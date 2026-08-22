@@ -108,11 +108,12 @@ export type PurchaseInvoiceField = keyof typeof purchaseInvoiceMapping.fieldToAc
 // § Fase 05 (Purchase Invoice — Auto-create Vendor & Item) — TERVERIFIKASI
 // 2026-08-20 via test call nyata: kalau vendor/item di Excel BELUM ada di
 // Accurate, dibuatkan dulu otomatis pakai field OPSIONAL ini, baru Faktur
-// Pembelian dibuat. SEMUA field di sini opsional — kalau vendor/item
-// SUDAH ada (ditemukan by `vendorNo`/`itemNo`), field ini diabaikan sama
-// sekali (tidak meng-update data master yang sudah ada, cuma dipakai saat
-// CREATE baru — hindari efek samping "diam-diam ubah data existing" yang
-// sudah dibahas di Fase 04).
+// Pembelian dibuat. Field di sini SEMUA opsional — kalau vendor/item
+// SUDAH ada (ditemukan by `vendorNo`/`itemNo`), field ini DIABAIKAN
+// (tidak meng-update data master yang sudah ada, cuma dipakai saat CREATE
+// baru — hindari efek samping "diam-diam ubah data existing", § Fase 04)
+// — KECUALI `vendorPayableAccountNo` (Akun Hutang), lihat catatan di
+// field itu (revisi 2026-08-22, keputusan eksplisit user).
 export const vendorAutoCreateMapping = {
   fieldToAccuratePath: {
     vendorName: "name", // WAJIB DIISI kalau vendor belum ada (error jelas kalau kosong)
@@ -128,9 +129,12 @@ export const vendorAutoCreateMapping = {
     vendorEmail: "email",
     vendorAddress: "billStreet",
     vendorCountry: "billCountry",
-    // Dipakai HANYA saat vendor baru dibuat (bukan update existing) —
-    // kalau perlu UPDATE akun hutang vendor yang SUDAH ADA, pakai modul
-    // Import Akun Hutang Pemasok (Fase 04) yang terpisah.
+    // § revisi 2026-08-22 — SATU-SATUNYA field di sini yang JUGA berlaku
+    // buat vendor yang SUDAH ADA (bukan cuma saat CREATE) — kalau vendor
+    // ditemukan DAN kolom ini diisi, akun hutangnya di-update juga. Beda
+    // dari field lain di atas yang tetap create-only. (Alternatif: modul
+    // Import Akun Hutang Pemasok, Fase 04, tetap ada buat update akun
+    // hutang TANPA perlu bikin/sertakan transaksi Faktur Pembelian.)
     vendorPayableAccountNo: "vendorPayableAccountListNo",
   } as const,
   defaultColumnMap: {

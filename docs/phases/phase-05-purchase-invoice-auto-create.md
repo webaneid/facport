@@ -53,12 +53,18 @@ Invoice / modul Setup Data Master terpisah / perluas Fase 04) — user pilih
   "Nama Kontak" terpisah di Excel, jadi dipakai NAMA VENDOR sebagai nama
   kontak default. Kalau nanti butuh kontak dengan nama beda dari vendor,
   perlu kolom tambahan (belum ada, dicatat di Known Limitations).
-- `vendorPayableAccountNo` (Akun Hutang) HANYA dipakai saat vendor BARU
-  dibuat — sengaja TIDAK update akun hutang vendor yang SUDAH ADA lewat
-  jalur ini, supaya tidak tumpang-tindih efek dengan modul Fase 04 (Import
-  Akun Hutang Pemasok) yang memang didesain khusus untuk itu, dan hindari
-  "diam-diam ubah data existing" (prinsip yang sama dipakai konsisten
-  sejak Fase 04).
+- `vendorPayableAccountNo` (Akun Hutang) awalnya HANYA dipakai saat vendor
+  BARU dibuat (hindari "diam-diam ubah data existing", prinsip yang sama
+  dari Fase 04). **Direvisi 2026-08-22 (keputusan eksplisit user)**:
+  sekarang JUGA update akun hutang vendor yang SUDAH ADA — field lain
+  (nama, kategori, telepon, email, WA, alamat, negara) TETAP create-only,
+  cuma Akun Hutang yang dikecualikan (dianggap aman karena settingnya
+  idempotent, beda dari field identitas vendor). Diverifikasi ulang via
+  test call nyata: vendor "PT Uji Otomatis Delapan" (V.NEW08, sudah ada)
+  di-update akun hutangnya dari `211.101-01` (IDR) → `211.101-02` (USD),
+  field lain (nama/telepon/email) TERBUKTI tidak ikut berubah. Modul Fase
+  04 (Import Akun Hutang Pemasok) TETAP ada — masih relevan buat update
+  akun hutang TANPA perlu ikut bikin/sertakan transaksi Faktur Pembelian.
 - `itemType` selalu `NON_INVENTORY` (bukan kolom Excel) — kalau user butuh
   item ber-stok (`INVENTORY`), tetap harus dibuat manual dulu di Accurate.
   Keputusan sengaja membatasi scope, bukan kelupaan.
@@ -94,8 +100,8 @@ Invoice / modul Setup Data Master terpisah / perluas Fase 04) — user pilih
   kontak/PIC berbeda)
 - `itemType` selalu `NON_INVENTORY` — item ber-stok (`INVENTORY`) tidak
   bisa dibuat lewat jalur auto-create ini
-- `vendorPayableAccountNo` cuma dipakai saat CREATE, tidak bisa dipakai
-  update vendor existing (pakai modul Fase 04 untuk itu)
+- ~~`vendorPayableAccountNo` cuma dipakai saat CREATE~~ — SUDAH DIPERBAIKI
+  2026-08-22, lihat § "Keputusan Kecil" di atas
 - Sama seperti Fase 04: koneksi Accurate EXISTING (connect sebelum fase
   ini di-deploy) perlu re-authorize manual untuk dapat scope `item_save`
   baru

@@ -66,7 +66,7 @@ const ACCURATE_FIELDS = [
   { value: "vendorEmail", label: "Email Pemasok Baru" },
   { value: "vendorAddress", label: "Alamat Pemasok Baru" },
   { value: "vendorCountry", label: "Negara Pemasok Baru" },
-  { value: "vendorPayableAccountNo", label: "Akun Hutang Pemasok Baru" },
+  { value: "vendorPayableAccountNo", label: "Akun Hutang Pemasok (berlaku buat Pemasok baru ATAU sudah ada)" },
   { value: "itemCategoryName", label: "Kategori Barang Baru (default: Umum)" },
 ] as const;
 

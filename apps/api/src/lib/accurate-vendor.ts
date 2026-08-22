@@ -71,17 +71,33 @@ export async function saveVendorPayableAccount(
 // § phase-05-purchase-invoice-auto-create.md — TERVERIFIKASI 2026-08-20
 // via test call nyata (vendor "CV Sumber Makmur" + kontak WhatsApp +
 // akun hutang, semua kesimpan benar sekaligus). Dipanggil SEBELUM
-// `savePurchaseInvoice` kalau vendor di Excel belum ada di Accurate —
-// field OPSIONAL (`createFields`) HANYA dipakai saat CREATE, TIDAK PERNAH
-// meng-update vendor yang SUDAH ADA (hindari efek samping diam-diam
-// mengubah data master, § Fase 04 "Keputusan Kecil").
+// `savePurchaseInvoice` kalau vendor di Excel belum ada di Accurate.
+//
+// § revisi 2026-08-22 (keputusan eksplisit user): `vendorPayableAccountListNo`
+// (Akun Hutang) SEKARANG boleh update vendor yang SUDAH ADA juga, TIDAK
+// cuma saat CREATE — beda dari field opsional lain (nama, kategori,
+// telepon, email, WA, alamat, negara) yang TETAP create-only (hindari
+// resiko tidak sengaja menimpa data vendor existing yang sudah benar,
+// cuma karena kolomnya kebetulan terisi di Excel). Akun Hutang dianggap
+// aman untuk kasus ini karena settingnya idempotent & memang tujuan
+// eksplisit user mengisi kolom itu — beda dari field identitas vendor.
 export async function findOrCreateVendor(
   ctx: AccurateSessionContext,
   vendorNo: string,
   createFields: Record<string, unknown>,
 ): Promise<{ id: number; name: string }> {
   const existing = await findVendorByNo(ctx, vendorNo);
-  if (existing) return existing;
+  if (existing) {
+    if (createFields.vendorPayableAccountListNo) {
+      return postVendorSave(ctx, {
+        id: existing.id,
+        name: existing.name,
+        transDate: todayAccurateDate(),
+        vendorPayableAccountListNo: createFields.vendorPayableAccountListNo,
+      });
+    }
+    return existing;
+  }
 
   if (!createFields.name) {
     throw new Error(
