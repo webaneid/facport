@@ -17,7 +17,7 @@
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.1",
     "@elysia/cors": "^1.4.2",
-    "@sentry/bun": "^9.15.0",
+    "@sentry/bun": "^10.70.0",
     "@sinclair/typebox": "^0.34.0",
     "better-auth": "1.7.1",
     "drizzle-orm": "0.45.2",
