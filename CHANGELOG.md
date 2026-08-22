@@ -1,3 +1,7 @@
+## <small>1.0.1 (2026-08-22)</small>
+
+* fix: Akun Hutang di import Faktur Pembelian juga update vendor existing ([22bfa31](https://github.com/webaneid/facport/commit/22bfa31))
+
 ## 1.0.0 (2026-08-22)
 
 * fix: install conventional-changelog-conventionalcommits peer dep ([d54f027](https://github.com/webaneid/facport/commit/d54f027))
