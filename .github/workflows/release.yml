@@ -61,6 +61,9 @@ jobs:
       - name: Migrate test database
         run: bun run db:migrate
 
+      - name: Seed database (role admin/customer, dst)
+        run: bun run --cwd apps/api db:seed
+
       - name: Run tests (gate — release dibatalkan kalau gagal)
         run: bun run test
 
