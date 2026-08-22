@@ -1,0 +1,136 @@
+# Progress Tracker
+
+> Index ringkas semua fase. Detail tiap fase ada di `docs/phases/phase-XX-*.md`.
+> Update tabel ini tiap kali status fase berubah (lihat `docs/SOP.md`).
+> **Fase 00 = fondasi** (settings, komponen reusable, i18n — lihat
+> `docs/architecture/architecture-components.md`), dibuat otomatis oleh skill
+> `project-init` dan WAJIB jalan sebelum Fase 01 fitur.
+
+| Fase | Nama                     | Status      | Architecture Doc                                   | Phase Doc                              |
+|------|---------------------------|-------------|-------------------------------------------------------|-------------------------------------------|
+| 00   | Fondasi Teknis (settings, komponen, auth+RBAC, queue) | Done | `docs/architecture/architecture-components.md` | `docs/phases/phase-00-fondasi.md` |
+| 01   | Fondasi Produk (routing 3-surface, langganan/plans, koneksi OAuth Accurate) | Done | `docs/architecture/architecture-domain-routing.md`, `docs/architecture/architecture-subscription.md`, `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-01-fondasi-produk.md` |
+| 02   | Modul Pembelian — **Purchase Invoice (Faktur Pembelian) saja** | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-02-modul-pembelian-purchase-invoice.md` |
+| 03   | Dashboard Pelanggan (App Shell + halaman utama) | Done | `docs/architecture/architecture-app-dashboard.md` | `docs/phases/phase-03-dashboard-pelanggan.md` |
+| 04   | Import Data Pemasok (update Akun Hutang) | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)" | `docs/phases/phase-04-import-vendor.md` |
+| 05   | Purchase Invoice — Auto-create Vendor & Item | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)", § 3 | `docs/phases/phase-05-purchase-invoice-auto-create.md` |
+
+**Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
+
+## Modul/Sub-modul Lain — Sengaja Di-pending
+Arahan eksplisit user (2026-08-19): **cuma Fase 02 (Purchase Invoice) yang
+aktif dikerjakan** setelah Fase 00-01 selesai. Semua ini di-pending sampai
+Fase 02 benar-benar solid & tervalidasi ke akun Accurate nyata — urutan &
+nomor fase berikutnya BELUM diputuskan, sengaja tidak di-pre-assign supaya
+tidak menyiratkan komitmen urutan yang belum benar ada:
+- Modul Pembelian — sub-modul lain: Purchase Order, Received Item, Purchase
+  Payment, Retur Pembelian
+- Modul Penjualan — semua sub-modul (Pesanan Penjualan, Delivery Order,
+  Sales Invoice, Sales Receipt, Retur Penjualan)
+- Modul Persediaan (Inventory) — semua sub-modul
+- Modul Manufaktur — semua sub-modul
+- Modul Kas & Bank + Buku Besar — semua sub-modul
+
+**Fase 04 (Import Data Pemasok — update Akun Hutang) Done 2026-08-20** —
+modul BARU (data master, di luar 5 modul transaksi yang di-listing di §
+"Modul/Sub-modul Lain — Sengaja Di-pending" di bawah), dipicu permintaan
+client soal kolom "Akun Hutang" di Faktur Pembelian. Lewat riset panjang +
+verifikasi empiris berulang (test call nyata ke Accurate, termasuk 3x
+re-authorize OAuth buat nambah scope), field yang tepat dikonfirmasi:
+`vendorPayableAccountListNo` (bukan saldo/`detailOpenBalance`) — dan
+dibuktikan BENERAN dipakai Accurate saat posting Faktur Pembelian
+berikutnya (bukan kosmetik). Endpoint + UI baru
+`/vendor/payable-account/import/*`, pola identik Purchase Invoice. Detail
+lengkap → `docs/phases/phase-04-import-vendor.md` § Ringkasan Hasil.
+**Known limitation penting**: koneksi Accurate existing perlu
+re-authorize manual untuk dapat scope baru ini.
+
+**Fase 05 (Purchase Invoice — Auto-create Vendor & Item) Done 2026-08-20** —
+perluasan modul Purchase Invoice (Fase 02): kalau Pemasok/Barang di Excel
+belum ada di Accurate, otomatis dibuatkan (field opsional: kategori,
+telepon, WhatsApp, email, alamat, negara, Akun Hutang untuk Pemasok baru),
+baru Fakturnya dibuat. Diverifikasi PENUH lewat browser sungguhan sampai
+sukses (vendor+item+faktur tercipta dalam 1 alur, semua field terkonfirmasi
+tersimpan benar). Detail lengkap → `docs/phases/phase-05-purchase-invoice-auto-create.md`
+§ Ringkasan Hasil. **Known limitation sama seperti Fase 04**: koneksi
+Accurate existing perlu re-authorize manual untuk scope `item_save` baru.
+
+## Fase Aktif Saat Ini
+Fase 00, Fase 01, DAN Fase 02 (Modul Pembelian — Purchase Invoice) semuanya
+**Done** (2026-08-19). Fase 02 tervalidasi end-to-end SUNGGUHAN — faktur
+asli tercipta di Accurate Online (Data Usaha "Retail Demo") lewat panggilan
+HTTP nyata (bukan mock), termasuk setelah security review (0 Critical, 1
+High + 2 Medium + 4 Low, semua diperbaiki). Detail lengkap →
+`docs/phases/phase-02-modul-pembelian-purchase-invoice.md` § Ringkasan
+Hasil.
+
+**Fase 03 (Dashboard Pelanggan) Done 2026-08-19** — App Shell (sidebar+topbar,
+route group `(protected)`) + dashboard home profesional (Card Langganan,
+Koneksi Accurate, Import Terakhir), pakai data ASLI dari Fase 01/02.
+Diverifikasi lewat browser sungguhan (Playwright): login, navigasi, logout,
+3 breakpoint responsive tanpa overflow. Fondasi UI ini dipakai ulang modul
+berikutnya — BUKAN modul import baru (urutan modul/sub-modul setelah
+Purchase Invoice masih BELUM diputuskan, lihat § "Modul/Sub-modul Lain —
+Sengaja Di-pending" di atas). Detail → `docs/phases/phase-03-dashboard-pelanggan.md`
+§ Ringkasan Hasil.
+
+**Update 2026-08-19**: user memberi snapshot lokal dokumentasi resmi
+Accurate (`docs/referencehtml/`, gitignored) — lihat
+`docs/architecture/architecture-accurate-integration.md` § "Dokumentasi
+Resmi" & § 3. Status 2 gap sebelumnya:
+- ✅ **Scope Accurate untuk Purchase Invoice — TERVERIFIKASI**. Pola
+  `{resource}_{aksi}` yang sudah ditebak di `accurate-scopes.ts` benar
+  (`purchase_invoice_view`/`save`/`delete`). Field request `save.do`/
+  `bulk-save.do` juga sudah didokumentasikan lengkap.
+- ✅ **`ACCURATE_CLIENT_ID`/`SECRET` — SELESAI, DAN SUDAH DIUJI END-TO-END
+  SUNGGUHAN 2026-08-19.** Aplikasi "facport" didaftarkan di Accurate,
+  kredensial masuk `apps/api/.env`. Alur penuh dites pakai browser user
+  asli: authorize URL → login Accurate → consent screen → callback →
+  **token exchange BERHASIL, access+refresh token asli tersimpan
+  terenkripsi di `accurate_connections`**. Satu bug ketemu & diperbaiki
+  dalam prosesnya (redirect tujuan salah karena `??` vs `||` pada env
+  string kosong) — detail → `docs/lessons-learned.md` entri
+  "`env.APP_ORIGIN_PROD ?? fallback` gagal fallback...".
+  **Gap baru ketemu dari test ini**: kolom `accurateDbId` di
+  `accurate_connections` masih NULL — alur callback saat ini cuma simpan
+  token, belum ada langkah pilih & simpan Data Usaha (`db-list.do` →
+  `open-db.do`, § "Sesi Data Usaha" di `architecture-accurate-integration.md`).
+  Ini WAJIB diselesaikan sebagai bagian awal Fase 02 (bukan reopen Fase 01
+  — langkah ini baru relevan begitu ada endpoint data yang benar-benar
+  dipakai, yaitu Purchase Invoice di Fase 02), sebelum bisa panggil
+  endpoint `/api/purchase-invoice/*` mana pun.
+
+**Update 2026-08-19 (sore)**: client user minta kolom "Akun Hutang" di
+import Faktur Pembelian. Dicek langsung ke `open-api/json.do` (live, bukan
+snapshot) — field itu TIDAK ADA di `purchase-invoice/save.do` (bukan
+properti transaksi), tapi ADA di `vendor/save.do`
+(`vendorPayableAccountListNo`). Kebutuhan sebenarnya = modul baru **Import
+Data Vendor** (data master, bukan transaksi) — didraf sebagai **Fase 04**,
+status `Planned`, **BELUM dieksekusi** karena user masih konfirmasi detail
+kebutuhan ke client dulu. Detail lengkap → `docs/phases/phase-04-import-vendor.md`
+dan `docs/architecture/architecture-accurate-integration.md` §
+"Vendor (Data Master)".
+
+**Terobosan besar 2026-08-19**: ditemukan `https://account.accurate.id/open-api/json.do`
+— spec OpenAPI RESMI Accurate yang **publik, tidak login-gated**, bisa
+diakses langsung oleh Claude kapan saja (via GitHub repo
+`aol-integration/accurate-schema-mcp`). Ini artinya verifikasi scope/field
+untuk modul-modul lain (Sales Invoice, Purchase Order, dst) di fase-fase
+berikutnya TIDAK PERLU lagi minta snapshot manual dari user — tinggal
+`curl`/fetch endpoint itu. Sudah dipakai untuk memperbaiki
+`accurate-scopes.ts` (semua 222 scope resmi dicek, 4 entry yang tadinya
+salah tebak sudah dikoreksi: `item_receipt_*`→`receive_item_*`,
+`payment_*`→`other_payment_*`, `receipt_*`→`other_deposit_*`,
+`journal_*`→`journal_voucher_*`) dan menemukan rate limit resmi (8
+req/detik, 8 concurrent) + pola error Accurate (`{"s": false}` di HTTP 200,
+bukan cuma HTTP error code). Detail lengkap →
+`architecture-accurate-integration.md` § "Dokumentasi Resmi", § 4, § 5, § 6.
+- ✅ **Gap baru ketemu, SEKARANG SEPENUHNYA TERSELESAIKAN**: alur OAuth
+  ternyata butuh langkah TAMBAHAN di luar access_token — "Sesi Data Usaha"
+  (`open-db.do` → host API dinamis + `X-Session-ID`, wajib dikirim di tiap
+  panggilan endpoint data). Semua parameter DAN contoh response
+  (`db-list.do`, `open-db.do`) sudah terverifikasi via kombinasi
+  `api-docs.do` (parameter) + https://accurate.id/api-integration/api-example/
+  (contoh response nyata, sumber publik). Detail lengkap →
+  `architecture-accurate-integration.md` § "Sesi Data Usaha (Company
+  Database)".

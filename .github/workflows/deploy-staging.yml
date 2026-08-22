@@ -1,0 +1,75 @@
+name: Deploy Staging
+
+# Trigger tiap push ke "develop" — TIDAK lewat semantic-release/versioning
+# (beda dari release.yml/deploy.yml yang trigger dari GitHub Release event
+# di "main"). Staging itu preview terus-menerus, bukan artifact ber-versi.
+# Lihat docs/decisions/adr-0003-staging-environment.md.
+on:
+  push:
+    branches: [develop]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check (gate — deploy staging dibatalkan kalau gagal)
+        run: bun run typecheck
+
+      - name: Test (gate)
+        run: bun run test
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag "staging" DITIMPA tiap push (bukan versioned) — sengaja, ini
+      # cuma preview terkini dari branch develop, bukan artifact yang perlu
+      # ditelusuri per-versi seperti production.
+      - name: Build & push apps/api (staging)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/api:staging
+
+      - name: Build & push apps/web (staging)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository }}/web:staging
+
+  deploy-to-server:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/app   # SAMA dengan production — beda project name (-p), lihat docker-compose.staging.yml
+            export GITHUB_REPO="${{ github.repository }}"
+            echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy-staging
+            docker network create edge 2>/dev/null || true   # no-op kalau sudah ada
+            docker compose -f docker-compose.staging.yml -p app-staging \
+              --env-file .env.staging --env-file .env.deploy-staging pull
+            docker compose -f docker-compose.staging.yml -p app-staging \
+              --env-file .env.staging --env-file .env.deploy-staging up -d
+            docker image prune -f

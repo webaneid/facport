@@ -1,0 +1,30 @@
+# Dokumentasi & konfigurasi Claude Code — TIDAK PERNAH boleh masuk image
+docs/
+.claude/
+*.md
+!apps/**/README.md
+
+# File deploy config — dipakai DI SERVER, bukan bagian dari build image
+docker-compose*.yml
+Caddyfile*
+.env.production*
+.env.staging*
+scripts/
+
+# Git & CI
+.git/
+.github/
+
+# Dependency lama / hasil build sebelumnya (biar fresh install di dalam container)
+node_modules/
+**/dist/
+**/.next/
+
+# Environment lokal
+.env
+.env.local
+.env.*.local
+
+# Misc
+.DS_Store
+*.log

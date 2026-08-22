@@ -1,0 +1,44 @@
+# Caddyfile
+# Caddy otomatis urus sertifikat HTTPS (Let's Encrypt) begitu domain
+# diarahkan ke IP VPS Hostinger kamu — nggak perlu setup certbot manual.
+
+# GANTI dengan domain asli kamu begitu sudah final (contoh pakai facport.com,
+# lihat docs/architecture/architecture-domain-routing.md § ADR-0007) — SATU
+# service "web" yang sama melayani ketiga host di bawah (dibedakan lewat Host
+# header di middleware Next.js, bukan container terpisah per surface).
+namadomain.com {
+    reverse_proxy web:3000
+}
+
+admin.namadomain.com {
+    reverse_proxy web:3000
+}
+
+app.namadomain.com {
+    reverse_proxy web:3000
+}
+
+api.namadomain.com {
+    reverse_proxy api:3001
+}
+
+# Staging — di-handle Caddy PRODUCTION yang sama (lihat docker-compose.prod.yml
+# & docker-compose.staging.yml, network "edge"). GANTI domain sesuai punya kamu.
+admin-staging.namadomain.com {
+    reverse_proxy web-staging:3000
+}
+
+app-staging.namadomain.com {
+    reverse_proxy web-staging:3000
+}
+
+api-staging.namadomain.com {
+    reverse_proxy api-staging:3001
+}
+
+# Kalau belum punya domain dan cuma mau tes pakai IP dulu, ganti blok di atas
+# sementara jadi (HTTP saja, tanpa auto-HTTPS):
+#
+# :80 {
+#     reverse_proxy web:3000
+# }

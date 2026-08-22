@@ -1,0 +1,67 @@
+# .github/dependabot.yml
+# Update dependency PROAKTIF lewat PR otomatis — pelengkap "bun audit" yang
+# reaktif (cuma tahu ada vulnerability SETELAH dependency itu sudah lama
+# terpasang). Dependabot dipilih atas Renovate karena native GitHub, zero
+# setup tambahan (Renovate butuh install GitHub App terpisah) — cukup untuk
+# kebutuhan solo/tim kecil. Kalau nanti butuh kontrol lebih (grouping PR,
+# scheduling custom, auto-merge minor) → pertimbangkan Renovate lewat ADR baru.
+
+version: 2
+updates:
+  # Root workspace (bun workspaces)
+  - package-ecosystem: "npm" # Dependabot belum ada ecosystem "bun" native, tapi baca package.json/lockfile npm-compatible dengan benar
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      # Group minor/patch jadi 1 PR (kurangi noise), major TETAP terpisah
+      # per-package (perlu review manual satu-satu, sering breaking change)
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  # Docker base images (oven/bun, postgres, minio, caddy)
+  - package-ecosystem: "docker"
+    directory: "/apps/api"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/apps/web"
+    schedule:
+      interval: "weekly"
+
+  # GitHub Actions versions (actions/checkout@v4, dst)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

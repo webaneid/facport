@@ -1,0 +1,48 @@
+name: Release
+
+# Jalan tiap push ke main. semantic-release yang MENENTUKAN apakah perlu
+# release baru atau tidak (kalau commit sejak tag terakhir cuma "chore:"/"docs:",
+# nggak ada release baru dibuat sama sekali — bukan setiap push jadi angka baru).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # perlu full history biar semantic-release bisa baca semua commit
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Type check (gate — release dibatalkan kalau gagal)
+        run: bun run typecheck
+
+      - name: Run tests (gate — release dibatalkan kalau gagal)
+        run: bun run test
+
+      - name: Secret scan (lapis kedua, jaga-jaga bypass PR/ci.yml)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: bunx semantic-release
+        # Output dari step ini: kalau ada release baru → git tag dibuat,
+        # CHANGELOG.md diupdate, GitHub Release dibuat otomatis dengan
+        # catatan rilis dari commit message. Ini trigger workflow deploy.yml
+        # lewat event "release: published".

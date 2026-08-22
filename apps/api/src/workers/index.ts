@@ -1,0 +1,221 @@
+import "../lib/env"; // WAJIB paling awal
+
+import { eq, and, or, lt, lte } from "drizzle-orm";
+import { boss, JOBS, startQueue } from "../lib/queue";
+import { logger } from "../lib/logger";
+import { Sentry } from "../lib/sentry";
+import { sendEmail } from "../lib/email";
+import { db } from "../lib/db";
+import { subscriptions, accurateConnections, importBatches, importBatchRows } from "../db/schema";
+import { refreshAccessToken } from "../lib/accurate";
+import { encrypt, decrypt } from "../lib/encryption";
+import { openAccurateSession } from "../lib/accurate-session";
+import { savePurchaseInvoice } from "../lib/accurate-purchase-invoice";
+import {
+  buildPurchaseInvoicePayload,
+  extractVendorCreateFields,
+  extractItemCreateFields,
+} from "../lib/import-mapping/purchase-invoice.mapping";
+import { saveVendorPayableAccount, findOrCreateVendor } from "../lib/accurate-vendor";
+import { buildVendorPayableAccountPayload } from "../lib/import-mapping/vendor-payable-account.mapping";
+import { findOrCreateItem } from "../lib/accurate-item";
+import type { AccurateSessionContext } from "../lib/accurate-session";
+
+// § architecture-accurate-integration.md — `import_batches.module`
+// menentukan cara proses 1 baris. Switch eksplisit (bukan lookup table
+// generik) SENGAJA dipilih — tiap modul punya bentuk payload beda
+// (Purchase Invoice: object nested `detailItem`, Vendor: flat
+// `{vendorNo, payableAccountNo}`), lookup table generik butuh cast tidak
+// aman (`as any`/`as never`) buat nyatuin tipe fungsi yang beda-beda.
+// Tambah `case` baru di sini kalau ada modul import lain — JOBS.IMPORT_TO_ACCURATE
+// tetap 1 job generik, bukan bikin job type terpisah per modul (§ queue.ts).
+async function processImportRow(
+  module: string,
+  ctx: AccurateSessionContext,
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): Promise<{ id: number | string }> {
+  switch (module) {
+    case "purchase_invoice": {
+      // § phase-05-purchase-invoice-auto-create.md — vendor/item yang
+      // BELUM ada di Accurate dibuatkan dulu otomatis (pakai kolom
+      // opsional tambahan), baru fakturnya dibuat. TERVERIFIKASI
+      // 2026-08-20 via test call nyata end-to-end.
+      const payload = buildPurchaseInvoicePayload(rawRow, columnMapping);
+      const vendorNo = String(payload.vendorNo ?? "");
+      const detailItem = ((payload.detailItem as Record<string, unknown>[] | undefined) ?? [])[0] ?? {};
+      const itemNo = String(detailItem.itemNo ?? "");
+
+      if (vendorNo) {
+        await findOrCreateVendor(ctx, vendorNo, extractVendorCreateFields(rawRow, columnMapping));
+      }
+      if (itemNo) {
+        await findOrCreateItem(ctx, itemNo, extractItemCreateFields(rawRow, columnMapping));
+      }
+      return savePurchaseInvoice(ctx, payload);
+    }
+    case "vendor_payable_account":
+      return saveVendorPayableAccount(ctx, buildVendorPayableAccountPayload(rawRow, columnMapping));
+    default:
+      throw new Error(`Modul import "${module}" tidak dikenali`);
+  }
+}
+
+async function main() {
+  await startQueue();
+
+  await boss.work<{ to: string; subject: string; html: string }>(
+    JOBS.SEND_EMAIL,
+    async ([job]) => {
+      if (!job) return;
+      try {
+        await sendEmail(job.data);
+        logger.info({ jobId: job.id }, "Email job processed");
+      } catch (err) {
+        logger.error({ err, jobId: job.id }, "Email job failed");
+        Sentry.captureException(err);
+        throw err; // pg-boss retry otomatis (default 3x, exponential backoff)
+      }
+    },
+  );
+
+  // § architecture-subscription.md — downgrade otomatis, harian (bukan
+  // real-time check saja) supaya status konsisten di DB kapan pun dilihat.
+  await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
+  await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
+    const expired = await db
+      .update(subscriptions)
+      .set({ status: "expired" })
+      .where(and(eq(subscriptions.status, "active"), lt(subscriptions.endAt, new Date())))
+      .returning({ id: subscriptions.id });
+    logger.info({ count: expired.length }, "Subscriptions expired");
+  });
+
+  // § architecture-accurate-integration.md § 1 — access token expire 15
+  // hari, refresh harian cukup (bukan tiap 30 menit). Cek koneksi yang
+  // mendekati expired (<2 hari lagi), refresh proaktif.
+  await boss.schedule(JOBS.REFRESH_ACCURATE_TOKEN, "0 2 * * *");
+  await boss.work(JOBS.REFRESH_ACCURATE_TOKEN, async () => {
+    const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const dueForRefresh = await db
+      .select()
+      .from(accurateConnections)
+      .where(and(eq(accurateConnections.status, "active"), lte(accurateConnections.expiresAt, soon)));
+
+    for (const conn of dueForRefresh) {
+      try {
+        const token = await refreshAccessToken(decrypt(conn.refreshTokenEncrypted));
+        await db
+          .update(accurateConnections)
+          .set({
+            accessTokenEncrypted: encrypt(token.access_token),
+            refreshTokenEncrypted: encrypt(token.refresh_token),
+            expiresAt: new Date(Date.now() + token.expires_in * 1000),
+            updatedAt: new Date(),
+          })
+          .where(eq(accurateConnections.id, conn.id));
+        logger.info({ connectionId: conn.id }, "Accurate token refreshed");
+      } catch (err) {
+        // Refresh token juga sudah invalid/di-revoke user dari sisi Accurate
+        // — tandai expired, user WAJIB hubungkan ulang manual (§ Halaman app
+        // "Hubungkan Ulang", docs/phases/phase-01-fondasi-produk.md)
+        await db
+          .update(accurateConnections)
+          .set({ status: "expired", updatedAt: new Date() })
+          .where(eq(accurateConnections.id, conn.id));
+        logger.error({ err, connectionId: conn.id }, "Accurate token refresh gagal, tandai expired");
+        Sentry.captureException(err);
+      }
+    }
+  });
+
+  // § architecture-accurate-integration.md § 2, § "Sesi Data Usaha" — 1
+  // baris Excel = 1 Faktur Pembelian dengan 1 detailItem (§ phase-02 doc
+  // "Keputusan Kecil"). Sesi Data Usaha dibuka SEKALI per job run, bukan
+  // per-row (§ "Sesi Data Usaha" — session/host ephemeral, tidak di-cache
+  // lintas job).
+  await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE, async ([job]) => {
+    if (!job) return;
+    const { batchId } = job.data;
+
+    const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, batchId));
+    if (!batch) {
+      logger.error({ batchId }, "Import batch tidak ditemukan, skip job");
+      return;
+    }
+
+    const [connection] = await db
+      .select()
+      .from(accurateConnections)
+      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+
+    if (!connection || !connection.accurateDbId) {
+      await db
+        .update(importBatches)
+        .set({ status: "failed", completedAt: new Date() })
+        .where(eq(importBatches.id, batch.id));
+      logger.error({ batchId }, "Import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
+      return;
+    }
+
+    let session;
+    try {
+      session = await openAccurateSession(connection);
+    } catch (err) {
+      await db
+        .update(importBatches)
+        .set({ status: "failed", completedAt: new Date() })
+        .where(eq(importBatches.id, batch.id));
+      logger.error({ err, batchId }, "Import gagal: tidak bisa buka sesi Data Usaha Accurate");
+      Sentry.captureException(err);
+      return;
+    }
+
+    const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+    const rows = await db
+      .select()
+      .from(importBatchRows)
+      .where(
+        and(
+          eq(importBatchRows.batchId, batch.id),
+          or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
+        ),
+      );
+
+    for (const row of rows) {
+      try {
+        const result = await processImportRow(
+          batch.module,
+          session,
+          row.rawData as Record<string, unknown>,
+          columnMapping,
+        );
+        await db
+          .update(importBatchRows)
+          .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null, processedAt: new Date() })
+          .where(eq(importBatchRows.id, row.id));
+      } catch (err) {
+        await db
+          .update(importBatchRows)
+          .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+          .where(eq(importBatchRows.id, row.id));
+      }
+    }
+
+    const finalRows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
+    const hasFailed = finalRows.some((r) => r.status === "failed");
+    await db
+      .update(importBatches)
+      .set({ status: hasFailed ? "completed_with_errors" : "completed", completedAt: new Date() })
+      .where(eq(importBatches.id, batch.id));
+
+    logger.info({ batchId, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length }, "Import batch selesai");
+  });
+
+  logger.info("apps/api worker started");
+}
+
+main().catch((err) => {
+  logger.error({ err }, "Worker failed to start");
+  process.exit(1);
+});

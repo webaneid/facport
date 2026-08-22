@@ -1,0 +1,69 @@
+name: Deploy
+
+# Trigger OTOMATIS begitu release.yml berhasil bikin GitHub Release baru.
+# Kalau release.yml jalan tapi tidak ada perubahan yang layak rilis
+# (misal cuma commit "docs:"), event ini TIDAK jalan — jadi deploy
+# cuma terjadi kalau memang ada versi baru beneran.
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Build & push image API — cuma isi dari Dockerfile (hasil build),
+      # bukan source repo mentah. Tag pakai nomor versi dari release,
+      # bukan "latest" doang, biar tiap versi tetap bisa ditelusuri/rollback.
+      - name: Build & push apps/api
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/api/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/api:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository }}/api:latest
+
+      - name: Build & push apps/web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./apps/web/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/web:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository }}/web:latest
+
+  deploy-to-server:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      # TEMPLATE — sesuaikan dengan cara akses server kamu yang sebenarnya.
+      # Pola umum: SSH ke server, pull image baru dari registry, restart
+      # container. Server TIDAK PERNAH clone git repo — cuma pull image
+      # yang sudah jadi, jadi otomatis nggak ada docs/.md di server.
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd /opt/app   # sesuaikan path deploy di VPS Hostinger kamu
+            export GITHUB_REPO="${{ github.repository }}"
+            export IMAGE_TAG="${{ github.event.release.tag_name }}"
+            echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
+            echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
+            docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull
+            docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy up -d
+            docker image prune -f   # bersihin image versi lama biar disk VPS nggak penuh

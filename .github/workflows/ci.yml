@@ -1,0 +1,39 @@
+name: CI
+
+# Jalan di TIAP pull request ke main — beda dari release.yml yang cuma
+# jalan setelah masuk main. Tujuannya: masalah ketahuan SEBELUM merge,
+# bukan sesudah.
+on:
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Type check
+        run: bun run typecheck
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Test
+        run: bun run test
+
+      - name: Secret scan (lapis kedua, independen dari hook Claude Code)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Dependency audit
+        run: bun audit
+        continue-on-error: true   # warning, tidak block PR (bisa noisy)

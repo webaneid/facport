@@ -1,0 +1,99 @@
+# docker-compose.staging.yml
+# Sama strukturnya dengan docker-compose.prod.yml, BEDA di:
+# - Image tag "staging" (ditimpa tiap push ke branch develop, bukan versioned)
+# - Nama volume beda (supaya tidak tabrakan sama production di VPS yang sama)
+# - Resource limit lebih kecil (staging bukan prioritas performa)
+# - TIDAK ADA Caddy sendiri — Caddy PRODUCTION (docker-compose.prod.yml) yang
+#   reverse-proxy ke sini juga, lewat network "edge" yang di-share. Kenapa
+#   begini, bukan Caddy kedua: Caddy didesain menangani banyak domain dalam
+#   1 proses, dan port 80/443 cuma bisa dipakai SATU proses per VPS.
+#
+# Jalan di server: docker compose -f docker-compose.staging.yml -p app-staging up -d
+# (flag -p penting — bikin project name beda dari production di VPS yang sama)
+#
+# PRASYARAT (sekali saja): network "edge" harus sudah ada sebelum compose up:
+#   docker network create edge
+
+services:
+  api:
+    image: ghcr.io/${GITHUB_REPO}/api:staging
+    restart: unless-stopped
+    env_file: .env.staging
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      internal:
+      edge:
+        aliases:
+          - api-staging   # dipanggil Caddy production sebagai "api-staging:3001"
+    mem_limit: 256m
+    cpus: 0.5
+
+  web:
+    image: ghcr.io/${GITHUB_REPO}/web:staging
+    restart: unless-stopped
+    env_file: .env.staging
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      internal:
+      edge:
+        aliases:
+          - web-staging   # dipanggil Caddy production sebagai "web-staging:3000"
+    mem_limit: 256m
+    cpus: 0.5
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data_staging:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    # JANGAN restore data production ke sini kecuali sudah dianonymized —
+    # lihat catatan di docs/decisions/adr-0003-staging-environment.md.
+    # Sengaja TIDAK di network "edge" — DB tidak perlu dijangkau Caddy.
+    mem_limit: 384m
+    cpus: 0.5
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data_staging:/data
+    networks: [internal]
+    mem_limit: 128m
+    cpus: 0.25
+
+networks:
+  internal:
+  edge:
+    external: true   # network yang sama dibuat & dipakai docker-compose.prod.yml
+
+volumes:
+  postgres_data_staging:
+  minio_data_staging:

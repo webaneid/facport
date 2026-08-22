@@ -1,0 +1,114 @@
+# docker-compose.prod.yml
+# Dipakai DI SERVER, bukan dibuild di sini — image ditarik dari GHCR
+# (sudah dibuild otomatis oleh .github/workflows/deploy.yml).
+# Jalan di server: docker compose -f docker-compose.prod.yml up -d
+#
+# CATATAN RESOURCE LIMITS: VPS (mis. Hostinger) biasanya RAM terbatas
+# (1-4GB). Tanpa limit, satu container yang leak/spike bisa habisin
+# semua RAM dan bikin container LAIN kena OOM-kill oleh kernel secara
+# tidak terduga (termasuk postgres — riskan data). Angka di bawah contoh
+# awal untuk VPS ~2GB RAM, SESUAIKAN dengan spek VPS asli & load nyata
+# (pantau lewat `docker stats` setelah jalan beberapa hari, jangan cuma tebak).
+
+services:
+  api:
+    image: ghcr.io/${GITHUB_REPO}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    # Tidak expose port ke luar langsung — cuma lewat Caddy (reverse proxy)
+    mem_limit: 512m
+    cpus: 0.75
+
+  web:
+    image: ghcr.io/${GITHUB_REPO}/web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env.production
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    mem_limit: 512m
+    cpus: 0.75
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks: [internal]
+    # Sengaja TIDAK ada "ports:" ke luar — DB cuma bisa diakses dari
+    # dalam network internal (api), bukan dari internet. Kalau butuh
+    # akses manual (mis. lewat DBeaver), pakai SSH tunnel, jangan expose port.
+    # Postgres paling penting DIKASIH RAM CUKUP (data integrity) — beri
+    # limit paling longgar di antara semua service kalau RAM VPS terbatas.
+    mem_limit: 768m
+    cpus: 1.0
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    volumes:
+      - minio_data:/data
+    networks: [internal]
+    # Console (:9001) sengaja tidak diekspos publik. Kalau perlu akses
+    # console dari luar, tambahkan lewat Caddy dengan auth tambahan,
+    # jangan buka port mentah-mentah ke internet.
+    mem_limit: 256m
+    cpus: 0.5
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on: [api, web]
+    networks: [internal, edge]
+    # "edge" = network eksternal shared, supaya Caddy yang SAMA ini juga bisa
+    # reverse-proxy ke container staging (docker-compose.staging.yml), tanpa
+    # perlu Caddy kedua rebutan port 80/443. Dibuat SEKALI manual:
+    # docker network create edge
+    mem_limit: 128m
+    cpus: 0.25
+
+networks:
+  internal:
+  edge:
+    external: true
+
+volumes:
+  postgres_data:
+  minio_data:
+  caddy_data:
+  caddy_config:

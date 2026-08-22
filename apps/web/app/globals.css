@@ -1,0 +1,51 @@
+@import "tailwindcss";
+
+/* § docs/architecture/architecture-app-dashboard.md — token desain.
+   Nama SEMANTIK (primary, background, dst), BUKAN hardcode nama warna
+   Tailwind langsung di komponen — supaya dark mode nanti (ditunda,
+   § phase-03 Known Limitations) tinggal override token ini, bukan cari-
+   ganti tiap komponen. Palet primary = skala indigo Tailwind standar,
+   dipilih user untuk kesan profesional produk SaaS B2B finance. */
+@theme {
+  --color-primary-50: #eef2ff;
+  --color-primary-100: #e0e7ff;
+  --color-primary-200: #c7d2fe;
+  --color-primary-300: #a5b4fc;
+  --color-primary-400: #818cf8;
+  --color-primary-500: #6366f1;
+  --color-primary-600: #4f46e5;
+  --color-primary-700: #4338ca;
+  --color-primary-800: #3730a3;
+  --color-primary-900: #312e81;
+
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+  --color-muted: #f8fafc;
+  --color-muted-foreground: #64748b;
+  --color-border: #e2e8f0;
+
+  --color-success: #16a34a;
+  --color-success-bg: #f0fdf4;
+  --color-warning: #d97706;
+  --color-warning-bg: #fffbeb;
+  --color-destructive: #dc2626;
+  --color-destructive-bg: #fef2f2;
+
+  --font-sans: var(--font-inter), system-ui, -apple-system, sans-serif;
+
+  /* § architecture-app-dashboard.md — skala shadow buat "elevasi" konsisten
+     (card, dropdown, dropzone) — dipakai lewat class shadow-card/shadow-elevated
+     Tailwind v4 (bukan cuma shadow-sm bawaan yang nyaris tidak kelihatan). */
+  --shadow-card: 0 1px 2px 0 rgb(15 23 42 / 0.04), 0 1px 3px 0 rgb(15 23 42 / 0.06);
+  --shadow-elevated: 0 4px 6px -2px rgb(15 23 42 / 0.05), 0 12px 24px -8px rgb(15 23 42 / 0.12);
+}
+
+body {
+  /* Wash halus (bukan putih polos) — isi ruang kosong di bawah konten
+     tanpa jadi "ramai", dan bikin card putih di atasnya kelihatan
+     "elevated" beneran (kontras dari background, bukan cuma border tipis). */
+  background: linear-gradient(180deg, var(--color-primary-50) 0%, var(--color-muted) 320px, var(--color-muted) 100%);
+  background-attachment: fixed;
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+}

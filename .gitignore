@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Env — asli JANGAN pernah commit, .example boleh
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+!.env.production.example
+!.env.staging.example
+!apps/*/.env.example
+
+# Build output
+dist/
+build/
+.next/
+out/
+
+# Drizzle
+apps/api/drizzle/
+
+# Logs
+*.log
+npm-debug.log*
+bun-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+
+# Test/coverage
+coverage/
+
+# Misc
+*.tsbuildinfo
+.turbo/
+
+# Claude Code session-local state (bukan config project)
+.claude/scheduled_tasks.lock
+
+# Saved reference docs (Accurate API HTML exports, etc.) — local only, not for repo
+docs/referencehtml/
