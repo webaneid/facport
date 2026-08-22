@@ -71,54 +71,36 @@ yang sama kalau tidak dicek dari awal.
 
 ---
 
-## 2026-08-20 — 3 "kegagalan" testing Fase 05 yang ternyata bukan bug produk — pentingnya isolasi root cause sebelum menyalahkan kode
-**Masalah:** Saat verifikasi browser fitur auto-create vendor/item (Fase
-05), muncul 3 error berturut-turut yang awalnya kelihatan seperti bug:
-(1) `Data "Nama" pada "Satuan Barang" terlalu besar. Maksimal 7 karakter`,
-(2) batch status macet di `processing` selamanya, (3) `No Faktur # harus
-diisi` padahal kolom nomor faktur sudah diisi.
+## 2026-08-20 — 3 "kegagalan" testing Fase 05 yang ternyata bukan bug produk
+**Masalah:** Verifikasi browser fitur auto-create vendor/item (Fase 05)
+sempat munculkan 3 error yang kelihatan seperti bug: field "Satuan Barang"
+dianggap kepanjangan, batch macet di `processing`, `No Faktur # harus diisi`.
 
-**Root cause masing-masing (SEMUA beda, SEMUA bukan bug di kode produk):**
-1. Skrip test Playwright nyusun Excel pakai 2 array terpisah (`headers`
-   dan `row`) yang ditulis manual — waktu nambah 1 kolom baru ("Branch
-   Name") di tengah `headers`, nilainya cuma ditambah di UJUNG `row`
-   (bukan di posisi yang sama) → semua kolom sesudahnya bergeser 1 posisi
-   → nilai "Gudang Utama" (nama gudang) ketuker masuk ke field "Satuan
-   Barang", yang MEMANG kepanjangan (>7 karakter) — errornya BENAR,
-   datanya yang salah.
-2. Worker (`bun run dev:worker`) jalan dengan hot-reload — waktu file
-   `workers/index.ts` diedit LAGI sementara sebuah job masih diproses,
-   proses worker restart di tengah jalan, baris sempat ke-update status
-   `failed` tapi update status BATCH di akhir loop tidak sempat jalan
-   (proses sudah mati duluan) — batch nyangkut permanen di `processing`.
-3. Skrip test tidak menyertakan kolom "Bill No" — akun Accurate "Retail
-   Demo" ternyata punya setting `useBillNumber: true`, yang mewajibkan
-   `billNumber` diisi (field yang SUDAH ada sejak Fase 02, cuma lupa
-   dipakai di Excel test kali ini).
+**Root cause (SEMUA bug test, BUKAN bug produk):**
+1. Skrip test Playwright nyusun Excel pakai 2 array terpisah (`headers`/`row`)
+   ditulis manual — nambah 1 kolom di tengah `headers` tapi nilainya cuma
+   ditambah di ujung `row` → semua kolom sesudahnya ketuker geser 1 posisi.
+2. Worker (`bun run dev:worker`) di-hot-reload SAAT job masih diproses →
+   proses restart di tengah jalan, update status batch di akhir loop tidak
+   sempat jalan → batch nyangkut permanen di `processing`.
+3. Skrip test lupa isi kolom "Bill No" — akun Accurate "Retail Demo" punya
+   setting `useBillNumber: true` yang mewajibkannya (field sudah ada sejak
+   Fase 02).
 
-**Fix:** Bukan fix di kode — konfirmasi lewat 4-5 test terisolasi
-(memanggil fungsi Accurate langsung tanpa lewat UI/worker) yang SEMUA
-sukses dengan payload identik, membuktikan logic-nya benar; baru fokus
-cari perbedaan antara test terisolasi vs test UI (ketemu 3 penyebab di
-atas satu per satu).
+**Fix:** Bukan fix kode — dikonfirmasi lewat test terisolasi (panggil fungsi
+Accurate langsung, tanpa UI/worker) yang semua sukses, membuktikan logic
+benar; baru dicari beda test terisolasi vs test UI.
 
 **Pencegahan:**
-- Susun data Excel test pakai 1 OBJECT (`{kolom: nilai}`), BUKAN 2 array
-  paralel — hilangkan seluruh kelas bug "kolom bergeser" ini, derive
-  `headers`/`row` dari `Object.keys()`/`Object.values()` object yang
-  sama.
-- JANGAN edit source file yang lagi diproses worker (`dev:worker` hot-reload)
-  SAAT job masih jalan — tunggu job selesai dulu, atau restart worker
-  manual setelah selesai edit, sebelum test batch berikutnya.
-- Kalau error dari Accurate kelihatan aneh/tidak masuk akal (misal "field
-  X kepanjangan" padahal nilainya pendek) — JANGAN langsung asumsikan bug
-  di kode. Cek dulu RAW DATA yang benar-benar tersimpan di DB
-  (`raw_data`/`column_mapping` di `import_batch_rows`/`import_batches`)
-  sebelum menyalahkan logic pemetaan.
-- `branchName` (akun multi-cabang) dan `billNumber` (setting
-  `useBillNumber`) adalah 2 field OPSIONAL Purchase Invoice yang gampang
-  lupa disertakan saat bikin data test manual — keduanya sudah ada di
-  mapping sejak Fase 02, cuma perlu diingat saat susun skenario test baru.
+- Susun data Excel test pakai 1 OBJECT (`{kolom: nilai}`), bukan 2 array
+  paralel — hilangkan kelas bug "kolom bergeser".
+- Jangan edit source file yang lagi diproses worker hot-reload saat job
+  masih jalan.
+- Error Accurate yang terasa aneh (mis. "field kepanjangan" padahal
+  pendek) → cek dulu RAW DATA tersimpan (`raw_data`/`column_mapping` di
+  `import_batch_rows`) sebelum menyalahkan logic pemetaan.
+- `branchName`/`billNumber` gampang lupa disertakan saat susun data test
+  manual — sudah ada di mapping sejak Fase 02.
 
 ---
 
@@ -215,114 +197,64 @@ ketiga, bukan sekadar formalitas checklist.
 
 ---
 
-## 2026-08-19 — Login gagal di browser sungguhan: 2 bug independen (lintas-situs + `Domain=.localhost` ditolak), 3 percobaan fix salah arah sebelum ketemu yang benar
-**Masalah:** User evaluasi UI lewat browser sungguhan (setelah Fase 02
-ditutup) — login "berhasil" (tidak ada error di form), tapi langsung
-dilempar balik ke `/login`. Firefox awalnya tampilkan pesan eksplisit
-("cookie ditolak karena lintas situs, SameSite Lax/Strict"), Chrome diam
-saja tanpa pesan tapi perilakunya sama.
+## 2026-08-19 — Login gagal di browser sungguhan: 2 bug cookie independen
+**Masalah:** Login "berhasil" (tidak ada error di form) tapi langsung
+dilempar balik ke `/login`. Ada 2 root cause TERPISAH, harus diperbaiki
+dua-duanya.
 
-**ADA 2 ROOT CAUSE TERPISAH**, ketemu satu-satu, HARUS diperbaiki DUA-duanya
-supaya login berhasil:
+**Root cause #1 — panggilan lintas-situs**: `apps/web` (`app.localhost:6209`)
+manggil `apps/api` (`localhost:3001`, host beda) langsung dari browser.
+`.localhost` bukan domain terdaftar asli — browser modern anggap **tiap
+subdomain `*.localhost` situs sendiri-sendiri** (beda dari production,
+`app.facport.com`/`api.facport.com` satu situs asli), jadi semua panggilan
+`web`→`api` di dev selalu "lintas-situs".
 
-**Root cause #1 — panggilan lintas-situs**: `apps/web` (`app.localhost:6209`
-dst) manggil `apps/api` (host BEDA, `localhost:3001`) langsung dari browser
-(Eden Treaty + Better Auth client, `credentials:"include"`). `.localhost`
-BUKAN domain terdaftar asli (tidak ada di Public Suffix List) — browser
-modern menganggap **tiap subdomain `*.localhost` sebagai SITUS
-SENDIRI-SENDIRI** (beda dari production: `app.facport.com`/`api.facport.com`
-SATU situs asli). Ini bikin SEMUA panggilan `apps/web`→`apps/api` di dev
-selalu "lintas-situs" di mata browser.
+**Root cause #2 — `Domain=.localhost` ditolak diam-diam**: ketemu SETELAH
+#1 diperbaiki (login masih gagal walau sudah same-origin lewat proxy).
+`advanced.crossSubDomainCookies` set atribut `Domain=.localhost` di cookie
+— browser memperlakukan `localhost` sebagai **public suffix** (sama alasan
+`Domain=.com` ditolak), jadi cookie tidak pernah tersimpan, TANPA warning
+apa pun. Dibuktikan via Playwright: hapus `Domain` attribute → login sukses.
 
-**Root cause #2 — `Domain=.localhost` ditolak diam-diam**: TERPISAH dari
-#1, ketemu SETELAH #1 diperbaiki (login masih gagal walau sudah same-origin
-lewat proxy). `advanced.crossSubDomainCookies` (Fase 01) set atribut
-`Domain=.localhost` di cookie supaya kebaca lintas-subdomain — browser
-memperlakukan `localhost` mirip **"public suffix"** (sama alasan
-`Domain=.com` ditolak: mustahil website manapun boleh set cookie yang
-berlaku untuk SELURUH `.com`) — jadi `Domain=.localhost` (¬ subdomain di
-depannya) DITOLAK TOTAL, cookie tidak pernah tersimpan, TANPA warning
-console apa pun (beda dari kasus #1 yang Firefox eksplisit kasih pesan).
-Dibuktikan lewat Playwright: hapus `Domain` attribute (host-only cookie,
-`crossSubDomainCookies.enabled: false`) → login langsung sukses.
+**3 percobaan fix yang salah arah** (semua untuk #1, dicatat supaya tidak
+diulang): (a) `sameSite:"none"`+`secure:true` — Firefox/Chrome tetap
+mempartisi storage cookie lintas-situs; (b) `partitioned:true` (CHIPS) —
+cookie tersimpan tapi TIDAK PERNAH ikut terkirim di navigasi top-level;
+(c) `next.config.ts` `rewrites()` untuk proxy — arah benar tapi
+`rewrites()` bawaan Next.js TIDAK meneruskan header `Set-Cookie`
+lintas-origin.
 
-**3 percobaan fix yang SALAH ARAH** (semua utk root cause #1, dicoba
-sebelum ketemu yang benar — dicatat supaya tidak diulang):
-1. `sameSite:"none"` + `secure:true` — hilangkan error Firefox pertama
-   (cookie berhasil di-*set*), TAPI Firefox (Total Cookie Protection) &
-   Chrome SAMA-SAMA mempartisi storage cookie lintas-situs — login tetap
-   gagal, Firefox kasih peringatan baru "butuh atribut Partitioned".
-2. `partitioned:true` (CHIPS) — hilangkan peringatan, cookie TERBUKTI
-   tersimpan (Playwright: `partitionKey` ada), TAPI **cookie Partitioned
-   TIDAK PERNAH ikut terkirim di navigasi top-level** (cuma di
-   sub-request/fetch) — dibuktikan lewat trace: `GET .../ ` sesudah login
-   sukses, `cookie header: (none)`. Redirect loop bertahan.
-3. `next.config.ts` `rewrites()` untuk proxy — arah BENAR (hilangkan sifat
-   lintas-situs), TAPI implementasinya salah: `rewrites()` bawaan Next.js
-   **TIDAK meneruskan header `Set-Cookie`** untuk tujuan lintas-origin
-   (diverifikasi: response yang di-proxy sama sekali tidak punya
-   `set-cookie`, padahal backend aslinya kirim). Ganti ke Route Handler
-   manual (lihat fix final di bawah) — beres.
-
-**Fix FINAL (kedua root cause)**:
+**Fix final:**
 1. `apps/web/app/api-proxy/[...path]/route.ts` — Route Handler manual
-   (BUKAN `next.config.ts` `rewrites()`) yang forward request ke apps/api
-   server-to-server, salin SEMUA header response termasuk **multi**
-   `Set-Cookie` (pakai `backendRes.headers.getSetCookie()`, BUKAN
-   `new Headers(backendRes.headers)` yang bisa gabung jadi 1 string tidak
-   valid). `apps/web/proxy.ts` (middleware) WAJIB skip guard-login untuk
-   `/api-proxy/*` (kalau tidak, panggilan sign-in ITU SENDIRI ikut
-   ke-redirect ke /login — chicken-and-egg).
+   (bukan `rewrites()`) forward request server-to-server, salin SEMUA
+   `Set-Cookie` via `backendRes.headers.getSetCookie()` (bukan
+   `new Headers()`, itu bisa gabung jadi 1 string tidak valid).
+   `apps/web/proxy.ts` WAJIB skip guard-login untuk `/api-proxy/*`.
 2. `lib/api-client.ts`/`lib/auth-client.ts` — di browser + bukan
    production, base URL jadi `${window.location.origin}/api-proxy` (Eden)
-   dan `${window.location.origin}/api-proxy/api/auth` (Better Auth — WAJIB
-   include `/api/auth` manual, karena Better Auth TIDAK nambahin path
-   default lagi begitu `baseURL` sudah punya path sendiri, lihat
-   `withPath()` di `better-auth/dist/utils/url.mjs`). SSR/production tetap
-   `NEXT_PUBLIC_API_URL` absolute (tidak ada masalah cross-site di situ).
+   dan `.../api-proxy/api/auth` (Better Auth, `/api/auth` wajib manual).
+   SSR/production tetap `NEXT_PUBLIC_API_URL` absolute.
 3. `apps/api/src/lib/auth.ts` — `crossSubDomainCookies.enabled` jadi
-   `process.env.NODE_ENV === "production"` (nonaktif di dev — tidak bisa
-   dipakai sama sekali di `.localhost`, HARUS aktif di production —
-   domain asli valid buat `Domain` attribute). `defaultCookieAttributes`
-   override DIHAPUS total, balik ke default Better Auth (`sameSite:"lax"`)
-   — sudah cukup begitu proxy bikin semuanya same-origin.
+   `NODE_ENV === "production"` saja, `defaultCookieAttributes` override
+   dihapus total (balik default Better Auth).
 
-**Konsekuensi yang perlu diketahui**: sesi login di dev **TIDAK share**
-otomatis antar `app.localhost`/`admin.localhost` (beda dari production,
-yang justru BISA karena domain asli mendukung `Domain` attribute) — login
-terpisah per surface kalau testing manual lintas-surface di dev. Ini
-batasan environment, bukan bug.
-
-**Cara verifikasi yang dipakai** (krusial — laporan manual user macet
-setelah 2-3 percobaan tanpa progres): script Playwright ad-hoc (`bunx
-playwright install chromium`, browser Chromium beneran headless) — replay
-persis alur login user, capture semua request/response/cookie/partitionKey.
-Ini yang akhirnya kasih bukti PASTI kenapa tiap percobaan gagal — tanpa
-ini kemungkinan besar akan terus menebak-nebak atribut cookie tanpa
-progres nyata. Diverifikasi FINAL lewat 3 skenario browser sungguhan:
-login → redirect ke "/", login → `/accurate` (tampil "Terhubung"), login →
-`/purchase-invoice/import` → upload file `.xlsx` sungguhan lewat form
-(bukan curl) → parsing berhasil, UI mapping tampil.
+**Konsekuensi:** sesi login di dev TIDAK share antar `app.localhost`/
+`admin.localhost` (production bisa, domain asli mendukung `Domain`
+attribute) — batasan environment, bukan bug.
 
 **Pencegahan:**
-1. Test API lewat `app.handle()`/curl TIDAK CUKUP untuk memvalidasi
-   perilaku cookie browser (`SameSite`, `Domain` public-suffix rejection,
-   partitioning) — SEMUA itu cuma ditegakkan BROWSER sungguhan, curl akan
-   selalu "berhasil" walau browser akan menolak diam-diam.
-2. Kalau debugging masalah browser-spesifik macet setelah 1-2 percobaan
-   manual, pertimbangkan otomasi browser (Playwright via `bunx`, tidak
-   perlu install manual) — jauh lebih cepat dapat bukti pasti daripada
-   bolak-balik minta user screenshot DevTools, DAN bisa mengungkap root
-   cause KEDUA yang tersembunyi di balik yang pertama (seperti kasus ini).
-3. `*.localhost` multi-subdomain di dev PUNYA DUA keterbatasan terpisah
-   dari production (bukan cuma satu): (a) tiap subdomain = situs berbeda
-   di mata browser (masalah SameSite/cross-site), DAN (b) `Domain=.localhost`
-   ditolak sebagai public-suffix (masalah cross-subdomain sharing) — kalau
-   ada gejala aneh terkait cookie/session di dev tapi TIDAK di production,
-   curigai keterbatasan ganda ini dulu sebelum ubah kode auth/cookie config.
-4. Kalau butuh proxy dev yang meneruskan `Set-Cookie`, JANGAN pakai
-   Next.js `rewrites()` — pakai Route Handler manual dengan
-   `response.headers.getSetCookie()` eksplisit.
+1. Test API lewat `app.handle()`/curl TIDAK CUKUP validasi perilaku cookie
+   browser (`SameSite`, public-suffix rejection, partitioning) — semua itu
+   cuma ditegakkan browser sungguhan.
+2. Debugging masalah browser-spesifik macet setelah 1-2 percobaan manual →
+   pakai Playwright (`bunx`, tidak perlu install manual) untuk bukti pasti,
+   bisa ungkap root cause kedua yang tersembunyi di balik yang pertama.
+3. `*.localhost` punya DUA keterbatasan terpisah dari production: (a) tiap
+   subdomain = situs beda (SameSite/cross-site), (b) `Domain=.localhost`
+   ditolak public-suffix (cross-subdomain sharing) — gejala cookie/session
+   aneh di dev tapi tidak di production, curigai keduanya.
+4. Proxy dev yang perlu meneruskan `Set-Cookie` → Route Handler manual
+   dengan `response.headers.getSetCookie()`, JANGAN `rewrites()`.
 
 ---
 
@@ -532,42 +464,6 @@ untuk user existing sebelum enable, ATAU terima bahwa mereka perlu re-verify).
 
 ---
 
-## 2026-08-19 — Double-wrap `{data,error}`: server manual-wrap BENTROK dengan wrapper Eden Treaty di client
-**Masalah:** `app/landing/page.tsx` (Fase 01 M6) crash runtime
-`plans.map is not a function`. `GET /plans` route return
-`{ data: [...], error: null }` (manual, ikut konvensi "Response Format"
-dari template awal) — tapi Eden Treaty (client) JUGA membungkus response
-jadi `{data, error}` berdasar HTTP status (2xx → body masuk `res.data` APA
-ADANYA, non-2xx → masuk `res.error` sebagai `{status, value}`). Hasilnya
-`res.data` di client = `{data: [...], error: null}` (objek server UTUH),
-payload asli kepentok di `res.data.data`.
-**Root cause:** Dua konvensi `{data,error}` independen ditumpuk — satu di
-level HTTP body (manual di tiap route), satu lagi di level Eden client
-(otomatis, berdasar status). Tidak saling tahu satu sama lain.
-**Salah diagnosis sebelumnya**: di Fase 00, gejala serupa (waktu itu di
-route upload media) sempat dicatat sebagai "Eden Treaty gagal narrow union
-type dengan benar" — diagnosis itu SALAH, ditambal pakai `as unknown as`
-tanpa cari akar masalah sungguhan. Baru ketahuan akar masalahnya pas
-kejadian LAGI di route berbeda (`GET /plans`, bukan upload) dan didebug
-sampai tuntas (curl raw body vs Eden client side-by-side).
-**Fix:** SEMUA route (`settings`, `media`, `plans`, `subscriptions`,
-`admin/*`, `accurate`, `app.ts` onError) diubah return payload BARE untuk
-sukses, `{code, message?}` bare untuk gagal — TANPA wrapper `{data,error}`
-manual. Didokumentasikan sebagai keputusan resmi:
-`docs/decisions/adr-0010-response-format-eden.md`. Konsumen frontend yang
-tadinya pakai `as unknown as` buat "nutupin" gejala ini dibersihkan —
-kecuali SATU limitasi Eden yang genuinely nyata & sempit (route `t.File()`
-multipart, infer tipe sukses jadi `{}` kosong walau body sudah bare).
-**Pencegahan:** Kalau nanti nulis route baru DAN gejalanya "Eden/TypeScript
-gagal infer tipe dengan benar" — **cek dulu raw HTTP body via curl** SEBELUM
-nyalahin Eden/nambah `as unknown as`. Kemungkinan besar itu double-wrap atau
-kesalahan bentuk response di server, bukan limitasi library. `as unknown as`
-itu tanda "saya belum ngerti kenapa", bukan solusi — SELALU cari akar
-masalah dulu, baru putuskan apakah type assertion memang perlu (dan kalau
-perlu, verifikasi manual dulu shape aslinya, jangan tebak).
-
----
-
 ## 2026-08-19 — Elysia `onError` memaksa 500 untuk SEMUA error non-NOT_FOUND, termasuk VALIDATION
 **Masalah:** `app.ts` awal punya `set.status = code === "NOT_FOUND" ? 404 : 500;`
 di `.onError()` — ini menimpa status yang SUDAH benar diset Elysia sendiri
@@ -640,20 +536,17 @@ tidak kaget/panik kalau lihat blok yang sama lagi setelah `next dev` jalan.
 
 ---
 
-## [Preventif, belum terjadi] — Override breaking-change di .releaserc.json
-**Masalah potensial:** Kalau app dianggap stabil dan naik ke `v1.0.0`, tapi
-lupa hapus override `releaseRules` di `.releaserc.json`, breaking change
-setelahnya tetap dianggap MINOR bukan MAJOR — melanggar ekspektasi semver.
-**Pencegahan:** Cek `docs/decisions/adr-0002-versioning-strategy.md` bagian
-"loncat ke 1.0.0" SETIAP kali mempertimbangkan rilis v1.0.0.
-
----
-
-## [Tanggal] — [Judul singkat masalah]
-**Masalah:**
-**Root cause:**
-**Fix:**
-**Pencegahan:**
+## 2026-08-22 — Override breaking-change di `.releaserc.json` MASIH aktif walau sudah rilis v1.0.0
+**Masalah:** `semantic-release` otomatis menetapkan rilis PERTAMA sebagai
+`v1.0.0` (perilaku default-nya, bukan proses manual "loncat ke 1.0.0" yang
+dijelaskan di `adr-0002-versioning-strategy.md`) — jadi override
+`releaseRules: [{breaking:true, release:"minor"}]` di `.releaserc.json`
+**belum sempat dihapus**, padahal app sekarang sudah `v1.0.1`. Kalau ada
+commit `feat!:`/`BREAKING CHANGE:` sekarang, tetap dianggap MINOR bukan
+MAJOR — melanggar ekspektasi semver untuk konsumen API.
+**Pencegahan:** Sebelum commit breaking change berikutnya, hapus override
+`releaseRules` itu dari `.releaserc.json` (lihat langkah 2 di
+`docs/decisions/adr-0002-versioning-strategy.md`).
 
 ---
 
