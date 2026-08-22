@@ -1,5 +1,14 @@
 # Architecture — Deployment & Versioning
 
+> **✅ Status 2026-08-22: pipeline release TERVERIFIKASI beneran jalan**
+> (bukan cuma teori di dokumen ini) — `v1.0.0` dan `v1.0.1` sudah terbit
+> nyata di GitHub lewat proses otomatis penuh (push → CI → semantic-release
+> → GitHub Release), setelah 5 bug infrastruktur diperbaiki di commit
+> pertama project ini. Detail lengkap tiap bug + cara diagnosanya →
+> `docs/lessons-learned.md` entri "Push pertama project — 5 bug CI/CD...".
+> Baca itu SEBELUM ubah `ci.yml`/`release.yml` lagi, supaya tidak
+> menemukan ulang masalah yang sama.
+
 ## Prinsip Utama
 1. **Server production tidak pernah clone git repo mentah.** Server cuma
    `docker pull` image yang sudah jadi dari registry (GHCR). Image itu
@@ -60,6 +69,35 @@ Docker image di-build (multi-stage, TANPA docs/.md) → push ke GHCR
         ↓
 SSH ke server → docker pull versi baru → docker compose up -d
 ```
+
+## Syarat Supaya `ci.yml`/`release.yml` Beneran Bisa Jalan
+Ditemukan lewat push pertama project ini (2026-08-22) — bukan sekadar
+teori, ini SYARAT NYATA yang kalau kelewat bikin workflow gagal:
+
+1. **Migration Drizzle (`apps/api/drizzle/`) WAJIB ikut commit** — jangan
+   di-`.gitignore`. Tanpa ini, CI/deploy tidak punya cara bikin skema
+   database dari checkout fresh.
+2. **Test suite butuh Postgres SUNGGUHAN** (bukan mock) — job `ci.yml`
+   dan `release.yml` WAJIB punya `services: postgres:` (image resmi,
+   health check `pg_isready`), plus env var `DATABASE_URL` yang nunjuk ke
+   service itu.
+3. **Urutan wajib SEBELUM `bun run test`**: migrate (`bun run db:migrate`)
+   → **seed** (`bun run --cwd apps/api db:seed`) — banyak test bergantung
+   ke role `admin`/`customer` yang di-seed, migration doang cuma bikin
+   tabel kosong.
+4. **Semua field required di `apps/api/src/lib/env.ts` butuh nilai** di
+   job env — boleh dummy (Postgres service-nya fresh tiap run, tidak
+   pernah persist data sungguhan), TAPI harus lolos validasi format
+   (`BETTER_AUTH_SECRET`/`ACCURATE_TOKEN_ENCRYPTION_KEY` minimal 32
+   karakter).
+5. **Plugin `semantic-release`** yang disebut di `.releaserc.json`
+   (`@semantic-release/changelog`, `git`, `github`, `commit-analyzer`,
+   `release-notes-generator`) **WAJIB jadi devDependency project**, bukan
+   cuma nama string di config — `bunx semantic-release` TIDAK
+   auto-install plugin-nya.
+6. **`conventional-changelog-conventionalcommits` PIN ke `^7`**, JANGAN
+   pakai `latest` (v10+) — versi terbaru butuh `conventional-changelog-writer@9+`
+   yang bentrok sama versi lama yang di-bawa `@semantic-release/release-notes-generator`.
 
 ## Kenapa Docker Multi-Stage (bukan rsync/git pull langsung)
 - **Isolasi total**: image production dibangun dari nol tiap kali, cuma

@@ -6,6 +6,71 @@
 
 ---
 
+## 2026-08-22 — Push pertama project: 5 bug CI/CD ketemu & diperbaiki berurutan (release.yml gagal 4x sebelum sukses)
+**Masalah:** Repo git baru di-init & push PERTAMA KALI sesi ini (sebelumnya
+"No commits yet" sejak awal project walau kode sudah sampai Fase 05).
+Begitu di-push ke `main`, workflow `release.yml` (jalan otomatis tiap push
+ke `main`) gagal **4 kali berturut-turut**, tiap kali error beda — karena
+`ci.yml`/`release.yml` memang belum PERNAH benar-benar dijalankan sejak
+project-init bikin file-nya (cuma ada sebagai config, tidak pernah dites).
+
+**5 bug yang ketemu, satu per satu, tiap kali diperbaiki muncul bug
+berikutnya (proses debugging BERLAPIS, bukan 1x langsung ketauan semua):**
+
+1. **Migration Drizzle ke-`.gitignore` total sejak awal** (`apps/api/drizzle/`)
+   — kontradiksi sama `architecture-database.md` sendiri yang bilang wajib
+   ikut commit. CI checkout fresh tidak punya migration sama sekali buat
+   bikin skema database. Fix: hapus baris itu dari `.gitignore`, commit
+   4 file migration + 5 file `meta/` yang selama ini "hilang".
+2. **Test suite gagal — `env.ts` validation error** (banyak field required
+   kosong). Root cause: `ci.yml`/`release.yml` belum punya `services:
+   postgres:` ATAU env var apa pun buat testnya. Fix: tambah service
+   Postgres (image `postgres:16`, health check) + `env:` block isi nilai
+   DUMMY (bukan secret production — Postgres service fresh tiap run,
+   tidak pernah persist) buat semua field required `env.ts`.
+3. **8 test gagal — `TypeError: undefined is not an object (evaluating
+   'customerRole.id')`.** Root cause: migration cuma bikin STRUKTUR tabel
+   kosong, role `admin`/`customer` (dari `db:seed.ts`) belum pernah
+   di-insert di database CI yang fresh — lolos di lokal karena dev DB
+   sudah lama di-seed manual. Fix: tambah step `bun run --cwd apps/api
+   db:seed` SETELAH migrate, SEBELUM test.
+4. **`semantic-release` error `Cannot find module '@semantic-release/changelog'`.**
+   Root cause: `.releaserc.json` udah konfigurasi plugin itu (+ `git`,
+   `github`, `commit-analyzer`, `release-notes-generator`), tapi package-nya
+   SENDIRI tidak pernah di-`bun add` — `bunx semantic-release` cuma
+   resolve package inti-nya, bukan plugin yang disebut di config. Fix:
+   `bun add -D semantic-release @semantic-release/{commit-analyzer,
+   release-notes-generator,changelog,git,github}`.
+5. **`generateNotes` gagal: "conventional-changelog-writer@9 or newer"
+   diminta, padahal versi lain di tree masih v8.** Root cause: `bun add`
+   pertama nginstall `conventional-changelog-conventionalcommits@latest`
+   (v10), yang butuh writer v9+ — tapi `@semantic-release/release-notes-generator@14.1.1`
+   bawa writer v8 sendiri, bentrok. Fix: pin eksplisit ke `^7`
+   (`bun add -D conventional-changelog-conventionalcommits@^7`).
+
+**Cara verifikasi tiap fix** (pola dipakai konsisten tiap iterasi): (a)
+`bunx semantic-release --dry-run --no-ci` LOKAL dulu sebelum push ulang
+(hemat 1-2 menit round-trip CI per percobaan), (b) `gh run view <id>
+--log-failed` buat baca log GitHub Actions LANGSUNG dari terminal (tidak
+perlu buka browser), (c) `Monitor` tool (poll `gh run view --json
+status,conclusion` tiap 15 detik) buat nunggu hasil run tanpa nge-block
+kerjaan lain.
+
+**Hasil akhir:** `v1.0.0` lalu `v1.0.1` (Akun Hutang existing-vendor fix)
+sukses terbit otomatis lewat pipeline penuh — bukan cuma "kelihatannya
+ada", beneran dibuktikan jalan end-to-end 2x berturut-turut.
+
+**Pencegahan:** Kalau ada project lain yang juga baru pertama kali di-push
+(config CI/CD dari template belum pernah dites), JANGAN asumsikan
+`ci.yml`/`release.yml` otomatis jalan mulus cuma karena file-nya ada —
+selalu treat sebagai "belum diverifikasi" sampai ada run nyata yang
+sukses. 5 bug di atas SEMUA kelas masalah generik (test butuh DB nyata,
+migration harus ikut commit, semantic-release plugin harus explicit
+dependency) — kemungkinan besar muncul lagi di project lain dari template
+yang sama kalau tidak dicek dari awal.
+
+---
+
 ## 2026-08-20 — 3 "kegagalan" testing Fase 05 yang ternyata bukan bug produk — pentingnya isolasi root cause sebelum menyalahkan kode
 **Masalah:** Saat verifikasi browser fitur auto-create vendor/item (Fase
 05), muncul 3 error berturut-turut yang awalnya kelihatan seperti bug:
