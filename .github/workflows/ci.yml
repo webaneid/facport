@@ -10,6 +10,37 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    # § test route (app.test.ts dst) beneran nulis/baca Postgres nyata
+    # (bukan mock) — WAJIB service container ini, bukan cuma env var kosong.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: facport_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # § Nilai DUMMY khusus CI (Postgres service di atas fresh tiap run,
+      # tidak pernah persist) — BUKAN secret production sungguhan, aman
+      # ditulis langsung di sini (bukan lewat repo Secrets), § architecture-security.md.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/facport_ci
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      PORT: "3001"
+      BETTER_AUTH_SECRET: ci-dummy-secret-not-for-production-use-only-32chars
+      BETTER_AUTH_URL: http://localhost:3001
+      COOKIE_DOMAIN: localhost
+      ACCURATE_REDIRECT_URI: http://localhost:3001/accurate/oauth/callback
+      ACCURATE_TOKEN_ENCRYPTION_KEY: ci-dummy-encryption-key-not-for-production-32chars
     steps:
       - uses: actions/checkout@v4
 
@@ -25,6 +56,9 @@ jobs:
 
       - name: Lint
         run: bun run lint
+
+      - name: Migrate test database
+        run: bun run db:migrate
 
       - name: Test
         run: bun run test

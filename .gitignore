@@ -19,8 +19,10 @@ build/
 .next/
 out/
 
-# Drizzle
-apps/api/drizzle/
+# § architecture-database.md "Migration Workflow" — file migration WAJIB
+# ikut commit (bukan di-generate ulang tiap environment), jangan exclude
+# folder ini. (Sempat salah exclude total di sini — baru ketauan pas
+# setup CI pertama kali butuh migration buat provision test DB.)
 
 # Logs
 *.log
