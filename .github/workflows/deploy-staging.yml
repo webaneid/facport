@@ -38,7 +38,7 @@ jobs:
       # cuma preview terkini dari branch develop, bukan artifact yang perlu
       # ditelusuri per-versi seperti production.
       - name: Build & push apps/api (staging)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/api/Dockerfile
@@ -46,7 +46,7 @@ jobs:
           tags: ghcr.io/${{ github.repository }}/api:staging
 
       - name: Build & push apps/web (staging)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/web/Dockerfile
