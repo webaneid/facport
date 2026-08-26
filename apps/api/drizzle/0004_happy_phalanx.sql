@@ -1,0 +1,1 @@
+ALTER TABLE "accurate_connections" ADD COLUMN "accurate_db_alias" varchar(255);

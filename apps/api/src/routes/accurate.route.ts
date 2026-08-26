@@ -94,8 +94,8 @@ export const accurateRoute = new Elysia()
     "/accurate/status",
     async ({ user }) => {
       const connection = await getConnectionForUser(user.id);
-      if (!connection) return { connected: false, accurateDbId: null };
-      return { connected: true, accurateDbId: connection.accurateDbId };
+      if (!connection) return { connected: false, accurateDbId: null, accurateDbAlias: null };
+      return { connected: true, accurateDbId: connection.accurateDbId, accurateDbAlias: connection.accurateDbAlias };
     },
     { auth: true },
   )
@@ -132,14 +132,16 @@ export const accurateRoute = new Elysia()
         await openDatabase(accessToken, body.accurateDbId); // validasi id benar-benar bisa dibuka
         await db
           .update(accurateConnections)
-          .set({ accurateDbId: String(body.accurateDbId), updatedAt: new Date() })
+          .set({ accurateDbId: String(body.accurateDbId), accurateDbAlias: body.alias, updatedAt: new Date() })
           .where(eq(accurateConnections.id, connection.id));
-        return { accurateDbId: body.accurateDbId };
+        return { accurateDbId: body.accurateDbId, accurateDbAlias: body.alias };
       } catch (err) {
         set.status = 502;
         logger.error({ err }, "Gagal buka Data Usaha Accurate");
         return { code: "ACCURATE_REQUEST_FAILED" };
       }
     },
-    { auth: true, body: t.Object({ accurateDbId: t.Number() }) },
+    // `alias` dikirim client (sudah ada di tangan dari GET /accurate/databases
+    // sebelumnya) — hindari panggilan Accurate API kedua cuma buat lookup nama.
+    { auth: true, body: t.Object({ accurateDbId: t.Number(), alias: t.String() }) },
   );
