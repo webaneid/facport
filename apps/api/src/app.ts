@@ -39,7 +39,12 @@ export const app = new Elysia()
     set.headers["X-Content-Type-Options"] = "nosniff";
     set.headers["X-Frame-Options"] = "DENY";
     set.headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
-    if (process.env.NODE_ENV === "production") {
+    // Notasi bracket ("NODE_ENV") SENGAJA, bukan process.env.NODE_ENV —
+    // Bun const-fold pola dot-notation itu SAAT BUILD (builder stage build
+    // tanpa NODE_ENV=production di-set), header ini jadi TIDAK PERNAH
+    // terpasang di production kalau pakai dot-notation. Lihat lib/auth.ts
+    // § crossSubDomainCookies buat detail lengkap bug class ini.
+    if (process.env["NODE_ENV"] === "production") {
       set.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains";
     }
   })
