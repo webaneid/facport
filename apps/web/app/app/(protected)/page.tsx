@@ -28,7 +28,12 @@ type ImportBatch = { id: string; fileName: string; status: string; totalRows: nu
 async function fetchJson<T>(path: string, cookie: string): Promise<T | null> {
   const res = await fetch(`${API_URL}${path}`, { headers: { cookie }, cache: "no-store" });
   if (!res.ok) return null;
-  return res.json() as Promise<T>;
+  // Elysia serialize handler yang `return null` jadi body BENERAN KOSONG
+  // (content-length: 0), bukan literal teks "null" — res.json() langsung
+  // throw "Unexpected end of JSON input" kalau dipanggil di body kosong
+  // (ketemu 2026-08-27: akun baru tanpa subscription bikin dashboard 500).
+  const text = await res.text();
+  return text ? (JSON.parse(text) as T) : null;
 }
 
 const SUBSCRIPTION_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
