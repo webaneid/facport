@@ -5,7 +5,7 @@
 FROM oven/bun:1 AS builder
 WORKDIR /repo
 
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.json ./
 COPY apps/web/package.json ./apps/web/
 RUN bun install --frozen-lockfile
 

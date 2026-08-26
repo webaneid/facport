@@ -9,7 +9,7 @@ FROM oven/bun:1 AS builder
 WORKDIR /repo
 
 # Copy manifest dulu buat cache layer install (lebih cepat rebuild)
-COPY package.json bun.lock ./
+COPY package.json bun.lock tsconfig.json ./
 COPY apps/api/package.json ./apps/api/
 RUN bun install --frozen-lockfile
 
