@@ -11,6 +11,7 @@ import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { api } from "@/lib/api-client";
+import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-accurate-integration.md § "Vendor (Data Master)" — update
 // Akun Hutang (COA) per Pemasok, TERVERIFIKASI beneran dipakai Accurate
@@ -107,7 +108,7 @@ export default function VendorPayableAccountImportPage() {
             <CardDescription>
               Format `.xlsx`/`.xls`, maks 10MB.{" "}
               <a
-                href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/vendor/payable-account/import/template`}
+                href={`${process.env.NODE_ENV === "production" ? getProdApiOrigin() : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")}/vendor/payable-account/import/template`}
                 className="text-primary-600 underline hover:text-primary-700"
               >
                 Download template Excel

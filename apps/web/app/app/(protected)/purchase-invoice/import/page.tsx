@@ -10,6 +10,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
 
 // § architecture-accurate-integration.md § 3, § phase-02 doc — upload
@@ -156,7 +157,7 @@ export default function PurchaseInvoiceImportPage() {
             <CardDescription>
               Format `.xlsx`/`.xls`, maks 10MB.{" "}
               <a
-                href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/purchase-invoice/import/template`}
+                href={`${process.env.NODE_ENV === "production" ? getProdApiOrigin() : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")}/purchase-invoice/import/template`}
                 className="text-primary-600 underline hover:text-primary-700"
               >
                 Download template Excel
