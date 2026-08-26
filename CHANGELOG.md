@@ -1,3 +1,7 @@
+## <small>1.0.13 (2026-08-26)</small>
+
+* fix(deploy): healthcheck api/web pakai wget yang gak ada di image slim ([97881b4](https://github.com/webaneid/facport/commit/97881b4))
+
 ## <small>1.0.12 (2026-08-26)</small>
 
 * fix(docker): api production stage juga butuh node_modules root (symlink sharp patah) ([7d80172](https://github.com/webaneid/facport/commit/7d80172))
