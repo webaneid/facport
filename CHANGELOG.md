@@ -1,3 +1,7 @@
+## <small>1.0.14 (2026-08-26)</small>
+
+* fix(web): NEXT_PUBLIC_API_URL di-bake ke bundle client saat build, bukan runtime ([1a96c3e](https://github.com/webaneid/facport/commit/1a96c3e))
+
 ## <small>1.0.13 (2026-08-26)</small>
 
 * fix(deploy): healthcheck api/web pakai wget yang gak ada di image slim ([97881b4](https://github.com/webaneid/facport/commit/97881b4))
