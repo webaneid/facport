@@ -1,3 +1,7 @@
+## 1.1.0 (2026-08-26)
+
+* feat(accurate): simpan & tampilkan nama Data Usaha, perbaiki UX pilih Data Usaha ([e51cb0c](https://github.com/webaneid/facport/commit/e51cb0c))
+
 ## <small>1.0.17 (2026-08-26)</small>
 
 * fix(web): dashboard 500 — fetchJson() gak tahan body kosong dari /me/subscription ([a0e3c5f](https://github.com/webaneid/facport/commit/a0e3c5f))
