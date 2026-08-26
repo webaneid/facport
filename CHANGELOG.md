@@ -1,3 +1,7 @@
+## <small>1.0.10 (2026-08-26)</small>
+
+* fix(docker): web production stage — jalan di Node, bukan Bun, tanpa output:standalone ([d822d0b](https://github.com/webaneid/facport/commit/d822d0b))
+
 ## <small>1.0.9 (2026-08-26)</small>
 
 * fix(web): bungkus LoginForm dengan Suspense — useSearchParams() bikin next build gagal ([6164826](https://github.com/webaneid/facport/commit/6164826))
