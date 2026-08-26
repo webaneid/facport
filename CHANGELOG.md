@@ -1,3 +1,7 @@
+## <small>1.0.12 (2026-08-26)</small>
+
+* fix(docker): api production stage juga butuh node_modules root (symlink sharp patah) ([7d80172](https://github.com/webaneid/facport/commit/7d80172))
+
 ## <small>1.0.11 (2026-08-26)</small>
 
 * fix(deploy): DATABASE_URL di .env.production/staging.example gak boleh pakai \${...} ([58b0108](https://github.com/webaneid/facport/commit/58b0108))
