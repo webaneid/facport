@@ -1,3 +1,7 @@
+## <small>1.0.15 (2026-08-26)</small>
+
+* fix(api): crossSubDomainCookies.enabled ke-const-fold jadi false permanen saat build ([2fe0033](https://github.com/webaneid/facport/commit/2fe0033))
+
 ## <small>1.0.14 (2026-08-26)</small>
 
 * fix(web): NEXT_PUBLIC_API_URL di-bake ke bundle client saat build, bukan runtime ([1a96c3e](https://github.com/webaneid/facport/commit/1a96c3e))
