@@ -1,3 +1,7 @@
+## <small>1.0.3 (2026-08-26)</small>
+
+* fix(ci): deploy.yml tidak pernah jalan — GITHUB_TOKEN gak trigger event release ([ae1fd1f](https://github.com/webaneid/facport/commit/ae1fd1f))
+
 ## <small>1.0.2 (2026-08-26)</small>
 
 * fix(web): resolve surface via subdomain prefix instead of hardcoded domain ([5f32fda](https://github.com/webaneid/facport/commit/5f32fda))
