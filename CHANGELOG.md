@@ -1,3 +1,7 @@
+## <small>1.0.7 (2026-08-26)</small>
+
+* fix(docker): copy root tsconfig.json — extends "../../tsconfig.json" gagal resolve ([6d3c93c](https://github.com/webaneid/facport/commit/6d3c93c))
+
 ## <small>1.0.6 (2026-08-26)</small>
 
 * fix(api): tambah script "build" yang belum ada — Dockerfile butuh dist/index.js ([569381d](https://github.com/webaneid/facport/commit/569381d))
