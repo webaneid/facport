@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -16,6 +16,16 @@ const schema = z.object({
 type FormValues = z.infer<typeof schema>;
 
 export function LoginForm() {
+  return (
+    // useSearchParams() WAJIB di-Suspense-boundary, kalau tidak `next build`
+    // gagal prerender (bailout error) — bukan cuma dev-only warning.
+    <Suspense fallback={null}>
+      <LoginFormInner />
+    </Suspense>
+  );
+}
+
+function LoginFormInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
