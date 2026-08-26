@@ -1,18 +1,77 @@
 name: Deploy
 
-# Trigger OTOMATIS begitu release.yml berhasil bikin GitHub Release baru.
-# Kalau release.yml jalan tapi tidak ada perubahan yang layak rilis
-# (misal cuma commit "docs:"), event ini TIDAK jalan — jadi deploy
-# cuma terjadi kalau memang ada versi baru beneran.
+# Trigger OTOMATIS setelah run release.yml di branch main SELESAI (bukan
+# lewat event "release: published" — GitHub Actions SENGAJA tidak memicu
+# workflow lain untuk event yang dibuat oleh GITHUB_TOKEN bawaan, dan
+# semantic-release di release.yml pakai GITHUB_TOKEN itu buat bikin GitHub
+# Release. Ditemukan 2026-08-26: deploy.yml TIDAK PERNAH jalan untuk
+# v1.0.0/v1.0.1/v1.0.2 walau release.yml sukses tiap kali — nol image
+# pernah ke-build/push ke GHCR. Detail → docs/lessons-learned.md.
+# workflow_run di bawah dipicu oleh SELESAINYA run release.yml itu sendiri
+# (event dari platform, bukan dari token di dalam run itu), jadi tidak
+# kena batasan yang sama.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Trigger manual — isi tag image yang mau dibangun (mis. v1.0.2)"
+        required: true
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
+  resolve-tag:
+    # workflow_run jalan walau release.yml GAGAL — cuma lanjut kalau sukses
+    # (atau trigger manual).
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      should_deploy: ${{ steps.resolve.outputs.should_deploy }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - name: Resolve tag & pastikan release baru beneran dibuat untuk commit ini
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LATEST_TAG" ]; then
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          TAG_SHA=$(git rev-list -n 1 "$LATEST_TAG")
+          if [ "$TAG_SHA" = "$HEAD_SHA" ]; then
+            echo "tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+            echo "should_deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            # release.yml jalan tapi commit ini bukan yang di-tag semantic-release
+            # (mis. cuma "docs:"/"chore:", tidak ada release baru) — skip.
+            echo "should_deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   build-and-push:
+    needs: resolve-tag
+    if: needs.resolve-tag.outputs.should_deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
       - name: Log in to registry
         uses: docker/login-action@v3
@@ -31,7 +90,7 @@ jobs:
           file: ./apps/api/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/api:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository }}/api:${{ needs.resolve-tag.outputs.tag }}
             ghcr.io/${{ github.repository }}/api:latest
 
       - name: Build & push apps/web
@@ -41,17 +100,20 @@ jobs:
           file: ./apps/web/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}/web:${{ github.event.release.tag_name }}
+            ghcr.io/${{ github.repository }}/web:${{ needs.resolve-tag.outputs.tag }}
             ghcr.io/${{ github.repository }}/web:latest
 
   deploy-to-server:
-    needs: build-and-push
+    needs: [resolve-tag, build-and-push]
     runs-on: ubuntu-latest
     steps:
       # TEMPLATE — sesuaikan dengan cara akses server kamu yang sebenarnya.
       # Pola umum: SSH ke server, pull image baru dari registry, restart
       # container. Server TIDAK PERNAH clone git repo — cuma pull image
       # yang sudah jadi, jadi otomatis nggak ada docs/.md di server.
+      # Kalau secrets SERVER_HOST/SERVER_USER/SERVER_SSH_KEY belum diisi
+      # (belum setup auto-deploy), step ini gagal — TIDAK apa-apa, image
+      # di job sebelumnya tetap sudah ter-push ke GHCR.
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -61,7 +123,7 @@ jobs:
           script: |
             cd /opt/app   # sesuaikan path deploy di VPS Hostinger kamu
             export GITHUB_REPO="${{ github.repository }}"
-            export IMAGE_TAG="${{ github.event.release.tag_name }}"
+            export IMAGE_TAG="${{ needs.resolve-tag.outputs.tag }}"
             echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
             echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
             docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull
