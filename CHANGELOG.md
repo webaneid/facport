@@ -1,3 +1,7 @@
+## <small>1.0.8 (2026-08-26)</small>
+
+* fix(docker): web build butuh source+deps apps/api juga (Eden Treaty type import) ([8d62159](https://github.com/webaneid/facport/commit/8d62159))
+
 ## <small>1.0.7 (2026-08-26)</small>
 
 * fix(docker): copy root tsconfig.json — extends "../../tsconfig.json" gagal resolve ([6d3c93c](https://github.com/webaneid/facport/commit/6d3c93c))
