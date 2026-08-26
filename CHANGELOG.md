@@ -1,3 +1,7 @@
+## <small>1.0.16 (2026-08-26)</small>
+
+* fix(api): 3 pola process.env.NODE_ENV lain kena const-fold Bun juga ([c190d93](https://github.com/webaneid/facport/commit/c190d93))
+
 ## <small>1.0.15 (2026-08-26)</small>
 
 * fix(api): crossSubDomainCookies.enabled ke-const-fold jadi false permanen saat build ([2fe0033](https://github.com/webaneid/facport/commit/2fe0033))
