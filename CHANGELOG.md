@@ -1,3 +1,7 @@
+## <small>1.0.5 (2026-08-26)</small>
+
+* fix(docker): Dockerfile copy bun.lockb yang tidak ada, seharusnya bun.lock ([92d2938](https://github.com/webaneid/facport/commit/92d2938))
+
 ## <small>1.0.4 (2026-08-26)</small>
 
 * fix(ci): resolve-tag salah bandingkan SHA — build-and-push selalu ke-skip ([174cae8](https://github.com/webaneid/facport/commit/174cae8))
