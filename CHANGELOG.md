@@ -1,3 +1,7 @@
+## <small>1.0.4 (2026-08-26)</small>
+
+* fix(ci): resolve-tag salah bandingkan SHA — build-and-push selalu ke-skip ([174cae8](https://github.com/webaneid/facport/commit/174cae8))
+
 ## <small>1.0.3 (2026-08-26)</small>
 
 * fix(ci): deploy.yml tidak pernah jalan — GITHUB_TOKEN gak trigger event release ([ae1fd1f](https://github.com/webaneid/facport/commit/ae1fd1f))
