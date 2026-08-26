@@ -1,13 +1,27 @@
 # Architecture — Deployment & Versioning
 
-> **✅ Status 2026-08-22: pipeline release TERVERIFIKASI beneran jalan**
+> **✅ Status 2026-08-22: `release.yml` TERVERIFIKASI beneran jalan**
 > (bukan cuma teori di dokumen ini) — `v1.0.0` dan `v1.0.1` sudah terbit
 > nyata di GitHub lewat proses otomatis penuh (push → CI → semantic-release
 > → GitHub Release), setelah 5 bug infrastruktur diperbaiki di commit
 > pertama project ini. Detail lengkap tiap bug + cara diagnosanya →
 > `docs/lessons-learned.md` entri "Push pertama project — 5 bug CI/CD...".
-> Baca itu SEBELUM ubah `ci.yml`/`release.yml` lagi, supaya tidak
-> menemukan ulang masalah yang sama.
+>
+> **⚠️ Status di atas CUMA soal `release.yml`, BUKAN `deploy.yml`** —
+> ketauan 2026-08-27 kalau `deploy.yml` (build+push image ke GHCR, trigger
+> via `release: published`) nol kali pernah jalan dari v1.0.0 s/d v1.0.2,
+> karena event dari `GITHUB_TOKEN` bawaan tidak memicu workflow lain
+> (anti-loop GitHub Actions). **✅ Status 2026-08-27: `deploy.yml`
+> TERVERIFIKASI jalan sampai `build-and-push` sukses** (image `api`+`web`
+> nyata ada di GHCR, tag `v1.0.10`) setelah 6 bug lagi diperbaiki (trigger
+> workflow_run, lockfile, build script, tsconfig, cross-workspace type
+> import, runtime Node vs Bun). `deploy-to-server` (SSH ke VPS) BELUM
+> terverifikasi otomatis — masih nunggu secrets `SERVER_HOST`/
+> `SERVER_USER`/`SERVER_SSH_KEY` diisi + first deploy manual (§
+> `docs/deployment-server-setup.md`). Detail lengkap 6 bug →
+> `docs/lessons-learned.md` entri "deploy.yml belum pernah jalan...".
+> Baca dua entri itu SEBELUM ubah `ci.yml`/`release.yml`/`deploy.yml`/
+> Dockerfile lagi, supaya tidak menemukan ulang masalah yang sama.
 
 ## Prinsip Utama
 1. **Server production tidak pernah clone git repo mentah.** Server cuma

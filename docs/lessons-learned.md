@@ -6,6 +6,108 @@
 
 ---
 
+## 2026-08-27 — `deploy.yml` belum PERNAH jalan sejak v1.0.0: 6 bug ketemu & diperbaiki berurutan (persiapan demo domain sementara)
+**Masalah:** User minta setup subdomain sementara (`ane.web.id`) buat
+presentasi besok + panduan `docker pull` di VPS baru. Sebelum kasih
+instruksi pull, dicek `gh run list --workflow=deploy.yml` — **NOL run,
+dari v1.0.0 sampai v1.0.2** (padahal `architecture-deployment.md` sudah
+klaim "pipeline release terverifikasi jalan"). Itu klaim soal
+`release.yml` doang (bikin GitHub Release) — `deploy.yml` (build+push
+image ke GHCR) ternyata nol kali pernah jalan sejak project mulai. Kalau
+ini kelewat, instruksi "pull di server" besok akan gagal total karena
+image-nya memang belum pernah ada.
+
+**6 bug, ketemu satu-satu lewat build+run image NYATA (bukan cuma baca
+kode) — pola sama seperti entri 2026-08-22, debugging berlapis:**
+
+1. **`deploy.yml` trigger `release: published` TIDAK PERNAH nyala.**
+   Root cause: `release.yml` bikin GitHub Release pakai `GITHUB_TOKEN`
+   bawaan (`bunx semantic-release`) — GitHub Actions SENGAJA tidak
+   memicu workflow lain untuk event yang dibuat `GITHUB_TOKEN` (anti-loop).
+   Fix: ganti trigger ke `workflow_run` (dipicu selesainya run
+   `release.yml` itu sendiri) + `workflow_dispatch` buat manual.
+2. **`resolve-tag` job salah bandingkan SHA, build selalu di-skip.**
+   `github.event.workflow_run.head_sha` = commit SEBELUM semantic-release
+   nambah commit `chore(release): x.x.x` (yang beneran ditag) — selalu
+   mismatch. Fix: checkout tip `main` TERBARU, cek `git describe --tags
+   --exact-match HEAD` langsung, bukan bandingkan SHA manual.
+3. **Dockerfile (api & web) copy `bun.lockb`** (format binary lama),
+   padahal repo pakai `bun.lock` (format teks, default Bun sekarang) —
+   `bun install --frozen-lockfile` gagal "not found". Fix: ganti nama
+   file di kedua Dockerfile.
+4. **`apps/api/package.json` belum pernah punya script `"build"`**
+   (selama ini cuma `bun run src/index.ts` langsung, tanpa build step),
+   padahal Dockerfile expect `dist/index.js`. Fix: tambah
+   `"build": "bun build ./src/index.ts --outdir ./dist --target bun
+   --external sharp"` — `sharp` WAJIB `--external`, native binding-nya
+   rusak kalau ikut di-bundle jadi satu file (diverifikasi: tanpa itu,
+   warm-start throw "Could not load sharp module").
+5. **`apps/web/tsconfig.json` (dan `apps/api/tsconfig.json`) extends
+   `"../../tsconfig.json"` (root)** tapi Dockerfile keduanya cuma copy
+   `package.json`+`bun.lock`, bukan `tsconfig.json` root — Turbopack
+   build gagal "extends ... doesn't resolve correctly". Fix: tambahkan
+   `tsconfig.json` ke `COPY` di kedua Dockerfile.
+6. **`lib/api-client.ts` (Eden Treaty) `import type { App } from
+   "../../api/src/index"`** — type-only import lintas-workspace ini
+   BUTUH source+dependency `apps/api` ada di builder image supaya
+   type-check `next build` bisa resolve, padahal Dockerfile web cuma
+   copy `apps/web` sendiri. Fix: copy `apps/api/package.json` (sebelum
+   install) DAN source `apps/api` juga ke builder stage — stage
+   production tetap TIDAK kebawa (cuma hasil build).
+7. **Bug produk (bukan infra CI), ketemu pas `next build` beneran
+   jalan pertama kali:** `useSearchParams()` di `LoginForm` (dipakai
+   admin/login & app/login) belum di-`Suspense`, bikin `next build`
+   GAGAL KERAS saat prerender (`/admin/login`) — beda dari dev server
+   yang cuma warning. Fix: bungkus `LoginFormInner` dengan `<Suspense>`
+   di `login-form.tsx` sendiri (satu tempat, semua consumer otomatis benar).
+8. **Stage production `apps/web/Dockerfile` pakai `output: "standalone"`
+   + jalan via `bun run` — DUA masalah sekaligus, ketemu pas image
+   di-*run* beneran (bukan cuma build sukses):**
+   (a) Next 16 (Turbopack) server bundle CRASH di runtime Bun:
+   `"Expected CommonJS module to have a function wrapper... bug in Bun"`.
+   (b) `output: "standalone"` nge-trace ulang `node_modules` dari
+   struktur isolated-store `bun install` (`node_modules/.bun/...` +
+   symlink) dan hasilnya GAK LENGKAP (`MODULE_NOT_FOUND`) — gap yang
+   sama baik dijalankan Bun maupun Node. Fix: hapus `output:standalone`,
+   base image production ganti ke `node:22-slim`, jalan
+   `node node_modules/.bin/next start` pakai `node_modules` ASLI (full,
+   bukan hasil trace) — struktur nested `/repo/apps/web` WAJIB
+   dipertahankan (symlink `apps/web/node_modules/*` nunjuk relatif ke
+   `../../../node_modules/.bun/...`). `apps/web/public/` juga ternyata
+   belum pernah ada di repo — ditambah `.gitkeep`.
+
+**Cara verifikasi yang KRITIKAL (beda dari sesi 2026-08-22 — kali ini
+sampai run container-nya, bukan cuma build sukses):** build `next build`
+lokal dulu tiap kali sebelum push ulang (hemat 3-4 menit round-trip CI
+per percobaan), DAN untuk bug #8 — simulasikan PERSIS susunan file yang
+di-`COPY` Dockerfile ke direktori terpisah lokal, jalankan
+`node node_modules/.bin/next start` dari situ, `curl` beneran ke server-nya
+(termasuk `curl -H "Host: admin.localhost"` buat mastiin proxy
+surface-detection ikut kepakai) — "image ke-build" TIDAK SAMA DENGAN
+"image bisa jalan", baru ketahuan setelah run beneran.
+
+**Hasil akhir:** `v1.0.10` — `build-and-push` sukses penuh (API + web,
+image ada di GHCR). `deploy-to-server` gagal (expected — secrets
+`SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` belum diisi, auto-deploy ke
+VPS belum di-setup, first deploy tetap manual sesuai
+`docs/deployment-server-setup.md`).
+
+**Pencegahan:** `architecture-deployment.md` § status "pipeline
+terverifikasi" cuma soal `release.yml` — JANGAN generalisasi ke seluruh
+pipeline (`deploy.yml`) tanpa cek `gh run list --workflow=deploy.yml`
+punya run sukses beneran. Kalau bikin workflow dua-tahap
+(release → deploy via `release: published`) dan release dibuat lewat
+`GITHUB_TOKEN` bawaan di workflow LAIN, WAJIB pakai `workflow_run` (atau
+PAT), bukan event `release published` — ini bukan kasus spesifik project
+ini, semua setup semantic-release + deploy terpisah kena masalah yang
+sama. Juga: `bun install` versi sekarang default isolated-store
+(`node_modules/.bun/...`), BUKAN hoisted-flat kayak npm/yarn classic —
+kalau nanti coba `output: "standalone"` Next.js lagi di monorepo Bun,
+verifikasi ulang dari nol (mungkin sudah diperbaiki di versi Next/Bun
+lebih baru), jangan asumsikan otomatis kompatibel.
+
+---
+
 ## 2026-08-22 — Push pertama project: 5 bug CI/CD ketemu & diperbaiki berurutan (release.yml gagal 4x sebelum sukses)
 **Masalah:** Repo git baru di-init & push PERTAMA KALI sesi ini (sebelumnya
 "No commits yet" sejak awal project walau kode sudah sampai Fase 05).
