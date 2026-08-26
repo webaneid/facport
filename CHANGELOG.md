@@ -1,3 +1,9 @@
+## <small>1.0.2 (2026-08-26)</small>
+
+* fix(web): resolve surface via subdomain prefix instead of hardcoded domain ([5f32fda](https://github.com/webaneid/facport/commit/5f32fda))
+* docs: dokumentasikan 5 bug CI/CD dari push pertama + verifikasi pipeline ([bef70a1](https://github.com/webaneid/facport/commit/bef70a1))
+* docs: prune irrelevant/stale documentation to save read tokens ([2bf9903](https://github.com/webaneid/facport/commit/2bf9903))
+
 ## <small>1.0.1 (2026-08-22)</small>
 
 * fix: Akun Hutang di import Faktur Pembelian juga update vendor existing ([22bfa31](https://github.com/webaneid/facport/commit/22bfa31))
