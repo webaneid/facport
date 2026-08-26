@@ -1,3 +1,7 @@
+## <small>1.0.17 (2026-08-26)</small>
+
+* fix(web): dashboard 500 — fetchJson() gak tahan body kosong dari /me/subscription ([a0e3c5f](https://github.com/webaneid/facport/commit/a0e3c5f))
+
 ## <small>1.0.16 (2026-08-26)</small>
 
 * fix(api): 3 pola process.env.NODE_ENV lain kena const-fold Bun juga ([c190d93](https://github.com/webaneid/facport/commit/c190d93))
