@@ -59,7 +59,19 @@ export const auth = betterAuth({
     // butuh test cross-subdomain SSO di dev, satu-satunya cara adalah pakai
     // domain asli (bukan `.localhost`) via `/etc/hosts` atau layanan
     // wildcard-DNS yang eTLD+1-nya benar (mis. `*.facport.nip.io`).
-    crossSubDomainCookies: { enabled: process.env.NODE_ENV === "production", domain: env.COOKIE_DOMAIN },
+    // BUKAN process.env.NODE_ENV === "production" (versi lama) — bundler
+    // Bun const-fold `process.env.NODE_ENV` SAAT BUILD (builder stage
+    // Dockerfile build TANPA NODE_ENV=production, cuma production stage
+    // yang punya itu, kepakainya cuma di runtime, kelewat) — hasilnya
+    // `enabled` selalu literal `false` ter-bake permanen ke bundle,
+    // terlepas dari env container yang jalan. Ketemu 2026-08-27: sign-in
+    // browser sukses (200 + cookie) tapi TIDAK ke-share ke subdomain lain
+    // (Set-Cookie tanpa atribut Domain sama sekali). Cek `env.COOKIE_DOMAIN`
+    // langsung (dibaca live via process.env biasa di lib/env.ts, TIDAK
+    // kena const-fold — cuma NODE_ENV yang di-special-case bundler) —
+    // sesuai maksud asli: nonaktifkan KHUSUS dev `.localhost` (lihat
+    // komentar di atas), bukan soal "production" per se.
+    crossSubDomainCookies: { enabled: env.COOKIE_DOMAIN !== ".localhost", domain: env.COOKIE_DOMAIN },
     // `sameSite:"none"`/`secure`/`partitioned` SEMPAT dicoba untuk "atasi"
     // cookie lintas-situs (apps/web manggil apps/api di host beda) —
     // TERBUKTI SALAH ARAH (Partitioned tersimpan tapi tidak pernah
