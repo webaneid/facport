@@ -3,8 +3,8 @@
 export type Surface = "landing" | "admin" | "app";
 
 export function getSurface(host: string): Surface {
-  const h = host.replace(/:\d+$/, ""); // buang port kalau ada (local dev)
-  if (h === "admin.facport.com" || h === "admin.localhost") return "admin";
-  if (h === "app.facport.com" || h === "app.localhost") return "app";
-  return "landing"; // root domain, www, atau localhost polos
+  const h = host.replace(/:\d+$/, "").toLowerCase(); // buang port kalau ada (local dev)
+  if (h.startsWith("admin.")) return "admin";
+  if (h.startsWith("app.")) return "app";
+  return "landing"; // root domain, subdomain lain (mis. landing/frontend.*), www, atau localhost polos
 }
