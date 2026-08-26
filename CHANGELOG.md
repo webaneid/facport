@@ -1,3 +1,8 @@
+## <small>1.0.11 (2026-08-26)</small>
+
+* fix(deploy): DATABASE_URL di .env.production/staging.example gak boleh pakai \${...} ([58b0108](https://github.com/webaneid/facport/commit/58b0108))
+* docs: dokumentasikan 6 bug deploy.yml (deploy.yml belum pernah jalan sejak v1.0.0) ([590c8cf](https://github.com/webaneid/facport/commit/590c8cf))
+
 ## <small>1.0.10 (2026-08-26)</small>
 
 * fix(docker): web production stage — jalan di Node, bukan Bun, tanpa output:standalone ([d822d0b](https://github.com/webaneid/facport/commit/d822d0b))
