@@ -1,3 +1,7 @@
+## <small>1.0.9 (2026-08-26)</small>
+
+* fix(web): bungkus LoginForm dengan Suspense — useSearchParams() bikin next build gagal ([6164826](https://github.com/webaneid/facport/commit/6164826))
+
 ## <small>1.0.8 (2026-08-26)</small>
 
 * fix(docker): web build butuh source+deps apps/api juga (Eden Treaty type import) ([8d62159](https://github.com/webaneid/facport/commit/8d62159))
