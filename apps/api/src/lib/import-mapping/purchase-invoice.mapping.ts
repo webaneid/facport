@@ -1,9 +1,9 @@
 // § architecture-accurate-integration.md § 3 — Purchase Invoice VERIFIED.
-// MVP: 1 baris Excel = 1 Faktur Pembelian dengan TEPAT 1 baris item
-// (`detailItem` array berisi 1 elemen). Ini konsisten dengan filosofi
-// "per-row" import_batch_rows (1 baris Excel = 1 hasil Accurate yang jelas)
-// — faktur multi-item per baris Excel BELUM didukung, dicatat sebagai Known
-// Limitation di phase-02 doc, bukan kelupaan.
+// § Fase 06 (2026-08-28, ADR-0011) — 1 Faktur Pembelian BISA punya banyak
+// `detailItem`: baris Excel dengan kolom "Bill No" (`billNumber`) SAMA
+// dikelompokkan jadi 1 payload `save.do` (lihat `groupPurchaseInvoiceRows`
+// di bawah), bukan lagi selalu 1 baris = 1 faktur (batasan MVP lama, sudah
+// tidak berlaku).
 //
 // Daftar field diperluas 2026-08-19 berdasarkan template referensi user
 // (`FACPORT_TEMPLATE_Purchase_Inv_v8.xlsx`, tool integrasi Accurate lain)
@@ -186,12 +186,10 @@ function toAccurateDate(value: unknown): unknown {
   return `${dd}/${mm}/${date.getUTCFullYear()}`;
 }
 
-// Bangun payload save.do dari 1 baris Excel yang sudah dipetakan
-// (columnMapping: excelColumn -> field internal, sesuai defaultColumnMap).
-export function buildPurchaseInvoicePayload(
+function extractRowValues(
   rawRow: Record<string, unknown>,
   columnMapping: Record<string, string>,
-): Record<string, unknown> {
+): Partial<Record<PurchaseInvoiceField, unknown>> {
   const values: Partial<Record<PurchaseInvoiceField, unknown>> = {};
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
     if (rawRow[excelColumn] !== undefined && rawRow[excelColumn] !== "") {
@@ -199,20 +197,111 @@ export function buildPurchaseInvoicePayload(
       values[f] = DATE_FIELDS.has(f) ? toAccurateDate(rawRow[excelColumn]) : rawRow[excelColumn];
     }
   }
+  return values;
+}
+
+// Bangun payload save.do dari SEKELOMPOK baris Excel yang jadi 1 Faktur
+// Pembelian (columnMapping: excelColumn -> field internal, sesuai
+// defaultColumnMap). § Fase 06 — SEBELUMNYA nerima 1 baris = 1 payload
+// (1 detailItem), SEKARANG nerima array baris (hasil `groupPurchaseInvoiceRows`)
+// — field HEADER (bukan prefix "detailItem.") diambil dari baris PERTAMA
+// saja, `detailItem` jadi array 1 elemen per baris dalam grup.
+export function buildPurchaseInvoicePayload(
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Record<string, unknown> {
+  const headerValues = extractRowValues(rawRows[0] ?? {}, columnMapping);
 
   const payload: Record<string, unknown> = {};
-  const detailItem: Record<string, unknown> = {};
   for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
-    const value = values[field as PurchaseInvoiceField];
-    if (value === undefined) continue;
-    if (accuratePath.startsWith("detailItem.")) {
-      detailItem[accuratePath.slice("detailItem.".length)] = value;
-    } else {
-      payload[accuratePath] = value;
-    }
+    if (accuratePath.startsWith("detailItem.")) continue;
+    const value = headerValues[field as PurchaseInvoiceField];
+    if (value !== undefined) payload[accuratePath] = value;
   }
-  payload.detailItem = [detailItem];
+
+  payload.detailItem = rawRows.map((rawRow) => {
+    const rowValues = extractRowValues(rawRow, columnMapping);
+    const detailItem: Record<string, unknown> = {};
+    for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
+      if (!accuratePath.startsWith("detailItem.")) continue;
+      const value = rowValues[field as PurchaseInvoiceField];
+      if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
+    }
+    return detailItem;
+  });
+
   return payload;
+}
+
+// § Fase 06, ADR-0011 — grouping baris Excel jadi 1 Faktur Pembelian
+// berdasarkan kolom yang di-mapping ke "billNumber" (Bill No). Baris tanpa
+// nilai Bill No (kolom tidak di-mapping user, ATAU di-mapping tapi
+// kosong di baris itu) tetap jadi grup sendiri isi 1 baris — behavior
+// SAMA PERSIS dengan sebelum ADR-0011, non-breaking buat user yang belum
+// pakai multi-item.
+export type ImportRowRecord = { id: string; rawData: Record<string, unknown> };
+export type PurchaseInvoiceGroup = { billNumber: string | null; rows: ImportRowRecord[] };
+
+function billNumberColumnOf(columnMapping: Record<string, string>): string | null {
+  return Object.entries(columnMapping).find(([, field]) => field === "billNumber")?.[0] ?? null;
+}
+
+function billNumberOf(row: ImportRowRecord, billNumberColumn: string | null): string | null {
+  if (!billNumberColumn) return null;
+  const value = row.rawData[billNumberColumn];
+  if (value === undefined || value === null) return null;
+  const trimmed = String(value).trim();
+  return trimmed === "" ? null : trimmed;
+}
+
+export function groupPurchaseInvoiceRows(
+  rows: ImportRowRecord[],
+  columnMapping: Record<string, string>,
+): PurchaseInvoiceGroup[] {
+  const billNumberColumn = billNumberColumnOf(columnMapping);
+  const groups: PurchaseInvoiceGroup[] = [];
+  const byBillNumber = new Map<string, PurchaseInvoiceGroup>();
+
+  for (const row of rows) {
+    const billNumber = billNumberOf(row, billNumberColumn);
+    if (billNumber === null) {
+      groups.push({ billNumber: null, rows: [row] });
+      continue;
+    }
+    const key = billNumber.toLowerCase();
+    let group = byBillNumber.get(key);
+    if (!group) {
+      group = { billNumber, rows: [] };
+      byBillNumber.set(key, group);
+      groups.push(group);
+    }
+    group.rows.push(row);
+  }
+
+  return groups;
+}
+
+// § ADR-0011 — semua baris dalam 1 grup (1 faktur) WAJIB vendorNo sama.
+// Return pesan error jelas kalau tidak (grup digagalkan SELURUHNYA,
+// TANPA panggil Accurate sama sekali), `null` kalau konsisten.
+export function validateGroupVendorConsistency(
+  group: PurchaseInvoiceGroup,
+  columnMapping: Record<string, string>,
+): string | null {
+  const vendorNoColumn = Object.entries(columnMapping).find(([, field]) => field === "vendorNo")?.[0];
+  if (!vendorNoColumn) return null; // vendorNo wajib di-mapping (requiredFields) — validasi itu terjadi di tempat lain
+
+  const vendorNos = new Set(
+    group.rows
+      .map((row) => row.rawData[vendorNoColumn])
+      .filter((v) => v !== undefined && v !== null && String(v).trim() !== "")
+      .map((v) => String(v).trim()),
+  );
+
+  if (vendorNos.size <= 1) return null;
+
+  const label = group.billNumber ?? "(tanpa Bill No)";
+  return `Bill No "${label}" dipakai untuk vendor berbeda-beda (${[...vendorNos].join(", ")}) — pastikan semua baris 1 faktur pakai Nomor Vendor yang sama.`;
 }
 
 // Ambil nilai mentah 1 kolom internal dari 1 baris Excel (dipakai
