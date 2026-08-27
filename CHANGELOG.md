@@ -1,3 +1,8 @@
+## 1.6.0 (2026-08-27)
+
+* feat: Fase 09 — Batal Import (hapus/susutkan faktur di Accurate) ([b8fc5f4](https://github.com/webaneid/facport/commit/b8fc5f4))
+* docs: tutup Fase 08 — diverifikasi nyata (6/6 retry sukses) ([0029fe9](https://github.com/webaneid/facport/commit/0029fe9)), closes [200/#250](https://github.com/webaneid/facport/issues/250)
+
 ## <small>1.5.1 (2026-08-27)</small>
 
 * fix: field vendor.vendorNo (bukan vendor.no) di getPurchaseInvoiceDetail ([00bb9fb](https://github.com/webaneid/facport/commit/00bb9fb))
