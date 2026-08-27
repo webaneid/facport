@@ -1,6 +1,6 @@
 import "../lib/env"; // WAJIB paling awal
 
-import { eq, and, or, lt, lte } from "drizzle-orm";
+import { eq, and, or, lt, lte, inArray } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
@@ -10,11 +10,15 @@ import { subscriptions, accurateConnections, importBatches, importBatchRows } fr
 import { refreshAccessToken } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
-import { savePurchaseInvoice } from "../lib/accurate-purchase-invoice";
+import { savePurchaseInvoice, type PurchaseInvoiceSaveResult } from "../lib/accurate-purchase-invoice";
 import {
   buildPurchaseInvoicePayload,
   extractVendorCreateFields,
   extractItemCreateFields,
+  groupPurchaseInvoiceRows,
+  validateGroupVendorConsistency,
+  type ImportRowRecord,
+  type PurchaseInvoiceGroup,
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { saveVendorPayableAccount, findOrCreateVendor } from "../lib/accurate-vendor";
 import { buildVendorPayableAccountPayload } from "../lib/import-mapping/vendor-payable-account.mapping";
@@ -29,6 +33,9 @@ import type { AccurateSessionContext } from "../lib/accurate-session";
 // aman (`as any`/`as never`) buat nyatuin tipe fungsi yang beda-beda.
 // Tambah `case` baru di sini kalau ada modul import lain — JOBS.IMPORT_TO_ACCURATE
 // tetap 1 job generik, bukan bikin job type terpisah per modul (§ queue.ts).
+// CATATAN: "purchase_invoice" TIDAK ada di sini lagi sejak Fase 06 — modul
+// itu diproses PER GRUP (banyak baris = 1 faktur), lihat
+// `processPurchaseInvoiceGroup` di bawah, bukan per-baris lewat fungsi ini.
 async function processImportRow(
   module: string,
   ctx: AccurateSessionContext,
@@ -36,29 +43,54 @@ async function processImportRow(
   columnMapping: Record<string, string>,
 ): Promise<{ id: number | string }> {
   switch (module) {
-    case "purchase_invoice": {
-      // § phase-05-purchase-invoice-auto-create.md — vendor/item yang
-      // BELUM ada di Accurate dibuatkan dulu otomatis (pakai kolom
-      // opsional tambahan), baru fakturnya dibuat. TERVERIFIKASI
-      // 2026-08-20 via test call nyata end-to-end.
-      const payload = buildPurchaseInvoicePayload(rawRow, columnMapping);
-      const vendorNo = String(payload.vendorNo ?? "");
-      const detailItem = ((payload.detailItem as Record<string, unknown>[] | undefined) ?? [])[0] ?? {};
-      const itemNo = String(detailItem.itemNo ?? "");
-
-      if (vendorNo) {
-        await findOrCreateVendor(ctx, vendorNo, extractVendorCreateFields(rawRow, columnMapping));
-      }
-      if (itemNo) {
-        await findOrCreateItem(ctx, itemNo, extractItemCreateFields(rawRow, columnMapping));
-      }
-      return savePurchaseInvoice(ctx, payload);
-    }
     case "vendor_payable_account":
       return saveVendorPayableAccount(ctx, buildVendorPayableAccountPayload(rawRow, columnMapping));
     default:
       throw new Error(`Modul import "${module}" tidak dikenali`);
   }
+}
+
+// § Fase 06, ADR-0011 — proses 1 GRUP baris Excel (1 Faktur Pembelian,
+// bisa banyak detailItem) jadi 1 faktur di Accurate. Vendor dicari/dibuat
+// SEKALI per grup (dari baris pertama — sudah divalidasi semua baris grup
+// vendorNo-nya sama, lihat `validateGroupVendorConsistency`), item
+// dicari/dibuat per ITEM UNIK dalam grup (dedupe, hindari panggil dobel
+// kalau ada baris duplikat barang).
+export async function processPurchaseInvoiceGroup(
+  ctx: AccurateSessionContext,
+  group: PurchaseInvoiceGroup,
+  columnMapping: Record<string, string>,
+): Promise<PurchaseInvoiceSaveResult> {
+  const mismatchError = validateGroupVendorConsistency(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+
+  const vendorNo = String(payload.vendorNo ?? "");
+  if (vendorNo) {
+    await findOrCreateVendor(ctx, vendorNo, extractVendorCreateFields(rawRows[0]!, columnMapping));
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const rawRow of rawRows) {
+    const detailItem = extractRowDetailItemNo(rawRow, columnMapping);
+    if (!detailItem || seenItemNo.has(detailItem)) continue;
+    seenItemNo.add(detailItem);
+    await findOrCreateItem(ctx, detailItem, extractItemCreateFields(rawRow, columnMapping));
+  }
+
+  return savePurchaseInvoice(ctx, payload);
+}
+
+// Ambil nilai kolom yang di-mapping ke "itemNo" dari 1 baris mentah —
+// dipakai buat dedupe findOrCreateItem per grup di atas.
+function extractRowDetailItemNo(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string | null {
+  const itemNoColumn = Object.entries(columnMapping).find(([, field]) => field === "itemNo")?.[0];
+  if (!itemNoColumn) return null;
+  const value = rawRow[itemNoColumn];
+  if (value === undefined || value === null || value === "") return null;
+  return String(value);
 }
 
 async function main() {
@@ -182,23 +214,53 @@ async function main() {
         ),
       );
 
-    for (const row of rows) {
-      try {
-        const result = await processImportRow(
-          batch.module,
-          session,
-          row.rawData as Record<string, unknown>,
-          columnMapping,
-        );
-        await db
-          .update(importBatchRows)
-          .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null, processedAt: new Date() })
-          .where(eq(importBatchRows.id, row.id));
-      } catch (err) {
-        await db
-          .update(importBatchRows)
-          .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
-          .where(eq(importBatchRows.id, row.id));
+    // § Fase 06, ADR-0011 — Purchase Invoice diproses PER GRUP (baris
+    // dengan Bill No sama = 1 faktur, bisa banyak detailItem), modul lain
+    // TETAP per-baris seperti sebelumnya (grouping cuma berlaku Purchase
+    // Invoice). Hasil (status/accurateTransactionId/errorMessage) dari 1
+    // panggilan Accurate di-apply ke SEMUA baris anggota grup itu —
+    // sebuah grup tidak pernah berstatus campuran (sebagian sukses,
+    // sebagian gagal), penting buat retry (§ route retry, tidak diubah)
+    // supaya re-grouping ulang selalu benar.
+    if (batch.module === "purchase_invoice") {
+      const groups = groupPurchaseInvoiceRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processPurchaseInvoiceGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null, processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else {
+      for (const row of rows) {
+        try {
+          const result = await processImportRow(
+            batch.module,
+            session,
+            row.rawData as Record<string, unknown>,
+            columnMapping,
+          );
+          await db
+            .update(importBatchRows)
+            .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null, processedAt: new Date() })
+            .where(eq(importBatchRows.id, row.id));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(eq(importBatchRows.id, row.id));
+        }
       }
     }
 
