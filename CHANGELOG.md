@@ -1,3 +1,7 @@
+## <small>1.2.1 (2026-08-27)</small>
+
+* fix(deploy): tambah service worker — job queue TIDAK PERNAH diproses tanpa ini ([a256df0](https://github.com/webaneid/facport/commit/a256df0))
+
 ## 1.2.0 (2026-08-27)
 
 * feat(import): pakai template-guide.ts — generateTemplateBuffer signature baru ([8e61194](https://github.com/webaneid/facport/commit/8e61194))
