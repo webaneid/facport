@@ -1,3 +1,9 @@
+## 1.3.0 (2026-08-27)
+
+* feat(web): tampilkan & urutkan Nomor Faktur di detail hasil import (Fase 07) ([376991c](https://github.com/webaneid/facport/commit/376991c))
+* docs: rencana Fase 06 (Purchase Invoice multi-item) + ADR-0011 ([34fab0a](https://github.com/webaneid/facport/commit/34fab0a))
+* fix(api): import_batches.status varchar(20) overflow untuk "completed_with_errors" ([d49b234](https://github.com/webaneid/facport/commit/d49b234))
+
 ## <small>1.2.1 (2026-08-27)</small>
 
 * fix(deploy): tambah service worker — job queue TIDAK PERNAH diproses tanpa ini ([a256df0](https://github.com/webaneid/facport/commit/a256df0))
