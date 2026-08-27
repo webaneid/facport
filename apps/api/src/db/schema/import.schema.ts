@@ -26,7 +26,10 @@ export const importBatches = pgTable("import_batches", {
   fileName: varchar("file_name", { length: 255 }).notNull(),
   totalRows: integer("total_rows").notNull(),
   columnMapping: jsonb("column_mapping"), // excelColumn -> field internal, diisi pas confirm mapping
-  status: varchar("status", { length: 20 }).notNull().default("mapping_pending"),
+  // length 30 (naik dari 20) — "completed_with_errors" 21 karakter, dulu
+  // overflow varchar(20) dan bikin UPDATE gagal diam-diam di worker
+  // (batch permanen nyangkut "processing", ketemu 2026-08-27 demo nyata).
+  status: varchar("status", { length: 30 }).notNull().default("mapping_pending"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .defaultNow()
     .notNull(),
