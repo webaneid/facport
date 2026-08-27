@@ -1,8 +1,8 @@
 # Fase 06 — Purchase Invoice: Multi-Item per Faktur
 
-**Status:** In Progress
+**Status:** Done
 **Mulai:** 2026-08-28
-**Selesai:**
+**Selesai:** 2026-08-28
 
 ## Tujuan
 Faktur Pembelian saat ini (Fase 02) dibatasi "1 baris Excel = 1 faktur =
@@ -72,12 +72,14 @@ perlu diingat kenapa dipilih begitu)
 - [x] Security review dijalankan (skill `security-review`) — 0 temuan
 - [x] Temuan Critical/High — tidak ada
 - [x] `docs/PROGRESS.md` diupdate
-- [ ] **Divalidasi ke akun Accurate Online NYATA — BELUM, menunggu deploy**
-      (minimal 1 faktur multi-item beneran tercipta dengan `detailItem`
-      lebih dari 1, dicek langsung di Accurate). Status fase TETAP
-      `In Progress` sampai ini terverifikasi — dilakukan setelah deploy ke
-      `ane.web.id` (bagian dari alur push→release→deploy yang sedang
-      berjalan).
+- [x] **Divalidasi ke akun Accurate Online NYATA** — upload 2 baris Excel
+      (Bill No sama "TEST-FASE06-001", Vendor No `V.00001`, Item No
+      `100009` x2, qty/harga beda) lewat HTTP API sungguhan (bukan panggil
+      fungsi langsung) ke Data Usaha "PT Frozen Food" (akun
+      `user1@fasport.com`, server `ane.web.id`). Hasil: KEDUA baris
+      `import_batch_rows` dapat `accurate_transaction_id` **SAMA (300)**
+      — bukti 2 baris tergabung jadi 1 faktur, bukan 2 faktur terpisah
+      seperti bug sebelum fase ini. Worker log: `total: 2, failed: 0`.
 
 ## Known Limitations
 (hal yang sengaja belum ditangani di fase ini, biar jelas dan disengaja —
@@ -91,9 +93,6 @@ bukan kelupaan)
   dari situ bisa menyesatkan). Diganti catatan info teks statis.
 
 ## Ringkasan Hasil (isi pas fase Done)
-**Sisi kode selesai 2026-08-28, verifikasi Accurate nyata menyusul setelah
-deploy** — lihat checklist di atas untuk apa yang sudah/belum.
-
 Baris Excel dengan kolom "Bill No" (`billNumber`) yang sama sekarang
 dikelompokkan jadi 1 payload `save.do` dengan `detailItem[]` banyak
 elemen — ini akar penyebab error "Sudah ada data lain dengan No Form..."
@@ -101,7 +100,23 @@ yang muncul di demo 2026-08-27 sudah diperbaiki di level desain (bukan
 cuma ditangani errornya). Baris dengan Bill No kosong tetap berperilaku
 seperti sebelumnya (1 baris = 1 faktur, non-breaking).
 
-Detail teknis lengkap (fungsi, file, keputusan) → ADR-0011 dan §
-Scope di atas. Hasil test: 9 unit test baru lolos, full suite 48/48,
-typecheck 0 error, build lokal (api+worker+web) sukses, security review
-0 temuan.
+**Diverifikasi PENUH lewat HTTP API sungguhan** (bukan cuma unit test) ke
+Data Usaha Accurate nyata ("PT Frozen Food") — 2 baris Excel Bill No sama
+menghasilkan 1 faktur (`accurateTransactionId` sama di kedua baris DB).
+Gap infra tambahan ketemu & diperbaiki di sesi yang sama: service `worker`
+(proses pg-boss terpisah) TIDAK PERNAH ada di `docker-compose.prod.yml`
+sejak awal project — ditambahkan sebagai bagian deploy fase ini (lihat
+`docs/lessons-learned.md` untuk detail).
+
+Detail teknis lengkap (fungsi, file, keputusan) → ADR-0011 dan § Scope di
+atas. Hasil test: 18 unit test di file mapping (9 baru + 9 lama
+disesuaikan signature, tanpa kehilangan coverage), full suite 57/57,
+typecheck 0 error, build lokal (api+worker+web) sukses, security review 0
+temuan.
+
+**Catatan operasional**: transaksi TEST (`Bill No: TEST-FASE06-001`,
+`accurateTransactionId: 300`) tercipta NYATA di Data Usaha "PT Frozen
+Food" sebagai bagian verifikasi ini — belum ada fitur hapus/batal import
+(§ item ke-3 yang DITUNDA, lihat `docs/PROGRESS.md`), jadi transaksi ini
+perlu dihapus/di-void MANUAL lewat UI Accurate langsung kalau tidak
+diinginkan tetap ada di data client.

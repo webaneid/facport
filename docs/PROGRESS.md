@@ -14,7 +14,7 @@
 | 03   | Dashboard Pelanggan (App Shell + halaman utama) | Done | `docs/architecture/architecture-app-dashboard.md` | `docs/phases/phase-03-dashboard-pelanggan.md` |
 | 04   | Import Data Pemasok (update Akun Hutang) | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)" | `docs/phases/phase-04-import-vendor.md` |
 | 05   | Purchase Invoice — Auto-create Vendor & Item | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)", § 3 | `docs/phases/phase-05-purchase-invoice-auto-create.md` |
-| 06   | Purchase Invoice — Multi-Item per Faktur | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
+| 06   | Purchase Invoice — Multi-Item per Faktur | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
@@ -180,3 +180,12 @@ faktur multi-item — akar penyebab error demo 2026-08-27 diperbaiki di
 level desain. 9 unit test baru lolos, full suite 48/48, typecheck 0 error,
 security review 0 temuan. Detail lengkap →
 `docs/phases/phase-06-purchase-invoice-multi-item.md` § Ringkasan Hasil.
+
+**Fase 06 Done 2026-08-28** — diverifikasi PENUH lewat HTTP API sungguhan
+ke Data Usaha Accurate nyata: 2 baris Excel Bill No sama → 1 faktur
+(`accurateTransactionId` sama di kedua baris). Gap infra tambahan ketemu
+& diperbaiki: service `worker` (pg-boss) tidak pernah ada di
+`docker-compose.prod.yml`/`.staging.yml` sejak awal project — job import
+tidak pernah diproses sama sekali di server manapun sampai sekarang.
+Detail lengkap → `docs/phases/phase-06-purchase-invoice-multi-item.md`
+§ Ringkasan Hasil, `docs/lessons-learned.md` entri 2026-08-28.

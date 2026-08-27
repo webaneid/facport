@@ -6,6 +6,58 @@
 
 ---
 
+## 2026-08-28 — Service `worker` (pg-boss) TIDAK PERNAH ada di `docker-compose.prod.yml`/`.staging.yml`
+**Masalah:** Batch import Faktur Pembelian permanen nyangkut status
+"processing" di server `ane.web.id` — halaman detail batch
+(`.../purchase-invoice/import/<batchId>`) "tidak masuk" (user report).
+Baris-barisnya juga tidak pernah berubah dari `pending`.
+
+**Root cause:** `apps/api` punya DUA entry point terpisah SENGAJA —
+`src/index.ts` (server HTTP, `.listen()`) dan `src/workers/index.ts`
+(proses worker pg-boss terpisah, konsumsi job `IMPORT_TO_ACCURATE`/
+`SEND_EMAIL`/dst — lihat `apps/api/CLAUDE.md`). `docker-compose.prod.yml`
+DAN `docker-compose.staging.yml` dari commit pertama project cuma punya
+service `api` (jalanin `dist/index.js`) — **tidak pernah ada service yang
+menjalankan `dist/worker.js` sama sekali**. Setiap `boss.send(...)` yang
+di-enqueue dari route (upload/confirm/retry) numpuk di tabel
+`pgboss.job` selamanya, tidak ada consumer.
+
+Ini KELAS BUG YANG SAMA dengan temuan sebelumnya soal `deploy.yml` tidak
+pernah jalan (`docs/lessons-learned.md` entri 2026-08-27) — sesuatu yang
+"ada di kode/config tapi belum pernah benar-benar dijalankan di
+lingkungan nyata" luput dari deteksi karena tidak ada test/CI yang
+menyentuh proses worker sebagai container terpisah (test lokal jalanin
+worker langsung via `bun run dev:worker`/`bun run src/workers/index.ts`,
+bukan lewat compose file production).
+
+**Fix:**
+1. `apps/api/package.json` — script baru `build:worker` (bundle
+   `src/workers/index.ts` terpisah dari `src/index.ts`, `--external sharp`
+   sama seperti build API server).
+2. `apps/api/Dockerfile` — builder stage jalankan `build:worker` juga,
+   `dist/worker.js` ikut ke-copy ke image production (image API dan
+   worker SAMA, cuma command override).
+3. `docker-compose.prod.yml` & `.staging.yml` — service baru `worker`,
+   `command: ["bun", "run", "dist/worker.js"]`.
+4. **Stopgap darurat** (sebelum image baru selesai build lewat CI):
+   `docker cp` source `apps/api/src` ke container `api` yang sudah jalan,
+   eksekusi `bun run src/workers/index.ts` langsung (Bun bisa jalankan
+   `.ts` tanpa build step) via `docker exec -d` — job yang nyangkut
+   langsung ke-proses begitu worker sementara ini nyala (pg-boss job
+   persisten di Postgres, worker yang telat nyala tetap kepick-up job
+   lama). Diganti proses resmi (container `worker` sungguhan) begitu
+   image baru selesai di-deploy.
+
+**Pencegahan:** Kalau project lain dari template ini juga punya proses
+worker terpisah (`workers/index.ts` atau sejenis), JANGAN asumsikan
+`docker-compose.prod.yml` otomatis include service untuk itu cuma karena
+`api`/`web` sudah ada — cek eksplisit `docker compose config --services`
+mencakup SEMUA proses yang didefinisikan di `package.json`
+(`start`/`start:worker`/dst), bukan cuma yang jelas-jelas terima HTTP
+request.
+
+---
+
 ## 2026-08-27 — `deploy.yml` belum PERNAH jalan sejak v1.0.0: 6 bug ketemu & diperbaiki berurutan (persiapan demo domain sementara)
 **Masalah:** User minta setup subdomain sementara (`ane.web.id`) buat
 presentasi besok + panduan `docker pull` di VPS baru. Sebelum kasih
