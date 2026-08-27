@@ -1,3 +1,10 @@
+## 1.4.0 (2026-08-27)
+
+* docs: update Fase 06 — sisi kode selesai, menunggu verifikasi Accurate nyata ([13a046f](https://github.com/webaneid/facport/commit/13a046f))
+* feat(api): grouping Faktur Pembelian multi-item berdasarkan Bill No (Fase 06, 1/3) ([05c5e37](https://github.com/webaneid/facport/commit/05c5e37))
+* feat(api): worker proses Faktur Pembelian per-grup, bukan per-baris (Fase 06, 2/3) ([8080505](https://github.com/webaneid/facport/commit/8080505))
+* feat(web): catatan info grouping multi-item di UI konfirmasi mapping (Fase 06, 3/3) ([e3ccb36](https://github.com/webaneid/facport/commit/e3ccb36))
+
 ## 1.3.0 (2026-08-27)
 
 * feat(web): tampilkan & urutkan Nomor Faktur di detail hasil import (Fase 07) ([376991c](https://github.com/webaneid/facport/commit/376991c))
