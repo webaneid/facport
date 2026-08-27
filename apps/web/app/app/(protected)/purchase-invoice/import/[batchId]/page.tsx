@@ -15,13 +15,52 @@ type Row = {
   status: string;
   accurateTransactionId: string | null;
   errorMessage: string | null;
+  rawData: Record<string, unknown>;
 };
 
 type BatchDetail = {
-  batch: { id: string; status: string; totalRows: number; fileName: string };
+  batch: {
+    id: string;
+    status: string;
+    totalRows: number;
+    fileName: string;
+    columnMapping: Record<string, string> | null;
+  };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
 };
+
+// Kolom Excel yang di-mapping user ke field "billNumber" (Nomor Faktur) —
+// columnMapping arahnya excelColumn -> field internal, jadi WAJIB di-invert
+// buat cari nama kolom aslinya.
+function findBillNumberColumn(columnMapping: Record<string, string> | null): string | null {
+  if (!columnMapping) return null;
+  const entry = Object.entries(columnMapping).find(([, field]) => field === "billNumber");
+  return entry?.[0] ?? null;
+}
+
+function invoiceNumberOf(row: Row, billNumberColumn: string | null): string {
+  if (!billNumberColumn) return "";
+  const value = row.rawData[billNumberColumn];
+  return value === undefined || value === null ? "" : String(value).trim();
+}
+
+// § permintaan user 2026-08-28 — urut berdasarkan Nomor Faktur (natural
+// sort, angka di dalam string diurutkan numerik: "PI2" < "PI10"), BUKAN
+// nomor baris Excel seperti sebelumnya. Baris tanpa Nomor Faktur ditaruh
+// di akhir, fallback urut nomor baris. Baris dengan Nomor Faktur SAMA
+// (grup multi-item, Fase 06) otomatis nempel berurutan lewat sort ini.
+function sortByInvoiceNumber(rows: Row[], billNumberColumn: string | null): Row[] {
+  return [...rows].sort((a, b) => {
+    const invA = invoiceNumberOf(a, billNumberColumn);
+    const invB = invoiceNumberOf(b, billNumberColumn);
+    if (!invA && !invB) return a.rowNumber - b.rowNumber;
+    if (!invA) return 1;
+    if (!invB) return -1;
+    const cmp = invA.localeCompare(invB, undefined, { numeric: true, sensitivity: "base" });
+    return cmp !== 0 ? cmp : a.rowNumber - b.rowNumber;
+  });
+}
 
 const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
   success: { label: "Sukses", variant: "success" },
@@ -73,6 +112,8 @@ export default function PurchaseInvoiceImportResultPage() {
 
   const { batch, summary, rows } = detail;
   const isProcessing = batch.status === "processing";
+  const billNumberColumn = findBillNumberColumn(batch.columnMapping);
+  const sortedRows = sortByInvoiceNumber(rows, billNumberColumn);
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -111,25 +152,27 @@ export default function PurchaseInvoiceImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Nomor Faktur</TableHead>
                 <TableHead>Baris</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ID Transaksi Accurate / Error</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows
-                .sort((a, b) => a.rowNumber - b.rowNumber)
-                .map((row) => (
-                  <TableRow key={row.id}>
-                    <TableCell>{row.rowNumber}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={row.status} />
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {row.accurateTransactionId ?? row.errorMessage ?? "-"}
-                    </TableCell>
-                  </TableRow>
-                ))}
+              {sortedRows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell className="font-medium text-foreground">
+                    {invoiceNumberOf(row, billNumberColumn) || "-"}
+                  </TableCell>
+                  <TableCell>{row.rowNumber}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={row.status} />
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {row.accurateTransactionId ?? row.errorMessage ?? "-"}
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </CardContent>

@@ -14,6 +14,8 @@
 | 03   | Dashboard Pelanggan (App Shell + halaman utama) | Done | `docs/architecture/architecture-app-dashboard.md` | `docs/phases/phase-03-dashboard-pelanggan.md` |
 | 04   | Import Data Pemasok (update Akun Hutang) | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)" | `docs/phases/phase-04-import-vendor.md` |
 | 05   | Purchase Invoice — Auto-create Vendor & Item | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)", § 3 | `docs/phases/phase-05-purchase-invoice-auto-create.md` |
+| 06   | Purchase Invoice — Multi-Item per Faktur | Planned | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
+| 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -30,6 +32,23 @@ tidak menyiratkan komitmen urutan yang belum benar ada:
 - Modul Persediaan (Inventory) — semua sub-modul
 - Modul Manufaktur — semua sub-modul
 - Modul Kas & Bank + Buku Besar — semua sub-modul
+
+**"Batal Import" (hapus dari Accurate) — DITUNDA SENGAJA, feedback client
+2026-08-27.** Ide: tombol di halaman Riwayat Import Terakhir yang
+menghapus SEMUA transaksi 1 batch langsung DARI ACCURATE (bukan cuma
+riwayat lokal Facport). Disepakati eksplisit dengan user (2026-08-27):
+dikerjakan PALING TERAKHIR dari 3 feedback client, setelah Fase 06 & 07
+solid — ini operasi DESTRUCTIVE terhadap data akuntansi ASLI client di
+sistem pihak ketiga, blast radius jauh lebih besar dari 2 fase di atas.
+Kalau nanti di-scope jadi fase resmi, WAJIB architecture doc + ADR
+tersendiri (belum dibuat sekarang, sengaja) yang minimal jawab: (1)
+transaksi yang sudah "dipakai" downstream di Accurate (mis. sudah
+dibayar/direferensikan transaksi lain) — kemungkinan besar ditolak API
+`delete.do` Accurate sendiri, perlu dipetakan skenario error-nya dulu,
+bukan diasumsikan selalu sukses; (2) UX konfirmasi (destructive action,
+minimal 1 langkah konfirmasi eksplisit, bukan 1 klik langsung hapus); (3)
+audit trail — siapa yang klik batal, kapan, transaksi apa saja yang
+kehapus, disimpan permanen terlepas dari hasil hapusnya sendiri.
 
 **Fase 04 (Import Data Pemasok — update Akun Hutang) Done 2026-08-20** —
 modul BARU (data master, di luar 5 modul transaksi yang di-listing di §
@@ -134,3 +153,22 @@ bukan cuma HTTP error code). Detail lengkap →
   (contoh response nyata, sumber publik). Detail lengkap →
   `architecture-accurate-integration.md` § "Sesi Data Usaha (Company
   Database)".
+
+## Update 2026-08-28 — 3 Feedback Client Pasca-Presentasi
+Presentasi 2026-08-27 (domain sementara `ane.web.id`) menghasilkan 3
+masukan client, diprioritaskan bareng user:
+1. **Fase 07** — tampilkan nomor faktur di tabel "Detail per Baris"
+   halaman hasil import (`Planned`). **Klarifikasi 2026-08-28**: draf awal
+   sempat disangka minta pencarian lintas-batch — SALAH, ternyata cukup
+   nampilin nomor faktur (data sudah ada di response API,
+   `rows[].rawData`) di halaman detail batch yang sudah ada. Scope jauh
+   lebih kecil dari draf awal, frontend-only.
+2. **Fase 06** — Faktur Pembelian multi-item, **PRIORITAS EKSEKUSI DULUAN**
+   (`Planned`) — akar penyebab error nyata di demo ("Sudah ada data lain
+   dengan No Form..."), lihat ADR-0011.
+3. **"Batal Import" (hapus dari Accurate)** — DITUNDA sengaja, dikerjakan
+   paling akhir karena destructive terhadap data akuntansi asli client.
+   Rasional lengkap → § "Modul/Sub-modul Lain — Sengaja Di-pending" di atas.
+
+Urutan eksekusi: Fase 06 dulu (dampak terbesar, benerin bug demo), baru
+Fase 07, baru "Batal Import" (kalau/setelah di-scope resmi jadi fase).
