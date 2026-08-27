@@ -14,6 +14,7 @@ export const JOBS = {
   EXPIRE_SUBSCRIPTIONS: "expire-subscriptions",
   REFRESH_ACCURATE_TOKEN: "refresh-accurate-token",
   IMPORT_TO_ACCURATE: "import-to-accurate",
+  CANCEL_IMPORT: "cancel-import", // § Fase 09, ADR-0013
 } as const;
 
 let started = false;

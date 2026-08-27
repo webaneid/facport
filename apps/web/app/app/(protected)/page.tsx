@@ -49,6 +49,10 @@ const BATCH_STATUS: Record<string, { label: string; variant: BadgeProps["variant
   processing: { label: "Memproses", variant: "warning" },
   mapping_pending: { label: "Menunggu Konfirmasi", variant: "default" },
   failed: { label: "Gagal", variant: "destructive" },
+  // § Fase 09, ADR-0013 — Batal Import
+  cancelling: { label: "Membatalkan...", variant: "warning" },
+  cancelled: { label: "Dibatalkan", variant: "default" },
+  cancelled_partial: { label: "Dibatalkan (sebagian)", variant: "warning" },
 };
 
 export default async function DashboardPage() {
@@ -136,9 +140,14 @@ export default async function DashboardPage() {
               </div>
               <CardDescription>5 import Faktur Pembelian terbaru.</CardDescription>
             </div>
-            <Link href="/purchase-invoice/import" className={buttonVariants("default")}>
-              Import Faktur Pembelian →
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link href="/purchase-invoice/import/riwayat" className={buttonVariants("outline")}>
+                Tampilkan Arsip Lain
+              </Link>
+              <Link href="/purchase-invoice/import" className={buttonVariants("default")}>
+                Import Faktur Pembelian →
+              </Link>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

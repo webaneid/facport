@@ -43,8 +43,16 @@ export const importBatchRows = pgTable("import_batch_rows", {
     .references(() => importBatches.id, { onDelete: "cascade" }),
   rowNumber: integer("row_number").notNull(),
   rawData: jsonb("raw_data").notNull(),
+  // status tambahan sejak Fase 09: "cancelled" (9 char, muat varchar(20))
   status: varchar("status", { length: 20 }).notNull().default("pending"),
-  accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }),
+  accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }), // id FAKTUR Accurate
+  // § Fase 09, ADR-0013 — id detailItem Accurate (BEDA dari id faktur di
+  // atas) — WAJIB ada supaya "Batal Import" tahu persis item mana milik
+  // baris ini di faktur yang mungkin gabungan lintas-batch (Fase 08).
+  // NULL untuk baris yang diproses SEBELUM Fase 09 ada — diblokir dari
+  // auto-cancel, bukan ditebak (lihat ADR-0013 Decision #2).
+  accurateDetailItemId: varchar("accurate_detail_item_id", { length: 100 }),
   errorMessage: text("error_message"),
   processedAt: timestamp("processed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
 });

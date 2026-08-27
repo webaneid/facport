@@ -17,6 +17,7 @@
 | 06   | Purchase Invoice — Multi-Item per Faktur | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 | 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
+| 09   | Batal Import (Hapus/Susutkan Faktur di Accurate) | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013 | `docs/phases/phase-09-batal-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

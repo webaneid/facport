@@ -7,10 +7,16 @@ import type { AccurateSessionContext } from "./accurate-session";
 // "Keputusan Kecil" untuk alasannya (response schema bulk-save.do tidak
 // terverifikasi Accurate).
 // Record hasil save.do (field `r`) punya PULUHAN field turunan Accurate —
-// cuma ambil yang dipakai (`id`, `number`), sisanya diabaikan.
+// cuma ambil yang dipakai. `detailItem[].id` ditambahkan Fase 09
+// (ADR-0013) — DIKONFIRMASI via test call nyata 2026-08-28 bahwa `r`
+// SELALU menyertakan `detailItem[].id` per item (bukan cuma di respons
+// `detail.do`), urutan SAMA dengan `detailItem[]` yang dikirim di
+// payload — dipakai buat tracking id per-item (`accurateDetailItemId`)
+// tanpa perlu fetch ulang `detail.do` setelah tiap save.
 export type PurchaseInvoiceSaveResult = {
   id: number;
   number: string;
+  detailItem: { id: number }[];
 };
 
 export async function savePurchaseInvoice(
@@ -75,5 +81,25 @@ export async function getPurchaseInvoiceDetail(ctx: AccurateSessionContext, id: 
         quantity: Number(it.quantity ?? 0),
       })),
     };
+  });
+}
+
+// § Fase 09, ADR-0013 — hapus SELURUH faktur (semua detailItem-nya
+// sekaligus). DIKONFIRMASI via test call nyata 2026-08-28: envelope
+// respons `{s, d}` BIASA (TIDAK ada field `r` seperti save.do — pakai
+// `parseAccurateEnvelope`, bukan `parseAccurateSaveEnvelope`), dan
+// BENAR-BENAR menghapus record (bukan soft-delete — `detail.do` sesudah
+// delete mengembalikan `s:false`). Cuma terima SATU id per panggilan
+// (bukan bulk) — caller WAJIB loop kalau ada banyak faktur.
+export async function deletePurchaseInvoice(ctx: AccurateSessionContext, id: number): Promise<void> {
+  return withAccurateRateLimit(async () => {
+    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/delete.do?${new URLSearchParams({ id: String(id) })}`, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${ctx.accessToken}`,
+        "X-Session-ID": ctx.session,
+      },
+    });
+    await parseAccurateEnvelope<unknown>(res);
   });
 }

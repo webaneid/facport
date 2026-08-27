@@ -70,6 +70,10 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destru
   completed: { label: "Selesai", variant: "success" },
   completed_with_errors: { label: "Selesai (ada gagal)", variant: "warning" },
   mapping_pending: { label: "Menunggu Konfirmasi", variant: "default" },
+  // § Fase 09, ADR-0013 — Batal Import
+  cancelling: { label: "Membatalkan...", variant: "warning" },
+  cancelled: { label: "Dibatalkan", variant: "default" },
+  cancelled_partial: { label: "Dibatalkan (sebagian)", variant: "warning" },
 };
 
 function StatusBadge({ status }: { status: string }) {

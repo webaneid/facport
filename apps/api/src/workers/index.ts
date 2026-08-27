@@ -6,11 +6,11 @@ import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
 import { sendEmail } from "../lib/email";
 import { db } from "../lib/db";
-import { subscriptions, accurateConnections, importBatches, importBatchRows } from "../db/schema";
+import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { refreshAccessToken } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
-import { savePurchaseInvoice, getPurchaseInvoiceDetail, type PurchaseInvoiceSaveResult } from "../lib/accurate-purchase-invoice";
+import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice } from "../lib/accurate-purchase-invoice";
 import {
   buildPurchaseInvoicePayload,
   buildDetailItemFromRow,
@@ -52,6 +52,15 @@ async function processImportRow(
   }
 }
 
+// § Fase 09, ADR-0013 — hasil proses 1 grup, per BARIS (bukan cuma id
+// faktur tunggal) — dipakai buat tracking `accurateDetailItemId` per
+// baris di DB (WAJIB, supaya "Batal Import" tahu persis item mana milik
+// baris mana di faktur yang mungkin gabungan lintas-batch).
+export type PurchaseInvoiceGroupResult = {
+  invoiceId: number;
+  rows: { rowId: string; detailItemId: number }[];
+};
+
 // § Fase 06, ADR-0011 — proses 1 GRUP baris Excel (1 Faktur Pembelian,
 // bisa banyak detailItem) jadi 1 faktur di Accurate. Vendor dicari/dibuat
 // SEKALI per grup (dari baris pertama — sudah divalidasi semua baris grup
@@ -62,7 +71,7 @@ export async function processPurchaseInvoiceGroup(
   ctx: AccurateSessionContext,
   group: PurchaseInvoiceGroup,
   columnMapping: Record<string, string>,
-): Promise<PurchaseInvoiceSaveResult> {
+): Promise<PurchaseInvoiceGroupResult> {
   const mismatchError = validateGroupVendorConsistency(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
 
@@ -82,7 +91,14 @@ export async function processPurchaseInvoiceGroup(
     await findOrCreateItem(ctx, detailItem, extractItemCreateFields(rawRow, columnMapping));
   }
 
-  return savePurchaseInvoice(ctx, payload);
+  // § Fase 09 — `result.detailItem[]` urutannya SAMA dengan `payload.detailItem`
+  // yang dikirim (= `rawRows` = `group.rows`, DIKONFIRMASI test call nyata
+  // 2026-08-28, § ADR-0013) — index-match langsung, tidak perlu matching by value.
+  const result = await savePurchaseInvoice(ctx, payload);
+  return {
+    invoiceId: result.id,
+    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: result.detailItem[i]!.id })),
+  };
 }
 
 // Ambil nilai kolom yang di-mapping ke "itemNo" dari 1 baris mentah —
@@ -138,7 +154,7 @@ export async function appendToExistingPurchaseInvoice(
   existingId: number,
   group: PurchaseInvoiceGroup,
   columnMapping: Record<string, string>,
-): Promise<PurchaseInvoiceSaveResult> {
+): Promise<PurchaseInvoiceGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
   const vendorNo = String(buildPurchaseInvoicePayload(rawRows, columnMapping).vendorNo ?? "");
 
@@ -157,29 +173,35 @@ export async function appendToExistingPurchaseInvoice(
     );
   }
 
-  const isDuplicateItem = (candidate: Record<string, unknown>) =>
-    detail.detailItem.some(
+  const findDuplicateItem = (candidate: Record<string, unknown>) =>
+    detail.detailItem.find(
       (existing) =>
         existing.itemNo === String(candidate.itemNo ?? "") &&
         existing.unitPrice === Number(candidate.unitPrice ?? 0) &&
         existing.quantity === Number(candidate.quantity ?? 0),
     );
 
-  // § Duplicate-guard — skip baris yang item-nya SUDAH ADA persis
-  // (itemNo+unitPrice+quantity sama) di faktur existing. Mencegah dobel
-  // kalau retry diklik berkali-kali, atau item itu sudah pernah ke-append
-  // sebelumnya (kasus nyata: row 2 batch `8b622538`).
-  const newRows: { rawRow: Record<string, unknown>; detailItem: Record<string, unknown> }[] = [];
-  for (const rawRow of rawRows) {
-    const detailItem = buildDetailItemFromRow(rawRow, columnMapping);
-    if (!isDuplicateItem(detailItem)) newRows.push({ rawRow, detailItem });
-  }
+  // § Duplicate-guard — baris yang item-nya SUDAH ADA persis
+  // (itemNo+unitPrice+quantity sama) di faktur existing di-skip dari
+  // save.do (mencegah dobel kalau retry diklik berkali-kali, atau item
+  // itu sudah pernah ke-append sebelumnya — kasus nyata: row 2 batch
+  // `8b622538`), TAPI tetap dilacak `detailItemId`-nya (§ Fase 09,
+  // ADR-0013 — dari item existing yang match, bukan NULL) supaya "Batal
+  // Import" tetap bisa mengenali baris ini nanti.
+  const perRow = group.rows.map((row, i) => {
+    const detailItem = buildDetailItemFromRow(rawRows[i]!, columnMapping);
+    return { row, rawRow: rawRows[i]!, detailItem, existingMatch: findDuplicateItem(detailItem) };
+  });
+  const newRows = perRow.filter((r) => !r.existingMatch);
 
   if (newRows.length === 0) {
     // § idempotent — semua item baris ini sudah ada di faktur existing,
     // dianggap sukses TANPA panggil save.do lagi (hemat API call & rate
     // limit, § architecture-accurate-integration.md § 4).
-    return { id: existingId, number: detail.detailItem.length > 0 ? String(existingId) : "" };
+    return {
+      invoiceId: existingId,
+      rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: r.existingMatch!.id })),
+    };
   }
 
   // § findOrCreateVendor SENGAJA DILEWATI di jalur ini — vendor sudah
@@ -193,10 +215,26 @@ export async function appendToExistingPurchaseInvoice(
     await findOrCreateItem(ctx, itemNo, extractItemCreateFields(rawRow, columnMapping));
   }
 
-  return savePurchaseInvoice(ctx, {
+  const result = await savePurchaseInvoice(ctx, {
     id: existingId,
     detailItem: [...detail.detailItem.map((it) => ({ id: it.id })), ...newRows.map((r) => r.detailItem)],
   });
+
+  // § Fase 09 — tail `result.detailItem` (N elemen terakhir, N =
+  // newRows.length) urutannya SAMA dengan `newRows` yang dikirim
+  // (existing items dikirim duluan, baru yang baru — DIKONFIRMASI test
+  // call nyata Fase 09, § ADR-0013).
+  const newIds = result.detailItem.slice(-newRows.length);
+  const detailItemIdByRowId = new Map<string, number>();
+  newRows.forEach((r, i) => detailItemIdByRowId.set(r.row.id, newIds[i]!.id));
+  for (const r of perRow) {
+    if (r.existingMatch) detailItemIdByRowId.set(r.row.id, r.existingMatch.id);
+  }
+
+  return {
+    invoiceId: result.id,
+    rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: detailItemIdByRowId.get(r.row.id)! })),
+  };
 }
 
 async function main() {
@@ -352,10 +390,23 @@ async function main() {
           const result = existingId
             ? await appendToExistingPurchaseInvoice(session, existingId, group, columnMapping)
             : await processPurchaseInvoiceGroup(session, group, columnMapping);
-          await db
-            .update(importBatchRows)
-            .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null, processedAt: new Date() })
-            .where(inArray(importBatchRows.id, rowIds));
+          // § Fase 09, ADR-0013 — update PER BARIS (bukan bulk inArray
+          // seperti sebelumnya) supaya tiap baris dapat
+          // `accurateDetailItemId` MASING-MASING (beda per baris dalam 1
+          // grup) — WAJIB buat "Batal Import" nanti bisa susutkan faktur
+          // per-item, bukan cuma tebak.
+          for (const r of result.rows) {
+            await db
+              .update(importBatchRows)
+              .set({
+                status: "success",
+                accurateTransactionId: String(result.invoiceId),
+                accurateDetailItemId: String(r.detailItemId),
+                errorMessage: null,
+                processedAt: new Date(),
+              })
+              .where(eq(importBatchRows.id, r.rowId));
+          }
         } catch (err) {
           await db
             .update(importBatchRows)
@@ -393,6 +444,146 @@ async function main() {
       .where(eq(importBatches.id, batch.id));
 
     logger.info({ batchId, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length }, "Import batch selesai");
+  });
+
+  // § Fase 09, ADR-0013 — "Batal Import". Per faktur yang pernah disentuh
+  // batch ini: kalau faktur itu 100% milik batch ini → hapus UTUH
+  // (`deletePurchaseInvoice`); kalau gabungan lintas-batch (Fase 08
+  // append) → SUSUTKAN (save.do update, sisakan item milik batch lain);
+  // kalau ADA baris (batch manapun) tanpa `accurateDetailItemId`
+  // tercatat → BLOKIR faktur itu (aman, bukan tebak). Kegagalan 1 faktur
+  // TIDAK menggagalkan seluruh job — lanjut ke faktur berikutnya, batch
+  // berakhir `cancelled_partial`.
+  await boss.work<{ batchId: string; actorId: string }>(JOBS.CANCEL_IMPORT, async ([job]) => {
+    if (!job) return;
+    const { batchId, actorId } = job.data;
+
+    const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, batchId));
+    if (!batch) {
+      logger.error({ batchId }, "Cancel import: batch tidak ditemukan, skip job");
+      return;
+    }
+    if (batch.status !== "cancelling") {
+      logger.error({ batchId, status: batch.status }, "Cancel import: batch tidak dalam status cancelling, skip job");
+      return;
+    }
+
+    const [connection] = await db
+      .select()
+      .from(accurateConnections)
+      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+
+    if (!connection || !connection.accurateDbId) {
+      logger.error({ batchId }, "Cancel import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
+      return; // status batch TETAP "cancelling" — bukan ditandai gagal permanen, user bisa coba lagi
+    }
+
+    let session;
+    try {
+      session = await openAccurateSession(connection);
+    } catch (err) {
+      logger.error({ err, batchId }, "Cancel import gagal: tidak bisa buka sesi Data Usaha Accurate");
+      Sentry.captureException(err);
+      return;
+    }
+
+    const successRows = await db
+      .select()
+      .from(importBatchRows)
+      .where(and(eq(importBatchRows.batchId, batch.id), eq(importBatchRows.status, "success")));
+
+    const byInvoice = new Map<string, typeof successRows>();
+    for (const row of successRows) {
+      if (!row.accurateTransactionId) continue;
+      const list = byInvoice.get(row.accurateTransactionId) ?? [];
+      list.push(row);
+      byInvoice.set(row.accurateTransactionId, list);
+    }
+
+    const summary = { deleted: [] as string[], shrunk: [] as string[], blocked: [] as string[], failed: [] as string[] };
+
+    for (const [invoiceIdStr, thisBatchRows] of byInvoice) {
+      const invoiceId = Number(invoiceIdStr);
+      if (!Number.isFinite(invoiceId)) continue;
+
+      // § ADR-0013 Decision #1 — eligibility check LINTAS-BATCH: semua
+      // baris (batch manapun, subscription sama) yang pernah tercatat
+      // terhubung ke faktur ini WAJIB punya `accurateDetailItemId`. Kalau
+      // ada satu saja yang NULL (baris lama, sebelum Fase 09) → blokir,
+      // jangan tebak.
+      const allRowsForInvoice = await db
+        .select({
+          id: importBatchRows.id,
+          batchId: importBatchRows.batchId,
+          accurateDetailItemId: importBatchRows.accurateDetailItemId,
+        })
+        .from(importBatchRows)
+        .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
+        .where(
+          and(
+            eq(importBatches.subscriptionId, batch.subscriptionId),
+            eq(importBatchRows.accurateTransactionId, invoiceIdStr),
+            eq(importBatchRows.status, "success"),
+          ),
+        );
+
+      if (allRowsForInvoice.some((r) => !r.accurateDetailItemId)) {
+        summary.blocked.push(invoiceIdStr);
+        continue;
+      }
+
+      const otherBatchRows = allRowsForInvoice.filter((r) => r.batchId !== batch.id);
+      const thisBatchDetailItemIds = new Set(thisBatchRows.map((r) => r.accurateDetailItemId!));
+
+      try {
+        if (otherBatchRows.length === 0) {
+          // § faktur 100% milik batch ini — hapus utuh.
+          await deletePurchaseInvoice(session, invoiceId);
+        } else {
+          // § faktur gabungan lintas-batch (Fase 08) — susutkan: kirim
+          // ulang detailItem TANPA item milik batch ini, sisakan punya
+          // batch lain. Fetch fresh (bukan asumsi state lama), pola sama
+          // `appendToExistingPurchaseInvoice` (Fase 08), arah kebalikan.
+          const detail = await getPurchaseInvoiceDetail(session, invoiceId);
+          const keep = detail.detailItem
+            .filter((it) => !thisBatchDetailItemIds.has(String(it.id)))
+            .map((it) => ({ id: it.id }));
+          await savePurchaseInvoice(session, { id: invoiceId, detailItem: keep });
+        }
+
+        await db
+          .update(importBatchRows)
+          .set({ status: "cancelled", cancelledAt: new Date() })
+          .where(
+            inArray(
+              importBatchRows.id,
+              thisBatchRows.map((r) => r.id),
+            ),
+          );
+        (otherBatchRows.length === 0 ? summary.deleted : summary.shrunk).push(invoiceIdStr);
+      } catch (err) {
+        // § faktur mungkin sudah "dipakai" downstream (dibayar/
+        // direferensikan transaksi lain) — Accurate bisa menolak. TIDAK
+        // abort seluruh job, baris batch ini TETAP "success" (tidak
+        // diubah), lanjut ke faktur berikutnya.
+        logger.error({ err, batchId, invoiceId }, "Cancel import: gagal membatalkan 1 faktur, lanjut ke faktur berikutnya");
+        summary.failed.push(invoiceIdStr);
+      }
+    }
+
+    await db.insert(auditLogs).values({
+      entityType: "import_batch",
+      entityId: batch.id,
+      action: "delete",
+      changes: summary,
+      actorId,
+    });
+
+    const successCount = summary.deleted.length + summary.shrunk.length;
+    const finalStatus = successCount === byInvoice.size ? "cancelled" : "cancelled_partial";
+    await db.update(importBatches).set({ status: finalStatus, completedAt: new Date() }).where(eq(importBatches.id, batch.id));
+
+    logger.info({ batchId, summary, finalStatus }, "Cancel import selesai");
   });
 
   logger.info("apps/api worker started");

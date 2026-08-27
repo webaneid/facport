@@ -1,9 +1,10 @@
 import { Elysia, t } from "elysia";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count } from "drizzle-orm";
 import { db } from "../lib/db";
 import { importBatches, importBatchRows } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
+import { boss, JOBS } from "../lib/queue";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
 import {
   purchaseInvoiceMapping,
@@ -12,7 +13,6 @@ import {
   type PurchaseInvoiceField,
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
-import { boss, JOBS } from "../lib/queue";
 
 // § architecture-security.md §8 — validasi tipe + ukuran di schema layer,
 // SEBELUM body di-buffer penuh (pola sama media.route.ts).
@@ -78,18 +78,24 @@ export const purchaseInvoiceImportRoute = new Elysia()
     "/purchase-invoice/import",
     async ({ subscription, query }) => {
       const limit = query.limit ?? 10;
-      const batches = await db
-        .select()
-        .from(importBatches)
-        .where(and(eq(importBatches.subscriptionId, subscription.id), eq(importBatches.module, "purchase_invoice")))
-        .orderBy(desc(importBatches.createdAt))
-        .limit(limit);
-      return { batches };
+      const offset = query.offset ?? 0;
+      const where = and(eq(importBatches.subscriptionId, subscription.id), eq(importBatches.module, "purchase_invoice"));
+      // § Fase 09 — `offset` ditambah buat halaman arsip (paginated),
+      // dashboard tetap pakai `limit` saja (offset default 0, behavior
+      // TIDAK berubah buat caller lama).
+      const [batches, totalRows] = await Promise.all([
+        db.select().from(importBatches).where(where).orderBy(desc(importBatches.createdAt)).limit(limit).offset(offset),
+        db.select({ total: count() }).from(importBatches).where(where),
+      ]);
+      return { batches, total: totalRows[0]?.total ?? 0 };
     },
     {
       permission: "import.create",
       moduleAccess: "pembelian",
-      query: t.Object({ limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })) }),
+      query: t.Object({
+        limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
+        offset: t.Optional(t.Numeric({ minimum: 0 })),
+      }),
     },
   )
   .post(
@@ -234,6 +240,33 @@ export const purchaseInvoiceImportRoute = new Elysia()
         .where(eq(importBatches.id, batch.id));
       await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
+    },
+    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+  )
+  // § Fase 09, ADR-0013 — "Batal Import": hapus/susutkan transaksi
+  // terkait dari Accurate (bukan cuma tandai lokal). Pola ownership check
+  // IDENTIK retry di atas. Cuma batch yang sudah SELESAI diproses yang
+  // boleh dibatalkan (bukan sedang diproses/belum dikonfirmasi/sudah
+  // dibatalkan) — mencegah race dengan job import/retry/cancel lain yang
+  // masih jalan untuk batch yang sama.
+  .post(
+    "/purchase-invoice/import/:batchId/cancel",
+    async ({ params, user, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+        set.status = 409;
+        return { code: "BATCH_NOT_CANCELLABLE" };
+      }
+      await db
+        .update(importBatches)
+        .set({ status: "cancelling", completedAt: null })
+        .where(eq(importBatches.id, batch.id));
+      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   );

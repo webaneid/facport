@@ -350,6 +350,34 @@ per item, lihat ADR-0012); kalau tidak, jalur CREATE seperti biasa (Fase
 06, tidak berubah). Tidak ada tombol/endpoint baru — logic ada di worker.
 Detail lengkap → ADR-0012 dan `docs/phases/phase-08-purchase-invoice-update-existing.md`.
 
+### Purchase Invoice — Batal Import / Hapus Faktur (Fase 09) ✅ VERIFIED 2026-08-28
+"Batal Import" menghapus/melepas transaksi Accurate yang dibuat oleh 1
+batch import — BUKAN cuma menyembunyikan record lokal. **Dikonfirmasi
+EMPIRIS** (create test invoice → hapus lagi, Data Usaha "PT Frozen
+Food"):
+- `purchase-invoice/delete.do` (`HTTP DELETE`, scope
+  `purchase_invoice_delete`) terima SATU `id` (Long) atau `number`
+  (String) per panggilan — BUKAN bulk. Menghapus SELURUH faktur (semua
+  `detailItem`), tidak ada mode hapus sebagian. Envelope respons `{s,
+  d}` (BUKAN `parseAccurateSaveEnvelope` — tidak ada field `r`, beda dari
+  `save.do`). Dikonfirmasi BENAR-BENAR menghapus (bukan soft-delete):
+  `detail.do` sesudahnya balas `{s:false, d:["Faktur Pembelian tidak
+  tepat"]}`.
+- `save.do` respons CREATE (`r`) **mengandung `detailItem[].id`** per
+  item (dikonfirmasi test nyata: item baru dapat `id` sendiri, terpisah
+  dari `id` faktur) — fondasi tracking per-item yang dipakai fase ini.
+
+**Masalah yang diselesaikan**: sejak Fase 08, 1 faktur bisa berisi item
+dari BEBERAPA batch (append lintas-batch) — `delete.do` polos bisa
+menghapus data batch LAIN yang menumpang di faktur yang sama. Solusi:
+cek dulu lintas-batch siapa saja pemilik faktur itu — kalau murni 1 batch
+→ `delete.do` (hapus utuh); kalau gabungan → `save.do` mode UPDATE
+(mekanisme sama Fase 08, arah kebalikan: kirim `detailItem[]` cuma berisi
+item milik batch LAIN yang dipertahankan). Baris lama tanpa tracking
+id-per-item (`accurateDetailItemId` NULL) diblokir dari auto-cancel
+(aman, bukan tebak-tebakan). Detail lengkap keputusan → ADR-0013,
+eksekusi → `docs/phases/phase-09-batal-import.md`.
+
 ### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
 Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
 otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error
