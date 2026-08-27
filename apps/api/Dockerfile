@@ -16,7 +16,7 @@ RUN bun install --frozen-lockfile
 # Baru copy source code apps/api (bukan seluruh repo — .dockerignore
 # juga bantu exclude docs/.claude di level ini)
 COPY apps/api ./apps/api
-RUN cd apps/api && bun run build
+RUN cd apps/api && bun run build && bun run build:worker
 
 # ---- Stage production: image final yang jalan di server ----
 # CATATAN PENTING (ditemukan 2026-08-27, deploy nyata pertama kali): WORKDIR

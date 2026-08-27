@@ -32,6 +32,27 @@ services:
     mem_limit: 512m
     cpus: 0.75
 
+  # Proses TERPISAH dari "api" — pg-boss (job queue: import Excel→Accurate,
+  # email, refresh token Accurate, expire subscription) diproses DI SINI,
+  # BUKAN di container "api" (§ apps/api/CLAUDE.md "workers/ ← proses
+  # terpisah dari index.ts"). Ketemu 2026-08-27: service ini KELEWAT dari
+  # docker-compose.prod.yml sejak awal — job import Excel numpuk status
+  # "processing" selamanya di server manapun yang pakai file ini, karena
+  # tidak ada proses apa pun yang konsumsi queue-nya. Image SAMA dengan
+  # "api" (dist/worker.js juga di-build di Dockerfile yang sama), cuma
+  # command override.
+  worker:
+    image: ghcr.io/${GITHUB_REPO}/api:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    env_file: .env.production
+    command: ["bun", "run", "dist/worker.js"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [internal]
+    mem_limit: 384m
+    cpus: 0.5
+
   web:
     image: ghcr.io/${GITHUB_REPO}/web:${IMAGE_TAG:-latest}
     restart: unless-stopped

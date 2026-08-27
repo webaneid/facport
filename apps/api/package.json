@@ -8,6 +8,7 @@
     "start": "bun run src/index.ts",
     "start:worker": "bun run src/workers/index.ts",
     "build": "bun build ./src/index.ts --outdir ./dist --target bun --external sharp",
+    "build:worker": "bun build ./src/workers/index.ts --outfile ./dist/worker.js --target bun --external sharp",
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "db:generate": "drizzle-kit generate",
