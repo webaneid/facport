@@ -6,6 +6,67 @@
 
 ---
 
+## 2026-08-28 — CI auto-deploy (`deploy-to-server`) TIDAK PERNAH benar-benar jalan sejak awal — secret SSH kosong
+**Masalah:** Ketemu saat verifikasi nyata Fase 08 — push ke `main` selalu
+menghasilkan Release sukses + `build-and-push` sukses (image ke GHCR), tapi
+job `deploy-to-server` (SSH ke VPS, `docker compose pull && up -d`) SELALU
+gagal dengan `error: missing server host` dari `appleboy/ssh-action`.
+Karena `build-and-push` selalu sukses dan overall run summary GitHub
+kadang tampil ambigu, ini tidak ketahuan sampai sengaja dicek satu-satu
+step-nya. Setiap "deploy" yang benar-benar sampai ke server `ane.web.id`
+sepanjang project ini (Fase 02 s.d. 08) **dilakukan MANUAL lewat SSH
+langsung**, BUKAN lewat pipeline CI — pipeline-nya cuma push image ke GHCR
+lalu berhenti.
+
+**Root cause:** `gh secret list` di repo `webaneid/facport` mengembalikan
+KOSONG — secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` yang dibaca
+`.github/workflows/deploy.yml` job `deploy-to-server` tidak pernah diisi
+sejak repo dibuat. Komentar di `deploy.yml` sendiri SUDAH mengantisipasi
+ini ("Kalau secrets ... belum diisi ... step ini gagal — TIDAK apa-apa,
+image di job sebelumnya tetap sudah ter-push ke GHCR") tapi tidak ada
+alert/notifikasi yang bikin ini kepergok lebih awal — kelas bug yang SAMA
+dengan 2 temuan sebelumnya (`deploy.yml` tidak ke-trigger 2026-08-26,
+service `worker` tidak pernah ada di compose 2026-08-28): sesuatu yang
+"ada di kode/config tapi belum pernah benar-benar tervalidasi jalan di
+lingkungan nyata" luput karena setiap langkah SEBELUMNYA (release,
+build-and-push) selalu sukses dan terlihat cukup meyakinkan.
+
+**Fix (saat ini):** BELUM diisi (butuh keputusan user — isi secret GitHub
+Actions perlu private key SSH server, sengaja tidak dilakukan sepihak).
+Workaround yang dipakai tiap kali fase baru butuh deploy nyata: manual
+`ssh wasugi@76.13.18.136`, `docker compose -f docker-compose.prod.yml -f
+docker-compose.override.yml --env-file .env.production --env-file
+.env.deploy pull/up -d` dengan `IMAGE_TAG` versi yang baru dirilis (lihat
+`git tag`/commit `chore(release): x.x.x`).
+
+**Insiden turunan saat workaround manual (2026-08-28)**: `docker compose
+up -d` PERTAMA dijalankan cuma dengan `-f docker-compose.prod.yml` (lupa
+`-f docker-compose.override.yml`) — Compose HANYA auto-merge
+`docker-compose.override.yml` kalau nama file compose utama default
+(`docker-compose.yml`), begitu `-f` dipakai eksplisit, override HARUS
+ikut di-`-f` eksplisit juga, TIDAK otomatis. Akibatnya container `web`/`api`
+naik TANPA port mapping ke `127.0.0.1:3020`/`3021` sama sekali (`docker
+port` kosong), nginx dapat 502 selama beberapa menit sampai ketahuan &
+diperbaiki (`ss -tlnp` konfirmasi tidak ada yang listen di port itu).
+
+**Pencegahan:**
+1. Isi secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` di GitHub
+   Actions kalau auto-deploy CI memang mau benar-benar dipakai — perlu
+   keputusan eksplisit user dulu (generate/pilih SSH key mana yang dipakai
+   khusus deploy, idealnya BUKAN key personal yang sama dipakai login
+   manual).
+2. SELALU pakai kedua `-f` file (`docker-compose.prod.yml` DAN
+   `docker-compose.override.yml`) untuk SEMUA operasi `docker compose`
+   manual di server ini — pertimbangkan bikin alias/script kecil di server
+   (`/opt/app/deploy.sh`) yang membungkus command lengkap supaya tidak
+   ketinggalan flag lagi.
+3. Setelah deploy manual apa pun, WAJIB curl `127.0.0.1:3020`/`3021` DAN
+   domain publik sebelum menganggap deploy selesai — jangan cuma percaya
+   `docker ps` status "healthy" (healthcheck internal container bisa OK
+   walau port EXTERNAL tidak ke-mapping sama sekali).
+
+---
+
 ## 2026-08-28 — Service `worker` (pg-boss) TIDAK PERNAH ada di `docker-compose.prod.yml`/`.staging.yml`
 **Masalah:** Batch import Faktur Pembelian permanen nyangkut status
 "processing" di server `ane.web.id` — halaman detail batch

@@ -16,7 +16,7 @@
 | 05   | Purchase Invoice — Auto-create Vendor & Item | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)", § 3 | `docs/phases/phase-05-purchase-invoice-auto-create.md` |
 | 06   | Purchase Invoice — Multi-Item per Faktur | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
-| 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
+| 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -206,6 +206,16 @@ Food") MENGKONFIRMASI `purchase-invoice/save.do` mendukung mode
 UPDATE/append (kirim `id` faktur + `detailItem[]` berisi item lama via
 `id` + item baru tanpa `id`) — mengoreksi klaim ADR-0011 yang bilang ini
 tidak didukung. Detail lengkap → ADR-0012,
-`docs/phases/phase-08-purchase-invoice-update-existing.md`. Status:
-`In Progress`, sisi kode sedang dikerjakan, menunggu verifikasi nyata
-setelah deploy.
+`docs/phases/phase-08-purchase-invoice-update-existing.md`.
+
+**Fase 08 Done 2026-08-28** — diverifikasi PENUH: retry batch `8b622538`
+(akun `user1@fasport.com`) via tombol Retry sungguhan → 6/6 baris
+`success`, 0 gagal. Dikonfirmasi ULANG langsung ke Accurate (`detail.do`
+fresh, bukan cuma status DB lokal): faktur #200 dan #250 masing-masing
+`detailItem` NAIK dari 1 jadi 2. 1 bug ditemukan & diperbaiki SAAT
+verifikasi (field `vendor.no` seharusnya `vendor.vendorNo` — dikonfirmasi
+dari raw JSON nyata, bukan asumsi). Gap operasional besar juga ketemu di
+proses ini: CI auto-deploy TIDAK PERNAH benar-benar jalan sejak awal
+(secret SSH server tidak pernah diisi) — detail lengkap →
+`docs/lessons-learned.md` entri 2026-08-28 "CI auto-deploy tidak pernah
+jalan...".
