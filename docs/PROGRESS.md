@@ -14,7 +14,7 @@
 | 03   | Dashboard Pelanggan (App Shell + halaman utama) | Done | `docs/architecture/architecture-app-dashboard.md` | `docs/phases/phase-03-dashboard-pelanggan.md` |
 | 04   | Import Data Pemasok (update Akun Hutang) | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)" | `docs/phases/phase-04-import-vendor.md` |
 | 05   | Purchase Invoice — Auto-create Vendor & Item | Done | `docs/architecture/architecture-accurate-integration.md` § "Vendor (Data Master)", § 3 | `docs/phases/phase-05-purchase-invoice-auto-create.md` |
-| 06   | Purchase Invoice — Multi-Item per Faktur | Planned | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
+| 06   | Purchase Invoice — Multi-Item per Faktur | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
@@ -172,3 +172,11 @@ masukan client, diprioritaskan bareng user:
 
 Urutan eksekusi: Fase 06 dulu (dampak terbesar, benerin bug demo), baru
 Fase 07, baru "Batal Import" (kalau/setelah di-scope resmi jadi fase).
+
+**Fase 06 — sisi kode selesai 2026-08-28** (status TETAP `In Progress`,
+BUKAN `Done` — menunggu verifikasi Accurate nyata setelah deploy, sesuai
+standar project Fase 02/05). Baris Excel Bill No sama dikelompokkan jadi 1
+faktur multi-item — akar penyebab error demo 2026-08-27 diperbaiki di
+level desain. 9 unit test baru lolos, full suite 48/48, typecheck 0 error,
+security review 0 temuan. Detail lengkap →
+`docs/phases/phase-06-purchase-invoice-multi-item.md` § Ringkasan Hasil.
