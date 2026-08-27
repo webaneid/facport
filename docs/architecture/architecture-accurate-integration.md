@@ -310,6 +310,32 @@ sekali (tidak pernah update data existing). Detail lengkap (field, fungsi
 `findOrCreateVendor`/`findOrCreateItem`, keputusan desain) →
 `docs/phases/phase-05-purchase-invoice-auto-create.md`.
 
+### Purchase Invoice — Multi-Item per Faktur (Fase 06) 🆕 DIRENCANAKAN 2026-08-28
+Client feedback pasca-presentasi: 1 faktur pembelian nyata sering punya
+banyak barang, tapi Fase 02 sengaja di-scope "1 baris Excel = 1 faktur =
+TEPAT 1 `detailItem`" (Known Limitation eksplisit). Baris Excel sekarang
+dikelompokkan berdasarkan kolom **"Bill No"** (`billNumber`) — baris
+dengan Bill No sama digabung jadi 1 payload `save.do` dengan `detailItem[]`
+banyak elemen, bukan dikirim sebagai faktur terpisah. Baris dengan Bill No
+kosong tetap 1 grup isi 1 baris (non-breaking untuk user existing). Field
+header (`transDate`, `vendorNo`, dst) diambil dari baris pertama tiap
+grup; semua baris dalam grup WAJIB `vendorNo` sama (validasi sebelum
+kirim). Hasil (`accurateTransactionId`/status) di-apply ke semua baris
+`import_batch_rows` anggota grup yang sama, tanpa kolom DB baru. Rasional
+lengkap (kenapa Bill No, bukan kolom baru/Trans No, dan trade-off retry
+per-grup) → `docs/decisions/adr-0011-purchase-invoice-multi-item.md`.
+Detail eksekusi → `docs/phases/phase-06-purchase-invoice-multi-item.md`.
+
+### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
+Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
+otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error
+"tidak ditemukan") sebelum Faktur Pembelian dibuat — pakai field OPSIONAL
+tambahan (kategori, telepon, WhatsApp, email, alamat, negara, Akun Hutang
+untuk vendor baru). Kalau vendor/item SUDAH ada, field ini diabaikan sama
+sekali (tidak pernah update data existing). Detail lengkap (field, fungsi
+`findOrCreateVendor`/`findOrCreateItem`, keputusan desain) →
+`docs/phases/phase-05-purchase-invoice-auto-create.md`.
+
 ### Purchase Invoice (Faktur Pembelian) — ✅ VERIFIED 2026-08-19
 Sumber: snapshot lokal `api-docs.do` (§ "Dokumentasi Resmi" di atas), bukan
 tebakan. Endpoint tersedia (semua di bawah `/api/purchase-invoice`, host
