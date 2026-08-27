@@ -14,9 +14,10 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
 
 // § architecture-accurate-integration.md § 3, § phase-02 doc — upload
-// Excel Purchase Invoice → cocokkan kolom → konfirmasi. 1 baris Excel = 1
-// Faktur Pembelian dengan 1 detailItem (Known Limitation, belum dukung
-// multi-item per baris).
+// Excel Purchase Invoice → cocokkan kolom → konfirmasi. § Fase 06,
+// ADR-0011 — baris dengan "Nomor Referensi Tagihan Pemasok" (billNumber)
+// SAMA digabung jadi 1 Faktur Pembelian multi-item, bukan lagi selalu
+// 1 baris = 1 faktur.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "vendorNo", label: "Nomor Pemasok (wajib)" },
@@ -28,7 +29,7 @@ const ACCURATE_FIELDS = [
   { value: "warehouseName", label: "Gudang (wajib)" },
   { value: "branchName", label: "Nama Cabang (wajib kalau akun multi-cabang)" },
   { value: "number", label: "Nomor Transaksi (kosongkan = auto)" },
-  { value: "billNumber", label: "Nomor Referensi Tagihan Pemasok" },
+  { value: "billNumber", label: "Nomor Referensi Tagihan Pemasok (isi sama untuk gabung jadi 1 faktur)" },
   { value: "description", label: "Keterangan" },
   { value: "currencyCode", label: "Kode Mata Uang" },
   { value: "rate", label: "Nilai Tukar" },
@@ -226,6 +227,10 @@ export default function PurchaseInvoiceImportPage() {
                   ))}
                 </TableBody>
               </Table>
+              <p className="text-xs text-muted-foreground">
+                💡 Baris dengan <strong>Nomor Referensi Tagihan Pemasok</strong> yang SAMA akan digabung jadi 1 faktur
+                (banyak barang) — pastikan tiap faktur yang berbeda pakai nomor yang berbeda juga.
+              </p>
               <Button type="submit" disabled={confirming} className="self-start">
                 {confirming ? "Memulai import..." : "Mulai Import"}
               </Button>

@@ -13,7 +13,7 @@ const BOOLEAN_FORMAT = "TRUE atau FALSE";
 
 export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Pembelian." },
-  { column: "Bill No", required: false, example: "INV-VENDOR-001", description: "Nomor referensi tagihan dari vendor (beda dari nomor transaksi Accurate)." },
+  { column: "Bill No", required: false, example: "INV-VENDOR-001", description: "Nomor referensi tagihan dari vendor (beda dari nomor transaksi Accurate). PENTING: isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur dengan banyak barang (multi-item) — baris dengan Bill No kosong tetap dianggap 1 faktur sendiri." },
   { column: "Vendor No", required: true, example: "V-0001", description: "Nomor/kode vendor PERSIS seperti terdaftar di Accurate Online." },
   { column: "Trans No", required: false, example: "", description: "Nomor transaksi Accurate — kosongkan supaya nomor otomatis (disarankan)." },
   { column: "Branch Name", required: false, example: "Cabang Jakarta", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
