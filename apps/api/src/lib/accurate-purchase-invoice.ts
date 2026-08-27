@@ -42,8 +42,13 @@ export async function savePurchaseInvoice(
 // (object bersarang), BUKAN `detailItem[].itemNo` langsung — dikonfirmasi
 // via test call nyata 2026-08-28 (ADR-0012). Dinormalisasi di sini supaya
 // caller tidak perlu tahu bentuk mentah Accurate.
+// § koreksi 2026-08-28 — field vendor asli adalah `vendor.vendorNo`, BUKAN
+// `vendor.no` (yang tidak pernah ada di response, bikin safety check
+// vendor-match di `appendToExistingPurchaseInvoice` selalu gagal dengan
+// vendor "" kosong). Dikonfirmasi via inspeksi raw JSON nyata faktur #150
+// (Data Usaha "PT Frozen Food") 2026-08-28.
 type RawPurchaseInvoiceDetail = {
-  vendor?: { no?: string };
+  vendor?: { vendorNo?: string };
   detailItem?: { id: number; unitPrice?: number; quantity?: number; item?: { no?: string } }[];
 };
 
@@ -62,7 +67,7 @@ export async function getPurchaseInvoiceDetail(ctx: AccurateSessionContext, id: 
     });
     const raw = await parseAccurateEnvelope<RawPurchaseInvoiceDetail>(res);
     return {
-      vendor: { no: raw.vendor?.no ?? "" },
+      vendor: { no: raw.vendor?.vendorNo ?? "" },
       detailItem: (raw.detailItem ?? []).map((it) => ({
         id: it.id,
         itemNo: it.item?.no ?? "",
