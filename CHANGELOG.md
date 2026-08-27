@@ -1,3 +1,7 @@
+## <small>1.5.1 (2026-08-27)</small>
+
+* fix: field vendor.vendorNo (bukan vendor.no) di getPurchaseInvoiceDetail ([00bb9fb](https://github.com/webaneid/facport/commit/00bb9fb))
+
 ## 1.5.0 (2026-08-27)
 
 * feat: Fase 08 — Retry Cerdas, update faktur existing (append item) ([8128049](https://github.com/webaneid/facport/commit/8128049))
