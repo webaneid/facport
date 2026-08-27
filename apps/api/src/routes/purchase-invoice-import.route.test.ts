@@ -84,7 +84,10 @@ describe("GET /purchase-invoice/import/template", () => {
 
 describe("POST /purchase-invoice/import/upload", () => {
   test("401 kalau tidak login (dengan file .xlsx asli, supaya bukan gagal validasi t.File duluan)", async () => {
-    const buffer = generateTemplateBuffer(["Vendor No", "Item No"]);
+    const buffer = generateTemplateBuffer([
+      { column: "Vendor No", required: true, example: "V-0001", description: "test" },
+      { column: "Item No", required: true, example: "BRG-001", description: "test" },
+    ]);
     const form = new FormData();
     form.append(
       "file",

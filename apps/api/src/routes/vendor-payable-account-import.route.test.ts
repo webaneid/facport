@@ -81,7 +81,10 @@ describe("GET /vendor/payable-account/import/template", () => {
 
 describe("POST /vendor/payable-account/import/upload", () => {
   test("401 kalau tidak login (dengan file .xlsx asli, supaya bukan gagal validasi t.File duluan)", async () => {
-    const buffer = generateTemplateBuffer(["Vendor No", "Akun Hutang"]);
+    const buffer = generateTemplateBuffer([
+      { column: "Vendor No", required: true, example: "V-0001", description: "test" },
+      { column: "Akun Hutang", required: true, example: "2-10100", description: "test" },
+    ]);
     const form = new FormData();
     form.append(
       "file",

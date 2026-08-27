@@ -11,6 +11,7 @@ import {
   itemAutoCreateMapping,
   type PurchaseInvoiceField,
 } from "../lib/import-mapping/purchase-invoice.mapping";
+import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 
 // § architecture-security.md §8 — validasi tipe + ukuran di schema layer,
@@ -63,7 +64,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
   .get(
     "/purchase-invoice/import/template",
     () => {
-      const buffer = generateTemplateBuffer(ALL_DEFAULT_COLUMN_MAPS.flatMap((map) => Object.keys(map)));
+      const buffer = generateTemplateBuffer(purchaseInvoiceTemplateGuide);
       return new Response(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

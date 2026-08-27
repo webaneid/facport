@@ -6,6 +6,7 @@ import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
 import { vendorPayableAccountMapping } from "../lib/import-mapping/vendor-payable-account.mapping";
+import { vendorPayableAccountTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 
 // § architecture-security.md §8, pola sama purchase-invoice-import.route.ts
@@ -41,7 +42,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
   .get(
     "/vendor/payable-account/import/template",
     () => {
-      const buffer = generateTemplateBuffer(Object.keys(vendorPayableAccountMapping.defaultColumnMap));
+      const buffer = generateTemplateBuffer(vendorPayableAccountTemplateGuide);
       return new Response(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
