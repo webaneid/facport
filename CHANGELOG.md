@@ -1,3 +1,8 @@
+## 1.2.0 (2026-08-27)
+
+* feat(import): pakai template-guide.ts — generateTemplateBuffer signature baru ([8e61194](https://github.com/webaneid/facport/commit/8e61194))
+* feat(import): tambah panduan pengisian + baris contoh di template Excel ([350256c](https://github.com/webaneid/facport/commit/350256c))
+
 ## 1.1.0 (2026-08-26)
 
 * feat(accurate): simpan & tampilkan nama Data Usaha, perbaiki UX pilih Data Usaha ([e51cb0c](https://github.com/webaneid/facport/commit/e51cb0c))
