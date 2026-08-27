@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import {
   buildPurchaseInvoicePayload,
+  buildDetailItemFromRow,
+  billNumberColumnOf,
   extractVendorCreateFields,
   extractItemCreateFields,
   groupPurchaseInvoiceRows,
@@ -233,6 +235,51 @@ describe("extractVendorCreateFields", () => {
 
   test("tidak ada kolom di-mapping -> object kosong (semua field ini opsional)", () => {
     expect(extractVendorCreateFields({}, {})).toEqual({});
+  });
+});
+
+// § Fase 08, ADR-0012 — `buildDetailItemFromRow` diextract dari
+// `buildPurchaseInvoicePayload` (dipakai ulang jalur update faktur
+// existing di workers/index.ts) — test regresi memastikan hasilnya SAMA
+// dengan sebelum diextract (bandingkan dengan `detailItem[0]` hasil
+// `buildPurchaseInvoicePayload` pada test paling atas file ini).
+describe("buildDetailItemFromRow", () => {
+  test("hasil sama persis dengan detailItem[0] dari buildPurchaseInvoicePayload (regresi refactor)", () => {
+    const rawRow = {
+      "Vendor No": "V.00001",
+      Tanggal: "2026-08-19",
+      "Kode Barang": "9900012",
+      Harga: 10000,
+      Qty: 5,
+    };
+    const columnMapping = {
+      "Vendor No": "vendorNo",
+      Tanggal: "transDate",
+      "Kode Barang": "itemNo",
+      Harga: "unitPrice",
+      Qty: "quantity",
+    };
+
+    expect(buildDetailItemFromRow(rawRow, columnMapping)).toEqual({ itemNo: "9900012", unitPrice: 10000, quantity: 5 });
+  });
+
+  test("field header (bukan prefix detailItem.) TIDAK ikut masuk", () => {
+    const rawRow = { "Vendor No": "V.00001", "Kode Barang": "BRG-1" };
+    const columnMapping = { "Vendor No": "vendorNo", "Kode Barang": "itemNo" };
+
+    expect(buildDetailItemFromRow(rawRow, columnMapping)).toEqual({ itemNo: "BRG-1" });
+  });
+});
+
+// § Fase 08, ADR-0012 — diexport supaya worker bisa cari kolom Bill No
+// lintas-batch (`findExistingAccurateInvoiceId`).
+describe("billNumberColumnOf", () => {
+  test("return nama kolom Excel yang di-mapping ke billNumber", () => {
+    expect(billNumberColumnOf({ "Bill No": "billNumber", "Vendor No": "vendorNo" })).toBe("Bill No");
+  });
+
+  test("return null kalau tidak ada kolom yang di-mapping ke billNumber", () => {
+    expect(billNumberColumnOf({ "Vendor No": "vendorNo" })).toBeNull();
   });
 });
 

@@ -219,18 +219,27 @@ export function buildPurchaseInvoicePayload(
     if (value !== undefined) payload[accuratePath] = value;
   }
 
-  payload.detailItem = rawRows.map((rawRow) => {
-    const rowValues = extractRowValues(rawRow, columnMapping);
-    const detailItem: Record<string, unknown> = {};
-    for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
-      if (!accuratePath.startsWith("detailItem.")) continue;
-      const value = rowValues[field as PurchaseInvoiceField];
-      if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
-    }
-    return detailItem;
-  });
+  payload.detailItem = rawRows.map((rawRow) => buildDetailItemFromRow(rawRow, columnMapping));
 
   return payload;
+}
+
+// § Fase 08, ADR-0012 — diextract dari `.map()` di atas SUPAYA dipakai
+// ulang oleh jalur UPDATE faktur existing (`appendToExistingPurchaseInvoice`
+// di workers/index.ts) TANPA duplikasi logic. Perilaku SAMA PERSIS dengan
+// sebelum diextract.
+export function buildDetailItemFromRow(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): Record<string, unknown> {
+  const rowValues = extractRowValues(rawRow, columnMapping);
+  const detailItem: Record<string, unknown> = {};
+  for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
+    if (!accuratePath.startsWith("detailItem.")) continue;
+    const value = rowValues[field as PurchaseInvoiceField];
+    if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
+  }
+  return detailItem;
 }
 
 // § Fase 06, ADR-0011 — grouping baris Excel jadi 1 Faktur Pembelian
@@ -242,7 +251,9 @@ export function buildPurchaseInvoicePayload(
 export type ImportRowRecord = { id: string; rawData: Record<string, unknown> };
 export type PurchaseInvoiceGroup = { billNumber: string | null; rows: ImportRowRecord[] };
 
-function billNumberColumnOf(columnMapping: Record<string, string>): string | null {
+// § Fase 08 — diexport supaya worker bisa cari kolom Bill No lintas-batch
+// (`findExistingAccurateInvoiceId`), tanpa duplikasi logic pencarian kolom.
+export function billNumberColumnOf(columnMapping: Record<string, string>): string | null {
   return Object.entries(columnMapping).find(([, field]) => field === "billNumber")?.[0] ?? null;
 }
 

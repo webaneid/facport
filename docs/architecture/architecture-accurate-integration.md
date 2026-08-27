@@ -326,6 +326,30 @@ lengkap (kenapa Bill No, bukan kolom baru/Trans No, dan trade-off retry
 per-grup) → `docs/decisions/adr-0011-purchase-invoice-multi-item.md`.
 Detail eksekusi → `docs/phases/phase-06-purchase-invoice-multi-item.md`.
 
+### Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08) ✅ VERIFIED 2026-08-28
+Batch yang diproses SEBELUM Fase 06 ada bisa punya baris `success` (1
+faktur, 1 item) + baris `failed` lain dengan Bill No sama (ditolak
+Accurate sebagai duplikat nomor faktur). Retry biasa tidak bisa
+memperbaiki ini — mencoba CREATE ulang tetap ditolak dengan alasan sama.
+**Dikonfirmasi EMPIRIS** (test call nyata ke faktur `#150`, Data Usaha
+"PT Frozen Food"): `purchase-invoice/save.do` MENDUKUNG mode UPDATE kalau
+payload menyertakan `id` faktur — bukan cuma create. `detailItem` yang
+dikirim REPLACE seluruh array (bukan merge), jadi item lama WAJIB
+direferensikan lewat `id`-nya (`{ "id": <id lama> }`, tanpa field lain)
+supaya tidak hilang; item baru dikirim tanpa `id`. Field header lain
+(`vendorNo`, `transDate`, dst) TIDAK perlu disertakan di payload update —
+dipertahankan otomatis oleh Accurate. Ini mengoreksi klaim ADR-0011 yang
+bilang `save.do` tidak punya mode append — SALAH, dikoreksi di
+`docs/decisions/adr-0012-purchase-invoice-update-existing.md` (ADR-0011
+sendiri tidak diedit, sudah Accepted).
+
+Retry sekarang otomatis pilih CREATE vs UPDATE: cari lintas-batch apakah
+Bill No grup itu sudah pernah `success` di subscription yang sama — kalau
+ketemu, jalur UPDATE (dengan safety check vendor-match + duplicate-guard
+per item, lihat ADR-0012); kalau tidak, jalur CREATE seperti biasa (Fase
+06, tidak berubah). Tidak ada tombol/endpoint baru — logic ada di worker.
+Detail lengkap → ADR-0012 dan `docs/phases/phase-08-purchase-invoice-update-existing.md`.
+
 ### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
 Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
 otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error
