@@ -1,3 +1,8 @@
+## 1.5.0 (2026-08-27)
+
+* feat: Fase 08 — Retry Cerdas, update faktur existing (append item) ([8128049](https://github.com/webaneid/facport/commit/8128049))
+* docs: tutup Fase 06 — diverifikasi nyata ke Accurate + lessons-learned worker ([f4a56ab](https://github.com/webaneid/facport/commit/f4a56ab))
+
 ## 1.4.0 (2026-08-27)
 
 * docs: update Fase 06 — sisi kode selesai, menunggu verifikasi Accurate nyata ([13a046f](https://github.com/webaneid/facport/commit/13a046f))
