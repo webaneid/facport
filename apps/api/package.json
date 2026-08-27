@@ -29,7 +29,7 @@
     "pino": "^9.6.0",
     "postgres": "^3.4.5",
     "resend": "^4.0.1",
-    "sharp": "^0.34.2",
+    "sharp": "^0.35.3",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
