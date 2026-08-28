@@ -2,19 +2,50 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { LayoutDashboard, FileSpreadsheet, Link2, Landmark, Users, Package, Settings } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 
-// § Fase 10 — `navItems` sekarang PROP (bukan konstanta hardcode di sini),
-// supaya `AppShell` bisa dipakai ulang surface admin (nav beda total dari
-// customer) tanpa duplikasi seluruh komponen shell. Tiap surface (`app/app/`,
-// `app/admin/`) definisikan daftar nav-nya sendiri di layout.tsx masing-masing,
-// SATU sumber per surface — jangan duplikasi ke tempat lain.
+// § Fase 10 — nav TETAP didefinisikan DI SINI (file "use client"), BUKAN
+// dioper sebagai prop dari Server Component layout.tsx. Alasannya BUKAN
+// gaya, tapi teknis: `icon` di tiap item adalah REFERENSI KOMPONEN
+// (lucide-react, dibangun via forwardRef) — Next.js App Router TIDAK
+// mengizinkan referensi fungsi/komponen dilewatkan sebagai PROP dari
+// Server Component ke Client Component (cuma boleh sebagai children/JSX
+// yang sudah di-render). Sempat dicoba dioper sebagai prop `navItems`
+// (ke `<AppShell navItems={...}>` dari `layout.tsx` Server Component) —
+// error runtime "Functions cannot be passed directly to Client
+// Components" (ketemu 2026-08-28). Solusinya: Server Component cuma
+// oper STRING murni (`surface`, aman diserialisasi), `Sidebar`/`Topbar`
+// (client, sudah "use client") yang lookup daftar nav-nya SENDIRI di
+// sini — modul baru (Sales Invoice dst) tinggal tambah 1 baris di array
+// surface yang relevan, JANGAN duplikasi ke tempat lain.
+export type Surface = "app" | "admin";
 export type NavItem = { href: string; label: string; icon: LucideIcon };
 
-function NavList({ navItems, onNavigate }: { navItems: NavItem[]; onNavigate?: () => void }) {
+const NAV_ITEMS_BY_SURFACE: Record<Surface, NavItem[]> = {
+  app: [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet },
+    { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark },
+    { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
+  ],
+  admin: [
+    { href: "/", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/users", label: "Pengguna", icon: Users },
+    { href: "/plans", label: "Paket", icon: Package },
+    { href: "/settings", label: "Pengaturan", icon: Settings },
+  ],
+};
+
+export function navItemsFor(surface: Surface): NavItem[] {
+  return NAV_ITEMS_BY_SURFACE[surface];
+}
+
+function NavList({ surface, onNavigate }: { surface: Surface; onNavigate?: () => void }) {
   const pathname = usePathname();
+  const navItems = navItemsFor(surface);
   return (
     <nav className="flex flex-1 flex-col gap-1 p-4">
       {navItems.map((item) => {
@@ -40,11 +71,11 @@ function NavList({ navItems, onNavigate }: { navItems: NavItem[]; onNavigate?: (
 }
 
 export function Sidebar({
-  navItems,
+  surface,
   mobileOpen,
   onMobileClose,
 }: {
-  navItems: NavItem[];
+  surface: Surface;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -55,7 +86,7 @@ export function Sidebar({
         <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
           Facport
         </div>
-        <NavList navItems={navItems} />
+        <NavList surface={surface} />
       </aside>
 
       {/* Mobile — drawer slide-in kiri, pakai primitif @radix-ui/react-dialog
@@ -72,7 +103,7 @@ export function Sidebar({
             <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
               Facport
             </div>
-            <NavList navItems={navItems} onNavigate={onMobileClose} />
+            <NavList surface={surface} onNavigate={onMobileClose} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

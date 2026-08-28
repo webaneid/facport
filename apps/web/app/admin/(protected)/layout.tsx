@@ -1,17 +1,6 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { LayoutDashboard, Users, Package, Settings } from "lucide-react";
 import { AppShell } from "@/components/app-shell/app-shell";
-import type { NavItem } from "@/components/app-shell/sidebar";
-
-// § Fase 10 — daftar nav surface admin, SATU sumber (beda total dari
-// customer, § `app/app/(protected)/layout.tsx`).
-const ADMIN_NAV_ITEMS: NavItem[] = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/users", label: "Pengguna", icon: Users },
-  { href: "/plans", label: "Paket", icon: Package },
-  { href: "/settings", label: "Pengaturan", icon: Settings },
-];
 
 // § Medium finding security review Fase 01 — proxy.ts cuma cek keberadaan
 // session cookie (existence-only, direkomendasikan Better Auth buat
@@ -30,7 +19,7 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   if (!me.roles.includes("admin")) redirect("/login");
 
   return (
-    <AppShell navItems={ADMIN_NAV_ITEMS} user={{ name: me.name, email: me.email }}>
+    <AppShell surface="admin" user={{ name: me.name, email: me.email }}>
       {children}
     </AppShell>
   );
