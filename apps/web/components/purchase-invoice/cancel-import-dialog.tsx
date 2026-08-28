@@ -86,8 +86,3 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
     </Dialog>
   );
 }
-
-// § dipakai dashboard & halaman arsip untuk menentukan kapan tombol ini
-// ditampilkan — batch harus sudah SELESAI diproses (bukan sedang
-// diproses/belum dikonfirmasi/sudah dibatalkan).
-export const CANCELLABLE_BATCH_STATUS = new Set(["completed", "completed_with_errors"]);
