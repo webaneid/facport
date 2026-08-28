@@ -269,4 +269,59 @@ export const purchaseInvoiceImportRoute = new Elysia()
       return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+  )
+  // § dibahas 2026-08-28 — Edit baris GAGAL langsung di aplikasi (tanpa
+  // upload ulang seluruh file). Cuma baris `failed` yang boleh diedit —
+  // baris `success` sudah live di Accurate (perbaikan di situ lewat Fase
+  // 08 Retry Cerdas, bukan endpoint ini), baris `pending`/`processing`
+  // belum tentu ada masalah. Update `rawData` MENTAH (key = nama kolom
+  // Excel asli, SAMA seperti hasil upload) — worker baca ulang pakai
+  // `columnMapping` batch yang sudah ada, tidak perlu logic baru di worker.
+  .put(
+    "/purchase-invoice/import/:batchId/rows/:rowId",
+    async ({ params, body, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      const [row] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, params.rowId));
+      if (!row || row.batchId !== batch.id) {
+        set.status = 404;
+        return { code: "ROW_NOT_FOUND" };
+      }
+      if (row.status !== "failed") {
+        set.status = 409;
+        return { code: "ROW_NOT_EDITABLE" };
+      }
+
+      // § validasi field WAJIB (per purchaseInvoiceMapping.requiredFields)
+      // punya NILAI (bukan cuma ter-mapping ke suatu kolom, seperti di
+      // /confirm — di sini kolomnya sudah pasti ter-mapping, yang dicek
+      // adalah ISI-nya tidak kosong) — feedback cepat sebelum retry
+      // beneran manggil Accurate.
+      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      const missing = purchaseInvoiceMapping.requiredFields.filter((field) => {
+        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+        const value = excelColumn ? body.rawData[excelColumn] : undefined;
+        return value === undefined || value === null || String(value).trim() === "";
+      });
+      if (missing.length > 0) {
+        set.status = 400;
+        return { code: "MISSING_REQUIRED_VALUES", fields: missing };
+      }
+
+      await db
+        .update(importBatchRows)
+        .set({ rawData: body.rawData, status: "pending", errorMessage: null })
+        .where(eq(importBatchRows.id, row.id));
+
+      return { rowId: row.id, status: "pending" };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "pembelian",
+      params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
+      body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
+    },
   );

@@ -2,13 +2,12 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ComingSoonIconButton } from "@/components/ui/coming-soon-icon-button";
+import { EditRowDialog } from "@/components/purchase-invoice/edit-row-dialog";
 import { api } from "@/lib/api-client";
 
 type Row = {
@@ -45,6 +44,18 @@ function invoiceNumberOf(row: Row, billNumberColumn: string | null): string {
   if (!billNumberColumn) return "";
   const value = row.rawData[billNumberColumn];
   return value === undefined || value === null ? "" : String(value).trim();
+}
+
+// § dibahas 2026-08-28 — baris dengan Bill No sama digabung jadi 1
+// faktur (ADR-0011), dipakai buat kasih tahu user di dialog Edit kalau
+// baris ini "senasib" dengan baris lain (vendor WAJIB konsisten,
+// sebelum retry, bukan cuma peringatan setelah gagal lagi).
+function siblingRowNumbersOf(row: Row, allRows: Row[], billNumberColumn: string | null): number[] {
+  const inv = invoiceNumberOf(row, billNumberColumn);
+  if (!inv) return [];
+  return allRows
+    .filter((r) => r.id !== row.id && invoiceNumberOf(r, billNumberColumn).toLowerCase() === inv.toLowerCase())
+    .map((r) => r.rowNumber);
 }
 
 // § permintaan user 2026-08-28 — urut berdasarkan Nomor Faktur (natural
@@ -179,10 +190,15 @@ export default function PurchaseInvoiceImportResultPage() {
                     {row.accurateTransactionId ?? row.errorMessage ?? "-"}
                   </TableCell>
                   <TableCell>
-                    {/* § dibahas 2026-08-28 — Edit baris gagal, belum dibangun */}
-                    {row.status === "failed" && (
+                    {row.status === "failed" && batch.columnMapping && (
                       <div className="flex justify-end">
-                        <ComingSoonIconButton icon={Pencil} label="Edit" />
+                        <EditRowDialog
+                          batchId={batch.id}
+                          row={row}
+                          columnMapping={batch.columnMapping}
+                          siblingRowNumbers={siblingRowNumbersOf(row, rows, billNumberColumn)}
+                          onSaved={load}
+                        />
                       </div>
                     )}
                   </TableCell>
