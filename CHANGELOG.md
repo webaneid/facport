@@ -1,3 +1,7 @@
+## <small>1.10.2 (2026-08-28)</small>
+
+* fix: normalisasi tanggal di dialog Edit baris gagal ([75cbff2](https://github.com/webaneid/facport/commit/75cbff2))
+
 ## <small>1.10.1 (2026-08-28)</small>
 
 * fix: AppShell nav — pisahkan surface (string) dari komponen icon ([8b8261c](https://github.com/webaneid/facport/commit/8b8261c))
