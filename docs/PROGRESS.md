@@ -17,7 +17,7 @@
 | 06   | Purchase Invoice — Multi-Item per Faktur | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 | 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
-| 09   | Batal Import (Hapus Faktur di Accurate) | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013, ADR-0014 | `docs/phases/phase-09-batal-import.md` |
+| 09   | Batal Import (Hapus Faktur di Accurate) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013, ADR-0014 | `docs/phases/phase-09-batal-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -35,22 +35,15 @@ tidak menyiratkan komitmen urutan yang belum benar ada:
 - Modul Manufaktur — semua sub-modul
 - Modul Kas & Bank + Buku Besar — semua sub-modul
 
-**"Batal Import" (hapus dari Accurate) — DITUNDA SENGAJA, feedback client
-2026-08-27.** Ide: tombol di halaman Riwayat Import Terakhir yang
-menghapus SEMUA transaksi 1 batch langsung DARI ACCURATE (bukan cuma
-riwayat lokal Facport). Disepakati eksplisit dengan user (2026-08-27):
-dikerjakan PALING TERAKHIR dari 3 feedback client, setelah Fase 06 & 07
-solid — ini operasi DESTRUCTIVE terhadap data akuntansi ASLI client di
-sistem pihak ketiga, blast radius jauh lebih besar dari 2 fase di atas.
-Kalau nanti di-scope jadi fase resmi, WAJIB architecture doc + ADR
-tersendiri (belum dibuat sekarang, sengaja) yang minimal jawab: (1)
-transaksi yang sudah "dipakai" downstream di Accurate (mis. sudah
-dibayar/direferensikan transaksi lain) — kemungkinan besar ditolak API
-`delete.do` Accurate sendiri, perlu dipetakan skenario error-nya dulu,
-bukan diasumsikan selalu sukses; (2) UX konfirmasi (destructive action,
-minimal 1 langkah konfirmasi eksplisit, bukan 1 klik langsung hapus); (3)
-audit trail — siapa yang klik batal, kapan, transaksi apa saja yang
-kehapus, disimpan permanen terlepas dari hasil hapusnya sendiri.
+**"Batal Import" (hapus dari Accurate) — Done, lihat Fase 09** (dulu
+sengaja ditunda sampai Fase 06 & 08 solid, feedback client 2026-08-27).
+Tombol di halaman arsip Riwayat Import yang menghapus transaksi 1 batch
+langsung DARI ACCURATE (bukan cuma riwayat lokal Facport) — TAPI cakupan
+akhirnya lebih sempit dari rencana awal: cuma faktur yang 100% milik 1
+batch yang bisa dihapus otomatis, faktur gabungan lintas-batch (Fase 08)
+DIBLOKIR (Accurate tidak punya cara aman hapus sebagian item, ketemu
+lewat verifikasi nyata — lihat ADR-0014). Detail lengkap →
+`docs/phases/phase-09-batal-import.md`, ADR-0013, ADR-0014.
 
 **Fase 04 (Import Data Pemasok — update Akun Hutang) Done 2026-08-20** —
 modul BARU (data master, di luar 5 modul transaksi yang di-listing di §
@@ -236,3 +229,11 @@ otomatis), tapi AMAN (tidak ada silent no-op yang salah lapor sukses).
 Diverifikasi PENUH lewat 3 skenario nyata ke Data Usaha Accurate asli
 ("PT Frozen Food"). Detail lengkap → ADR-0013, ADR-0014,
 `docs/phases/phase-09-batal-import.md`.
+
+**Fase 09 Done 2026-08-28** — deploy ulang (v1.6.1) setelah fix ADR-0014,
+diverifikasi ULANG nyata: faktur murni 1 batch → hapus utuh sukses;
+faktur gabungan lintas-batch → diblokir dengan benar, batch
+`cancelled_partial`, faktur Accurate TIDAK berubah sama sekali (jujur,
+tidak ada silent no-op). Ini fase terakhir dari 3 feedback client
+pasca-presentasi 2026-08-27 — semua 3 item sekarang selesai (Fase 06,
+07, 09).

@@ -1,8 +1,8 @@
 # Fase 09 — Batal Import (Hapus Faktur di Accurate)
 
-**Status:** In Progress
+**Status:** Done
 **Mulai:** 2026-08-28
-**Selesai:**
+**Selesai:** 2026-08-28
 
 ## Tujuan
 Item ke-3 dari 3 feedback client pasca-presentasi 2026-08-27 (item 1 =
@@ -118,19 +118,24 @@ sungguhan (bukan simulasi/mock):
    terpisah, termasuk jeda 45 detik buat pastikan bukan isu timing) →
    dikonfirmasi `save.do` upsert-only, ADR-0014 ditulis, kode diperbaiki
    (susutkan dihapus, ganti blokir) SEBELUM fase ditutup.
-3. **Setelah fix**: skenario faktur gabungan sekarang akan DIBLOKIR
-   (`summary.blocked`), row TETAP `success` (tidak diubah, tidak ada
-   silent no-op yang salah lapor sukses) — perilaku ini konsisten dengan
-   logic yang sudah dipakai buat kasus "baris tanpa tracking id", jadi
-   sudah tercakup logic-nya walau tidak diulang jadi skenario nyata
-   terpisah (kode identik, sudah diverifikasi jalur "blocked"-nya lewat
-   test lain).
+3. **Setelah fix, di-deploy ulang (v1.6.1) dan DIULANG NYATA ke Accurate**
+   — skenario faktur gabungan (batch A buat, batch B append, dikonfirmasi
+   2 item) → cancel batch A → batch jadi `cancelled_partial`, row A
+   **TETAP `success`** (tidak diubah), dan faktur Accurate **TIDAK
+   BERUBAH SAMA SEKALI** (`detail.do` fresh: masih 2 item persis sama) —
+   perilaku sekarang JUJUR (tidak ada silent no-op yang salah lapor
+   sukses). Skenario 1 (faktur murni 1 batch) DIULANG juga di v1.6.1 —
+   tetap sukses persis seperti sebelumnya.
 
 Test invoice yang dipakai verifikasi SEMUA sudah dibersihkan (dihapus)
-sebagai bagian proses test — tidak ada data test tersisa di Data Usaha
-client. Hasil test suite: 61/61 tetap lolos (tidak ada regresi, karena
-perubahan Fase 09 tidak menyentuh logic murni `purchase-invoice.mapping.ts`),
-typecheck 0 error, security review 0 temuan.
+sebagai bagian proses test — invoice skenario-1 self-cleaning lewat
+fitur Batal Import sendiri, invoice skenario-2 (faktur gabungan, TIDAK
+BISA dihapus lewat fitur karena memang diblokir by design) dibersihkan
+manual via `delete.do` langsung di akhir test — TIDAK ada data test
+tersisa di Data Usaha client. Hasil test suite: 61/61 tetap lolos (tidak
+ada regresi, karena perubahan Fase 09 tidak menyentuh logic murni
+`purchase-invoice.mapping.ts`), typecheck 0 error, security review 0
+temuan.
 
 **Pelajaran penting** (juga dicatat `docs/lessons-learned.md`): asumsi
 "detailItem di-REPLACE penuh" dari ADR-0012 TERBUKTI cuma valid untuk
