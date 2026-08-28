@@ -6,6 +6,92 @@
 
 ---
 
+## 2026-08-28 — Dialog Edit baris: tanggal (serial Excel) ke-`String()` mentah, silent-corrupt kalau tersimpan ulang
+**Masalah:** User laporan tampilan tanggal di dialog Edit (fitur "Edit
+Baris Gagal", § PROGRESS.md) "bentuknya aneh" — field "Tanggal"
+menampilkan angka mentah (mis. `46261`) alih-alih tanggal terbaca.
+
+**Root cause:** `rawData` per baris disimpan APA ADANYA dari hasil parse
+Excel (`lib/excel.ts`, apps/api) — kolom tanggal biasanya berupa ANGKA
+SERIAL Excel mentah (`XLSX.utils.sheet_to_json` tanpa `cellDates:true`),
+BUKAN string tanggal. Normalisasi ke format Accurate (DD/MM/YYYY) cuma
+terjadi SEKALI, di worker (`toAccurateDate()`,
+`purchase-invoice.mapping.ts`), pas payload dikirim ke Accurate — TIDAK
+PERNAH terjadi di titik lain. Dialog Edit (`edit-row-dialog.tsx`) yang
+baru dibuat cuma `String(rawData[col])` polos ke semua kolom tanpa
+pengecualian.
+
+**Dampak LEBIH SERIUS dari sekadar tampilan**: kalau user save row TANPA
+sentuh field tanggal sama sekali, angka serial (number, mis. `46261`)
+ikut ke-`String()`-kan jadi TEKS (`"46261"`) saat disimpan balik ke
+`rawData`. `toAccurateDate()` di worker cuma mengenali serial Excel kalau
+`typeof value === "number"` — begitu sudah jadi string `"46261"`, TIDAK
+match regex DD/MM/YYYY maupun ISO, jatuh ke `return value` apa adanya —
+Accurate menerima literal teks "46261" sebagai tanggal dan pasti
+menolaknya. Tanggal rusak DIAM-DIAM, bukan cuma soal tampilan kosmetik.
+
+**Fix:** `edit-row-dialog.tsx` sekarang deteksi kolom mana yang termasuk
+field tanggal (`transDate`/`taxDate`/`shipDate`, via `columnMapping`),
+normalisasi ke DD/MM/YYYY SAAT dialog dibuka (replika PERSIS algoritma
+`toAccurateDate` backend — serial→date, ISO→DD/MM/YYYY, DD/MM/YYYY tetap
+apa adanya), dan SELALU simpan balik sebagai string DD/MM/YYYY —
+terlepas user sentuh field itu atau tidak.
+
+**Pencegahan:** Kalau ada logic NORMALISASI/PARSING nilai (bukan cuma
+tampil apa adanya) di SATU sisi (backend), dan sisi LAIN (frontend, atau
+titik masuk data manapun) ikut MEMBACA/MENULIS ULANG nilai mentah yang
+sama, WAJIB replikasi normalisasi yang SAMA di kedua sisi — jangan
+asumsikan nilai "cuma ditampilkan ulang" tanpa transformasi aman
+dilakukan begitu saja, terutama untuk tipe data yang punya BANYAK bentuk
+representasi berbeda (tanggal: serial number/ISO string/DD-MM-YYYY
+string/Date object) tapi cuma SATU bentuk yang valid buat sistem hilir
+(Accurate).
+
+---
+
+## 2026-08-28 — Next.js RSC: referensi komponen icon di prop Server→Client Component bikin 500 total
+**Masalah:** Refactor `AppShell`/`Sidebar`/`Topbar` (Fase 10, supaya bisa
+dipakai ulang surface admin+customer) bikin dashboard app.ane.web.id DAN
+admin.ane.web.id 500 total setelah deploy. Browser: `Uncaught Error:
+Minified React error #441`. Log server: `Error: Functions cannot be
+passed directly to Client Components unless you explicitly expose it by
+marking it with "use server"` — payload error menunjukkan bentuk objek
+`{$$typeof, render, displayName}`, persis struktur internal komponen
+`lucide-react` (dibangun via `React.forwardRef`).
+
+**Root cause:** `navItems` (array berisi `{href, label, icon:
+LucideIcon}`) sebelumnya didefinisikan LANGSUNG di file "use client"
+(`sidebar.tsx`), aman. Refactor memindahkan definisinya ke Server
+Component (`layout.tsx`) supaya bisa beda per surface, lalu dioper
+sebagai PROP ke `<AppShell navItems={...}>` (Client Component). Next.js
+App Router (React Server Components) TIDAK mengizinkan referensi
+fungsi/komponen (termasuk komponen icon) dilewatkan sebagai DATA PROP
+dari Server ke Client Component — cuma boleh sebagai `children`/JSX yang
+SUDAH di-render di sisi server. Ini KELAS BUG BERBEDA dari temuan
+sebelumnya hari ini (export non-komponen dari file "use client" diimpor
+Server Component, § entri "CANCELLABLE_BATCH_STATUS" — itu arah
+CLIENT→SERVER; ini arah SERVER→CLIENT, aturan RSC yang beda lagi).
+
+**Fix:** Server Component (`layout.tsx`) cuma oper STRING murni
+(`surface: "app" | "admin"`, aman diserialisasi apa pun). `Sidebar`/
+`Topbar` (sudah "use client") lookup daftar nav-nya SENDIRI secara
+internal berdasar `surface` — komponen icon tidak PERNAH menyeberangi
+boundary Server→Client sebagai data, cuma dipakai di dalam JSX yang
+di-render Client Component itu sendiri.
+
+**Pencegahan:** Kalau sebuah value BERISI referensi komponen/fungsi React
+(bukan primitif: string/number/boolean/plain object/array berisi
+primitif), JANGAN pernah dioper sebagai prop dari Server Component ke
+Client Component — cuma boleh: (1) didefinisikan/dipakai SEPENUHNYA di
+sisi client (termasuk lookup dari key/id yang dioper sebagai string), atau
+(2) sudah di-render jadi JSX SEBELUM masuk prop `children`. Test SEMUA
+halaman yang dipengaruhi refactor shared-component (bukan cuma yang
+sedang dikerjakan) sebelum deploy — refactor ini menyentuh 2 surface
+sekaligus (admin+customer), cuma admin yang sempat ditest manual sebelum
+deploy, customer (`app/app/`) baru ketahuan rusak lewat laporan user.
+
+---
+
 ## 2026-08-28 — Accurate `save.do` TIDAK bisa hapus 1 `detailItem` via omit (upsert-only, bukan full-replace)
 **Masalah:** Fase 09 ("Batal Import") desain awal (ADR-0013) berasumsi
 faktur gabungan lintas-batch bisa "disusutkan" — kirim ulang `detailItem[]`

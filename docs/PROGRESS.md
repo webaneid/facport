@@ -268,6 +268,16 @@ butuh auth (401 tanpa sesi login). Typecheck 0 error, test suite 61/61,
 security review dijalankan (ownership+validasi konsisten pola endpoint
 lain, 0 temuan).
 
+**Bug ditemukan pasca-deploy, lewat laporan user nyata, langsung
+diperbaiki**: field tanggal di dialog Edit tampil sebagai angka serial
+Excel mentah (mis. `46261`, bukan tanggal terbaca) — dan kalau baris
+disimpan TANPA sentuh field itu, angka ikut ke-`String()`-kan jadi teks
+yang tidak lagi dikenali `toAccurateDate()` di worker, tanggal rusak
+diam-diam. Diperbaiki: dialog normalisasi tanggal ke DD/MM/YYYY saat
+tampil (replika persis algoritma backend), selalu simpan balik dalam
+format itu. Detail lengkap → `docs/lessons-learned.md` entri 2026-08-28
+"Dialog Edit baris: tanggal (serial Excel) ke-`String()` mentah...".
+
 ## Update 2026-08-28 — Delete (hapus riwayat lokal, tidak sentuh Accurate)
 Icon Delete diaktifkan (dashboard + halaman arsip). Endpoint baru
 `DELETE /purchase-invoice/import/:batchId` — hapus batch+baris (cascade
@@ -310,3 +320,14 @@ gating) TIDAK dilakukan sesi ini (percobaan fabrikasi sesi Better Auth
 gagal) — gating modul sendiri BUKAN kode baru fase ini, sudah terbukti
 jalan lewat pemakaian nyata sepanjang sesi. Detail lengkap → ADR-0015,
 `docs/phases/phase-10-admin-dashboard.md`.
+
+**Bug produksi ditemukan pasca-deploy Fase 10 (lewat laporan user), 500
+total di app.ane.web.id DAN admin.ane.web.id sekaligus**: refactor
+`AppShell` (dipakai ulang admin+customer) sempat oper `navItems` (berisi
+komponen icon `lucide-react`) sebagai prop dari Server Component ke
+Client Component — dilarang React Server Components (`Uncaught Error:
+Minified React error #441` / "Functions cannot be passed directly to
+Client Components"). Diperbaiki: Server Component cuma oper string
+`surface`, komponen client lookup nav-nya sendiri. Detail lengkap →
+`docs/lessons-learned.md` entri 2026-08-28 "Next.js RSC: referensi
+komponen icon di prop Server→Client Component...".
