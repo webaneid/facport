@@ -1,3 +1,7 @@
+## <small>1.7.1 (2026-08-28)</small>
+
+* fix: dashboard 500 — pisahkan CANCELLABLE_BATCH_STATUS dari file "use client" ([d6cd362](https://github.com/webaneid/facport/commit/d6cd362))
+
 ## 1.7.0 (2026-08-28)
 
 * feat(web): icon konsisten Detail/Batal Import di dashboard + arsip ([dfe6a95](https://github.com/webaneid/facport/commit/dfe6a95))
