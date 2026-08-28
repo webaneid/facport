@@ -1,3 +1,7 @@
+## <small>1.7.3 (2026-08-28)</small>
+
+* fix(web): lebarkan halaman detail batch (max-w-3xl -> max-w-4xl) ([fbb7445](https://github.com/webaneid/facport/commit/fbb7445))
+
 ## <small>1.7.2 (2026-08-28)</small>
 
 * fix(web): pindah icon Edit ke baris gagal, bukan tabel batch ([df6823f](https://github.com/webaneid/facport/commit/df6823f))
