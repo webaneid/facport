@@ -237,3 +237,32 @@ faktur gabungan lintas-batch → diblokir dengan benar, batch
 tidak ada silent no-op). Ini fase terakhir dari 3 feedback client
 pasca-presentasi 2026-08-27 — semua 3 item sekarang selesai (Fase 06,
 07, 09).
+
+## Update 2026-08-28 — Edit Baris Gagal (langsung di aplikasi, tanpa upload ulang)
+Permintaan user setelah Fase 09: baris `failed` bisa diedit langsung di
+UI (dialog per-baris, semua kolom yang ter-mapping, pesan error Accurate
+ditampilkan, peringatan kalau baris ini satu grup faktur/Bill No dengan
+baris lain — ADR-0011) lalu dipakai ulang tombol "Retry baris gagal" yang
+sudah ada — TANPA perlu upload ulang file Excel. Feasible langsung karena
+arsitektur existing sudah pas: `rawData` disimpan per-baris di DB, retry
+sudah baca ulang `rawData` + `columnMapping` batch, jadi endpoint baru
+(`PUT .../rows/:rowId`) cukup update `rawData` + reset status jadi
+`pending` + hapus `errorMessage` lama — TIDAK ADA perubahan di worker.
+
+**Cakupan disengaja tidak termasuk** (dibahas dulu, ditunda): tampilan
+grid ala Excel (dipilih dialog per-baris — lebih ringan, cukup untuk
+jumlah baris gagal yang biasanya sedikit); auto-validasi konsistensi
+vendor antar baris satu grup di dalam dialog (baru divalidasi saat retry
+sungguhan, sama seperti sebelumnya — dialog cuma kasih peringatan
+informatif). Icon Edit (pencil) & Delete (tempat sampah, hapus LOKAL
+saja tanpa sentuh Accurate — beda dari Batal Import) sempat dipasang
+placeholder duluan sebelum fungsinya dibangun — Edit sekarang FUNGSIONAL
+penuh, Delete masih placeholder (dibahas nanti).
+
+**Diverifikasi PENUH lewat alur nyata**: baris sengaja dibuat gagal
+(unit salah di Accurate) → diedit (data diperbaiki jadi unit benar) →
+retry → SUKSES, faktur asli tercipta di Accurate dengan data yang benar
+(dikonfirmasi `detail.do` fresh) → dibersihkan. Endpoint dikonfirmasi
+butuh auth (401 tanpa sesi login). Typecheck 0 error, test suite 61/61,
+security review dijalankan (ownership+validasi konsisten pola endpoint
+lain, 0 temuan).
