@@ -1,3 +1,8 @@
+## 1.9.0 (2026-08-28)
+
+* feat: aktifkan Delete — hapus riwayat import lokal, tidak sentuh Accurate ([a016916](https://github.com/webaneid/facport/commit/a016916))
+* docs: catat fitur Edit Baris Gagal di PROGRESS.md ([164aae1](https://github.com/webaneid/facport/commit/164aae1))
+
 ## 1.8.0 (2026-08-28)
 
 * feat: edit baris gagal langsung di aplikasi (tanpa upload ulang) ([04790f4](https://github.com/webaneid/facport/commit/04790f4))
