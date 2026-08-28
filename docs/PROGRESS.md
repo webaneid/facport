@@ -266,3 +266,25 @@ retry → SUKSES, faktur asli tercipta di Accurate dengan data yang benar
 butuh auth (401 tanpa sesi login). Typecheck 0 error, test suite 61/61,
 security review dijalankan (ownership+validasi konsisten pola endpoint
 lain, 0 temuan).
+
+## Update 2026-08-28 — Delete (hapus riwayat lokal, tidak sentuh Accurate)
+Icon Delete diaktifkan (dashboard + halaman arsip). Endpoint baru
+`DELETE /purchase-invoice/import/:batchId` — hapus batch+baris (cascade
+FK) dari Facport SAJA, TIDAK PERNAH memanggil Accurate — beda total dari
+"Batal Import" (Fase 09). **Keputusan eksplisit user (dikonfirmasi lewat
+tanya-jawab kritis)**: boleh dipakai untuk batch APA PUN termasuk yang
+sudah punya baris sukses ke Accurate — jejak lokal ke transaksi itu
+hilang permanen (risiko yang disadari & diterima, bukan dibatasi di
+endpoint). Diblokir cuma untuk batch yang sedang diproses job lain
+(`processing`/`cancelling`). Audit log ditulis SEBELUM delete (termasuk
+flag `hadAccurateSuccess`) supaya tetap ada jejak minimal walau record
+batch-nya sendiri hilang. Konfirmasi UI klik biasa (bukan type-to-confirm
+seperti Batal Import — risiko lebih rendah, tidak menyentuh data
+akuntansi asli pihak ketiga).
+
+**Diverifikasi PENUH lewat alur nyata**: batch dengan baris SUKSES ke
+Accurate (invoice asli tercipta) → delete lokal → batch+baris lokal
+BENAR hilang, audit log tercatat — TAPI faktur di Accurate dikonfirmasi
+`detail.do` fresh MASIH ADA UTUH (Delete benar-benar tidak pernah
+menyentuh Accurate). Endpoint dikonfirmasi butuh auth (401 tanpa sesi).
+Typecheck 0 error, test suite 61/61, security review 0 temuan.
