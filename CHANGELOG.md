@@ -1,3 +1,7 @@
+## <small>1.6.1 (2026-08-28)</small>
+
+* fix: Fase 09 — blokir faktur gabungan, bukan susutkan (ADR-0014) ([0d6503b](https://github.com/webaneid/facport/commit/0d6503b))
+
 ## 1.6.0 (2026-08-27)
 
 * feat: Fase 09 — Batal Import (hapus/susutkan faktur di Accurate) ([b8fc5f4](https://github.com/webaneid/facport/commit/b8fc5f4))
