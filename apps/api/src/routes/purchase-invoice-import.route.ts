@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc, count } from "drizzle-orm";
 import { db } from "../lib/db";
-import { importBatches, importBatchRows } from "../db/schema";
+import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { boss, JOBS } from "../lib/queue";
@@ -324,4 +324,49 @@ export const purchaseInvoiceImportRoute = new Elysia()
       params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
       body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
     },
+  )
+  // § dibahas 2026-08-28 — "Delete": hapus batch+baris LOKAL saja (file
+  // Excel & record Facport), TIDAK PERNAH memanggil Accurate sama sekali
+  // — beda total dari "Batal Import" (Fase 09, ADR-0013) yang menghapus
+  // transaksi Accurate. Keputusan eksplisit user: boleh dipakai untuk
+  // batch APA PUN termasuk yang sudah punya baris `success` (jejak lokal
+  // ke transaksi Accurate yang sudah sukses akan hilang permanen — risiko
+  // yang disadari & diterima user, BUKAN dibatasi di endpoint ini).
+  // `import_batch_rows` ikut terhapus otomatis (`onDelete: "cascade"` di
+  // FK, § import.schema.ts) — TIDAK perlu DELETE terpisah.
+  .delete(
+    "/purchase-invoice/import/:batchId",
+    async ({ params, user, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      if (batch.status === "processing" || batch.status === "cancelling") {
+        set.status = 409;
+        return { code: "BATCH_BUSY" };
+      }
+
+      // § audit trail — batch fisik akan hilang, jadi jejak "siapa hapus
+      // apa kapan" WAJIB dicatat SEBELUM delete (sesuai pola audit_logs
+      // yang sudah ada, § architecture-security.md §11).
+      const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
+      await db.insert(auditLogs).values({
+        entityType: "import_batch",
+        entityId: batch.id,
+        action: "delete",
+        changes: {
+          fileName: batch.fileName,
+          totalRows: batch.totalRows,
+          status: batch.status,
+          hadAccurateSuccess: rows.some((r) => r.accurateTransactionId !== null),
+        },
+        actorId: user.id,
+      });
+
+      await db.delete(importBatches).where(eq(importBatches.id, batch.id));
+
+      return { batchId: batch.id, deleted: true };
+    },
+    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   );

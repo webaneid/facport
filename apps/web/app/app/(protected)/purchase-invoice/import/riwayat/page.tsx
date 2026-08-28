@@ -2,16 +2,16 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, Inbox, Trash2 } from "lucide-react";
+import { Eye, Inbox } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ComingSoonIconButton } from "@/components/ui/coming-soon-icon-button";
 import { CancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
-import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import { DeleteImportDialog } from "@/components/purchase-invoice/delete-import-dialog";
+import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 
@@ -111,7 +111,9 @@ export default function PurchaseInvoiceImportArchivePage() {
                           {CANCELLABLE_BATCH_STATUS.has(batch.status) && (
                             <CancelImportDialog batch={batch} onCancelled={load} />
                           )}
-                          <ComingSoonIconButton icon={Trash2} label="Delete" />
+                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
+                            <DeleteImportDialog batch={batch} onDeleted={load} />
+                          )}
                         </div>
                       </TableCell>
                     </TableRow>

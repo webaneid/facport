@@ -1,14 +1,14 @@
 import { headers } from "next/headers";
 import Link from "next/link";
-import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ComingSoonIconButton } from "@/components/ui/coming-soon-icon-button";
 import { CancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
-import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import { DeleteImportDialog } from "@/components/purchase-invoice/delete-import-dialog";
+import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
 import { formatDate } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -193,7 +193,7 @@ export default async function DashboardPage() {
                           <Eye className="h-4 w-4" />
                         </Link>
                         {CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} />}
-                        <ComingSoonIconButton icon={Trash2} label="Delete" />
+                        {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <DeleteImportDialog batch={batch} />}
                       </div>
                     </TableCell>
                   </TableRow>
