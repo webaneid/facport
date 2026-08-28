@@ -1,6 +1,6 @@
 import { headers } from "next/headers";
 import Link from "next/link";
-import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye, Pencil, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye, Trash2 } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -192,7 +192,6 @@ export default async function DashboardPage() {
                         >
                           <Eye className="h-4 w-4" />
                         </Link>
-                        <ComingSoonIconButton icon={Pencil} label="Edit" />
                         {CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} />}
                         <ComingSoonIconButton icon={Trash2} label="Delete" />
                       </div>

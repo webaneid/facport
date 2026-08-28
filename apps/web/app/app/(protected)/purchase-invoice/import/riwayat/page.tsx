@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, Inbox, Pencil, Trash2 } from "lucide-react";
+import { Eye, Inbox, Trash2 } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -108,7 +108,6 @@ export default function PurchaseInvoiceImportArchivePage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Link>
-                          <ComingSoonIconButton icon={Pencil} label="Edit" />
                           {CANCELLABLE_BATCH_STATUS.has(batch.status) && (
                             <CancelImportDialog batch={batch} onCancelled={load} />
                           )}

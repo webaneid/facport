@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ComingSoonIconButton } from "@/components/ui/coming-soon-icon-button";
 import { api } from "@/lib/api-client";
 
 type Row = {
@@ -160,6 +162,7 @@ export default function PurchaseInvoiceImportResultPage() {
                 <TableHead>Baris</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ID Transaksi Accurate / Error</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -174,6 +177,14 @@ export default function PurchaseInvoiceImportResultPage() {
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {row.accurateTransactionId ?? row.errorMessage ?? "-"}
+                  </TableCell>
+                  <TableCell>
+                    {/* § dibahas 2026-08-28 — Edit baris gagal, belum dibangun */}
+                    {row.status === "failed" && (
+                      <div className="flex justify-end">
+                        <ComingSoonIconButton icon={Pencil} label="Edit" />
+                      </div>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
