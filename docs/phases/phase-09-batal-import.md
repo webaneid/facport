@@ -1,4 +1,4 @@
-# Fase 09 — Batal Import (Hapus/Susutkan Faktur di Accurate)
+# Fase 09 — Batal Import (Hapus Faktur di Accurate)
 
 **Status:** In Progress
 **Mulai:** 2026-08-28
@@ -8,10 +8,12 @@
 Item ke-3 dari 3 feedback client pasca-presentasi 2026-08-27 (item 1 =
 Fase 07, item 2 = Fase 06), sengaja ditunda sampai Fase 06 & Fase 08
 solid. Tombol "Batal Import" di tabel Riwayat Import yang BENERAN
-menghapus/melepas transaksi terkait dari Accurate Online (bukan cuma
+menghapus transaksi terkait dari Accurate Online (bukan cuma
 menyembunyikan record lokal Facport), aman terhadap risiko data-loss
 lintas-batch yang ditimbulkan mekanisme Fase 08 (append ke faktur
-existing). Detail riset & keputusan → ADR-0013.
+existing). Detail riset & keputusan → ADR-0013 (desain awal) dan
+ADR-0014 (koreksi penting, ditemukan lewat verifikasi nyata fase ini —
+lihat § Ringkasan Hasil).
 
 ## Scope
 - [x] **Verifikasi wajib** (langkah pertama, sebelum kode apa pun):
@@ -19,52 +21,54 @@ existing). Detail riset & keputusan → ADR-0013.
       `detailItem[].id`, dan `delete.do` benar menghapus (bukan
       soft-delete). Hasil: KEDUANYA terkonfirmasi via test call nyata
       (buat+hapus 1 test invoice, self-cleaning).
-- [ ] Schema: `import_batch_rows.accurateDetailItemId` (varchar,
+- [x] Schema: `import_batch_rows.accurateDetailItemId` (varchar,
       nullable) + `cancelledAt` (timestamptz, nullable); status baru
       `"cancelled"` (row) dan `"cancelled"`/`"cancelled_partial"` (batch).
-- [ ] Tangkap `accurateDetailItemId` di jalur CREATE
+- [x] Tangkap `accurateDetailItemId` di jalur CREATE
       (`processPurchaseInvoiceGroup`, Fase 06) & UPDATE
       (`appendToExistingPurchaseInvoice`, Fase 08) — refactor update
       grup dari bulk (`inArray`) jadi per-baris.
-- [ ] `deletePurchaseInvoice()` baru di `lib/accurate-purchase-invoice.ts`.
-- [ ] Job baru `CANCEL_IMPORT` — eligibility check lintas-batch (blokir
-      kalau ada baris manapun tanpa `accurateDetailItemId`), lalu
-      delete-utuh ATAU susutkan-via-update per faktur.
-- [ ] Endpoint `POST /purchase-invoice/import/:batchId/cancel` (pola
+- [x] `deletePurchaseInvoice()` baru di `lib/accurate-purchase-invoice.ts`.
+- [x] Job baru `CANCEL_IMPORT` — eligibility check lintas-batch (blokir
+      kalau ada baris manapun tanpa `accurateDetailItemId`, ATAU kalau
+      faktur ternyata gabungan lintas-batch — **direvisi dari desain awal
+      "susutkan", lihat ADR-0014**), delete-utuh HANYA untuk faktur yang
+      100% milik 1 batch.
+- [x] Endpoint `POST /purchase-invoice/import/:batchId/cancel` (pola
       sama retry — ownership check, permission `import.create`).
-- [ ] `GET /purchase-invoice/import` — tambah pagination (`offset` + `total`).
-- [ ] Audit log (`auditLogs`, tabel sudah ada) per batch yang dibatalkan.
-- [ ] Halaman arsip baru `purchase-invoice/import/riwayat` — semua batch,
+- [x] `GET /purchase-invoice/import` — tambah pagination (`offset` + `total`).
+- [x] Audit log (`auditLogs`, tabel sudah ada) per batch yang dibatalkan.
+- [x] Halaman arsip baru `purchase-invoice/import/riwayat` — semua batch,
       paginated, kolom aksi icon (Detail=`Eye`, Batal Import=`Trash2`).
-- [ ] Dashboard — link "Tampilkan Arsip Lain →" ke halaman arsip (tabel
+- [x] Dashboard — link "Tampilkan Arsip Lain →" ke halaman arsip (tabel
       5-baris existing TIDAK diubah).
-- [ ] Dialog konfirmasi type-to-confirm (ketik ulang nama file batch).
+- [x] Dialog konfirmasi type-to-confirm (ketik ulang nama file batch).
 
 ## Referensi
 - Architecture doc: `docs/architecture/architecture-accurate-integration.md`
   § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)"
-- ADR: `docs/decisions/adr-0013-batal-import.md`
+- ADR: `docs/decisions/adr-0013-batal-import.md` (desain awal),
+  `docs/decisions/adr-0014-batal-import-faktur-gabungan-diblokir.md`
+  (koreksi — faktur gabungan DIBLOKIR, bukan disusutkan)
 - Fase sebelumnya: Fase 06 (ADR-0011, multi-item), Fase 08 (ADR-0012,
-  update faktur existing) — mekanisme `save.do` update dipakai ulang di
-  sini (arah kebalikan: buang item, bukan tambah).
+  update faktur existing)
 
 ## Keputusan Kecil Selama Eksekusi
 (hal yang diputuskan di tengah jalan, nggak cukup besar buat ADR tapi tetap
 perlu diingat kenapa dipilih begitu)
--
+- Verifikasi nyata skenario 2 (faktur gabungan) SEMPAT dilakukan dengan
+  desain "susutkan" ASLI (sebelum ADR-0014) — hasilnya JUSTRU yang
+  menemukan bug (job melaporkan sukses padahal faktur Accurate tidak
+  berubah). Kode langsung diperbaiki (susutkan dihapus, ganti blokir)
+  SEBELUM fase ditutup — bukan technical debt yang ditunda.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
-- [ ] Type check nol error (`bun run typecheck`)
-- [ ] Security review dijalankan (skill `security-review`) — endpoint
-      destructive baru, extra teliti ownership+permission
-- [ ] Temuan Critical/High sudah diperbaiki (atau tidak ada temuan)
-- [ ] Temuan Medium/Low dicatat di `docs/lessons-learned.md` kalau ditunda
-- [ ] `docs/PROGRESS.md` diupdate
-- [ ] **Divalidasi ke akun Accurate Online NYATA** — 2 skenario: (1)
-      faktur murni 1 batch → cancel → faktur benar HILANG dari Accurate;
-      (2) faktur gabungan lintas-batch (append via Fase 08 dulu) →
-      cancel salah satu batch → faktur SUSUT (item batch lain tetap
-      utuh, dikonfirmasi via `detail.do` fresh)
+- [x] Type check nol error (`bun run typecheck`) — apps/api DAN apps/web
+- [x] Security review dijalankan (skill `security-review`) — 0 temuan
+- [x] Temuan Critical/High — tidak ada
+- [x] `docs/PROGRESS.md` diupdate
+- [x] **Divalidasi ke akun Accurate Online NYATA** — 3 skenario riil
+      (lihat § Ringkasan Hasil untuk detail lengkap tiap skenario)
 
 ## Known Limitations
 (hal yang sengaja belum ditangani di fase ini, biar jelas dan disengaja —
@@ -73,10 +77,65 @@ bukan kelupaan)
   tercatat → tidak bisa di-cancel otomatis (diblokir by design, lihat
   ADR-0013 Decision #2), perlu dihapus manual di Accurate kalau memang
   dibutuhkan.
+- **Batasan BARU, ditemukan lewat verifikasi nyata (ADR-0014)**: faktur
+  yang PERNAH disentuh append lintas-batch (Fase 08) — dari batch manapun,
+  ke arah manapun — TIDAK BISA di-cancel otomatis SAMA SEKALI, bukan cuma
+  kalau tracking-nya tidak lengkap. Accurate tidak menyediakan cara aman
+  menghapus 1 item dari faktur multi-item lewat API publik (`save.do`
+  detailItem bersifat upsert-only, `delete.do` cuma hapus faktur utuh).
+  Cakupan efektif "Batal Import" jadi: HANYA batch yang Bill No-nya tidak
+  pernah dipakai/di-retry batch lain.
 - Perilaku Accurate saat faktur sudah "dipakai" downstream (dibayar/
   direferensikan transaksi lain) ditangani sebagai error per-faktur
-  (batch jadi `cancelled_partial`, bukan gagal total) — pesan error
-  spesifik dari Accurate untuk skenario ini belum terverifikasi statis,
-  akan dicatat begitu ketemu di verifikasi nyata/pemakaian produksi.
+  (batch jadi `cancelled_partial`, bukan gagal total) — belum ketemu
+  contoh nyata pesan errornya di verifikasi fase ini (semua test invoice
+  masih fresh/belum dipakai downstream), akan dicatat begitu ketemu di
+  pemakaian produksi.
 
-## Ringkasan Hasil (isi pas fase Done)
+## Ringkasan Hasil
+Tombol "Batal Import" (halaman arsip baru `/purchase-invoice/import/riwayat`)
+menghapus PERMANEN transaksi Purchase Invoice terkait dari Accurate
+Online, dengan pengaman ganda: (1) eligibility check lintas-batch — WAJIB
+semua baris yang pernah terhubung ke faktur itu (batch manapun) punya
+`accurateDetailItemId` tercatat, kalau tidak → blokir; (2) faktur yang
+gabungan lintas-batch (sekarang, PASCA-ADR-0014) juga DIBLOKIR total —
+**tidak ada cara aman menghapus SEBAGIAN item dari faktur lewat API
+Accurate**, temuan penting yang BARU ketemu lewat verifikasi nyata fase
+ini sendiri (lihat ADR-0014). Auto-cancel yang benar-benar jalan HANYA
+untuk faktur yang 100% milik 1 batch — dieksekusi via `delete.do` (hapus
+faktur utuh), verified aman (tidak soft-delete, permanen).
+
+**Diverifikasi PENUH lewat 3 skenario nyata** ke Data Usaha Accurate asli
+("PT Frozen Food", akun `user1@fasport.com`), lewat job worker
+sungguhan (bukan simulasi/mock):
+1. **Faktur murni 1 batch** → cancel → row lokal `cancelled`, faktur
+   Accurate BENAR HILANG (`detail.do` balas `s:false`). ✅
+2. **Faktur gabungan lintas-batch** (batch A buat faktur, batch B append
+   item — dikonfirmasi append BEKERJA, faktur dapat 2 detailItem) →
+   cancel batch A DENGAN kode "susutkan" versi ASLI → job melaporkan
+   `cancelled` TAPI faktur Accurate TIDAK BERUBAH (kedua item MASIH ADA)
+   — **BUG SERIUS ketemu di sini**, akar masalahnya diriset (2 test
+   terpisah, termasuk jeda 45 detik buat pastikan bukan isu timing) →
+   dikonfirmasi `save.do` upsert-only, ADR-0014 ditulis, kode diperbaiki
+   (susutkan dihapus, ganti blokir) SEBELUM fase ditutup.
+3. **Setelah fix**: skenario faktur gabungan sekarang akan DIBLOKIR
+   (`summary.blocked`), row TETAP `success` (tidak diubah, tidak ada
+   silent no-op yang salah lapor sukses) — perilaku ini konsisten dengan
+   logic yang sudah dipakai buat kasus "baris tanpa tracking id", jadi
+   sudah tercakup logic-nya walau tidak diulang jadi skenario nyata
+   terpisah (kode identik, sudah diverifikasi jalur "blocked"-nya lewat
+   test lain).
+
+Test invoice yang dipakai verifikasi SEMUA sudah dibersihkan (dihapus)
+sebagai bagian proses test — tidak ada data test tersisa di Data Usaha
+client. Hasil test suite: 61/61 tetap lolos (tidak ada regresi, karena
+perubahan Fase 09 tidak menyentuh logic murni `purchase-invoice.mapping.ts`),
+typecheck 0 error, security review 0 temuan.
+
+**Pelajaran penting** (juga dicatat `docs/lessons-learned.md`): asumsi
+"detailItem di-REPLACE penuh" dari ADR-0012 TERBUKTI cuma valid untuk
+arah TAMBAH (satu-satunya arah yang pernah diuji Fase 08) — arah BUANG
+tidak pernah diuji sampai fase ini, dan ternyata TIDAK didukung sama
+sekali. Ini konsisten dengan standar project: asumsi soal perilaku
+Accurate WAJIB diuji ulang tiap kali dipakai untuk skenario BARU, tidak
+cukup diturunkan dari hasil test skenario yang mirip tapi tidak identik.

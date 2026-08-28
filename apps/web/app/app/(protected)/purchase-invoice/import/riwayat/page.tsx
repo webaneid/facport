@@ -84,8 +84,9 @@ function CancelImportDialog({ batch, onCancelled }: { batch: ImportBatch; onCanc
             riwayat di Facport. Tindakan ini <strong>tidak bisa dibatalkan lewat Facport</strong>.
           </p>
           <p className="text-muted-foreground">
-            Faktur yang gabungan dengan batch import lain akan disusutkan (item batch lain tetap aman), faktur yang
-            tidak bisa dipastikan keamanannya akan dilewati (perlu dihapus manual di Accurate).
+            Faktur yang gabungan dengan batch import lain (lewat fitur Retry) akan DILEWATI otomatis, bukan
+            terhapus — Accurate tidak mendukung hapus sebagian item faktur, jadi faktur itu perlu dihapus manual
+            lewat Accurate langsung kalau memang perlu.
           </p>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">

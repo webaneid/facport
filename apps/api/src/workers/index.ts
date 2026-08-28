@@ -500,7 +500,7 @@ async function main() {
       byInvoice.set(row.accurateTransactionId, list);
     }
 
-    const summary = { deleted: [] as string[], shrunk: [] as string[], blocked: [] as string[], failed: [] as string[] };
+    const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[] };
 
     for (const [invoiceIdStr, thisBatchRows] of byInvoice) {
       const invoiceId = Number(invoiceIdStr);
@@ -532,25 +532,25 @@ async function main() {
         continue;
       }
 
+      // § ADR-0014 (koreksi ADR-0013) — DIKONFIRMASI EMPIRIS 2026-08-28:
+      // `save.do` TIDAK mendukung hapus 1 detailItem via omit dari array
+      // (upsert-only — item yang tidak disertakan TETAP ADA, dikonfirmasi
+      // walau ditunggu 45 detik untuk pastikan bukan isu timing kalkulasi
+      // biaya barang). TIDAK ADA cara aman "menyusutkan" faktur gabungan
+      // lewat API publik — satu-satunya opsi adalah hapus faktur UTUH
+      // (`delete.do`), yang akan ikut menghapus data batch LAIN. Jadi
+      // faktur gabungan lintas-batch WAJIB diblokir juga (sama seperti
+      // baris tanpa tracking id), BUKAN disusutkan.
       const otherBatchRows = allRowsForInvoice.filter((r) => r.batchId !== batch.id);
-      const thisBatchDetailItemIds = new Set(thisBatchRows.map((r) => r.accurateDetailItemId!));
+      if (otherBatchRows.length > 0) {
+        summary.blocked.push(invoiceIdStr);
+        continue;
+      }
 
       try {
-        if (otherBatchRows.length === 0) {
-          // § faktur 100% milik batch ini — hapus utuh.
-          await deletePurchaseInvoice(session, invoiceId);
-        } else {
-          // § faktur gabungan lintas-batch (Fase 08) — susutkan: kirim
-          // ulang detailItem TANPA item milik batch ini, sisakan punya
-          // batch lain. Fetch fresh (bukan asumsi state lama), pola sama
-          // `appendToExistingPurchaseInvoice` (Fase 08), arah kebalikan.
-          const detail = await getPurchaseInvoiceDetail(session, invoiceId);
-          const keep = detail.detailItem
-            .filter((it) => !thisBatchDetailItemIds.has(String(it.id)))
-            .map((it) => ({ id: it.id }));
-          await savePurchaseInvoice(session, { id: invoiceId, detailItem: keep });
-        }
-
+        // § faktur 100% milik batch ini (tidak ada batch lain nempel) —
+        // satu-satunya kasus yang aman di-auto-cancel — hapus utuh.
+        await deletePurchaseInvoice(session, invoiceId);
         await db
           .update(importBatchRows)
           .set({ status: "cancelled", cancelledAt: new Date() })
@@ -560,7 +560,7 @@ async function main() {
               thisBatchRows.map((r) => r.id),
             ),
           );
-        (otherBatchRows.length === 0 ? summary.deleted : summary.shrunk).push(invoiceIdStr);
+        summary.deleted.push(invoiceIdStr);
       } catch (err) {
         // § faktur mungkin sudah "dipakai" downstream (dibayar/
         // direferensikan transaksi lain) — Accurate bisa menolak. TIDAK
@@ -579,8 +579,7 @@ async function main() {
       actorId,
     });
 
-    const successCount = summary.deleted.length + summary.shrunk.length;
-    const finalStatus = successCount === byInvoice.size ? "cancelled" : "cancelled_partial";
+    const finalStatus = summary.deleted.length === byInvoice.size ? "cancelled" : "cancelled_partial";
     await db.update(importBatches).set({ status: finalStatus, completedAt: new Date() }).where(eq(importBatches.id, batch.id));
 
     logger.info({ batchId, summary, finalStatus }, "Cancel import selesai");

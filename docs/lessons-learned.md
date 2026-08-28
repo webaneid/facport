@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-08-28 — Accurate `save.do` TIDAK bisa hapus 1 `detailItem` via omit (upsert-only, bukan full-replace)
+**Masalah:** Fase 09 ("Batal Import") desain awal (ADR-0013) berasumsi
+faktur gabungan lintas-batch bisa "disusutkan" — kirim ulang `detailItem[]`
+via `save.do` mode update, cuma berisi item yang mau DIPERTAHANKAN (via
+`id`), berharap item yang DI-OMIT otomatis terhapus. Asumsi ini diturunkan
+dari catatan ADR-0012 ("detailItem di-REPLACE, bukan merge") — TAPI
+ADR-0012 cuma pernah menguji arah TAMBAH item, tidak pernah arah BUANG.
+
+**Root cause:** Verifikasi nyata Fase 09 membuktikan asumsi ini SALAH.
+Test 1 (langsung buang 1 dari 2 item baru dibuat): `save.do` balas
+`s:false`, error "kalkulasi biaya barang belum selesai" — awalnya disangka
+cuma isu timing. Test 2 (SAMA persis, tapi tunggu 45 detik dulu): `save.do`
+balas `s:true` ("berhasil disimpan") TANPA error — tapi `detail.do` fresh
+sesudahnya menunjukkan KEDUA item (termasuk yang di-omit) MASIH ADA.
+Kesimpulan: `detailItem[]` di `save.do` mode update bersifat **upsert-only**
+— item yang direferensikan tetap/diupdate, item baru (tanpa `id`)
+ditambahkan, tapi item yang TIDAK disertakan TETAP DIPERTAHANKAN (bukan
+dihapus). Tidak ada endpoint/field alternatif untuk hapus 1 baris item
+(`delete.do` cuma hapus FAKTUR UTUH, bukan per-item).
+
+**Dampak yang SEMPAT terjadi**: sebelum ketemu, kode Fase 09 (`workers/index.ts`)
+sempat memanggil `save.do` dengan `detailItem[]` parsial dan MENANDAI
+baris sebagai `cancelled` begitu respons `s:true` diterima — padahal
+faktur Accurate TIDAK BERUBAH sama sekali. Ini kelas bug BERBAHAYA: sistem
+melaporkan sukses padahal data akuntansi asli TIDAK terhapus, user bisa
+percaya sesuatu sudah dibatalkan padahal masih ada. Ketemu & diperbaiki
+SAAT verifikasi nyata sebelum fase ditutup — TIDAK sempat ke production.
+
+**Fix:** ADR-0014 (koreksi ADR-0013) — hapus total mekanisme "susutkan"
+dari kode, ganti jadi BLOKIR (faktur gabungan lintas-batch tidak bisa
+di-auto-cancel sama sekali, sama seperti kasus "baris tanpa tracking id").
+
+**Pencegahan:** Kesimpulan dari test skenario A ("X berhasil dengan
+payload P") TIDAK BOLEH digeneralisasi ke skenario B yang cuma "mirip"
+(P dengan 1 elemen dihapus) tanpa diuji ulang secara terpisah — arah
+operasi (tambah vs buang) bisa punya semantik API yang BEDA TOTAL walau
+sama-sama lewat endpoint & field yang sama. Selalu uji tiap ARAH operasi
+secara eksplisit, jangan asumsikan simetris. Kalau hasil test `s:true`
+tanpa error, TETAP verifikasi ulang via fetch independent (`detail.do`
+fresh) sebelum percaya sistem benar-benar melakukan yang diminta — respons
+sukses dari `save.do` cuma berarti "request diterima & diproses", BUKAN
+jaminan hasil akhirnya sesuai ekspektasi caller.
+
+---
+
 ## 2026-08-28 — CI auto-deploy (`deploy-to-server`) TIDAK PERNAH benar-benar jalan sejak awal — secret SSH kosong
 **Masalah:** Ketemu saat verifikasi nyata Fase 08 — push ke `main` selalu
 menghasilkan Release sukses + `build-and-push` sukses (image ke GHCR), tapi

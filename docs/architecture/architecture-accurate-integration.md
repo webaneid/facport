@@ -366,17 +366,25 @@ Food"):
 - `save.do` respons CREATE (`r`) **mengandung `detailItem[].id`** per
   item (dikonfirmasi test nyata: item baru dapat `id` sendiri, terpisah
   dari `id` faktur) — fondasi tracking per-item yang dipakai fase ini.
+- ⚠️ **`save.do` mode update TIDAK BISA menghapus 1 detailItem via omit
+  dari array** — DIKONFIRMASI EMPIRIS (buang 1 dari 2 item, tunggu 45
+  detik biar bukan isu timing kalkulasi biaya, `save.do` balas `s:true`
+  TANPA error, tapi `detail.do` fresh sesudahnya menunjukkan item yang
+  di-omit MASIH ADA). `detailItem[]` bersifat **upsert-only** (tambah/
+  update via `id`), BUKAN full-replace seperti draf awal ADR-0012/0013
+  duga. Koreksi lengkap → ADR-0014.
 
 **Masalah yang diselesaikan**: sejak Fase 08, 1 faktur bisa berisi item
 dari BEBERAPA batch (append lintas-batch) — `delete.do` polos bisa
-menghapus data batch LAIN yang menumpang di faktur yang sama. Solusi:
-cek dulu lintas-batch siapa saja pemilik faktur itu — kalau murni 1 batch
-→ `delete.do` (hapus utuh); kalau gabungan → `save.do` mode UPDATE
-(mekanisme sama Fase 08, arah kebalikan: kirim `detailItem[]` cuma berisi
-item milik batch LAIN yang dipertahankan). Baris lama tanpa tracking
-id-per-item (`accurateDetailItemId` NULL) diblokir dari auto-cancel
-(aman, bukan tebak-tebakan). Detail lengkap keputusan → ADR-0013,
-eksekusi → `docs/phases/phase-09-batal-import.md`.
+menghapus data batch LAIN yang menumpang di faktur yang sama. **Karena
+tidak ada cara aman "menyusutkan" faktur gabungan** (temuan di atas),
+solusinya: cek dulu lintas-batch siapa saja pemilik faktur itu — kalau
+murni 1 batch → `delete.do` (hapus utuh, SATU-SATUNYA kasus yang aman
+di-auto-cancel); kalau gabungan (batch lain juga punya item di faktur
+itu) → **DIBLOKIR**, sama seperti baris lama tanpa tracking id-per-item
+(`accurateDetailItemId` NULL). Detail lengkap keputusan → ADR-0013 (desain
+awal) dan ADR-0014 (koreksi "susutkan" → "blokir"), eksekusi →
+`docs/phases/phase-09-batal-import.md`.
 
 ### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
 Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan

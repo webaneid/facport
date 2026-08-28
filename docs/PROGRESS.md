@@ -17,7 +17,7 @@
 | 06   | Purchase Invoice — Multi-Item per Faktur | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Multi-Item per Faktur", ADR-0011 | `docs/phases/phase-06-purchase-invoice-multi-item.md` |
 | 07   | Tampilkan Nomor Faktur di Detail Hasil Import | Done | (frontend-only, lihat phase doc) | `docs/phases/phase-07-riwayat-cari-nomor-faktur.md` |
 | 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
-| 09   | Batal Import (Hapus/Susutkan Faktur di Accurate) | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013 | `docs/phases/phase-09-batal-import.md` |
+| 09   | Batal Import (Hapus Faktur di Accurate) | In Progress | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013, ADR-0014 | `docs/phases/phase-09-batal-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -220,3 +220,19 @@ proses ini: CI auto-deploy TIDAK PERNAH benar-benar jalan sejak awal
 (secret SSH server tidak pernah diisi) — detail lengkap →
 `docs/lessons-learned.md` entri 2026-08-28 "CI auto-deploy tidak pernah
 jalan...".
+
+## Update 2026-08-28 — Fase 09: Batal Import
+Item ke-3 (terakhir) dari 3 feedback client, akhirnya digarap setelah
+Fase 06 & 08 solid. **1 bug SERIUS ketemu & diperbaiki SAAT verifikasi
+nyata** (bukan lolos ke production): desain awal ADR-0013 mau
+"menyusutkan" faktur gabungan lintas-batch (hapus 1 item via `save.do`,
+sisakan yang lain) — verifikasi nyata membuktikan ini TIDAK BEKERJA
+(`save.do` bersifat upsert-only, item yang di-omit dari payload TETAP
+ADA di Accurate walau job melaporkan sukses/`cancelled`). Dikoreksi via
+ADR-0014: faktur gabungan sekarang DIBLOKIR total dari auto-cancel
+(bukan disusutkan) — cakupan "Batal Import" jadi lebih sempit dari
+rencana awal (cuma faktur yang 100% milik 1 batch yang bisa dihapus
+otomatis), tapi AMAN (tidak ada silent no-op yang salah lapor sukses).
+Diverifikasi PENUH lewat 3 skenario nyata ke Data Usaha Accurate asli
+("PT Frozen Food"). Detail lengkap → ADR-0013, ADR-0014,
+`docs/phases/phase-09-batal-import.md`.
