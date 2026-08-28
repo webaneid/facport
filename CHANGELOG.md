@@ -1,3 +1,8 @@
+## 1.10.0 (2026-08-28)
+
+* feat: Fase 10 — admin dashboard (settings, user, paket, retensi data) ([f2a7734](https://github.com/webaneid/facport/commit/f2a7734))
+* docs: catat fitur Delete (hapus lokal) di PROGRESS.md ([f3b615a](https://github.com/webaneid/facport/commit/f3b615a))
+
 ## 1.9.0 (2026-08-28)
 
 * feat: aktifkan Delete — hapus riwayat import lokal, tidak sentuh Accurate ([a016916](https://github.com/webaneid/facport/commit/a016916))
