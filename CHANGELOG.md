@@ -1,3 +1,7 @@
+## <small>1.7.2 (2026-08-28)</small>
+
+* fix(web): pindah icon Edit ke baris gagal, bukan tabel batch ([df6823f](https://github.com/webaneid/facport/commit/df6823f))
+
 ## <small>1.7.1 (2026-08-28)</small>
 
 * fix: dashboard 500 — pisahkan CANCELLABLE_BATCH_STATUS dari file "use client" ([d6cd362](https://github.com/webaneid/facport/commit/d6cd362))
