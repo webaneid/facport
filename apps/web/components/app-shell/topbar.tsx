@@ -3,7 +3,7 @@
 import { Menu, LogOut } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { NAV_ITEMS } from "./sidebar";
+import type { NavItem } from "./sidebar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -23,14 +23,22 @@ function getInitials(name: string, email: string) {
 // Cari nav item paling spesifik yang jadi awalan pathname — supaya
 // halaman turunan (mis. `/purchase-invoice/import/[batchId]`) tetap dapat
 // judul dari induknya ("Import Faktur Pembelian"), bukan kosong.
-function currentPageLabel(pathname: string): string {
-  const match = [...NAV_ITEMS]
+function currentPageLabel(pathname: string, navItems: NavItem[]): string {
+  const match = [...navItems]
     .sort((a, b) => b.href.length - a.href.length)
     .find((item) => (item.href === "/" ? pathname === "/" : pathname.startsWith(item.href)));
   return match?.label ?? "Dashboard";
 }
 
-export function Topbar({ user, onMenuClick }: { user: { name: string; email: string }; onMenuClick: () => void }) {
+export function Topbar({
+  navItems,
+  user,
+  onMenuClick,
+}: {
+  navItems: NavItem[];
+  user: { name: string; email: string };
+  onMenuClick: () => void;
+}) {
   const router = useRouter();
   const pathname = usePathname();
 
@@ -46,7 +54,7 @@ export function Topbar({ user, onMenuClick }: { user: { name: string; email: str
         <Button variant="ghost" className="px-2 lg:hidden" onClick={onMenuClick} aria-label="Buka menu">
           <Menu className="h-5 w-5" />
         </Button>
-        <span className="text-sm font-medium text-foreground">{currentPageLabel(pathname)}</span>
+        <span className="text-sm font-medium text-foreground">{currentPageLabel(pathname, navItems)}</span>
       </div>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>

@@ -15,6 +15,7 @@ export const JOBS = {
   REFRESH_ACCURATE_TOKEN: "refresh-accurate-token",
   IMPORT_TO_ACCURATE: "import-to-accurate",
   CANCEL_IMPORT: "cancel-import", // § Fase 09, ADR-0013
+  PURGE_OLD_IMPORTS: "purge-old-imports", // § Fase 10 — retensi data import
 } as const;
 
 let started = false;

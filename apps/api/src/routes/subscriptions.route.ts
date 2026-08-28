@@ -29,6 +29,15 @@ export const subscriptionsRoute = new Elysia()
         set.status = 404;
         return { code: "PLAN_NOT_FOUND" };
       }
+      // § Fase 10, ADR-0015 — `plans.price` nullable (Facport sementara
+      // tanpa harga). Checkout SELALU butuh amount valid buat `orders`
+      // (kolom itu tetap notNull — order nyata WAJIB ada jumlahnya) — plan
+      // tanpa harga tidak bisa checkout sama sekali, harus di-assign admin
+      // manual (`POST /admin/subscriptions`) selama ADR-0015 berlaku.
+      if (plan.price === null) {
+        set.status = 400;
+        return { code: "PLAN_HAS_NO_PRICE" };
+      }
 
       // § architecture-payment.md — provider (Ipaymu/Xendit) BELUM final.
       // Order & subscription tetap dibuat (status pending_payment) supaya

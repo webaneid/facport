@@ -1,6 +1,18 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
+import { LayoutDashboard, FileSpreadsheet, Link2, Landmark } from "lucide-react";
 import { AppShell } from "@/components/app-shell/app-shell";
+import type { NavItem } from "@/components/app-shell/sidebar";
+
+// § Fase 10 — daftar nav surface customer, SATU sumber (dulu di
+// `components/app-shell/sidebar.tsx`, dipindah ke sini supaya AppShell bisa
+// dipakai ulang surface admin dengan nav berbeda — lihat `app/admin/(protected)/layout.tsx`).
+const NAV_ITEMS: NavItem[] = [
+  { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet },
+  { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark },
+  { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
+];
 
 // § Medium finding security review Fase 01 (pola sama dengan
 // app/admin/(protected)/layout.tsx) — proxy.ts cuma cek keberadaan session
@@ -17,5 +29,9 @@ export default async function AppProtectedLayout({ children }: { children: React
   const me = (await res.json()) as { id: string; email: string; name: string; roles: string[] };
   if (!me.roles.includes("customer")) redirect("/login");
 
-  return <AppShell user={{ name: me.name, email: me.email }}>{children}</AppShell>;
+  return (
+    <AppShell navItems={NAV_ITEMS} user={{ name: me.name, email: me.email }}>
+      {children}
+    </AppShell>
+  );
 }

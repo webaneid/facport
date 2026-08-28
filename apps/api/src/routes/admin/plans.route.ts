@@ -1,12 +1,15 @@
 import { Elysia, t } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 
+// § Fase 10, ADR-0015 — TIDAK ADA field `price` — Facport sementara
+// tanpa harga (supporting app), lihat ADR-0015. Kolom `price` di DB
+// TETAP ada (nullable, reversibel) tapi route ini sengaja tidak
+// menerimanya dari client sama sekali.
 const planBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 100 }),
-  price: t.Integer({ minimum: 0 }),
   durationDays: t.Integer({ minimum: 1 }),
   modules: t.Array(t.String()),
   isActive: t.Optional(t.Boolean()),
@@ -14,6 +17,14 @@ const planBody = t.Object({
 
 export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
   .use(permissionPlugin)
+  .get(
+    "/",
+    async () => {
+      const all = await db.select().from(plans).orderBy(desc(plans.createdAt));
+      return { plans: all };
+    },
+    { permission: "plans.manage" },
+  )
   .post(
     "/",
     async ({ body, user }) => {

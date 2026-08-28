@@ -1,12 +1,13 @@
 import "../lib/env"; // WAJIB paling awal
 
-import { eq, and, or, lt, lte, inArray, sql } from "drizzle-orm";
+import { eq, and, or, lt, lte, inArray, notInArray, sql } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
 import { sendEmail } from "../lib/email";
 import { db } from "../lib/db";
-import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs } from "../db/schema";
+import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings } from "../db/schema";
+import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { refreshAccessToken } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
@@ -265,6 +266,54 @@ async function main() {
       .where(and(eq(subscriptions.status, "active"), lt(subscriptions.endAt, new Date())))
       .returning({ id: subscriptions.id });
     logger.info({ count: expired.length }, "Subscriptions expired");
+  });
+
+  // § Fase 10, architecture-subscription.md § "Retensi Data Import" —
+  // data Excel yang diimpor berisi data bisnis sensitif client, TIDAK
+  // disimpan lama-lama. Batas 7 hari HARDCODE (bukan admin-configurable),
+  // default admin 2 hari (§ settings.route.ts — divalidasi 1-7 di situ,
+  // tapi job ini TETAP clamp ulang defensif kalau ada nilai settings yang
+  // di luar batas via jalur lain, mis. edit manual DB).
+  await boss.schedule(JOBS.PURGE_OLD_IMPORTS, "0 3 * * *");
+  await boss.work(JOBS.PURGE_OLD_IMPORTS, async () => {
+    const [retentionSetting] = await db.select().from(settings).where(eq(settings.key, IMPORT_RETENTION_SETTING_KEY));
+    const rawDefault = Number(retentionSetting?.value ?? DEFAULT_IMPORT_RETENTION_DAYS);
+    const adminDefaultDays = Number.isInteger(rawDefault) ? Math.min(Math.max(rawDefault, 1), MAX_IMPORT_RETENTION_DAYS) : DEFAULT_IMPORT_RETENTION_DAYS;
+
+    // § retensi EFEKTIF per batch = override subscription kalau ada, else
+    // default admin — dihitung di JS (bukan SQL) supaya logic clamp 1-7
+    // konsisten SATU tempat, tidak diduplikasi jadi ekspresi SQL terpisah.
+    const candidates = await db
+      .select({
+        id: importBatches.id,
+        createdAt: importBatches.createdAt,
+        overrideDays: subscriptions.importRetentionDaysOverride,
+      })
+      .from(importBatches)
+      .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+      .where(notInArray(importBatches.status, ["processing", "cancelling"]));
+
+    const now = Date.now();
+    const idsToDelete = candidates
+      .filter((c) => {
+        const effectiveDays = c.overrideDays != null ? Math.min(Math.max(c.overrideDays, 1), MAX_IMPORT_RETENTION_DAYS) : adminDefaultDays;
+        return now - c.createdAt.getTime() > effectiveDays * 24 * 60 * 60 * 1000;
+      })
+      .map((c) => c.id);
+
+    if (idsToDelete.length > 0) {
+      await db.delete(importBatches).where(inArray(importBatches.id, idsToDelete));
+    }
+
+    await db.insert(auditLogs).values({
+      entityType: "system",
+      entityId: "purge-old-imports",
+      action: "delete",
+      changes: { reason: "retention_policy", batchesDeleted: idsToDelete.length, defaultRetentionDays: adminDefaultDays },
+      actorId: null,
+    });
+
+    logger.info({ batchesDeleted: idsToDelete.length, adminDefaultDays }, "Purge old imports selesai");
   });
 
   // § architecture-accurate-integration.md § 1 — access token expire 15

@@ -2,27 +2,22 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, Link2, Landmark } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 
-// § architecture-app-dashboard.md — SATU sumber daftar nav. Modul
-// berikutnya (Sales Invoice, Purchase Order, dst) tinggal tambah 1 baris
-// di sini, JANGAN duplikasi nav ke tempat lain. Diekspor (bukan cuma
-// lokal) supaya Topbar bisa reuse buat judul halaman — SATU sumber, dua
-// pemakai, bukan daftar duplikat.
-export const NAV_ITEMS = [
-  { href: "/", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet },
-  { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark },
-  { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
-];
+// § Fase 10 — `navItems` sekarang PROP (bukan konstanta hardcode di sini),
+// supaya `AppShell` bisa dipakai ulang surface admin (nav beda total dari
+// customer) tanpa duplikasi seluruh komponen shell. Tiap surface (`app/app/`,
+// `app/admin/`) definisikan daftar nav-nya sendiri di layout.tsx masing-masing,
+// SATU sumber per surface — jangan duplikasi ke tempat lain.
+export type NavItem = { href: string; label: string; icon: LucideIcon };
 
-function NavList({ onNavigate }: { onNavigate?: () => void }) {
+function NavList({ navItems, onNavigate }: { navItems: NavItem[]; onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
     <nav className="flex flex-1 flex-col gap-1 p-4">
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const active = pathname === item.href;
         const Icon = item.icon;
         return (
@@ -44,7 +39,15 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen: boolean; onMobileClose: () => void }) {
+export function Sidebar({
+  navItems,
+  mobileOpen,
+  onMobileClose,
+}: {
+  navItems: NavItem[];
+  mobileOpen: boolean;
+  onMobileClose: () => void;
+}) {
   return (
     <>
       {/* Desktop — selalu tampil */}
@@ -52,7 +55,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen: boolean; on
         <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
           Facport
         </div>
-        <NavList />
+        <NavList navItems={navItems} />
       </aside>
 
       {/* Mobile — drawer slide-in kiri, pakai primitif @radix-ui/react-dialog
@@ -69,7 +72,7 @@ export function Sidebar({ mobileOpen, onMobileClose }: { mobileOpen: boolean; on
             <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
               Facport
             </div>
-            <NavList onNavigate={onMobileClose} />
+            <NavList navItems={navItems} onNavigate={onMobileClose} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

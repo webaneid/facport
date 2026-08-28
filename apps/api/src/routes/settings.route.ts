@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { settings } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
+import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 
 export const settingsRoute = new Elysia({ prefix: "/settings" })
   .use(permissionPlugin)
@@ -27,7 +28,22 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
   )
   .put(
     "/",
-    async ({ body, user }) => {
+    async ({ body, user, set }) => {
+      // § Fase 10, architecture-subscription.md § "Retensi Data Import" —
+      // key ini SATU-SATUNYA pengecualian di sistem settings yang
+      // fleksibel/tanpa-skema ini: nilainya langsung dipakai job
+      // penghapusan data OTOMATIS (`PURGE_OLD_IMPORTS`), jadi WAJIB
+      // divalidasi server-side (bukan cuma form frontend) — batas 7 hari
+      // adalah aturan bisnis TETAP (data client sensitif), bukan saran.
+      const retentionItem = body.find((b) => b.key === IMPORT_RETENTION_SETTING_KEY);
+      if (retentionItem) {
+        const days = Number(retentionItem.value);
+        if (!Number.isInteger(days) || days < 1 || days > MAX_IMPORT_RETENTION_DAYS) {
+          set.status = 400;
+          return { code: "INVALID_RETENTION_DAYS", maxDays: MAX_IMPORT_RETENTION_DAYS };
+        }
+      }
+
       for (const { key, value, group } of body) {
         await db
           .insert(settings)

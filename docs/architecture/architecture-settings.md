@@ -60,19 +60,30 @@ skill `security-review`/checklist review kalau ada kolom timestamp baru**.
 - **`integrations`**: `google.analyticsId` (GA4 Measurement ID) — opsional,
   kalau nanti butuh tracking usage dashboard internal.
 
+## Field Group `data` (Fase 10)
+| Key | Value | Catatan |
+|---|---|---|
+| `data.importRetentionDays` | integer (hari) | Default 2, WAJIB divalidasi 1–7 (§ `architecture-subscription.md` § "Retensi Data Import" — batas 7 hari HARDCODE, bukan cuma UI). Dipakai job `PURGE_OLD_IMPORTS` sebagai default kalau `subscriptions.importRetentionDaysOverride` kosong. |
+
 ## Komponen Frontend
 ```
-apps/web/app/(admin)/settings/
-  general/page.tsx        ← nama, alamat, logo, favicon, timezone
-  integrations/page.tsx    ← Google Analytics (opsional)
+apps/web/app/admin/(protected)/settings/page.tsx   ← nama, alamat, timezone, retensi data
 ```
+> Path DIKOREKSI Fase 10 — draf awal doc ini menulis `app/(admin)/settings/`,
+> TIDAK sesuai konvensi routing final (§ `architecture-domain-routing.md`,
+> surface admin di `app/admin/(protected)/`, bukan route group `(admin)`).
+> Logo/favicon company & halaman `integrations/` (Google Analytics) DITUNDA
+> di Fase 10 — dicatat Known Limitation di `docs/phases/phase-10-admin-dashboard.md`,
+> bukan lupa.
+
 Form pakai `react-hook-form` + `zod` (§ ADR-0004). Field alamat cukup
 `Textarea` biasa (project ini tidak pakai komponen Alamat terstruktur).
 
 ## API
 ```
 GET  /settings?group=general    → { "company.name": "...", ... }
-PUT  /settings                  → body: { key, value }[] — update banyak sekaligus
+GET  /settings?group=data       → { "data.importRetentionDays": 2 }
+PUT  /settings                  → body: { key, value, group }[] — update banyak sekaligus
 ```
 Endpoint `PUT` WAJIB auth guard + permission check (cuma role tertentu, mis.
 `owner`/`admin`, boleh ubah settings) — bukan endpoint publik.

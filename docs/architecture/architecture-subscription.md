@@ -10,7 +10,11 @@
 export const plans = pgTable("plans", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 100 }).notNull(), // "Starter", "Pro", "Semua Modul", dst
-  price: integer("price").notNull(), // Rupiah, integer (hindari float untuk uang)
+  // § Fase 10, ADR-0015 — NULLABLE (dulu notNull). Facport SEMENTARA
+  // tanpa harga (supporting app, bukan produk mandiri) — kolom TETAP
+  // ada (reversibel), form admin TIDAK punya field ini sama sekali
+  // selama ADR-0015 berlaku.
+  price: integer("price"), // Rupiah, integer (hindari float untuk uang)
   durationDays: integer("duration_days").notNull(), // 30 = bulanan, 365 = tahunan, dst
   modules: jsonb("modules").notNull(), // string[] — subset dari daftar modul di docs/glossary.md, mis. ["penjualan", "pembelian"]
   isActive: boolean("is_active").notNull().default(true), // paket yang di-nonaktifkan tidak hilang dari histori subscriber lama
@@ -27,9 +31,41 @@ export const subscriptions = pgTable("subscriptions", {
   // enum: "pending_payment" | "active" | "expired" | "cancelled"
   startAt: timestamp("start_at"), // diisi begitu status jadi "active"
   endAt: timestamp("end_at"), // startAt + plan.durationDays, dihitung saat aktivasi
+  // § Fase 10 — override retensi data import PER PELANGGAN (nullable,
+  // NULL = pakai default admin). Kolomnya sudah ada dari Fase 10, TAPI
+  // endpoint buat customer isi field ini sendiri SENGAJA belum dibangun
+  // (ditunda ke fase customer-settings terpisah) — lihat § "Retensi Data
+  // Import" di bawah.
+  importRetentionDaysOverride: integer("import_retention_days_override"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 ```
+
+## Retensi Data Import (Fase 10)
+Data Excel yang diimpor (`import_batches`/`import_batch_rows`, § architecture-accurate-integration.md
+§ 2) berisi data bisnis sensitif milik client (harga beli, nama vendor,
+dst) — Facport SENGAJA tidak menyimpannya lama-lama, supaya tidak bisa
+dituduh menahan data rahasia perusahaan client lebih lama dari
+seperlunya.
+
+- **Batas sistem TETAP: maksimal 7 hari** (konstanta kode
+  `MAX_IMPORT_RETENTION_DAYS`, BUKAN nilai yang bisa diubah admin maupun
+  customer).
+- **Default admin: 2 hari** — disimpan di `settings` (key-value,
+  `data.importRetentionDays`, group `"data"`), diatur dari
+  `/admin/settings`.
+- **Override per-pelanggan** (`subscriptions.importRetentionDaysOverride`,
+  di atas) — kalau terisi, dipakai gantikan default admin UNTUK
+  subscription itu saja. UI buat customer mengisi field ini sendiri
+  DITUNDA (Fase 10 cuma siapkan kolom + logic baca-nya di job, bukan
+  endpoint tulis-nya).
+- Job terjadwal harian `PURGE_OLD_IMPORTS` (§ `architecture-jobs.md`)
+  hitung retensi EFEKTIF per batch (override kalau ada, else default
+  admin), hapus `import_batches` (cascade rows) yang lebih tua dari itu
+  dan TIDAK sedang `processing`/`cancelling`. Detail lengkap →
+  `docs/phases/phase-10-admin-dashboard.md`.
+- Retensi ini **TIDAK menyentuh** `audit_logs`, `media`, atau data user —
+  scope-nya cuma riwayat import Excel.
 `plans.modules` pakai key modul yang SAMA dengan yang dipakai di
 `import_batches.module` (§ `architecture-accurate-integration.md`) — supaya
 gating (di bawah) tinggal cek keanggotaan array, bukan mapping nama berbeda.
@@ -133,8 +169,11 @@ GET  /plans                          → daftar paket aktif (publik, untuk landi
 POST /subscriptions/checkout         → body: { planId } — buat order + return payment URL
 GET  /me/subscription                → status langganan user saat ini
 # Admin only:
-POST /admin/plans                    → CRUD paket
+GET  /admin/plans                    → daftar SEMUA paket (aktif+nonaktif), § Fase 10
+POST/PUT/DELETE /admin/plans         → CRUD paket
+GET  /admin/users                    → daftar user + role + subscription aktif, § Fase 10
 POST /admin/users                    → provisioning user manual (§ Admin-Provisioned di atas)
+GET  /admin/subscriptions?userId=    → riwayat subscription 1 user, § Fase 10
 POST /admin/subscriptions            → assign plan manual ke user (tanpa payment)
 ```
 

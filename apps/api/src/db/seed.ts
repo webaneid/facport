@@ -12,6 +12,7 @@ const ADMIN_PERMISSION_KEYS = [
   "plans.manage",
   "users.manage",
   "subscriptions.manage",
+  "audit.view", // § Fase 10 — lihat riwayat audit_logs (dashboard admin)
 ];
 
 // Permission customer (fitur import — digabung dengan requireModuleAccess()

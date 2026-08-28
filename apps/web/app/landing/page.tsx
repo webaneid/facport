@@ -38,9 +38,17 @@ export default async function LandingPage() {
             {plans.map((plan) => (
               <div key={plan.id} className="rounded-lg border border-neutral-200 p-4">
                 <h3 className="font-medium">{plan.name}</h3>
+                {/* § Fase 10, ADR-0015 — plan.price nullable (Facport
+                    sementara tanpa harga, supporting app) */}
                 <p className="text-2xl font-semibold">
-                  Rp{plan.price.toLocaleString("id-ID")}
-                  <span className="text-sm font-normal text-neutral-500">/{plan.durationDays} hari</span>
+                  {plan.price != null ? (
+                    <>
+                      Rp{plan.price.toLocaleString("id-ID")}
+                      <span className="text-sm font-normal text-neutral-500">/{plan.durationDays} hari</span>
+                    </>
+                  ) : (
+                    <span className="text-base font-normal text-neutral-500">Hubungi kami</span>
+                  )}
                 </p>
                 <ul className="mt-2 text-sm text-neutral-500">
                   {plan.modules.map((m) => (
