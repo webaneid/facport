@@ -22,6 +22,40 @@ type EditableRow = {
   rawData: Record<string, unknown>;
 };
 
+// § ketemu 2026-08-28 — kolom TANGGAL disimpan di `rawData` APA ADANYA
+// dari hasil parse Excel (`lib/excel.ts`, apps/api) — biasanya angka
+// SERIAL Excel mentah (mis. `46261`), BUKAN string tanggal. Dialog ini
+// sebelumnya cuma `String(...)` semua kolom tanpa pengecualian: (1)
+// tampil ke user sebagai angka serial yang tidak masuk akal, (2) BUG
+// LEBIH SERIUS — kalau user save TANPA sentuh field tanggal, angka itu
+// ikut ke-`String()`-kan jadi teks ("46261"), dan `toAccurateDate()` di
+// worker (apps/api/.../purchase-invoice.mapping.ts) tidak lagi
+// mengenalinya sebagai serial number (cuma cek `typeof === "number"`),
+// tanggal jadi rusak diam-diam. Fix: normalisasi ke DD/MM/YYYY saat
+// tampil, SELALU simpan balik sebagai string DD/MM/YYYY — replikasi
+// PERSIS algoritma `toAccurateDate` (backend, satu-satunya sumber
+// kebenaran format tanggal Accurate) supaya hasilnya identik.
+// Field internal yang dianggap tanggal — HARUS SINKRON dengan
+// `DATE_FIELDS` di `apps/api/src/lib/import-mapping/purchase-invoice.mapping.ts`.
+const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function toDisplayDate(value: unknown): string {
+  if (typeof value === "number") {
+    const date = new Date(EXCEL_EPOCH_UTC_MS + value * 86400000);
+    const dd = String(date.getUTCDate()).padStart(2, "0");
+    const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+    return `${dd}/${mm}/${date.getUTCFullYear()}`;
+  }
+  if (typeof value === "string") {
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) return value; // sudah DD/MM/YYYY
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[3]}/${isoMatch[2]}/${isoMatch[1]}`;
+    return value;
+  }
+  return value == null ? "" : String(value);
+}
+
 export function EditRowDialog({
   batchId,
   row,
@@ -36,13 +70,18 @@ export function EditRowDialog({
   onSaved: () => void;
 }) {
   const columns = Object.keys(columnMapping);
+  const dateColumns = new Set(columns.filter((col) => DATE_INTERNAL_FIELDS.has(columnMapping[col]!)));
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function openDialog() {
-    setValues(Object.fromEntries(columns.map((col) => [col, String(row.rawData[col] ?? "")])));
+    setValues(
+      Object.fromEntries(
+        columns.map((col) => [col, dateColumns.has(col) ? toDisplayDate(row.rawData[col]) : String(row.rawData[col] ?? "")]),
+      ),
+    );
     setError(null);
     setOpen(true);
   }
@@ -95,7 +134,11 @@ export function EditRowDialog({
           {columns.map((col) => (
             <label key={col} className="flex flex-col gap-1">
               <span className="text-xs font-medium text-foreground">{col}</span>
-              <Input value={values[col] ?? ""} onChange={(e) => setValues((v) => ({ ...v, [col]: e.target.value }))} />
+              <Input
+                value={values[col] ?? ""}
+                onChange={(e) => setValues((v) => ({ ...v, [col]: e.target.value }))}
+                placeholder={dateColumns.has(col) ? "DD/MM/YYYY" : undefined}
+              />
             </label>
           ))}
           <Button onClick={handleSave} disabled={submitting} className="self-end">
