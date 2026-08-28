@@ -109,7 +109,7 @@ export default function PurchaseInvoiceImportResultPage() {
 
   if (!detail) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+      <div className="mx-auto flex max-w-4xl flex-col gap-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-40 w-full" />
       </div>
@@ -122,7 +122,7 @@ export default function PurchaseInvoiceImportResultPage() {
   const sortedRows = sortByInvoiceNumber(rows, billNumberColumn);
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="mx-auto flex max-w-4xl flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import</h1>
         <p className="text-sm text-muted-foreground">{batch.fileName}</p>
