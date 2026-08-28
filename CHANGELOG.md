@@ -1,3 +1,8 @@
+## 1.7.0 (2026-08-28)
+
+* feat(web): icon konsisten Detail/Batal Import di dashboard + arsip ([dfe6a95](https://github.com/webaneid/facport/commit/dfe6a95))
+* docs: tutup Fase 09 — diverifikasi ulang nyata pasca-fix ADR-0014 ([26a7e4e](https://github.com/webaneid/facport/commit/26a7e4e))
+
 ## <small>1.6.1 (2026-08-28)</small>
 
 * fix: Fase 09 — blokir faktur gabungan, bukan susutkan (ADR-0014) ([0d6503b](https://github.com/webaneid/facport/commit/0d6503b))
