@@ -1,3 +1,7 @@
+## 1.8.0 (2026-08-28)
+
+* feat: edit baris gagal langsung di aplikasi (tanpa upload ulang) ([04790f4](https://github.com/webaneid/facport/commit/04790f4))
+
 ## <small>1.7.3 (2026-08-28)</small>
 
 * fix(web): lebarkan halaman detail batch (max-w-3xl -> max-w-4xl) ([fbb7445](https://github.com/webaneid/facport/commit/fbb7445))
