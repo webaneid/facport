@@ -2,23 +2,22 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Eye, Trash2, Inbox } from "lucide-react";
-import { toast } from "sonner";
+import { Eye, Inbox } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CancelImportDialog, CANCELLABLE_BATCH_STATUS } from "@/components/purchase-invoice/cancel-import-dialog";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 
 // § Fase 09, ADR-0013 — halaman arsip SEMUA batch import (dashboard cuma
 // tampil 5 terakhir, § app/(protected)/page.tsx). Kolom aksi icon SVG
-// (`lucide-react`, § permintaan user 2026-08-28) — scope KECIL, cuma
-// tombol di tabel ini, bukan seluruh aplikasi.
+// (`lucide-react`, § permintaan user 2026-08-28) — Detail=mata,
+// Batal Import=undo (`components/purchase-invoice/cancel-import-dialog.tsx`,
+// dipakai bareng dashboard).
 type ImportBatch = { id: string; fileName: string; status: string; totalRows: number; createdAt: string };
 
 const PAGE_SIZE = 20;
@@ -33,79 +32,6 @@ const BATCH_STATUS: Record<string, { label: string; variant: BadgeProps["variant
   cancelled: { label: "Dibatalkan", variant: "default" },
   cancelled_partial: { label: "Dibatalkan (sebagian)", variant: "warning" },
 };
-
-const CANCELLABLE_STATUS = new Set(["completed", "completed_with_errors"]);
-
-// § ADR-0013 Decision #2 — type-to-confirm: user WAJIB ketik ulang nama
-// file batch persis sebelum tombol "Batalkan Import" aktif, karena ini
-// destructive ke data akuntansi ASLI client (bukan cuma dialog Ya/Tidak).
-function CancelImportDialog({ batch, onCancelled }: { batch: ImportBatch; onCancelled: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [confirmText, setConfirmText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-
-  async function handleConfirm() {
-    setSubmitting(true);
-    const res = await api["purchase-invoice"].import({ batchId: batch.id }).cancel.post();
-    setSubmitting(false);
-    if (res.error) {
-      toast.error("Gagal memulai Batal Import — coba lagi.");
-      return;
-    }
-    toast.success("Batal Import diproses — transaksi terkait akan dihapus/disusutkan dari Accurate.");
-    setOpen(false);
-    setConfirmText("");
-    onCancelled();
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) setConfirmText("");
-      }}
-    >
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Batal Import"
-        aria-label={`Batal Import untuk ${batch.fileName}`}
-        className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
-      >
-        <Trash2 className="h-4 w-4" />
-      </button>
-      <DialogContent>
-        <DialogTitle>Batal Import: {batch.fileName}</DialogTitle>
-        <div className="mt-3 flex flex-col gap-3 text-sm">
-          <p className="text-muted-foreground">
-            Ini akan <strong className="text-destructive">menghapus atau menyusutkan permanen</strong> seluruh
-            transaksi Faktur Pembelian yang dibuat batch ini langsung di Accurate Online — bukan cuma menyembunyikan
-            riwayat di Facport. Tindakan ini <strong>tidak bisa dibatalkan lewat Facport</strong>.
-          </p>
-          <p className="text-muted-foreground">
-            Faktur yang gabungan dengan batch import lain (lewat fitur Retry) akan DILEWATI otomatis, bukan
-            terhapus — Accurate tidak mendukung hapus sebagian item faktur, jadi faktur itu perlu dihapus manual
-            lewat Accurate langsung kalau memang perlu.
-          </p>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-foreground">
-              Ketik ulang nama file (<code className="text-destructive">{batch.fileName}</code>) untuk konfirmasi:
-            </span>
-            <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
-          </label>
-          <Button
-            onClick={handleConfirm}
-            disabled={confirmText !== batch.fileName || submitting}
-            className="self-end bg-destructive hover:bg-destructive/90"
-          >
-            {submitting ? "Memproses..." : "Batalkan Import"}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
 
 export default function PurchaseInvoiceImportArchivePage() {
   const [batches, setBatches] = useState<ImportBatch[] | null>(null);
@@ -180,7 +106,7 @@ export default function PurchaseInvoiceImportArchivePage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Link>
-                          {CANCELLABLE_STATUS.has(batch.status) && (
+                          {CANCELLABLE_BATCH_STATUS.has(batch.status) && (
                             <CancelImportDialog batch={batch} onCancelled={load} />
                           )}
                         </div>

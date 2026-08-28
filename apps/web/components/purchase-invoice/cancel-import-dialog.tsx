@@ -1,0 +1,93 @@
+"use client";
+
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { Undo2 } from "lucide-react";
+import { toast } from "sonner";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { api } from "@/lib/api-client";
+
+// § Fase 09, ADR-0013 — "Batal Import": hapus transaksi terkait dari
+// Accurate (bukan cuma riwayat lokal), dipakai di dashboard DAN halaman
+// arsip (§ permintaan user 2026-08-28, icon konsisten di kedua tempat).
+// Icon `Undo2` (bukan `Trash2`) — semantiknya "undo import ini", beda
+// dari rencana tombol "Delete" (hapus lokal saja, belum dibangun,
+// dibahas bareng Edit nanti) yang nanti pakai `Trash2`.
+type CancellableBatch = { id: string; fileName: string };
+
+export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableBatch; onCancelled?: () => void }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [confirmText, setConfirmText] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleConfirm() {
+    setSubmitting(true);
+    const res = await api["purchase-invoice"].import({ batchId: batch.id }).cancel.post();
+    setSubmitting(false);
+    if (res.error) {
+      toast.error("Gagal memulai Batal Import — coba lagi.");
+      return;
+    }
+    toast.success("Batal Import diproses — transaksi terkait akan dihapus dari Accurate.");
+    setOpen(false);
+    setConfirmText("");
+    if (onCancelled) onCancelled();
+    else router.refresh();
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setConfirmText("");
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Batal Import"
+        aria-label={`Batal Import untuk ${batch.fileName}`}
+        className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
+      >
+        <Undo2 className="h-4 w-4" />
+      </button>
+      <DialogContent>
+        <DialogTitle>Batal Import: {batch.fileName}</DialogTitle>
+        <div className="mt-3 flex flex-col gap-3 text-sm">
+          <p className="text-muted-foreground">
+            Ini akan <strong className="text-destructive">menghapus permanen</strong> seluruh transaksi Faktur
+            Pembelian yang dibuat batch ini langsung di Accurate Online — bukan cuma menyembunyikan riwayat di
+            Facport. Tindakan ini <strong>tidak bisa dibatalkan lewat Facport</strong>.
+          </p>
+          <p className="text-muted-foreground">
+            Faktur yang gabungan dengan batch import lain (lewat fitur Retry) akan DILEWATI otomatis, bukan
+            terhapus — Accurate tidak mendukung hapus sebagian item faktur, jadi faktur itu perlu dihapus manual
+            lewat Accurate langsung kalau memang perlu.
+          </p>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-foreground">
+              Ketik ulang nama file (<code className="text-destructive">{batch.fileName}</code>) untuk konfirmasi:
+            </span>
+            <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)} autoComplete="off" />
+          </label>
+          <Button
+            onClick={handleConfirm}
+            disabled={confirmText !== batch.fileName || submitting}
+            className="self-end bg-destructive hover:bg-destructive/90"
+          >
+            {submitting ? "Memproses..." : "Batalkan Import"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// § dipakai dashboard & halaman arsip untuk menentukan kapan tombol ini
+// ditampilkan — batch harus sudah SELESAI diproses (bukan sedang
+// diproses/belum dikonfirmasi/sudah dibatalkan).
+export const CANCELLABLE_BATCH_STATUS = new Set(["completed", "completed_with_errors"]);

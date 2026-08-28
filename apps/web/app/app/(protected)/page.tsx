@@ -1,11 +1,12 @@
 import { headers } from "next/headers";
 import Link from "next/link";
-import { FileSpreadsheet, Link2, CreditCard, Inbox } from "lucide-react";
+import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
+import { CancelImportDialog, CANCELLABLE_BATCH_STATUS } from "@/components/purchase-invoice/cancel-import-dialog";
 import { formatDate } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -165,7 +166,7 @@ export default async function DashboardPage() {
                   <TableHead>Status</TableHead>
                   <TableHead>Baris</TableHead>
                   <TableHead>Tanggal</TableHead>
-                  <TableHead />
+                  <TableHead className="text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -180,9 +181,17 @@ export default async function DashboardPage() {
                     <TableCell>{batch.totalRows}</TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(batch.createdAt)}</TableCell>
                     <TableCell>
-                      <Link href={`/purchase-invoice/import/${batch.id}`} className="text-primary-600 hover:underline">
-                        Detail
-                      </Link>
+                      <div className="flex items-center justify-end gap-1">
+                        <Link
+                          href={`/purchase-invoice/import/${batch.id}`}
+                          title="Detail"
+                          aria-label={`Detail untuk ${batch.fileName}`}
+                          className={buttonVariants("ghost", "h-8 w-8 p-0")}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Link>
+                        {CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} />}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
