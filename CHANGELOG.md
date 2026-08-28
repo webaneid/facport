@@ -1,3 +1,8 @@
+## <small>1.10.1 (2026-08-28)</small>
+
+* fix: AppShell nav — pisahkan surface (string) dari komponen icon ([8b8261c](https://github.com/webaneid/facport/commit/8b8261c))
+* docs: tutup Fase 10 — diverifikasi nyata (job retensi + query admin) ([1030975](https://github.com/webaneid/facport/commit/1030975))
+
 ## 1.10.0 (2026-08-28)
 
 * feat: Fase 10 — admin dashboard (settings, user, paket, retensi data) ([f2a7734](https://github.com/webaneid/facport/commit/f2a7734))
