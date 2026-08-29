@@ -40,7 +40,7 @@ COPY apps/api ./apps/api
 RUN cd apps/web && bun run build
 
 # ---- Stage production: image final yang jalan di server (Node, lihat catatan atas) ----
-FROM node:22-slim AS production
+FROM node:26-slim AS production
 WORKDIR /repo
 
 # node_modules ROOT (berisi store `.bun/...` asli) WAJIB ikut — symlink di
