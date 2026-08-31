@@ -18,4 +18,22 @@ const baseURL = isBrowserDev
     ? getProdApiOrigin() // browser + production — lihat lib/get-prod-api-origin.ts
     : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"); // SSR — process.env dibaca live tiap request, aman
 
-export const api = treaty<App>(baseURL, { fetch: { credentials: "include" } });
+// § ketemu 2026-08-31 — Eden Treaty DEFAULT-nya `parseDate: true`: SEMUA
+// string di response JSON yang "kelihatan seperti tanggal" (regex broad —
+// cocok juga format DD/MM/YYYY, bukan cuma ISO) otomatis di-`JSON.parse`
+// reviver jadi objek `Date`, di SELURUH response, bukan cuma field yang
+// route-nya declare `t.Date()`. Row `rawData` (purchase-invoice import,
+// { batchId }).rows import) berisi APA ADANYA hasil parse Excel/tanggal
+// yang di-normalize dialog Edit ke "DD/MM/YYYY" — keduanya cocok regex
+// ini, jadi diam-diam berubah jadi `Date` sebelum kode frontend (mis.
+// `edit-row-dialog.tsx` `toDisplayDate()`, yang cuma cek
+// `typeof === "string"/"number"`) sempat baca nilainya. Efeknya: field
+// tanggal tampil sebagai `Date.toString()` penuh ("Wed Aug 19 2026
+// 07:00:00 GMT+0700 (...)"), dan kalau ke-save balik APA ADANYA, format
+// itu tidak dikenali `toAccurateDate()` di worker — baris gagal lagi
+// terus walau user sudah "berhasil" simpan (toast sukses, PUT 200).
+// Nonaktifkan GLOBAL — SATU-SATUNYA tempat kode ini butuh nilai tanggal
+// SEBAGAI STRING APA ADANYA dari backend, konversi ke `Date` (kalau perlu
+// tampil) dilakukan eksplisit di titik pakainya (`lib/utils.ts`
+// `formatDate`, terima `string | Date`), bukan implisit di layer HTTP.
+export const api = treaty<App>(baseURL, { fetch: { credentials: "include" }, parseDate: false });

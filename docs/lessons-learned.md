@@ -6,6 +6,61 @@
 
 ---
 
+## 2026-08-31 — Eden Treaty `parseDate` DEFAULT-nya `true`: field tanggal di dialog Edit baris rusak lagi walau fix 2026-08-28 sudah live
+**Masalah:** User laporan (production): dialog "Edit Baris Gagal" (Purchase
+Invoice import) — setelah edit lalu klik "Simpan Perubahan", perubahan
+TIDAK benar-benar tersimpan/berfungsi. Direproduksi lokal (Postgres dev,
+data batch `processing` dengan row `failed` peninggalan E2E test): field
+"Tanggal" tampil sebagai `Wed Aug 19 2026 07:00:00 GMT+0700 (Western
+Indonesia Time)` — BUKAN format DD/MM/YYYY yang seharusnya dihasilkan
+`toDisplayDate()` (fix commit `75cbff2`, 2026-08-28). Klik Simpan tetap
+`200 OK` (PUT sukses, row pindah status `pending`) — tapi nilai rusak itu
+ikut ke-save balik ke `rawData`, jadi retry ke Accurate gagal lagi dengan
+error tanggal, membuat "edit tidak tersimpan" walau secara teknis endpoint
+berhasil.
+
+**Root cause:** `apps/web/lib/api-client.ts` bikin client Eden Treaty
+TANPA opsi `parseDate` — default library-nya (`@elysia/eden` treaty2)
+adalah `parseDate: true` untuk SEMUA response JSON, bukan cuma field yang
+route-nya declare `t.Date()`. Treaty pasang `JSON.parse` REVIVER yang cek
+regex broad terhadap SETIAP nilai string di response (ISO 8601 DAN format
+umum `DD/MM/YYYY` ikut match) — kalau cocok, otomatis diubah jadi objek
+`Date` SEBELUM kode aplikasi sempat baca. `rawData` (hasil parse Excel,
+sudah dinormalisasi dialog Edit ke `DD/MM/YYYY` di sisi tampil) berisi
+persis nilai yang match regex ini. `edit-row-dialog.tsx` `toDisplayDate()`
+cuma cek `typeof value === "number"`/`"string"` — Date object lolos kedua
+cek itu, jatuh ke `String(dateObj)` yang menghasilkan format
+`Date.toString()` JS, bukan string yang dikenali `toAccurateDate()` di
+worker. Fix 2026-08-28 menormalisasi nilai SAAT dialog dibuka, tapi tidak
+menyadari nilai itu sudah "dirusak" Eden SEBELUM sempat sampai ke fungsi
+normalisasi — beda sumber corruption dari yang diperbaiki sebelumnya
+(dulu: `String()` polos di kode sendiri; sekarang: konversi implisit di
+HTTP client layer, di LUAR kontrol langsung kode fitur ini).
+
+**Fix:** `treaty<App>(baseURL, { fetch: {...}, parseDate: false })` —
+nonaktifkan GLOBAL. Diverifikasi aman: satu-satunya tempat lain yang baca
+field tanggal dari response (`createdAt`/`completedAt` dst di beberapa
+halaman listing) sudah lewat `formatDate(value: string | Date)`
+(`lib/utils.ts`) yang eksplisit `new Date(value)` — jalan sama baik dikirim
+`string` maupun `Date`. Tidak ada kode lain yang assume nilai tanggal dari
+API SUDAH berupa objek `Date` (`.getTime()`/`instanceof Date`/dst — dicek
+lewat grep, nihil).
+
+**Pencegahan:** Kalau pakai library client yang punya "smart"
+serialization/deserialization implisit (auto-parse Date, auto-parse
+angka, dst berdasarkan REGEX terhadap NILAI, bukan skema eksplisit per-
+field), WAJIB baca opsi konfigurasinya dan pertimbangkan matikan kalau
+project menyimpan data mentah (rawData/JSON bebas bentuk) yang KEBETULAN
+bisa match pola itu — regex "kelihatan seperti tanggal" gampang overlap
+dengan data domain lain (di sini: field tanggal hasil normalisasi kita
+sendiri). Kalau menutup bug "silent corruption" versi sebelumnya (fix
+tampilan/normalisasi di satu titik), verifikasi ulang path data
+LENGKAP dari response mentah sampai ke titik pakai — jangan asumsikan
+`typeof` value di kode aplikasi sama dengan tipe JSON asli di wire,
+kalau ada HTTP client library di antaranya yang bisa transform diam-diam.
+
+---
+
 ## 2026-08-28 — Dialog Edit baris: tanggal (serial Excel) ke-`String()` mentah, silent-corrupt kalau tersimpan ulang
 **Masalah:** User laporan tampilan tanggal di dialog Edit (fitur "Edit
 Baris Gagal", § PROGRESS.md) "bentuknya aneh" — field "Tanggal"
