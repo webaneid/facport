@@ -250,6 +250,22 @@ diperbaiki (`ss -tlnp` konfirmasi tidak ada yang listen di port itu).
    domain publik sebelum menganggap deploy selesai — jangan cuma percaya
    `docker ps` status "healthy" (healthcheck internal container bisa OK
    walau port EXTERNAL tidak ke-mapping sama sekali).
+4. **(2026-08-31)** `docker compose ... up -d` TANPA nama service eksplisit
+   di VPS ini akan GAGAL total dengan `network edge declared as external,
+   but could not be found` — `docker-compose.prod.yml` punya service
+   `caddy` yang butuh network eksternal `edge` (§ baris `networks: [internal,
+   edge]`, dibuat manual via `docker network create edge`, untuk skenario
+   Caddy di-share dengan staging). VPS ini TIDAK pakai Caddy sama sekali
+   (nginx existing yang pegang port 80/443, lihat komentar
+   `docker-compose.override.yml`), network `edge` sengaja TIDAK PERNAH
+   dibuat di sini, dan container `caddy` TIDAK PERNAH ada di `docker ps`
+   VPS ini — tapi Compose tetap validasi SELURUH network di top-level
+   `networks:` config walau service yang dituju (`caddy`) tidak diminta.
+   **Command yang benar** (skip `caddy`, sebutkan service eksplisit):
+   `docker compose -f docker-compose.prod.yml -f docker-compose.override.yml
+   --env-file .env.production --env-file .env.deploy up -d api web worker
+   minio postgres`. Bare `up -d` (tanpa daftar service) akan SELALU gagal
+   di VPS ini sampai kapan pun, bukan error transient.
 
 ---
 
