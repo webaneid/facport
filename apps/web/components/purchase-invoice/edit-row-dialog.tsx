@@ -71,6 +71,12 @@ export function EditRowDialog({
 }) {
   const columns = Object.keys(columnMapping);
   const dateColumns = new Set(columns.filter((col) => DATE_INTERNAL_FIELDS.has(columnMapping[col]!)));
+  // § field wajib dari backend (`MISSING_REQUIRED_VALUES`) pakai nama field
+  // internal Accurate (mis. "itemUnitName"), BUKAN nama kolom Excel yang
+  // ditampilkan di form ini — user bingung karena teks itu tidak match
+  // apa pun di layar. Balikkan lewat columnMapping ke nama kolom Excel
+  // asli yang dia lihat & bisa edit.
+  const fieldToColumn = Object.fromEntries(columns.map((col) => [columnMapping[col], col]));
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -95,7 +101,7 @@ export function EditRowDialog({
       const value = res.error.value as { code?: string; fields?: string[] } | undefined;
       setError(
         value?.code === "MISSING_REQUIRED_VALUES"
-          ? `Field wajib belum diisi: ${value.fields?.join(", ")}`
+          ? `Kolom wajib belum diisi: ${value.fields?.map((f) => fieldToColumn[f] ?? f).join(", ")}`
           : "Gagal menyimpan perubahan — coba lagi.",
       );
       return;
