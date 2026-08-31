@@ -1,3 +1,8 @@
+## <small>1.10.3 (2026-08-31)</small>
+
+* fix: matikan auto-parse Date Eden Treaty — cegah tanggal rusak di dialog Edit baris ([b3d0ff1](https://github.com/webaneid/facport/commit/b3d0ff1))
+* docs: catat 2 bug produksi hari ini di lessons-learned.md ([c0b2926](https://github.com/webaneid/facport/commit/c0b2926))
+
 ## <small>1.10.2 (2026-08-28)</small>
 
 * fix: normalisasi tanggal di dialog Edit baris gagal ([75cbff2](https://github.com/webaneid/facport/commit/75cbff2))
