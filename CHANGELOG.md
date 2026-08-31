@@ -1,3 +1,8 @@
+## <small>1.10.4 (2026-08-31)</small>
+
+* fix: terjemahkan field wajib ke nama kolom Excel di error Edit Baris ([40642fe](https://github.com/webaneid/facport/commit/40642fe))
+* docs: catat gotcha deploy manual — network "edge" bikin bare `up -d` selalu gagal di VPS ini ([6b768c8](https://github.com/webaneid/facport/commit/6b768c8))
+
 ## <small>1.10.3 (2026-08-31)</small>
 
 * fix: matikan auto-parse Date Eden Treaty — cegah tanggal rusak di dialog Edit baris ([b3d0ff1](https://github.com/webaneid/facport/commit/b3d0ff1))
