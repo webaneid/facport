@@ -154,5 +154,9 @@ bun run lint                # jalankan linter
 bun run db:migrate         # jalankan migration Drizzle
 bun run db:studio          # buka Drizzle Studio
 ```
-> Release & deploy TIDAK dijalankan manual — otomatis lewat CI setelah push
-> ke main (lihat `docs/architecture/architecture-deployment.md`).
+> Release (versioning + build image ke GHCR) otomatis lewat CI setelah push
+> ke main. **Deploy ke server VPS saat ini MASIH MANUAL** (secret SSH CI
+> belum diisi, § `docs/lessons-learned.md` 2026-08-28) — Claude Code cuma
+> commit+push+pantau CI, deploy ke server pakai runbook Minimal/Full di
+> `docs/architecture/architecture-deployment.md` § "Deploy Manual ke
+> Server".

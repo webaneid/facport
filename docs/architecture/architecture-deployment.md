@@ -141,7 +141,78 @@ setup GitHub Secrets) → **`docs/deployment-server-setup.md`** — ini runbook
 manual, dikerjakan sekali di awal (atau tiap ganti server), bukan bagian dari
 alur otomatis CI/CD.
 
+## Deploy Manual ke Server (status saat ini — CI SSH belum aktif)
+> Selama secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` belum diisi di
+> GitHub Actions (`gh secret list` kosong, diverifikasi lagi 2026-08-31 —
+> lihat `docs/lessons-learned.md` entri 2026-08-28), job `deploy-to-server`
+> di `deploy.yml` SELALU gagal (`error: missing server host`). Ini
+> **expected**, bukan bug baru tiap kali kejadian — `release` +
+> `build-and-push` tetap jalan otomatis penuh (image `vX.Y.Z` sampai ke
+> GHCR), cuma langkah SSH ke VPS yang harus manual. Runbook ini SATU-SATUNYA
+> referensi dipakai supaya tiap sesi kasih tutorial yang sama persis —
+> jangan improvisasi ulang dari nol tiap ditanya.
+
+**Pembagian tugas baku:**
+1. **Claude Code** — commit, push ke `main`, pantau run `Release` (gate
+   typecheck+test → semantic-release tag versi baru) lalu run `Deploy`
+   (`build-and-push` image ke GHCR; job `deploy-to-server` dibiarkan gagal,
+   itu memang belum dipakai). Ambil `IMAGE_TAG` (versi baru) dari situ.
+2. **User** — jalankan salah satu runbook di bawah via SSH ke VPS
+   (`wasugi@76.13.18.136`, path `/opt/app`).
+
+### Minimal — fix kecil, tanpa migration DB, tanpa ubah worker/queue
+Cocok untuk: fix UI, pesan error/teks, perubahan 1 route tanpa skema baru.
+```bash
+ssh wasugi@76.13.18.136
+cd /opt/app
+export GITHUB_REPO="webaneid/facport"
+export IMAGE_TAG="vX.Y.Z"   # ganti sesuai versi rilis terbaru
+echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
+echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
+
+docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull api web
+docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy up -d api web
+```
+
+### Full — default kalau ragu; WAJIB kalau ada migration DB, perubahan worker/job, atau rilis besar
+```bash
+ssh wasugi@76.13.18.136
+cd /opt/app
+export GITHUB_REPO="webaneid/facport"
+export IMAGE_TAG="vX.Y.Z"
+echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
+echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
+
+docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull
+docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy up -d api web worker minio postgres
+docker image prune -f
+docker ps --format "table {{.Names}}\t{{.Status}}"
+```
+
+**Aturan wajib (§ `docs/lessons-learned.md` 2026-08-28 & 2026-08-31), berlaku kedua varian:**
+- **SELALU** sebut KEDUA `-f` (`docker-compose.prod.yml` DAN
+  `docker-compose.override.yml`) di command `up -d` — Compose cuma
+  auto-merge override kalau file utama namanya default
+  (`docker-compose.yml`); begitu `-f` dipakai eksplisit, override HARUS
+  ikut disebut eksplisit juga. Kelewat → container naik TANPA port mapping
+  ke nginx, 502 diam-diam sampai ketahuan.
+- **JANGAN** `up -d` tanpa daftar service eksplisit — VPS ini pakai nginx
+  existing (bukan `caddy`), network eksternal `edge` yang dibutuhkan
+  service `caddy` sengaja tidak pernah dibuat di sini, jadi bare `up -d`
+  SELALU gagal validasi network sampai kapan pun. Sebut service eksplisit,
+  skip `caddy`.
+
+### Verifikasi setelah deploy (WAJIB, jangan skip)
+1. `docker ps --format "table {{.Names}}\t{{.Status}}"` — service yang
+   di-deploy harus `healthy`/`Up` dengan waktu restart baru saja.
+2. Buka domain publik (`https://app.ane.web.id` dst) dan tes LANGSUNG fitur
+   yang baru di-deploy — jangan cuma percaya status container (healthcheck
+   internal container bisa OK walau port EXTERNAL tidak ke-mapping sama
+   sekali).
+
 ## Rollback
+Manual (sama seperti di atas), ganti `IMAGE_TAG` ke versi sebelumnya (lihat
+`git tag` untuk daftar versi), lalu ulangi runbook **Full** di atas.
 ```bash
 # Di server, langsung ganti ke versi sebelumnya
 docker pull ghcr.io/[repo]/api:v0.2.9
