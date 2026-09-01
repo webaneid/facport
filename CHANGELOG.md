@@ -1,3 +1,8 @@
+## <small>1.10.5 (2026-09-01)</small>
+
+* fix: tombol Retry hilang saat semua baris gagal sudah diedit jadi menunggu ([24d1404](https://github.com/webaneid/facport/commit/24d1404))
+* docs: standarkan runbook deploy manual (Minimal/Full) ke server ([89616bf](https://github.com/webaneid/facport/commit/89616bf))
+
 ## <small>1.10.4 (2026-08-31)</small>
 
 * fix: terjemahkan field wajib ke nama kolom Excel di error Edit Baris ([40642fe](https://github.com/webaneid/facport/commit/40642fe))
