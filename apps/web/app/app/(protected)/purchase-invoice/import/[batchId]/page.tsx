@@ -152,7 +152,7 @@ export default function PurchaseInvoiceImportResultPage() {
             <StatusBadge status={batch.status} />
           </div>
         </CardHeader>
-        {summary.failed > 0 && !isProcessing && (
+        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
           <CardContent>
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}
