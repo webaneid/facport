@@ -1,3 +1,7 @@
+## 1.11.0 (2026-09-02)
+
+* feat: perjelas dialog Edit Baris — tanda wajib, highlight per-kolom, auto-scroll ke error ([a2ae455](https://github.com/webaneid/facport/commit/a2ae455))
+
 ## <small>1.10.5 (2026-09-01)</small>
 
 * fix: tombol Retry hilang saat semua baris gagal sudah diedit jadi menunggu ([24d1404](https://github.com/webaneid/facport/commit/24d1404))
