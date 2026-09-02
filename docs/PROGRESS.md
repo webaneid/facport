@@ -331,3 +331,45 @@ Client Components"). Diperbaiki: Server Component cuma oper string
 `surface`, komponen client lookup nav-nya sendiri. Detail lengkap →
 `docs/lessons-learned.md` entri 2026-08-28 "Next.js RSC: referensi
 komponen icon di prop Server→Client Component...".
+
+## Update 2026-09-01/02 — 2 bug produksi + 1 UX improvement seputar Edit Baris Gagal/Retry
+Dipicu laporan user pasca-pakai fitur "Edit Baris Gagal" (2026-08-28) di
+production nyata (`app.ane.web.id`):
+
+1. **Bug: tombol "Retry baris gagal" hilang setelah semua baris gagal
+   diedit** (status jadi `pending`, kondisi tombol cuma cek
+   `summary.failed > 0`). Fix di `[batchId]/page.tsx` + guard tambahan
+   `batch.columnMapping` (cegah tombol salah muncul di batch yang belum
+   dikonfirmasi mapping-nya). Deploy `v1.10.5`. Detail →
+   `docs/lessons-learned.md` entri 2026-09-01.
+2. **Investigasi error Accurate "Sudah ada data lain dengan No Form..."**
+   — dikonfirmasi BUKAN bug Facport, tapi typo user di kolom Excel "Bill
+   No" (beda 1 karakter dari faktur sebelumnya) sementara kolom "Trans
+   No" tetap sama dengan faktur existing — kombinasi ini bikin "Retry
+   Cerdas" (Fase 08) gagal mengenali faktur yang sama, CREATE ulang
+   ditolak Accurate. Investigasi pakai query read-only langsung ke
+   Postgres production (dijalankan USER via SSH, akses langsung
+   Claude Code ke DB production di-block otomatis oleh permission
+   classifier). Ide perbaikan mekanisme (pre-flight check Trans No
+   sebelum CREATE) dicatat sebagai technical debt, BELUM dieksekusi —
+   user cuma minta perbaikan UX form, bukan fix mekanisme. Detail →
+   `docs/lessons-learned.md` entri 2026-09-02.
+3. **UX improvement dialog Edit Baris** (respons ke temuan #2 —
+   `edit-row-dialog.tsx`): kolom wajib ditandai `*` + border beda,
+   kolom yang kosong di-highlight merah individual + teks "Wajib
+   diisi." (bukan cuma disebut di teks gabungan atas), validasi wajib
+   dicek di client dulu sebelum panggil API, placeholder contoh isian
+   untuk field yang formatnya gampang salah tebak (BUKAN "default
+   Accurate" — itu bervariasi per company, sengaja tidak diklaim
+   statis), dan dialog auto-scroll ke atas begitu ada error supaya
+   notifikasi pasti kelihatan (sebelumnya kalau user scroll ke bawah
+   form panjang lalu Simpan gagal, notifikasi error di atas tidak
+   kelihatan sama sekali). Deploy `v1.11.0`. Typecheck 0 error, test
+   suite 61/61 (tidak berubah, murni frontend), security review 0
+   temuan.
+
+Kedua deploy diverifikasi container `healthy` (`docker ps`) oleh user
+langsung di server; verifikasi END-TO-END via browser sungguhan untuk
+item #3 (cek tanda `*`, highlight merah, auto-scroll) BELUM dikonfirmasi
+user di sesi ini — cek dulu sebelum anggap fitur ini "selesai diverifikasi
+production" kalau ditanya lagi nanti.

@@ -6,6 +6,107 @@
 
 ---
 
+## 2026-09-02 — Retry Cerdas (Fase 08) cuma cocokkan "Bill No", bukan "Trans No" — typo 1 karakter bikin CREATE nabrak faktur existing
+**Masalah:** User laporan (production) error Accurate `"Sudah ada data
+lain dengan No Form # Faktur Pembelian \"PI01001050\""` muncul lagi di
+batch baru, padahal Fase 08 (ADR-0012, "Retry Cerdas") sudah seharusnya
+menangani kasus faktur duplikat dengan append, bukan create ulang.
+
+**Investigasi** (query read-only langsung ke Postgres production via SSH,
+dengan izin user — akses SSH+DB production kena block otomatis oleh
+permission classifier Auto Mode saat dicoba tanpa sepengetahuan user
+eksplisit di percakapan, jadi query dijalankan USER sendiri lewat command
+yang disiapkan): batch gagal (`3299a0cd-...`) dibandingkan `raw_data`-nya
+row-per-row dengan 2 batch sukses sebelumnya (`4d906f3a-...`,
+`5b284ab6-...`, sama-sama `accurate_transaction_id: 800`):
+- Kolom **"Bill No"** (`billNumber`) di batch baru: `"PI010010501"` — ada
+  1 digit "1" nyempil di belakang, BEDA dari `"PI01001050"` yang dipakai
+  2 batch sukses sebelumnya.
+- Kolom **"Trans No"** (`number` — field NOMOR FORM Accurate sendiri,
+  BEDA dari Bill No yang cuma referensi vendor) di batch baru: TETAP
+  `"PI01001050"`, sama persis dengan faktur #800 yang sudah ada.
+
+**Root cause:** `findExistingAccurateInvoiceId` (`workers/index.ts:124-146`,
+Fase 08) cuma mencocokkan lintas-batch berdasarkan **Bill No** (case-
+insensitive + trim). Karena Bill No batch baru sudah beda (typo), fungsi
+ini TIDAK menemukan faktur existing → worker jatuh ke jalur CREATE biasa.
+CREATE ini mengirim field `number` (Trans No) `"PI01001050"` ke Accurate
+— yang SUDAH dipakai faktur #800 — dan Accurate menolaknya sebagai
+duplikat No Form. Ini BUKAN bug regresi Fase 08 (mekanismenya bekerja
+persis seperti didesain — dikonfirmasi 2 batch sebelumnya berhasil
+append lewat jalur yang sama), tapi juga bukan sekadar "user salah ketik
+biasa": kombinasi 2 field independen (Bill No dipakai untuk deteksi
+duplikat, Trans No dipakai untuk nomor form aktual) bikin 1 typo di SATU
+kolom menghasilkan pesan error yang MENYEBUTKAN kolom LAIN (Trans No),
+sehingga user tidak langsung tahu kolom mana yang harus dicek.
+
+**Fix diterapkan:** BUKAN mengubah logic worker (matching Bill No tetap
+by design — itu identitas dokumen vendor, `number`/Trans No memang
+dimaksud auto-generate/opsional per ADR-0011). Sebagai gantinya,
+dialog Edit Baris (`edit-row-dialog.tsx`) diperjelas: kolom wajib
+ditandai `*` + highlight merah per-kolom kalau kosong, auto-scroll ke
+notifikasi error saat simpan gagal — supaya user setidaknya bisa
+melihat & membandingkan nilai Bill No/Trans No dengan lebih jelas saat
+memperbaiki baris gagal. Data batch ini sendiri diperbaiki manual oleh
+user via dialog Edit (bukan lewat query DB).
+
+**Pencegahan / ide lanjutan (belum dieksekusi, dicatat sebagai
+technical debt)**: kalau kasus ini terulang, pertimbangkan salah satu —
+(a) validasi tambahan pre-flight: sebelum CREATE, cek apakah `number`
+(Trans No) yang akan dikirim SUDAH dipakai transaksi lain (butuh 1 query
+`list.do` Accurate tambahan per grup, biaya rate-limit vs UX), atau (b)
+kalau `number` diisi user (bukan dikosongkan utk auto-number) DAN Bill No
+tidak match apa pun di riwayat lokal, tampilkan warning non-blocking di
+UI konfirmasi mapping "N baris mengisi Trans No manual — pastikan belum
+pernah dipakai". TIDAK dipilih sekarang karena user cuma minta perbaikan
+observability/UX form edit, bukan minta fix mekanisme deteksi duplikat.
+
+---
+
+## 2026-09-01 — Tombol "Retry baris gagal" hilang begitu SEMUA baris gagal sudah diedit (status jadi "pending", bukan "failed")
+**Masalah:** User laporan (production): edit baris gagal via dialog Edit
+Baris (fitur 2026-08-28) tersimpan sukses (toast muncul, status baris di
+tabel berubah jadi "Menunggu"), TAPI tombol **"Retry baris gagal"** di
+kartu Ringkasan tiba-tiba hilang — user jadi tidak tahu cara lanjut
+mengirim baris yang sudah diperbaiki itu ke Accurate.
+
+**Root cause:** `[batchId]/page.tsx` menampilkan tombol Retry HANYA
+berdasarkan `summary.failed > 0` (`page.tsx:155`, sebelum fix). Endpoint
+`PUT .../rows/:rowId` (edit baris) SENGAJA me-reset status baris yang
+diedit dari `failed` → `pending` (bukan balik ke `failed`) — supaya
+worker/retry memprosesnya sebagai baris baru, bukan baris yang masih
+"error". Begitu baris terakhir yang `failed` diedit, `summary.failed`
+turun ke 0 → kondisi tombol jadi `false` → tombol hilang, padahal ada
+baris `pending` yang worker (`workers/index.ts:402-407`, query row
+`pending` ATAU `failed`) sebenarnya siap proses kalau saja job-nya
+di-trigger. Icon Edit (pensil) juga ikut hilang di baris itu (syaratnya
+`row.status === "failed"`), jadi user benar-benar tidak punya aksi apa
+pun di UI untuk baris yang nyangkut di status "Menunggu" ini.
+
+**Fix:** kondisi tombol diubah jadi
+`(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping`
+(`page.tsx:155`). Guard `batch.columnMapping` WAJIB ditambahkan —
+tanpanya, tombol bisa salah muncul kalau user navigasi langsung ke URL
+batch yang statusnya masih `mapping_pending` (baru upload, belum
+konfirmasi mapping kolom, SEMUA baris default `pending` bukan karena
+diedit) — klik Retry di kondisi itu akan mengirim job dengan
+`columnMapping: null` ke worker (regresi baru, endpoint `/retry` sendiri
+tidak validasi ini). Dikonfirmasi lewat riset: user TIDAK bisa sampai ke
+halaman ini dengan mapping kosong lewat alur tombol normal (redirect
+cuma terjadi SETELAH `/confirm` sukses), tapi navigasi manual/back-button
+ke `batchId` yang baru diupload tetap kemungkinan nyata.
+
+**Pencegahan:** kalau nambah kondisi tampil/sembunyi tombol yang
+tergantung status agregat (`summary.*`), CEK SEMUA state transition yang
+bisa mengubah status row/batch — termasuk transition yang "tidak
+lazim" (bukan cuma create→success/failed, tapi juga edit→pending, retry
+manual, dst). Kondisi yang cuma benar untuk 1 alur normal (misal "abis
+diproses sekali") gampang salah untuk state MENENGAH (baris pernah gagal,
+diperbaiki, belum di-retry ulang) yang secara desain memang valid tapi
+jarang dites manual. Deploy: `v1.10.5`.
+
+---
+
 ## 2026-08-31 — Eden Treaty `parseDate` DEFAULT-nya `true`: field tanggal di dialog Edit baris rusak lagi walau fix 2026-08-28 sudah live
 **Masalah:** User laporan (production): dialog "Edit Baris Gagal" (Purchase
 Invoice import) — setelah edit lalu klik "Simpan Perubahan", perubahan
