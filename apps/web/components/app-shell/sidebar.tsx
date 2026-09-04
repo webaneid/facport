@@ -22,13 +22,20 @@ import { cn } from "@/lib/utils";
 // sini — modul baru (Sales Invoice dst) tinggal tambah 1 baris di array
 // surface yang relevan, JANGAN duplikasi ke tempat lain.
 export type Surface = "app" | "admin";
-export type NavItem = { href: string; label: string; icon: LucideIcon };
+// § Fase 13, ADR-0018 — `moduleKey` opsional: item TANPA moduleKey
+// (Dashboard, Koneksi Accurate, semua item admin) selalu tampil; item
+// DENGAN moduleKey cuma tampil kalau moduleKey ada di plan langganan
+// AKTIF customer (§ navItemsFor). Modul transaksi baru (Purchase Payment,
+// Sales/Customer Receipt, Jurnal Umum) WAJIB isi ini sejak awal, bukan
+// kasus khusus Sales Invoice.
+export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string };
 
 const NAV_ITEMS_BY_SURFACE: Record<Surface, NavItem[]> = {
   app: [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet },
-    { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark },
+    { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "pembelian" },
+    { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "pembelian" },
+    { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "penjualan" },
     { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
   ],
   admin: [
@@ -39,13 +46,17 @@ const NAV_ITEMS_BY_SURFACE: Record<Surface, NavItem[]> = {
   ],
 };
 
-export function navItemsFor(surface: Surface): NavItem[] {
-  return NAV_ITEMS_BY_SURFACE[surface];
+// § ADR-0018 — `subscriptionModules` undefined/kosong = tidak ada
+// langganan aktif (atau surface admin yang memang tidak relevan) — item
+// ber-moduleKey DISEMBUNYIKAN by default (aman, bukan ditampilkan by
+// default lalu ditolak backend).
+export function navItemsFor(surface: Surface, subscriptionModules?: string[]): NavItem[] {
+  return NAV_ITEMS_BY_SURFACE[surface].filter((item) => !item.moduleKey || (subscriptionModules?.includes(item.moduleKey) ?? false));
 }
 
-function NavList({ surface, onNavigate }: { surface: Surface; onNavigate?: () => void }) {
+function NavList({ surface, subscriptionModules, onNavigate }: { surface: Surface; subscriptionModules?: string[]; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const navItems = navItemsFor(surface);
+  const navItems = navItemsFor(surface, subscriptionModules);
   return (
     <nav className="flex flex-1 flex-col gap-1 p-4">
       {navItems.map((item) => {
@@ -85,11 +96,13 @@ function BrandLogo({ logoUrl }: { logoUrl?: string }) {
 export function Sidebar({
   surface,
   logoUrl,
+  subscriptionModules,
   mobileOpen,
   onMobileClose,
 }: {
   surface: Surface;
   logoUrl?: string;
+  subscriptionModules?: string[];
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -100,7 +113,7 @@ export function Sidebar({
         <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
           <BrandLogo logoUrl={logoUrl} />
         </div>
-        <NavList surface={surface} />
+        <NavList surface={surface} subscriptionModules={subscriptionModules} />
       </aside>
 
       {/* Mobile — drawer slide-in kiri, pakai primitif @radix-ui/react-dialog
@@ -117,7 +130,7 @@ export function Sidebar({
             <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
               <BrandLogo logoUrl={logoUrl} />
             </div>
-            <NavList surface={surface} onNavigate={onMobileClose} />
+            <NavList surface={surface} subscriptionModules={subscriptionModules} onNavigate={onMobileClose} />
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

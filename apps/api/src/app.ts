@@ -22,6 +22,7 @@ import { adminStatsRoute } from "./routes/admin/stats.route";
 import { accurateRoute } from "./routes/accurate.route";
 import { meRoute } from "./routes/me.route";
 import { purchaseInvoiceImportRoute } from "./routes/purchase-invoice-import.route";
+import { salesInvoiceImportRoute } from "./routes/sales-invoice-import.route";
 import { vendorPayableAccountImportRoute } from "./routes/vendor-payable-account-import.route";
 
 const allowedOrigins = [
@@ -90,6 +91,7 @@ export const app = new Elysia()
   .use(accurateRoute)
   .use(meRoute)
   .use(purchaseInvoiceImportRoute)
+  .use(salesInvoiceImportRoute)
   .use(vendorPayableAccountImportRoute);
 
 export type App = typeof app;

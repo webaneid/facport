@@ -20,8 +20,24 @@ export default async function AppProtectedLayout({ children }: { children: React
 
   const settings = await getPublicSettings();
 
+  // § Fase 13, ADR-0018 — nav difilter oleh modul plan langganan AKTIF.
+  // `/me/subscription` balas body BENERAN KOSONG (bukan literal "null")
+  // kalau belum ada subscription — res.json() langsung throw kalau
+  // dipanggil di body kosong (§ lessons-learned.md 2026-08-27, gotcha
+  // yang sama seperti app/app/(protected)/page.tsx `fetchJson`).
+  const subRes = await fetch(`${apiUrl}/me/subscription`, { headers: { cookie }, cache: "no-store" });
+  const subText = subRes.ok ? await subRes.text() : "";
+  const subscriptionInfo = subText
+    ? (JSON.parse(subText) as { subscription: { status: string }; plan: { modules: string[] } } | null)
+    : null;
+  // § `/me/subscription` balikin subscription TERBARU apa pun statusnya
+  // (termasuk expired/cancelled/pending_payment) — nav cuma boleh percaya
+  // modules dari subscription yang BENAR-BENAR "active", supaya tidak
+  // nampilin menu yang bakal ditolak `moduleAccess` gate begitu diklik.
+  const subscriptionModules = subscriptionInfo?.subscription.status === "active" ? subscriptionInfo.plan.modules : undefined;
+
   return (
-    <AppShell surface="app" logoUrl={settings["company.logo"]} user={{ name: me.name, email: me.email }}>
+    <AppShell surface="app" logoUrl={settings["company.logo"]} subscriptionModules={subscriptionModules} user={{ name: me.name, email: me.email }}>
       {children}
     </AppShell>
   );

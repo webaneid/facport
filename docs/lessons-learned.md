@@ -6,6 +6,40 @@
 
 ---
 
+## 2026-09-04 — Security review Fase 13 (Sales Invoice): 1 Medium diperbaiki — query "Batal Import" belum di-scope per module
+**Konteks:** Subagent `security-auditor` review Fase 13 (Sales Invoice,
+mirror 1:1 Purchase Invoice). Ringkasan lengkap →
+`docs/phases/phase-13-sales-invoice.md` § "Ringkasan Hasil".
+
+**Sudah diperbaiki (Medium):**
+- Query `allRowsForInvoice` di job `CANCEL_IMPORT` (`workers/index.ts`,
+  Fase 09/ADR-0013) cek "apakah faktur Accurate ini 100% milik batch yang
+  mau di-cancel" HANYA filter by `subscriptionId` + `accurateTransactionId`
+  + `status`, TANPA filter `module`. Begitu ada 2 modul (`purchase_invoice`
+  dan `sales_invoice`, sejak Fase 13) yang sama-sama isi
+  `accurateTransactionId` dengan ID internal Accurate, dan Accurate kasih
+  ID per-jenis-transaksi secara TERPISAH (PI dan SI masing-masing punya
+  ruang ID sendiri), teorinya bisa collision (PI #42 dan SI #42 sama-sama
+  ada). Query ini akan salah anggap keduanya "faktur yang sama". Dampak
+  SELALU ke arah aman (over-blocking — batch yang seharusnya boleh
+  di-cancel malah diblokir), BUKAN ke arah hapus faktur yang salah — tapi
+  tetap bug fungsional nyata. Kode SEJENIS untuk retry cerdas
+  (`findExistingAccurateInvoiceId`/`findExistingAccurateSalesInvoiceId`)
+  SUDAH benar di-scope per module dari awal — celah ini murni ketinggalan
+  di 1 tempat saat mirroring. Fix: tambah `eq(importBatches.module,
+  batch.module)` ke query itu.
+
+**Pencegahan:** kalau nanti modul transaksi baru lagi (Purchase Payment,
+Sales/Customer Receipt, Jurnal Umum) juga isi `accurateTransactionId` di
+`import_batch_rows`, PASTIKAN semua query yang JOIN `importBatchRows` ↔
+`importBatches` dan match by `accurateTransactionId` LINTAS-BATCH ikut
+di-filter `module` juga — bukan cuma yang baru ditulis Fase itu, tapi
+JUGA cek ulang kode LAMA yang mungkin implisit mengasumsikan "cuma ada 1
+modul yang pernah pakai kolom ini" (assumption yang jadi tidak valid lagi
+begitu modul kedua ditambahkan).
+
+---
+
 ## 2026-09-04 — Deploy production nyata Fase 12: dokumen arsitektur asumsi Caddy TIDAK cocok realita (nginx shared VPS)
 **Masalah:** Saat pandu user deploy manual fitur logo/favicon (butuh
 subdomain baru `media.ane.web.id` + akses publik ke MinIO), instruksi awal
