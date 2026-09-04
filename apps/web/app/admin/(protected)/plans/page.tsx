@@ -14,9 +14,10 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/api-client";
 
 // § docs/glossary.md, ADR-0015 — daftar modul selaras penamaan Accurate.
-// Cuma "pembelian" yang punya fitur jalan (Purchase Invoice + Akun Hutang
-// Pemasok) — modul lain boleh dicentang (forward-compatible), belum ada
-// efeknya sampai fitur importnya dibangun.
+// "pembelian" (Purchase Invoice + Akun Hutang Pemasok) dan "penjualan"
+// (Sales Invoice, § Fase 13) punya fitur jalan — modul lain boleh
+// dicentang (forward-compatible), belum ada efeknya sampai fitur
+// importnya dibangun.
 const MODULE_OPTIONS = [
   { key: "penjualan", label: "Penjualan" },
   { key: "pembelian", label: "Pembelian" },

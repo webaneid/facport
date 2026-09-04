@@ -386,6 +386,86 @@ itu) → **DIBLOKIR**, sama seperti baris lama tanpa tracking id-per-item
 awal) dan ADR-0014 (koreksi "susutkan" → "blokir"), eksekusi →
 `docs/phases/phase-09-batal-import.md`.
 
+## Sales Invoice (Faktur Penjualan) — Fase 13
+> Client minta 5 sub-modul aktif (2026-09-04): Sales Invoice (SI),
+> Purchase Invoice (PI, sudah ada), Sales Receipt/"Customer Receipt" (CR),
+> Purchase Payment (PP), Journal Voucher/"Jurnal Umum" (JU). Fase 13 ini
+> Sales Invoice SAJA — PP/CR/JU menyusul fase terpisah (urutan: yang
+> paling mirip pola existing dulu). Semua endpoint/scope di bawah
+> diverifikasi langsung dari `docs/referencehtml/accurate-openapi.json`
+> (OpenAPI spec resmi Accurate, bukan tebakan).
+
+**Prinsip: SI adalah bayangan cermin PI** — `vendorNo`↔`customerNo`,
+Vendor↔Customer, semua pola generik yang sudah diputuskan untuk PI
+(grouping multi-item per ADR-0011, retry cerdas per ADR-0012, batal
+import per ADR-0013/ADR-0014) **diterapkan APA ADANYA ke resource baru
+ini**, bukan didesain ulang. Dibangun LANGSUNG lengkap (bukan bertahap
+seperti histori PI Fase 02→05→06→08→09) — keputusan eksplisit user
+2026-09-04, karena pola-nya sudah terbukti matang di PI.
+
+**Endpoint** (`/api/sales-invoice/*`, host dinamis dari sesi Data Usaha):
+| Endpoint | Method | Scope |
+|---|---|---|
+| `/save.do` | POST | `sales_invoice_save` |
+| `/detail.do` | GET | `sales_invoice_view` |
+| `/list.do` | GET | `sales_invoice_view` |
+| `/delete.do` | DELETE | `sales_invoice_delete` |
+
+Scope `sales_invoice_view`/`sales_invoice_save` **sudah ada** di
+`apps/api/src/lib/accurate-scopes.ts` (grup `penjualan`) sejak awal
+project — belum pernah dipakai endpoint/service sampai fase ini.
+
+**Field wajib** `save.do`: `detailItem[].itemNo`, `detailItem[].unitPrice`
+(persis PI). `customerNo` SECARA TEKNIS opsional di schema Accurate
+(beda dari PI yang `vendorNo` juga opsional secara schema tapi WAJIB
+secara bisnis) — tetap diperlakukan WAJIB di `requiredFields` mapping
+kita, konsisten dengan PI.
+
+**Customer (data master, setara Vendor di PI)** — `apps/api/src/lib/accurate-customer.ts`,
+mirror 1:1 `accurate-vendor.ts`:
+- `findCustomerByNo` — `customer/list.do` + `filter.no.val`, sama pola
+  `findVendorByNo`.
+- `findOrCreateCustomer` — auto-create kalau `customerNo` di Excel belum
+  ada, field opsional `customerName` (wajib diisi kalau memang mau buat
+  baru), kategori/telepon/WA/email/alamat/negara — SEMUA create-only
+  (tidak update customer existing), KECUALI:
+- **`customerReceivableAccountListNo`** ("Akun Piutang") — setara
+  `vendorPayableAccountListNo` di PI (§ Fase 04 & revisi 2026-08-22):
+  BOLEH update customer yang SUDAH ADA juga, bukan cuma saat create.
+  Field asli Accurate dikonfirmasi ada di `customer/save.do` schema
+  (`customerReceivableAccountListNo`, tipe String) — simetris persis
+  dengan vendor, TIDAK perlu modul "Import Data Pelanggan" terpisah
+  (beda dari PI yang punya Fase 04 sebagai modul mandiri — di sini
+  cukup jadi field opsional di Sales Invoice langsung karena tidak ada
+  permintaan client spesifik soal itu, gampang ditambah modul terpisah
+  nanti kalau ternyata dibutuhkan).
+
+**Multi-item, retry cerdas, batal import** — reuse fungsi generik dari
+`workers/index.ts` yang sudah ada untuk PI (`groupPurchaseInvoiceRows`,
+dst pola-nya), diterapkan lewat fungsi SI sendiri
+(`groupSalesInvoiceRows`, `processSalesInvoiceGroup`,
+`appendToExistingSalesInvoice`, `findExistingAccurateSalesInvoiceId`) —
+kolom pengelompokan pengganti "Bill No" adalah **"PO Number"**
+(`poNumber`, field resmi Accurate di `sales-invoice/save.do` — referensi
+nomor PO dari customer, peran sama seperti Bill No vendor di PI: nomor
+referensi EKSTERNAL yang dipakai user mengelompokkan baris jadi 1
+faktur, BUKAN nomor transaksi Accurate `number`).
+
+**Kolom Excel & UI** — pola 1:1 PI: `sales-invoice.mapping.ts`
+(`fieldToAccuratePath`, `defaultColumnMap`, `customerAutoCreateMapping`),
+halaman `app/app/(protected)/sales-invoice/import/*`, komponen
+`components/sales-invoice/*`. Detail field lengkap → baca kode langsung
+(bukan didokumentasikan ulang di sini, sesuai pola PI yang sudah settle
+— dokumen ini cukup jadi peta konsep + rujukan ADR, bukan duplikat kode).
+
+**Nav & dashboard difilter oleh langganan** (§ ADR-0018, BARU sejak fase
+ini) — menu "Import Faktur Penjualan" di sidebar customer HANYA muncul
+kalau plan langganan customer itu mencakup modul `"penjualan"`. Pola ini
+BAKU untuk semua modul baru berikutnya (PP, CR, JU), bukan kasus khusus
+SI.
+
+Detail eksekusi lengkap → `docs/phases/phase-13-sales-invoice.md`.
+
 ### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
 Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
 otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error

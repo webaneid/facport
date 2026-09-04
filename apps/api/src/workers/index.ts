@@ -27,6 +27,25 @@ import { saveVendorPayableAccount, findOrCreateVendor } from "../lib/accurate-ve
 import { buildVendorPayableAccountPayload } from "../lib/import-mapping/vendor-payable-account.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
+// § Fase 13 — Sales Invoice, mirror 1:1 import Purchase Invoice di atas.
+// Alias pada nama yang collide (`buildDetailItemFromRow`/`extractItemCreateFields`
+// ADA di kedua mapping file, isinya identik tapi tetap 2 fungsi berbeda
+// per modul — bukan di-share, konsisten filosofi "3 baris mirip lebih
+// baik dari abstraksi prematur"). `ImportRowRecord` TIDAK diimpor ulang
+// dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
+// impor di atas, reuse type yang sama.
+import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice } from "../lib/accurate-sales-invoice";
+import {
+  buildSalesInvoicePayload,
+  buildDetailItemFromRow as buildDetailItemFromRowSI,
+  poNumberColumnOf,
+  extractCustomerCreateFields,
+  extractItemCreateFields as extractItemCreateFieldsSI,
+  groupSalesInvoiceRows,
+  validateGroupCustomerConsistency,
+  type SalesInvoiceGroup,
+} from "../lib/import-mapping/sales-invoice.mapping";
+import { findOrCreateCustomer } from "../lib/accurate-customer";
 
 // § architecture-accurate-integration.md — `import_batches.module`
 // menentukan cara proses 1 baris. Switch eksplisit (bukan lookup table
@@ -225,6 +244,136 @@ export async function appendToExistingPurchaseInvoice(
   // newRows.length) urutannya SAMA dengan `newRows` yang dikirim
   // (existing items dikirim duluan, baru yang baru — DIKONFIRMASI test
   // call nyata Fase 09, § ADR-0013).
+  const newIds = result.detailItem.slice(-newRows.length);
+  const detailItemIdByRowId = new Map<string, number>();
+  newRows.forEach((r, i) => detailItemIdByRowId.set(r.row.id, newIds[i]!.id));
+  for (const r of perRow) {
+    if (r.existingMatch) detailItemIdByRowId.set(r.row.id, r.existingMatch.id);
+  }
+
+  return {
+    invoiceId: result.id,
+    rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: detailItemIdByRowId.get(r.row.id)! })),
+  };
+}
+
+// ============================================================
+// § Fase 13 — Sales Invoice. Bayangan cermin blok Purchase Invoice di
+// atas (customer↔vendor, PO Number↔Bill No) — lihat komentar masing-
+// masing fungsi PI untuk penjelasan lengkap alasan tiap keputusan
+// (ADR-0011/0012/0013), TIDAK diulang di sini supaya tidak duplikasi teks.
+// ============================================================
+export type SalesInvoiceGroupResult = {
+  invoiceId: number;
+  rows: { rowId: string; detailItemId: number }[];
+};
+
+export async function processSalesInvoiceGroup(
+  ctx: AccurateSessionContext,
+  group: SalesInvoiceGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesInvoiceGroupResult> {
+  const mismatchError = validateGroupCustomerConsistency(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+
+  const customerNo = String(payload.customerNo ?? "");
+  if (customerNo) {
+    await findOrCreateCustomer(ctx, customerNo, extractCustomerCreateFields(rawRows[0]!, columnMapping));
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const rawRow of rawRows) {
+    const detailItem = extractRowDetailItemNo(rawRow, columnMapping);
+    if (!detailItem || seenItemNo.has(detailItem)) continue;
+    seenItemNo.add(detailItem);
+    await findOrCreateItem(ctx, detailItem, extractItemCreateFieldsSI(rawRow, columnMapping));
+  }
+
+  const result = await saveSalesInvoice(ctx, payload);
+  return {
+    invoiceId: result.id,
+    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: result.detailItem[i]!.id })),
+  };
+}
+
+// § mirror `findExistingAccurateInvoiceId` — cari lintas-batch by PO
+// Number, scoped `module = "sales_invoice"` (BEDA dari PI yang scoped
+// "purchase_invoice" — dua modul tidak pernah saling cari faktur satu
+// sama lain, walau kebetulan nomor referensinya sama).
+async function findExistingAccurateSalesInvoiceId(subscriptionId: string, poNumber: string, poNumberColumn: string): Promise<number | null> {
+  const [row] = await db
+    .select({ accurateTransactionId: importBatchRows.accurateTransactionId })
+    .from(importBatchRows)
+    .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
+    .where(
+      and(
+        eq(importBatches.subscriptionId, subscriptionId),
+        eq(importBatches.module, "sales_invoice"),
+        eq(importBatchRows.status, "success"),
+        sql`lower(trim(${importBatchRows.rawData}->>${poNumberColumn})) = lower(trim(${poNumber}))`,
+      ),
+    )
+    .limit(1);
+
+  if (!row?.accurateTransactionId) return null;
+  const id = Number(row.accurateTransactionId);
+  return Number.isFinite(id) ? id : null;
+}
+
+export async function appendToExistingSalesInvoice(
+  ctx: AccurateSessionContext,
+  existingId: number,
+  group: SalesInvoiceGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesInvoiceGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  const customerNo = String(buildSalesInvoicePayload(rawRows, columnMapping).customerNo ?? "");
+
+  const detail = await getSalesInvoiceDetail(ctx, existingId);
+
+  if (customerNo && detail.customer.no !== customerNo) {
+    throw new Error(
+      `PO Number "${group.poNumber}" sudah dipakai Faktur Penjualan #${existingId} milik Customer "${detail.customer.no}" di Accurate — tidak sama dengan Customer baris ini ("${customerNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
+    );
+  }
+
+  const findDuplicateItem = (candidate: Record<string, unknown>) =>
+    detail.detailItem.find(
+      (existing) =>
+        existing.itemNo === String(candidate.itemNo ?? "") &&
+        existing.unitPrice === Number(candidate.unitPrice ?? 0) &&
+        existing.quantity === Number(candidate.quantity ?? 0),
+    );
+
+  const perRow = group.rows.map((row, i) => {
+    const detailItem = buildDetailItemFromRowSI(rawRows[i]!, columnMapping);
+    return { row, rawRow: rawRows[i]!, detailItem, existingMatch: findDuplicateItem(detailItem) };
+  });
+  const newRows = perRow.filter((r) => !r.existingMatch);
+
+  if (newRows.length === 0) {
+    return {
+      invoiceId: existingId,
+      rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: r.existingMatch!.id })),
+    };
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const { rawRow } of newRows) {
+    const itemNo = extractRowDetailItemNo(rawRow, columnMapping);
+    if (!itemNo || seenItemNo.has(itemNo)) continue;
+    seenItemNo.add(itemNo);
+    await findOrCreateItem(ctx, itemNo, extractItemCreateFieldsSI(rawRow, columnMapping));
+  }
+
+  const result = await saveSalesInvoice(ctx, {
+    id: existingId,
+    detailItem: [...detail.detailItem.map((it) => ({ id: it.id })), ...newRows.map((r) => r.detailItem)],
+  });
+
   const newIds = result.detailItem.slice(-newRows.length);
   const detailItemIdByRowId = new Map<string, number>();
   newRows.forEach((r, i) => detailItemIdByRowId.set(r.row.id, newIds[i]!.id));
@@ -463,6 +612,43 @@ async function main() {
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
+      // § Fase 13 — Sales Invoice, bayangan cermin blok Purchase Invoice
+      // di atas (PO Number ganti peran Bill No, Customer ganti Vendor).
+    } else if (batch.module === "sales_invoice") {
+      const groups = groupSalesInvoiceRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      const poNumberColumn = poNumberColumnOf(columnMapping);
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const existingId =
+            group.poNumber && poNumberColumn
+              ? await findExistingAccurateSalesInvoiceId(batch.subscriptionId, group.poNumber, poNumberColumn)
+              : null;
+          const result = existingId
+            ? await appendToExistingSalesInvoice(session, existingId, group, columnMapping)
+            : await processSalesInvoiceGroup(session, group, columnMapping);
+          for (const r of result.rows) {
+            await db
+              .update(importBatchRows)
+              .set({
+                status: "success",
+                accurateTransactionId: String(result.invoiceId),
+                accurateDetailItemId: String(r.detailItemId),
+                errorMessage: null,
+                processedAt: new Date(),
+              })
+              .where(eq(importBatchRows.id, r.rowId));
+          }
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
     } else {
       for (const row of rows) {
         try {
@@ -560,6 +746,13 @@ async function main() {
       // terhubung ke faktur ini WAJIB punya `accurateDetailItemId`. Kalau
       // ada satu saja yang NULL (baris lama, sebelum Fase 09) → blokir,
       // jangan tebak.
+      // § Fase 13, security review — Medium finding: WAJIB scope by
+      // `module` juga, sama seperti `findExistingAccurateInvoiceId`/
+      // `findExistingAccurateSalesInvoiceId` — dua modul (purchase_invoice
+      // vs sales_invoice) punya ruang ID Accurate TERPISAH, tanpa filter
+      // ini `accurateTransactionId` yang kebetulan sama angkanya di 2
+      // modul berbeda akan dianggap "faktur yang sama" (arahnya cuma
+      // over-blocking, bukan hapus salah faktur, tapi tetap bug nyata).
       const allRowsForInvoice = await db
         .select({
           id: importBatchRows.id,
@@ -571,6 +764,7 @@ async function main() {
         .where(
           and(
             eq(importBatches.subscriptionId, batch.subscriptionId),
+            eq(importBatches.module, batch.module),
             eq(importBatchRows.accurateTransactionId, invoiceIdStr),
             eq(importBatchRows.status, "success"),
           ),
@@ -599,7 +793,13 @@ async function main() {
       try {
         // § faktur 100% milik batch ini (tidak ada batch lain nempel) —
         // satu-satunya kasus yang aman di-auto-cancel — hapus utuh.
-        await deletePurchaseInvoice(session, invoiceId);
+        // § Fase 13 — cabang by module, endpoint delete Accurate beda per
+        // jenis transaksi (purchase-invoice vs sales-invoice).
+        if (batch.module === "sales_invoice") {
+          await deleteSalesInvoice(session, invoiceId);
+        } else {
+          await deletePurchaseInvoice(session, invoiceId);
+        }
         await db
           .update(importBatchRows)
           .set({ status: "cancelled", cancelledAt: new Date() })

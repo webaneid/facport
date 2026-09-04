@@ -21,22 +21,26 @@
 | 10   | Admin Dashboard (Settings, User, Paket, Retensi Data) | Done | `docs/architecture/architecture-subscription.md` § "Retensi Data Import", `docs/architecture/architecture-settings.md`, ADR-0015 | `docs/phases/phase-10-admin-dashboard.md` |
 | 11   | Admin: Expired Manual per Subscription | Done | `docs/architecture/architecture-subscription.md`, ADR-0016 | `docs/phases/phase-11-admin-subscription-expired-manual.md` |
 | 12   | Logo & Favicon Company (Aset Branding Publik) | Done | `docs/architecture/architecture-storage.md`, `docs/architecture/architecture-settings.md`, ADR-0017 | `docs/phases/phase-12-logo-favicon-branding.md` |
+| 13   | Sales Invoice (Faktur Penjualan) | Done | `docs/architecture/architecture-accurate-integration.md` § "Sales Invoice (Faktur Penjualan)", ADR-0018 | `docs/phases/phase-13-sales-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
 ## Modul/Sub-modul Lain — Sengaja Di-pending
-Arahan eksplisit user (2026-08-19): **cuma Fase 02 (Purchase Invoice) yang
-aktif dikerjakan** setelah Fase 00-01 selesai. Semua ini di-pending sampai
-Fase 02 benar-benar solid & tervalidasi ke akun Accurate nyata — urutan &
-nomor fase berikutnya BELUM diputuskan, sengaja tidak di-pre-assign supaya
-tidak menyiratkan komitmen urutan yang belum benar ada:
-- Modul Pembelian — sub-modul lain: Purchase Order, Received Item, Purchase
-  Payment, Retur Pembelian
-- Modul Penjualan — semua sub-modul (Pesanan Penjualan, Delivery Order,
-  Sales Invoice, Sales Receipt, Retur Penjualan)
+**Update 2026-09-04**: client sekarang minta 5 sub-modul aktif —
+**Sales Invoice (Fase 13, In Progress), Purchase Invoice (Done), Sales
+Receipt/"Customer Receipt", Purchase Payment, Journal Voucher/"Jurnal
+Umum"**. 3 terakhir itu ANTRE, urutan pengerjaan: yang paling mirip pola
+existing dulu (PP & CR pola baru tapi mirip satu sama lain, JU paling
+kompleks — butuh validasi balance debit=kredit, ditunda terakhir).
+Modul/sub-modul LAIN di luar 5 ini (arahan awal 2026-08-19, masih berlaku
+buat sisanya) TETAP di-pending, urutan belum diputuskan:
+- Modul Pembelian — sub-modul lain (di luar PI & PP): Purchase Order,
+  Received Item, Retur Pembelian
+- Modul Penjualan — sub-modul lain (di luar SI & CR): Pesanan Penjualan,
+  Delivery Order, Retur Penjualan
 - Modul Persediaan (Inventory) — semua sub-modul
 - Modul Manufaktur — semua sub-modul
-- Modul Kas & Bank + Buku Besar — semua sub-modul
+- Modul Kas & Bank (di luar OP/OD yang mungkin ikut Jurnal Umum) — TBD
 
 **"Batal Import" (hapus dari Accurate) — Done, lihat Fase 09** (dulu
 sengaja ditunda sampai Fase 06 & 08 solid, feedback client 2026-08-27).
