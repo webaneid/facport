@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, text, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, text, timestamp, smallint, unique } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { plans } from "./subscription.schema";
 
@@ -34,3 +34,22 @@ export const invoiceItems = pgTable("invoice_items", {
   label: varchar("label", { length: 200 }).notNull(), // SNAPSHOT plan.name
   price: integer("price").notNull(), // SNAPSHOT plan.price
 });
+
+// § Fase 16, ADR-0022 — ganti pola `COUNT(*) LIKE 'INV/...%'` (Fase 15,
+// rawan race condition di checkout concurrent) dengan sequence ATOMIK
+// per (year, month) — adaptasi pola `financial_sequences` yang TERBUKTI
+// production (jalajogja). `generateInvoiceNumber()` (lib/invoice-number.ts)
+// increment `lastNumber` via `INSERT ... ON CONFLICT DO UPDATE ...
+// RETURNING`, 1 statement atomik di level row Postgres — 2 checkout
+// bersamaan TIDAK BISA dapat nomor invoice yang sama lagi.
+export const invoiceSequences = pgTable(
+  "invoice_sequences",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    year: smallint("year").notNull(),
+    month: smallint("month").notNull(), // 1-12
+    lastNumber: integer("last_number").notNull().default(0),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [unique().on(t.year, t.month)],
+);

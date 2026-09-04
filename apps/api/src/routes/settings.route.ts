@@ -4,6 +4,46 @@ import { db } from "../lib/db";
 import { settings } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
+import { isValidQrisPayload } from "../lib/qris-emv";
+
+// § Fase 16, security review 2026-09-04 (Medium) — `company.bankAccounts`/
+// `company.qrisAccounts` dikonsumsi `orders.route.ts` dengan cast `as
+// BankAccount[]` TANPA runtime check. Value cacat (bukan array/field
+// hilang) akan LOLOS lewat `PUT /settings` generik (`value: t.Unknown()`)
+// dan baru meledak (500) saat CUSTOMER coba bayar — bukan saat admin
+// simpan. Validasi runtime di sini (pola sama `retentionItem` di bawah),
+// GAGAL di titik SIMPAN (admin), bukan titik PAKAI (customer).
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isValidBankAccounts(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (a) => isRecord(a) && typeof a.id === "string" && typeof a.bankName === "string" && typeof a.accountNumber === "string" && typeof a.accountName === "string",
+    )
+  );
+}
+
+function isValidQrisAccounts(value: unknown): { ok: true } | { ok: false; invalidId?: string } {
+  if (!Array.isArray(value)) return { ok: false };
+  for (const a of value) {
+    if (!isRecord(a) || typeof a.id !== "string" || typeof a.name !== "string" || typeof a.imageUrl !== "string" || typeof a.isDynamic !== "boolean") {
+      return { ok: false };
+    }
+    if (a.isDynamic) {
+      // § payload EMV WAJIB valid SEBELUM disimpan kalau ditandai dinamis
+      // — cegah bug "QR ditandai dinamis tapi nominal tidak ter-inject"
+      // (§ qris-emv.ts fix terkait) ketahuan saat admin simpan, bukan
+      // saat customer generate QR.
+      if (typeof a.emvPayload !== "string" || !isValidQrisPayload(a.emvPayload)) {
+        return { ok: false, invalidId: a.id };
+      }
+    }
+  }
+  return { ok: true };
+}
 
 // § Fase 12, ADR-0017 — allowlist EKSPLISIT untuk `GET /settings/public`
 // (endpoint TANPA auth sama sekali, dipakai landing page & tag favicon).
@@ -76,6 +116,21 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
       if (body.some((b) => (BRANDING_ONLY_KEYS as readonly string[]).includes(b.key))) {
         set.status = 400;
         return { code: "USE_BRANDING_UPLOAD_ENDPOINT" };
+      }
+
+      const bankAccountsItem = body.find((b) => b.key === "company.bankAccounts");
+      if (bankAccountsItem && !isValidBankAccounts(bankAccountsItem.value)) {
+        set.status = 400;
+        return { code: "INVALID_BANK_ACCOUNTS" };
+      }
+
+      const qrisAccountsItem = body.find((b) => b.key === "company.qrisAccounts");
+      if (qrisAccountsItem) {
+        const result = isValidQrisAccounts(qrisAccountsItem.value);
+        if (!result.ok) {
+          set.status = 400;
+          return { code: "INVALID_QRIS_ACCOUNTS", qrisId: result.invalidId };
+        }
       }
 
       for (const { key, value, group } of body) {

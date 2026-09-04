@@ -24,6 +24,7 @@
 | 13   | Sales Invoice (Faktur Penjualan) | Done | `docs/architecture/architecture-accurate-integration.md` § "Sales Invoice (Faktur Penjualan)", ADR-0018 | `docs/phases/phase-13-sales-invoice.md` |
 | 14   | Restrukturisasi Inti: Sub-Modul + Koneksi Accurate Reusable | Done | `docs/architecture/architecture-subscription.md`, `docs/architecture/architecture-accurate-integration.md`, ADR-0019, ADR-0020 | `docs/phases/phase-14-fondasi-langganan.md` |
 | 15   | Invoice Profesional (Skema + PDF) | Done | `docs/architecture/architecture-invoice.md`, ADR-0021 | `docs/phases/phase-15-invoice-profesional.md` |
+| 16   | Payment Manual (Transfer Bank + QRIS) | Done | `docs/architecture/architecture-payment.md`, ADR-0022 | `docs/phases/phase-16-payment-manual.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -34,12 +35,15 @@ Receipt", Purchase Payment, Journal Voucher/"Jurnal Umum"**. Sebelum
 lanjut bangun CR/PP/JU, user minta fondasi komersial diperkuat dulu
 (Fase 14-18) — gating pindah dari grup top-level ke per-sub-modul, koneksi
 Accurate reusable lintas subscription, invoice profesional, payment
-gateway Ipaymu, cart multi-modul. **Fase 14 (restrukturisasi inti) DAN
-Fase 15 (Invoice Profesional) Done 2026-09-04** — sisanya (Fase 16
-Payment Gateway Ipaymu, Fase 17 Checkout UI, Fase 18 Onboarding Admin)
-BELUM dikerjakan, MENUNGGU konfirmasi user sebelum lanjut (sesuai SOP,
-tidak otomatis lanjut fase berikutnya). **CR/PP/JU BARU dikerjakan
-setelah Fase 14-18 selesai** —
+manual (transfer bank + QRIS — **update 2026-09-04**: rencana AWAL
+"Payment Gateway Ipaymu" DIGANTI setelah riset ke aplikasi sibling
+production `jalajogja` menemukan gateway otomatis TIDAK PERNAH benar-benar
+diimplementasikan di sana, sementara pola manual TERBUKTI jalan
+bertahun-tahun — detail lengkap ADR-0022), cart multi-modul. **Fase 14,
+Fase 15, DAN Fase 16 (Payment Manual) Done 2026-09-04** — sisanya (Fase
+17 Checkout UI, Fase 18 Onboarding Admin) BELUM dikerjakan, MENUNGGU
+konfirmasi user sebelum lanjut (sesuai SOP, tidak otomatis lanjut fase
+berikutnya). **CR/PP/JU BARU dikerjakan setelah Fase 14-18 selesai** —
 supaya 3 modul itu langsung dibangun di atas struktur final (harga
 per-SKU, gating per-sub-modul), bukan mirror struktur lama PI/SI yang
 bakal langsung perlu dirombak lagi. Rencana detail 5 fase → ADR-0019,
@@ -68,10 +72,23 @@ ASLI (bukan cuma status code) — file didownload nyata via `curl`, `file`
 command konfirmasi PDF valid, teks diekstrak konfirmasi SEMUA data
 (company, bill-to, item, total, footer) benar. **Belum ada jalur normal
 bikin invoice** (checkout = Fase 16-17) — data test dibuat manual/script,
-bukan alur user nyata. **Fase 14 DAN Fase 15 keduanya BELUM di-commit/
-push** — masih di working tree branch `feat/subscription-foundation`,
-dikonfirmasi ke user saat penutupan Fase 15 (user pilih commit+push+PR ke
-develop setelah security review Fase 15 selesai).
+bukan alur user nyata. **Fase 14 DAN Fase 15** di-commit+push+PR
+(#26, ke `develop`) setelah Fase 15 ditutup.
+
+**Fase 16 Done 2026-09-04** — ringkasan lengkap →
+`docs/phases/phase-16-payment-manual.md` § Ringkasan Hasil. Rencana awal
+"Payment Gateway Ipaymu" DIGANTI payment manual (transfer bank + QRIS
+dinamis lokal) setelah riset ke aplikasi sibling production `jalajogja`
+(detail ADR-0022). Typecheck 0 error, 144/146 test pass (26 baru, 2
+di-skip — MinIO lokal env mismatch, bukan bug kode). Security review 0
+Critical, 1 High (guard checkout concurrent — DIPERBAIKI, dibungkus
+`db.transaction()` + row lock) + 3 Medium (DIPERBAIKI: QRIS Tag 53/54
+fallback, validasi settings bankAccounts/qrisAccounts, info disclosure
+`GET /orders/:id`) + 2 Low diterima sebagai debt. **Upload bukti transfer
+via MinIO NYATA belum terverifikasi** (env lokal mismatch credential,
+lihat Known Limitations phase doc) — WAJIB dicek manual di staging
+sebelum dianggap jalan end-to-end penuh. Belum di-commit/push — MENUNGGU
+arahan user berikutnya.
 Modul/sub-modul LAIN di luar 5 ini (arahan awal 2026-08-19, masih berlaku
 buat sisanya) TETAP di-pending, urutan belum diputuskan:
 - Modul Pembelian — sub-modul lain (di luar PI & PP): Purchase Order,

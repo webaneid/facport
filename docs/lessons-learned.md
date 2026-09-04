@@ -6,6 +6,86 @@
 
 ---
 
+## 2026-09-04 — Security review Fase 16 (Payment Manual): 1 High + 3 Medium diperbaiki langsung, 2 Low diterima/dicatat
+**Konteks:** Subagent `security-auditor` review Fase 16 (checkout cart,
+skema `orders` payment manual, QRIS EMV builder, upload bukti, konfirmasi
+admin dengan row-lock). Ringkasan lengkap →
+`docs/phases/phase-16-payment-manual.md` § "Ringkasan Hasil". Fokus audit
+(row-lock confirm/reject, ownership order, validasi account ref, privasi
+bucket bukti, alur reject→resubmit, matematika aktivasi multi-item) semua
+**lolos** kecuali 1 High — 0 Critical.
+
+**Sudah diperbaiki (High):**
+- `POST /subscriptions/checkout` (`subscriptions.route.ts`) — guard "cegah
+  beli modul sama 2x" SEBELUMNYA cuma cek subscription AKTIF, TIDAK
+  melihat invoice/order lain yang masih `pending`/`submitted` untuk modul
+  yang sama (subscription baru tercipta SETELAH admin confirm, jadi 2
+  checkout modul sama sebelum bayar SAMA SEKALI lolos guard lama). Fix:
+  seluruh alur checkout dibungkus `db.transaction()` + row lock pada
+  baris `user` (serialisasi checkout SAMA user, bukan lintas user), guard
+  diperluas cek invoice/order non-terminal juga — test baru
+  (`subscriptions.route.test.ts`) reproduksi skenario "2 tab checkout
+  modul sama sebelum bayar".
+
+**Sudah diperbaiki (Medium):**
+- `buildDynamicQris()` (`qris-emv.ts`) — payload EMV admin TANPA Tag 53
+  MAUPUN Tag 54 (malformed/salah salin) sebelumnya lolos TANPA nominal
+  ter-inject sama sekali, QR tetap ditandai "dinamis" tapi nominal tidak
+  pernah dikunci — customer diam-diam disuruh ketik manual TANPA tahu
+  itu (kode unik jadi tidak ikut ke-transfer). Fix: throw eksplisit kalau
+  `hasTag54` masih `false` setelah parsing (caller sudah punya try/catch →
+  502).
+- `company.bankAccounts`/`company.qrisAccounts` disimpan lewat `PUT
+  /settings` generik TANPA validasi bentuk — value cacat bisa lolos
+  disimpan admin lalu baru meledak (500) saat CUSTOMER coba bayar. Fix:
+  validasi runtime eksplisit di `settings.route.ts` (pola sama
+  `retentionItem`), termasuk panggil `isValidQrisPayload()` yang
+  sebelumnya didefinisikan tapi TIDAK PERNAH dipanggil di mana pun — plus
+  defense-in-depth `Array.isArray` check di `orders.route.ts`
+  `getPaymentSettings()`.
+- `GET /orders/:id` (`orders.route.ts`) — sebelumnya spread SELURUH row
+  `orders`/`invoices` ke customer, termasuk `proofUrl` (MinIO object key
+  privat) dan `confirmedBy`/`rejectedBy` (user ID admin) — melanggar
+  spirit ADR-0022 ("proofUrl HANYA boleh ditukar presigned URL server-
+  side admin-only"). Fix: response di-`pick` eksplisit ke field yang
+  memang dibutuhkan customer saja.
+
+**Sudah diperbaiki (Low):**
+- Frontend `pay/page.tsx` render kosong tanpa pesan kalau admin hapus
+  rekening bank yang sedang direferensikan order in-flight (jalur QRIS
+  sudah menangani ini via `QRIS_ACCOUNT_NOT_FOUND`, jalur bank transfer
+  belum) — ditambah fallback pesan jelas.
+
+**Ditunda ke technical debt (dicatat sesuai SOP):**
+- Object MinIO lama TIDAK dihapus saat customer upload ulang bukti
+  setelah ditolak (numpuk file "yatim" di bucket privat) — bukan celah
+  keamanan (bucket tetap privat), murni storage housekeeping, ditunda
+  sampai jadi masalah cost nyata.
+- Belum ada job yang mentransisikan order/invoice ke status `"expired"`
+  otomatis setelah lewat `dueDate` — kolom & status sudah disiapkan di
+  skema, implementasinya sengaja ditunda (di luar scope "verifikasi
+  konsep manual payment jalan end-to-end").
+- Permission `orders.manage` di data role PRODUCTION perlu dicek manual
+  supaya cuma di-assign ke admin/super-admin (pola sama technical debt
+  Fase 12/15).
+
+**Catatan tambahan (bug ditemukan pas nulis test, BUKAN temuan
+security-auditor):** helper test `seedPaymentSettings()`
+(`orders.route.test.ts`) sempat pakai `onConflictDoUpdate({set: {value:
+settings.value}})` — self-reference ke kolom LAMA (no-op saat conflict),
+BUG YANG SAMA PERSIS pernah ketemu di script manual test Fase 15. Efeknya
+di sini: test file lain (`settings.route.test.ts`) yang JUGA menulis key
+global `company.bankAccounts`/`company.qrisAccounts` bisa "menang" duluan
+tergantung urutan eksekusi, bikin test lain gagal intermiten
+(`ACCOUNT_NOT_FOUND` padahal seed harusnya jalan). Fix: set value LITERAL
+per-key (2 pemanggilan terpisah, bukan 1 `.values([...])` array).
+**Pencegahan:** `onConflictDoUpdate` HARUS selalu set value dari variabel
+LOKAL/literal, JANGAN PERNAH `column: table.column` (self-reference) —
+pola ini sudah 2x ketemu di sesi berbeda, jadikan checklist review kalau
+lihat `onConflictDoUpdate` baru.
+
+---
+
 ## 2026-09-04 — Security review Fase 15 (Invoice + PDF): 0 Critical/High/Medium, 3 Low (diterima sebagai technical debt)
 **Konteks:** Subagent `security-auditor` review Fase 15 (skema
 `invoices`/`invoiceItems`, PDF generator `@react-pdf/renderer`, endpoint

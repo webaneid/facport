@@ -145,4 +145,47 @@ export const brandingRoute = new Elysia({ prefix: "/admin/branding" })
         file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }),
       }),
     },
+  )
+  // § Fase 16, ADR-0022 — upload foto QRIS statis (dari bank/penyedia
+  // QRIS admin). BEDA dari logo/favicon: TIDAK langsung tulis ke 1 key
+  // settings tetap — cuma balikin `url`, admin yang gabungkan ke array
+  // `company.qrisAccounts` lewat `PUT /settings` generik (1 company
+  // boleh punya banyak QRIS, bukan 1 slot tunggal seperti logo).
+  .post(
+    "/qris-image",
+    async ({ body, user, set }) => {
+      const buffer = Buffer.from(await body.file.arrayBuffer());
+
+      try {
+        await sharp(buffer).metadata();
+      } catch {
+        set.status = 400;
+        return { code: "INVALID_IMAGE_FILE" };
+      }
+
+      await ensurePublicBucket();
+
+      const id = randomUUID();
+      const key = `branding/qris-${id}.webp`;
+      const webpBuffer = await sharp(buffer).webp({ quality: 90 }).toBuffer();
+      await minioClient.putObject(PUBLIC_MEDIA_BUCKET, key, webpBuffer);
+      const url = publicUrl(key);
+
+      await db.insert(media).values({
+        id,
+        filename: body.file.name,
+        storageKey: key,
+        mimeType: "image/webp",
+        sizeBytes: webpBuffer.length,
+        uploadedBy: user.id,
+      });
+
+      return { url };
+    },
+    {
+      permission: "settings.update",
+      body: t.Object({
+        file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }),
+      }),
+    },
   );

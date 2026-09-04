@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, Link2, Landmark, Users, Package, Settings, Receipt } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, Link2, Landmark, Users, Package, Settings, Receipt, CreditCard } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
@@ -45,6 +45,8 @@ const NAV_ITEMS_BY_SURFACE: Record<Surface, NavItem[]> = {
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
     { href: "/users", label: "Pengguna", icon: Users },
     { href: "/plans", label: "Paket", icon: Package },
+    // § Fase 16, ADR-0022 — antrian konfirmasi pembayaran manual.
+    { href: "/orders", label: "Konfirmasi Pembayaran", icon: CreditCard },
     { href: "/settings", label: "Pengaturan", icon: Settings },
   ],
 };

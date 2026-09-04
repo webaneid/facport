@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
-import { invoices, invoiceItems, settings } from "../db/schema";
+import { invoices, invoiceItems, settings, orders } from "../db/schema";
 import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
 import { attachInvoiceItems } from "../lib/invoice-helpers";
@@ -47,7 +47,14 @@ export const invoicesRoute = new Elysia()
     "/me/invoices",
     async ({ user }) => {
       const rows = await db.select().from(invoices).where(eq(invoices.userId, user.id)).orderBy(desc(invoices.createdAt));
-      return { invoices: await attachInvoiceItems(rows) };
+      const invoiceIds = rows.map((r) => r.id);
+      // § Fase 16 — dipakai FE (`/billing`) buat link "Bayar Sekarang":
+      // `orders.invoiceId` 1:1 ke invoice, TIDAK ada FK terbalik di
+      // `invoices`, jadi di-JOIN di sini (bukan disimpan redundan).
+      const orderRows = invoiceIds.length ? await db.select().from(orders).where(inArray(orders.invoiceId, invoiceIds)) : [];
+      const orderIdByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o.id]));
+      const withItems = await attachInvoiceItems(rows);
+      return { invoices: withItems.map((inv) => ({ ...inv, orderId: orderIdByInvoiceId.get(inv.id) ?? null })) };
     },
     { auth: true },
   )

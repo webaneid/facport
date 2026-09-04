@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { FileText, Download } from "lucide-react";
+import Link from "next/link";
+import { FileText, Download, CreditCard } from "lucide-react";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -20,6 +21,7 @@ type Invoice = {
   dueDate: string;
   createdAt: string;
   items: InvoiceItem[];
+  orderId: string | null;
 };
 
 const INVOICE_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
@@ -87,15 +89,23 @@ export default function BillingPage() {
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right">
-                      <a
-                        href={`${apiBaseUrl}/invoices/${inv.id}/pdf`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className={buttonVariants("outline", "h-8 gap-1.5")}
-                      >
-                        <Download className="h-3.5 w-3.5" />
-                        Unduh PDF
-                      </a>
+                      <div className="flex items-center justify-end gap-2">
+                        {inv.status === "unpaid" && inv.orderId && (
+                          <Link href={`/billing/${inv.orderId}/pay`} className={buttonVariants("default", "h-8 gap-1.5")}>
+                            <CreditCard className="h-3.5 w-3.5" />
+                            Bayar Sekarang
+                          </Link>
+                        )}
+                        <a
+                          href={`${apiBaseUrl}/invoices/${inv.id}/pdf`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className={buttonVariants("outline", "h-8 gap-1.5")}
+                        >
+                          <Download className="h-3.5 w-3.5" />
+                          Unduh PDF
+                        </a>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
