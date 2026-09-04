@@ -50,6 +50,7 @@ export default function PurchaseInvoiceImportArchivePage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch awal + polling daftar batch, pola standar
     load();
     const interval = setInterval(load, 5000);
     return () => clearInterval(interval);

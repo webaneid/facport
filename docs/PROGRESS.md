@@ -19,6 +19,8 @@
 | 08   | Purchase Invoice — Update Faktur Existing (Retry Cerdas) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08)", ADR-0012 | `docs/phases/phase-08-purchase-invoice-update-existing.md` |
 | 09   | Batal Import (Hapus Faktur di Accurate) | Done | `docs/architecture/architecture-accurate-integration.md` § "Purchase Invoice — Batal Import / Hapus Faktur (Fase 09)", ADR-0013, ADR-0014 | `docs/phases/phase-09-batal-import.md` |
 | 10   | Admin Dashboard (Settings, User, Paket, Retensi Data) | Done | `docs/architecture/architecture-subscription.md` § "Retensi Data Import", `docs/architecture/architecture-settings.md`, ADR-0015 | `docs/phases/phase-10-admin-dashboard.md` |
+| 11   | Admin: Expired Manual per Subscription | Done | `docs/architecture/architecture-subscription.md`, ADR-0016 | `docs/phases/phase-11-admin-subscription-expired-manual.md` |
+| 12   | Logo & Favicon Company (Aset Branding Publik) | Done | `docs/architecture/architecture-storage.md`, `docs/architecture/architecture-settings.md`, ADR-0017 | `docs/phases/phase-12-logo-favicon-branding.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

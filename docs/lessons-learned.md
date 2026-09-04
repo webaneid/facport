@@ -6,6 +6,119 @@
 
 ---
 
+## 2026-09-04 — Push pertama ke `develop`: 2 bug lagi di `deploy-staging.yml` (lanjutan entri `ci.yml` di bawah)
+**Konteks:** Setelah 3 bug `ci.yml` (entri di bawah) diperbaiki dan PR #23
+merge ke `develop`, `deploy-staging.yml` (trigger `push: develop` — SAMA
+SEKALI belum pernah jalan sebelumnya karena branch `develop` baru ada)
+gagal lagi 2x dengan penyebab berbeda:
+1. **Job `build-and-push` gagal di step `Test (gate)`** — sama persis
+   kelas masalah dengan `ci.yml`: job ini jalankan `bun run typecheck` +
+   `bun run test` TANPA `services.postgres` maupun `env:` block sama
+   sekali (beda dari `ci.yml`/`release.yml` yang sudah benar). Fix: copy
+   block `services`+`env`+step migrate/seed dari `ci.yml` apa adanya.
+2. **Job `build-and-push` gagal push image ke GHCR** — `denied:
+   installation not allowed to Write organization package`.
+   `deploy-staging.yml` TIDAK punya `permissions:` block sama sekali
+   (GITHUB_TOKEN default read-only untuk packages di org ini), beda dari
+   `deploy.yml` yang sudah punya `permissions: { contents: read, packages:
+   write }`. Fix: tambah block yang sama.
+
+Setelah kedua fix di atas, `build-and-push` **sukses** (image
+`api:staging`/`web:staging` nyata ada di GHCR). Job `deploy-to-server`
+TETAP gagal `error: missing server host` — ini **EXPECTED**, bukan bug
+baru (secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` memang belum
+diisi, konsisten dengan status `deploy.yml` yang sudah didokumentasikan
+di `architecture-deployment.md`).
+
+**Root cause sama dengan entri `ci.yml` di bawah**: `develop` branch tidak
+pernah ada sebelum sesi ini, jadi trigger `push: develop` untuk
+`deploy-staging.yml` juga baru pertama kali benar-benar dieksekusi.
+`deploy-staging.yml` ternyata di-copy dari pola `ci.yml`/`deploy.yml` TAPI
+tidak lengkap menyalin bagian env/permissions-nya.
+
+**Pencegahan**: sama seperti pencegahan di entri `ci.yml` — kalau ada
+field wajib baru di `env.ts`, update SEMUA tempat yang jalankan
+`bun run test`/`typecheck` (`ci.yml`, `release.yml`, `deploy-staging.yml`).
+Pertimbangkan ekstrak env block ini jadi 1 file YAML anchor/reusable
+workflow supaya tidak perlu disalin manual ke 3 tempat lagi ke depannya.
+
+---
+
+## 2026-09-04 — PR pertama repo ini: 3 bug `ci.yml` yang sudah lama laten, tidak pernah ketahuan karena selalu commit langsung ke `main`
+**Masalah:** Saat buka PR #23 (branch `feat/admin-expiry-and-branding` →
+`develop`, branch `develop` itu sendiri BARU dibuat di PR ini — sebelumnya
+tidak ada branch `develop` sama sekali di repo), `ci.yml` gagal 3 kali
+berturut-turut dengan penyebab BERBEDA tiap kali:
+1. **Lint gagal** — `react-hooks/set-state-in-effect`/`react-hooks/immutability`
+   (rule dari `eslint-plugin-react-hooks` v7, sudah lama ke-lock di
+   `bun.lock`) menolak pola fetch-on-mount standar (`load()` dipanggil
+   langsung di body `useEffect`) di 5 file LAMA yang sudah ada sebelum PR
+   ini — diverifikasi dengan `bun run lint` langsung di `origin/main`
+   (branch belum disentuh), errornya SAMA PERSIS.
+2. **Job `db:seed` gagal** — env var baru `MINIO_PUBLIC_URL` (ditambah ke
+   `apps/api/src/lib/env.ts` di Fase 12) lupa ditambahkan ke blok `env:`
+   di `ci.yml`/`release.yml`, jadi `env.ts` reject saat boot job seed.
+3. **Gitleaks gagal** — `actions/checkout@v4` di `ci.yml` TANPA
+   `fetch-depth: 0` (default shallow, depth 1), bikin
+   `gitleaks/gitleaks-action@v2` gagal `fatal: ambiguous argument
+   'base^..head': unknown revision` saat coba diff base..head commit PR.
+   `release.yml` SUDAH benar (`fetch-depth: 0` sudah ada), `ci.yml` belum
+   — kemungkinan besar karena trigger `pull_request` di `ci.yml` memang
+   belum pernah benar-benar dieksekusi sebelumnya.
+
+**Root cause tunggal di balik ketiganya**: repo ini praktiknya SELALU
+commit langsung ke `main` sejak awal (riwayat commit tidak pernah lewat
+PR) — jadi trigger `on: pull_request` di `ci.yml` secara harfiah baru
+pertama kali jalan sungguhan di PR #23 ini. Bug #1 sudah laten dari
+dependency bump manapun yang terakhir mengunci `eslint-plugin-react-hooks`
+v7 ke `bun.lock`; bug #2 & #3 murni gap konfigurasi `ci.yml` yang tidak
+pernah "kena test" sampai sekarang.
+
+**Fix**: (1) tandai eksplisit tiap `load()`-di-effect sebagai fetch data
+awal yang disengaja (`eslint-disable-next-line` + komentar alasan, BUKAN
+refactor pola-nya — di luar scope Fase 11/12), plus reorder
+`loadDatabases()` di `accurate/page.tsx` yang dipanggil sebelum
+dideklarasikan; (2) tambah `MINIO_PUBLIC_URL` ke `env:` `ci.yml` &
+`release.yml`; (3) tambah `fetch-depth: 0` ke step checkout `ci.yml`.
+
+**Pencegahan**: kalau nanti nambah env var WAJIB baru di `apps/api/src/lib/env.ts`,
+WAJIB ikut update `env:` block di `ci.yml` DAN `release.yml` di commit
+yang sama — checklist ini belum ada enforcement otomatis (technical debt:
+pertimbangkan test yang assert semua key `envSchema` ada di kedua workflow
+file). Juga: sekarang `develop` branch sudah ada dan dipakai — pastikan
+alur PR→develop dipakai konsisten ke depannya (bukan balik commit langsung
+ke `main`), supaya `ci.yml` terus "kena tes" dan gap serupa ketahuan lebih
+awal, bukan menumpuk lagi.
+
+---
+
+## 2026-09-04 — Security review Fase 12 (Logo/Favicon Branding): 1 Medium diperbaiki, 1 Low dicatat sebagai technical debt
+**Konteks:** Subagent `security-auditor` review fitur upload logo/favicon
+company (bucket public MinIO baru, § ADR-0017). Ringkasan lengkap →
+`docs/phases/phase-12-logo-favicon-branding.md` § "Ringkasan Hasil".
+
+**Sudah diperbaiki (Medium):**
+- `PUT /settings` generik (`value: t.Unknown()` untuk key apa pun) bisa
+  dipakai buat menimpa `company.logo`/`company.favicon` dengan value bebas
+  (bukan URL, bentuk object salah, dst), bypass pipeline upload+re-encode
+  sharp di `branding.route.ts` — padahal `GET /settings/public` (tanpa
+  auth) meng-echo value itu apa adanya ke `<img src>`/favicon metadata di
+  SEMUA surface. Fix: `PUT /settings` sekarang blokir eksplisit 2 key ini
+  (`BRANDING_ONLY_KEYS` di `settings.route.ts`), return 400
+  `USE_BRANDING_UPLOAD_ENDPOINT` — satu-satunya jalur tulis tetap lewat
+  endpoint upload yang sudah benar.
+
+**Ditunda ke technical debt (Low):**
+- Tidak bisa diverifikasi dari kode saja apakah permission
+  `settings.update` di data PRODUCTION cuma di-assign ke role
+  admin/super-admin (RBAC project ini dinamis, custom role bisa dibuat
+  admin). Kalau di-assign terlalu longgar ke role staf level bawah,
+  dampak dari kelas masalah di atas (siapa pun yang bisa ubah aset
+  branding publik) jadi lebih luas. **Aksi:** cek manual data role/permission
+  production, bukan perbaikan kode.
+
+---
+
 ## 2026-09-02 — Retry Cerdas (Fase 08) cuma cocokkan "Bill No", bukan "Trans No" — typo 1 karakter bikin CREATE nabrak faktur existing
 **Masalah:** User laporan (production) error Accurate `"Sudah ada data
 lain dengan No Form # Faktur Pembelian \"PI01001050\""` muncul lagi di
@@ -1029,11 +1142,14 @@ kasih 1 angka default untuk semua kecuali satu.
   sudah ada) — pertimbangkan lint rule custom atau test yang enumerasi
   `app.routes` dan assert tiap route punya salah satu macro, sebelum jumlah
   route bertambah banyak di Fase 01+.
-- Kebijakan serving MinIO (presigned URL vs bucket public-read) belum
-  diputuskan — `POST /media/upload` return `storageKey` mentah, frontend
-  belum punya cara render gambar dari situ. WAJIB diputuskan sebelum ada
-  fitur yang benar-benar render gambar user (§ `architecture-storage.md`
-  Opsi A/B masih kosong "[Isi opsi mana yang dipakai]").
+- ~~Kebijakan serving MinIO (presigned URL vs bucket public-read) belum
+  diputuskan~~ — **RESOLVED SEBAGIAN Fase 12 (2026-09-04), ADR-0017**: untuk
+  kategori aset branding publik (logo/favicon company), dipakai bucket
+  kedua `facport-public` (public-read) + host Caddy baru `media.<domain>`.
+  Untuk kategori media PRIVAT (`POST /media/upload` → `facport-media`),
+  gap ini **TETAP TERBUKA** — `storageKey` mentah masih dikembalikan,
+  belum ada proxy/presign. Lihat § `architecture-storage.md` "Gap RESOLVED
+  SEBAGIAN".
 - `bun audit`/dependency scanning belum diverifikasi jalan di CI (infra,
   bukan kode — `.github/workflows/ci.yml` sudah ada langkahnya, tinggal
   pastikan benar-benar jalan pas PR pertama nanti).

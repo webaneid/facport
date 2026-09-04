@@ -103,7 +103,17 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
     volumes:
       - minio_data_staging:/data
-    networks: [internal]
+    # § Fase 12, ADR-0017 — bucket public (facport-public, logo/favicon)
+    # butuh dijangkau Caddy PRODUCTION (proses/network terpisah dari compose
+    # staging ini) lewat host media-staging.<domain>, pola identik dengan
+    # alias api-staging/web-staging di atas — BEDA dari sebelum Fase 12
+    # yang cukup `networks: [internal]` karena belum ada kebutuhan diakses
+    # dari luar compose project ini.
+    networks:
+      internal:
+      edge:
+        aliases:
+          - minio-staging   # dipanggil Caddy production sebagai "minio-staging:9000"
     mem_limit: 128m
     cpus: 0.25
 

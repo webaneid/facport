@@ -104,10 +104,18 @@ Admin pilih: kirim email undangan set-password KE user, ATAU set password
 sementara langsung (dicatat mana yang dipilih, WAJIB paksa ganti password
 di login pertama kalau opsi kedua)
       ↓
+Admin pilih plan + input TANGGAL EXPIRED (endAt) secara manual — BUKAN
+otomatis dihitung dari plan.durationDays seperti jalur self-service (§
+ADR-0016). Alasan: kasus admin-provisioned justru sering butuh tanggal
+custom (kontrak korporat berakhir sesuai PO, bukan kelipatan durationDays).
+      ↓
 subscriptions dibuat LANGSUNG berstatus "active" (orderId = null, tidak
 lewat payment gateway — dianggap sudah dibayar di luar sistem, mis. invoice
 manual/kontrak korporat)
 ```
+Untuk perpanjang/perpendek `endAt` subscription admin-provisioned yang
+SUDAH aktif (tanpa bikin baris subscription baru) → `PATCH
+/admin/subscriptions/:id`, § "API (Ringkas)" di bawah dan ADR-0016.
 
 ## Gating Akses Modul — Beda dari RBAC Permission
 
@@ -147,17 +155,22 @@ ini atau tidak).
 
 ## Downgrade Otomatis Saat Expired
 
+Didaftarkan di `apps/api/src/workers/index.ts` bareng SEMUA job lain (bukan
+file terpisah per job — § `architecture-jobs.md` § "Worker (Proses
+Terpisah, Bukan di Request Handler)"):
+
 ```ts
-// apps/api/src/workers/expire-subscriptions.worker.ts — job terjadwal harian
-// (pg-boss scheduling, § architecture-jobs.md)
-export async function expireSubscriptions() {
+// apps/api/src/workers/index.ts
+await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
+await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
   const expired = await db
     .update(subscriptions)
     .set({ status: "expired" })
     .where(and(eq(subscriptions.status, "active"), lt(subscriptions.endAt, new Date())))
-    .returning();
+    .returning({ id: subscriptions.id });
+  logger.info({ count: expired.length }, "Subscriptions expired");
   // Opsional: enqueue email notifikasi "langganan kamu berakhir" per row
-}
+});
 ```
 **Kenapa job terjadwal, bukan cuma cek real-time saat request**: status di
 DB harus konsisten dan terlihat benar dari admin dashboard kapan saja, tanpa
@@ -174,11 +187,16 @@ POST/PUT/DELETE /admin/plans         → CRUD paket
 GET  /admin/users                    → daftar user + role + subscription aktif, § Fase 10
 POST /admin/users                    → provisioning user manual (§ Admin-Provisioned di atas)
 GET  /admin/subscriptions?userId=    → riwayat subscription 1 user, § Fase 10
-POST /admin/subscriptions            → assign plan manual ke user (tanpa payment)
+POST /admin/subscriptions            → assign plan manual ke user (tanpa payment), body WAJIB
+                                        sertakan `endAt` (§ ADR-0016 — TIDAK dihitung otomatis
+                                        dari plan.durationDays untuk jalur admin-provisioned)
+PATCH /admin/subscriptions/:id       → ubah `endAt` subscription "active" yang sudah ada,
+                                        tanpa bikin baris baru (§ Fase 11, ADR-0016)
 ```
 
 ## Referensi
 - Rasional keputusan → `docs/decisions/adr-0008-model-langganan.md`
+- Expired manual admin-provisioned + edit endAt → `docs/decisions/adr-0016-admin-subscription-expired-manual.md`
 - Payment & orders → `docs/architecture/architecture-payment.md`
 - RBAC & permission → `docs/architecture/architecture-auth.md`
 - Job terjadwal → `docs/architecture/architecture-jobs.md`

@@ -37,6 +37,7 @@ jobs:
       MINIO_USE_SSL: "false"
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      MINIO_PUBLIC_URL: http://localhost:9000
       PORT: "3001"
       BETTER_AUTH_SECRET: ci-dummy-secret-not-for-production-use-only-32chars
       BETTER_AUTH_URL: http://localhost:3001

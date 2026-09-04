@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { AppShell } from "@/components/app-shell/app-shell";
+import { getPublicSettings } from "@/lib/get-public-settings";
 
 // § Medium finding security review Fase 01 — proxy.ts cuma cek keberadaan
 // session cookie (existence-only, direkomendasikan Better Auth buat
@@ -18,8 +19,10 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   const me = (await res.json()) as { id: string; email: string; name: string; roles: string[] };
   if (!me.roles.includes("admin")) redirect("/login");
 
+  const settings = await getPublicSettings();
+
   return (
-    <AppShell surface="admin" user={{ name: me.name, email: me.email }}>
+    <AppShell surface="admin" logoUrl={settings["company.logo"]} user={{ name: me.name, email: me.email }}>
       {children}
     </AppShell>
   );

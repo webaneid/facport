@@ -70,12 +70,26 @@ function NavList({ surface, onNavigate }: { surface: Surface; onNavigate?: () =>
   );
 }
 
+// § Fase 12, ADR-0017 — logo company (kalau admin sudah upload di
+// `/admin/settings`), fallback wordmark teks "Facport" kalau belum diisi.
+// `<img>` biasa (bukan `next/image`) SENGAJA — URL-nya dari host eksternal
+// (`media.<domain>`, bucket public MinIO) yang tidak terdaftar di
+// `next.config` `images.domains`, dan logo company bukan gambar besar yang
+// butuh optimasi lazy-load/responsive srcset.
+function BrandLogo({ logoUrl }: { logoUrl?: string }) {
+  if (!logoUrl) return "Facport";
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={logoUrl} alt="Logo" className="h-8 w-auto" />;
+}
+
 export function Sidebar({
   surface,
+  logoUrl,
   mobileOpen,
   onMobileClose,
 }: {
   surface: Surface;
+  logoUrl?: string;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -84,7 +98,7 @@ export function Sidebar({
       {/* Desktop — selalu tampil */}
       <aside className="hidden lg:flex lg:w-64 lg:flex-col lg:border-r lg:border-border lg:bg-background">
         <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
-          Facport
+          <BrandLogo logoUrl={logoUrl} />
         </div>
         <NavList surface={surface} />
       </aside>
@@ -101,7 +115,7 @@ export function Sidebar({
           >
             <DialogPrimitive.Title className="sr-only">Menu Navigasi</DialogPrimitive.Title>
             <div className="flex h-14 items-center border-b border-border px-4 text-lg font-semibold text-primary-700">
-              Facport
+              <BrandLogo logoUrl={logoUrl} />
             </div>
             <NavList surface={surface} onNavigate={onMobileClose} />
           </DialogPrimitive.Content>
