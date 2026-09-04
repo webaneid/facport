@@ -10,7 +10,8 @@ import { salesInvoiceMapping, customerAutoCreateMapping, itemAutoCreateMapping, 
 import { salesInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice-import.route.ts` (module
-// "sales_invoice", moduleAccess "penjualan").
+// "sales_invoice", moduleAccess "sales_invoice" sejak Fase 14/ADR-0019 —
+// sebelumnya grup top-level "penjualan").
 const ALLOWED_MIME = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
@@ -58,7 +59,7 @@ export const salesInvoiceImportRoute = new Elysia()
         },
       });
     },
-    { permission: "import.create", moduleAccess: "penjualan" },
+    { permission: "import.create", moduleAccess: "sales_invoice" },
   )
   .get(
     "/sales-invoice/import",
@@ -74,7 +75,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       query: t.Object({
         limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
         offset: t.Optional(t.Numeric({ minimum: 0 })),
@@ -135,7 +136,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       body: t.Object({ file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }) }),
     },
   )
@@ -173,7 +174,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
       body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
     },
@@ -194,7 +195,7 @@ export const salesInvoiceImportRoute = new Elysia()
       };
       return { batch, summary, rows };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/sales-invoice/import/:batchId/retry",
@@ -208,7 +209,7 @@ export const salesInvoiceImportRoute = new Elysia()
       await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/sales-invoice/import/:batchId/cancel",
@@ -226,7 +227,7 @@ export const salesInvoiceImportRoute = new Elysia()
       await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .put(
     "/sales-invoice/import/:batchId/rows/:rowId",
@@ -263,7 +264,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
       body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
     },
@@ -299,5 +300,5 @@ export const salesInvoiceImportRoute = new Elysia()
 
       return { batchId: batch.id, deleted: true };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   );

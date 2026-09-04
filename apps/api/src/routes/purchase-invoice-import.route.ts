@@ -72,7 +72,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         },
       });
     },
-    { permission: "import.create", moduleAccess: "pembelian" },
+    { permission: "import.create", moduleAccess: "purchase_invoice" },
   )
   .get(
     "/purchase-invoice/import",
@@ -91,7 +91,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       query: t.Object({
         limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
         offset: t.Optional(t.Numeric({ minimum: 0 })),
@@ -157,7 +157,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       body: t.Object({ file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }) }),
     },
   )
@@ -203,7 +203,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
       body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
     },
@@ -224,7 +224,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
       };
       return { batch, summary, rows };
     },
-    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/purchase-invoice/import/:batchId/retry",
@@ -241,7 +241,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
       await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
-    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   // § Fase 09, ADR-0013 — "Batal Import": hapus/susutkan transaksi
   // terkait dari Accurate (bukan cuma tandai lokal). Pola ownership check
@@ -268,7 +268,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
       await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
-    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   // § dibahas 2026-08-28 — Edit baris GAGAL langsung di aplikasi (tanpa
   // upload ulang seluruh file). Cuma baris `failed` yang boleh diedit —
@@ -320,7 +320,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
       body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
     },
@@ -368,5 +368,5 @@ export const purchaseInvoiceImportRoute = new Elysia()
 
       return { batchId: batch.id, deleted: true };
     },
-    { permission: "import.create", moduleAccess: "pembelian", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   );

@@ -15,12 +15,21 @@ import { formatDate } from "@/lib/utils";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
-type SubscriptionInfo = {
-  subscription: { status: string; endAt: string | null };
+type SubscriptionRow = {
+  subscription: { id: string; status: string; endAt: string | null };
   plan: { name: string; modules: string[] };
-} | null;
+};
+type SubscriptionsResponse = { subscriptions: SubscriptionRow[] };
 
-type AccurateStatus = { connected: boolean; accurateDbId: string | null };
+type AccurateSubscriptionRow = {
+  subscriptionId: string;
+  moduleKey: string | null;
+  planName: string;
+  connected: boolean;
+  accurateDbId: string | null;
+  accurateDbAlias: string | null;
+};
+type AccurateSubscriptionsResponse = { subscriptions: AccurateSubscriptionRow[] };
 
 type ImportBatch = { id: string; fileName: string; status: string; totalRows: number; createdAt: string };
 
@@ -63,24 +72,26 @@ const BATCH_STATUS: Record<string, { label: string; variant: BadgeProps["variant
 export default async function DashboardPage() {
   const cookie = (await headers()).get("cookie") ?? "";
 
-  const [subscriptionInfo, accurateStatus] = await Promise.all([
-    fetchJson<SubscriptionInfo>("/me/subscription", cookie),
-    fetchJson<AccurateStatus>("/accurate/status", cookie),
+  const [subscriptionsInfo, accurateSubscriptionsInfo] = await Promise.all([
+    fetchJson<SubscriptionsResponse>("/me/subscriptions", cookie),
+    fetchJson<AccurateSubscriptionsResponse>("/accurate/subscriptions", cookie),
   ]);
+  const accurateSubscriptions = accurateSubscriptionsInfo?.subscriptions ?? [];
 
-  // § Fase 13, ADR-0018 — subscription bisa saja TERBARU tapi statusnya
-  // bukan "active" (expired/cancelled/pending_payment) — cuma percaya
-  // modules dari subscription yang BENAR-BENAR aktif. Widget "Import
+  // § Fase 14, ADR-0019 — `/me/subscriptions` (JAMAK) cuma balikin baris
+  // "active" (server-side filtered) — 1 user boleh punya BANYAK
+  // subscription aktif sekaligus (1 per sub-modul). Widget "Import
   // Terakhir" PER MODUL render kondisional (bukan 1 tabel gabungan lintas
   // modul — keputusan eksplisit user: 1 modul = 1 harga = 1 area fitur
-  // sendiri), termasuk Purchase Invoice yang sebelumnya unconditional.
-  const subscriptionModules = subscriptionInfo?.subscription.status === "active" ? subscriptionInfo.plan.modules : [];
-  const hasPembelian = subscriptionModules.includes("pembelian");
-  const hasPenjualan = subscriptionModules.includes("penjualan");
+  // sendiri) berdasarkan UNION modul dari SEMUA subscription aktif.
+  const subscriptions = subscriptionsInfo?.subscriptions ?? [];
+  const subscriptionModules = [...new Set(subscriptions.flatMap((s) => s.plan.modules))];
+  const hasPurchaseInvoice = subscriptionModules.includes("purchase_invoice");
+  const hasSalesInvoice = subscriptionModules.includes("sales_invoice");
 
   const [purchaseInvoiceList, salesInvoiceList] = await Promise.all([
-    hasPembelian ? fetchJson<{ batches: ImportBatch[] }>("/purchase-invoice/import?limit=5", cookie) : Promise.resolve(null),
-    hasPenjualan ? fetchJson<{ batches: ImportBatch[] }>("/sales-invoice/import?limit=5", cookie) : Promise.resolve(null),
+    hasPurchaseInvoice ? fetchJson<{ batches: ImportBatch[] }>("/purchase-invoice/import?limit=5", cookie) : Promise.resolve(null),
+    hasSalesInvoice ? fetchJson<{ batches: ImportBatch[] }>("/sales-invoice/import?limit=5", cookie) : Promise.resolve(null),
   ]);
 
   const purchaseInvoiceBatches = purchaseInvoiceList?.batches ?? [];
@@ -101,22 +112,22 @@ export default async function DashboardPage() {
               <CardTitle>Langganan</CardTitle>
             </div>
           </CardHeader>
-          <CardContent className="flex flex-col gap-2">
-            {!subscriptionInfo ? (
+          <CardContent className="flex flex-col gap-3">
+            {subscriptions.length === 0 ? (
               <EmptyState icon={CreditCard} title="Belum punya langganan aktif" className="py-4" />
             ) : (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="font-medium text-foreground">{subscriptionInfo.plan.name}</span>
-                  <Badge variant={(SUBSCRIPTION_STATUS[subscriptionInfo.subscription.status] ?? { variant: "default" }).variant}>
-                    {SUBSCRIPTION_STATUS[subscriptionInfo.subscription.status]?.label ?? subscriptionInfo.subscription.status}
-                  </Badge>
+              subscriptions.map((row) => (
+                <div key={row.subscription.id} className="flex flex-col gap-1 border-b border-border pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between">
+                    <span className="font-medium text-foreground">{row.plan.name}</span>
+                    <Badge variant={(SUBSCRIPTION_STATUS[row.subscription.status] ?? { variant: "default" }).variant}>
+                      {SUBSCRIPTION_STATUS[row.subscription.status]?.label ?? row.subscription.status}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Modul: {row.plan.modules.join(", ")}</p>
+                  {row.subscription.endAt && <p className="text-xs text-muted-foreground">Berlaku sampai {formatDate(row.subscription.endAt)}</p>}
                 </div>
-                <p className="text-xs text-muted-foreground">Modul: {subscriptionInfo.plan.modules.join(", ")}</p>
-                {subscriptionInfo.subscription.endAt && (
-                  <p className="text-xs text-muted-foreground">Berlaku sampai {formatDate(subscriptionInfo.subscription.endAt)}</p>
-                )}
-              </>
+              ))
             )}
           </CardContent>
         </Card>
@@ -129,26 +140,28 @@ export default async function DashboardPage() {
             </div>
           </CardHeader>
           <CardContent className="flex flex-col gap-3">
-            {accurateStatus?.connected && accurateStatus.accurateDbId ? (
-              <Badge variant="success">✓ Terhubung</Badge>
+            {accurateSubscriptions.length === 0 ? (
+              <EmptyState icon={Link2} title="Belum punya langganan aktif" className="py-4" />
+            ) : accurateSubscriptions.every((row) => row.connected) ? (
+              <Badge variant="success">✓ Semua modul terhubung</Badge>
             ) : (
-              <EmptyState
-                icon={Link2}
-                title="Belum terhubung ke Accurate"
-                description="Hubungkan akun Accurate Online supaya faktur bisa langsung masuk otomatis."
-                action={
-                  <Link href="/accurate" className={buttonVariants("default")}>
-                    Hubungkan Sekarang
-                  </Link>
-                }
-                className="py-4"
-              />
+              <>
+                {accurateSubscriptions.map((row) => (
+                  <div key={row.subscriptionId} className="flex items-center justify-between text-sm">
+                    <span className="text-foreground">{row.planName}</span>
+                    {row.connected ? <Badge variant="success">✓ Terhubung</Badge> : <Badge variant="warning">Belum terhubung</Badge>}
+                  </div>
+                ))}
+                <Link href="/accurate" className={buttonVariants("default")}>
+                  Hubungkan Sekarang
+                </Link>
+              </>
             )}
           </CardContent>
         </Card>
       </div>
 
-      {hasPembelian && (
+      {hasPurchaseInvoice && (
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -215,7 +228,7 @@ export default async function DashboardPage() {
         </Card>
       )}
 
-      {hasPenjualan && (
+      {hasSalesInvoice && (
         <Card>
           <CardHeader>
             <div className="flex flex-wrap items-center justify-between gap-3">

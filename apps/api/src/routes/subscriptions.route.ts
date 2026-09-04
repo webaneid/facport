@@ -1,23 +1,27 @@
 import { Elysia, t } from "elysia";
 import { randomUUID } from "crypto";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { db } from "../lib/db";
 import { orders, plans, subscriptions } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 
 export const subscriptionsRoute = new Elysia()
   .use(permissionPlugin)
+  // § Fase 14, ADR-0019 — PLURAL (semua subscription AKTIF user), ganti
+  // GET /me/subscription (singular, 1 baris terbaru apa pun status-nya).
+  // 1 user sekarang bisa punya banyak subscription aktif bersamaan (1
+  // per sub-modul dibeli) — dipakai sidebar/dashboard buat tahu union
+  // modul yang dia langganan.
   .get(
-    "/me/subscription",
+    "/me/subscriptions",
     async ({ user }) => {
-      const [row] = await db
+      const rows = await db
         .select({ subscription: subscriptions, plan: plans })
         .from(subscriptions)
         .innerJoin(plans, eq(plans.id, subscriptions.planId))
-        .where(eq(subscriptions.userId, user.id))
-        .orderBy(desc(subscriptions.createdAt))
-        .limit(1);
-      return row ?? null;
+        .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.status, "active")))
+        .orderBy(desc(subscriptions.createdAt));
+      return { subscriptions: rows };
     },
     { auth: true },
   )
@@ -29,20 +33,16 @@ export const subscriptionsRoute = new Elysia()
         set.status = 404;
         return { code: "PLAN_NOT_FOUND" };
       }
-      // § Fase 10, ADR-0015 — `plans.price` nullable (Facport sementara
-      // tanpa harga). Checkout SELALU butuh amount valid buat `orders`
-      // (kolom itu tetap notNull — order nyata WAJIB ada jumlahnya) — plan
-      // tanpa harga tidak bisa checkout sama sekali, harus di-assign admin
-      // manual (`POST /admin/subscriptions`) selama ADR-0015 berlaku.
-      if (plan.price === null) {
-        set.status = 400;
-        return { code: "PLAN_HAS_NO_PRICE" };
-      }
+      // § Fase 14, ADR-0019 — `plans.price` WAJIB lagi (supersede
+      // ADR-0015), cek "harga null" sudah tidak relevan lagi.
 
-      // § architecture-payment.md — provider (Ipaymu/Xendit) BELUM final.
-      // Order & subscription tetap dibuat (status pending_payment) supaya
-      // alur bisa di-test end-to-end minus redirect ke payment gateway
-      // asli — lihat Known Limitations docs/phases/phase-01-fondasi-produk.md
+      // § architecture-payment.md — provider (Ipaymu) BELUM diintegrasi
+      // (§ Fase 16, ADR-0021 direncanakan). Order & subscription tetap
+      // dibuat (status pending_payment) supaya alur bisa di-test
+      // end-to-end minus redirect ke payment gateway asli — lihat Known
+      // Limitations docs/phases/phase-01-fondasi-produk.md. Endpoint ini
+      // MASIH 1-plan-per-checkout (bukan cart) — cart multi-modul §
+      // Fase 16 rework `{ planIds: uuid[] }`.
       const [order] = await db
         .insert(orders)
         .values({ externalId: randomUUID(), status: "pending", amount: plan.price })

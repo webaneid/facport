@@ -50,7 +50,7 @@ async function createProvisionedUser(email: string) {
 
   const [plan] = await db
     .insert(plans)
-    .values({ name: `PI Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["pembelian"] })
+    .values({ name: `PI Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
     .returning();
   const [subscription] = await db
     .insert(subscriptions)
