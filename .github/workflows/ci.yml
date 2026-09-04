@@ -46,7 +46,7 @@ jobs:
       # § fetch-depth: 0 (bukan default shallow 1) — gitleaks-action di bawah
       # butuh bandingkan base..head commit PR, gagal "unknown revision" kalau
       # histori git-nya cuma 1 commit. Baru ketahuan di PR pertama repo ini.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
