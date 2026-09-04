@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CreditCard } from "lucide-react";
+import { CreditCard, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -128,8 +128,12 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [history, setHistory] = useState<SubscriptionHistoryItem[] | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [endAt, setEndAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editEndAt, setEditEndAt] = useState("");
+  const [editSubmitting, setEditSubmitting] = useState(false);
 
   async function load() {
     const [plansRes, historyRes] = await Promise.all([api.admin.plans.get(), api.admin.subscriptions.get({ query: { userId: user.id } })]);
@@ -140,7 +144,9 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   function openDialog() {
     setOpen(true);
     setSelectedPlanId("");
+    setEndAt("");
     setError(null);
+    setEditingId(null);
     load();
   }
 
@@ -149,16 +155,43 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       setError("Pilih paket dulu.");
       return;
     }
+    // § ADR-0016 — endAt WAJIB diisi admin secara manual, tidak lagi
+    // dihitung otomatis dari plan.durationDays.
+    if (!endAt) {
+      setError("Tanggal expired wajib diisi.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
-    const res = await api.admin.subscriptions.post({ userId: user.id, planId: selectedPlanId });
+    const res = await api.admin.subscriptions.post({ userId: user.id, planId: selectedPlanId, endAt: new Date(endAt).toISOString() });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal assign paket.");
+      setError("Gagal assign paket — pastikan tanggal expired di masa depan.");
       return;
     }
     toast.success(`Paket berhasil di-assign ke ${user.name || user.email}.`);
     setSelectedPlanId("");
+    setEndAt("");
+    load();
+    onAssigned();
+  }
+
+  function startEdit(h: SubscriptionHistoryItem) {
+    setEditingId(h.id);
+    setEditEndAt(h.endAt ? h.endAt.slice(0, 10) : "");
+  }
+
+  async function handleSaveEdit(id: string) {
+    if (!editEndAt) return;
+    setEditSubmitting(true);
+    const res = await api.admin.subscriptions({ id }).patch({ endAt: new Date(editEndAt).toISOString() });
+    setEditSubmitting(false);
+    if (res.error) {
+      toast.error("Gagal ubah tanggal expired — pastikan tanggal di masa depan.");
+      return;
+    }
+    toast.success("Tanggal expired berhasil diubah.");
+    setEditingId(null);
     load();
     onAssigned();
   }
@@ -188,12 +221,49 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 {history.map((h) => (
                   <li key={h.id} className="flex items-center justify-between py-2">
                     <span className="text-foreground">{h.planName}</span>
-                    <div className="flex items-center gap-2">
-                      <Badge variant={(SUB_STATUS[h.status] ?? { variant: "default" }).variant}>
-                        {SUB_STATUS[h.status]?.label ?? h.status}
-                      </Badge>
-                      {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt)}</span>}
-                    </div>
+                    {editingId === h.id ? (
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="date"
+                          value={editEndAt}
+                          onChange={(e) => setEditEndAt(e.target.value)}
+                          className="h-8 w-36"
+                        />
+                        <Button
+                          onClick={() => handleSaveEdit(h.id)}
+                          disabled={editSubmitting || !editEndAt}
+                          className="h-8 px-2.5 py-0 text-xs"
+                        >
+                          {editSubmitting ? "..." : "Simpan"}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={() => setEditingId(null)}
+                          disabled={editSubmitting}
+                          className="h-8 px-2.5 py-0 text-xs"
+                        >
+                          Batal
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <Badge variant={(SUB_STATUS[h.status] ?? { variant: "default" }).variant}>
+                          {SUB_STATUS[h.status]?.label ?? h.status}
+                        </Badge>
+                        {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt)}</span>}
+                        {h.status === "active" && (
+                          <button
+                            type="button"
+                            title="Ubah tanggal expired"
+                            aria-label="Ubah tanggal expired"
+                            onClick={() => startEdit(h)}
+                            className={buttonVariants("ghost", "h-6 w-6 p-0")}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -219,6 +289,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 ))}
               </select>
             )}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-foreground">Tanggal Expired</span>
+              <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
+            </label>
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleAssign} disabled={submitting || !plans?.length} className="self-end">
               {submitting ? "Memproses..." : "Assign Paket"}
