@@ -6,6 +6,63 @@
 
 ---
 
+## 2026-09-04 — Deploy production nyata Fase 12: dokumen arsitektur asumsi Caddy TIDAK cocok realita (nginx shared VPS)
+**Masalah:** Saat pandu user deploy manual fitur logo/favicon (butuh
+subdomain baru `media.ane.web.id` + akses publik ke MinIO), instruksi awal
+saya (tambah host ke `Caddyfile`, restart Caddy) SALAH TOTAL untuk server
+nyata — user bingung "kok DNS setup lagi, kan tinggal update mesin aja".
+
+**Root cause:** `docs/architecture/architecture-deployment.md` &
+`Caddyfile` mendeskripsikan skenario "VPS dedicated, Caddy sebagai
+reverse proxy tunggal" — TAPI server production nyata (`wasugi@76.13.18.136`,
+`ane.web.id`) ternyata:
+1. **SHARED** — banyak project lain jalan di VPS yang sama (`jalamandala-*`,
+   `tokoambu`, `storage-forbis`, situs `webane.com`), bukan didedikasikan
+   buat facport saja.
+2. **Reverse proxy sesungguhnya nginx yang sudah ada duluan di server**,
+   BUKAN Caddy — service `caddy` di `docker-compose.prod.yml` TIDAK
+   PERNAH dipakai nyata (network `edge` yang dia butuhkan sengaja tidak
+   pernah dibuat di server ini).
+3. Port host untuk tiap service HARUS dicek dulu lintas SEMUA project di
+   VPS — port `9000` (default MinIO) ternyata SUDAH dipakai container
+   minio project lain, ketemu pas coba expose MinIO facport ke nginx.
+
+Dokumen ini sendiri (di bagian lain, § "Deploy Manual ke Server") SEBENARNYA
+sudah mencatat fakta nginx-vs-Caddy ini (dari insiden 2026-08-31) — tapi
+karena saya baca bagian AWAL dokumen dulu (yang masih narasi Caddy) tanpa
+scroll ke bagian bawah yang punya fakta real, saya kasih instruksi salah
+ke user.
+
+**Fix:** Dokumen baru `docs/deployment-new-domain-onboarding.md` — runbook
+LENGKAP untuk onboarding domain baru ke VPS shared ini, ditulis dari
+langkah yang BENERAN dieksekusi & diverifikasi end-to-end (DNS → port
+mapping MinIO → nginx per-subdomain → certbot → deploy image → verifikasi).
+`docs/deployment-server-setup.md` & `docs/architecture/architecture-deployment.md`
+ditambah warning eksplisit di bagian ATAS (bukan cuma di tengah/bawah)
+supaya tidak terulang salah baca urutan.
+
+**Insiden turunan saat eksekusi (dicatat juga di runbook baru)**:
+copy-paste multi-line YAML (`docker-compose.override.yml`) dari chat ke
+terminal SSH user berulang kali rusak indentasinya (2 spasi ekstra ke-inject
+entah dari mana), dan 2 heredoc dengan delimiter sama yang di-paste
+berdekatan sempat tercampur jadi 1 file corrupt. **Fix**: tulis config
+sebagai flow-style YAML SATU BARIS (`services: {web: {...}}`) dan nginx
+config SATU BARIS juga (`server { ... }`) — nginx/YAML flow-style sama-sama
+tidak sensitif newline, jadi aman dari masalah reformat paste apa pun.
+
+**Pencegahan:**
+1. Kalau baca dokumen arsitektur/deployment yang panjang, SELALU cek
+   apakah ada bagian "status real"/"catatan" di tengah/akhir dokumen yang
+   mengoreksi bagian awal — jangan asumsikan bagian pertama yang dibaca
+   sudah cukup, terutama untuk dokumen yang ditulis bertahap lintas fase.
+2. Untuk instruksi copy-paste ke terminal SSH user (bukan dieksekusi
+   sendiri oleh Claude Code), SELALU pakai format satu-baris kalau
+   sintaksnya memungkinkan (YAML flow-style, nginx tanpa newline) —
+   JANGAN andalkan heredoc/multi-line paste tetap utuh, banyak
+   kombinasi client-terminal yang mengubah whitespace saat paste.
+
+---
+
 ## 2026-09-04 — Push pertama ke `develop`: 2 bug lagi di `deploy-staging.yml` (lanjutan entri `ci.yml` di bawah)
 **Konteks:** Setelah 3 bug `ci.yml` (entri di bawah) diperbaiki dan PR #23
 merge ke `develop`, `deploy-staging.yml` (trigger `push: develop` — SAMA
