@@ -8,6 +8,15 @@ on:
   push:
     branches: [develop]
 
+# § ketemu 2026-09-04 — tanpa ini, GITHUB_TOKEN default read-only untuk
+# packages (kebijakan org), push image ke GHCR gagal "denied: installation
+# not allowed to Write organization package". deploy.yml SUDAH benar
+# (block ini sudah ada di sana), deploy-staging.yml belum — baru ketahuan
+# sekarang karena trigger push:develop belum pernah jalan sebelumnya.
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
