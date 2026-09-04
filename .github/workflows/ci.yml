@@ -43,7 +43,12 @@ jobs:
       ACCURATE_REDIRECT_URI: http://localhost:3001/accurate/oauth/callback
       ACCURATE_TOKEN_ENCRYPTION_KEY: ci-dummy-encryption-key-not-for-production-32chars
     steps:
+      # § fetch-depth: 0 (bukan default shallow 1) — gitleaks-action di bawah
+      # butuh bandingkan base..head commit PR, gagal "unknown revision" kalau
+      # histori git-nya cuma 1 commit. Baru ketahuan di PR pertama repo ini.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: oven-sh/setup-bun@v2
         with:
