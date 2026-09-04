@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-09-04 — Push pertama ke `develop`: 2 bug lagi di `deploy-staging.yml` (lanjutan entri `ci.yml` di bawah)
+**Konteks:** Setelah 3 bug `ci.yml` (entri di bawah) diperbaiki dan PR #23
+merge ke `develop`, `deploy-staging.yml` (trigger `push: develop` — SAMA
+SEKALI belum pernah jalan sebelumnya karena branch `develop` baru ada)
+gagal lagi 2x dengan penyebab berbeda:
+1. **Job `build-and-push` gagal di step `Test (gate)`** — sama persis
+   kelas masalah dengan `ci.yml`: job ini jalankan `bun run typecheck` +
+   `bun run test` TANPA `services.postgres` maupun `env:` block sama
+   sekali (beda dari `ci.yml`/`release.yml` yang sudah benar). Fix: copy
+   block `services`+`env`+step migrate/seed dari `ci.yml` apa adanya.
+2. **Job `build-and-push` gagal push image ke GHCR** — `denied:
+   installation not allowed to Write organization package`.
+   `deploy-staging.yml` TIDAK punya `permissions:` block sama sekali
+   (GITHUB_TOKEN default read-only untuk packages di org ini), beda dari
+   `deploy.yml` yang sudah punya `permissions: { contents: read, packages:
+   write }`. Fix: tambah block yang sama.
+
+Setelah kedua fix di atas, `build-and-push` **sukses** (image
+`api:staging`/`web:staging` nyata ada di GHCR). Job `deploy-to-server`
+TETAP gagal `error: missing server host` — ini **EXPECTED**, bukan bug
+baru (secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` memang belum
+diisi, konsisten dengan status `deploy.yml` yang sudah didokumentasikan
+di `architecture-deployment.md`).
+
+**Root cause sama dengan entri `ci.yml` di bawah**: `develop` branch tidak
+pernah ada sebelum sesi ini, jadi trigger `push: develop` untuk
+`deploy-staging.yml` juga baru pertama kali benar-benar dieksekusi.
+`deploy-staging.yml` ternyata di-copy dari pola `ci.yml`/`deploy.yml` TAPI
+tidak lengkap menyalin bagian env/permissions-nya.
+
+**Pencegahan**: sama seperti pencegahan di entri `ci.yml` — kalau ada
+field wajib baru di `env.ts`, update SEMUA tempat yang jalankan
+`bun run test`/`typecheck` (`ci.yml`, `release.yml`, `deploy-staging.yml`).
+Pertimbangkan ekstrak env block ini jadi 1 file YAML anchor/reusable
+workflow supaya tidak perlu disalin manual ke 3 tempat lagi ke depannya.
+
+---
+
 ## 2026-09-04 — PR pertama repo ini: 3 bug `ci.yml` yang sudah lama laten, tidak pernah ketahuan karena selalu commit langsung ke `main`
 **Masalah:** Saat buka PR #23 (branch `feat/admin-expiry-and-branding` →
 `develop`, branch `develop` itu sendiri BARU dibuat di PR ini — sebelumnya
