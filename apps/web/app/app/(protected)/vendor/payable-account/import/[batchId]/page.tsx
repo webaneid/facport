@@ -49,6 +49,7 @@ export default function VendorPayableAccountImportResultPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch awal + polling status batch, pola standar
     load();
     const interval = setInterval(load, 3000);
     return () => clearInterval(interval);

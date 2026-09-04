@@ -320,6 +320,7 @@ export default function AdminUsersPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat page/search berubah, pola standar
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, search]);

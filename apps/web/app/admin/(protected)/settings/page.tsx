@@ -60,7 +60,6 @@ export default function AdminSettingsPage() {
       });
     }
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function handleLogoChange(file: File | undefined) {
