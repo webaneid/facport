@@ -6,6 +6,54 @@
 
 ---
 
+## 2026-09-04 — PR pertama repo ini: 3 bug `ci.yml` yang sudah lama laten, tidak pernah ketahuan karena selalu commit langsung ke `main`
+**Masalah:** Saat buka PR #23 (branch `feat/admin-expiry-and-branding` →
+`develop`, branch `develop` itu sendiri BARU dibuat di PR ini — sebelumnya
+tidak ada branch `develop` sama sekali di repo), `ci.yml` gagal 3 kali
+berturut-turut dengan penyebab BERBEDA tiap kali:
+1. **Lint gagal** — `react-hooks/set-state-in-effect`/`react-hooks/immutability`
+   (rule dari `eslint-plugin-react-hooks` v7, sudah lama ke-lock di
+   `bun.lock`) menolak pola fetch-on-mount standar (`load()` dipanggil
+   langsung di body `useEffect`) di 5 file LAMA yang sudah ada sebelum PR
+   ini — diverifikasi dengan `bun run lint` langsung di `origin/main`
+   (branch belum disentuh), errornya SAMA PERSIS.
+2. **Job `db:seed` gagal** — env var baru `MINIO_PUBLIC_URL` (ditambah ke
+   `apps/api/src/lib/env.ts` di Fase 12) lupa ditambahkan ke blok `env:`
+   di `ci.yml`/`release.yml`, jadi `env.ts` reject saat boot job seed.
+3. **Gitleaks gagal** — `actions/checkout@v4` di `ci.yml` TANPA
+   `fetch-depth: 0` (default shallow, depth 1), bikin
+   `gitleaks/gitleaks-action@v2` gagal `fatal: ambiguous argument
+   'base^..head': unknown revision` saat coba diff base..head commit PR.
+   `release.yml` SUDAH benar (`fetch-depth: 0` sudah ada), `ci.yml` belum
+   — kemungkinan besar karena trigger `pull_request` di `ci.yml` memang
+   belum pernah benar-benar dieksekusi sebelumnya.
+
+**Root cause tunggal di balik ketiganya**: repo ini praktiknya SELALU
+commit langsung ke `main` sejak awal (riwayat commit tidak pernah lewat
+PR) — jadi trigger `on: pull_request` di `ci.yml` secara harfiah baru
+pertama kali jalan sungguhan di PR #23 ini. Bug #1 sudah laten dari
+dependency bump manapun yang terakhir mengunci `eslint-plugin-react-hooks`
+v7 ke `bun.lock`; bug #2 & #3 murni gap konfigurasi `ci.yml` yang tidak
+pernah "kena test" sampai sekarang.
+
+**Fix**: (1) tandai eksplisit tiap `load()`-di-effect sebagai fetch data
+awal yang disengaja (`eslint-disable-next-line` + komentar alasan, BUKAN
+refactor pola-nya — di luar scope Fase 11/12), plus reorder
+`loadDatabases()` di `accurate/page.tsx` yang dipanggil sebelum
+dideklarasikan; (2) tambah `MINIO_PUBLIC_URL` ke `env:` `ci.yml` &
+`release.yml`; (3) tambah `fetch-depth: 0` ke step checkout `ci.yml`.
+
+**Pencegahan**: kalau nanti nambah env var WAJIB baru di `apps/api/src/lib/env.ts`,
+WAJIB ikut update `env:` block di `ci.yml` DAN `release.yml` di commit
+yang sama — checklist ini belum ada enforcement otomatis (technical debt:
+pertimbangkan test yang assert semua key `envSchema` ada di kedua workflow
+file). Juga: sekarang `develop` branch sudah ada dan dipakai — pastikan
+alur PR→develop dipakai konsisten ke depannya (bukan balik commit langsung
+ke `main`), supaya `ci.yml` terus "kena tes" dan gap serupa ketahuan lebih
+awal, bukan menumpuk lagi.
+
+---
+
 ## 2026-09-04 — Security review Fase 12 (Logo/Favicon Branding): 1 Medium diperbaiki, 1 Low dicatat sebagai technical debt
 **Konteks:** Subagent `security-auditor` review fitur upload logo/favicon
 company (bucket public MinIO baru, § ADR-0017). Ringkasan lengkap →
