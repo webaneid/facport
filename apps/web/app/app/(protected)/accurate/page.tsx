@@ -38,13 +38,9 @@ export default function AccuratePage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar
     loadStatus();
   }, []);
-
-  useEffect(() => {
-    if (status?.connected && !status.accurateDbId) loadDatabases();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [status?.connected, status?.accurateDbId]);
 
   async function loadDatabases() {
     const res = await api.accurate.databases.get();
@@ -54,6 +50,11 @@ export default function AccuratePage() {
     }
     setDatabases((res.data as { databases: AccurateDatabase[] }).databases);
   }
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch daftar Data Usaha begitu status koneksi diketahui, pola standar
+    if (status?.connected && !status.accurateDbId) loadDatabases();
+  }, [status?.connected, status?.accurateDbId]);
 
   async function handleSaveDatabase() {
     const selected = databases?.find((d) => d.id === selectedId);

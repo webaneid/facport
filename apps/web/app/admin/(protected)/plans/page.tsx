@@ -119,6 +119,7 @@ export default function AdminPlansPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar (bukan derived state)
     load();
   }, []);
 

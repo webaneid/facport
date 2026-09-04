@@ -141,6 +141,23 @@ setup GitHub Secrets) → **`docs/deployment-server-setup.md`** — ini runbook
 manual, dikerjakan sekali di awal (atau tiap ganti server), bukan bagian dari
 alur otomatis CI/CD.
 
+**Host baru `media.<domain>` (Fase 12, ADR-0017)**: reverse proxy Caddy
+langsung ke MinIO (`minio:9000`) — akses PUBLIK ke bucket `facport-public`
+(logo/favicon company), TIDAK lewat `apps/api`. Bucket `facport-media`
+(privat) TETAP aman diekspos lewat host yang sama karena MinIO sendiri yang
+enforce akses per-bucket (private tetap butuh signature, Caddy cuma
+reverse-proxy transparan). **WAJIB di-setup manual saat deploy** (di luar
+alur CI/CD otomatis, sama seperti host lain):
+1. DNS A record `media.<domain>` → IP VPS (§ `docs/deployment-server-setup.md`)
+2. `Caddyfile` sudah include block-nya (root repo) — restart Caddy production
+   setelah DNS resolve: `docker compose -f docker-compose.prod.yml restart caddy`
+3. Env var `MINIO_PUBLIC_URL=https://media.<domain>` di `.env.production`
+   (staging: `media-staging.<domain>`, § `.env.staging.example`)
+4. Staging: service `minio` di `docker-compose.staging.yml` WAJIB ikut
+   network `edge` (alias `minio-staging`) — SUDAH ditambahkan, beda dari
+   production yang cukup network `internal` (Caddy production sudah satu
+   network dengan MinIO production di compose project yang sama).
+
 ## Deploy Manual ke Server (status saat ini — CI SSH belum aktif)
 > Selama secret `SERVER_HOST`/`SERVER_USER`/`SERVER_SSH_KEY` belum diisi di
 > GitHub Actions (`gh secret list` kosong, diverifikasi lagi 2026-08-31 —

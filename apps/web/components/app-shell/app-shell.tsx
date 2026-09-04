@@ -6,10 +6,12 @@ import { Topbar } from "./topbar";
 
 export function AppShell({
   surface,
+  logoUrl,
   user,
   children,
 }: {
   surface: Surface;
+  logoUrl?: string;
   user: { name: string; email: string };
   children: React.ReactNode;
 }) {
@@ -17,7 +19,7 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen bg-muted/40">
-      <Sidebar surface={surface} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
+      <Sidebar surface={surface} logoUrl={logoUrl} mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
       {/* § architecture-app-dashboard.md — `min-w-0` WAJIB di flex item ini:
           tanpa ini, konten lebar (tabel `whitespace-nowrap`) mendorong
           seluruh kolom keluar viewport di mobile alih-alih di-scroll lokal

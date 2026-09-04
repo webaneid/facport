@@ -43,8 +43,9 @@ komentar di `docker-compose.prod.yml`).
 ## 5. Arahkan domain ke VPS
 Di DNS provider domain kamu, buat A record:
 ```
-app.namadomain.com   → IP VPS Hostinger
-api.namadomain.com   → IP VPS Hostinger
+app.namadomain.com     → IP VPS Hostinger
+api.namadomain.com     → IP VPS Hostinger
+media.namadomain.com   → IP VPS Hostinger   # § Fase 12, ADR-0017 — akses publik bucket logo/favicon
 ```
 Caddy otomatis urus HTTPS begitu domain ini resolve ke VPS dan container jalan.
 
@@ -118,8 +119,9 @@ docker compose -f docker-compose.staging.yml -p app-staging \
 
 Arahkan DNS tambahan (selain domain production di langkah 5):
 ```
-app-staging.namadomain.com   → IP VPS (sama dengan production)
-api-staging.namadomain.com   → IP VPS (sama dengan production)
+app-staging.namadomain.com     → IP VPS (sama dengan production)
+api-staging.namadomain.com     → IP VPS (sama dengan production)
+media-staging.namadomain.com   → IP VPS (sama dengan production)   # § Fase 12, ADR-0017
 ```
 Caddy production otomatis urus HTTPS untuk domain staging ini juga begitu
 DNS resolve (lihat blok tambahan di `Caddyfile`) — **restart Caddy production**

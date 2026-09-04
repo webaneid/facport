@@ -13,6 +13,12 @@ const envSchema = t.Object({
   MINIO_USE_SSL: t.String({ minLength: 1 }),
   MINIO_ACCESS_KEY: t.String({ minLength: 1 }),
   MINIO_SECRET_KEY: t.String({ minLength: 1 }),
+  // § Fase 12, ADR-0017 — base URL yang bisa diakses BROWSER untuk bucket
+  // public (facport-public), BEDA dari MINIO_ENDPOINT (host internal Docker
+  // network, cuma bisa diakses server). Dev: "http://localhost:9000".
+  // Prod: "https://media.<domain>" (host baru di Caddyfile, reverse_proxy
+  // ke minio:9000 — MinIO sendiri TETAP tidak diekspos langsung).
+  MINIO_PUBLIC_URL: t.String({ minLength: 1 }),
   PORT: t.String({ minLength: 1 }),
   BETTER_AUTH_SECRET: t.String({ minLength: 32 }),
   BETTER_AUTH_URL: t.String({ minLength: 1 }),

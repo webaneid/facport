@@ -53,13 +53,31 @@ format aslinya sebagai backup/re-process). WebP dipilih karena ukuran file
 jauh lebih kecil dari JPEG/PNG di kualitas visual setara — mempercepat
 loading dashboard admin (logo, avatar, dll).
 
-## Favicon (Kasus Khusus)
+## Favicon (Kasus Khusus) — Terimplementasi Fase 12, ADR-0017
 Favicon butuh multi-ukuran berbeda dari variant di atas (16×16, 32×32,
-180×180 untuk Apple touch icon, 512×512 untuk PWA). Generate terpisah saat
-upload di Settings Page (§ `architecture-settings.md`), bukan lewat pipeline
-Media Library umum — logic-nya beda (favicon butuh transparent background
-dipertahankan, biasanya PNG bukan WebP karena kompatibilitas browser lama
-untuk favicon).
+180×180 untuk Apple touch icon, 512×512 untuk PWA), generate TERPISAH dari
+pipeline Media Library umum (`generateVariants` di atas) — logic-nya beda
+(favicon butuh transparent background dipertahankan, PNG bukan WebP karena
+kompatibilitas browser lama untuk favicon):
+
+```ts
+// apps/api/src/services/image-processing.service.ts
+const FAVICON_SIZES = [16, 32, 180, 512] as const;
+
+export async function generateFaviconSizes(buffer: Buffer) {
+  const sizes: Record<string, Buffer> = {};
+  for (const size of FAVICON_SIZES) {
+    sizes[String(size)] = await sharp(buffer)
+      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } }) // transparent, TIDAK di-flatten
+      .png()
+      .toBuffer();
+  }
+  return sizes; // upload tiap ukuran ke bucket facport-public, key branding/favicon-{uuid}/{size}.png
+}
+```
+Dipanggil dari `POST /admin/branding/favicon` (§ `architecture-settings.md`
+§ API), hasil upload disimpan sebagai object `{ "16": url, ... }` di
+`settings.company.favicon` — BUKAN lewat `POST /media/upload` generik.
 
 ## Referensi
 - Dipanggil dari alur upload → `architecture-component-media-library.md`
