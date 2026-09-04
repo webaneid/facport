@@ -11,6 +11,41 @@ on:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    # § ketemu 2026-09-04, PR pertama yang bikin branch `develop` — job ini
+    # copy pola typecheck+test dari ci.yml TAPI lupa ikut copy services
+    # Postgres + env block-nya, jadi `bun run test` selalu gagal "Environment
+    # variable tidak valid" begitu benar-benar dijalankan (baru ketahuan
+    # sekarang karena trigger push ke `develop` belum pernah jalan
+    # sebelumnya — lihat docs/lessons-learned.md). Blok di bawah SAMA
+    # PERSIS dengan ci.yml/release.yml — kalau field env.ts nambah, update
+    # KETIGANYA sekaligus.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: facport_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/facport_ci
+      MINIO_ENDPOINT: localhost
+      MINIO_PORT: "9000"
+      MINIO_USE_SSL: "false"
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_PUBLIC_URL: http://localhost:9000
+      PORT: "3001"
+      BETTER_AUTH_SECRET: ci-dummy-secret-not-for-production-use-only-32chars
+      BETTER_AUTH_URL: http://localhost:3001
+      COOKIE_DOMAIN: localhost
+      ACCURATE_REDIRECT_URI: http://localhost:3001/accurate/oauth/callback
+      ACCURATE_TOKEN_ENCRYPTION_KEY: ci-dummy-encryption-key-not-for-production-32chars
     steps:
       - uses: actions/checkout@v4
 
@@ -23,6 +58,12 @@ jobs:
 
       - name: Type check (gate — deploy staging dibatalkan kalau gagal)
         run: bun run typecheck
+
+      - name: Migrate test database
+        run: bun run db:migrate
+
+      - name: Seed database (role admin/customer, dst)
+        run: bun run --cwd apps/api db:seed
 
       - name: Test (gate)
         run: bun run test
