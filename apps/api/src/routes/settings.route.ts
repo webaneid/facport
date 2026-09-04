@@ -1,12 +1,41 @@
 import { Elysia, t } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { settings } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 
+// § Fase 12, ADR-0017 — allowlist EKSPLISIT untuk `GET /settings/public`
+// (endpoint TANPA auth sama sekali, dipakai landing page & tag favicon).
+// WAJIB tambah key baru ke sini secara sadar — JANGAN pernah ganti endpoint
+// ini jadi "return semua row" (persis Critical finding Fase 00: `GET
+// /settings` pernah bocor semua row tanpa guard).
+const PUBLIC_SETTINGS_KEYS = ["company.name", "company.logo", "company.favicon"] as const;
+
+// § Fase 12, Medium finding security review — `company.logo`/`company.favicon`
+// HARUS selalu berupa URL bucket public hasil `branding.route.ts` (file
+// di-magic-bytes-check + di-re-encode ulang lewat sharp sebelum disimpan).
+// `PUT /settings` generik terima `value: t.Unknown()` untuk key APA PUN —
+// tanpa blokir ini, pemegang permission `settings.update` bisa menimpa
+// kedua key ini dengan value bebas (bukan URL, bentuk object salah, dst)
+// lewat jalur ini, bypass validasi/re-encode di endpoint upload, padahal
+// value-nya di-echo APA ADANYA oleh `GET /settings/public` (tanpa auth) ke
+// `<img src>`/favicon metadata di semua surface.
+const BRANDING_ONLY_KEYS = ["company.logo", "company.favicon"] as const;
+
 export const settingsRoute = new Elysia({ prefix: "/settings" })
   .use(permissionPlugin)
+  // § Fase 12 — publik BETULAN (dipakai landing page tanpa login, dan tag
+  // favicon di SEMUA halaman termasuk yang belum login), TANPA `auth`/
+  // `permission` macro sama sekali. Path statis "/public" tidak konflik
+  // dengan "/" di bawah (bukan wildcard/param route).
+  .get("/public", async () => {
+    const rows = await db
+      .select()
+      .from(settings)
+      .where(inArray(settings.key, [...PUBLIC_SETTINGS_KEYS]));
+    return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+  })
   .get(
     "/",
     async ({ query }) => {
@@ -42,6 +71,11 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
           set.status = 400;
           return { code: "INVALID_RETENTION_DAYS", maxDays: MAX_IMPORT_RETENTION_DAYS };
         }
+      }
+
+      if (body.some((b) => (BRANDING_ONLY_KEYS as readonly string[]).includes(b.key))) {
+        set.status = 400;
+        return { code: "USE_BRANDING_UPLOAD_ENDPOINT" };
       }
 
       for (const { key, value, group } of body) {

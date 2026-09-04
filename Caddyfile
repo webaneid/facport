@@ -22,6 +22,15 @@ api.namadomain.com {
     reverse_proxy api:3001
 }
 
+# § Fase 12, ADR-0017 — akses PUBLIK ke bucket facport-public (logo/favicon
+# company) via MinIO S3 API langsung, TIDAK lewat apps/api. Aman diekspos
+# apa adanya: bucket facport-media (privat) TETAP butuh signature/kredensial
+# MinIO yang tidak dipunya browser, MinIO sendiri yang enforce itu per-bucket
+# — Caddy di sini cuma reverse-proxy transparan, bukan yang atur akses.
+media.namadomain.com {
+    reverse_proxy minio:9000
+}
+
 # Staging — di-handle Caddy PRODUCTION yang sama (lihat docker-compose.prod.yml
 # & docker-compose.staging.yml, network "edge"). GANTI domain sesuai punya kamu.
 admin-staging.namadomain.com {
@@ -34,6 +43,10 @@ app-staging.namadomain.com {
 
 api-staging.namadomain.com {
     reverse_proxy api-staging:3001
+}
+
+media-staging.namadomain.com {
+    reverse_proxy minio-staging:9000
 }
 
 # Kalau belum punya domain dan cuma mau tes pakai IP dulu, ganti blok di atas

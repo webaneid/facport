@@ -21,3 +21,20 @@ export async function generateVariants(buffer: Buffer) {
   }
   return variants;
 }
+
+// § Fase 12, ADR-0017 — favicon PIPELINE TERPISAH dari `generateVariants`
+// di atas: PNG (bukan WebP, kompatibilitas browser lama) + transparent
+// background dipertahankan (bukan di-flatten putih), § architecture-
+// component-image-processing.md § "Favicon (Kasus Khusus)".
+const FAVICON_SIZES = [16, 32, 180, 512] as const;
+
+export async function generateFaviconSizes(buffer: Buffer) {
+  const sizes: Record<string, Buffer> = {};
+  for (const size of FAVICON_SIZES) {
+    sizes[String(size)] = await sharp(buffer)
+      .resize(size, size, { fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 } })
+      .png()
+      .toBuffer();
+  }
+  return sizes;
+}

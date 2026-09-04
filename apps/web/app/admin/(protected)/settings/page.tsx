@@ -21,18 +21,36 @@ type FormState = {
   retentionDays: string;
 };
 
+// § Fase 12, ADR-0017 — logo/favicon TERPISAH dari FormState di atas:
+// upload langsung tersimpan server-side begitu file dipilih (bukan
+// menunggu tombol "Simpan Pengaturan"), jadi state-nya juga terpisah
+// (preview URL dari DB, bukan input terkontrol biasa).
+type BrandingState = {
+  logoUrl: string | null;
+  faviconUrls: Record<string, string> | null;
+};
+
 export default function AdminSettingsPage() {
   const [form, setForm] = useState<FormState | null>(null);
+  const [branding, setBranding] = useState<BrandingState | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [uploadingFavicon, setUploadingFavicon] = useState(false);
+
+  async function loadGeneral() {
+    const generalRes = await api.settings.get({ query: { group: "general" } });
+    const general = (generalRes.data as Record<string, unknown> | undefined) ?? {};
+    setBranding({
+      logoUrl: typeof general["company.logo"] === "string" ? general["company.logo"] : null,
+      faviconUrls: (general["company.favicon"] as Record<string, string> | undefined) ?? null,
+    });
+    return general;
+  }
 
   useEffect(() => {
     async function load() {
-      const [generalRes, dataRes] = await Promise.all([
-        api.settings.get({ query: { group: "general" } }),
-        api.settings.get({ query: { group: "data" } }),
-      ]);
-      const general = (generalRes.data as Record<string, unknown> | undefined) ?? {};
+      const [general, dataRes] = await Promise.all([loadGeneral(), api.settings.get({ query: { group: "data" } })]);
       const data = (dataRes.data as Record<string, unknown> | undefined) ?? {};
       setForm({
         companyName: String(general["company.name"] ?? ""),
@@ -42,7 +60,34 @@ export default function AdminSettingsPage() {
       });
     }
     load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function handleLogoChange(file: File | undefined) {
+    if (!file) return;
+    setUploadingLogo(true);
+    const res = await api.admin.branding.logo.post({ file });
+    setUploadingLogo(false);
+    if (res.error) {
+      toast.error("Gagal upload logo — cek tipe file (JPEG/PNG/WebP) & ukuran (maks 5MB).");
+      return;
+    }
+    toast.success("Logo berhasil diperbarui.");
+    loadGeneral();
+  }
+
+  async function handleFaviconChange(file: File | undefined) {
+    if (!file) return;
+    setUploadingFavicon(true);
+    const res = await api.admin.branding.favicon.post({ file });
+    setUploadingFavicon(false);
+    if (res.error) {
+      toast.error("Gagal upload favicon — cek tipe file (JPEG/PNG/WebP) & ukuran (maks 5MB).");
+      return;
+    }
+    toast.success("Favicon berhasil diperbarui.");
+    loadGeneral();
+  }
 
   async function handleSave() {
     if (!form) return;
@@ -111,6 +156,43 @@ export default function AdminSettingsPage() {
               onChange={(e) => setForm({ ...form, companyTimezone: e.target.value })}
               placeholder="Asia/Jakarta"
             />
+          </label>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Branding</CardTitle>
+          <CardDescription>Logo & favicon yang tampil di dashboard dan tab browser.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-6 sm:flex-row">
+          <label className="flex flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Logo</span>
+            {branding?.logoUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={branding.logoUrl} alt="Logo saat ini" className="h-12 w-auto rounded border border-border p-1" />
+            )}
+            <Input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={uploadingLogo}
+              onChange={(e) => handleLogoChange(e.target.files?.[0])}
+            />
+            {uploadingLogo && <span className="text-xs text-muted-foreground">Mengupload...</span>}
+          </label>
+          <label className="flex flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Favicon</span>
+            {branding?.faviconUrls?.["32"] && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={branding.faviconUrls["32"]} alt="Favicon saat ini" className="h-8 w-8 rounded border border-border p-1" />
+            )}
+            <Input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              disabled={uploadingFavicon}
+              onChange={(e) => handleFaviconChange(e.target.files?.[0])}
+            />
+            {uploadingFavicon && <span className="text-xs text-muted-foreground">Mengupload...</span>}
           </label>
         </CardContent>
       </Card>

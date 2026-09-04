@@ -6,6 +6,33 @@
 
 ---
 
+## 2026-09-04 — Security review Fase 12 (Logo/Favicon Branding): 1 Medium diperbaiki, 1 Low dicatat sebagai technical debt
+**Konteks:** Subagent `security-auditor` review fitur upload logo/favicon
+company (bucket public MinIO baru, § ADR-0017). Ringkasan lengkap →
+`docs/phases/phase-12-logo-favicon-branding.md` § "Ringkasan Hasil".
+
+**Sudah diperbaiki (Medium):**
+- `PUT /settings` generik (`value: t.Unknown()` untuk key apa pun) bisa
+  dipakai buat menimpa `company.logo`/`company.favicon` dengan value bebas
+  (bukan URL, bentuk object salah, dst), bypass pipeline upload+re-encode
+  sharp di `branding.route.ts` — padahal `GET /settings/public` (tanpa
+  auth) meng-echo value itu apa adanya ke `<img src>`/favicon metadata di
+  SEMUA surface. Fix: `PUT /settings` sekarang blokir eksplisit 2 key ini
+  (`BRANDING_ONLY_KEYS` di `settings.route.ts`), return 400
+  `USE_BRANDING_UPLOAD_ENDPOINT` — satu-satunya jalur tulis tetap lewat
+  endpoint upload yang sudah benar.
+
+**Ditunda ke technical debt (Low):**
+- Tidak bisa diverifikasi dari kode saja apakah permission
+  `settings.update` di data PRODUCTION cuma di-assign ke role
+  admin/super-admin (RBAC project ini dinamis, custom role bisa dibuat
+  admin). Kalau di-assign terlalu longgar ke role staf level bawah,
+  dampak dari kelas masalah di atas (siapa pun yang bisa ubah aset
+  branding publik) jadi lebih luas. **Aksi:** cek manual data role/permission
+  production, bukan perbaikan kode.
+
+---
+
 ## 2026-09-02 — Retry Cerdas (Fase 08) cuma cocokkan "Bill No", bukan "Trans No" — typo 1 karakter bikin CREATE nabrak faktur existing
 **Masalah:** User laporan (production) error Accurate `"Sudah ada data
 lain dengan No Form # Faktur Pembelian \"PI01001050\""` muncul lagi di
@@ -1029,11 +1056,14 @@ kasih 1 angka default untuk semua kecuali satu.
   sudah ada) — pertimbangkan lint rule custom atau test yang enumerasi
   `app.routes` dan assert tiap route punya salah satu macro, sebelum jumlah
   route bertambah banyak di Fase 01+.
-- Kebijakan serving MinIO (presigned URL vs bucket public-read) belum
-  diputuskan — `POST /media/upload` return `storageKey` mentah, frontend
-  belum punya cara render gambar dari situ. WAJIB diputuskan sebelum ada
-  fitur yang benar-benar render gambar user (§ `architecture-storage.md`
-  Opsi A/B masih kosong "[Isi opsi mana yang dipakai]").
+- ~~Kebijakan serving MinIO (presigned URL vs bucket public-read) belum
+  diputuskan~~ — **RESOLVED SEBAGIAN Fase 12 (2026-09-04), ADR-0017**: untuk
+  kategori aset branding publik (logo/favicon company), dipakai bucket
+  kedua `facport-public` (public-read) + host Caddy baru `media.<domain>`.
+  Untuk kategori media PRIVAT (`POST /media/upload` → `facport-media`),
+  gap ini **TETAP TERBUKA** — `storageKey` mentah masih dikembalikan,
+  belum ada proxy/presign. Lihat § `architecture-storage.md` "Gap RESOLVED
+  SEBAGIAN".
 - `bun audit`/dependency scanning belum diverifikasi jalan di CI (infra,
   bukan kode — `.github/workflows/ci.yml` sudah ada langkahnya, tinggal
   pastikan benar-benar jalan pas PR pertama nanti).

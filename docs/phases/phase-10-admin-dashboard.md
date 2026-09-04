@@ -72,7 +72,8 @@ perlu diingat kenapa dipilih begitu)
 ## Known Limitations
 (hal yang sengaja belum ditangani di fase ini, biar jelas dan disengaja —
 bukan kelupaan)
-- Upload logo/favicon company (butuh integrasi media-library) — ditunda.
+- ~~Upload logo/favicon company (butuh integrasi media-library) — ditunda.~~
+  **Selesai di Fase 12** (ADR-0017, `docs/phases/phase-12-logo-favicon-branding.md`).
 - Halaman setting retensi data di sisi CUSTOMER (`app.ane.web.id`)
   ditunda — kolom `subscriptions.importRetentionDaysOverride` sudah
   disiapkan di fase ini, tinggal tambah endpoint+halaman kecil nanti.

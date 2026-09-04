@@ -28,8 +28,8 @@ jarang berubah, cocok banget di-cache).
 |---|---|---|
 | `company.name` | string | Default: "FAC Institute" |
 | `company.address` | string (free text) | Project ini TIDAK pakai komponen Alamat terstruktur (checklist = Tidak) — cukup textarea bebas |
-| `company.logo` | media ID (uuid) | Reference ke tabel `media` |
-| `company.favicon` | media ID (uuid) | Lihat catatan multi-ukuran di `components/architecture-component-image-processing.md` |
+| `company.logo` | string (URL publik) | § Fase 12, ADR-0017 — URL SUDAH di-resolve (`${MINIO_PUBLIC_URL}/facport-public/...`), BUKAN media ID mentah lagi (koreksi dari draf awal). Diisi via `POST /admin/branding/logo`, bukan form teks manual. |
+| `company.favicon` | object `{ "16": url, "32": url, "180": url, "512": url }` | § Fase 12, ADR-0017 — 4 ukuran PNG, lihat catatan multi-ukuran di `components/architecture-component-image-processing.md`. Diisi via `POST /admin/branding/favicon`. |
 | `company.timezone` | string (IANA tz, mis. `"Asia/Jakarta"`) | **Lihat aturan timezone di bawah — WAJIB dibaca**. Default: `"Asia/Jakarta"` |
 
 ## ⚠️ Aturan Timezone — Sumber Bug Paling Sering
@@ -72,22 +72,36 @@ apps/web/app/admin/(protected)/settings/page.tsx   ← nama, alamat, timezone, r
 > Path DIKOREKSI Fase 10 — draf awal doc ini menulis `app/(admin)/settings/`,
 > TIDAK sesuai konvensi routing final (§ `architecture-domain-routing.md`,
 > surface admin di `app/admin/(protected)/`, bukan route group `(admin)`).
-> Logo/favicon company & halaman `integrations/` (Google Analytics) DITUNDA
-> di Fase 10 — dicatat Known Limitation di `docs/phases/phase-10-admin-dashboard.md`,
-> bukan lupa.
+> Logo/favicon company DITUNDA di Fase 10, **sudah diimplementasikan Fase 12**
+> (§ ADR-0017, `docs/phases/phase-12-logo-favicon-branding.md`) — widget
+> upload ada di halaman settings yang sama. Halaman `integrations/` (Google
+> Analytics) MASIH ditunda, belum ada fase yang menjadwalkannya.
 
 Form pakai `react-hook-form` + `zod` (§ ADR-0004). Field alamat cukup
 `Textarea` biasa (project ini tidak pakai komponen Alamat terstruktur).
 
 ## API
 ```
-GET  /settings?group=general    → { "company.name": "...", ... }
+GET  /settings?group=general    → { "company.name": "...", ... } — WAJIB login (auth: true)
 GET  /settings?group=data       → { "data.importRetentionDays": 2 }
 PUT  /settings                  → body: { key, value, group }[] — update banyak sekaligus
+GET  /settings/public            → { "company.name", "company.logo", "company.favicon" } SAJA,
+                                     TANPA auth sama sekali (§ Fase 12, ADR-0017) — allowlist
+                                     eksplisit di kode, JANGAN pernah expose row lain di endpoint
+                                     ini (ingat Critical finding Fase 00: GET /settings pernah
+                                     bocor semua row tanpa guard).
+POST /admin/branding/logo        → multipart, 1 file image, permission settings.update,
+                                     upload ke bucket public, update settings.company.logo (§ Fase 12)
+POST /admin/branding/favicon     → multipart, 1 file image, permission settings.update,
+                                     generate 4 ukuran PNG, update settings.company.favicon (§ Fase 12)
 ```
-Endpoint `PUT` WAJIB auth guard + permission check (cuma role tertentu, mis.
-`owner`/`admin`, boleh ubah settings) — bukan endpoint publik.
+Endpoint `PUT`/`POST admin/branding/*` WAJIB auth guard + permission check
+(cuma role tertentu, mis. `owner`/`admin`, boleh ubah settings) — bukan
+endpoint publik. `GET /settings/public` SENGAJA publik (dipakai landing page
+& tag favicon di halaman yang belum login), tapi WAJIB filter allowlist di
+kode, bukan buka semua row.
 
 ## Referensi
 - Logo/favicon → `components/architecture-component-media-library.md`,
-  `components/architecture-component-image-processing.md`
+  `components/architecture-component-image-processing.md`,
+  `docs/decisions/adr-0017-branding-public-bucket.md`

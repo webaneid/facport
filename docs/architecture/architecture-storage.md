@@ -27,21 +27,25 @@ bukan pilihan performa terbaik untuk file besar/traffic tinggi — cukup
 untuk kebutuhan saat ini (Media Library internal, bukan upload publik
 skala besar).
 
-**⚠️ Gap terbuka, BELUM diselesaikan (dicatat sejak security review Fase
-00, § `docs/lessons-learned.md`)**: karena Opsi A dipakai, response
-`media.upload` cuma balikin `storageKey` (path internal MinIO), BUKAN URL
-yang bisa langsung dipakai `<img src>` di browser — MinIO bucket-nya
-private, bukan public-read, dan tidak ada endpoint proxy/presign buat
-generate URL yang bisa diakses browser. `MediaLibraryModal`
-(`apps/web/components/media-library/media-library-modal.tsx`) saat ini
-masih naive nyimpen `storageKey` mentah seakan-akan itu URL — LATEN, belum
-ketauan karena komponen ini baru dipakai di halaman dev/test
+**⚠️ Gap RESOLVED SEBAGIAN (Fase 12, ADR-0017)** — untuk kategori **aset
+branding publik** (logo/favicon company), gap ini sudah diselesaikan lewat
+bucket terpisah `facport-public` (public-read), lihat § "Bucket Kedua:
+Aset Branding Publik" di bawah. Untuk kategori **media lain yang privat**
+(dokumen/gambar user via `POST /media/upload` yang tetap ke `facport-media`),
+gap **TETAP TERBUKA** — response `media.upload` masih cuma balikin
+`storageKey` (path internal MinIO), BUKAN URL yang bisa langsung dipakai
+`<img src>` di browser. `MediaLibraryModal`
+(`apps/web/components/media-library/media-library-modal.tsx`) masih naive
+nyimpen `storageKey` mentah seakan-akan itu URL — LATEN, belum ketauan
+karena komponen ini baru dipakai di halaman dev/test
 (`apps/web/app/dev/components-test/page.tsx`), BELUM dipakai fitur nyata
-manapun. **WAJIB diselesaikan SEBELUM fitur pertama yang benar-benar
-nampilin gambar dari MinIO ke user** — opsi: (a) endpoint
+manapun. **WAJIB diselesaikan SEBELUM ada fitur nyata lain yang benar-benar
+nampilin gambar PRIVAT dari `facport-media` ke user** — opsi: (a) endpoint
 `GET /media/:id/url` yang generate presigned GET URL sekali pakai/expiry
 pendek, atau (b) endpoint proxy `GET /media/:id` yang stream isi file
-lewat API. Belum diputuskan yang mana.
+lewat API. Belum diputuskan yang mana — JANGAN otomatis pakai pola bucket
+public seperti branding (§ ADR-0017 § "Alternatif yang Dipertimbangkan"
+— sengaja tidak digeneralisasi tanpa kebutuhan konkret).
 
 ## Konfigurasi Client (Bun/Elysia)
 ```ts
@@ -58,6 +62,7 @@ export const minioClient = new Client({
 });
 
 export const MEDIA_BUCKET = "facport-media";
+export const PUBLIC_MEDIA_BUCKET = "facport-public"; // § Fase 12, ADR-0017
 ```
 
 ## Public vs Private Bucket
@@ -65,6 +70,34 @@ Bucket `facport-media` **private** (bukan public-read) — belum pakai CDN
 di depan MinIO. Konsekuensinya persis gap "Gap terbuka" di atas: TANPA
 endpoint proxy/presign, file yang sudah ke-upload TIDAK BISA diakses
 browser sama sekali dari URL storageKey mentah.
+
+## Bucket Kedua: Aset Branding Publik (Fase 12, ADR-0017)
+`facport-public` — bucket **public-read** (`s3:GetObject` untuk semua
+principal, HANYA pada bucket ini), terpisah dari `facport-media` yang tetap
+private. Khusus dipakai untuk logo & favicon company (aset yang MEMANG
+publik: tampil di landing page tanpa login, favicon di-fetch browser tanpa
+auth) — BUKAN tempat umum untuk media lain.
+```
+facport-public/
+  branding/logo-{uuid}.webp
+  branding/favicon-{uuid}/16.png
+  branding/favicon-{uuid}/32.png
+  branding/favicon-{uuid}/180.png
+  branding/favicon-{uuid}/512.png
+```
+Diakses browser lewat host terpisah `media.<domain>` (Caddy `reverse_proxy
+minio:9000`, MinIO sendiri TETAP di network internal — lihat
+`docs/architecture/architecture-deployment.md` § "Host Baru: media.<domain>").
+Base URL browser-facing disimpan di env var `MINIO_PUBLIC_URL`, BEDA dari
+`MINIO_ENDPOINT` (host internal Docker network, cuma bisa diakses server):
+```
+MINIO_PUBLIC_URL = http://localhost:9000        # dev
+MINIO_PUBLIC_URL = https://media.<domain>        # production
+```
+URL lengkap yang disimpan ke `settings.company.logo`/`company.favicon` =
+`${MINIO_PUBLIC_URL}/${PUBLIC_MEDIA_BUCKET}/${key}` — server yang
+construct, frontend tinggal pakai URL jadi, tidak perlu tahu detail
+bucket/key (§ `architecture-settings.md`).
 
 ## Catatan
 - Validasi tipe file (magic-bytes via `sharp.metadata()`, bukan cuma
