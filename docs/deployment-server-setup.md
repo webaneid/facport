@@ -4,6 +4,15 @@
 > server), bukan sesuatu yang Claude jalankan otomatis. Beda dari
 > `docs/architecture/architecture-deployment.md` yang jelasin KONSEP
 > alurnya — ini langkah CONCRETE di VPS Hostinger kamu.
+>
+> **⚠️ Dokumen ini nulis skenario VPS BARU/dedicated pakai Caddy — belum
+> pernah benar-benar dipakai persis begitu di production nyata kita.**
+> Server production nyata (`ane.web.id`) ternyata SHARED (banyak project
+> lain jalan di situ) dan pakai **nginx existing, BUKAN Caddy**. Kalau
+> mau nambah domain/instance baru ke VPS yang SUDAH DIPAKAI (skenario
+> paling mungkin ke depan), pakai
+> **`docs/deployment-new-domain-onboarding.md`** — ditulis dari langkah
+> yang BENERAN dieksekusi & diverifikasi (2026-09-04), bukan teori.
 
 ## 1. Install Docker di VPS
 SSH ke VPS Hostinger kamu, lalu:

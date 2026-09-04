@@ -136,10 +136,19 @@ staging dalam satu proses), dan `.env.production.example`/`.env.staging.example`
 sudah dibuat di root repo (services: api, web, postgres, minio, caddy sebagai
 reverse proxy + HTTPS otomatis).
 
-Panduan one-time setup VPS (install Docker, buka firewall, arahkan domain,
-setup GitHub Secrets) → **`docs/deployment-server-setup.md`** — ini runbook
-manual, dikerjakan sekali di awal (atau tiap ganti server), bukan bagian dari
-alur otomatis CI/CD.
+> **⚠️ Realita production (`ane.web.id`) BEDA dari deskripsi di atas** —
+> VPS-nya SHARED (banyak project lain jalan bareng), reverse proxy
+> SESUNGGUHNYA nginx yang sudah ada duluan, `caddy` service di
+> `docker-compose.prod.yml` **tidak pernah dipakai nyata**. Untuk
+> onboarding domain baru ke VPS yang sudah dipakai (skenario nyata kita),
+> pakai **`docs/deployment-new-domain-onboarding.md`**, bukan asumsi
+> Caddy di bagian ini.
+
+Panduan one-time setup VPS **dari nol/dedicated** (install Docker, buka
+firewall, arahkan domain, setup GitHub Secrets) → `docs/deployment-server-setup.md`.
+Panduan nambah domain baru ke VPS **shared yang sudah dipakai** (kondisi
+nyata kita) → `docs/deployment-new-domain-onboarding.md`. Keduanya runbook
+manual, bukan bagian dari alur otomatis CI/CD.
 
 **Host baru `media.<domain>` (Fase 12, ADR-0017)**: reverse proxy Caddy
 langsung ke MinIO (`minio:9000`) — akses PUBLIK ke bucket `facport-public`
