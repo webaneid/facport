@@ -13,6 +13,7 @@ const ADMIN_PERMISSION_KEYS = [
   "users.manage",
   "subscriptions.manage",
   "audit.view", // § Fase 10 — lihat riwayat audit_logs (dashboard admin)
+  "invoices.view", // § Fase 15 — lihat SEMUA invoice lintas user (GET /admin/invoices, GET /invoices/:id/pdf milik user lain)
 ];
 
 // Permission customer (fitur import — digabung dengan requireModuleAccess()

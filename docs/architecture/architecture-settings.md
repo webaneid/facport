@@ -65,6 +65,18 @@ skill `security-review`/checklist review kalau ada kolom timestamp baru**.
 |---|---|---|
 | `data.importRetentionDays` | integer (hari) | Default 2, WAJIB divalidasi 1–7 (§ `architecture-subscription.md` § "Retensi Data Import" — batas 7 hari HARDCODE, bukan cuma UI). Dipakai job `PURGE_OLD_IMPORTS` sebagai default kalau `subscriptions.importRetentionDaysOverride` kosong. |
 
+## Field Group `billing` (Fase 15, ADR-0021)
+| Key | Value | Catatan |
+|---|---|---|
+| `company.taxId` | string | NPWP, free text (tidak divalidasi format — bisa beda-beda instansi) |
+| `company.phone` | string | Nomor telepon company, tampil di footer PDF invoice |
+| `company.email` | string | Email company, tampil di footer PDF invoice |
+| `company.bankAccount` | string (free text, multi-baris) | "Instruksi Pembayaran" — nama bank, no rekening, atas nama. Free text SENGAJA (bisa >1 rekening/metode), bukan field terstruktur |
+
+Semua field ini opsional (boleh kosong) — PDF generator (§ `architecture-invoice.md`)
+cukup skip baris footer yang value-nya kosong, JANGAN tampilkan placeholder
+kosong/`undefined` mentah di dokumen resmi yang dilihat customer.
+
 ## Komponen Frontend
 ```
 apps/web/app/admin/(protected)/settings/page.tsx   ← nama, alamat, timezone, retensi data

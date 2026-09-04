@@ -1,7 +1,11 @@
 # Architecture — Subscription & Plans (Model Langganan)
 
-> Rasional keputusan → `docs/decisions/adr-0008-model-langganan.md`.
-> File ini pelengkap teknis (skema, flow, gating akses modul).
+> Rasional keputusan → `docs/decisions/adr-0008-model-langganan.md`
+> (model dasar), **`docs/decisions/adr-0019-gating-per-sub-modul-dan-katalog-plan.md`**
+> (Fase 14 — granularitas per SUB-MODUL, bukan lagi grup Penjualan/
+> Pembelian; `price` wajib lagi, supersede ADR-0015). File ini pelengkap
+> teknis (skema, flow, gating akses modul). Dokumen invoice/PDF (Fase 15)
+> → `docs/architecture/architecture-invoice.md`.
 
 ## Skema Database
 
@@ -9,14 +13,20 @@
 // apps/api/src/db/schema.ts
 export const plans = pgTable("plans", {
   id: uuid("id").defaultRandom().primaryKey(),
-  name: varchar("name", { length: 100 }).notNull(), // "Starter", "Pro", "Semua Modul", dst
-  // § Fase 10, ADR-0015 — NULLABLE (dulu notNull). Facport SEMENTARA
-  // tanpa harga (supporting app, bukan produk mandiri) — kolom TETAP
-  // ada (reversibel), form admin TIDAK punya field ini sama sekali
-  // selama ADR-0015 berlaku.
-  price: integer("price"), // Rupiah, integer (hindari float untuk uang)
+  name: varchar("name", { length: 100 }).notNull(), // "Sales Invoice — Bulanan", dst — 1 row = 1 SKU per SATU sub-modul
+  // § Fase 14, ADR-0019 — WAJIB lagi (dulu nullable sementara, ADR-0015,
+  // "Facport tanpa harga" — premis itu sudah tidak berlaku, Facport jual
+  // per-sub-modul dengan harga nyata sekarang).
+  price: integer("price").notNull(), // Rupiah, integer (hindari float untuk uang)
   durationDays: integer("duration_days").notNull(), // 30 = bulanan, 365 = tahunan, dst
-  modules: jsonb("modules").notNull(), // string[] — subset dari daftar modul di docs/glossary.md, mis. ["penjualan", "pembelian"]
+  // § Fase 14, ADR-0019 — isi SUB-MODUL (sales_invoice/purchase_invoice/
+  // sales_receipt/purchase_payment/journal_voucher), BUKAN lagi grup
+  // top-level (penjualan/pembelian). Tetap array (tipe TIDAK berubah,
+  // hindari migration breaking), tapi KONVENSI-nya sekarang cuma 1
+  // elemen per plan — bundling lintas-modul terjadi di CART (§ "Cart
+  // Multi-Modul" di bawah), bukan didefinisikan sebagai 1 plan berisi
+  // banyak modul.
+  modules: jsonb("modules").notNull(), // string[], konvensi: 1 elemen
   isActive: boolean("is_active").notNull().default(true), // paket yang di-nonaktifkan tidak hilang dari histori subscriber lama
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -31,6 +41,17 @@ export const subscriptions = pgTable("subscriptions", {
   // enum: "pending_payment" | "active" | "expired" | "cancelled"
   startAt: timestamp("start_at"), // diisi begitu status jadi "active"
   endAt: timestamp("end_at"), // startAt + plan.durationDays, dihitung saat aktivasi
+  // § Fase 14, ADR-0020 — pointer ke koneksi Accurate yang dipakai
+  // SUBSCRIPTION/MODUL INI. Nullable — diisi BELAKANGAN (customer pilih
+  // reuse koneksi existing ATAU connect Data Usaha baru, § "Koneksi
+  // Accurate — Reusable Lintas Subscription" di bawah), bukan saat
+  // checkout/pembayaran.
+  accurateConnectionId: uuid("accurate_connection_id").references(() => accurateConnections.id),
+  // § Fase 15, ADR-0021 — pointer BALIK ke baris invoice yang membuat
+  // subscription ini. Nullable — subscription BOLEH dibuat TANPA invoice
+  // (jalur admin "Tandai Sudah Dibayar Manual", Fase 18, atau subscription
+  // lama pra-Fase 15). Lihat `architecture-invoice.md`.
+  invoiceItemId: uuid("invoice_item_id").references(() => invoiceItems.id),
   // § Fase 10 — override retensi data import PER PELANGGAN (nullable,
   // NULL = pakai default admin). Kolomnya sudah ada dari Fase 10, TAPI
   // endpoint buat customer isi field ini sendiri SENGAJA belum dibangun
@@ -40,6 +61,21 @@ export const subscriptions = pgTable("subscriptions", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 ```
+
+## Cart Multi-Modul & 1 Subscription = 1 Sub-Modul (Fase 14, ADR-0019)
+Sejak Fase 14, **1 `subscriptions` row = 1 SUB-MODUL** (Sales Invoice,
+Purchase Invoice, Sales Receipt, Purchase Payment, atau Journal Voucher),
+BUKAN lagi 1 bundel berisi banyak modul. Customer BOLEH checkout/dibuatkan
+admin **beberapa sub-modul sekaligus dalam 1 transaksi** (cart, § Fase 16
+payment) — hasilnya BUKAN 1 subscription gabungan, tapi **BANYAK
+subscription row terpisah**, 1 per sub-modul yang dibeli, masing-masing
+`endAt`/status/koneksi Accurate independen.
+
+Konsekuensi teknis: **1 user BOLEH punya banyak subscription `status:
+"active"` bersamaan** — beda dari sebelum Fase 14 yang asumsi "1 user = 1
+plan aktif". `getActiveSubscription()` (singular, ambil 1 baris terbaru)
+diganti `getActiveSubscriptions()` (plural, ambil SEMUA baris aktif) —
+lihat § "Gating Akses Modul" di bawah.
 
 ## Retensi Data Import (Fase 10)
 Data Excel yang diimpor (`import_batches`/`import_batch_rows`, § architecture-accurate-integration.md
@@ -73,10 +109,36 @@ gating (di bawah) tinggal cek keanggotaan array, bukan mapping nama berbeda.
 menghubungkan akun Accurate mereka (§ `architecture-accurate-integration.md` § 1) —
 least privilege, jangan minta scope di luar modul yang dilanggan.
 
-> **1 subscription = 1 akun Accurate Online** (lihat
-> `docs/decisions/adr-0009-detail-oauth-accurate.md`) — `accurate_connections`
-> berelasi 1:1 ke `subscriptions`, BUKAN ke `users` langsung. User yang
-> kelola beberapa company Accurate butuh subscription terpisah per company.
+## Koneksi Accurate — Reusable Lintas Subscription (Fase 14, ADR-0020)
+> Supersede poin 3 ADR-0009. `accurate_connections` SEKARANG berelasi ke
+> `users` (bukan ke `subscriptions` lagi, dan BUKAN unique — 1 user boleh
+> punya banyak connection, 1 per Data Usaha berbeda). `subscriptions.accurateConnectionId`
+> (di atas) yang jadi pointer "modul ini pakai koneksi yang mana".
+
+**Kenapa berubah dari ADR-0009**: dulu 1 subscription = seluruh akun
+(bundel banyak modul), jadi wajar 1:1 ke 1 Data Usaha. Sejak Fase 14, 1
+subscription = 1 sub-modul — kalau tetap 1:1 unique, customer yang beli 2
+sub-modul untuk COMPANY ACCURATE YANG SAMA terpaksa OAuth-connect 2x
+terpisah, dan **Accurate men-charge per "aplikasi terkoneksi"** — jadi
+customer di-charge dua kali untuk sesuatu yang nyatanya 1 koneksi ke 1
+company. Sekarang: connect SEKALI per Data Usaha, dipakai ulang
+(`accurateConnectionId`) oleh subscription/modul lain yang company-nya
+sama — TANPA re-OAuth, TANPA connection baru.
+
+**Alur customer** (`apps/web/app/app/(protected)/accurate/page.tsx`) —
+per subscription/modul yang BELUM ada koneksinya, 2 pilihan:
+1. **"Pakai koneksi yang sudah ada"** — dropdown Data Usaha dari
+   `accurate_connections` milik dia (`status:"active"`) yang sudah
+   dihubungkan modul lain → `subscriptions.accurateConnectionId` di-set
+   ke situ, SELESAI, tidak ada panggilan OAuth apa pun.
+2. **"Hubungkan Data Usaha Baru"** — OAuth flow penuh (§ 1 di bawah,
+   ALUR-nya sendiri tidak berubah sejak Fase 01) → bikin
+   `accurate_connections` row baru, langsung di-assign ke subscription
+   yang menginisiasi.
+
+User yang kelola company Accurate BERBEDA per modul (bukan 1 company yang
+sama) tetap bisa — connect Data Usaha baru untuk tiap company, cuma
+TIDAK dipaksa kalau company-nya sama.
 
 ## Dua Jalur Registrasi
 
@@ -128,30 +190,55 @@ Ini **LAPISAN TERPISAH** dari `requirePermission()` (§ `architecture-auth.md`):
 
 ```ts
 // apps/api/src/lib/subscription-gate.ts
-export const requireModuleAccess = (moduleKey: string) =>
-  new Elysia().derive(async ({ user }) => {
-    const sub = await getActiveSubscription(user.id);
-    if (!sub || sub.status !== "active") {
-      throw new Error("SUBSCRIPTION_INACTIVE");
-    }
-    const plan = await getPlan(sub.planId);
-    if (!plan.modules.includes(moduleKey)) {
-      throw new Error("MODULE_NOT_IN_PLAN");
-    }
-    return { subscription: sub };
-  });
+// § Fase 14, ADR-0019 — getActiveSubscriptionsWithPlans (PLURAL, array)
+// ganti getActiveSubscriptionWithPlan (singular) — 1 user bisa punya
+// BANYAK subscription aktif bersamaan sekarang (1 per sub-modul dibeli).
+// moduleKey dicari di SEMUA subscription aktif user (union), bukan cuma
+// 1 baris terbaru. `subscription` yang dikembalikan resolve() adalah
+// baris SPESIFIK yang cover moduleKey ini — dipakai route import buat
+// resolve `accurateConnectionId`-nya sendiri (tiap sub-modul beda koneksi).
+export async function getActiveSubscriptionsWithPlans(userId: string) {
+  return db
+    .select({ subscription: subscriptions, plan: plans })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")));
+  // § endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
+  // (jalan tiap hari) yang jaga `status` selalu konsisten, pola yang
+  // SUDAH ada sejak sebelum Fase 14, tidak berubah.
+}
 
-// Pemakaian di route import (Fase 01 dst):
-app.group("/import/sales", (app) =>
+export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).macro({
+  moduleAccess: (moduleKey: string) => ({
+    async resolve({ status, request: { headers } }) {
+      const session = await auth.api.getSession({ headers });
+      if (!session) return status(401);
+
+      const activeSubs = await getActiveSubscriptionsWithPlans(session.user.id);
+      const matching = activeSubs.find((s) => s.plan.modules.includes(moduleKey));
+      if (!matching) return status(403, { code: "MODULE_NOT_SUBSCRIBED" });
+
+      return { user: session.user, session: session.session, subscription: matching.subscription };
+    },
+  }),
+});
+
+// Pemakaian di route import (moduleKey sekarang SUB-MODUL, § ADR-0019):
+app.group("/sales-invoice", (app) =>
   app
-    .use(requirePermission("import.create"))
-    .use(requireModuleAccess("penjualan"))
-    .post("/", uploadHandler)
+    .use(permissionPlugin)
+    .use(subscriptionGatePlugin)
+    .post("/import/upload", uploadHandler, { permission: "import.create", moduleAccess: "sales_invoice" })
 );
 ```
 **Kedua guard WAJIB lolos** — permission check dulu (role secara umum boleh
-akses fitur import), baru subscription gate (paket spesifiknya cover modul
-ini atau tidak).
+akses fitur import), baru subscription gate (ADA subscription aktif yang
+cover sub-modul spesifik ini atau tidak). Kode error `SUBSCRIPTION_INACTIVE`/
+`MODULE_NOT_IN_PLAN` (2 kode terpisah, dari sebelum Fase 14) digabung jadi
+**1 kode**: `MODULE_NOT_SUBSCRIBED` — beda-in "tidak ada subscription sama
+sekali" vs "ada subscription tapi bukan modul ini" sudah tidak relevan
+begitu 1 user bisa punya banyak subscription independen (kasusnya sama
+persis dari sudut pandang customer: "sub-modul ini belum kamu langganan").
 
 ## Downgrade Otomatis Saat Expired
 
@@ -178,9 +265,12 @@ bergantung ada/tidaknya request aktif dari user yang bersangkutan.
 
 ## API (Ringkas)
 ```
-GET  /plans                          → daftar paket aktif (publik, untuk landing page pricing)
+GET  /plans                          → daftar SKU per-sub-modul aktif (publik, landing page pricing)
 POST /subscriptions/checkout         → body: { planId } — buat order + return payment URL
-GET  /me/subscription                → status langganan user saat ini
+                                        (Fase 16 rework ke cart: { planIds: uuid[] }, lihat Fase 16 doc)
+GET  /me/subscriptions               → § Fase 14 — SEMUA subscription aktif user (PLURAL, ganti
+                                        GET /me/subscription singular) — dipakai sidebar/dashboard
+                                        buat tahu union modul yang dia langganan
 # Admin only:
 GET  /admin/plans                    → daftar SEMUA paket (aktif+nonaktif), § Fase 10
 POST/PUT/DELETE /admin/plans         → CRUD paket

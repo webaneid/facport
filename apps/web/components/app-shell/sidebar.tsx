@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, FileSpreadsheet, Link2, Landmark, Users, Package, Settings } from "lucide-react";
+import { LayoutDashboard, FileSpreadsheet, Link2, Landmark, Users, Package, Settings, Receipt } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
@@ -33,10 +33,13 @@ export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey
 const NAV_ITEMS_BY_SURFACE: Record<Surface, NavItem[]> = {
   app: [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "pembelian" },
-    { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "pembelian" },
-    { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "penjualan" },
+    { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "purchase_invoice" },
+    { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "purchase_invoice" },
+    { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "sales_invoice" },
     { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
+    // § Fase 15 — TANPA moduleKey (selalu tampil untuk customer login,
+    // sama seperti "Koneksi Accurate" di atas — bukan fitur per-sub-modul).
+    { href: "/billing", label: "Tagihan", icon: Receipt },
   ],
   admin: [
     { href: "/", label: "Dashboard", icon: LayoutDashboard },

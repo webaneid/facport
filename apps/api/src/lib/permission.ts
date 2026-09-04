@@ -4,7 +4,10 @@ import { auth } from "./auth";
 import { db } from "./db";
 import { permissions, rolePermissions, userRoles } from "../db/schema";
 
-async function userHasPermission(userId: string, permissionKey: string) {
+// § Fase 15 — exported: dipakai di luar macro juga (`invoices.route.ts`
+// `GET /invoices/:id/pdf`, campur akses "milik sendiri" ATAU "admin", TIDAK
+// bisa diekspresikan lewat 1 macro `permission` tunggal).
+export async function userHasPermission(userId: string, permissionKey: string) {
   const rows = await db
     .select({ key: permissions.key })
     .from(userRoles)

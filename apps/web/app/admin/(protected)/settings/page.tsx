@@ -19,6 +19,12 @@ type FormState = {
   companyAddress: string;
   companyTimezone: string;
   retentionDays: string;
+  // § Fase 15, ADR-0021 — dipakai footer PDF invoice ("Instruksi
+  // Pembayaran"), group "billing" (§ architecture-settings.md).
+  companyTaxId: string;
+  companyPhone: string;
+  companyEmail: string;
+  companyBankAccount: string;
 };
 
 // § Fase 12, ADR-0017 — logo/favicon TERPISAH dari FormState di atas:
@@ -50,13 +56,22 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     async function load() {
-      const [general, dataRes] = await Promise.all([loadGeneral(), api.settings.get({ query: { group: "data" } })]);
+      const [general, dataRes, billingRes] = await Promise.all([
+        loadGeneral(),
+        api.settings.get({ query: { group: "data" } }),
+        api.settings.get({ query: { group: "billing" } }),
+      ]);
       const data = (dataRes.data as Record<string, unknown> | undefined) ?? {};
+      const billing = (billingRes.data as Record<string, unknown> | undefined) ?? {};
       setForm({
         companyName: String(general["company.name"] ?? ""),
         companyAddress: String(general["company.address"] ?? ""),
         companyTimezone: String(general["company.timezone"] ?? "Asia/Jakarta"),
         retentionDays: String(data["data.importRetentionDays"] ?? 2),
+        companyTaxId: String(billing["company.taxId"] ?? ""),
+        companyPhone: String(billing["company.phone"] ?? ""),
+        companyEmail: String(billing["company.email"] ?? ""),
+        companyBankAccount: String(billing["company.bankAccount"] ?? ""),
       });
     }
     load();
@@ -104,6 +119,10 @@ export default function AdminSettingsPage() {
       { key: "company.address", value: form.companyAddress, group: "general" },
       { key: "company.timezone", value: form.companyTimezone, group: "general" },
       { key: "data.importRetentionDays", value: retentionDays, group: "data" },
+      { key: "company.taxId", value: form.companyTaxId, group: "billing" },
+      { key: "company.phone", value: form.companyPhone, group: "billing" },
+      { key: "company.email", value: form.companyEmail, group: "billing" },
+      { key: "company.bankAccount", value: form.companyBankAccount, group: "billing" },
     ]);
     setSaving(false);
     if (res.error) {
@@ -192,6 +211,39 @@ export default function AdminSettingsPage() {
               onChange={(e) => handleFaviconChange(e.target.files?.[0])}
             />
             {uploadingFavicon && <span className="text-xs text-muted-foreground">Mengupload...</span>}
+          </label>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Info Penagihan (Invoice)</CardTitle>
+          <CardDescription>Tampil di footer PDF invoice (&quot;Instruksi Pembayaran&quot;). Boleh dikosongkan.</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">NPWP</span>
+            <Input value={form.companyTaxId} onChange={(e) => setForm({ ...form, companyTaxId: e.target.value })} />
+          </label>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">Telepon</span>
+              <Input value={form.companyPhone} onChange={(e) => setForm({ ...form, companyPhone: e.target.value })} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">Email</span>
+              <Input type="email" value={form.companyEmail} onChange={(e) => setForm({ ...form, companyEmail: e.target.value })} />
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Rekening Bank</span>
+            <textarea
+              className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10"
+              rows={3}
+              placeholder="mis. BCA 1234567890 a.n. PT Facport"
+              value={form.companyBankAccount}
+              onChange={(e) => setForm({ ...form, companyBankAccount: e.target.value })}
+            />
           </label>
         </CardContent>
       </Card>
