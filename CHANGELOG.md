@@ -1,3 +1,18 @@
+## 1.12.0 (2026-09-04)
+
+* Merge pull request #23 from webaneid/feat/admin-expiry-and-branding ([b286835](https://github.com/webaneid/facport/commit/b286835)), closes [#23](https://github.com/webaneid/facport/issues/23)
+* Merge pull request #24 from webaneid/develop ([1d24b86](https://github.com/webaneid/facport/commit/1d24b86)), closes [#24](https://github.com/webaneid/facport/issues/24)
+* docs: catat 2 bug deploy-staging.yml lagi (env test-gate + permissions GHCR) ([1d417ad](https://github.com/webaneid/facport/commit/1d417ad))
+* docs: catat 3 bug ci.yml laten yang ketahuan di PR pertama repo ini ([4db1a01](https://github.com/webaneid/facport/commit/4db1a01))
+* docs: catat root cause tombol Retry hilang + bug Bill No vs Trans No mismatch ([876e090](https://github.com/webaneid/facport/commit/876e090))
+* fix(ci): deploy-staging.yml lupa services Postgres + env block untuk typecheck/test ([4a8901d](https://github.com/webaneid/facport/commit/4a8901d))
+* fix(ci): fetch-depth 0 di ci.yml supaya gitleaks-action bisa diff base..head PR ([97a9a25](https://github.com/webaneid/facport/commit/97a9a25))
+* fix(ci): tambah MINIO_PUBLIC_URL ke env CI/release ([0bd3f5b](https://github.com/webaneid/facport/commit/0bd3f5b))
+* fix(ci): tambah permissions packages:write ke deploy-staging.yml ([db479a6](https://github.com/webaneid/facport/commit/db479a6))
+* fix(lint): patuhi rule react-hooks/set-state-in-effect & immutability (eslint-plugin-react-hooks v7) ([2522cb7](https://github.com/webaneid/facport/commit/2522cb7))
+* feat(branding): upload logo & favicon company, bucket public MinIO baru ([3a8e2da](https://github.com/webaneid/facport/commit/3a8e2da))
+* feat(subscriptions): admin bisa set tanggal expired manual per subscription ([75f2da8](https://github.com/webaneid/facport/commit/75f2da8))
+
 ## 1.11.0 (2026-09-02)
 
 * feat: perjelas dialog Edit Baris — tanda wajib, highlight per-kolom, auto-scroll ke error ([a2ae455](https://github.com/webaneid/facport/commit/a2ae455))
