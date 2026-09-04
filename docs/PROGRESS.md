@@ -22,16 +22,73 @@
 | 11   | Admin: Expired Manual per Subscription | Done | `docs/architecture/architecture-subscription.md`, ADR-0016 | `docs/phases/phase-11-admin-subscription-expired-manual.md` |
 | 12   | Logo & Favicon Company (Aset Branding Publik) | Done | `docs/architecture/architecture-storage.md`, `docs/architecture/architecture-settings.md`, ADR-0017 | `docs/phases/phase-12-logo-favicon-branding.md` |
 | 13   | Sales Invoice (Faktur Penjualan) | Done | `docs/architecture/architecture-accurate-integration.md` § "Sales Invoice (Faktur Penjualan)", ADR-0018 | `docs/phases/phase-13-sales-invoice.md` |
+| 14   | Restrukturisasi Inti: Sub-Modul + Koneksi Accurate Reusable | Done | `docs/architecture/architecture-subscription.md`, `docs/architecture/architecture-accurate-integration.md`, ADR-0019, ADR-0020 | `docs/phases/phase-14-fondasi-langganan.md` |
+| 15   | Invoice Profesional (Skema + PDF) | Done | `docs/architecture/architecture-invoice.md`, ADR-0021 | `docs/phases/phase-15-invoice-profesional.md` |
+| 16   | Payment Manual (Transfer Bank + QRIS) | Done | `docs/architecture/architecture-payment.md`, ADR-0022 | `docs/phases/phase-16-payment-manual.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
 ## Modul/Sub-modul Lain — Sengaja Di-pending
-**Update 2026-09-04**: client sekarang minta 5 sub-modul aktif —
-**Sales Invoice (Fase 13, In Progress), Purchase Invoice (Done), Sales
-Receipt/"Customer Receipt", Purchase Payment, Journal Voucher/"Jurnal
-Umum"**. 3 terakhir itu ANTRE, urutan pengerjaan: yang paling mirip pola
-existing dulu (PP & CR pola baru tapi mirip satu sama lain, JU paling
-kompleks — butuh validasi balance debit=kredit, ditunda terakhir).
+**Update 2026-09-04**: client minta 5 sub-modul aktif — **Sales Invoice
+(Fase 13, Done), Purchase Invoice (Done), Sales Receipt/"Customer
+Receipt", Purchase Payment, Journal Voucher/"Jurnal Umum"**. Sebelum
+lanjut bangun CR/PP/JU, user minta fondasi komersial diperkuat dulu
+(Fase 14-18) — gating pindah dari grup top-level ke per-sub-modul, koneksi
+Accurate reusable lintas subscription, invoice profesional, payment
+manual (transfer bank + QRIS — **update 2026-09-04**: rencana AWAL
+"Payment Gateway Ipaymu" DIGANTI setelah riset ke aplikasi sibling
+production `jalajogja` menemukan gateway otomatis TIDAK PERNAH benar-benar
+diimplementasikan di sana, sementara pola manual TERBUKTI jalan
+bertahun-tahun — detail lengkap ADR-0022), cart multi-modul. **Fase 14,
+Fase 15, DAN Fase 16 (Payment Manual) Done 2026-09-04** — sisanya (Fase
+17 Checkout UI, Fase 18 Onboarding Admin) BELUM dikerjakan, MENUNGGU
+konfirmasi user sebelum lanjut (sesuai SOP, tidak otomatis lanjut fase
+berikutnya). **CR/PP/JU BARU dikerjakan setelah Fase 14-18 selesai** —
+supaya 3 modul itu langsung dibangun di atas struktur final (harga
+per-SKU, gating per-sub-modul), bukan mirror struktur lama PI/SI yang
+bakal langsung perlu dirombak lagi. Rencana detail 5 fase → ADR-0019,
+ADR-0020, dan phase doc masing-masing fase (dibuat bertahap saat fase itu
+dimulai).
+
+**Fase 14 Done 2026-09-04** — ringkasan lengkap →
+`docs/phases/phase-14-fondasi-langganan.md` § Ringkasan Hasil. Typecheck
+0 error (apps/api & apps/web), 95/95 test pass, security review 0
+Critical/High (1 Medium + 4 Low, semua diperbaiki langsung). Migrasi data
+3-tahap diverifikasi manual pasca-migration (ketemu & dibersihkan 1 baris
+plan test lama yang lolos backfill otomatis — detail di
+`docs/lessons-learned.md`). **Verifikasi UI browser sungguhan BELUM
+dilakukan** sesi ini (ekstensi Chrome tidak terhubung) — request/response
+API sudah diverifikasi nyata lewat `curl` (termasuk skenario inti: 1 user
+2 subscription beda modul, reuse 1 koneksi Accurate lintas modul tanpa
+re-OAuth), tapi rendering komponen React (`/admin/plans`,
+`/app/accurate`) belum pernah dilihat langsung — cek manual kalau
+memungkinkan.
+
+**Fase 15 Done 2026-09-04** — ringkasan lengkap →
+`docs/phases/phase-15-invoice-profesional.md` § Ringkasan Hasil.
+Typecheck 0 error, 105/105 test pass (10 baru), security review 0
+Critical/High/Medium (3 Low, 1 diperbaiki langsung). PDF diverifikasi
+ASLI (bukan cuma status code) — file didownload nyata via `curl`, `file`
+command konfirmasi PDF valid, teks diekstrak konfirmasi SEMUA data
+(company, bill-to, item, total, footer) benar. **Belum ada jalur normal
+bikin invoice** (checkout = Fase 16-17) — data test dibuat manual/script,
+bukan alur user nyata. **Fase 14 DAN Fase 15** di-commit+push+PR
+(#26, ke `develop`) setelah Fase 15 ditutup.
+
+**Fase 16 Done 2026-09-04** — ringkasan lengkap →
+`docs/phases/phase-16-payment-manual.md` § Ringkasan Hasil. Rencana awal
+"Payment Gateway Ipaymu" DIGANTI payment manual (transfer bank + QRIS
+dinamis lokal) setelah riset ke aplikasi sibling production `jalajogja`
+(detail ADR-0022). Typecheck 0 error, 144/146 test pass (26 baru, 2
+di-skip — MinIO lokal env mismatch, bukan bug kode). Security review 0
+Critical, 1 High (guard checkout concurrent — DIPERBAIKI, dibungkus
+`db.transaction()` + row lock) + 3 Medium (DIPERBAIKI: QRIS Tag 53/54
+fallback, validasi settings bankAccounts/qrisAccounts, info disclosure
+`GET /orders/:id`) + 2 Low diterima sebagai debt. **Upload bukti transfer
+via MinIO NYATA belum terverifikasi** (env lokal mismatch credential,
+lihat Known Limitations phase doc) — WAJIB dicek manual di staging
+sebelum dianggap jalan end-to-end penuh. Belum di-commit/push — MENUNGGU
+arahan user berikutnya.
 Modul/sub-modul LAIN di luar 5 ini (arahan awal 2026-08-19, masih berlaku
 buat sisanya) TETAP di-pending, urutan belum diputuskan:
 - Modul Pembelian — sub-modul lain (di luar PI & PP): Purchase Order,

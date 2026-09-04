@@ -20,21 +20,16 @@ export default async function AppProtectedLayout({ children }: { children: React
 
   const settings = await getPublicSettings();
 
-  // § Fase 13, ADR-0018 — nav difilter oleh modul plan langganan AKTIF.
-  // `/me/subscription` balas body BENERAN KOSONG (bukan literal "null")
-  // kalau belum ada subscription — res.json() langsung throw kalau
-  // dipanggil di body kosong (§ lessons-learned.md 2026-08-27, gotcha
-  // yang sama seperti app/app/(protected)/page.tsx `fetchJson`).
-  const subRes = await fetch(`${apiUrl}/me/subscription`, { headers: { cookie }, cache: "no-store" });
-  const subText = subRes.ok ? await subRes.text() : "";
-  const subscriptionInfo = subText
-    ? (JSON.parse(subText) as { subscription: { status: string }; plan: { modules: string[] } } | null)
-    : null;
-  // § `/me/subscription` balikin subscription TERBARU apa pun statusnya
-  // (termasuk expired/cancelled/pending_payment) — nav cuma boleh percaya
-  // modules dari subscription yang BENAR-BENAR "active", supaya tidak
-  // nampilin menu yang bakal ditolak `moduleAccess` gate begitu diklik.
-  const subscriptionModules = subscriptionInfo?.subscription.status === "active" ? subscriptionInfo.plan.modules : undefined;
+  // § Fase 14, ADR-0019 — nav difilter oleh UNION modul dari SEMUA
+  // subscription AKTIF (1 user bisa punya banyak subscription, 1 per
+  // sub-modul). `/me/subscriptions` (JAMAK) sudah cuma balikin baris
+  // `status: "active"` (server-side filtered) — tidak perlu filter
+  // status lagi di sini seperti versi `/me/subscription` (tunggal) lama.
+  const subRes = await fetch(`${apiUrl}/me/subscriptions`, { headers: { cookie }, cache: "no-store" });
+  const subJson = subRes.ok ? ((await subRes.json()) as { subscriptions: { plan: { modules: string[] } }[] }) : { subscriptions: [] };
+  const subscriptionModules = subJson.subscriptions.length
+    ? [...new Set(subJson.subscriptions.flatMap((s) => s.plan.modules))]
+    : undefined;
 
   return (
     <AppShell surface="app" logoUrl={settings["company.logo"]} subscriptionModules={subscriptionModules} user={{ name: me.name, email: me.email }}>

@@ -4,14 +4,34 @@ import { db } from "../../lib/db";
 import { plans, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 
-// § Fase 10, ADR-0015 — TIDAK ADA field `price` — Facport sementara
-// tanpa harga (supporting app), lihat ADR-0015. Kolom `price` di DB
-// TETAP ada (nullable, reversibel) tapi route ini sengaja tidak
-// menerimanya dari client sama sekali.
+// § Fase 14, ADR-0019 — `price` WAJIB lagi (supersede ADR-0015 "tanpa
+// harga sementara"). `modules` WAJIB PERSIS 1 elemen, salah satu dari 5
+// sub-modul yang dijual (§ accurate-scopes.ts `MODULE_ACCURATE_SCOPES`
+// — daftar SAMA, sengaja tidak di-share langsung sebagai TypeBox schema
+// karena beda representasi/tujuan, tapi WAJIB disinkronkan manual kalau
+// salah satu berubah) — 1 plan = 1 SKU per sub-modul, bundling lintas-modul
+// terjadi di cart (§ Fase 16), bukan di definisi plan.
+// § `.map()` di atas array `as const` TIDAK boleh dipakai untuk bangun
+// `t.Union` di sini — `.map()` selalu balikin `T[]` (array biasa), BUKAN
+// tuple, dan `t.Union` butuh TUPLE literal supaya TypeBox bisa resolve
+// tipe tiap elemen dengan benar. Ketemu 2026-09-04: versi `.map()` bikin
+// Eden Treaty (apps/web) salah infer field `modules` jadi `File | File[]`
+// (bukan union string literal) — tuple eksplisit di bawah ini WAJIB
+// ditulis literal, JANGAN di-generate dari array lagi.
 const planBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 100 }),
+  price: t.Integer({ minimum: 0 }),
   durationDays: t.Integer({ minimum: 1 }),
-  modules: t.Array(t.String()),
+  modules: t.Array(
+    t.Union([
+      t.Literal("sales_invoice"),
+      t.Literal("purchase_invoice"),
+      t.Literal("sales_receipt"),
+      t.Literal("purchase_payment"),
+      t.Literal("journal_voucher"),
+    ]),
+    { minItems: 1, maxItems: 1 },
+  ),
   isActive: t.Optional(t.Boolean()),
 });
 

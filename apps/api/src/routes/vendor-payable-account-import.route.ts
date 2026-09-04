@@ -50,7 +50,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
         },
       });
     },
-    { permission: "import.create", moduleAccess: "pembelian" },
+    { permission: "import.create", moduleAccess: "purchase_invoice" },
   )
   .get(
     "/vendor/payable-account/import",
@@ -68,7 +68,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       query: t.Object({ limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })) }),
     },
   )
@@ -126,7 +126,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       body: t.Object({ file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }) }),
     },
   )
@@ -167,7 +167,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
       body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
     },
@@ -190,7 +190,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
     },
   )
@@ -211,7 +211,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "purchase_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
     },
   );

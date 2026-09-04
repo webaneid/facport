@@ -60,18 +60,33 @@ mobile/client-side). Facport pakai **Authorization Code Grant** — sesuai
 prinsip ADR-0009 ("pilih code grant kalau tersedia, lebih aman karena token
 tidak pernah lewat browser"). Implicit grant TIDAK dipakai.
 
-### Aturan Bisnis — 1 Subscription = 1 Akun Accurate
-**Satu langganan Facport cuma bisa terhubung ke SATU akun Accurate Online.**
-Ini konsisten dengan cara Accurate sendiri bekerja: satu akun Accurate
-mewakili satu company/database (atau satu user internal di company itu) —
-bukan multi-company dalam satu koneksi. Implikasi:
-- Kalau user (mis. akuntan yang pegang beberapa klien) butuh impor ke lebih
-  dari satu company Accurate, dia butuh **subscription terpisah per company**
-  — ini juga jadi salah satu pendorong model harga per-`subscription`, bukan
-  per-`user` (lihat `docs/architecture/architecture-subscription.md`).
-- `accurate_connections` di-relasikan ke `subscriptions` (bukan langsung ke
-  `users`), dengan **unique constraint 1:1** — satu subscription maksimal
-  satu koneksi Accurate aktif.
+### Aturan Bisnis — 1 Subscription (Sub-Modul) = 1 Akun Accurate, Koneksi Reusable Lintas Subscription
+> **⚠️ Direvisi Fase 14, ADR-0020** (supersede poin 3 ADR-0009 di bawah
+> ini — dibiarkan tercatat sebagai histori keputusan, BUKAN dihapus,
+> tapi TIDAK berlaku lagi apa adanya). Detail rasional lengkap →
+> `docs/decisions/adr-0020-accurate-connection-reusable-lintas-subscription.md`,
+> `docs/architecture/architecture-subscription.md` § "Koneksi Accurate —
+> Reusable Lintas Subscription".
+
+**Satu subscription (= 1 sub-modul sejak Fase 14) cuma bisa terhubung ke
+SATU Data Usaha Accurate** — aturan dasarnya TIDAK berubah, konsisten
+dengan cara Accurate sendiri bekerja (1 Data Usaha = 1 company/database).
+Yang BERUBAH: kalau customer punya BEBERAPA subscription (beli SI+PI
+sekaligus, mis.) untuk **Data Usaha yang SAMA**, dia TIDAK WAJIB re-OAuth
+per subscription — koneksi (`accurate_connections`) SEKARANG milik
+**user** (bukan 1:1 ke 1 subscription lagi), bisa dipakai ulang lintas
+subscription. Alasan bisnis: Accurate men-charge per "aplikasi
+terkoneksi" — connect berkali-kali ke company yang sama akan dianggap
+Accurate sebagai beberapa aplikasi terpisah, customer di-charge lebih
+dari seharusnya.
+- User yang kelola company Accurate BERBEDA per modul TETAP bisa —
+  connect Data Usaha baru per company, cuma sekarang PILIHAN
+  (`accurateConnectionId` per subscription), bukan dipaksa skema.
+- `accurate_connections` di-relasikan ke `users` (bukan ke `subscriptions`
+  lagi), TANPA unique constraint — 1 user boleh punya banyak connection
+  (1 per Data Usaha berbeda yang pernah dia hubungkan).
+  `subscriptions.accurateConnectionId` (nullable FK) yang jadi pointer
+  "subscription/modul ini pakai koneksi yang mana".
 
 ### Alur (Terverifikasi — Authorization Code Grant)
 ```
@@ -223,13 +238,19 @@ juga mengurangi permukaan kalau token bocor).
 ### Skema DB
 ```ts
 // apps/api/src/db/schema.ts
+// § Fase 14, ADR-0020 — userId ganti subscriptionId, TANPA unique (1 user
+// boleh punya banyak connection, 1 per Data Usaha berbeda). Pointer
+// "subscription/modul mana pakai koneksi ini" sekarang di
+// `subscriptions.accurateConnectionId` (§ architecture-subscription.md),
+// BUKAN lagi di tabel ini.
 export const accurateConnections = pgTable("accurate_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
-  subscriptionId: uuid("subscription_id").references(() => subscriptions.id).notNull().unique(), // 1 subscription = 1 akun Accurate
+  userId: uuid("user_id").references(() => users.id).notNull(), // TIDAK unique — reusable lintas subscription
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
   refreshTokenEncrypted: text("refresh_token_encrypted").notNull(), // Authorization Code Grant SELALU terbitkan ini (terverifikasi)
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(), // access_token, ~15 hari dari connectedAt/refresh terakhir
   accurateDbId: varchar("accurate_db_id", { length: 100 }), // ID database/company Accurate yang terhubung
+  accurateDbAlias: varchar("accurate_db_alias", { length: 255 }), // nama Data Usaha, buat ditampilkan di dropdown "pakai koneksi yang sudah ada"
   status: varchar("status", { length: 20 }).notNull().default("active"), // "active" | "expired" | "revoked"
   connectedAt: timestamp("connected_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),

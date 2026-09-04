@@ -6,6 +6,232 @@
 
 ---
 
+## 2026-09-04 — Security review Fase 16 (Payment Manual): 1 High + 3 Medium diperbaiki langsung, 2 Low diterima/dicatat
+**Konteks:** Subagent `security-auditor` review Fase 16 (checkout cart,
+skema `orders` payment manual, QRIS EMV builder, upload bukti, konfirmasi
+admin dengan row-lock). Ringkasan lengkap →
+`docs/phases/phase-16-payment-manual.md` § "Ringkasan Hasil". Fokus audit
+(row-lock confirm/reject, ownership order, validasi account ref, privasi
+bucket bukti, alur reject→resubmit, matematika aktivasi multi-item) semua
+**lolos** kecuali 1 High — 0 Critical.
+
+**Sudah diperbaiki (High):**
+- `POST /subscriptions/checkout` (`subscriptions.route.ts`) — guard "cegah
+  beli modul sama 2x" SEBELUMNYA cuma cek subscription AKTIF, TIDAK
+  melihat invoice/order lain yang masih `pending`/`submitted` untuk modul
+  yang sama (subscription baru tercipta SETELAH admin confirm, jadi 2
+  checkout modul sama sebelum bayar SAMA SEKALI lolos guard lama). Fix:
+  seluruh alur checkout dibungkus `db.transaction()` + row lock pada
+  baris `user` (serialisasi checkout SAMA user, bukan lintas user), guard
+  diperluas cek invoice/order non-terminal juga — test baru
+  (`subscriptions.route.test.ts`) reproduksi skenario "2 tab checkout
+  modul sama sebelum bayar".
+
+**Sudah diperbaiki (Medium):**
+- `buildDynamicQris()` (`qris-emv.ts`) — payload EMV admin TANPA Tag 53
+  MAUPUN Tag 54 (malformed/salah salin) sebelumnya lolos TANPA nominal
+  ter-inject sama sekali, QR tetap ditandai "dinamis" tapi nominal tidak
+  pernah dikunci — customer diam-diam disuruh ketik manual TANPA tahu
+  itu (kode unik jadi tidak ikut ke-transfer). Fix: throw eksplisit kalau
+  `hasTag54` masih `false` setelah parsing (caller sudah punya try/catch →
+  502).
+- `company.bankAccounts`/`company.qrisAccounts` disimpan lewat `PUT
+  /settings` generik TANPA validasi bentuk — value cacat bisa lolos
+  disimpan admin lalu baru meledak (500) saat CUSTOMER coba bayar. Fix:
+  validasi runtime eksplisit di `settings.route.ts` (pola sama
+  `retentionItem`), termasuk panggil `isValidQrisPayload()` yang
+  sebelumnya didefinisikan tapi TIDAK PERNAH dipanggil di mana pun — plus
+  defense-in-depth `Array.isArray` check di `orders.route.ts`
+  `getPaymentSettings()`.
+- `GET /orders/:id` (`orders.route.ts`) — sebelumnya spread SELURUH row
+  `orders`/`invoices` ke customer, termasuk `proofUrl` (MinIO object key
+  privat) dan `confirmedBy`/`rejectedBy` (user ID admin) — melanggar
+  spirit ADR-0022 ("proofUrl HANYA boleh ditukar presigned URL server-
+  side admin-only"). Fix: response di-`pick` eksplisit ke field yang
+  memang dibutuhkan customer saja.
+
+**Sudah diperbaiki (Low):**
+- Frontend `pay/page.tsx` render kosong tanpa pesan kalau admin hapus
+  rekening bank yang sedang direferensikan order in-flight (jalur QRIS
+  sudah menangani ini via `QRIS_ACCOUNT_NOT_FOUND`, jalur bank transfer
+  belum) — ditambah fallback pesan jelas.
+
+**Ditunda ke technical debt (dicatat sesuai SOP):**
+- Object MinIO lama TIDAK dihapus saat customer upload ulang bukti
+  setelah ditolak (numpuk file "yatim" di bucket privat) — bukan celah
+  keamanan (bucket tetap privat), murni storage housekeeping, ditunda
+  sampai jadi masalah cost nyata.
+- Belum ada job yang mentransisikan order/invoice ke status `"expired"`
+  otomatis setelah lewat `dueDate` — kolom & status sudah disiapkan di
+  skema, implementasinya sengaja ditunda (di luar scope "verifikasi
+  konsep manual payment jalan end-to-end").
+- Permission `orders.manage` di data role PRODUCTION perlu dicek manual
+  supaya cuma di-assign ke admin/super-admin (pola sama technical debt
+  Fase 12/15).
+
+**Catatan tambahan (bug ditemukan pas nulis test, BUKAN temuan
+security-auditor):** helper test `seedPaymentSettings()`
+(`orders.route.test.ts`) sempat pakai `onConflictDoUpdate({set: {value:
+settings.value}})` — self-reference ke kolom LAMA (no-op saat conflict),
+BUG YANG SAMA PERSIS pernah ketemu di script manual test Fase 15. Efeknya
+di sini: test file lain (`settings.route.test.ts`) yang JUGA menulis key
+global `company.bankAccounts`/`company.qrisAccounts` bisa "menang" duluan
+tergantung urutan eksekusi, bikin test lain gagal intermiten
+(`ACCOUNT_NOT_FOUND` padahal seed harusnya jalan). Fix: set value LITERAL
+per-key (2 pemanggilan terpisah, bukan 1 `.values([...])` array).
+**Pencegahan:** `onConflictDoUpdate` HARUS selalu set value dari variabel
+LOKAL/literal, JANGAN PERNAH `column: table.column` (self-reference) —
+pola ini sudah 2x ketemu di sesi berbeda, jadikan checklist review kalau
+lihat `onConflictDoUpdate` baru.
+
+---
+
+## 2026-09-04 — Security review Fase 15 (Invoice + PDF): 0 Critical/High/Medium, 3 Low (diterima sebagai technical debt)
+**Konteks:** Subagent `security-auditor` review Fase 15 (skema
+`invoices`/`invoiceItems`, PDF generator `@react-pdf/renderer`, endpoint
+`GET /me/invoices`, `GET /invoices/:id/pdf`, `GET /admin/invoices`).
+Ringkasan lengkap → `docs/phases/phase-15-invoice-profesional.md` §
+"Ringkasan Hasil". Fokus audit (ownership check PDF endpoint, isolasi
+data lintas-user, remote image fetch di PDF, header injection nomor
+invoice, konsistensi permission key) semua **lolos** — 0 Critical/High/Medium.
+
+**Sudah diperbaiki (kualitas kode, bukan security, tapi ditemukan pas
+review yang sama):**
+- Logic agregasi `invoiceItems` per invoice ter-duplikasi identik antara
+  `invoices.route.ts` dan `admin/invoices.route.ts` — diekstrak ke
+  `apps/api/src/lib/invoice-helpers.ts` (`attachInvoiceItems`), dipakai
+  kedua route.
+
+**Diterima sebagai technical debt (Low, TIDAK diperbaiki — alasan
+eksplisit di tiap poin):**
+- **Timing side-channel** di `GET /invoices/:id/pdf`
+  (`invoices.route.ts`): query `userHasPermission()` (3-table JOIN) cuma
+  jalan di cabang `invoice.userId !== user.id`, bikin response time beda
+  terukur antara "invoice tidak ada" vs "invoice ada tapi bukan milik &
+  bukan admin" — keduanya sama-sama 404, tapi timing beda bisa jadi oracle
+  keberadaan invoice ID. **Diterima**: `params.id` WAJIB `format:"uuid"`
+  (128-bit entropy) — brute-force ID praktis mustahil terlepas dari
+  oracle timing ini, fix (selalu jalankan query permission tanpa
+  short-circuit) menambah 1 query per request tanpa manfaat praktis nyata.
+- **Field `company.taxId`/`phone`/`email`/`bankAccount` tanpa `maxLength`**
+  di skema key-value `settings` (`value: t.Unknown()`, pola lama sejak
+  Fase 00) — value sangat panjang bisa overflow layout footer PDF.
+  **Diterima**: endpoint sudah admin-only (`permission: "settings.update"`),
+  cuma memperluas blast-radius trade-off desain yang sudah diterima
+  sebelumnya (skema key-value fleksibel), bukan celah baru untuk user
+  biasa.
+- **`<a href target="_blank">` unduh PDF invoice** (`billing/page.tsx`) —
+  di production, link ini navigasi top-level LINTAS SUBDOMAIN
+  (`app.<domain>` → `api.<domain>`). **Belum diverifikasi manual di
+  production** apakah cookie sesi Better Auth (`sameSite:"lax"` +
+  `crossSubDomainCookies`, § `lib/auth.ts`) benar-benar terkirim di
+  navigasi ini — SECARA TEORI harus jalan (`SameSite=Lax` mengizinkan
+  cookie di navigasi top-level GET lintas-subdomain SELAMA subdomain
+  masih 1 "site"/eTLD+1 yang sama, yang mana `crossSubDomainCookies` di
+  production memang men-scope cookie ke domain induk bersama) — TAPI
+  ini murni penalaran dari kode, BUKAN pengamatan langsung. **Cek manual
+  di staging/production sebelum menganggap tombol "Unduh PDF" pasti
+  jalan** — kalau ternyata gagal (401), ini bug FUNGSIONAL bukan
+  security, root cause paling mungkin `SameSite` provider/browser lebih
+  ketat dari yang diasumsikan.
+
+---
+
+## 2026-09-04 — `t.Union(array.map(t.Literal))` merusak inferensi tipe Eden Treaty (jadi `File | File[]`)
+**Masalah:** `admin/plans.route.ts` (Fase 14) build union modul dari
+`SUB_MODULE_KEYS.map((k) => t.Literal(k))` (`SUB_MODULE_KEYS` array
+`as const` 5 elemen). Schema TypeBox-nya SENDIRI valid (`typeof
+planBody.static` di apps/api resolve benar ke union literal) — tapi
+`bun run typecheck` di **apps/web** gagal dengan error yang sangat
+menyesatkan: field `modules` diklaim bertipe `File | File[]`, bukan union
+string literal. Awalnya dikira bug tidak berhubungan (device upload?),
+butuh isolasi manual (`Parameters<typeof api.admin.plans.post>[0]`) untuk
+ketemu bahwa masalahnya justru di route API, bukan di halaman React yang
+error-nya muncul.
+
+**Root cause:** `Array.prototype.map()` SELALU balikin tipe `U[]` (array
+biasa), BUKAN tuple — walau sumbernya array `as const`. `t.Union<T extends
+TSchema[]>` TypeBox butuh T berupa TUPLE literal supaya bisa resolve tipe
+tiap elemen individual; diberi array generik (bukan tuple), sesuatu di
+pipeline type-generation Eden Treaty (`UnwrapRoute`/`MergeSchema`) salah
+resolve ke fallback yang kebetulan sama seperti representasi internal File
+upload — kemunculan `File` di error TIDAK ada hubungan literal dengan
+upload sama sekali, murni fallback tipe yang salah.
+
+**Fix:** Tulis union sebagai TUPLE literal eksplisit — daftar
+`t.Literal(...)` satu-satu di dalam `t.Union([...])`, JANGAN
+di-generate dari `.map()` atas array manapun (termasuk yang `as const`).
+
+**Pencegahan:** Kalau butuh union literal dari daftar string yang sudah
+ada sebagai array/const di proyek ini, JANGAN pakai
+`arr.map(t.Literal)` untuk isi `t.Union()` — tulis literal manual. Kalau
+`bun run typecheck` di **apps/web** gagal dengan tipe body Eden Treaty
+yang aneh (terutama nyebut `File`) padahal route API-nya kelihatan benar,
+curigai pola `.map()` di schema TypeBox route yang bersangkutan duluan,
+sebelum curiga ke kode React.
+
+---
+
+## 2026-09-04 — Security review Fase 14 (Fondasi Langganan): 1 Medium + 4 Low, semua diperbaiki langsung
+**Konteks:** Subagent `security-auditor` review Fase 14 (restrukturisasi
+gating per sub-modul + koneksi Accurate reusable lintas subscription, 25
+file dibaca). Ringkasan lengkap → `docs/phases/phase-14-fondasi-langganan.md`
+§ "Ringkasan Hasil". Fokus audit (ownership `/accurate/reuse`, isolasi
+data lintas-user, TOCTOU `moduleAccess`, token handling, validasi
+`plans.route.ts`) semua **lolos** — 0 Critical/High.
+
+**Sudah diperbaiki (Medium):**
+- `POST /accurate/databases/select` (`accurate.route.ts`) bisa dipanggil
+  ulang untuk connection yang `accurateDbId`-nya SUDAH terisi, diam-diam
+  mengganti Data Usaha — karena Fase 14 bikin 1 connection bisa dipakai
+  BARENG beberapa subscription, ini ikut memindahkan tujuan import
+  subscription LAIN yang share koneksi itu tanpa user sadar. Fix: tolak
+  400 `DATABASE_ALREADY_SELECTED` kalau `accurateDbId` sudah ada — ganti
+  Data Usaha WAJIB lewat koneksi baru (connect ulang), bukan endpoint ini.
+
+**Sudah diperbaiki (Low):**
+- `getOwnedConnection()` tidak filter `status:"active"` — connection
+  `expired`/`revoked` tetap bisa di-`reuse`/dipilih Data Usaha-nya (assign
+  sukses di DB, baru gagal belakangan pas worker pakai token invalid).
+  Fix: tambah filter status di query.
+- `getActiveSubscriptionsWithPlans()` tidak `ORDER BY` — kalau user
+  (secara tidak seharusnya, tidak dijaga unique constraint) punya 2
+  subscription aktif utk modul yang sama, `.find()` di `moduleAccess`
+  macro bisa pilih baris yang tidak deterministik antar request. Fix:
+  `orderBy(desc(subscriptions.createdAt))`, konsisten ambil yang terbaru.
+- `alias` di `POST /accurate/databases/select` tanpa `maxLength` (kolom DB
+  varchar(255)) — alias kepanjangan bikin Postgres error mentah, ketangkep
+  jadi 502 `ACCURATE_REQUEST_FAILED` yang menyesatkan (nyalahin Accurate
+  API padahal masalah validasi lokal). Fix: `t.String({maxLength:255})`.
+- Komentar stale di `sales-invoice-import.route.ts` masih nyebut
+  `moduleAccess: "penjualan"` (taksonomi lama sebelum Fase 14) padahal
+  kode sudah benar pakai `"sales_invoice"` — diupdate.
+
+**Ditunda ke technical debt (dicatat sesuai SOP, § Known Limitations
+phase-14 doc):**
+- Race condition sangat sempit di `POST /accurate/connect` (2 request
+  paralel subscriptionId sama) bisa nyisain 1 `accurate_connections` row
+  "yatim" — bukan celah keamanan, butuh unique constraint/row lock kalau
+  data trafik production nanti nunjukkin ini nyata terjadi.
+- Invariant "1 modul aktif = 1 subscription" belum dijaga unique
+  constraint DB — gate sudah konsisten (fix di atas), tapi endpoint
+  checkout Fase 16-17 WAJIB cegah user beli modul yang sama 2x dari awal.
+
+**Catatan tambahan (data-integrity, ditemukan saat verifikasi migrasi,
+BUKAN temuan security-auditor):** backfill `drizzle/0009_*.sql` (Fase 14)
+cuma menyasar `plans.modules` array SATU elemen persis
+(`["pembelian"]`/`["penjualan"]`) — 1 plan test lama (inactive, 0
+subscription referensi, dari era Fase 00/10) dengan `modules:
+["pembelian","penjualan"]` (2 elemen gabungan) lolos, ketahuan pas
+verifikasi manual pasca-migration (bukan diasumsikan beres). Dihapus
+manual setelah dikonfirmasi 0 subscription referensi. **Pencegahan:**
+kalau bikin backfill migration untuk field array/jsonb, WAJIB cek juga
+kombinasi/variasi nilai historis yang mungkin ada (bukan cuma bentuk
+"bersih" 1 elemen) — query verifikasi count SETELAH migration diterapkan,
+jangan cuma percaya migration "kelihatan benar" dari SQL-nya saja.
+
+---
+
 ## 2026-09-04 — Security review Fase 13 (Sales Invoice): 1 Medium diperbaiki — query "Batal Import" belum di-scope per module
 **Konteks:** Subagent `security-auditor` review Fase 13 (Sales Invoice,
 mirror 1:1 Purchase Invoice). Ringkasan lengkap →

@@ -47,6 +47,17 @@ import {
 } from "../lib/import-mapping/sales-invoice.mapping";
 import { findOrCreateCustomer } from "../lib/accurate-customer";
 
+// § Fase 14, ADR-0020 — koneksi Accurate SEKARANG milik user, reusable
+// lintas subscription (bukan 1:1 ke subscription lagi). Resolve 2 langkah:
+// subscription → accurateConnectionId → connection. `null` kalau
+// subscription belum pilih/hubungkan Data Usaha SAMA SEKALI.
+async function getConnectionForBatch(subscriptionId: string) {
+  const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
+  if (!subscription?.accurateConnectionId) return null;
+  const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, subscription.accurateConnectionId));
+  return connection ?? null;
+}
+
 // § architecture-accurate-integration.md — `import_batches.module`
 // menentukan cara proses 1 baris. Switch eksplisit (bukan lookup table
 // generik) SENGAJA dipilih — tiap modul punya bentuk payload beda
@@ -518,10 +529,7 @@ async function main() {
       return;
     }
 
-    const [connection] = await db
-      .select()
-      .from(accurateConnections)
-      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+    const connection = await getConnectionForBatch(batch.subscriptionId);
 
     if (!connection || !connection.accurateDbId) {
       await db
@@ -703,10 +711,7 @@ async function main() {
       return;
     }
 
-    const [connection] = await db
-      .select()
-      .from(accurateConnections)
-      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+    const connection = await getConnectionForBatch(batch.subscriptionId);
 
     if (!connection || !connection.accurateDbId) {
       logger.error({ batchId }, "Cancel import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");

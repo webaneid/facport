@@ -1,15 +1,19 @@
 import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
-import { subscriptions } from "./subscription.schema";
+import { user } from "./auth.schema";
 
 // § architecture-accurate-integration.md § 1 — Authorization Code Grant
 // terverifikasi (2026-08-19): refresh_token SELALU diterbitkan, access
-// token expire 15 hari. 1 subscription = 1 akun Accurate (unique).
+// token expire 15 hari.
+// § Fase 14, ADR-0020 — supersede: koneksi SEKARANG milik `user`, TANPA
+// unique (1 user boleh punya banyak connection, 1 per Data Usaha
+// berbeda). Reusable lintas subscription — hindari Accurate men-charge
+// customer sebagai "aplikasi terpisah" kalau 2 subscription/modul
+// sebenarnya connect ke company yang sama. Pointer "subscription mana
+// pakai koneksi ini" ada di `subscriptions.accurateConnectionId`
+// (subscription.schema.ts), BUKAN di tabel ini lagi.
 export const accurateConnections = pgTable("accurate_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
-  subscriptionId: uuid("subscription_id")
-    .notNull()
-    .unique()
-    .references(() => subscriptions.id),
+  userId: text("user_id").notNull().references(() => user.id),
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
   refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

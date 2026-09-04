@@ -21,6 +21,10 @@ import { adminAuditLogsRoute } from "./routes/admin/audit-logs.route";
 import { adminStatsRoute } from "./routes/admin/stats.route";
 import { accurateRoute } from "./routes/accurate.route";
 import { meRoute } from "./routes/me.route";
+import { invoicesRoute } from "./routes/invoices.route";
+import { adminInvoicesRoute } from "./routes/admin/invoices.route";
+import { ordersRoute } from "./routes/orders.route";
+import { adminOrdersRoute } from "./routes/admin/orders.route";
 import { purchaseInvoiceImportRoute } from "./routes/purchase-invoice-import.route";
 import { salesInvoiceImportRoute } from "./routes/sales-invoice-import.route";
 import { vendorPayableAccountImportRoute } from "./routes/vendor-payable-account-import.route";
@@ -90,6 +94,10 @@ export const app = new Elysia()
   .use(adminStatsRoute)
   .use(accurateRoute)
   .use(meRoute)
+  .use(invoicesRoute)
+  .use(adminInvoicesRoute)
+  .use(ordersRoute)
+  .use(adminOrdersRoute)
   .use(purchaseInvoiceImportRoute)
   .use(salesInvoiceImportRoute)
   .use(vendorPayableAccountImportRoute);
