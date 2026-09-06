@@ -1,17 +1,17 @@
 import { headers } from "next/headers";
 import Link from "next/link";
-import { FileSpreadsheet, Link2, CreditCard, Inbox, Eye } from "lucide-react";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { FileSpreadsheet, Link2, CreditCard, Inbox, AlertTriangle, FileCheck2, Clock } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
-import { CancelImportDialog as PurchaseInvoiceCancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
-import { DeleteImportDialog as PurchaseInvoiceDeleteImportDialog } from "@/components/purchase-invoice/delete-import-dialog";
-import { CancelImportDialog as SalesInvoiceCancelImportDialog } from "@/components/sales-invoice/cancel-import-dialog";
-import { DeleteImportDialog as SalesInvoiceDeleteImportDialog } from "@/components/sales-invoice/delete-import-dialog";
-import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
-import { formatDate } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/lib/status-badges";
+import { ImportBatchTable, type UnifiedImportBatch } from "@/components/import-archive/import-batch-table";
+import { formatDate, currencyFormatter, formatWorkTimeSaved } from "@/lib/utils";
+import { moduleLabel } from "@/lib/module-options";
+import { getPublicSettings } from "@/lib/get-public-settings";
+import { DEFAULT_COMPANY_TIMEZONE } from "@/lib/timezone";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -31,7 +31,15 @@ type AccurateSubscriptionRow = {
 };
 type AccurateSubscriptionsResponse = { subscriptions: AccurateSubscriptionRow[] };
 
-type ImportBatch = { id: string; fileName: string; status: string; totalRows: number; createdAt: string };
+// § Fase 17 — reminder invoice belum dibayar. `orderId` sudah ikut
+// diekspos `GET /me/invoices` sejak Fase 16 (link "Bayar Sekarang").
+type UnpaidInvoiceRow = { id: string; invoiceNumber: string; total: number; status: string; orderId: string | null };
+type InvoicesResponse = { invoices: UnpaidInvoiceRow[] };
+
+// § diminta user 2026-09-06 — "efisiensi waktu kerja": total baris sukses
+// milik user ini (lintas SEMUA modul) × estimasi admin detik/baris,
+// dihitung server-side (§ apps/api/src/routes/me.route.ts `GET /me/stats`).
+type MeStats = { successfulRowCount: number; estimatedTimeSavedSeconds: number };
 
 // § architecture-app-dashboard.md — Server Component fetch DENGAN cookie
 // forward manual (pola sama app/admin/(protected)/layout.tsx) — Eden
@@ -50,59 +58,84 @@ async function fetchJson<T>(path: string, cookie: string): Promise<T | null> {
   return text ? (JSON.parse(text) as T) : null;
 }
 
-const SUBSCRIPTION_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
-  active: { label: "Aktif", variant: "success" },
-  pending_payment: { label: "Menunggu Pembayaran", variant: "warning" },
-  expired: { label: "Kadaluarsa", variant: "destructive" },
-  cancelled: { label: "Dibatalkan", variant: "default" },
-};
-
-const BATCH_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
-  completed: { label: "Selesai", variant: "success" },
-  completed_with_errors: { label: "Selesai (ada gagal)", variant: "warning" },
-  processing: { label: "Memproses", variant: "warning" },
-  mapping_pending: { label: "Menunggu Konfirmasi", variant: "default" },
-  failed: { label: "Gagal", variant: "destructive" },
-  // § Fase 09, ADR-0013 — Batal Import
-  cancelling: { label: "Membatalkan...", variant: "warning" },
-  cancelled: { label: "Dibatalkan", variant: "default" },
-  cancelled_partial: { label: "Dibatalkan (sebagian)", variant: "warning" },
-};
-
 export default async function DashboardPage() {
   const cookie = (await headers()).get("cookie") ?? "";
+  // § Fase 43 (audit timezone 2026-09-06) — Server Component TIDAK bisa
+  // pakai `useCompanyTimezone()` (hook), fetch langsung sama seperti
+  // `generateMetadata`/root layout (Next.js dedup otomatis).
+  const publicSettings = await getPublicSettings();
+  const companyTimezone = publicSettings["company.timezone"] ?? DEFAULT_COMPANY_TIMEZONE;
 
-  const [subscriptionsInfo, accurateSubscriptionsInfo] = await Promise.all([
+  const [subscriptionsInfo, accurateSubscriptionsInfo, invoicesInfo, meStats, recentImportBatches] = await Promise.all([
     fetchJson<SubscriptionsResponse>("/me/subscriptions", cookie),
     fetchJson<AccurateSubscriptionsResponse>("/accurate/subscriptions", cookie),
+    fetchJson<InvoicesResponse>("/me/invoices", cookie),
+    fetchJson<MeStats>("/me/stats", cookie),
+    fetchJson<{ batches: UnifiedImportBatch[]; total: number }>("/me/import-batches?limit=5", cookie),
   ]);
   const accurateSubscriptions = accurateSubscriptionsInfo?.subscriptions ?? [];
+  const unpaidInvoices = (invoicesInfo?.invoices ?? []).filter((inv) => inv.status === "unpaid");
 
   // § Fase 14, ADR-0019 — `/me/subscriptions` (JAMAK) cuma balikin baris
   // "active" (server-side filtered) — 1 user boleh punya BANYAK
-  // subscription aktif sekaligus (1 per sub-modul). Widget "Import
-  // Terakhir" PER MODUL render kondisional (bukan 1 tabel gabungan lintas
-  // modul — keputusan eksplisit user: 1 modul = 1 harga = 1 area fitur
-  // sendiri) berdasarkan UNION modul dari SEMUA subscription aktif.
+  // subscription aktif sekaligus (1 per sub-modul).
   const subscriptions = subscriptionsInfo?.subscriptions ?? [];
-  const subscriptionModules = [...new Set(subscriptions.flatMap((s) => s.plan.modules))];
-  const hasPurchaseInvoice = subscriptionModules.includes("purchase_invoice");
-  const hasSalesInvoice = subscriptionModules.includes("sales_invoice");
 
-  const [purchaseInvoiceList, salesInvoiceList] = await Promise.all([
-    hasPurchaseInvoice ? fetchJson<{ batches: ImportBatch[] }>("/purchase-invoice/import?limit=5", cookie) : Promise.resolve(null),
-    hasSalesInvoice ? fetchJson<{ batches: ImportBatch[] }>("/sales-invoice/import?limit=5", cookie) : Promise.resolve(null),
-  ]);
-
-  const purchaseInvoiceBatches = purchaseInvoiceList?.batches ?? [];
-  const salesInvoiceBatches = salesInvoiceList?.batches ?? [];
+  // § diminta user 2026-09-06 — "Import Terakhir" SEKARANG 1 card
+  // GABUNGAN lintas semua modul (bukan 1 card per modul lagi) —
+  // `GET /me/import-batches` generik, § `components/import-archive/import-batch-table.tsx`.
+  const recentBatches = recentImportBatches?.batches ?? [];
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Dashboard</h1>
-        <p className="text-sm text-muted-foreground">Ringkasan akun & aktivitas import kamu.</p>
-      </div>
+      <PageHeader title="Dashboard" description="Ringkasan akun & aktivitas import kamu." />
+
+      {unpaidInvoices.length > 0 && (
+        <Card className="border-warning/40 bg-warning-bg">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              <p className="text-sm text-foreground">
+                {unpaidInvoices.length === 1
+                  ? `Invoice ${unpaidInvoices[0]!.invoiceNumber} (${currencyFormatter.format(unpaidInvoices[0]!.total)}) belum dibayar.`
+                  : `${unpaidInvoices.length} invoice belum dibayar.`}
+              </p>
+            </div>
+            <Link
+              href={unpaidInvoices.length === 1 && unpaidInvoices[0]!.orderId ? `/billing/${unpaidInvoices[0]!.orderId}/pay` : "/billing"}
+              className={buttonVariants("default", "h-8")}
+            >
+              Bayar Sekarang
+            </Link>
+          </CardContent>
+        </Card>
+      )}
+
+      {meStats && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <FileCheck2 className="h-4 w-4 text-primary-600" />
+                <CardTitle>Baris Berhasil Diimport</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-3xl font-bold text-foreground">{meStats.successfulRowCount.toLocaleString("id-ID")}</p>
+            </CardContent>
+          </Card>
+
+          <Card className="bg-primary-600 text-white">
+            <CardContent className="flex items-center gap-3 py-6">
+              <Clock className="h-8 w-8 shrink-0" />
+              <div>
+                <p className="text-sm text-white/90">Anda telah efisiensi waktu kerja sebanyak:</p>
+                <p className="text-xl font-bold">{formatWorkTimeSaved(meStats.estimatedTimeSavedSeconds)}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
@@ -120,12 +153,10 @@ export default async function DashboardPage() {
                 <div key={row.subscription.id} className="flex flex-col gap-1 border-b border-border pb-3 last:border-0 last:pb-0">
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-foreground">{row.plan.name}</span>
-                    <Badge variant={(SUBSCRIPTION_STATUS[row.subscription.status] ?? { variant: "default" }).variant}>
-                      {SUBSCRIPTION_STATUS[row.subscription.status]?.label ?? row.subscription.status}
-                    </Badge>
+                    <StatusBadge domain="subscription" status={row.subscription.status} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Modul: {row.plan.modules.join(", ")}</p>
-                  {row.subscription.endAt && <p className="text-xs text-muted-foreground">Berlaku sampai {formatDate(row.subscription.endAt)}</p>}
+                  <p className="text-xs text-muted-foreground">Modul: {row.plan.modules.map(moduleLabel).join(", ")}</p>
+                  {row.subscription.endAt && <p className="text-xs text-muted-foreground">Berlaku sampai {formatDate(row.subscription.endAt, companyTimezone)}</p>}
                 </div>
               ))
             )}
@@ -161,134 +192,29 @@ export default async function DashboardPage() {
         </Card>
       </div>
 
-      {hasPurchaseInvoice && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-primary-600" />
-                  <CardTitle>Import Terakhir</CardTitle>
-                </div>
-                <CardDescription>5 import Faktur Pembelian terbaru.</CardDescription>
-              </div>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
               <div className="flex items-center gap-2">
-                <Link href="/purchase-invoice/import/riwayat" className={buttonVariants("outline")}>
-                  Tampilkan Arsip Lain
-                </Link>
-                <Link href="/purchase-invoice/import" className={buttonVariants("default")}>
-                  Import Faktur Pembelian →
-                </Link>
+                <FileSpreadsheet className="h-4 w-4 text-primary-600" />
+                <CardTitle>Import Terakhir</CardTitle>
               </div>
+              <CardDescription>5 import terakhir dari semua modul.</CardDescription>
             </div>
-          </CardHeader>
-          <CardContent>
-            {purchaseInvoiceBatches.length === 0 ? (
-              <EmptyState icon={Inbox} title="Belum ada riwayat import" description="Upload file Excel Faktur Pembelian pertama kamu untuk mulai." />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Baris</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {purchaseInvoiceBatches.map((batch) => (
-                    <TableRow key={batch.id}>
-                      <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
-                      <TableCell>
-                        <Badge variant={(BATCH_STATUS[batch.status] ?? { variant: "default" }).variant}>{BATCH_STATUS[batch.status]?.label ?? batch.status}</Badge>
-                      </TableCell>
-                      <TableCell>{batch.totalRows}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatDate(batch.createdAt)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Link
-                            href={`/purchase-invoice/import/${batch.id}`}
-                            title="Detail"
-                            aria-label={`Detail untuk ${batch.fileName}`}
-                            className={buttonVariants("ghost", "h-8 w-8 p-0")}
-                          >
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                          {CANCELLABLE_BATCH_STATUS.has(batch.status) && <PurchaseInvoiceCancelImportDialog batch={batch} />}
-                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <PurchaseInvoiceDeleteImportDialog batch={batch} />}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {hasSalesInvoice && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <FileSpreadsheet className="h-4 w-4 text-primary-600" />
-                  <CardTitle>Import Terakhir</CardTitle>
-                </div>
-                <CardDescription>5 import Faktur Penjualan terbaru.</CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Link href="/sales-invoice/import/riwayat" className={buttonVariants("outline")}>
-                  Tampilkan Arsip Lain
-                </Link>
-                <Link href="/sales-invoice/import" className={buttonVariants("default")}>
-                  Import Faktur Penjualan →
-                </Link>
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {salesInvoiceBatches.length === 0 ? (
-              <EmptyState icon={Inbox} title="Belum ada riwayat import" description="Upload file Excel Faktur Penjualan pertama kamu untuk mulai." />
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Baris</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {salesInvoiceBatches.map((batch) => (
-                    <TableRow key={batch.id}>
-                      <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
-                      <TableCell>
-                        <Badge variant={(BATCH_STATUS[batch.status] ?? { variant: "default" }).variant}>{BATCH_STATUS[batch.status]?.label ?? batch.status}</Badge>
-                      </TableCell>
-                      <TableCell>{batch.totalRows}</TableCell>
-                      <TableCell className="text-muted-foreground">{formatDate(batch.createdAt)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Link href={`/sales-invoice/import/${batch.id}`} title="Detail" aria-label={`Detail untuk ${batch.fileName}`} className={buttonVariants("ghost", "h-8 w-8 p-0")}>
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                          {CANCELLABLE_BATCH_STATUS.has(batch.status) && <SalesInvoiceCancelImportDialog batch={batch} />}
-                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <SalesInvoiceDeleteImportDialog batch={batch} />}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
-      )}
+            <Link href="/import/arsip" className={buttonVariants("outline")}>
+              Tampilkan Arsip Lain
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {recentBatches.length === 0 ? (
+            <EmptyState icon={Inbox} title="Belum ada riwayat import" description="Upload file Excel pertama kamu untuk mulai." />
+          ) : (
+            <ImportBatchTable batches={recentBatches} timezone={companyTimezone} />
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -34,8 +34,9 @@ jarang berubah, cocok banget di-cache).
 
 ## ⚠️ Aturan Timezone — Sumber Bug Paling Sering
 **Semua timestamp di database WAJIB `timestamptz` (UTC), TIDAK PERNAH simpan
-local time.** `company.timezone` di settings **HANYA dipakai saat MENAMPILKAN**
-tanggal/jam ke user (convert UTC → timezone target), bukan saat menyimpan.
+local time.** Untuk instant yang PUNYA jam-menit-detik jelas (mis. `new
+Date()` saat ini juga), `company.timezone` **HANYA dipakai saat
+MENAMPILKAN** (convert UTC → timezone target), bukan saat menyimpan.
 
 ```ts
 // ❌ SALAH — jangan convert ke local time sebelum simpan ke DB
@@ -45,16 +46,55 @@ await db.insert(events).values({ startAt: localTime });
 // ✅ BENAR — simpan UTC apa adanya, convert cuma pas tampilkan
 await db.insert(events).values({ startAt: new Date() }); // UTC, native
 
-// Saat render ke user (apps/web):
-import { formatInTimeZone } from "date-fns-tz";
-const displayTime = formatInTimeZone(event.startAt, companyTimezone, "dd MMM yyyy HH:mm");
+// Saat render ke user (apps/web) — native Intl, BUKAN date-fns-tz
+// (project ini TIDAK install date-fns-tz, lihat lib/timezone.ts):
+import { formatDate } from "@/lib/utils";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
+const companyTimezone = useCompanyTimezone();
+const displayTime = formatDate(event.startAt, companyTimezone);
 ```
+
+### § Fase 43/44, ADR-0028 (koreksi 2026-09-06) — pengecualian untuk INPUT tanggal-saja
+Aturan di atas (timezone cuma buat MENAMPILKAN) berlaku untuk instant yang
+sudah jelas jam-menit-detiknya. TAPI ada kasus BERBEDA yang TIDAK tercakup
+aturan itu: **input tanggal-SAJA dari user** (`<input type="date">`,
+format "YYYY-MM-DD", mis. admin pilih "tanggal expired subscription")
+SELALU merepresentasikan tanggal kalender MENURUT TIMEZONE PERUSAHAAN,
+BUKAN UTC — memparse-nya langsung (`new Date("2026-12-31")`) tanpa
+konversi eksplisit membuat JS menginterpretasikannya sebagai **UTC
+midnight**, yang di Asia/Jakarta (UTC+7) berarti jam 07:00 pagi hari
+ITU JUGA, BUKAN akhir/awal hari yang user maksud — pergeseran ~7 jam ini
+FATAL untuk field seperti `subscriptions.endAt` (subscription berhenti
+aktif lebih awal dari yang admin kira, ditemukan lewat audit 2026-09-06,
+§ `docs/lessons-learned.md`).
+
+```ts
+// ❌ SALAH — date-only string diparse sebagai UTC midnight, BUKAN akhir
+// hari di timezone perusahaan
+const endAt = new Date(dateInputValue).toISOString();
+
+// ✅ BENAR — konversi eksplisit lewat lib/timezone.ts (native Intl,
+// DST-safe untuk timezone manapun meski Indonesia sendiri tidak ber-DST)
+import { endOfDayInTimezone } from "@/lib/timezone";
+const endAt = endOfDayInTimezone(dateInputValue, companyTimezone).toISOString();
+```
+Lihat `apps/web/lib/timezone.ts` (`endOfDayInTimezone` untuk field yang
+menentukan aktif/expired, `middayInTimezone` untuk tanggal yang sekadar
+catatan/informasi) dan ADR-0028 untuk daftar lengkap titik yang kena bug
+ini (`admin/users/page.tsx`, `order-pay-flow.tsx`) serta bug SEJENIS di
+backend (`todayAccurateDate()`, pakai local server time alih-alih
+timezone perusahaan — § `apps/api/src/lib/company-timezone.ts`).
+
 **Kenapa ini "selalu jadi masalah"**: begitu ADA SATU tempat yang menyimpan
 local time (bukan UTC), semua perhitungan durasi/perbandingan jadi salah
 begitu server/user pindah timezone atau daylight saving (walau Indonesia
-tidak DST, tim/klien lintas negara bisa kena). Aturan tunggal "DB selalu UTC"
-menghilangkan seluruh kelas bug ini dari akarnya — **ini di-cek juga di
-skill `security-review`/checklist review kalau ada kolom timestamp baru**.
+tidak DST, tim/klien lintas negara bisa kena) — dan begitu ADA SATU tempat
+yang lupa konversi input tanggal-saja, hasilnya bergeser beberapa jam
+tanpa gejala yang jelas (angka masih "masuk akal", cuma salah). Aturan
+"DB selalu UTC" + "input tanggal-saja WAJIB lewat `lib/timezone.ts`"
+menghilangkan kedua kelas bug ini dari akarnya — **ini di-cek juga di
+skill `security-review`/checklist review kalau ada kolom timestamp ATAU
+input tanggal-saja baru**.
 
 ## Field Group Lain (Fase Berikutnya, Bukan Wajib di Fase 01)
 - **`integrations`**: `google.analyticsId` (GA4 Measurement ID) — opsional,
