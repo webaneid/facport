@@ -6,6 +6,916 @@
 
 ---
 
+## 2026-09-06 — Asumsi kunci grouping Excel ("PO Number") ternyata SELALU KOSONG di data asli — verifikasi ke OpenAPI spec resmi TIDAK CUKUP
+**Masalah:** User minta cek apakah modul import Facport sudah "follow up"
+file Excel contoh kompetitor di `docs/referencehtml/`. Dibandingkan
+langsung (bukan cuma baca header kolom, tapi ISI datanya): Sales Invoice
+grouping multi-item pakai kolom "PO Number" — di data ASLI kompetitor
+(833 baris nyata) **PO Number 100% KOSONG**, padahal **52% faktur (77/149)
+itu multi-item** (sampai 58 baris/faktur). Tiap baris kebaca "faktur
+sendiri-sendiri", TANPA error — faktur 58-item bisa pecah jadi 58 faktur
+terpisah di Accurate, diam-diam salah. Sales Receipt malah SAMA SEKALI
+tidak dukung grouping, padahal 100% (137/137) struk penerimaan
+kompetitor multi-faktur.
+
+**Root cause:** Desain awal (Fase 13/34) sudah diverifikasi ketat ke
+`accurate-openapi.json` (field/tipe/required BENAR sesuai spec resmi) —
+tapi verifikasi itu cuma menjawab "apakah field ini VALID di Accurate",
+BUKAN "apakah field/kolom ini REALISTIS TERISI di praktik nyata
+customer". "PO Number" valid secara skema, tapi ternyata jarang/tidak
+pernah dipakai bisnis riil untuk penjualan retail — sementara "Trans No"
+(nomor transaksi sendiri, field `number`) justru SELALU diisi customer
+karena mereka assign nomor sendiri (bukan pakai auto-number Accurate).
+
+**Fix:** § Fase 49 — `groupSalesInvoiceRows` digeneralisasi (prioritas
+"Trans No", fallback "PO Number", fallback akhir 1-baris-1-faktur — TIDAK
+ada regresi). Sales Receipt dapat grouping baru dari nol (`receiptNumber`
+→ Accurate `number`), SEDERHANA tanpa retry-cerdas-lintas-batch (karena
+"Batal Import" sengaja tidak didukung modul itu).
+
+**Pencegahan:** untuk modul import BARU (atau audit modul lama) — spec
+API resmi menjawab "field apa yang VALID", tapi TIDAK menjawab "kolom
+mana yang REALISTIS TERISI". Kalau ada sample data nyata (kompetitor,
+customer, atau template industri) — WAJIB dicek ISI datanya (persentase
+kosong/terisi per kolom kandidat kunci grouping), bukan cuma nama
+kolomnya. Purchase Payment & Journal Voucher punya gap serupa
+(ditemukan di audit yang sama, § plan Fase 49), BELUM diperbaiki —
+prioritaskan kalau ada waktu.
+
+---
+
+## 2026-09-06 — Self-register TIDAK PERNAH dapat role "customer" — login "gagal diam-diam" & tidak muncul di admin
+**Masalah:** User daftar akun baru (`wasugi@gmail.com`) lewat `/register`
+publik. Setelah email di-verify manual (RESEND_API_KEY belum
+dikonfigurasi, verifikasi email belum bisa terkirim), user tetap tidak
+bisa login (dilempar balik ke `/login` tanpa pesan error) DAN akunnya
+tidak muncul sama sekali di halaman admin Pengguna.
+
+**Root cause:** alur self-service (`RegisterForm` → `authClient.signUp.email`
+→ Better Auth `POST /api/auth/sign-up/email`) **tidak pernah insert baris
+`user_roles`** — beda dari alur admin-provisioned (`admin/users.route.ts`
+baris ~168-171, `admin/staff.route.ts` baris ~84) yang eksplisit assign
+role SETELAH `auth.api.signUpEmail()`. Dua akibat gabungan:
+1. `GET /admin/users` (`admin/users.route.ts` baris ~55-62) filter STRICT
+   ke user yang punya role "customer" (`inArray(userTable.id,
+   customerIds)`) — user tanpa role tidak pernah lolos filter, hilang
+   total dari listing.
+2. `apps/web/app/app/(protected)/layout.tsx` baris ~20 cek
+   `me.roles.includes("customer")` dan `redirect("/login")` kalau kosong
+   — dari sisi user, auth SUKSES (cookie sesi ke-set) tapi langsung
+   dilempar balik ke halaman login TANPA pesan error apa pun, kelihatan
+   persis seperti "login gagal".
+
+**Fix:** intercept `POST /api/auth/sign-up/email` di `apps/api/src/app.ts`
+(pola SAMA PERSIS intercept disabled-account-check di sign-in yang sudah
+ada) — setelah `auth.handler(request)` sukses, baca `response.clone()`
+buat ambil `user.id`, lalu assign role "customer" (`onConflictDoNothing`).
+**Sengaja BUKAN `databaseHooks.user.create.after`** (dicoba dulu, DITOLAK
+oleh test) — hook itu jalan untuk SEMUA jalur `auth.api.signUpEmail()`
+termasuk akun admin/staff-provisioned, bikin akun staff/admin ikut
+kebagian role "customer" (melanggar separasi role di
+`architecture-user-roles.md`, ketahuan dari 3 test gagal:
+`admin/staff.route.test.ts` × 2, `admin/users.route.test.ts` × 1).
+Intercept di route HTTP path spesifik AMAN karena `admin/users.route.ts`/
+`admin/staff.route.ts` manggil `auth.api.signUpEmail()` sebagai
+**server-side function call langsung** (bukan request HTTP ke path itu),
+jadi tidak pernah menyentuh intercept ini sama sekali.
+Regression test ditambah di `app.test.ts` ("role customer otomatis") —
+sengaja set `x-real-ip` unik supaya tidak numpuk ke bucket rate-limit
+`/api/auth` bersama test lain (§ pelajaran turunan: bucket rate-limit
+`"unknown"` di test suite sudah HAMPIR PENUH oleh test yang tidak kirim
+IP — 1 request tambahan tanpa IP unik langsung bikin test LAIN yang
+jalan setelahnya kena 429, false failure yang kelihatan tidak related).
+Backfill manual untuk akun yang sudah kena bug (`user_roles` insert
+langsung by SQL, 1 akun terdampak di DB dev).
+
+**Pencegahan:** kalau nanti ada jalur signup BARU (mis. OAuth
+social login), WAJIB cek ulang apakah perlu role default juga — role
+assignment TIDAK otomatis dari Better Auth core, harus eksplisit di tiap
+titik masuk (admin-provisioned SUDAH benar, self-service BARU
+diperbaiki di sini).
+
+---
+
+## 2026-09-06 — Audit timezone menyeluruh: 2 bug FATAL ditemukan, setting `company.timezone` ternyata tidak pernah dipakai
+**Masalah:** User minta audit ("berlangganan tidak benar terhitung-nya
+hanya karena timezone, kalau salah ini, fatal"). Ditemukan setting
+`company.timezone` (ada sejak Fase 00/01) **TIDAK PERNAH benar-benar
+dipakai** di kode manapun — `formatDate()` hardcode `"Asia/Jakarta"`
+literal, murni decorative.
+
+**Bug #1 (FATAL) — `endAt` subscription admin-manual salah ~7 jam:**
+`admin/users/page.tsx` (`POST`/`PATCH /admin/subscriptions`) kirim
+`new Date(dateInputValue).toISOString()` dari `<input type="date">` —
+JS mem-parse string tanggal-saja ("2026-12-31") sebagai **UTC MIDNIGHT**,
+bukan akhir hari di Asia/Jakarta (UTC+7). Admin pilih "31 Desember"
+bermaksud "berlaku SAMPAI akhir hari itu", tapi subscription tersimpan
+expired mulai jam 07:00 WIB tanggal itu JUGA — masa aktif TERAKHIR
+terpotong ~17 jam tanpa admin sadar.
+
+**Bug #2 (FATAL) — `todayAccurateDate()` pakai local server time:**
+`apps/api/src/lib/accurate-vendor.ts` — `now.getDate()`/`getMonth()`/
+`getFullYear()` baca timezone PROSES SERVER, bukan timezone perusahaan.
+Di production (container `postgres:16-alpine`/`oven/bun` tanpa `TZ`
+eksplisit, default OS-nya UTC), jendela 00:00–06:59 WIB (=17:00–23:59
+UTC hari sebelumnya) bikin `transDate` auto-create vendor/customer
+tercatat SALAH 1 HARI di pembukuan Accurate customer, SETIAP HARI,
+tanpa terkecuali, selama jendela itu.
+
+**Root cause bersama:** kedua bug BUKAN soal penyimpanan DB (semua
+kolom sudah `timestamptz`/UTC dengan benar) — soal titik KONVERSI:
+(a) input tanggal-saja dari user butuh tahu timezone perusahaan untuk
+diinterpretasikan dengan benar sebelum jadi instant UTC, dan (b) "hari
+ini" untuk keperluan bisnis harus dihitung dari timezone perusahaan,
+bukan UTC atau local server time. Kode lain yang SUDAH BENAR
+(`toAccurateDate()` untuk parse tanggal Excel, kalkulasi `endAt` self-
+service via aritmetika milidetik, job `EXPIRE_SUBSCRIPTIONS`) jadi bukti
+pola yang benar itu SUDAH ADA di codebase — cuma tidak diterapkan
+konsisten di 2 titik ini.
+
+**Fix:** `apps/api/src/lib/company-timezone.ts` (baru,
+`getCompanyTimezone()`), `apps/web/lib/timezone.ts` (baru,
+`endOfDayInTimezone`/`middayInTimezone`, native `Intl.DateTimeFormat`,
+TANPA dependency baru), `CompanyTimezoneProvider` (Context, root layout)
++ wire ulang 16 titik `formatDate()`. Detail lengkap →
+`docs/decisions/adr-0028-timezone-aware-date-handling.md`,
+`docs/phases/phase-44-audit-timezone.md`.
+
+**Pencegahan:** SETIAP kali ada `<input type="date">` yang hasilnya
+dikirim ke backend sebagai instant (bukan string tanggal apa adanya) —
+WAJIB lewat `lib/timezone.ts` (`endOfDayInTimezone`/`middayInTimezone`),
+TIDAK PERNAH `new Date(dateOnlyString)` langsung. Kalau ada logic "hari
+ini menurut kalender bisnis" di backend — WAJIB pakai
+`company-timezone.ts` `getCompanyTimezone()` + `Intl.DateTimeFormat`,
+TIDAK PERNAH local Date getters (`getDate()`/`getMonth()`/`getHours()`
+dkk, semua itu baca timezone PROSES, bukan timezone bisnis).
+
+---
+
+## 2026-09-06 — Fase 43 (trial) awalnya salah asumsi "semua paket otomatis bisa trial"
+**Masalah:** Implementasi pertama Fase 43 (sistem trial) membuat SEMUA
+paket otomatis punya jalur "Coba Gratis" begitu fitur dirilis — tidak
+ada kontrol admin sama sekali. User koreksi: "kalau otomatis aktif
+semua tidak seru, admin tidak punya otoritas terhadap paketnya" — admin
+harus bisa memilih PER PAKET mana yang boleh ditrial, bukan flag
+global/otomatis untuk semua.
+
+**Root cause:** Instruksi awal user ("saya ingin semua paket punya
+fitur trial") dibaca terlalu literal sebagai "semua paket AKTIF trial
+sekarang", padahal maksudnya "semua paket harus PUNYA KEMUNGKINAN
+ditrial" — kontrol aktivasinya tetap harus di tangan admin per paket,
+konsisten dengan pola `isActive` (paket juga tidak otomatis aktif tanpa
+admin yang menentukan).
+
+**Fix:** Tambah kolom `plans.trialEligible` (boolean, default `false`).
+Admin toggle eksplisit "Bisa Dicoba Gratis (Trial)" di form buat/edit
+paket (`admin/plans/page.tsx`). `POST /subscriptions/trial` menolak
+(`TRIAL_NOT_AVAILABLE_FOR_PLAN`) kalau `plan.trialEligible` false — guard
+DI SERVER, bukan cuma sembunyikan tombol di frontend. § detail lengkap
+`docs/architecture/architecture-subscription.md` § "Trial (Batas Baris)".
+
+**Pencegahan:** Kalau user minta "semua X punya fitur Y" pada entity
+yang punya konsep aktif/nonaktif (paket, user, dst.) — WAJIB tanya/
+asumsikan default AMAN (nonaktif, admin yang mengaktifkan), bukan
+langsung nyalakan semua entity sekaligus tanpa kontrol, KECUALI user
+eksplisit bilang "otomatis untuk semua".
+
+---
+
+## 2026-09-06 — Batas baris trial (Fase 43) TIDAK row-lock — TOCTOU teoretis kalau 2 batch dikonfirmasi bersamaan
+**Masalah/keputusan:** `checkTrialRowBudget()` (`apps/api/src/lib/trial.ts`)
+dipanggil di 12 titik (`:batchId/confirm`+`:batchId/retry` × 6 modul)
+SEBELUM `boss.send(JOBS.IMPORT_TO_ACCURATE, ...)`, TAPI tidak dibungkus
+row-lock/transaction seperti checkout (`POST /subscriptions/checkout`
+row-lock `user` FOR UPDATE, § architecture-subscription.md § "Trial
+(Batas Baris)"). Kalau customer trial mengonfirmasi 2 batch BERSAMAAN
+(2 tab), keduanya bisa lolos cek kuota secara independen lalu gabungan
+keduanya melebihi `trial.maxRows` — race TOCTOU (time-of-check to
+time-of-use).
+
+**Kenapa DITERIMA tanpa fix sekarang:** confirm/retry endpoint ini
+SUDAH TIDAK row-lock terhadap double-submit biasa SEBELUM Fase 43 juga
+(keterbatasan pre-existing, bukan regresi baru) — menambah row-lock
+KHUSUS untuk trial butuh restrukturisasi endpoint yang dipakai SEMUA
+subscription (trial maupun bukan), di luar scope Fase 43. Dampaknya pun
+kerugian bisnis kecil (beberapa baris ekstra trial gratis), BUKAN celah
+keamanan/data breach — tidak ada akses data user lain, tidak ada bypass
+auth/ownership.
+
+**Kalau nanti mau diperketat:** tambahkan row-lock (`SELECT ... FOR
+UPDATE`) pada baris `subscriptions` yang bersangkutan di dalam
+`checkTrialRowBudget()`, dibungkus 1 transaction bareng
+`db.update(importBatches)...` di endpoint pemanggilnya — pola sama
+persis row-lock `user` di checkout.
+
+---
+
+## 2026-09-06 — QRIS dinamis gagal simpan (400) walau payload EMV valid — whitespace copy-paste
+**Masalah:** User laporkan simpan QRIS di `/admin/settings` gagal —
+"payload emv tidak muncul, qris tidak tersimpan", pesan generik "Gagal
+menyimpan pengaturan", console: `PUT /settings 400 (Bad Request)`.
+
+**Root cause:** `isValidQrisPayload()` (`apps/api/src/lib/qris-emv.ts`)
+pakai regex `$`-anchored (`/6304[0-9A-Fa-f]{4}$/`) TANPA toleransi
+whitespace — payload EMV yang disalin dari alat scan/decode QR
+eksternal ke `<Textarea>` (`settings/page.tsx`) HAMPIR SELALU ikut bawa
+newline/spasi di awal/akhir (kebiasaan copy-paste umum). Payload yang
+SEBENARNYA valid jadi ditolak, dan pesan error di frontend TIDAK
+menangani kode `INVALID_QRIS_ACCOUNTS` secara spesifik (jatuh ke
+fallback generik) — admin tidak dapat petunjuk sama sekali kenapa gagal.
+
+**Fix:**
+1. Backend (`settings.route.ts`): `isValidQrisAccounts()` validasi versi
+   `.trim()` dari `emvPayload`; `normalizeQrisAccounts()` (baru) trim
+   SEBELUM disimpan — nilai yang lolos validasi = persis nilai yang
+   tersimpan.
+2. Frontend: trim + cek struktural yang SAMA (mirror, bukan import) di
+   client SEBELUM submit — admin dapat feedback SPESIFIK ("Payload EMV
+   untuk QRIS \"X\" tidak valid...") instan tanpa perlu round-trip
+   server. Tambah handling eksplisit `INVALID_QRIS_ACCOUNTS`/
+   `INVALID_BANK_ACCOUNTS` di error branch (sebelumnya jatuh ke fallback
+   generik "Gagal menyimpan pengaturan" — sama sekali tidak actionable).
+
+**Pencegahan:** Field mana pun yang menerima data disalin-tempel dari
+sumber eksternal (bukan diketik manual) WAJIB di-trim sebelum validasi
+struktural APA PUN yang pakai anchor `^`/`$` — whitespace tersembunyi
+dari clipboard adalah sumber bug yang sangat umum, TIDAK terlihat di
+UI (Textarea tidak menampilkan newline/spasi trailing secara jelas).
+Kalau nambah validasi client-side yang MIRROR backend, selalu sertakan
+kode error spesifik dari server juga di frontend (jangan biarkan
+fallback generik jadi satu-satunya jalur) — supaya kalau validasi
+client kelewat sesuatu, pesan dari server tetap actionable.
+
+**Test regresi**: `settings.route.test.ts` — payload dengan whitespace
+sekarang tersimpan TRIM (200), payload BENERAN invalid tetap ditolak
+(400 + `qrisId` spesifik).
+
+**Bug KEDUA, ketemu SEGERA setelah fix di atas dari testing user**: fix
+pertama nambah `.trim()` LANGSUNG ke `a.emvPayload` (`handleSave`,
+`settings/page.tsx`) — TAPI entri QRIS `isDynamic: false` (statis, tidak
+butuh payload EMV) TIDAK PERNAH dijamin punya field `emvPayload` sama
+sekali di data lama/tersimpan (bentuknya `{id, name, imageUrl,
+isDynamic}` saja, field opsional yang hilang, BUKAN string kosong) —
+`undefined.trim()` → `TypeError` runtime, bikin halaman `/admin/settings`
+CRASH TOTAL saat coba simpan (bukan lagi 400 API, tapi client exception).
+
+**Root cause dikonfirmasi PERSIS**: `orders.route.test.ts`/
+`public/orders.route.test.ts` MENULIS fixture `{id: "qris-static-1",
+name: "QRIS Statis", imageUrl: "https://example.test/qris-public.png",
+isDynamic: false}` (TANPA `emvPayload`) ke row SETTINGS GLOBAL
+`company.qrisAccounts` tiap kali test itu jalan (untuk uji jalur
+konsumsi QRIS statis di `orders.route.ts`), lalu TIDAK cleanup — persis
+pola "test tulis row settings GLOBAL, tidak restore" yang sudah dicatat
+2× sebelumnya hari ini (`data.manualInputSecondsPerRow`, Fase 40/41).
+`https://example.test/qris-public.png` adalah domain reserved-for-testing
+(RFC 2606) — bukti kuat ini fixture test, BUKAN data asli user yang
+kebetulan sempat terhapus salah sasaran sebelumnya di sesi yang sama.
+
+**Fix KEDUA**: normalisasi SETIAP entri `qrisAccounts` SAAT LOAD dari
+server (bukan cuma saat save) — tiap field WAJIB (`id`/`name`/
+`imageUrl`/`isDynamic`/`emvPayload`) diberi default eksplisit kalau
+hilang, supaya `form.qrisAccounts` di state React SELALU cocok 100%
+dengan tipe `QrisAccount` (tidak ada field opsional tersembunyi). Plus
+defense-in-depth `(a.emvPayload ?? "").trim()` di `handleSave`.
+
+**Pencegahan DIPERKUAT**: kalau baca data eksternal (API response) ke
+state yang tipenya "semua field wajib ada", JANGAN cuma `as Type[]`
+(type assertion TIDAK memvalidasi apa pun saat runtime) — normalisasi
+dengan default eksplisit per-field SAAT LOAD, bukan berasumsi shape-nya
+selalu lengkap. Ini kelas bug yang SAMA dengan alasan `t.Unknown()` di
+`settings.route.ts` butuh validasi manual (§ komentar di file itu) —
+skema key-value fleksibel = TIDAK ADA jaminan struktur dari database/
+migration, cuma dari kode yang menulisnya (dan kode lama/test bisa
+menulis versi field yang lebih sempit dari tipe frontend saat ini).
+
+---
+
+## 2026-09-06 — Card "Langganan" dashboard tampilkan raw key modul (`purchase_payment`) bukan label manusia — FIXED
+**Masalah:** User laporkan card "Langganan" di dashboard `app.` tampil
+"Modul: purchase_payment" dkk — key database mentah, bukan label
+("Purchase Payment").
+
+**Root cause:** `apps/web/app/app/(protected)/page.tsx` baris
+`Modul: {row.plan.modules.join(", ")}` join array modul LANGSUNG tanpa
+lewat `moduleLabel()` (`lib/module-options.ts`) — helper yang SUDAH
+dipakai konsisten di 5 tempat lain (subscribe page, catalog-cart admin
+invoices, admin users list & detail). Baris ini kelewat saat helper itu
+diperkenalkan Fase 17, tidak pernah di-backfill.
+
+**Fix:** `row.plan.modules.map(moduleLabel).join(", ")`.
+
+**Update sama hari — ketemu 2 lokasi LAGI**: user minta verifikasi
+model koneksi Accurate (1 subscription/modul = 1 Data Usaha, reusable
+lintas modul) sekaligus cek UI-nya — investigasi itu menemukan bug
+SAMA PERSIS di `apps/web/app/app/(protected)/accurate/page.tsx`, 3
+baris (`<CardDescription>Modul: {row.moduleKey ?? "-"}</CardDescription>`)
+render `moduleKey` mentah (`plan.modules[0]` dari
+`accurate.route.ts:61`) tanpa lewat `moduleLabel()`. Fix sama:
+`row.moduleKey ? moduleLabel(row.moduleKey) : "-"`. Sapuan lanjutan
+(`grep -rn "moduleKey"` lintas `apps/web`) mengonfirmasi SEMUA
+pemakaian `moduleKey` lain sudah aman (type def, filtering logic, atau
+sudah dipasangkan field `.label` terpisah yang memang dirender — bukan
+`moduleKey` mentah).
+
+**Pencegahan:** Sapuan cepat (`grep -rn "modules\.join\|modules\.map"`
+dan `grep -rn "moduleKey"`) mengonfirmasi cakupan penuh. Pola sama
+dengan bug admin batch-view di atas: helper/pola baru diperkenalkan
+tapi tidak di-audit ulang ke SEMUA tempat existing yang seharusnya
+ikut pakai. Kalau nanti nambah field key-based baru (module/status/
+role/dst), WAJIB langsung cek: ini akan dirender ke user, dan kalau
+ya, apa sudah ada helper label-nya, dan sudah dipakai di SEMUA titik
+render, bukan cuma titik yang baru ditulis.
+
+---
+
+## 2026-09-06 — Audit konsistensi 6 modul: shared admin view TIDAK ikut update saat modul baru ditambah — FIXED (semua temuan sekarang RESOLVED, § update di bawah)
+
+> **Update sore 2026-09-06**: temuan gap besar di bawah (paritas fitur
+> Riwayat/Edit Baris/Hapus) SUDAH diselesaikan — Fase 36-39 membangun
+> fitur itu untuk keempat modul yang tadinya kosong (Vendor Payable
+> Account, Purchase Payment, Sales Receipt, Jurnal Umum). Detail →
+> `docs/phases/phase-36-riwayat-vendor-payable-account.md` s/d
+> `docs/phases/phase-39-riwayat-journal-voucher.md`,
+> `docs/PROGRESS.md` § Update 2026-09-06 (Fase 36-39). Isi asli entri
+> ini (root cause bug admin batch-view) dipertahankan apa adanya di
+> bawah sebagai referensi historis.
+**Masalah:** User minta evaluasi menyeluruh 6 modul import (Purchase
+Invoice, Sales Invoice, Vendor Payable Account, Purchase Payment, Sales
+Receipt, Jurnal Umum) — konsistensi, integrasi admin, retensi data,
+gap/bug antara dokumentasi arsitektur vs kode. Ditemukan
+`admin/import-batches/[batchId]/page.tsx` (Fase 30, dibangun SEBELUM
+Purchase Payment/Sales Receipt/Jurnal Umum ada) hardcode render cabang
+`{batch.module === "..."}` cuma untuk 3 modul lama — 3 modul baru (Fase
+33-35) TIDAK PERNAH dapat cabang render, walau BACKEND-nya
+(`admin/import-batches.route.ts`) sudah generik sejak awal. Admin yang
+buka detail batch salah satu dari 3 modul baru cuma lihat header +
+ringkasan, TANPA tabel per-baris sama sekali — persis kasus yang Fase
+30 seharusnya cegah ("admin tahu apa yang error saat ditelepon").
+
+**Root cause:** Halaman ini SENGAJA replikasi tampilan PER-MODUL
+(bukan 1 komponen generik, keputusan sadar Fase 30 supaya tampilan
+match versi customer persis) — trade-off-nya: kalau ada modul baru,
+WAJIB diingat manual untuk tambah cabang render di sini juga. Tidak ada
+mekanisme yang otomatis "memaksa" developer (atau Claude) ingat
+melakukan ini saat membangun modul baru.
+
+**Fix:** Tambah `PurchasePaymentView`/`SalesReceiptView`/
+`JournalVoucherView` (mirror persis `VendorPayableAccountView` — ketiga
+modul baru itu sama-sama tanpa grouping kolom) + 3 entri `MODULE_TITLE`.
+
+**Pencegahan:** Kalau bikin modul import baru lagi, checklist tempat
+yang WAJIB disentuh (selain route/worker/mapping/sidebar/frontend
+sendiri): `admin/import-batches/[batchId]/page.tsx` (render cabang
+read-only admin). **Temuan LAIN dari audit yang sama (belum di-fix,
+scope lebih besar, menunggu prioritas user):** Vendor Payable Account/
+Purchase Payment/Sales Receipt/Jurnal Umum TIDAK PUNYA halaman
+"Riwayat" self-service, card "Import Terakhir" di dashboard, maupun
+"Edit Baris" — SEMUA fitur itu cuma ada di Purchase Invoice/Sales
+Invoice. Lihat `docs/PROGRESS.md` § Update 2026-09-06 untuk detail
+lengkap.
+
+---
+
+## 2026-09-05 — MinIO lokal `.env` salah port+password — RESOLVED (sebelumnya dicatat "Known Limitation", ternyata cuma salah config)
+**Masalah:** User melaporkan upload bukti transfer di halaman pembayaran
+publik gagal — `PATCH /public/orders/:id/proof` balas 500. Root cause
+`ECONNREFUSED` ke MinIO.
+
+**Root cause SEBENARNYA (bukan yang diasumsikan sebelumnya):**
+`apps/api/.env` di mesin ini berisi `MINIO_PORT=9002` dan
+`MINIO_SECRET_KEY=minioadmin`, TIDAK cocok dengan instance MinIO native
+homebrew yang benar-benar jalan (`/opt/homebrew/bin/minio server
+~/minio-data --console-address :9001`, PID terverifikasi lewat `ps eww`)
+— instance itu listen di port **9000** (default, sama dengan
+`.env.example` & `docker-compose.dev.yml`) dengan
+`MINIO_ROOT_PASSWORD=minioadmin123` (BUKAN `minioadmin` polos). 2 nilai
+`.env` ini kemungkinan besar peninggalan draft config lama yang tidak
+pernah disinkronkan ulang ke instance MinIO yang benar-benar dipakai.
+
+Entri lama di `orders.route.test.ts`/`public/orders.route.test.ts`
+(2026-09-04, security review Fase 16/27) SUDAH mendiagnosis separuh soal
+ini dengan benar (`S3Error SignatureDoesNotMatch`, koneksi berhasil tapi
+kredensial salah) — TAPI disimpulkan sebagai "infra belum dibereskan",
+test di-`test.skip()`, dan tidak pernah benar-benar diperbaiki. Ternyata
+password yang benar ada di environment variable proses MinIO itu sendiri
+sepanjang waktu (`ps eww -p <pid>` — bukan misteri infra, cuma belum
+dicek sampai ke sana).
+
+**Fix:**
+1. `apps/api/.env`: `MINIO_PORT` 9002→9000, `MINIO_PUBLIC_URL` mengikuti,
+   `MINIO_SECRET_KEY` `minioadmin`→`minioadmin123`.
+2. Restart proses `bun run dev` (apps/api) — `bun --watch` TIDAK
+   otomatis reload nilai `.env` yang sudah termuat ke `process.env` saat
+   startup pertama, restart manual proses tetap wajib walau file di
+   dalam watch glob.
+3. Un-skip 3 test yang sebelumnya `test.skip()` (2 di
+   `orders.route.test.ts`, 1 di `public/orders.route.test.ts`) — semua
+   PASS sekarang. Test suite: 170 pass/3 skip → **173 pass/0 skip**.
+
+**Verifikasi:** `curl -X PATCH .../public/orders/:id/proof` end-to-end
+manual (200, `orders.status` → `submitted`, `proof_url` terisi) SEBELUM
+menjalankan test suite otomatis, supaya perbaikan dikonfirmasi nyata
+lebih dulu, bukan cuma "test hijau".
+
+**Pencegahan:** Kalau ketemu lagi gejala mirip ("test di-skip karena gap
+infra lokal", "MinIO SignatureDoesNotMatch/ECONNREFUSED") — JANGAN
+langsung asumsikan itu keterbatasan lingkungan yang harus diterima.
+Cek DULU env var proses yang benar-benar jalan (`ps eww -p <pid> | grep
+MINIO`) sebelum menyimpulkan "belum dibereskan" — kemungkinan besar cuma
+`.env` yang perlu disamakan, bukan infra yang perlu dibangun ulang.
+
+---
+
+## 2026-09-05 — Rate limiter `x-forwarded-for` bisa dilewati bebas oleh client (High, security review Fase 27)
+**Konteks:** Fase 27 menambah endpoint publik TANPA login sama sekali
+(`/public/orders/*`, link pembayaran invoice — § ADR-0025) yang eksplisit
+mengandalkan `rateLimitPlugin` (`lib/rate-limit.ts`) sebagai mitigasi
+utama abuse (spam upload gambar, brute-force). Security review (subagent
+`security-auditor`) menemukan rate limiter itu SENDIRI (dipakai juga di
+`/api/auth` sejak awal) punya celah yang baru terasa serius sekarang ada
+endpoint tulis publik di baliknya.
+
+**Masalah:** `getClientIp()` (dulu inline di `onRequest`) pakai
+`request.headers.get("x-forwarded-for")` MENTAH sebagai kunci bucket
+rate-limit. Header ini BISA DISET BEBAS oleh client mana pun (browser
+`fetch`, `curl -H`) — dan nginx (§ `docs/deployment-new-domain-onboarding.md`)
+cuma **menambahkan** (`$proxy_add_x_forwarded_for`) IP asli ke header
+yang sudah ada, BUKAN menimpanya. Penyerang cukup kirim nilai acak
+berbeda tiap request → selalu dapat bucket rate-limit baru → limit
+efektif TIDAK PERNAH terpicu untuk IP asli yang sama.
+
+**Fix:** Pakai `x-real-ip` sebagai sumber utama — nginx config yang sama
+SELALU `proxy_set_header X-Real-IP $remote_addr` (DITIMPA nginx tiap
+request, client TIDAK BISA override header ini lewat request masuk).
+`x-forwarded-for` dipertahankan cuma sebagai fallback dev lokal (tidak
+ada nginx di depan). `apps/api/src/lib/rate-limit.ts`.
+
+**Pencegahan:** Kalau bikin rate-limiter/apa pun yang "identitas
+client"-nya dari HTTP header — WAJIB pakai header yang DITIMPA reverse
+proxy tepercaya (`X-Real-IP`), BUKAN header yang cuma DITAMBAHKAN
+(`X-Forwarded-For` tanpa parsing hop-paling-kanan-tepercaya). Ini jenis
+bug yang "kelihatan benar" dan lolos review selama endpoint di
+baliknya butuh auth (attacker sudah harus login duluan, rate-limit
+cuma lapis kedua) — begitu ada endpoint PUBLIK tanpa auth di belakang
+rate-limiter yang sama, celah yang sama jadi jauh lebih berarti. Cek
+ulang SEMUA pemakaian rate-limiter existing kalau nanti nambah endpoint
+publik baru lagi.
+
+---
+
+## 2026-09-05 — Bug produksi (ditemukan user pasca-Fase 21): tabel di halaman admin/app perlu scroll horizontal walau layar desktop lebar
+**Konteks:** Fase 21 (Rollout Konsistensi Admin) closed dengan
+"verifikasi visual browser TIDAK BISA dilakukan" (ekstensi Chrome tidak
+terhubung sesi itu) — bug ini persis jenis yang lolos karena itu, ketahuan
+dari laporan user langsung setelah cek manual di browser sungguhan.
+
+**Masalah:** Halaman listing (`admin/plans`, `admin/users`, `admin/orders`,
+`billing`, 2 halaman riwayat import, 3 halaman detail batch) semua
+dibungkus `<div className="mx-auto flex max-w-4xl ...">` (atau
+`max-w-5xl`/`max-w-3xl`) — pola yang sudah ada sejak Fase 02-18, TIDAK
+diperkenalkan Fase 19-21. `components/ui/table.tsx` (§ ADR-0004) sengaja
+punya `overflow-x-auto` + `whitespace-nowrap` di tiap sel supaya tabel
+lebar tidak merusak layout — TAPI itu artinya kalau kontainer pembungkus
+dibuat sempit (896px/`max-w-4xl`) padahal tabelnya punya 6-7 kolom,
+scrollbar horizontal MUNCUL TERUS walau layar desktop asli jauh lebih
+lebar (`<main>` di `AppShell` sudah cukup lega, cuma dibatasi lagi oleh
+wrapper halaman itu sendiri). User: "table-nya banyak yang tertutup...
+ada scroll bahkan ketika di desktop."
+
+**Root cause:** 2 kelas halaman (form vs listing) dibungkus pola
+kontainer yang SAMA (`mx-auto max-w-Nxl`) padahal kebutuhan lebarnya
+beda total — form 1-kolom memang enak dibaca sempit, tabel banyak-kolom
+butuh ruang. Dashboard admin/app (`(protected)/page.tsx`) KEBETULAN
+sudah benar (tidak pernah pakai `mx-auto max-w-*` sejak awal) — makanya
+inkonsistensi ini terasa jelas begitu user pindah dari dashboard (lega)
+ke halaman Users/Plans/Orders (sempit).
+
+**Fix:** Semua halaman yang KONTENnya tabel/listing (bukan form)
+dilepas `mx-auto max-w-Nxl`-nya, diganti `flex flex-col gap-6` polos
+(sama seperti dashboard) — tabel jadi pakai lebar penuh `<main>`.
+Halaman yang KONTENnya form/kartu (Settings, Profile, upload Excel,
+halaman bayar, koneksi Accurate, subscribe cart) SENGAJA TIDAK diubah —
+lebar sempit di sana justru benar (baris teks panjang di form 1-kolom
+lebar penuh malah susah dibaca).
+
+**Pencegahan:** Kalau bikin halaman baru — tanya dulu "ini form atau
+listing?" SEBELUM pasang `max-w-Nxl`. Form/detail 1-kolom → boleh
+`max-w-2xl`/`max-w-3xl`. Listing/tabel (apalagi kalau pakai `DataTable`
+atau >4 kolom) → JANGAN dibatasi `max-w`, biarkan penuh seperti
+dashboard. `Table` primitif memang sengaja scroll-safe (`overflow-x-auto`)
+untuk kasus viewport SUNGGUHAN sempit (mobile) — bukan alasan untuk
+sengaja mempersempit container di desktop juga.
+
+---
+
+## 2026-09-05 — `@tanstack/react-table` yang terinstall (v9.1.2) API-nya BEDA TOTAL dari v8, bukan cuma minor bump
+**Konteks:** Fase 19 (Admin Design System — Fondasi) akhirnya benar-benar
+memakai `@tanstack/react-table` (dependency sejak ADR-0004, sebelumnya
+terpasang tapi 0 pemakaian nyata di seluruh `apps/web`). Saat menulis
+`components/ui/data-table.tsx`, kode berpola v8 (`useReactTable({data,
+columns, getCoreRowModel: getCoreRowModel()})`) — pola paling umum di
+training data/dokumentasi lama — **tidak jalan sama sekali** di versi
+yang ter-install.
+
+**Root cause:** Versi ter-install adalah v9.1.2, rilis dengan API
+REACTIVE STORE yang didesain ulang total: `useReactTable` diganti
+`useTable`, opsi `getCoreRowModel()`/`getSortedRowModel()` diganti
+registrasi eksplisit lewat `tableFeatures({ rowSortingFeature,
+sortedRowModel: createSortedRowModel(), ... })`, dan tabel WAJIB
+dibangun dari 1 objek `features` yang SAMA dipakai `createColumnHelper`
+maupun `useTable` (kalau beda referensi, tipe tidak nyambung). Ada
+compat layer `useLegacyTable` (`import ... from
+"@tanstack/react-table/legacy"`) yang meniru API v8, TAPI ditandai
+`@deprecated` oleh library itu sendiri ("compatibility layer for
+migrating from v8... use `useTable` instead").
+
+**Fix:** `data-table.tsx` dibangun native di atas API v9 (`useTable`,
+`tableFeatures`, `rowSortingFeature`+`createSortedRowModel()`,
+`rowPaginationFeature`+`createPaginatedRowModel()`) — BUKAN pakai shim
+deprecated, supaya komponen yang baru dibuat tidak langsung menumpuk
+utang teknis. Ketahuan API sebenarnya BUKAN dari command `npm info`/
+changelog manual, tapi dari file `node_modules/@tanstack/{react-table,
+table-core}/skills/*/SKILL.md` — package ini SENGAJA men-ship dokumentasi
+format "skill" untuk coding agent (metadata `library_version`, contoh
+kode benar/salah eksplisit) karena penulisnya tahu training data akan
+selalu bias ke v8. Skill relevan: `getting-started`, `table-features`,
+`sorting`, `pagination`, `typescript`, `migrate-v8-to-v9`.
+
+**Pencegahan:** Kalau library JS/TS versi barunya jauh lebih baru dari
+yang diingat training data (terutama major version yang baru rilis),
+JANGAN langsung tulis kode dari memori — cek dulu
+`node_modules/<package>/skills/*/SKILL.md` kalau ada (semakin banyak
+library modern 2026 mulai ship ini), atau minimal baca
+`dist/*.d.ts` yang benar-benar ter-install sebelum menulis kode yang
+memakainya. Ini kelas bug yang KELIHATAN benar secara sintaks/analogi
+tapi gagal total di runtime/typecheck begitu dicoba.
+
+---
+
+## 2026-09-05 — Audit doc-vs-code pra-browser-testing Fase 14-18: 1 open redirect + 1 gap transaction ditemukan & diperbaiki
+**Konteks:** Sebelum mulai verifikasi browser sungguhan untuk Fase 14-18,
+diaudit ulang seluruh dokumentasi (architecture-subscription.md,
+architecture-payment.md, architecture-invoice.md, phase doc 14-18) vs kode
+yang benar-benar terimplementasi — bukan cuma dipercaya dari ringkasan
+fase sebelumnya. Mayoritas cocok persis; 2 gap nyata ditemukan & langsung
+diperbaiki (bukan cuma dicatat):
+
+**1. Open redirect di `login-form.tsx`** — `router.push(searchParams.get("redirect")
+|| "/")` menerima nilai `redirect` MENTAH dari query string publik TANPA
+validasi. Sejak Fase 17, param ini dipakai jalur PUBLIK (landing →
+`/login?redirect=/subscribe?plans=...`, § `catalog-cart.tsx`) — link
+phishing `/login?redirect=https://evil.com` bisa arahkan user KELUAR
+aplikasi tepat setelah login sukses. Gap ini sudah ada sejak Fase 01
+(bukan diperkenalkan Fase 14-18), tapi baru jadi risiko nyata setelah
+exposed lewat CTA publik landing. Fix: `getSafeRedirect()` helper —
+TOLAK redirect yang tidak diawali `/` tunggal (blokir URL absolute
+`http(s)://` DAN protocol-relative `//evil.com`, browser anggap ini
+absolute juga), fallback `/`.
+**Pencegahan:** setiap kali query param dipakai sebagai navigation
+target (redirect, next, returnUrl, dst), WAJIB whitelist bentuk (path
+relatif SATU-slash saja), JANGAN percaya string mentah dari URL.
+
+**2. `generateInvoiceNumber()` tidak jalan di dalam transaction pembungkusnya**
+— fungsi ini selalu pakai `db` modul-level, bukan `tx` yang diterima
+`createInvoiceAndOrder(tx, ...)` (satu-satunya caller, dipanggil dari
+DALAM `db.transaction()` di checkout & admin/users "Kirim Invoice").
+`architecture-payment.md` § "Nomor Invoice" mendokumentasikan fungsi ini
+seolah jalan di scope transaction yang sama — kode tidak cocok. Efek
+praktis: kalau transaction pembungkus rollback SETELAH nomor
+dialokasikan, nomor invoice itu "terbakar"/hilang permanen (gap
+penomoran, BUKAN duplikat — `ON CONFLICT DO UPDATE ... RETURNING` tetap
+atomic di koneksi manapun). Fix: `generateInvoiceNumber(tx?, now?)` —
+parameter `tx` opsional (default `db`), `invoice-order.ts` sekarang oper
+`tx`-nya sendiri.
+**Pencegahan:** helper yang SELALU dipanggil dari dalam
+`db.transaction()` (grep caller-nya dulu) harus terima `tx` sebagai
+parameter, bukan diam-diam pakai `db` modul-level — pola `type Tx =
+Parameters<Parameters<typeof db.transaction>[0]>[0]` (sudah dipakai
+`invoice-order.ts`/`manual-subscription.ts`) harus konsisten dipakai di
+SEMUA helper baru yang punya kebutuhan sama.
+
+Juga diperbaiki (cosmetic, bukan bug fungsional): tipe generic
+`boss.work<{...}>` untuk job `SEND_EMAIL` di `workers/index.ts` tidak
+mendeklarasikan field `sensitive` (ada di runtime lewat `boss.send(...,
+{sensitive: true})`, cuma hilang dari anotasi tipe) — ditambahkan supaya
+tipe tidak menyesatkan pembaca berikutnya.
+
+Typecheck 0 error, test suite 151 pass/2 skip/0 fail setelah semua fix
+(tidak berubah dari sebelum audit — perubahan murni internal, tidak ada
+kontrak API yang berubah).
+
+## 2026-09-05 — Security review Fase 18 (Onboarding Admin): 1 High + 2 Medium diperbaiki langsung
+**Konteks:** Subagent `security-auditor` review Fase 18 (`POST
+/admin/users` diperluas terima `planIds`/`markAsPaid`, helper baru
+`lib/invoice-order.ts`/`lib/manual-subscription.ts`, email selamat
+datang otomatis). Ringkasan lengkap →
+`docs/phases/phase-18-onboarding-admin.md` § "Ringkasan Hasil". Fokus
+audit (mutual exclusivity 2 jalur hasil akhir, validasi plan sebelum
+create user, ekstraksi `createInvoiceAndOrder` tidak melemahkan apa pun
+dari versi checkout asli) semua **lolos** — 0 Critical.
+
+**Sudah diperbaiki (High):**
+- `markAsPaid: true` di `POST /admin/users` (`admin/users.route.ts`)
+  MELAKUKAN PERSIS aksi yang sama dengan `POST /admin/subscriptions`
+  (aktivasi subscription langsung, bypass payment) — tapi endpoint LAMA
+  itu sengaja digerbangi permission TERPISAH `subscriptions.manage` (§
+  ADR-0016), sedangkan endpoint baru ini cuma digerbangi `users.manage`.
+  Role custom yang punya `users.manage` TAPI TIDAK `subscriptions.manage`
+  (skenario realistis di RBAC dinamis project ini — mis. "staf
+  onboarding" yang cuma boleh bikin akun, bukan urus billing) bisa
+  memotong boundary otorisasi yang sudah didesain di endpoint lama. Fix:
+  cek eksplisit `userHasPermission(user.id, "subscriptions.manage")`
+  SEBELUM cabang `markAsPaid` dijalankan (dan sebelum user dibuat sama
+  sekali, cegah user "setengah jalan") — 2 test regresi baru (role
+  terbatas ditolak 403, admin biasa tetap jalan normal).
+
+**Sudah diperbaiki (Medium):**
+- HTML injection di email selamat datang — `body.name` (free-text admin
+  input, TANPA batasan karakter) diinterpolasi mentah ke HTML email yang
+  dikirim ke user baru. Admin (termasuk akun admin yang dibajak) bisa
+  sisipkan markup/link palsu ke email "resmi" Facport. Fix: `escapeHtml()`
+  helper baru (`lib/email.ts`), diterapkan ke `body.name` dan nama plan.
+- Password sementara PLAINTEXT bisa ke-log via `lib/email.ts` fallback
+  dev-no-op (`RESEND_API_KEY` kosong → seluruh `html` di-log, pola lama
+  yang SENGAJA begitu supaya dev bisa lihat link verifikasi tanpa
+  Resend asli — tapi email Fase 18 ini beda, isinya SECRET NYATA bukan
+  link tanpa nilai). Fix: `sendEmail()` dapat parameter `sensitive?:
+  boolean` — kalau `true`, fallback dev-no-op TIDAK ikutkan `html` di
+  log (cuma `to`/`subject`). Email verifikasi (nilai kredensial nol)
+  TETAP pakai jalur lama (tidak di-set `sensitive`), supaya kegunaan
+  debug link verifikasi di dev tidak hilang.
+
+**Ditunda ke technical debt (dicatat sesuai SOP):**
+- Permission `subscriptions.manage`/`users.manage` di data role
+  PRODUCTION perlu dicek manual — apakah memang ada role yang split
+  seperti skenario di atas (kalau tidak ada, temuan High di atas murni
+  defense-in-depth preventif, bukan celah aktif sekarang) — pola sama
+  technical debt Fase 12/15/16.
+- Apakah `RESEND_API_KEY` SELALU terisi di production sekarang (kalau
+  ya, fix logging password murni preventif config-drift masa depan).
+
+---
+
+## 2026-09-04 — Security review Fase 16 (Payment Manual): 1 High + 3 Medium diperbaiki langsung, 2 Low diterima/dicatat
+**Konteks:** Subagent `security-auditor` review Fase 16 (checkout cart,
+skema `orders` payment manual, QRIS EMV builder, upload bukti, konfirmasi
+admin dengan row-lock). Ringkasan lengkap →
+`docs/phases/phase-16-payment-manual.md` § "Ringkasan Hasil". Fokus audit
+(row-lock confirm/reject, ownership order, validasi account ref, privasi
+bucket bukti, alur reject→resubmit, matematika aktivasi multi-item) semua
+**lolos** kecuali 1 High — 0 Critical.
+
+**Sudah diperbaiki (High):**
+- `POST /subscriptions/checkout` (`subscriptions.route.ts`) — guard "cegah
+  beli modul sama 2x" SEBELUMNYA cuma cek subscription AKTIF, TIDAK
+  melihat invoice/order lain yang masih `pending`/`submitted` untuk modul
+  yang sama (subscription baru tercipta SETELAH admin confirm, jadi 2
+  checkout modul sama sebelum bayar SAMA SEKALI lolos guard lama). Fix:
+  seluruh alur checkout dibungkus `db.transaction()` + row lock pada
+  baris `user` (serialisasi checkout SAMA user, bukan lintas user), guard
+  diperluas cek invoice/order non-terminal juga — test baru
+  (`subscriptions.route.test.ts`) reproduksi skenario "2 tab checkout
+  modul sama sebelum bayar".
+
+**Sudah diperbaiki (Medium):**
+- `buildDynamicQris()` (`qris-emv.ts`) — payload EMV admin TANPA Tag 53
+  MAUPUN Tag 54 (malformed/salah salin) sebelumnya lolos TANPA nominal
+  ter-inject sama sekali, QR tetap ditandai "dinamis" tapi nominal tidak
+  pernah dikunci — customer diam-diam disuruh ketik manual TANPA tahu
+  itu (kode unik jadi tidak ikut ke-transfer). Fix: throw eksplisit kalau
+  `hasTag54` masih `false` setelah parsing (caller sudah punya try/catch →
+  502).
+- `company.bankAccounts`/`company.qrisAccounts` disimpan lewat `PUT
+  /settings` generik TANPA validasi bentuk — value cacat bisa lolos
+  disimpan admin lalu baru meledak (500) saat CUSTOMER coba bayar. Fix:
+  validasi runtime eksplisit di `settings.route.ts` (pola sama
+  `retentionItem`), termasuk panggil `isValidQrisPayload()` yang
+  sebelumnya didefinisikan tapi TIDAK PERNAH dipanggil di mana pun — plus
+  defense-in-depth `Array.isArray` check di `orders.route.ts`
+  `getPaymentSettings()`.
+- `GET /orders/:id` (`orders.route.ts`) — sebelumnya spread SELURUH row
+  `orders`/`invoices` ke customer, termasuk `proofUrl` (MinIO object key
+  privat) dan `confirmedBy`/`rejectedBy` (user ID admin) — melanggar
+  spirit ADR-0022 ("proofUrl HANYA boleh ditukar presigned URL server-
+  side admin-only"). Fix: response di-`pick` eksplisit ke field yang
+  memang dibutuhkan customer saja.
+
+**Sudah diperbaiki (Low):**
+- Frontend `pay/page.tsx` render kosong tanpa pesan kalau admin hapus
+  rekening bank yang sedang direferensikan order in-flight (jalur QRIS
+  sudah menangani ini via `QRIS_ACCOUNT_NOT_FOUND`, jalur bank transfer
+  belum) — ditambah fallback pesan jelas.
+
+**Ditunda ke technical debt (dicatat sesuai SOP):**
+- Object MinIO lama TIDAK dihapus saat customer upload ulang bukti
+  setelah ditolak (numpuk file "yatim" di bucket privat) — bukan celah
+  keamanan (bucket tetap privat), murni storage housekeeping, ditunda
+  sampai jadi masalah cost nyata.
+- Belum ada job yang mentransisikan order/invoice ke status `"expired"`
+  otomatis setelah lewat `dueDate` — kolom & status sudah disiapkan di
+  skema, implementasinya sengaja ditunda (di luar scope "verifikasi
+  konsep manual payment jalan end-to-end").
+- Permission `orders.manage` di data role PRODUCTION perlu dicek manual
+  supaya cuma di-assign ke admin/super-admin (pola sama technical debt
+  Fase 12/15).
+
+**Catatan tambahan (bug ditemukan pas nulis test, BUKAN temuan
+security-auditor):** helper test `seedPaymentSettings()`
+(`orders.route.test.ts`) sempat pakai `onConflictDoUpdate({set: {value:
+settings.value}})` — self-reference ke kolom LAMA (no-op saat conflict),
+BUG YANG SAMA PERSIS pernah ketemu di script manual test Fase 15. Efeknya
+di sini: test file lain (`settings.route.test.ts`) yang JUGA menulis key
+global `company.bankAccounts`/`company.qrisAccounts` bisa "menang" duluan
+tergantung urutan eksekusi, bikin test lain gagal intermiten
+(`ACCOUNT_NOT_FOUND` padahal seed harusnya jalan). Fix: set value LITERAL
+per-key (2 pemanggilan terpisah, bukan 1 `.values([...])` array).
+**Pencegahan:** `onConflictDoUpdate` HARUS selalu set value dari variabel
+LOKAL/literal, JANGAN PERNAH `column: table.column` (self-reference) —
+pola ini sudah 2x ketemu di sesi berbeda, jadikan checklist review kalau
+lihat `onConflictDoUpdate` baru.
+
+---
+
+## 2026-09-04 — Security review Fase 15 (Invoice + PDF): 0 Critical/High/Medium, 3 Low (diterima sebagai technical debt)
+**Konteks:** Subagent `security-auditor` review Fase 15 (skema
+`invoices`/`invoiceItems`, PDF generator `@react-pdf/renderer`, endpoint
+`GET /me/invoices`, `GET /invoices/:id/pdf`, `GET /admin/invoices`).
+Ringkasan lengkap → `docs/phases/phase-15-invoice-profesional.md` §
+"Ringkasan Hasil". Fokus audit (ownership check PDF endpoint, isolasi
+data lintas-user, remote image fetch di PDF, header injection nomor
+invoice, konsistensi permission key) semua **lolos** — 0 Critical/High/Medium.
+
+**Sudah diperbaiki (kualitas kode, bukan security, tapi ditemukan pas
+review yang sama):**
+- Logic agregasi `invoiceItems` per invoice ter-duplikasi identik antara
+  `invoices.route.ts` dan `admin/invoices.route.ts` — diekstrak ke
+  `apps/api/src/lib/invoice-helpers.ts` (`attachInvoiceItems`), dipakai
+  kedua route.
+
+**Diterima sebagai technical debt (Low, TIDAK diperbaiki — alasan
+eksplisit di tiap poin):**
+- **Timing side-channel** di `GET /invoices/:id/pdf`
+  (`invoices.route.ts`): query `userHasPermission()` (3-table JOIN) cuma
+  jalan di cabang `invoice.userId !== user.id`, bikin response time beda
+  terukur antara "invoice tidak ada" vs "invoice ada tapi bukan milik &
+  bukan admin" — keduanya sama-sama 404, tapi timing beda bisa jadi oracle
+  keberadaan invoice ID. **Diterima**: `params.id` WAJIB `format:"uuid"`
+  (128-bit entropy) — brute-force ID praktis mustahil terlepas dari
+  oracle timing ini, fix (selalu jalankan query permission tanpa
+  short-circuit) menambah 1 query per request tanpa manfaat praktis nyata.
+- **Field `company.taxId`/`phone`/`email`/`bankAccount` tanpa `maxLength`**
+  di skema key-value `settings` (`value: t.Unknown()`, pola lama sejak
+  Fase 00) — value sangat panjang bisa overflow layout footer PDF.
+  **Diterima**: endpoint sudah admin-only (`permission: "settings.update"`),
+  cuma memperluas blast-radius trade-off desain yang sudah diterima
+  sebelumnya (skema key-value fleksibel), bukan celah baru untuk user
+  biasa.
+- **`<a href target="_blank">` unduh PDF invoice** (`billing/page.tsx`) —
+  di production, link ini navigasi top-level LINTAS SUBDOMAIN
+  (`app.<domain>` → `api.<domain>`). **Belum diverifikasi manual di
+  production** apakah cookie sesi Better Auth (`sameSite:"lax"` +
+  `crossSubDomainCookies`, § `lib/auth.ts`) benar-benar terkirim di
+  navigasi ini — SECARA TEORI harus jalan (`SameSite=Lax` mengizinkan
+  cookie di navigasi top-level GET lintas-subdomain SELAMA subdomain
+  masih 1 "site"/eTLD+1 yang sama, yang mana `crossSubDomainCookies` di
+  production memang men-scope cookie ke domain induk bersama) — TAPI
+  ini murni penalaran dari kode, BUKAN pengamatan langsung. **Cek manual
+  di staging/production sebelum menganggap tombol "Unduh PDF" pasti
+  jalan** — kalau ternyata gagal (401), ini bug FUNGSIONAL bukan
+  security, root cause paling mungkin `SameSite` provider/browser lebih
+  ketat dari yang diasumsikan.
+
+---
+
+## 2026-09-04 — `t.Union(array.map(t.Literal))` merusak inferensi tipe Eden Treaty (jadi `File | File[]`)
+**Masalah:** `admin/plans.route.ts` (Fase 14) build union modul dari
+`SUB_MODULE_KEYS.map((k) => t.Literal(k))` (`SUB_MODULE_KEYS` array
+`as const` 5 elemen). Schema TypeBox-nya SENDIRI valid (`typeof
+planBody.static` di apps/api resolve benar ke union literal) — tapi
+`bun run typecheck` di **apps/web** gagal dengan error yang sangat
+menyesatkan: field `modules` diklaim bertipe `File | File[]`, bukan union
+string literal. Awalnya dikira bug tidak berhubungan (device upload?),
+butuh isolasi manual (`Parameters<typeof api.admin.plans.post>[0]`) untuk
+ketemu bahwa masalahnya justru di route API, bukan di halaman React yang
+error-nya muncul.
+
+**Root cause:** `Array.prototype.map()` SELALU balikin tipe `U[]` (array
+biasa), BUKAN tuple — walau sumbernya array `as const`. `t.Union<T extends
+TSchema[]>` TypeBox butuh T berupa TUPLE literal supaya bisa resolve tipe
+tiap elemen individual; diberi array generik (bukan tuple), sesuatu di
+pipeline type-generation Eden Treaty (`UnwrapRoute`/`MergeSchema`) salah
+resolve ke fallback yang kebetulan sama seperti representasi internal File
+upload — kemunculan `File` di error TIDAK ada hubungan literal dengan
+upload sama sekali, murni fallback tipe yang salah.
+
+**Fix:** Tulis union sebagai TUPLE literal eksplisit — daftar
+`t.Literal(...)` satu-satu di dalam `t.Union([...])`, JANGAN
+di-generate dari `.map()` atas array manapun (termasuk yang `as const`).
+
+**Pencegahan:** Kalau butuh union literal dari daftar string yang sudah
+ada sebagai array/const di proyek ini, JANGAN pakai
+`arr.map(t.Literal)` untuk isi `t.Union()` — tulis literal manual. Kalau
+`bun run typecheck` di **apps/web** gagal dengan tipe body Eden Treaty
+yang aneh (terutama nyebut `File`) padahal route API-nya kelihatan benar,
+curigai pola `.map()` di schema TypeBox route yang bersangkutan duluan,
+sebelum curiga ke kode React.
+
+---
+
+## 2026-09-04 — Security review Fase 14 (Fondasi Langganan): 1 Medium + 4 Low, semua diperbaiki langsung
+**Konteks:** Subagent `security-auditor` review Fase 14 (restrukturisasi
+gating per sub-modul + koneksi Accurate reusable lintas subscription, 25
+file dibaca). Ringkasan lengkap → `docs/phases/phase-14-fondasi-langganan.md`
+§ "Ringkasan Hasil". Fokus audit (ownership `/accurate/reuse`, isolasi
+data lintas-user, TOCTOU `moduleAccess`, token handling, validasi
+`plans.route.ts`) semua **lolos** — 0 Critical/High.
+
+**Sudah diperbaiki (Medium):**
+- `POST /accurate/databases/select` (`accurate.route.ts`) bisa dipanggil
+  ulang untuk connection yang `accurateDbId`-nya SUDAH terisi, diam-diam
+  mengganti Data Usaha — karena Fase 14 bikin 1 connection bisa dipakai
+  BARENG beberapa subscription, ini ikut memindahkan tujuan import
+  subscription LAIN yang share koneksi itu tanpa user sadar. Fix: tolak
+  400 `DATABASE_ALREADY_SELECTED` kalau `accurateDbId` sudah ada — ganti
+  Data Usaha WAJIB lewat koneksi baru (connect ulang), bukan endpoint ini.
+
+**Sudah diperbaiki (Low):**
+- `getOwnedConnection()` tidak filter `status:"active"` — connection
+  `expired`/`revoked` tetap bisa di-`reuse`/dipilih Data Usaha-nya (assign
+  sukses di DB, baru gagal belakangan pas worker pakai token invalid).
+  Fix: tambah filter status di query.
+- `getActiveSubscriptionsWithPlans()` tidak `ORDER BY` — kalau user
+  (secara tidak seharusnya, tidak dijaga unique constraint) punya 2
+  subscription aktif utk modul yang sama, `.find()` di `moduleAccess`
+  macro bisa pilih baris yang tidak deterministik antar request. Fix:
+  `orderBy(desc(subscriptions.createdAt))`, konsisten ambil yang terbaru.
+- `alias` di `POST /accurate/databases/select` tanpa `maxLength` (kolom DB
+  varchar(255)) — alias kepanjangan bikin Postgres error mentah, ketangkep
+  jadi 502 `ACCURATE_REQUEST_FAILED` yang menyesatkan (nyalahin Accurate
+  API padahal masalah validasi lokal). Fix: `t.String({maxLength:255})`.
+- Komentar stale di `sales-invoice-import.route.ts` masih nyebut
+  `moduleAccess: "penjualan"` (taksonomi lama sebelum Fase 14) padahal
+  kode sudah benar pakai `"sales_invoice"` — diupdate.
+
+**Ditunda ke technical debt (dicatat sesuai SOP, § Known Limitations
+phase-14 doc):**
+- Race condition sangat sempit di `POST /accurate/connect` (2 request
+  paralel subscriptionId sama) bisa nyisain 1 `accurate_connections` row
+  "yatim" — bukan celah keamanan, butuh unique constraint/row lock kalau
+  data trafik production nanti nunjukkin ini nyata terjadi.
+- Invariant "1 modul aktif = 1 subscription" belum dijaga unique
+  constraint DB — gate sudah konsisten (fix di atas), tapi endpoint
+  checkout Fase 16-17 WAJIB cegah user beli modul yang sama 2x dari awal.
+
+**Catatan tambahan (data-integrity, ditemukan saat verifikasi migrasi,
+BUKAN temuan security-auditor):** backfill `drizzle/0009_*.sql` (Fase 14)
+cuma menyasar `plans.modules` array SATU elemen persis
+(`["pembelian"]`/`["penjualan"]`) — 1 plan test lama (inactive, 0
+subscription referensi, dari era Fase 00/10) dengan `modules:
+["pembelian","penjualan"]` (2 elemen gabungan) lolos, ketahuan pas
+verifikasi manual pasca-migration (bukan diasumsikan beres). Dihapus
+manual setelah dikonfirmasi 0 subscription referensi. **Pencegahan:**
+kalau bikin backfill migration untuk field array/jsonb, WAJIB cek juga
+kombinasi/variasi nilai historis yang mungkin ada (bukan cuma bentuk
+"bersih" 1 elemen) — query verifikasi count SETELAH migration diterapkan,
+jangan cuma percaya migration "kelihatan benar" dari SQL-nya saja.
+
+---
+
+## 2026-09-04 — Security review Fase 13 (Sales Invoice): 1 Medium diperbaiki — query "Batal Import" belum di-scope per module
+**Konteks:** Subagent `security-auditor` review Fase 13 (Sales Invoice,
+mirror 1:1 Purchase Invoice). Ringkasan lengkap →
+`docs/phases/phase-13-sales-invoice.md` § "Ringkasan Hasil".
+
+**Sudah diperbaiki (Medium):**
+- Query `allRowsForInvoice` di job `CANCEL_IMPORT` (`workers/index.ts`,
+  Fase 09/ADR-0013) cek "apakah faktur Accurate ini 100% milik batch yang
+  mau di-cancel" HANYA filter by `subscriptionId` + `accurateTransactionId`
+  + `status`, TANPA filter `module`. Begitu ada 2 modul (`purchase_invoice`
+  dan `sales_invoice`, sejak Fase 13) yang sama-sama isi
+  `accurateTransactionId` dengan ID internal Accurate, dan Accurate kasih
+  ID per-jenis-transaksi secara TERPISAH (PI dan SI masing-masing punya
+  ruang ID sendiri), teorinya bisa collision (PI #42 dan SI #42 sama-sama
+  ada). Query ini akan salah anggap keduanya "faktur yang sama". Dampak
+  SELALU ke arah aman (over-blocking — batch yang seharusnya boleh
+  di-cancel malah diblokir), BUKAN ke arah hapus faktur yang salah — tapi
+  tetap bug fungsional nyata. Kode SEJENIS untuk retry cerdas
+  (`findExistingAccurateInvoiceId`/`findExistingAccurateSalesInvoiceId`)
+  SUDAH benar di-scope per module dari awal — celah ini murni ketinggalan
+  di 1 tempat saat mirroring. Fix: tambah `eq(importBatches.module,
+  batch.module)` ke query itu.
+
+**Pencegahan:** kalau nanti modul transaksi baru lagi (Purchase Payment,
+Sales/Customer Receipt, Jurnal Umum) juga isi `accurateTransactionId` di
+`import_batch_rows`, PASTIKAN semua query yang JOIN `importBatchRows` ↔
+`importBatches` dan match by `accurateTransactionId` LINTAS-BATCH ikut
+di-filter `module` juga — bukan cuma yang baru ditulis Fase itu, tapi
+JUGA cek ulang kode LAMA yang mungkin implisit mengasumsikan "cuma ada 1
+modul yang pernah pakai kolom ini" (assumption yang jadi tidak valid lagi
+begitu modul kedua ditambahkan).
+
+---
+
 ## 2026-09-04 — Deploy production nyata Fase 12: dokumen arsitektur asumsi Caddy TIDAK cocok realita (nginx shared VPS)
 **Masalah:** Saat pandu user deploy manual fitur logo/favicon (butuh
 subdomain baru `media.ane.web.id` + akses publik ke MinIO), instruksi awal
@@ -1224,6 +2134,34 @@ injection** — ini fitur asli Next.js 16 (`next dev` otomatis nambah blok
 persis saat `bun run dev` pertama kali dijalankan di `apps/web` sesi ini,
 bukan disisipkan dari sumber luar. Dicatat di sini supaya sesi berikutnya
 tidak kaget/panik kalau lihat blok yang sama lagi setelah `next dev` jalan.
+
+---
+
+## 2026-09-05 — `usePermissions()` fetch `/me` sekali per mount, tidak refresh kalau role berubah live
+**Masalah (Low, dari security-auditor Fase 26):** `PermissionsProvider`
+(`apps/web/lib/use-permissions.tsx`) fetch `GET /me` SEKALI saat mount —
+kalau admin lain mengubah role/permission user yang sedang login di tab
+lain, `<Can>`/nav filter di tab yang masih terbuka tidak ikut update
+sampai reload/login ulang. Backend tetap jadi penjaga sesungguhnya (403
+kalau tetap diklik), jadi ini bukan celah keamanan, cuma UX stale-hint.
+**Keputusan:** DITERIMA sebagai trade-off desain (fetch sekali per sesi,
+bukan polling) — biaya refetch berkala/on-focus dianggap tidak sepadan
+untuk skenario yang jarang terjadi (role admin yang sedang login diubah
+paksa admin lain, real-time, di sesi yang sama).
+
+**Masalah kedua (Low, sama laporan):** Nav item "Dashboard" tidak
+permission-gated walau kontennya (`admin/(protected)/page.tsx`) fetch 2
+data yang masing-masing digerbangi permission berbeda (`users.manage`
+untuk stats, `audit.view` untuk audit log terbaru). Admin tanpa kedua
+permission itu melihat dashboard dengan angka `"-"` semua — bukan error,
+cuma placeholder kosong yang bisa membingungkan.
+**Keputusan:** DITERIMA — kosmetik, bukan celah keamanan (fetch
+server-side, backend tetap menolak diam-diam via `if (!res.ok) return
+null`). Item "Dashboard" sengaja TIDAK diberi `permission` di nav karena
+halaman itu sendiri tetap valid diakses (render partial), beda dari
+kasus split-permission `subscriptions.manage`/`invoices.manage` yang
+memang perlu disembunyikan total (fix di UI Fase 26 untuk
+`ManageSubscriptionDialog` dan `searchUsers` di `CreateInvoiceDialog`).
 
 ---
 

@@ -62,6 +62,22 @@ jobs:
         with:
           bun-version: latest
 
+      # § pola sama ci.yml — test upload bukti transfer butuh MinIO nyata,
+      # docker run manual (bukan services:) karena image resmi minio/minio
+      # wajib command "server /data" yang tidak bisa diset lewat services:.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          echo "::error::MinIO tidak siap setelah 30 detik" && exit 1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

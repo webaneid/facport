@@ -17,7 +17,11 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   if (!res.ok) redirect("/login");
 
   const me = (await res.json()) as { id: string; email: string; name: string; roles: string[] };
-  if (!me.roles.includes("admin")) redirect("/login");
+  // § Fase 29, ADR-0027 — "staff" (label UI "Admin") sekarang JUGA boleh
+  // akses surface ini, beda dari sebelumnya yang cuma "admin" (Super
+  // Admin). Perbedaan izin antar keduanya dicek per-endpoint di backend
+  // (`users.manage` vs `users.view`), BUKAN di sini.
+  if (!me.roles.includes("admin") && !me.roles.includes("staff")) redirect("/login");
 
   const settings = await getPublicSettings();
 

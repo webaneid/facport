@@ -7,6 +7,7 @@ import { minioClient, PUBLIC_MEDIA_BUCKET, ensurePublicBucket } from "../../lib/
 import { generateFaviconSizes } from "../../services/image-processing.service";
 import { permissionPlugin } from "../../lib/permission";
 import { env } from "../../lib/env";
+import { decodeQrisEmvPayload } from "../../lib/qris-decode";
 
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"] as const;
 const MAX_SIZE_MB = 5;
@@ -138,6 +139,52 @@ export const brandingRoute = new Elysia({ prefix: "/admin/branding" })
       });
 
       return { urls };
+    },
+    {
+      permission: "settings.update",
+      body: t.Object({
+        file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }),
+      }),
+    },
+  )
+  // § Fase 16, ADR-0022 — upload foto QRIS statis (dari bank/penyedia
+  // QRIS admin). BEDA dari logo/favicon: TIDAK langsung tulis ke 1 key
+  // settings tetap — cuma balikin `url`, admin yang gabungkan ke array
+  // `company.qrisAccounts` lewat `PUT /settings` generik (1 company
+  // boleh punya banyak QRIS, bukan 1 slot tunggal seperti logo).
+  .post(
+    "/qris-image",
+    async ({ body, user, set }) => {
+      const buffer = Buffer.from(await body.file.arrayBuffer());
+
+      try {
+        await sharp(buffer).metadata();
+      } catch {
+        set.status = 400;
+        return { code: "INVALID_IMAGE_FILE" };
+      }
+
+      await ensurePublicBucket();
+
+      const id = randomUUID();
+      const key = `branding/qris-${id}.webp`;
+      const [webpBuffer, emvPayload] = await Promise.all([
+        sharp(buffer).webp({ quality: 90 }).toBuffer(),
+        decodeQrisEmvPayload(buffer),
+      ]);
+      await minioClient.putObject(PUBLIC_MEDIA_BUCKET, key, webpBuffer);
+      const url = publicUrl(key);
+
+      await db.insert(media).values({
+        id,
+        filename: body.file.name,
+        storageKey: key,
+        mimeType: "image/webp",
+        sizeBytes: webpBuffer.length,
+        uploadedBy: user.id,
+      });
+
+      return { url, emvPayload };
     },
     {
       permission: "settings.update",

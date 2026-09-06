@@ -7,6 +7,10 @@ export type PublicSettings = {
   "company.name"?: string;
   "company.logo"?: string;
   "company.favicon"?: Record<string, string>;
+  // § Fase 43 (audit timezone 2026-09-06) — dipakai `CompanyTimezoneProvider`
+  // di root layout, supaya format tanggal konsisten dengan setting admin
+  // di SEMUA surface (termasuk halaman publik tanpa login).
+  "company.timezone"?: string;
 };
 
 export async function getPublicSettings(): Promise<PublicSettings> {

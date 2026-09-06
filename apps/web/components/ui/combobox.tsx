@@ -28,7 +28,7 @@ export function Combobox({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="flex w-full items-center justify-between rounded-md border border-neutral-300 px-3 py-2 text-sm">
+        <button className="flex w-full items-center justify-between rounded-md border border-border px-3 py-2 text-sm">
           {selected?.label ?? placeholder}
           <ChevronsUpDown className="h-4 w-4 opacity-50" />
         </button>

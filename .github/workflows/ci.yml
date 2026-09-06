@@ -54,6 +54,27 @@ jobs:
         with:
           bun-version: latest
 
+      # § test upload bukti transfer (orders.route.test.ts dst) beneran
+      # connect ke MinIO nyata — sebelumnya tidak ada MinIO SAMA SEKALI di
+      # CI (cuma env var MINIO_* tanpa server beneran), jadi selalu gagal
+      # connect (500). Dijalankan via `docker run` manual (bukan `services:`)
+      # karena GitHub Actions services tidak bisa override command
+      # container, sedangkan image resmi minio/minio WAJIB command
+      # "server /data" supaya bisa start. Bucket dibuat otomatis oleh app
+      # sendiri (ensureBucket dst, lib/minio.ts) saat request pertama.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio \
+            -p 9000:9000 \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            minio/minio server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && exit 0
+            sleep 1
+          done
+          echo "::error::MinIO tidak siap setelah 30 detik" && exit 1
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 

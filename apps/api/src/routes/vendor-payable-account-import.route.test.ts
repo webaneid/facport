@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows } from "../db/schema";
 import { vendorPayableAccountImportRoute } from "./vendor-payable-account-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 
@@ -45,7 +45,7 @@ async function createProvisionedUser(email: string) {
 
   const [plan] = await db
     .insert(plans)
-    .values({ name: `Vendor Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["pembelian"] })
+    .values({ name: `Vendor Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["vendor_payable_account"] })
     .returning();
   const [subscription] = await db
     .insert(subscriptions)
@@ -203,9 +203,302 @@ describe("GET /vendor/payable-account/import (list)", () => {
       new Request("http://localhost/vendor/payable-account/import?limit=2", { headers: { cookie: owner.cookie } }),
     );
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { batches: { fileName: string }[] };
+    const body = (await res.json()) as { batches: { fileName: string }[]; total: number };
     expect(body.batches).toHaveLength(2);
     expect(body.batches.map((b) => b.fileName)).toEqual(["batch-3.xlsx", "batch-2.xlsx"]);
     expect(body.batches.some((b) => b.fileName === "punya-orang-lain.xlsx")).toBe(false);
+    expect(body.total).toBe(3);
+  });
+
+  test("?offset melompati N batch terbaru, `total` tetap hitungan penuh (bukan cuma halaman ini) — pola halaman Riwayat", async () => {
+    const owner = await createProvisionedUser(`vpa-offset-${runId}@test.local`);
+    for (const fileName of ["off-1.xlsx", "off-2.xlsx", "off-3.xlsx"]) {
+      await db.insert(importBatches).values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName,
+        totalRows: 1,
+        status: "completed",
+      });
+    }
+
+    const res = await testApp.handle(
+      new Request("http://localhost/vendor/payable-account/import?limit=2&offset=1", { headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { batches: { fileName: string }[]; total: number };
+    expect(body.batches.map((b) => b.fileName)).toEqual(["off-2.xlsx", "off-1.xlsx"]);
+    expect(body.total).toBe(3);
+  });
+});
+
+describe("PUT /vendor/payable-account/import/:batchId/rows/:rowId — Edit Baris", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/vendor/payable-account/import/00000000-0000-0000-0000-000000000000/rows/00000000-0000-0000-0000-000000000000", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: {} }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("404 kalau batch milik user LAIN", async () => {
+    const owner = await createProvisionedUser(`vpa-editrow-owner-${runId}@test.local`);
+    const attacker = await createProvisionedUser(`vpa-editrow-attacker-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName: "test.xlsx",
+        totalRows: 1,
+        status: "completed_with_errors",
+        columnMapping: { "Vendor No": "vendorNo", "Akun Hutang": "payableAccountNo" },
+      })
+      .returning();
+    const [row] = await db
+      .insert(importBatchRows)
+      .values({ batchId: batch!.id, rowNumber: 1, rawData: { "Vendor No": "" }, status: "failed" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows/${row!.id}`, {
+        method: "PUT",
+        headers: { cookie: attacker.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: { "Vendor No": "V-0001", "Akun Hutang": "2-10100" } }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_FOUND");
+  });
+
+  test("409 ROW_NOT_EDITABLE kalau baris statusnya bukan failed", async () => {
+    const owner = await createProvisionedUser(`vpa-editrow-noteditable-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName: "test.xlsx",
+        totalRows: 1,
+        status: "completed",
+        columnMapping: { "Vendor No": "vendorNo", "Akun Hutang": "payableAccountNo" },
+      })
+      .returning();
+    const [row] = await db
+      .insert(importBatchRows)
+      .values({ batchId: batch!.id, rowNumber: 1, rawData: { "Vendor No": "V-0001" }, status: "success" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows/${row!.id}`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: { "Vendor No": "V-0002", "Akun Hutang": "2-10100" } }),
+      }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("ROW_NOT_EDITABLE");
+  });
+
+  test("400 MISSING_REQUIRED_VALUES kalau field wajib dikosongkan, sukses (status pending) kalau lengkap", async () => {
+    const owner = await createProvisionedUser(`vpa-editrow-save-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName: "test.xlsx",
+        totalRows: 1,
+        status: "completed_with_errors",
+        columnMapping: { "Vendor No": "vendorNo", "Akun Hutang": "payableAccountNo" },
+      })
+      .returning();
+    const [row] = await db
+      .insert(importBatchRows)
+      .values({ batchId: batch!.id, rowNumber: 1, rawData: { "Vendor No": "V-0001" }, status: "failed", errorMessage: "Vendor tidak ditemukan" })
+      .returning();
+
+    const missingRes = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows/${row!.id}`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: { "Vendor No": "V-0001", "Akun Hutang": "" } }),
+      }),
+    );
+    expect(missingRes.status).toBe(400);
+    const missingBody = (await missingRes.json()) as { code: string; fields: string[] };
+    expect(missingBody.code).toBe("MISSING_REQUIRED_VALUES");
+    expect(missingBody.fields).toContain("payableAccountNo");
+
+    const okRes = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows/${row!.id}`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: { "Vendor No": "V-0001", "Akun Hutang": "2-10100" } }),
+      }),
+    );
+    expect(okRes.status).toBe(200);
+    expect((await okRes.json()) as { rowId: string; status: string }).toEqual({ rowId: row!.id, status: "pending" });
+
+    const [updated] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, row!.id));
+    expect(updated!.status).toBe("pending");
+    expect(updated!.errorMessage).toBeNull();
+  });
+});
+
+// § Fase 51 — versi BULK, dipakai grid edit ala Excel.
+describe("PUT /vendor/payable-account/import/:batchId/rows — Edit Bulk (Grid)", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/vendor/payable-account/import/00000000-0000-0000-0000-000000000000/rows", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: [] }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("404 kalau batch milik user LAIN", async () => {
+    const owner = await createProvisionedUser(`vpa-bulkedit-owner-${runId}@test.local`);
+    const attacker = await createProvisionedUser(`vpa-bulkedit-attacker-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName: "test.xlsx",
+        totalRows: 1,
+        status: "completed_with_errors",
+        columnMapping: { "Vendor No": "vendorNo", "Akun Hutang": "payableAccountNo" },
+      })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows`, {
+        method: "PUT",
+        headers: { cookie: attacker.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rows: [] }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_FOUND");
+  });
+
+  test("campuran: baris valid tersimpan (pending), baris field wajib kosong & baris status bukan failed dicatat di errors, bukan gagalkan seluruh request", async () => {
+    const owner = await createProvisionedUser(`vpa-bulkedit-mixed-${runId}@test.local`);
+    const columnMapping = { "Vendor No": "vendorNo", "Akun Hutang": "payableAccountNo" };
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: owner.userId,
+        subscriptionId: owner.subscriptionId,
+        module: "vendor_payable_account",
+        fileName: "test.xlsx",
+        totalRows: 3,
+        status: "completed_with_errors",
+        columnMapping,
+      })
+      .returning();
+    const [validRow, missingRow, notFailedRow] = await db
+      .insert(importBatchRows)
+      .values([
+        { batchId: batch!.id, rowNumber: 1, rawData: { "Vendor No": "V-0001" }, status: "failed", errorMessage: "Vendor tidak ditemukan" },
+        { batchId: batch!.id, rowNumber: 2, rawData: { "Vendor No": "V-0002" }, status: "failed", errorMessage: "Vendor tidak ditemukan" },
+        { batchId: batch!.id, rowNumber: 3, rawData: { "Vendor No": "V-0003" }, status: "success" },
+      ])
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}/rows`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: [
+            { id: validRow!.id, rawData: { "Vendor No": "V-0001", "Akun Hutang": "2-10100" } },
+            { id: missingRow!.id, rawData: { "Vendor No": "V-0002", "Akun Hutang": "" } },
+            { id: notFailedRow!.id, rawData: { "Vendor No": "V-0003" } },
+          ],
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updated: string[]; errors: { rowId: string; rowNumber: number; fields: string[] }[] };
+    expect(body.updated).toEqual([validRow!.id]);
+    expect(body.errors).toHaveLength(2);
+    expect(body.errors.find((e) => e.rowId === missingRow!.id)?.fields).toContain("payableAccountNo");
+    expect(body.errors.find((e) => e.rowId === notFailedRow!.id)?.fields).toContain("ROW_NOT_EDITABLE");
+
+    const [updatedValid] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, validRow!.id));
+    expect(updatedValid!.status).toBe("pending");
+    const [stillMissing] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, missingRow!.id));
+    expect(stillMissing!.status).toBe("failed");
+    const [stillSuccess] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, notFailedRow!.id));
+    expect(stillSuccess!.status).toBe("success");
+  });
+});
+
+describe("DELETE /vendor/payable-account/import/:batchId — hapus riwayat lokal", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/vendor/payable-account/import/00000000-0000-0000-0000-000000000000", { method: "DELETE" }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("404 kalau batch milik user LAIN", async () => {
+    const owner = await createProvisionedUser(`vpa-delete-owner-${runId}@test.local`);
+    const attacker = await createProvisionedUser(`vpa-delete-attacker-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "vendor_payable_account", fileName: "test.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}`, { method: "DELETE", headers: { cookie: attacker.cookie } }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("409 BATCH_BUSY kalau status processing", async () => {
+    const owner = await createProvisionedUser(`vpa-delete-busy-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "vendor_payable_account", fileName: "test.xlsx", totalRows: 1, status: "processing" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}`, { method: "DELETE", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_BUSY");
+  });
+
+  test("berhasil hapus batch + baris (cascade), tercatat di audit log", async () => {
+    const owner = await createProvisionedUser(`vpa-delete-ok-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "vendor_payable_account", fileName: "hapus-saya.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "success", accurateTransactionId: "123" });
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/vendor/payable-account/import/${batch!.id}`, { method: "DELETE", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; deleted: boolean }).toEqual({ batchId: batch!.id, deleted: true });
+
+    const [remaining] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(remaining).toBeUndefined();
+    const remainingRows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch!.id));
+    expect(remainingRows).toHaveLength(0);
   });
 });
