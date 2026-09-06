@@ -17,9 +17,9 @@ export function Command({
 
 export function CommandInput(props: React.ComponentProps<typeof CommandPrimitive.Input>) {
   return (
-    <div className="flex items-center border-b border-neutral-200 px-3">
+    <div className="flex items-center border-b border-border px-3">
       <CommandPrimitive.Input
-        className="flex h-9 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-neutral-400"
+        className="flex h-9 w-full rounded-md bg-transparent py-3 text-sm outline-none placeholder:text-muted-foreground"
         {...props}
       />
     </div>
@@ -31,7 +31,7 @@ export function CommandList(props: React.ComponentProps<typeof CommandPrimitive.
 }
 
 export function CommandEmpty(props: React.ComponentProps<typeof CommandPrimitive.Empty>) {
-  return <CommandPrimitive.Empty className="py-6 text-center text-sm text-neutral-500" {...props} />;
+  return <CommandPrimitive.Empty className="py-6 text-center text-sm text-muted-foreground" {...props} />;
 }
 
 export function CommandItem({
@@ -41,7 +41,7 @@ export function CommandItem({
   return (
     <CommandPrimitive.Item
       className={cn(
-        "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-neutral-100",
+        "flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none aria-selected:bg-muted",
         className,
       )}
       {...props}
