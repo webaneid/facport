@@ -1,3 +1,8 @@
+## <small>1.13.1 (2026-09-06)</small>
+
+* Merge pull request #28 from webaneid/develop ([19459eb](https://github.com/webaneid/facport/commit/19459eb)), closes [#28](https://github.com/webaneid/facport/issues/28)
+* fix(api): pdfkit gagal resolve font di production build ([17ea1c7](https://github.com/webaneid/facport/commit/17ea1c7))
+
 ## 1.13.0 (2026-09-06)
 
 * Merge pull request #25 from webaneid/feat/sales-invoice ([ae84211](https://github.com/webaneid/facport/commit/ae84211)), closes [#25](https://github.com/webaneid/facport/issues/25)
