@@ -3,14 +3,16 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, Download, CreditCard } from "lucide-react";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatusBadge } from "@/lib/status-badges";
 import { api, apiBaseUrl } from "@/lib/api-client";
-import { formatDate } from "@/lib/utils";
+import { formatDate, currencyFormatter } from "@/lib/utils";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 type InvoiceItem = { id: string; label: string; moduleKey: string; price: number };
 type Invoice = {
@@ -24,19 +26,11 @@ type Invoice = {
   orderId: string | null;
 };
 
-const INVOICE_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
-  unpaid: { label: "Belum Dibayar", variant: "warning" },
-  paid: { label: "Lunas", variant: "success" },
-  void: { label: "Dibatalkan", variant: "default" },
-  expired: { label: "Kadaluarsa", variant: "destructive" },
-};
-
-const currencyFormatter = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
-
 // § Fase 15, ADR-0021 — riwayat invoice + unduh PDF. Belum ada jalur
 // normal yang bikin invoice (checkout = Fase 16-17), jadi halaman ini
 // WAJAR kosong sampai fase itu selesai — EmptyState bukan indikasi bug.
 export default function BillingPage() {
+  const companyTimezone = useCompanyTimezone();
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
 
   useEffect(() => {
@@ -48,11 +42,8 @@ export default function BillingPage() {
   }, []);
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Tagihan</h1>
-        <p className="text-sm text-muted-foreground">Riwayat invoice langganan Facport kamu.</p>
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Tagihan" description="Riwayat invoice langganan Facport kamu." />
 
       <Card>
         <CardHeader>
@@ -82,11 +73,9 @@ export default function BillingPage() {
                     <TableCell className="font-medium text-foreground">{inv.invoiceNumber}</TableCell>
                     <TableCell className="text-muted-foreground">{inv.items.map((i) => i.label).join(", ") || "-"}</TableCell>
                     <TableCell>{currencyFormatter.format(inv.total)}</TableCell>
-                    <TableCell className="text-muted-foreground">{formatDate(inv.dueDate)}</TableCell>
+                    <TableCell className="text-muted-foreground">{formatDate(inv.dueDate, companyTimezone)}</TableCell>
                     <TableCell>
-                      <Badge variant={(INVOICE_STATUS[inv.status] ?? { variant: "default" }).variant}>
-                        {INVOICE_STATUS[inv.status]?.label ?? inv.status}
-                      </Badge>
+                      <StatusBadge domain="invoice" status={inv.status} />
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-2">

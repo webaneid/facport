@@ -5,13 +5,18 @@ import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from 
 import { permissionPlugin } from "../../lib/permission";
 import { minioClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
+import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 
 const PROOF_URL_EXPIRY_SECONDS = 10 * 60; // 10 menit
 
 export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
   .use(permissionPlugin)
   // § Fase 16 — antrian konfirmasi: default filter status="submitted"
-  // (yang butuh aksi admin), bisa override lihat status lain via query.
+  // (yang butuh aksi admin, perilaku lama TIDAK berubah kalau query
+  // kosong). § Fase 20, ADR-0023 — sebelumnya "submitted" adalah
+  // SATU-SATUNYA jalur (hardcode), admin tidak pernah bisa lihat order
+  // yang sudah paid/rejected/cancelled/expired lewat UI sama sekali.
+  // Sekarang bisa pilih status lain eksplisit, atau "all" untuk semua.
   .get(
     "/",
     async ({ query }) => {
@@ -20,11 +25,26 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
         .select({ order: orders, invoice: invoices })
         .from(orders)
         .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
-        .where(eq(orders.status, statusFilter))
-        .orderBy(desc(orders.submittedAt));
+        .where(statusFilter === "all" ? undefined : eq(orders.status, statusFilter))
+        .orderBy(desc(orders.submittedAt), desc(orders.createdAt));
       return { orders: rows.map((r) => ({ ...r.order, invoice: r.invoice, amountDue: r.invoice.total + r.order.uniqueCode })) };
     },
-    { permission: "orders.manage", query: t.Object({ status: t.Optional(t.String()) }) },
+    {
+      permission: "orders.manage",
+      query: t.Object({
+        status: t.Optional(
+          t.Union([
+            t.Literal("pending"),
+            t.Literal("submitted"),
+            t.Literal("paid"),
+            t.Literal("rejected"),
+            t.Literal("cancelled"),
+            t.Literal("expired"),
+            t.Literal("all"),
+          ]),
+        ),
+      }),
+    },
   )
   // § presigned URL, expiry PENDEK — bukti pembayaran adalah dokumen
   // finansial customer, TIDAK disimpan sebagai URL permanen di mana pun
@@ -107,6 +127,21 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             actorId: user.id,
           });
 
+          await createNotification(
+            {
+              userId: lockedInvoice.userId,
+              type: NOTIFICATION_TYPES.PAYMENT_VERIFIED,
+              title: "Pembayaran terverifikasi",
+              body:
+                createdSubscriptionIds.length === 1
+                  ? "Pembayaran kamu terverifikasi — langganan sudah aktif, selamat menggunakan Facport!"
+                  : `Pembayaran kamu terverifikasi — ${createdSubscriptionIds.length} langganan sudah aktif, selamat menggunakan Facport!`,
+              entityType: "order",
+              entityId: lockedOrder.id,
+            },
+            tx,
+          );
+
           return { subscriptionsCreated: createdSubscriptionIds.length };
         });
 
@@ -147,6 +182,19 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             changes: { status: { from: "submitted", to: "rejected" }, reason: body.reason },
             actorId: user.id,
           });
+
+          const [invoice] = await tx.select().from(invoices).where(eq(invoices.id, lockedOrder.invoiceId));
+          await createNotification(
+            {
+              userId: invoice!.userId,
+              type: NOTIFICATION_TYPES.PAYMENT_REJECTED,
+              title: "Bukti transfer ditolak",
+              body: `Bukti transfer kamu ditolak: ${body.reason}. Silakan upload ulang bukti transfer yang benar.`,
+              entityType: "order",
+              entityId: params.id,
+            },
+            tx,
+          );
         });
 
         return { ok: true };

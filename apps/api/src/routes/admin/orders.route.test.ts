@@ -4,7 +4,7 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminOrdersRoute } from "./orders.route";
 import { db } from "../../lib/db";
-import { plans, invoices, invoiceItems, orders, subscriptions, roles, userRoles, user as userTable } from "../../db/schema";
+import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable } from "../../db/schema";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(adminOrdersRoute);
@@ -112,6 +112,56 @@ describe("GET /admin/orders", () => {
     const body = (await res.json()) as { orders: { id: string }[] };
     expect(body.orders.some((o) => o.id === order.id)).toBe(true);
   });
+
+  // § Fase 20, ADR-0023 — sebelumnya status="submitted" satu-satunya
+  // jalur (hardcode), admin tidak pernah bisa lihat order paid/rejected
+  // lewat UI. Test ini pastikan default TIDAK berubah, TAPI filter
+  // eksplisit ke status lain (dan "all") sekarang berfungsi.
+  test("default TANPA query TIDAK ikut order yang sudah paid (perilaku lama tidak berubah)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-default-excl-paid-${runId}@test.local`);
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "sales_invoice", price: 100000, durationDays: 30 }]);
+    await testApp.handle(new Request(`http://localhost/admin/orders/${order.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+
+    const res = await testApp.handle(new Request("http://localhost/admin/orders", { headers: { cookie: adminCookie } }));
+    const body = (await res.json()) as { orders: { id: string }[] };
+    expect(body.orders.some((o) => o.id === order.id)).toBe(false);
+  });
+
+  test("200 status=paid mengembalikan order yang sudah dikonfirmasi (sebelumnya TIDAK BISA dilihat lewat UI sama sekali)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-filter-paid-${runId}@test.local`);
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "purchase_invoice", price: 100000, durationDays: 30 }]);
+    await testApp.handle(new Request(`http://localhost/admin/orders/${order.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+
+    const res = await testApp.handle(new Request("http://localhost/admin/orders?status=paid", { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { orders: { id: string; status: string }[] };
+    const found = body.orders.find((o) => o.id === order.id);
+    expect(found).toBeTruthy();
+    expect(found!.status).toBe("paid");
+  });
+
+  test("200 status=all mengembalikan order lintas status sekaligus (submitted DAN paid)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerA = await signUp(`admin-orders-filter-all-a-${runId}@test.local`);
+    const customerB = await signUp(`admin-orders-filter-all-b-${runId}@test.local`);
+    const { order: submittedOrder } = await createSubmittedOrder(customerA, [{ moduleKey: "sales_invoice", price: 100000, durationDays: 30 }]);
+    const { order: paidOrder } = await createSubmittedOrder(customerB, [{ moduleKey: "purchase_invoice", price: 100000, durationDays: 30 }]);
+    await testApp.handle(new Request(`http://localhost/admin/orders/${paidOrder.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+
+    const res = await testApp.handle(new Request("http://localhost/admin/orders?status=all", { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { orders: { id: string }[] };
+    expect(body.orders.some((o) => o.id === submittedOrder.id)).toBe(true);
+    expect(body.orders.some((o) => o.id === paidOrder.id)).toBe(true);
+  });
+
+  test("422 kalau status query bukan salah satu enum yang dikenal", async () => {
+    const adminCookie = await makeAdmin();
+    const res = await testApp.handle(new Request("http://localhost/admin/orders?status=not_a_real_status", { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(422);
+  });
 });
 
 describe("POST /admin/orders/:id/confirm", () => {
@@ -156,6 +206,11 @@ describe("POST /admin/orders/:id/confirm", () => {
       // toleransi 5 detik (waktu eksekusi test), bukan exact millisecond match
       expect(Math.abs(actualDurationMs - expectedDurationMs)).toBeLessThan(5000);
     }
+
+    // § Fase 45 — customer dapat notifikasi "payment_verified"
+    const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));
+    expect(notif!.type).toBe("payment_verified");
+    expect(notif!.entityId).toBe(order.id);
   });
 
   test("400 ORDER_NOT_SUBMITTED kalau order sudah paid (tidak bisa confirm 2x)", async () => {
@@ -194,6 +249,11 @@ describe("POST /admin/orders/:id/reject", () => {
 
     const subs = await db.select().from(subscriptions).where(and(eq(subscriptions.orderId, order.id)));
     expect(subs.length).toBe(0);
+
+    // § Fase 45 — customer dapat notifikasi "payment_rejected" berisi alasan
+    const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));
+    expect(notif!.type).toBe("payment_rejected");
+    expect(notif!.body).toContain("Nominal tidak cocok dengan bukti transfer");
   });
 
   test("400 kalau reason kosong", async () => {
