@@ -22,10 +22,18 @@ export default async function LandingPage() {
   const [{ data: plans }, statsRes] = await Promise.all([
     api.plans.get(),
     // § cache 5 menit — hindari query COUNT berulang tiap visitor buka
-    // landing, pola sama `getPublicSettings()` (Fase 12).
-    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/public/stats`, { next: { revalidate: 300 } }),
+    // landing, pola sama `getPublicSettings()` (Fase 12). `.catch(() =>
+    // null)` WAJIB — saat `docker build` (next build prerender halaman ini),
+    // API belum jalan sama sekali (connection refused), fetch mentah
+    // melempar error dan menggagalkan build TOTAL kalau tidak ditangkap
+    // (beda dari `statsRes.ok` yang cuma nangkep response HTTP error, bukan
+    // kegagalan koneksi). Fallback default di bawah, self-correct lewat ISR
+    // revalidate begitu API sungguhan hidup pasca-deploy.
+    fetch(`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001"}/public/stats`, {
+      next: { revalidate: 300 },
+    }).catch(() => null),
   ]);
-  const stats: PublicStats = statsRes.ok
+  const stats: PublicStats = statsRes?.ok
     ? await statsRes.json()
     : { customerCount: 0, successfulRowCount: 0, estimatedTimeSavedSeconds: 0 };
 
