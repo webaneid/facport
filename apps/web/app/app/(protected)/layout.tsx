@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { AppShell } from "@/components/app-shell/app-shell";
 import { getPublicSettings } from "@/lib/get-public-settings";
+import { CustomerCareWidget } from "@/components/customer-care/customer-care-widget";
 
 // § Medium finding security review Fase 01 (pola sama dengan
 // app/admin/(protected)/layout.tsx) — proxy.ts cuma cek keberadaan session
@@ -26,14 +27,29 @@ export default async function AppProtectedLayout({ children }: { children: React
   // `status: "active"` (server-side filtered) — tidak perlu filter
   // status lagi di sini seperti versi `/me/subscription` (tunggal) lama.
   const subRes = await fetch(`${apiUrl}/me/subscriptions`, { headers: { cookie }, cache: "no-store" });
-  const subJson = subRes.ok ? ((await subRes.json()) as { subscriptions: { plan: { modules: string[] } }[] }) : { subscriptions: [] };
+  const subJson = subRes.ok
+    ? ((await subRes.json()) as { subscriptions: { plan: { name: string; modules: string[] } }[] })
+    : { subscriptions: [] };
   const subscriptionModules = subJson.subscriptions.length
     ? [...new Set(subJson.subscriptions.flatMap((s) => s.plan.modules))]
     : undefined;
+  // § diminta user 2026-09-05 — label sidebar "Import Data" ikut nama
+  // paket yang admin buat (bukan nama fitur generik), supaya customer
+  // langsung tahu link itu bagian paket apa yang mereka beli. Cuma
+  // dipakai `Sidebar` buat OVERRIDE TEKS TAMPILAN — TIDAK mempengaruhi
+  // filter modul (`subscriptionModules` di atas) sama sekali.
+  const modulePlanNames = Object.fromEntries(subJson.subscriptions.flatMap((s) => s.plan.modules.map((m) => [m, s.plan.name])));
 
   return (
-    <AppShell surface="app" logoUrl={settings["company.logo"]} subscriptionModules={subscriptionModules} user={{ name: me.name, email: me.email }}>
+    <AppShell
+      surface="app"
+      logoUrl={settings["company.logo"]}
+      subscriptionModules={subscriptionModules}
+      modulePlanNames={modulePlanNames}
+      user={{ name: me.name, email: me.email }}
+    >
       {children}
+      <CustomerCareWidget />
     </AppShell>
   );
 }

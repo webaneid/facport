@@ -99,6 +99,41 @@
       "when": 1788531917001,
       "tag": "0013_dizzy_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1788588989506,
+      "tag": "0014_perpetual_obadiah_stane",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1788642174849,
+      "tag": "0015_bouncy_gideon",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1788643403697,
+      "tag": "0016_gigantic_mauler",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1788647084798,
+      "tag": "0017_true_vargas",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1788650477195,
+      "tag": "0018_chemical_punisher",
+      "breakpoints": true
     }
   ]
 }
