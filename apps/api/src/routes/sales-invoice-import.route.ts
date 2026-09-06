@@ -1,16 +1,18 @@
 import { Elysia, t } from "elysia";
-import { eq, and, desc, count } from "drizzle-orm";
+import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { boss, JOBS } from "../lib/queue";
+import { checkTrialRowBudget } from "../lib/trial";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
 import { salesInvoiceMapping, customerAutoCreateMapping, itemAutoCreateMapping, type SalesInvoiceField } from "../lib/import-mapping/sales-invoice.mapping";
 import { salesInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice-import.route.ts` (module
-// "sales_invoice", moduleAccess "penjualan").
+// "sales_invoice", moduleAccess "sales_invoice" sejak Fase 14/ADR-0019 —
+// sebelumnya grup top-level "penjualan").
 const ALLOWED_MIME = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   "application/vnd.ms-excel",
@@ -58,7 +60,7 @@ export const salesInvoiceImportRoute = new Elysia()
         },
       });
     },
-    { permission: "import.create", moduleAccess: "penjualan" },
+    { permission: "import.create", moduleAccess: "sales_invoice" },
   )
   .get(
     "/sales-invoice/import",
@@ -74,7 +76,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       query: t.Object({
         limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
         offset: t.Optional(t.Numeric({ minimum: 0 })),
@@ -135,7 +137,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       body: t.Object({ file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }) }),
     },
   )
@@ -165,6 +167,17 @@ export const salesInvoiceImportRoute = new Elysia()
         return { code: "MISSING_REQUIRED_FIELDS", fields: missing };
       }
 
+      // § Fase 43 — trial dibatasi jumlah baris berhasil-import (bukan
+      // paket asli, `checkTrialRowBudget` selalu {ok:true} untuk itu).
+      // confirm memproses SEMUA baris batch ini, jadi additionalRows =
+      // totalRows. Tolak SELURUH batch (bukan sebagian) kalau lebih dari
+      // sisa kuota.
+      const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
+      if (!budgetCheck.ok) {
+        set.status = 400;
+        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+      }
+
       await db.update(importBatches).set({ columnMapping: body.columnMapping, status: "processing" }).where(eq(importBatches.id, batch.id));
 
       await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
@@ -173,7 +186,7 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
       body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
     },
@@ -194,7 +207,7 @@ export const salesInvoiceImportRoute = new Elysia()
       };
       return { batch, summary, rows };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/sales-invoice/import/:batchId/retry",
@@ -204,11 +217,25 @@ export const salesInvoiceImportRoute = new Elysia()
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
       }
+
+      // § Fase 43 — retry cuma memproses ULANG baris pending/failed
+      // (bukan seluruh batch seperti confirm), jadi additionalRows =
+      // jumlah baris ITU, bukan `batch.totalRows`.
+      const [pendingRowCount] = await db
+        .select({ pendingCount: count() })
+        .from(importBatchRows)
+        .where(and(eq(importBatchRows.batchId, batch.id), inArray(importBatchRows.status, ["pending", "failed"])));
+      const budgetCheck = await checkTrialRowBudget(subscription.id, pendingRowCount?.pendingCount ?? 0);
+      if (!budgetCheck.ok) {
+        set.status = 400;
+        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+      }
+
       await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
       await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/sales-invoice/import/:batchId/cancel",
@@ -226,7 +253,7 @@ export const salesInvoiceImportRoute = new Elysia()
       await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .put(
     "/sales-invoice/import/:batchId/rows/:rowId",
@@ -263,9 +290,71 @@ export const salesInvoiceImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "penjualan",
+      moduleAccess: "sales_invoice",
       params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
       body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
+    },
+  )
+  // § Fase 51 — versi BULK dari endpoint di atas (JAMAK "/rows", bukan
+  // "/rows/:rowId") — dipakai grid edit ala Excel. Baris yang bukan
+  // milik batch ini atau statusnya bukan `failed` DILEWATI (dicatat di
+  // `errors`, BUKAN gagalkan seluruh request).
+  .put(
+    "/sales-invoice/import/:batchId/rows",
+    async ({ params, body, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+
+      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      const existingRows = await db
+        .select()
+        .from(importBatchRows)
+        .where(inArray(importBatchRows.id, body.rows.map((r) => r.id)));
+      const rowById = new Map(existingRows.map((r) => [r.id, r]));
+
+      const updated: string[] = [];
+      const errors: { rowId: string; rowNumber: number; fields: string[] }[] = [];
+
+      for (const item of body.rows) {
+        const row = rowById.get(item.id);
+        if (!row || row.batchId !== batch.id) {
+          errors.push({ rowId: item.id, rowNumber: -1, fields: ["ROW_NOT_FOUND"] });
+          continue;
+        }
+        if (row.status !== "failed") {
+          errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: ["ROW_NOT_EDITABLE"] });
+          continue;
+        }
+
+        const missing = salesInvoiceMapping.requiredFields.filter((field) => {
+          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+          const value = excelColumn ? item.rawData[excelColumn] : undefined;
+          return value === undefined || value === null || String(value).trim() === "";
+        });
+        if (missing.length > 0) {
+          errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
+          continue;
+        }
+
+        await db
+          .update(importBatchRows)
+          .set({ rawData: item.rawData, status: "pending", errorMessage: null })
+          .where(eq(importBatchRows.id, row.id));
+        updated.push(row.id);
+      }
+
+      return { updated, errors };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "sales_invoice",
+      params: t.Object({ batchId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        rows: t.Array(t.Object({ id: t.String({ format: "uuid" }), rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) })),
+      }),
     },
   )
   .delete(
@@ -299,5 +388,5 @@ export const salesInvoiceImportRoute = new Elysia()
 
       return { batchId: batch.id, deleted: true };
     },
-    { permission: "import.create", moduleAccess: "penjualan", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+    { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   );

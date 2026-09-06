@@ -1,13 +1,14 @@
 import { Elysia, t } from "elysia";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
-import { importBatches, importBatchRows } from "../db/schema";
+import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
 import { vendorPayableAccountMapping } from "../lib/import-mapping/vendor-payable-account.mapping";
 import { vendorPayableAccountTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
+import { checkTrialRowBudget } from "../lib/trial";
 
 // § architecture-security.md §8, pola sama purchase-invoice-import.route.ts
 const ALLOWED_MIME = [
@@ -36,6 +37,9 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 // bersifat OVERRIDE opsional (kosong = pakai default Mata Uang), TAPI
 // TERVERIFIKASI beneran dipakai Accurate saat posting transaksi
 // berikutnya (bukan kosmetik), § phase-04-import-vendor.md.
+// § ADR-0026 — `moduleAccess` SEKARANG sub-modul sendiri
+// (`vendor_payable_account`), BUKAN lagi dibundel ke `purchase_invoice`
+// seperti Fase 04. Subscribe Purchase Invoice saja TIDAK LAGI cukup.
 export const vendorPayableAccountImportRoute = new Elysia()
   .use(permissionPlugin)
   .use(subscriptionGatePlugin)
@@ -50,26 +54,30 @@ export const vendorPayableAccountImportRoute = new Elysia()
         },
       });
     },
-    { permission: "import.create", moduleAccess: "pembelian" },
+    { permission: "import.create", moduleAccess: "vendor_payable_account" },
   )
   .get(
     "/vendor/payable-account/import",
     async ({ subscription, query }) => {
       const limit = query.limit ?? 10;
-      const batches = await db
-        .select()
-        .from(importBatches)
-        .where(
-          and(eq(importBatches.subscriptionId, subscription.id), eq(importBatches.module, "vendor_payable_account")),
-        )
-        .orderBy(desc(importBatches.createdAt))
-        .limit(limit);
-      return { batches };
+      const offset = query.offset ?? 0;
+      const where = and(eq(importBatches.subscriptionId, subscription.id), eq(importBatches.module, "vendor_payable_account"));
+      // § halaman arsip (paginated) — dashboard tetap pakai `limit` saja
+      // (offset default 0, behavior TIDAK berubah buat caller lama), pola
+      // sama `purchase-invoice-import.route.ts` Fase 09.
+      const [batches, totalRows] = await Promise.all([
+        db.select().from(importBatches).where(where).orderBy(desc(importBatches.createdAt)).limit(limit).offset(offset),
+        db.select({ total: count() }).from(importBatches).where(where),
+      ]);
+      return { batches, total: totalRows[0]?.total ?? 0 };
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
-      query: t.Object({ limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })) }),
+      moduleAccess: "vendor_payable_account",
+      query: t.Object({
+        limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
+        offset: t.Optional(t.Numeric({ minimum: 0 })),
+      }),
     },
   )
   .post(
@@ -126,7 +134,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "vendor_payable_account",
       body: t.Object({ file: t.File({ type: [...ALLOWED_MIME], maxSize: `${MAX_SIZE_MB}m` }) }),
     },
   )
@@ -156,6 +164,17 @@ export const vendorPayableAccountImportRoute = new Elysia()
         return { code: "MISSING_REQUIRED_FIELDS", fields: missing };
       }
 
+      // § Fase 43 — trial dibatasi jumlah baris berhasil-import (bukan
+      // paket asli, `checkTrialRowBudget` selalu {ok:true} untuk itu).
+      // confirm memproses SEMUA baris batch ini, jadi additionalRows =
+      // totalRows. Tolak SELURUH batch (bukan sebagian) kalau lebih dari
+      // sisa kuota.
+      const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
+      if (!budgetCheck.ok) {
+        set.status = 400;
+        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+      }
+
       await db
         .update(importBatches)
         .set({ columnMapping: body.columnMapping, status: "processing" })
@@ -167,7 +186,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "vendor_payable_account",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
       body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
     },
@@ -190,7 +209,7 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "vendor_payable_account",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
     },
   )
@@ -202,6 +221,20 @@ export const vendorPayableAccountImportRoute = new Elysia()
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
       }
+
+      // § Fase 43 — retry cuma memproses ULANG baris pending/failed
+      // (bukan seluruh batch seperti confirm), jadi additionalRows =
+      // jumlah baris ITU, bukan `batch.totalRows`.
+      const [pendingRowCount] = await db
+        .select({ pendingCount: count() })
+        .from(importBatchRows)
+        .where(and(eq(importBatchRows.batchId, batch.id), inArray(importBatchRows.status, ["pending", "failed"])));
+      const budgetCheck = await checkTrialRowBudget(subscription.id, pendingRowCount?.pendingCount ?? 0);
+      if (!budgetCheck.ok) {
+        set.status = 400;
+        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+      }
+
       await db
         .update(importBatches)
         .set({ status: "processing", completedAt: null })
@@ -211,7 +244,157 @@ export const vendorPayableAccountImportRoute = new Elysia()
     },
     {
       permission: "import.create",
-      moduleAccess: "pembelian",
+      moduleAccess: "vendor_payable_account",
+      params: t.Object({ batchId: t.String({ format: "uuid" }) }),
+    },
+  )
+  // § edit baris GAGAL langsung di aplikasi (tanpa upload ulang seluruh
+  // file), pola sama `purchase-invoice-import.route.ts`. Cuma baris
+  // `failed` yang boleh diedit. Update `rawData` MENTAH — worker baca
+  // ulang pakai `columnMapping` batch yang sudah ada, tidak perlu logic
+  // baru di worker.
+  .put(
+    "/vendor/payable-account/import/:batchId/rows/:rowId",
+    async ({ params, body, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      const [row] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, params.rowId));
+      if (!row || row.batchId !== batch.id) {
+        set.status = 404;
+        return { code: "ROW_NOT_FOUND" };
+      }
+      if (row.status !== "failed") {
+        set.status = 409;
+        return { code: "ROW_NOT_EDITABLE" };
+      }
+
+      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      const missing = vendorPayableAccountMapping.requiredFields.filter((field) => {
+        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+        const value = excelColumn ? body.rawData[excelColumn] : undefined;
+        return value === undefined || value === null || String(value).trim() === "";
+      });
+      if (missing.length > 0) {
+        set.status = 400;
+        return { code: "MISSING_REQUIRED_VALUES", fields: missing };
+      }
+
+      await db
+        .update(importBatchRows)
+        .set({ rawData: body.rawData, status: "pending", errorMessage: null })
+        .where(eq(importBatchRows.id, row.id));
+
+      return { rowId: row.id, status: "pending" };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "vendor_payable_account",
+      params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
+      body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
+    },
+  )
+  // § Fase 51 — versi BULK dari endpoint di atas (JAMAK "/rows", bukan
+  // "/rows/:rowId") — dipakai grid edit ala Excel. Baris yang bukan
+  // milik batch ini atau statusnya bukan `failed` DILEWATI (dicatat di
+  // `errors`, BUKAN gagalkan seluruh request).
+  .put(
+    "/vendor/payable-account/import/:batchId/rows",
+    async ({ params, body, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+
+      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      const existingRows = await db
+        .select()
+        .from(importBatchRows)
+        .where(inArray(importBatchRows.id, body.rows.map((r) => r.id)));
+      const rowById = new Map(existingRows.map((r) => [r.id, r]));
+
+      const updated: string[] = [];
+      const errors: { rowId: string; rowNumber: number; fields: string[] }[] = [];
+
+      for (const item of body.rows) {
+        const row = rowById.get(item.id);
+        if (!row || row.batchId !== batch.id) {
+          errors.push({ rowId: item.id, rowNumber: -1, fields: ["ROW_NOT_FOUND"] });
+          continue;
+        }
+        if (row.status !== "failed") {
+          errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: ["ROW_NOT_EDITABLE"] });
+          continue;
+        }
+
+        const missing = vendorPayableAccountMapping.requiredFields.filter((field) => {
+          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+          const value = excelColumn ? item.rawData[excelColumn] : undefined;
+          return value === undefined || value === null || String(value).trim() === "";
+        });
+        if (missing.length > 0) {
+          errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
+          continue;
+        }
+
+        await db
+          .update(importBatchRows)
+          .set({ rawData: item.rawData, status: "pending", errorMessage: null })
+          .where(eq(importBatchRows.id, row.id));
+        updated.push(row.id);
+      }
+
+      return { updated, errors };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "vendor_payable_account",
+      params: t.Object({ batchId: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        rows: t.Array(t.Object({ id: t.String({ format: "uuid" }), rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) })),
+      }),
+    },
+  )
+  // § "Delete": hapus batch+baris LOKAL saja, TIDAK PERNAH memanggil
+  // Accurate — pola sama `purchase-invoice-import.route.ts`. Boleh
+  // dipakai untuk batch apa pun kecuali sedang diproses.
+  .delete(
+    "/vendor/payable-account/import/:batchId",
+    async ({ params, user, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      if (batch.status === "processing" || batch.status === "cancelling") {
+        set.status = 409;
+        return { code: "BATCH_BUSY" };
+      }
+
+      const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
+      await db.insert(auditLogs).values({
+        entityType: "import_batch",
+        entityId: batch.id,
+        action: "delete",
+        changes: {
+          fileName: batch.fileName,
+          totalRows: batch.totalRows,
+          status: batch.status,
+          hadAccurateSuccess: rows.some((r) => r.accurateTransactionId !== null),
+        },
+        actorId: user.id,
+      });
+
+      await db.delete(importBatches).where(eq(importBatches.id, batch.id));
+
+      return { batchId: batch.id, deleted: true };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "vendor_payable_account",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
     },
   );

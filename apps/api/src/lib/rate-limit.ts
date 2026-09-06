@@ -11,6 +11,22 @@ import { logger } from "./logger";
 type Bucket = { count: number; resetAt: number };
 const buckets = new Map<string, Bucket>();
 
+// § security review Fase 27, ADR-0025 (High) — SEBELUMNYA pakai
+// `x-forwarded-for` mentah sebagai kunci bucket: header itu BISA DI-SET
+// BEBAS oleh client (browser/curl manapun), dan nginx (§
+// docs/deployment-new-domain-onboarding.md) cuma MENAMBAHKAN IP asli ke
+// header itu (append, bukan replace) — penyerang cukup kirim nilai acak
+// beda tiap request supaya SELALU dapat bucket baru, rate limit jadi
+// tidak pernah kena. `x-real-ip` yang benar: nginx config yang sama
+// SELALU set `proxy_set_header X-Real-IP $remote_addr` — nilai ini
+// DITIMPA nginx tiap request (client TIDAK BISA override), jadi aman
+// dipakai sebagai identitas rate-limit. `x-forwarded-for` dipertahankan
+// SEBAGAI FALLBACK untuk dev lokal (tidak ada nginx di depan, header
+// keduanya kosong) — production HARUS selalu punya `x-real-ip` terisi.
+function getClientIp(request: Request): string {
+  return request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for") ?? "unknown";
+}
+
 export function rateLimitPlugin({
   windowMs,
   max,
@@ -24,7 +40,7 @@ export function rateLimitPlugin({
     const url = new URL(request.url);
     if (!url.pathname.startsWith(pathPrefix)) return;
 
-    const ip = request.headers.get("x-forwarded-for") ?? "unknown";
+    const ip = getClientIp(request);
     const key = `${pathPrefix}:${ip}`;
     const now = Date.now();
     const bucket = buckets.get(key);

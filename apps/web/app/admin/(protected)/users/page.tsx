@@ -1,18 +1,28 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CreditCard, Pencil } from "lucide-react";
+import Link from "next/link";
+import { CreditCard, Pencil, UserX, UserCheck, Eye } from "lucide-react";
 import { toast } from "sonner";
-import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { SearchForm } from "@/components/ui/search-form";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Can } from "@/components/auth/can";
+import { Combobox } from "@/components/ui/combobox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
-import { formatDate } from "@/lib/utils";
+import { PageHeader } from "@/components/ui/page-header";
+import { Pagination } from "@/components/ui/pagination";
+import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { StatusBadge } from "@/lib/status-badges";
+import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { endOfDayInTimezone } from "@/lib/timezone";
+import { moduleLabel } from "@/lib/module-options";
 
 const PAGE_SIZE = 20;
 
@@ -22,11 +32,12 @@ type UserRow = {
   name: string;
   email: string;
   emailVerified: boolean;
+  disabled: boolean;
   createdAt: string;
   roles: string[];
   activeSubscription: ActiveSubscription;
 };
-type Plan = { id: string; name: string; durationDays: number; modules: string[]; isActive: boolean };
+type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
 type SubscriptionHistoryItem = {
   id: string;
   status: string;
@@ -36,23 +47,53 @@ type SubscriptionHistoryItem = {
   planName: string;
 };
 
-const SUB_STATUS: Record<string, { label: string; variant: BadgeProps["variant"] }> = {
-  active: { label: "Aktif", variant: "success" },
-  pending_payment: { label: "Menunggu Pembayaran", variant: "warning" },
-  expired: { label: "Kadaluarsa", variant: "destructive" },
-  cancelled: { label: "Dibatalkan", variant: "default" },
+type CreatedUserResult = {
+  email: string;
+  tempPassword: string;
+  invoiceId?: string;
+  orderId?: string;
+  amountDue?: number;
+  subscriptionIds?: string[];
 };
 
 // § architecture-subscription.md § "Admin-Provisioned" — tempPassword
 // CUMA muncul SEKALI di response create, tidak disimpan/ditampilkan lagi
 // setelahnya — dialog ini WAJIB jelas bilang "catat sekarang".
+//
+// § Fase 18 — DIPERLUAS: admin BOLEH sekalian centang sub-modul + pilih
+// "Kirim Invoice" (customer bayar sendiri, § /billing/[orderId]/pay,
+// Fase 16) ATAU "Tandai Sudah Dibayar" (subscription langsung aktif,
+// tanpa invoice). Email selamat datang (kredensial + link relevan)
+// dikirim OTOMATIS oleh backend (job queue) — dialog ini TIDAK perlu
+// kirim email sendiri, cukup tampilkan konfirmasi hasil.
 function AddUserDialog({ onCreated }: { onCreated: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [selectedPlanIds, setSelectedPlanIds] = useState<Set<string>>(new Set());
+  const [markAsPaid, setMarkAsPaid] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [created, setCreated] = useState<{ email: string; tempPassword: string } | null>(null);
+  const [created, setCreated] = useState<CreatedUserResult | null>(null);
+
+  function openDialog() {
+    setOpen(true);
+    if (!plans) {
+      api.admin.plans.get().then((res) => {
+        if (res.data) setPlans((res.data as unknown as { plans: Plan[] }).plans.filter((p) => p.isActive));
+      });
+    }
+  }
+
+  function togglePlan(planId: string) {
+    setSelectedPlanIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(planId)) next.delete(planId);
+      else next.add(planId);
+      return next;
+    });
+  }
 
   async function handleCreate() {
     if (!name.trim() || !email.trim()) {
@@ -61,14 +102,19 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     }
     setSubmitting(true);
     setError(null);
-    const res = await api.admin.users.post({ name: name.trim(), email: email.trim() });
+    const res = await api.admin.users.post({
+      name: name.trim(),
+      email: email.trim(),
+      planIds: selectedPlanIds.size > 0 ? [...selectedPlanIds] : undefined,
+      markAsPaid: selectedPlanIds.size > 0 ? markAsPaid : undefined,
+    });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal membuat user — coba lagi.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(code === "PLAN_NOT_ACTIVE" ? "Salah satu paket sudah tidak aktif." : "Gagal membuat user — coba lagi.");
       return;
     }
-    const data = res.data as unknown as { email: string; tempPassword: string };
-    setCreated({ email: data.email, tempPassword: data.tempPassword });
+    setCreated(res.data as unknown as CreatedUserResult);
     onCreated();
   }
 
@@ -77,15 +123,20 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     if (!next) {
       setName("");
       setEmail("");
+      setSelectedPlanIds(new Set());
+      setMarkAsPaid(false);
       setCreated(null);
       setError(null);
     }
   }
 
+  const selectedPlans = plans?.filter((p) => selectedPlanIds.has(p.id)) ?? [];
+  const total = selectedPlans.reduce((sum, p) => sum + p.price, 0);
+
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <Button onClick={() => setOpen(true)}>Tambah User</Button>
-      <DialogContent>
+      <Button onClick={openDialog}>Tambah User</Button>
+      <DialogContent className="max-w-lg">
         <DialogTitle>Tambah User</DialogTitle>
         {created ? (
           <div className="mt-3 flex flex-col gap-3 text-sm">
@@ -98,12 +149,23 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             <p>
               Password sementara: <code className="text-foreground">{created.tempPassword}</code>
             </p>
+            {created.orderId && (
+              <p className="text-muted-foreground">
+                Invoice dibuat (total {currencyFormatter.format(created.amountDue ?? 0)}) — customer bisa login lalu bayar di{" "}
+                <code className="text-foreground">/billing/{created.orderId}/pay</code>. Email undangan otomatis terkirim.
+              </p>
+            )}
+            {created.subscriptionIds && (
+              <p className="text-muted-foreground">
+                {created.subscriptionIds.length} sub-modul langsung AKTIF (ditandai sudah dibayar). Email undangan otomatis terkirim.
+              </p>
+            )}
             <Button onClick={() => handleClose(false)} className="self-end">
               Selesai
             </Button>
           </div>
         ) : (
-          <div className="mt-3 flex flex-col gap-3 text-sm">
+          <div className="mt-3 flex flex-col gap-4 text-sm">
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">Nama</span>
               <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -112,6 +174,52 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
               <span className="text-xs font-medium text-foreground">Email</span>
               <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
             </label>
+
+            <div className="flex flex-col gap-2 border-t border-border pt-3">
+              <span className="text-xs font-medium text-foreground">Sub-Modul (opsional)</span>
+              {!plans ? (
+                <Skeleton className="h-16 w-full" />
+              ) : plans.length === 0 ? (
+                <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
+              ) : (
+                <div className="flex flex-col gap-1.5">
+                  {plans.map((p) => (
+                    <label key={p.id} className="flex items-center gap-2">
+                      <Checkbox checked={selectedPlanIds.has(p.id)} onCheckedChange={() => togglePlan(p.id)} />
+                      <span className="text-foreground">{p.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        ({p.modules.map(moduleLabel).join(", ")}, {currencyFormatter.format(p.price)})
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedPlanIds.size > 0 && (
+              <div className="flex flex-col gap-2 rounded-md bg-muted p-3">
+                <p className="text-xs text-muted-foreground">Total: {currencyFormatter.format(total)}</p>
+                {/* § Fase 26, ADR-0024 — `markAsPaid` PERSIS aksi yang
+                    digerbangi `subscriptions.manage` di backend (§
+                    security review Fase 18, HIGH bypass fix) — role
+                    yang cuma punya `users.manage` (mis. "staf
+                    onboarding") tidak PERLU lihat opsi yang toh akan
+                    ditolak 403 kalau dipilih. UI hint saja, backend
+                    TETAP jadi penjaga sesungguhnya. */}
+                <Can permission="subscriptions.manage">
+                  <label className="flex items-center gap-2">
+                    <Checkbox checked={markAsPaid} onCheckedChange={(checked) => setMarkAsPaid(checked === true)} />
+                    <span className="text-foreground">Tandai Sudah Dibayar (aktifkan langsung, tanpa invoice)</span>
+                  </label>
+                </Can>
+                {!markAsPaid && (
+                  <p className="text-xs text-muted-foreground">
+                    Invoice dibuat, customer bayar sendiri (transfer bank/QRIS) lewat halaman tagihan setelah login.
+                  </p>
+                )}
+              </div>
+            )}
+
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleCreate} disabled={submitting} className="self-end">
               {submitting ? "Membuat..." : "Buat User"}
@@ -124,6 +232,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
 }
 
 function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssigned: () => void }) {
+  const companyTimezone = useCompanyTimezone();
   const [open, setOpen] = useState(false);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [history, setHistory] = useState<SubscriptionHistoryItem[] | null>(null);
@@ -163,7 +272,21 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     }
     setSubmitting(true);
     setError(null);
-    const res = await api.admin.subscriptions.post({ userId: user.id, planId: selectedPlanId, endAt: new Date(endAt).toISOString() });
+    // § BUG ditemukan 2026-09-06 (audit timezone menyeluruh, diminta user)
+    // — `new Date(endAt).toISOString()` mem-parse tanggal date-picker
+    // ("YYYY-MM-DD") sebagai UTC MIDNIGHT, BUKAN akhir hari di timezone
+    // perusahaan. Admin pilih "31 Desember" bermaksud "berlaku SAMPAI
+    // akhir tanggal itu", tapi versi lama bikin subscription expired
+    // mulai jam 07:00 WIB tanggal itu juga (UTC+7 midnight = 07:00 WIB)
+    // — masa aktif TERAKHIR terpotong ~17 jam tanpa admin sadari. Fix:
+    // `endOfDayInTimezone` (§ lib/timezone.ts) konversi ke instant UTC
+    // yang benar-benar merepresentasikan 23:59:59.999 di timezone
+    // perusahaan.
+    const res = await api.admin.subscriptions.post({
+      userId: user.id,
+      planId: selectedPlanId,
+      endAt: endOfDayInTimezone(endAt, companyTimezone).toISOString(),
+    });
     setSubmitting(false);
     if (res.error) {
       setError("Gagal assign paket — pastikan tanggal expired di masa depan.");
@@ -184,7 +307,8 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   async function handleSaveEdit(id: string) {
     if (!editEndAt) return;
     setEditSubmitting(true);
-    const res = await api.admin.subscriptions({ id }).patch({ endAt: new Date(editEndAt).toISOString() });
+    // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
+    const res = await api.admin.subscriptions({ id }).patch({ endAt: endOfDayInTimezone(editEndAt, companyTimezone).toISOString() });
     setEditSubmitting(false);
     if (res.error) {
       toast.error("Gagal ubah tanggal expired — pastikan tanggal di masa depan.");
@@ -247,10 +371,8 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                       </div>
                     ) : (
                       <div className="flex items-center gap-2">
-                        <Badge variant={(SUB_STATUS[h.status] ?? { variant: "default" }).variant}>
-                          {SUB_STATUS[h.status]?.label ?? h.status}
-                        </Badge>
-                        {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt)}</span>}
+                        <StatusBadge domain="subscription" status={h.status} />
+                        {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt, companyTimezone)}</span>}
                         {h.status === "active" && (
                           <button
                             type="button"
@@ -276,18 +398,12 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
             ) : plans.length === 0 ? (
               <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
             ) : (
-              <select
-                className="rounded-md border border-border bg-background px-3 py-2 text-sm"
+              <Combobox
+                options={plans.map((p) => ({ value: p.id, label: `${p.name} — ${p.durationDays} hari` }))}
                 value={selectedPlanId}
-                onChange={(e) => setSelectedPlanId(e.target.value)}
-              >
-                <option value="">(pilih paket)</option>
-                {plans.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} — {p.durationDays} hari
-                  </option>
-                ))}
-              </select>
+                onChange={setSelectedPlanId}
+                placeholder="(pilih paket)"
+              />
             )}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">Tanggal Expired</span>
@@ -304,7 +420,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   );
 }
 
+const columnHelper = createDataTableColumns<UserRow>();
+
 export default function AdminUsersPage() {
+  const companyTimezone = useCompanyTimezone();
   const [users, setUsers] = useState<UserRow[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -319,6 +438,27 @@ export default function AdminUsersPage() {
     }
   }
 
+  // § Fase 29, ADR-0027 — "mengurangi user" = nonaktifkan (reversibel),
+  // BUKAN hapus permanen (§ ADR-0027 § Decision 3). Guard tambahan
+  // (tolak diri sendiri/Super Admin terakhir) ditegakkan BACKEND — pesan
+  // error di sini cuma re-tampilkan kode dari sana, bukan validasi baru.
+  async function toggleDisabled(row: UserRow) {
+    const res = row.disabled ? await api.admin.users({ id: row.id }).enable.patch() : await api.admin.users({ id: row.id }).disable.patch();
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      const message =
+        code === "CANNOT_DISABLE_SELF"
+          ? "Tidak bisa menonaktifkan akun sendiri."
+          : code === "CANNOT_DISABLE_LAST_SUPER_ADMIN"
+            ? "Tidak bisa menonaktifkan Super Admin terakhir yang masih aktif."
+            : "Gagal mengubah status akun.";
+      toast.error(message);
+      return;
+    }
+    toast.success(row.disabled ? "Akun diaktifkan kembali." : "Akun dinonaktifkan — sesi login yang aktif langsung diputus.");
+    load();
+  }
+
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat page/search berubah, pola standar
     load();
@@ -327,25 +467,97 @@ export default function AdminUsersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
-  return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Pengguna</h1>
-          <p className="text-sm text-muted-foreground">Kelola user & langganan mereka.</p>
+  // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
+  const columns = [
+    columnHelper.accessor("name", { header: "Nama", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue() || "-"}</span> }),
+    columnHelper.accessor("email", { header: "Email", cell: (ctx) => <span className="text-muted-foreground">{ctx.getValue()}</span> }),
+    columnHelper.display({
+      id: "status",
+      header: "Status",
+      // § halaman ini SEKARANG cuma customer (§ Fase 29 lanjutan, `GET
+      // /admin/users` difilter server-side) — kolom "Role" yang dulu di
+      // sini SELALU "Pelanggan" jadi dihapus, tidak ada nilai informasi.
+      cell: ({ row }) => (row.original.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <span className="text-xs text-muted-foreground">Aktif</span>),
+    }),
+    columnHelper.display({
+      id: "activeSubscription",
+      header: "Langganan Aktif",
+      cell: ({ row }) =>
+        row.original.activeSubscription ? (
+          <Badge variant="success">{row.original.activeSubscription.planName}</Badge>
+        ) : (
+          <span className="text-xs text-muted-foreground">Tidak ada</span>
+        ),
+    }),
+    columnHelper.accessor("createdAt", { header: "Terdaftar", cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span> }),
+    columnHelper.display({
+      id: "actions",
+      header: "Aksi",
+      cell: ({ row }) => (
+        <div className="flex items-center justify-end gap-1">
+          {/* § diminta user 2026-09-05 — lihat detail user (profil +
+              riwayat/log import) buat bantu diagnosa saat user telepon
+              support. `users.view` cukup (read-only, sama dgn izin
+              lihat halaman ini sendiri). */}
+          <Link
+            href={`/users/${row.original.id}`}
+            title="Detail"
+            aria-label={`Detail ${row.original.name}`}
+            className={buttonVariants("ghost", "h-8 w-8 p-0")}
+          >
+            <Eye className="h-4 w-4" />
+          </Link>
+          {/* § Fase 26, ADR-0024 (security-auditor finding) — dialog ini
+              assign/edit/lihat riwayat subscription, SEMUA digerbangi
+              `subscriptions.manage` di backend, BUKAN `users.manage` yang
+              menggerbangi halaman ini — pola split-permission sama dgn
+              checkbox "Tandai Sudah Dibayar" di bawah. */}
+          <Can permission="subscriptions.manage">
+            <ManageSubscriptionDialog user={row.original} onAssigned={load} />
+          </Can>
+          {/* § Fase 29, ADR-0027 — nonaktifkan/aktifkan HANYA `users.manage`
+              (Super Admin), beda dari halaman ini sendiri yang cuma butuh
+              `users.view` (Admin terbatas juga bisa lihat, tidak bisa aksi). */}
+          <Can permission="users.manage">
+            <button
+              type="button"
+              onClick={() => toggleDisabled(row.original)}
+              title={row.original.disabled ? "Aktifkan Kembali" : "Nonaktifkan"}
+              aria-label={`${row.original.disabled ? "Aktifkan" : "Nonaktifkan"} ${row.original.name}`}
+              className={buttonVariants("ghost", "h-8 w-8 p-0")}
+            >
+              {row.original.disabled ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
+            </button>
+          </Can>
         </div>
-        <AddUserDialog onCreated={load} />
-      </div>
+      ),
+    }),
+  ];
+
+  return (
+    <div className="flex flex-col gap-6">
+      <PageHeader
+        title="Pengguna"
+        description="Kelola pelanggan & langganan mereka. Akun tim internal (Super Admin/Admin) dikelola di menu Tim Internal."
+        // § Fase 29, ADR-0027 — halaman ini bisa diakses dgn `users.view`
+        // saja (Admin terbatas), tapi tambah user BARU butuh
+        // `users.manage` terpisah — sembunyikan trigger kalau permission
+        // itu tidak ada (backend tetap jadi penjaga utama).
+        action={
+          <Can permission="users.manage">
+            <AddUserDialog onCreated={load} />
+          </Can>
+        }
+      />
 
       <Card>
         <CardHeader>
           <CardTitle>Semua Pengguna</CardTitle>
           <CardDescription>{total} pengguna total.</CardDescription>
-          <Input
+          <SearchForm
             placeholder="Cari nama atau email..."
-            value={search}
-            onChange={(e) => {
-              setSearch(e.target.value);
+            onSearch={(q) => {
+              setSearch(q);
               setPage(0);
             }}
             className="mt-2 max-w-xs"
@@ -354,63 +566,18 @@ export default function AdminUsersPage() {
         <CardContent>
           {!users ? (
             <Skeleton className="h-40 w-full" />
-          ) : users.length === 0 ? (
-            <EmptyState icon={CreditCard} title="Tidak ada pengguna ditemukan" />
           ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nama</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Langganan Aktif</TableHead>
-                    <TableHead>Terdaftar</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {users.map((u) => (
-                    <TableRow key={u.id}>
-                      <TableCell className="font-medium text-foreground">{u.name || "-"}</TableCell>
-                      <TableCell className="text-muted-foreground">{u.email}</TableCell>
-                      <TableCell className="text-muted-foreground">{u.roles.join(", ") || "-"}</TableCell>
-                      <TableCell>
-                        {u.activeSubscription ? (
-                          <Badge variant="success">{u.activeSubscription.planName}</Badge>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">Tidak ada</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">{formatDate(u.createdAt)}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <ManageSubscriptionDialog user={u} onAssigned={load} />
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-
-              <div className="mt-4 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">
-                  Halaman {page + 1} dari {totalPages}
-                </p>
-                <div className="flex gap-2">
-                  <Button variant="outline" onClick={() => setPage((p) => Math.max(0, p - 1))} disabled={page === 0}>
-                    Sebelumnya
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                    disabled={page + 1 >= totalPages}
-                  >
-                    Berikutnya
-                  </Button>
-                </div>
-              </div>
-            </>
+            <div className="flex flex-col gap-4">
+              <DataTable columns={columns} data={users} pageSize={PAGE_SIZE} emptyIcon={CreditCard} emptyTitle="Tidak ada pengguna ditemukan" />
+              {/* § Fase 21 — `DataTable` cuma paginasi CLIENT-SIDE (§
+                  komentar `data-table.tsx`), sedangkan daftar ini
+                  paginasi SERVER-SIDE (`offset`/`limit` ke API). `pageSize`
+                  di atas disamakan `PAGE_SIZE` supaya 1 halaman server =
+                  1 "halaman" client (Pagination bawaan DataTable jadi
+                  no-op), navigasi sungguhan pakai `Pagination` yang SAMA
+                  komponennya, di-wire ke state server di sini. */}
+              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+            </div>
           )}
         </CardContent>
       </Card>

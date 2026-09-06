@@ -12,7 +12,10 @@ import { getProdApiOrigin } from "./get-prod-api-origin";
 // langsung (aman, app.facport.com/api.facport.com satu situs asli).
 const isBrowser = typeof window !== "undefined";
 const isBrowserDev = isBrowser && process.env.NODE_ENV !== "production";
-const baseURL = isBrowserDev
+// § Fase 15 — exported: dipakai juga buat construct URL non-Eden (mis.
+// `<a href>` unduh PDF invoice) yang butuh base URL SAMA PERSIS dengan
+// yang dipakai Eden client, TANPA duplikasi logic proxy dev/prod di atas.
+export const apiBaseUrl = isBrowserDev
   ? `${window.location.origin}/api-proxy` // absolute — Eden construct URL via `new URL()`, tolak path relatif polos juga
   : isBrowser
     ? getProdApiOrigin() // browser + production — lihat lib/get-prod-api-origin.ts
@@ -36,4 +39,4 @@ const baseURL = isBrowserDev
 // SEBAGAI STRING APA ADANYA dari backend, konversi ke `Date` (kalau perlu
 // tampil) dilakukan eksplisit di titik pakainya (`lib/utils.ts`
 // `formatDate`, terima `string | Date`), bukan implisit di layer HTTP.
-export const api = treaty<App>(baseURL, { fetch: { credentials: "include" }, parseDate: false });
+export const api = treaty<App>(apiBaseUrl, { fetch: { credentials: "include" }, parseDate: false });

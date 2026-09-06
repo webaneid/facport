@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import { Toaster } from "sonner";
 import { getPublicSettings } from "@/lib/get-public-settings";
+import { CompanyTimezoneProvider } from "@/components/company-timezone-provider";
+import { DEFAULT_COMPANY_TIMEZONE } from "@/lib/timezone";
 import "./globals.css";
 
 // § architecture-app-dashboard.md — font profesional, self-host otomatis
@@ -35,13 +37,21 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+// § Fase 43 (audit timezone 2026-09-06) — `async` supaya bisa fetch
+// `company.timezone` sekali di SINI (dipakai ketiga surface, Next.js
+// dedup otomatis dengan fetch yang sama di `generateMetadata` lewat
+// request memoization) dan sediakan ke semua Client Component descendant
+// lewat Context — lihat `components/company-timezone-provider.tsx`.
+export default async function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  const settings = await getPublicSettings();
+  const timezone = settings["company.timezone"] ?? DEFAULT_COMPANY_TIMEZONE;
+
   return (
     <html lang="id" className={inter.variable}>
       <body>
-        {children}
+        <CompanyTimezoneProvider timezone={timezone}>{children}</CompanyTimezoneProvider>
         <Toaster richColors position="top-right" />
       </body>
     </html>

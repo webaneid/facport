@@ -6,11 +6,14 @@ import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
 import { sendEmail } from "../lib/email";
 import { db } from "../lib/db";
-import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings } from "../db/schema";
+import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings, announcements } from "../db/schema";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { refreshAccessToken } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
+import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES } from "../lib/notifications";
+import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
+import { resolveAnnouncementRecipients } from "../lib/announcements";
 import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice } from "../lib/accurate-purchase-invoice";
 import {
   buildPurchaseInvoicePayload,
@@ -25,6 +28,28 @@ import {
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { saveVendorPayableAccount, findOrCreateVendor } from "../lib/accurate-vendor";
 import { buildVendorPayableAccountPayload } from "../lib/import-mapping/vendor-payable-account.mapping";
+import { savePurchasePayment } from "../lib/accurate-purchase-payment";
+import {
+  buildPurchasePaymentPayload,
+  groupPurchasePaymentRows,
+  validateGroupVendorConsistencyForPayment,
+  type PurchasePaymentGroup,
+} from "../lib/import-mapping/purchase-payment.mapping";
+import { saveSalesReceipt } from "../lib/accurate-sales-receipt";
+import {
+  buildSalesReceiptPayload,
+  groupSalesReceiptRows,
+  validateGroupCustomerConsistencyForReceipt,
+  type SalesReceiptGroup,
+} from "../lib/import-mapping/sales-receipt.mapping";
+import { saveJournalVoucher } from "../lib/accurate-journal-voucher";
+import {
+  buildJournalVoucherPayload,
+  buildJournalVoucherPayloadTall,
+  formatOf as journalVoucherFormatOf,
+  groupJournalVoucherRows,
+  type JournalVoucherGroup,
+} from "../lib/import-mapping/journal-voucher.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
 // § Fase 13 — Sales Invoice, mirror 1:1 import Purchase Invoice di atas.
@@ -38,7 +63,6 @@ import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice } from "../
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
-  poNumberColumnOf,
   extractCustomerCreateFields,
   extractItemCreateFields as extractItemCreateFieldsSI,
   groupSalesInvoiceRows,
@@ -46,6 +70,17 @@ import {
   type SalesInvoiceGroup,
 } from "../lib/import-mapping/sales-invoice.mapping";
 import { findOrCreateCustomer } from "../lib/accurate-customer";
+
+// § Fase 14, ADR-0020 — koneksi Accurate SEKARANG milik user, reusable
+// lintas subscription (bukan 1:1 ke subscription lagi). Resolve 2 langkah:
+// subscription → accurateConnectionId → connection. `null` kalau
+// subscription belum pilih/hubungkan Data Usaha SAMA SEKALI.
+async function getConnectionForBatch(subscriptionId: string) {
+  const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
+  if (!subscription?.accurateConnectionId) return null;
+  const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, subscription.accurateConnectionId));
+  return connection ?? null;
+}
 
 // § architecture-accurate-integration.md — `import_batches.module`
 // menentukan cara proses 1 baris. Switch eksplisit (bukan lookup table
@@ -55,9 +90,13 @@ import { findOrCreateCustomer } from "../lib/accurate-customer";
 // aman (`as any`/`as never`) buat nyatuin tipe fungsi yang beda-beda.
 // Tambah `case` baru di sini kalau ada modul import lain — JOBS.IMPORT_TO_ACCURATE
 // tetap 1 job generik, bukan bikin job type terpisah per modul (§ queue.ts).
-// CATATAN: "purchase_invoice" TIDAK ada di sini lagi sejak Fase 06 — modul
-// itu diproses PER GRUP (banyak baris = 1 faktur), lihat
-// `processPurchaseInvoiceGroup` di bawah, bukan per-baris lewat fungsi ini.
+// CATATAN: "purchase_invoice"/"sales_invoice" TIDAK ada di sini lagi sejak
+// Fase 06/13, "sales_receipt" TIDAK ada lagi sejak Fase 49, dan
+// "purchase_payment" TIDAK ada lagi sejak Fase 50 — modul-modul itu
+// diproses PER GRUP (banyak baris bisa jadi 1 transaksi), lihat
+// `processPurchaseInvoiceGroup`/`processSalesInvoiceGroup`/
+// `processSalesReceiptGroup`/`processPurchasePaymentGroup` di bawah,
+// bukan per-baris lewat fungsi ini.
 async function processImportRow(
   module: string,
   ctx: AccurateSessionContext,
@@ -67,6 +106,8 @@ async function processImportRow(
   switch (module) {
     case "vendor_payable_account":
       return saveVendorPayableAccount(ctx, buildVendorPayableAccountPayload(rawRow, columnMapping));
+    case "journal_voucher":
+      return saveJournalVoucher(ctx, buildJournalVoucherPayload(rawRow, columnMapping));
     default:
       throw new Error(`Modul import "${module}" tidak dikenali`);
   }
@@ -303,7 +344,7 @@ export async function processSalesInvoiceGroup(
 // Number, scoped `module = "sales_invoice"` (BEDA dari PI yang scoped
 // "purchase_invoice" — dua modul tidak pernah saling cari faktur satu
 // sama lain, walau kebetulan nomor referensinya sama).
-async function findExistingAccurateSalesInvoiceId(subscriptionId: string, poNumber: string, poNumberColumn: string): Promise<number | null> {
+async function findExistingAccurateSalesInvoiceId(subscriptionId: string, groupKey: string, groupColumn: string): Promise<number | null> {
   const [row] = await db
     .select({ accurateTransactionId: importBatchRows.accurateTransactionId })
     .from(importBatchRows)
@@ -313,7 +354,7 @@ async function findExistingAccurateSalesInvoiceId(subscriptionId: string, poNumb
         eq(importBatches.subscriptionId, subscriptionId),
         eq(importBatches.module, "sales_invoice"),
         eq(importBatchRows.status, "success"),
-        sql`lower(trim(${importBatchRows.rawData}->>${poNumberColumn})) = lower(trim(${poNumber}))`,
+        sql`lower(trim(${importBatchRows.rawData}->>${groupColumn})) = lower(trim(${groupKey}))`,
       ),
     )
     .limit(1);
@@ -336,7 +377,7 @@ export async function appendToExistingSalesInvoice(
 
   if (customerNo && detail.customer.no !== customerNo) {
     throw new Error(
-      `PO Number "${group.poNumber}" sudah dipakai Faktur Penjualan #${existingId} milik Customer "${detail.customer.no}" di Accurate — tidak sama dengan Customer baris ini ("${customerNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
+      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Penjualan #${existingId} milik Customer "${detail.customer.no}" di Accurate — tidak sama dengan Customer baris ini ("${customerNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
     );
   }
 
@@ -387,10 +428,88 @@ export async function appendToExistingSalesInvoice(
   };
 }
 
+// ============================================================
+// § Fase 49 — Sales Receipt, grouping DALAM 1 batch (banyak baris = 1
+// penerimaan yang bayar banyak faktur). LEBIH SEDERHANA dari blok
+// Purchase Invoice/Sales Invoice di atas — SENGAJA TANPA
+// findExisting/append-to-existing-lintas-batch (architecture-sales-receipt.md:
+// "Batal Import" & retry-cerdas SENGAJA tidak didukung modul ini, 2
+// penerimaan nominal sama ke faktur sama adalah 2 transaksi SAH beda,
+// bukan duplikat) — tiap grup SELALU lewat jalur CREATE (`saveSalesReceipt`
+// tanpa `id`), tidak pernah UPDATE ke penerimaan lama.
+export type SalesReceiptGroupResult = {
+  receiptId: number;
+  rowIds: string[];
+};
+
+export async function processSalesReceiptGroup(
+  ctx: AccurateSessionContext,
+  group: SalesReceiptGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesReceiptGroupResult> {
+  const mismatchError = validateGroupCustomerConsistencyForReceipt(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+
+  const result = await saveSalesReceipt(ctx, payload);
+  return { receiptId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
+// atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
+// — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
+// nominal sama ke faktur sama adalah 2 transaksi SAH beda).
+// ============================================================
+export type PurchasePaymentGroupResult = {
+  paymentId: number;
+  rowIds: string[];
+};
+
+export async function processPurchasePaymentGroup(
+  ctx: AccurateSessionContext,
+  group: PurchasePaymentGroup,
+  columnMapping: Record<string, string>,
+): Promise<PurchasePaymentGroupResult> {
+  const mismatchError = validateGroupVendorConsistencyForPayment(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+
+  const result = await savePurchasePayment(ctx, payload);
+  return { paymentId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 50 — Journal Voucher Opsi B (format panjang), grouping DALAM
+// 1 batch, create-only. TIDAK ada validasi konsistensi vendor/customer
+// (JV memang tidak punya konsep itu) — validasi balance debit=kredit
+// SUDAH di dalam `buildJournalVoucherPayloadTall` sendiri.
+// ============================================================
+export type JournalVoucherGroupResult = {
+  journalId: number;
+  rowIds: string[];
+};
+
+export async function processJournalVoucherGroup(
+  ctx: AccurateSessionContext,
+  group: JournalVoucherGroup,
+  columnMapping: Record<string, string>,
+): Promise<JournalVoucherGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildJournalVoucherPayloadTall(rawRows, columnMapping);
+
+  const result = await saveJournalVoucher(ctx, payload);
+  return { journalId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
 async function main() {
   await startQueue();
 
-  await boss.work<{ to: string; subject: string; html: string }>(
+  await boss.work<{ to: string; subject: string; html: string; sensitive?: boolean }>(
     JOBS.SEND_EMAIL,
     async ([job]) => {
       if (!job) return;
@@ -409,12 +528,106 @@ async function main() {
   // real-time check saja) supaya status konsisten di DB kapan pun dilihat.
   await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
   await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
+    // § Fase 45 — ikut ambil userId+isTrial (bukan cuma id) supaya bisa
+    // bikin notifikasi "trial_expired"/"subscription_expired" yang tepat.
     const expired = await db
       .update(subscriptions)
       .set({ status: "expired" })
       .where(and(eq(subscriptions.status, "active"), lt(subscriptions.endAt, new Date())))
-      .returning({ id: subscriptions.id });
+      .returning({ id: subscriptions.id, userId: subscriptions.userId, isTrial: subscriptions.isTrial });
+
+    for (const sub of expired) {
+      await createNotification({
+        userId: sub.userId,
+        type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_EXPIRED : NOTIFICATION_TYPES.SUBSCRIPTION_EXPIRED,
+        title: sub.isTrial ? "Trial sudah berakhir" : "Langganan sudah berakhir",
+        body: sub.isTrial
+          ? "Trial kamu sudah berakhir — upgrade ke paket berbayar untuk lanjut import."
+          : "Langganan kamu sudah berakhir — perpanjang supaya bisa lanjut import.",
+        entityType: "subscription",
+        entityId: sub.id,
+      });
+    }
+
     logger.info({ count: expired.length }, "Subscriptions expired");
+  });
+
+  // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir,
+  // TERPISAH dari job expire di atas (yang FLIP status, bukan cuma
+  // ingatkan). Threshold BEDA untuk trial (durasi pendek, cukup H-3/H-1)
+  // vs subscription asli (H-7/H-3/H-1) — § lib/subscription-reminders.ts.
+  await boss.schedule(JOBS.NOTIFY_EXPIRING_SOON, "0 0 * * *");
+  await boss.work(JOBS.NOTIFY_EXPIRING_SOON, async () => {
+    const now = Date.now();
+    const active = await db
+      .select({
+        id: subscriptions.id,
+        userId: subscriptions.userId,
+        isTrial: subscriptions.isTrial,
+        endAt: subscriptions.endAt,
+        lastReminderThresholdDays: subscriptions.lastReminderThresholdDays,
+      })
+      .from(subscriptions)
+      .where(eq(subscriptions.status, "active"));
+
+    let notified = 0;
+    for (const sub of active) {
+      if (!sub.endAt) continue;
+      const daysLeft = (sub.endAt.getTime() - now) / (24 * 60 * 60 * 1000);
+      const thresholds = sub.isTrial ? TRIAL_REMINDER_THRESHOLDS : SUBSCRIPTION_REMINDER_THRESHOLDS;
+      const applicableThreshold = findApplicableReminderThreshold(daysLeft, thresholds, sub.lastReminderThresholdDays);
+      if (applicableThreshold === null) continue;
+
+      await createNotification({
+        userId: sub.userId,
+        type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_ENDING_SOON : NOTIFICATION_TYPES.SUBSCRIPTION_ENDING_SOON,
+        title: sub.isTrial ? "Trial akan berakhir" : "Langganan akan berakhir",
+        body: sub.isTrial
+          ? `Trial kamu akan berakhir ${Math.ceil(daysLeft)} hari lagi — upgrade sekarang supaya tidak terputus.`
+          : `Langganan kamu akan berakhir ${Math.ceil(daysLeft)} hari lagi — perpanjang sekarang supaya tidak terputus.`,
+        entityType: "subscription",
+        entityId: sub.id,
+      });
+      await db.update(subscriptions).set({ lastReminderThresholdDays: applicableThreshold }).where(eq(subscriptions.id, sub.id));
+      notified++;
+    }
+
+    logger.info({ notified }, "Notify expiring soon selesai");
+  });
+
+  // § Fase 45, ADR-0029 — fan-out broadcast admin. Dipanggil ASYNC dari
+  // `POST /admin/announcements` (bukan sinkron di endpoint) supaya
+  // response admin tidak nunggu resolve target + bulk-insert selesai
+  // (bisa banyak baris kalau target="all_customers").
+  await boss.work<{ announcementId: string }>(JOBS.SEND_ANNOUNCEMENT, async ([job]) => {
+    if (!job) return;
+    const { announcementId } = job.data;
+    const [announcement] = await db.select().from(announcements).where(eq(announcements.id, announcementId));
+    if (!announcement) {
+      logger.error({ announcementId }, "SEND_ANNOUNCEMENT: announcement tidak ditemukan");
+      return;
+    }
+
+    const recipientIds = await resolveAnnouncementRecipients({
+      target: announcement.target as "all_customers" | "specific_modules" | "specific_users",
+      targetModules: announcement.targetModules,
+      targetUserIds: announcement.targetUserIds,
+    });
+
+    await createNotificationsBulk(
+      recipientIds.map((userId) => ({
+        userId,
+        type: NOTIFICATION_TYPES.ANNOUNCEMENT,
+        title: announcement.title,
+        body: announcement.body,
+        entityType: "announcement",
+        entityId: announcement.id,
+        sourceAnnouncementId: announcement.id,
+      })),
+    );
+
+    await db.update(announcements).set({ recipientCount: recipientIds.length }).where(eq(announcements.id, announcementId));
+    logger.info({ announcementId, recipientCount: recipientIds.length }, "Announcement fan-out selesai");
   });
 
   // § Fase 10, architecture-subscription.md § "Retensi Data Import" —
@@ -499,6 +712,19 @@ async function main() {
           .where(eq(accurateConnections.id, conn.id));
         logger.error({ err, connectionId: conn.id }, "Accurate token refresh gagal, tandai expired");
         Sentry.captureException(err);
+
+        // § Fase 45 — GAP ditemukan lewat audit screening: sebelum ini,
+        // customer PEMILIK koneksi (`conn.userId` — BUKAN admin, § ADR-0020
+        // koneksi milik user) tidak pernah tahu koneksinya putus sampai
+        // mereka coba import dan gagal. Notifikasi langsung ke pemiliknya.
+        await createNotification({
+          userId: conn.userId,
+          type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_EXPIRED,
+          title: "Koneksi Accurate terputus",
+          body: `Koneksi ke ${conn.accurateDbAlias ?? "Data Usaha Accurate"} kamu terputus — hubungkan ulang supaya import bisa lanjut.`,
+          entityType: "accurate_connection",
+          entityId: conn.id,
+        });
       }
     }
   });
@@ -518,10 +744,7 @@ async function main() {
       return;
     }
 
-    const [connection] = await db
-      .select()
-      .from(accurateConnections)
-      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+    const connection = await getConnectionForBatch(batch.subscriptionId);
 
     if (!connection || !connection.accurateDbId) {
       await db
@@ -613,19 +836,21 @@ async function main() {
         }
       }
       // § Fase 13 — Sales Invoice, bayangan cermin blok Purchase Invoice
-      // di atas (PO Number ganti peran Bill No, Customer ganti Vendor).
+      // di atas (PO Number/Trans No ganti peran Bill No, Customer ganti
+      // Vendor). § Fase 49 — kunci grouping DIGENERALISASI
+      // (`group.groupKey`/`group.groupColumn`, bisa dari kolom "Trans
+      // No" ATAU "PO Number" — lihat `groupSalesInvoiceRows`).
     } else if (batch.module === "sales_invoice") {
       const groups = groupSalesInvoiceRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      const poNumberColumn = poNumberColumnOf(columnMapping);
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const existingId =
-            group.poNumber && poNumberColumn
-              ? await findExistingAccurateSalesInvoiceId(batch.subscriptionId, group.poNumber, poNumberColumn)
+            group.groupKey && group.groupColumn
+              ? await findExistingAccurateSalesInvoiceId(batch.subscriptionId, group.groupKey, group.groupColumn)
               : null;
           const result = existingId
             ? await appendToExistingSalesInvoice(session, existingId, group, columnMapping)
@@ -642,6 +867,89 @@ async function main() {
               })
               .where(eq(importBatchRows.id, r.rowId));
           }
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 49 — Sales Receipt, grouping DALAM 1 batch, create-only
+      // (TANPA findExisting/append — lihat komentar `processSalesReceiptGroup`).
+    } else if (batch.module === "sales_receipt") {
+      const groups = groupSalesReceiptRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processSalesReceiptGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.receiptId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt
+      // di atas (lihat komentar `processPurchasePaymentGroup`).
+    } else if (batch.module === "purchase_payment") {
+      const groups = groupPurchasePaymentRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processPurchasePaymentGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.paymentId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 50 — Journal Voucher Opsi B (format panjang) SAJA
+      // diproses per-grup di sini — Opsi A (format lebar) TETAP lewat
+      // `processImportRow` generic di bawah (`else` terakhir),
+      // TIDAK BERUBAH dari sebelum Fase 50 (backward compat).
+    } else if (batch.module === "journal_voucher" && journalVoucherFormatOf(columnMapping) === "tall") {
+      const groups = groupJournalVoucherRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processJournalVoucherGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.journalId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
         } catch (err) {
           await db
             .update(importBatchRows)
@@ -703,10 +1011,7 @@ async function main() {
       return;
     }
 
-    const [connection] = await db
-      .select()
-      .from(accurateConnections)
-      .where(eq(accurateConnections.subscriptionId, batch.subscriptionId));
+    const connection = await getConnectionForBatch(batch.subscriptionId);
 
     if (!connection || !connection.accurateDbId) {
       logger.error({ batchId }, "Cancel import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");

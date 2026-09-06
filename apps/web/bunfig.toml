@@ -1,0 +1,5 @@
+[test]
+# § Fase 32 — daftarkan DOM (happy-dom) + matcher jest-dom SEBELUM test
+# file mana pun jalan. `bun test` TANPA ini tidak punya `document`/`window`
+# sama sekali (beda dari Jest/Vitest, DOM environment bukan default).
+preload = ["./test/happydom.ts", "./test/setup.ts"]

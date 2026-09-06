@@ -37,7 +37,7 @@ type EditableRow = {
 // kebenaran format tanggal Accurate) supaya hasilnya identik.
 // Field internal yang dianggap tanggal — HARUS SINKRON dengan
 // `DATE_FIELDS` di `apps/api/src/lib/import-mapping/purchase-invoice.mapping.ts`.
-const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § field wajib — HARUS SINKRON dengan `purchaseInvoiceMapping.requiredFields`
@@ -46,7 +46,7 @@ const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 // cuma tipe via Eden, lihat apps/web/CLAUDE.md). Dipakai buat tanda "*" +
 // styling wajib di form, BUKAN sumber kebenaran validasi (itu tetap di
 // backend, form ini cuma kasih feedback lebih cepat sebelum submit).
-const REQUIRED_INTERNAL_FIELDS = new Set([
+export const REQUIRED_INTERNAL_FIELDS = new Set([
   "vendorNo",
   "transDate",
   "itemNo",

@@ -1,6 +1,7 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { getCompanyTimezone } from "./company-timezone";
 
 export type VendorPayableAccountResult = {
   id: number;
@@ -25,11 +26,21 @@ export async function findVendorByNo(
   });
 }
 
-export function todayAccurateDate(): string {
-  const now = new Date();
-  const dd = String(now.getDate()).padStart(2, "0");
-  const mm = String(now.getMonth() + 1).padStart(2, "0");
-  return `${dd}/${mm}/${now.getFullYear()}`;
+// § BUG ditemukan 2026-09-06 (audit timezone menyeluruh, diminta user) —
+// versi lama pakai `now.getDate()`/`getMonth()`/`getFullYear()`, SEMUANYA
+// menggunakan timezone LOKAL PROSES SERVER, bukan timezone PERUSAHAAN.
+// Di production (container `postgres:16-alpine`/`oven/bun` TANPA `TZ` di-
+// set eksplisit, default OS timezone-nya UTC), jam 00:00–06:59 WIB (=
+// 17:00–23:59 UTC hari SEBELUMNYA) bikin `transDate` vendor/customer
+// auto-create TERCATAT SALAH 1 HARI di pembukuan Accurate customer —
+// setiap hari, tanpa terkecuali, selama jendela 7 jam itu. Fix: pakai
+// `Intl.DateTimeFormat` dengan `timeZone` eksplisit dari `company.timezone`
+// (§ lib/company-timezone.ts) — BUKAN UTC, BUKAN local server time.
+export async function todayAccurateDate(now: Date = new Date()): Promise<string> {
+  const timezone = await getCompanyTimezone();
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: timezone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(now);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("day")}/${get("month")}/${get("year")}`;
 }
 
 async function postVendorSave(ctx: AccurateSessionContext, payload: Record<string, unknown>) {
@@ -63,7 +74,7 @@ export async function saveVendorPayableAccount(
   return postVendorSave(ctx, {
     id: vendor.id,
     name: vendor.name,
-    transDate: todayAccurateDate(),
+    transDate: await todayAccurateDate(),
     vendorPayableAccountListNo: payload.payableAccountNo,
   });
 }
@@ -92,7 +103,7 @@ export async function findOrCreateVendor(
       return postVendorSave(ctx, {
         id: existing.id,
         name: existing.name,
-        transDate: todayAccurateDate(),
+        transDate: await todayAccurateDate(),
         vendorPayableAccountListNo: createFields.vendorPayableAccountListNo,
       });
     }
@@ -107,7 +118,7 @@ export async function findOrCreateVendor(
 
   return postVendorSave(ctx, {
     vendorNo,
-    transDate: todayAccurateDate(),
+    transDate: await todayAccurateDate(),
     categoryName: "Umum", // default, di-override kalau createFields punya categoryName sendiri
     ...createFields,
   });

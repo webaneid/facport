@@ -7,6 +7,9 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/vendor-payable-account/edit-row-dialog";
+import { EditableGrid } from "@/components/import/editable-grid";
+import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 
 type Row = {
@@ -15,10 +18,11 @@ type Row = {
   status: string;
   accurateTransactionId: string | null;
   errorMessage: string | null;
+  rawData: Record<string, unknown>;
 };
 
 type BatchDetail = {
-  batch: { id: string; status: string; totalRows: number; fileName: string };
+  batch: { id: string; status: string; totalRows: number; fileName: string; columnMapping: Record<string, string> | null };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
 };
@@ -42,10 +46,18 @@ export default function VendorPayableAccountImportResultPage() {
   const params = useParams<{ batchId: string }>();
   const [detail, setDetail] = useState<BatchDetail | null>(null);
   const [retrying, setRetrying] = useState(false);
+  const [gridOpen, setGridOpen] = useState(false);
 
   async function load() {
     const res = await api.vendor["payable-account"].import({ batchId: params.batchId }).get();
     if (res.data) setDetail(res.data as unknown as BatchDetail);
+  }
+
+  // § Fase 51 — bulk save (grid ala Excel), TIDAK auto-retry.
+  async function handleGridSave(rowsToSave: { id: string; rawData: Record<string, string> }[]) {
+    const res = await api.vendor["payable-account"].import({ batchId: params.batchId }).rows.put({ rows: rowsToSave });
+    if (res.error) return null;
+    return res.data as { updated: string[]; errors: { rowId: string; rowNumber: number; fields: string[] }[] };
   }
 
   useEffect(() => {
@@ -58,14 +70,23 @@ export default function VendorPayableAccountImportResultPage() {
 
   async function handleRetry() {
     setRetrying(true);
-    await api.vendor["payable-account"].import({ batchId: params.batchId }).retry.post();
+    const res = await api.vendor["payable-account"].import({ batchId: params.batchId }).retry.post();
     setRetrying(false);
+    if (res.error) {
+      const value = res.error.value as { code?: string; remaining?: number; max?: number } | undefined;
+      toast.error(
+        value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
+          ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris atau upgrade ke paket berbayar.`
+          : "Gagal mengirim ulang baris — coba lagi.",
+      );
+      return;
+    }
     load();
   }
 
   if (!detail) {
     return (
-      <div className="mx-auto flex max-w-3xl flex-col gap-4">
+      <div className="flex flex-col gap-4">
         <Skeleton className="h-8 w-64" />
         <Skeleton className="h-40 w-full" />
       </div>
@@ -76,7 +97,7 @@ export default function VendorPayableAccountImportResultPage() {
   const isProcessing = batch.status === "processing";
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
+    <div className="flex flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import Akun Hutang Pemasok</h1>
         <p className="text-sm text-muted-foreground">{batch.fileName}</p>
@@ -96,13 +117,37 @@ export default function VendorPayableAccountImportResultPage() {
           </div>
         </CardHeader>
         {summary.failed > 0 && !isProcessing && (
-          <CardContent>
+          <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}
             </Button>
+            {batch.columnMapping && (
+              <Button variant="outline" onClick={() => setGridOpen((v) => !v)}>
+                {gridOpen ? "Tutup Tabel" : "Edit Semua (Tabel)"}
+              </Button>
+            )}
           </CardContent>
         )}
       </Card>
+
+      {gridOpen && batch.columnMapping && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Edit Semua Baris Gagal</CardTitle>
+            <CardDescription>Ubah langsung di tabel, lalu simpan semua sekaligus.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <EditableGrid
+              rows={rows.filter((r) => r.status === "failed")}
+              columnMapping={batch.columnMapping}
+              requiredInternalFields={REQUIRED_INTERNAL_FIELDS}
+              dateInternalFields={DATE_INTERNAL_FIELDS}
+              onSave={handleGridSave}
+              onSaved={load}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       <Card>
         <CardHeader>
@@ -115,6 +160,7 @@ export default function VendorPayableAccountImportResultPage() {
                 <TableHead>Baris</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ID Vendor Accurate / Error</TableHead>
+                <TableHead className="text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -128,6 +174,13 @@ export default function VendorPayableAccountImportResultPage() {
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       {row.accurateTransactionId ?? row.errorMessage ?? "-"}
+                    </TableCell>
+                    <TableCell>
+                      {row.status === "failed" && batch.columnMapping && (
+                        <div className="flex justify-end">
+                          <EditRowDialog batchId={batch.id} row={row} columnMapping={batch.columnMapping} onSaved={load} />
+                        </div>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

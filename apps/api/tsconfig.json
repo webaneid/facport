@@ -3,7 +3,11 @@
   "compilerOptions": {
     "types": ["bun"],
     "baseUrl": ".",
-    "outDir": "dist"
+    "outDir": "dist",
+    // § Fase 15 — SATU-SATUNYA pemakai JSX di apps/api: `lib/invoice-pdf.tsx`
+    // (@react-pdf/renderer). Backend ini TIDAK render HTML/React di tempat
+    // lain — kalau nanti dihapus/diganti, opsi ini boleh dilepas lagi.
+    "jsx": "react-jsx"
   },
   "include": ["src", "drizzle.config.ts"]
 }

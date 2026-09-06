@@ -1,0 +1,1 @@
+ALTER TABLE "plans" ADD COLUMN "trial_eligible" boolean DEFAULT false NOT NULL;

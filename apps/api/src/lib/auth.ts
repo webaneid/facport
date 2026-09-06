@@ -13,7 +13,25 @@ export const auth = betterAuth({
   // sebelumnya session langsung aktif tanpa verifikasi apa pun). Admin-
   // provisioned user (routes/admin/users.route.ts) di-set emailVerified=true
   // manual setelah dibuat — admin yang vouch, tidak perlu verifikasi ulang.
-  emailAndPassword: { enabled: true, requireEmailVerification: true },
+  emailAndPassword: {
+    enabled: true,
+    requireEmailVerification: true,
+    // § diminta user 2026-09-05 — sebelumnya TIDAK ADA jalur pemulihan
+    // password mandiri sama sekali (gap ditemukan saat audit fondasi).
+    // Endpoint `/request-password-reset`/`/reset-password/:token`/
+    // `/reset-password` SUDAH BAWAAN Better Auth (bukan plugin — core,
+    // sudah otomatis ter-mount via `.mount(auth.handler)` di app.ts),
+    // TINGGAL kasih `sendResetPassword` di sini supaya beneran ngirim
+    // email (tanpa ini, Better Auth balas "RESET_PASSWORD_DISABLED").
+    sendResetPassword: async ({ user, url }) => {
+      await startQueue();
+      await boss.send(JOBS.SEND_EMAIL, {
+        to: user.email,
+        subject: "Reset password Facport",
+        html: `<p>Ada permintaan reset password untuk akun Facport kamu.</p><p>Klik link berikut untuk atur password baru:</p><p><a href="${url}">${url}</a></p><p>Kalau kamu tidak meminta ini, abaikan email ini — password kamu tetap aman.</p>`,
+      });
+    },
+  },
   // § CLAUDE.md root "Rules Non-Negotiable" — tugas kirim email WAJIB
   // lewat job queue, JANGAN sinkron di request handler (signup tidak
   // boleh ikut lambat/gagal kalau Resend lagi lambat/down). Enqueue
@@ -31,6 +49,15 @@ export const auth = betterAuth({
         html: `<p>Klik link berikut untuk verifikasi email kamu:</p><p><a href="${url}">${url}</a></p>`,
       });
     },
+    // § Fase 48 — diminta user: setelah pilih paket di landing → daftar,
+    // sebelumnya user harus BALIK login manual lagi setelah klik link
+    // verifikasi (pilihan paket ikut hilang di tengah jalan). Dengan ini,
+    // klik link verifikasi = LANGSUNG login (Better Auth `createSession`+
+    // `setSessionCookie` built-in, § `email-verification.mjs`), lalu
+    // redirect ke `callbackURL` yang dikirim `register-form.tsx` saat
+    // signUp (`/subscribe?plans=...`) — user mendarat sudah login DENGAN
+    // paket ke-preselect, tinggal checkout.
+    autoSignInAfterVerification: true,
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 hari

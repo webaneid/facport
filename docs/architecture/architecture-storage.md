@@ -27,10 +27,16 @@ bukan pilihan performa terbaik untuk file besar/traffic tinggi — cukup
 untuk kebutuhan saat ini (Media Library internal, bukan upload publik
 skala besar).
 
-**⚠️ Gap RESOLVED SEBAGIAN (Fase 12, ADR-0017)** — untuk kategori **aset
-branding publik** (logo/favicon company), gap ini sudah diselesaikan lewat
-bucket terpisah `facport-public` (public-read), lihat § "Bucket Kedua:
-Aset Branding Publik" di bawah. Untuk kategori **media lain yang privat**
+**⚠️ Gap RESOLVED SEBAGIAN (Fase 12, ADR-0017; Fase 16, ADR-0022)** — untuk
+kategori **aset branding publik** (logo/favicon company), gap ini sudah
+diselesaikan lewat bucket terpisah `facport-public` (public-read), lihat
+§ "Bucket Kedua: Aset Branding Publik" di bawah. Untuk kategori **bukti
+pembayaran** (Fase 16), gap ini diselesaikan lewat opsi (a) — presigned
+GET URL, expiry pendek — di bucket privat KETIGA `facport-payment-proofs`
+(BUKAN `facport-media` — dipisah sengaja, konten sensitif finansial yang
+punya siklus hidup/kebijakan retensi berbeda), lihat
+`docs/architecture/architecture-payment.md` § "Bucket Bukti Pembayaran".
+Untuk kategori **media lain yang privat**
 (dokumen/gambar user via `POST /media/upload` yang tetap ke `facport-media`),
 gap **TETAP TERBUKA** — response `media.upload` masih cuma balikin
 `storageKey` (path internal MinIO), BUKAN URL yang bisa langsung dipakai

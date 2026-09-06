@@ -192,39 +192,64 @@ export function buildDetailItemFromRow(
   return detailItem;
 }
 
-// § mirror grouping PI (ADR-0011) — pengganti kolom "Bill No" adalah
-// "PO Number" (`poNumber`).
+// § mirror grouping PI (ADR-0011) — awalnya pengganti kolom "Bill No"
+// cuma "PO Number" (`poNumber`). § Fase 49 — DIGENERALISASI: audit data
+// ASLI kompetitor (`docs/referencehtml/format_sales_inv_v7.xlsx`, 833
+// baris) menemukan "PO Number" SELALU KOSONG di praktik nyata, padahal
+// 52% faktur (77/149) itu multi-item — grouping by PO Number gagal
+// TOTAL untuk pola data ini (tiap baris kebaca faktur sendiri-sendiri,
+// TANPA error, diam-diam salah). "Trans No" (`number`) di data yang
+// SAMA justru SELALU terisi & konsisten per faktur — jadi field
+// `groupKey`/`groupColumn` (bukan `poNumber` literal) dipakai supaya
+// grouping bisa pakai KOLOM MANA PUN yang relevan, bukan cuma PO Number.
 export type ImportRowRecord = { id: string; rawData: Record<string, unknown> };
-export type SalesInvoiceGroup = { poNumber: string | null; rows: ImportRowRecord[] };
+export type SalesInvoiceGroup = { groupKey: string | null; groupColumn: string | null; rows: ImportRowRecord[] };
 
 export function poNumberColumnOf(columnMapping: Record<string, string>): string | null {
   return Object.entries(columnMapping).find(([, field]) => field === "poNumber")?.[0] ?? null;
 }
 
-function poNumberOf(row: ImportRowRecord, poNumberColumn: string | null): string | null {
-  if (!poNumberColumn) return null;
-  const value = row.rawData[poNumberColumn];
+// § Fase 49 — "Trans No" (field internal `number`, SUDAH ada di
+// `defaultColumnMap` sejak awal & sudah otomatis diteruskan ke Accurate)
+// dipakai juga sebagai kunci grouping, DIUTAMAKAN dari PO Number kalau
+// keduanya termapping — lihat alasan di komentar `SalesInvoiceGroup`.
+export function numberColumnOf(columnMapping: Record<string, string>): string | null {
+  return Object.entries(columnMapping).find(([, field]) => field === "number")?.[0] ?? null;
+}
+
+function valueOfColumn(row: ImportRowRecord, column: string | null): string | null {
+  if (!column) return null;
+  const value = row.rawData[column];
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
   return trimmed === "" ? null : trimmed;
 }
 
+// § Fase 49 — PER BARIS: pakai "Trans No" kalau kolom itu termapping
+// DAN terisi di baris ini, fallback ke "PO Number" (perilaku LAMA,
+// TIDAK berubah untuk siapa pun yang sudah pakai PO Number tanpa Trans
+// No), fallback akhir tetap "1 baris = 1 faktur sendiri" (sama seperti
+// sebelum Fase 49 — TIDAK ADA regresi buat mapping yang sudah ada).
 export function groupSalesInvoiceRows(rows: ImportRowRecord[], columnMapping: Record<string, string>): SalesInvoiceGroup[] {
+  const numberColumn = numberColumnOf(columnMapping);
   const poNumberColumn = poNumberColumnOf(columnMapping);
   const groups: SalesInvoiceGroup[] = [];
-  const byPoNumber = new Map<string, SalesInvoiceGroup>();
+  const byKey = new Map<string, SalesInvoiceGroup>();
 
   for (const row of rows) {
-    const poNumber = poNumberOf(row, poNumberColumn);
-    if (poNumber === null) {
-      groups.push({ poNumber: null, rows: [row] });
+    const numberValue = valueOfColumn(row, numberColumn);
+    const groupColumn = numberValue !== null ? numberColumn : poNumberColumn;
+    const groupKey = numberValue !== null ? numberValue : valueOfColumn(row, poNumberColumn);
+
+    if (groupKey === null || groupColumn === null) {
+      groups.push({ groupKey: null, groupColumn: null, rows: [row] });
       continue;
     }
-    const key = poNumber.toLowerCase();
-    let group = byPoNumber.get(key);
+    const mapKey = `${groupColumn}::${groupKey.toLowerCase()}`;
+    let group = byKey.get(mapKey);
     if (!group) {
-      group = { poNumber, rows: [] };
-      byPoNumber.set(key, group);
+      group = { groupKey, groupColumn, rows: [] };
+      byKey.set(mapKey, group);
       groups.push(group);
     }
     group.rows.push(row);
@@ -248,8 +273,8 @@ export function validateGroupCustomerConsistency(group: SalesInvoiceGroup, colum
 
   if (customerNos.size <= 1) return null;
 
-  const label = group.poNumber ?? "(tanpa PO Number)";
-  return `PO Number "${label}" dipakai untuk customer berbeda-beda (${[...customerNos].join(", ")}) — pastikan semua baris 1 faktur pakai Nomor Customer yang sama.`;
+  const label = group.groupKey ?? "(tanpa Trans No/PO Number)";
+  return `Nomor grup "${label}" dipakai untuk customer berbeda-beda (${[...customerNos].join(", ")}) — pastikan semua baris 1 faktur pakai Nomor Customer yang sama.`;
 }
 
 function rawValueFor(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): unknown {

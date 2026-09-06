@@ -31,7 +31,8 @@ kandidat alternatif (`detailOpenBalance`/Saldo Awal) yang muncul dari
 eksperimen manual 2026-08-20, tapi sudah disingkirkan setelah klarifikasi
 client. Bukti test call nyata (Postman + screenshot UI dari client, DAN
 eksperimen mandiri Facport lewat koneksi OAuth sendiri) sudah diverifikasi
-— lihat `architecture-accurate-integration.md` § "Vendor (Data Master)".
+— lihat `docs/architecture/architecture-vendor-payable-account.md`
+(dipindah dari `architecture-accurate-integration.md` § 2026-09-05).
 **✅ Verifikasi teknis TUNTAS 2026-08-20** — semua pertanyaan terbuka
 sudah terjawab, termasuk yang paling kritis (apakah override beneran
 dipakai Accurate saat posting Faktur Pembelian — TERBUKTI YA, § "Eksperimen

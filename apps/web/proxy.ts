@@ -29,7 +29,10 @@ export function proxy(request: NextRequest) {
   }
 
   const surface = getSurface(request.headers.get("host") ?? "");
-  const isAuthPage = pathname === "/login" || pathname === "/register";
+  // § diminta user 2026-09-05 — halaman lupa/reset password WAJIB
+  // reachable TANPA sesi (persis alasan /login/register) — user yang
+  // lupa password by definition tidak punya sesi aktif.
+  const isAuthPage = pathname === "/login" || pathname === "/register" || pathname === "/forgot-password" || pathname === "/reset-password";
 
   if ((surface === "admin" || surface === "app") && !isAuthPage) {
     // getSessionCookie() CUMA cek keberadaan cookie (bukan validasi/DB) —
