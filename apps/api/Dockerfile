@@ -35,6 +35,17 @@ COPY --from=builder /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=builder /repo/apps/api/dist ./apps/api/dist
 COPY --from=builder /repo/apps/api/package.json ./apps/api/package.json
 
+# § ditemukan 2026-09-06, deploy production PERTAMA kali ke instance baru
+# (DB kosong): `bun run db:migrate`/`db:seed` gagal total di dalam container
+# ini — drizzle-kit butuh drizzle.config.ts + folder migration `drizzle/`,
+# `db:seed` (`bun run src/db/seed.ts`) jalan dari SOURCE (bukan dist/,
+# beda dari server utama yang sudah di-bundle) jadi butuh `src/` asli.
+# Sebelumnya TIDAK PERNAH ketahuan karena baru sekarang pertama kali ada
+# yang benar-benar migrate DB kosong dari DALAM image production ini.
+COPY --from=builder /repo/apps/api/drizzle.config.ts ./apps/api/drizzle.config.ts
+COPY --from=builder /repo/apps/api/drizzle ./apps/api/drizzle
+COPY --from=builder /repo/apps/api/src ./apps/api/src
+
 ENV NODE_ENV=production
 EXPOSE 3001
 WORKDIR /repo/apps/api
