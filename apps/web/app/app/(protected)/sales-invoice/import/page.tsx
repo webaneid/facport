@@ -118,8 +118,14 @@ export default function SalesInvoiceImportPage() {
     const res = await api["sales-invoice"].import({ batchId: result.batchId }).confirm.post({ columnMapping });
     setConfirming(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; fields?: string[] } | undefined;
-      setError(value?.code === "MISSING_REQUIRED_FIELDS" ? `Field wajib belum dipetakan: ${value.fields?.join(", ")}` : "Gagal konfirmasi mapping.");
+      const value = res.error.value as { code?: string; fields?: string[]; remaining?: number; max?: number } | undefined;
+      setError(
+        value?.code === "MISSING_REQUIRED_FIELDS"
+          ? `Field wajib belum dipetakan: ${value.fields?.join(", ")}`
+          : value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
+            ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris di file atau upgrade ke paket berbayar.`
+            : "Gagal konfirmasi mapping.",
+      );
       return;
     }
     router.push(`/sales-invoice/import/${result.batchId}`);

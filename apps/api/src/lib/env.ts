@@ -36,6 +36,10 @@ const envSchema = t.Object({
   // redirect setelah OAuth callback Accurate (routes/accurate.route.ts),
   // beda kebutuhan dari WEB_ORIGINS_PROD (list, buat CORS/trustedOrigins).
   APP_ORIGIN_PROD: t.Optional(t.String()),
+  // § Fase 29, ADR-0027 — origin surface "admin" SATU-SATUNYA, dipakai
+  // link login di email welcome staff/admin baru (`POST /admin/staff`)
+  // — beda dari `APP_ORIGIN_PROD` yang dipakai welcome customer.
+  ADMIN_ORIGIN_PROD: t.Optional(t.String()),
   // Cross-subdomain session cookie (§ architecture-domain-routing.md,
   // Fase 01 M5) — ".localhost" dev, ".facport.com" prod (contoh).
   COOKIE_DOMAIN: t.String({ minLength: 1 }),

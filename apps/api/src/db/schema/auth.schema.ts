@@ -21,6 +21,12 @@ export const user = pgTable("user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  // § Fase 29, ADR-0027 — "nonaktifkan" (reversibel), BUKAN hapus
+  // permanen. Field CUSTOM (di luar hasil generate Better Auth CLI,
+  // sama seperti deviasi timestamptz di atas) — dicek manual di route
+  // `POST /api/auth/sign-in/email` (§ app.ts) SEBELUM diteruskan ke
+  // Better Auth, dan sesi existing di-hapus paksa saat di-set true.
+  disabled: boolean("disabled").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .$onUpdate(() => new Date())

@@ -178,7 +178,7 @@ Keputusan lengkap + riset pembanding → ADR-0022,
   otomatis (mirip pola `EXPIRE_SUBSCRIPTIONS` yang sudah ada) — dicatat,
   belum dikerjakan fase ini kalau di luar scope inti "verifikasi konsep
   manual payment jalan end-to-end".
-- **Upload bukti transfer via MinIO NYATA belum terverifikasi sesi ini**
+- ~~**Upload bukti transfer via MinIO NYATA belum terverifikasi sesi ini**
   — `.env` lokal (port 9002, credential docker-compose.dev.yml) tidak
   reachable dengan instance MinIO asli yang jalan di mesin ini (native
   homebrew, port 9000, credential beda — dikonfirmasi `S3Error
@@ -186,7 +186,13 @@ Keputusan lengkap + riset pembanding → ADR-0022,
   mesin ini. 2 test (`orders.route.test.ts`) di-skip eksplisit dengan
   komentar detail. **WAJIB diverifikasi manual di staging/lingkungan
   dengan MinIO benar** sebelum alur upload bukti dianggap benar-benar
-  jalan end-to-end.
+  jalan end-to-end.~~ **RESOLVED 2026-09-05** — ternyata cuma `.env`
+  lokal yang salah (port 9002→9000, secret key `minioadmin`→
+  `minioadmin123`, nilai asli didapat dari env var proses MinIO yang
+  jalan, `ps eww -p <pid>`). Bukan gap infra, murni config drift. Fix +
+  detail lengkap → `docs/lessons-learned.md` 2026-09-05 "MinIO lokal
+  `.env` salah port+password". Ke-2 test yang di-skip sudah di-unskip
+  dan PASS.
 - **Object MinIO lama tidak dihapus saat resubmit bukti setelah ditolak**
   — numpuk file "yatim" di bucket privat, murni storage housekeeping,
   bukan celah keamanan (§ lessons-learned.md 2026-09-04).

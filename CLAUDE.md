@@ -125,11 +125,19 @@ untuk task kecil, itu justru lebih mahal token.
 | Settings page (nama perusahaan, timezone, dst)  | `docs/architecture/architecture-settings.md`  |
 | Keputusan tool UI/komponen (icon, editor, dst) | `docs/decisions/adr-0004-ui-component-standards.md` |
 | Auth & role/permission (RBAC)          | `docs/architecture/architecture-auth.md`             |
+| Model role & tipe user (customer vs admin/staff) | `docs/architecture/architecture-user-roles.md` |
 | Background jobs/queue                  | `docs/architecture/architecture-jobs.md` |
 | Full-text search                       | `docs/architecture/architecture-search.md` |
 | Notifikasi (email)                     | `docs/architecture/architecture-notifications.md` |
 | Payment gateway (Ipaymu/Xendit)        | `docs/architecture/architecture-payment.md` |
-| Integrasi Accurate Online (OAuth, import data) | `docs/architecture/architecture-accurate-integration.md` |
+| Alur transaksi end-to-end (invoice→payment→subscription), titik masuk & "mesin" shared | `docs/architecture/architecture-transaction-flow.md` |
+| Integrasi Accurate Online — OAuth & infra bersama SEMUA modul | `docs/architecture/architecture-accurate-integration.md` |
+| Modul Faktur Pembelian (Purchase Invoice) | `docs/architecture/architecture-purchase-invoice.md` |
+| Modul Faktur Penjualan (Sales Invoice) | `docs/architecture/architecture-sales-invoice.md` |
+| Modul Akun Hutang Pemasok (Vendor, Data Master) | `docs/architecture/architecture-vendor-payable-account.md` |
+| Modul Purchase Payment (Pembayaran Pembelian) | `docs/architecture/architecture-purchase-payment.md` |
+| Modul Sales Receipt (Penerimaan Penjualan) | `docs/architecture/architecture-sales-receipt.md` |
+| Modul Jurnal Umum (Journal Voucher) | `docs/architecture/architecture-journal-voucher.md` |
 | Model langganan, paket, gating akses modul | `docs/architecture/architecture-subscription.md` |
 | Routing 3 surface (landing/admin/app), subdomain | `docs/architecture/architecture-domain-routing.md` |
 | Dashboard pelanggan, App Shell (sidebar/nav modul baru) | `docs/architecture/architecture-app-dashboard.md` |

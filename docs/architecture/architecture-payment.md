@@ -111,13 +111,19 @@ export const invoiceSequences = pgTable("invoice_sequences", {
   lastNumber: integer("last_number").notNull().default(0),
 }, (t) => ({ uniq: unique().on(t.year, t.month) }));
 ```
-`generateInvoiceNumber()` sekarang: `db.transaction()` → `SELECT ... FOR
-UPDATE` (atau `INSERT ... ON CONFLICT DO UPDATE SET lastNumber =
-lastNumber + 1 RETURNING lastNumber`, lebih ringkas — 1 statement atomik,
-tidak perlu SELECT terpisah) baris `(year, month)` bulan berjalan →
-increment → format `INV/{year}/{month}/{lastNumber padded 4 digit}`.
-Race condition Fase 15 (2 invoice nomor sama) TIDAK BISA TERJADI LAGI —
-lock/atomicity di level row Postgres, bukan cuma di level aplikasi.
+`generateInvoiceNumber(tx?, now?)` sekarang: `INSERT ... ON CONFLICT DO
+UPDATE SET lastNumber = lastNumber + 1 RETURNING lastNumber` — 1
+statement atomik, tidak perlu `SELECT ... FOR UPDATE` terpisah — baris
+`(year, month)` bulan berjalan → increment → format
+`INV/{year}/{month}/{lastNumber padded 4 digit}`. Race condition Fase 15
+(2 invoice nomor sama) TIDAK BISA TERJADI LAGI — atomicity di level row
+Postgres, bukan cuma di level aplikasi, jadi aman dipanggil dari koneksi
+manapun. **`tx` opsional** (default modul-level `db`) — satu-satunya
+caller (`createInvoiceAndOrder`, § Fase 18) SELALU oper `tx`-nya sendiri
+supaya alokasi nomor ini jadi bagian transaction YANG SAMA dengan insert
+invoice-nya (kalau tidak, rollback transaction pembungkus akan
+"membakar"/melewati 1 nomor invoice secara permanen — gap penomoran,
+bukan duplikat, tapi tetap tidak rapi).
 
 ## QRIS Dinamis — Manipulasi EMV Lokal (TANPA API Gateway)
 Adaptasi dari `qris-emv.ts` (jalajogja, TERBUKTI production) — format
@@ -134,16 +140,31 @@ export function buildDynamicQris(staticPayload: string, amount: number, referenc
   // 6. Rebuild payload, hitung ulang CRC16-CCITT, append
 }
 ```
-Admin upload **1 foto QRIS statis** (dari bank/penyedia QRIS mereka,
-gratis) via halaman settings, PLUS payload EMV string mentahnya (di-scan
-dari QR itu sendiri via library decode QR, atau input manual kalau
-decode gagal). Saat checkout, sistem generate QR **baru** dengan nominal
-terkunci ke `amountDue` via `buildDynamicQris()`, dirender jadi image via
-library `qrcode` (`QRCode.toDataURL()` — TIDAK perlu simpan file, cukup
-data URL langsung dikirim ke response/ditampilkan `<img>`).
+**Guard keras**: kalau payload admin TIDAK punya Tag 53 (Currency) MAUPUN
+Tag 54 (Amount) sama sekali, `buildDynamicQris()` **`throw`** (BUKAN
+lolos diam-diam) — payload malformed/salah salin sebelumnya bisa
+lolos jadi QR "dinamis" TANPA nominal ter-inject, customer diam-diam
+diminta ketik manual tanpa tahu (§ security review 2026-09-04, Medium).
+Caller (`lib/order-payment.ts` `buildQrisResult()`, § di bawah) sudah
+`try/catch` → response `502 QRIS_GENERATION_FAILED`.
 
-**Kalau admin cuma punya foto QRIS TANPA payload EMV** (tidak sempat/tidak
-bisa di-decode) — fallback **statis**: tampilkan foto asli apa adanya,
+**Payload EMV dibaca OTOMATIS dari foto QRIS yang diupload** (§ Fase 42,
+2026-09-06) — `apps/api/src/lib/qris-decode.ts` (`sharp().ensureAlpha().raw()`
++ `jsQR`) decode barcode-nya begitu admin upload, TIDAK perlu admin
+scan/decode manual pakai alat eksternal lagi (§ fallback kalau decode
+gagal, lihat paragraf di bawah). Saat checkout, sistem generate QR
+**baru** dengan nominal terkunci ke `amountDue` via
+`buildDynamicQris()`, dirender jadi image via library `qrcode`
+(`QRCode.toDataURL()` — TIDAK perlu simpan file, cukup data URL
+langsung dikirim ke response/ditampilkan `<img>`). Kedua langkah
+(`buildDynamicQris()` + `generateQrDataUrl()`) dipanggil lewat 1 helper
+bersama, `lib/order-payment.ts` `buildQrisResult()` — dipakai KEDUA
+jalur (`/orders/:id/qris` login DAN `/public/orders/:id/qris` publik,
+§ "Link Pembayaran Publik" di bawah), supaya logic-nya SATU tempat.
+
+**Kalau payload EMV tidak berhasil didapat sama sekali** (auto-decode
+gagal DAN admin tidak isi manual) — fallback **statis**: tampilkan foto
+asli apa adanya,
 customer scan lalu **ketik manual** nominal `amountDue` (termasuk kode
 unik) di aplikasi e-wallet/m-banking mereka sendiri. Ini KURANG ideal
 (rawan customer salah ketik nominal, kode unik jadi tidak berfungsi) tapi
@@ -172,6 +193,40 @@ disimpan permanen. Ini menyelesaikan gap "private media belum bisa
 disajikan" (§ `architecture-storage.md`, terbuka sejak Fase 00) KHUSUS
 untuk kategori ini — kategori privat lain (`facport-media` umum) TETAP
 terbuka, di luar scope.
+
+## Link Pembayaran Publik (Tanpa Login) — ADR-0025
+Selain jalur customer login (`/billing/[orderId]/pay`, di atas), SETIAP
+order punya link publik: `{APP_URL}/pay/{orderId}` — bisa diakses TANPA
+sesi login sama sekali. Dipakai terutama untuk invoice yang DIBUAT ADMIN
+untuk user existing (§ `architecture-invoice.md` § "Admin Membuat
+Invoice") — klien korporat/kontrak manual belum tentu mau/sempat bikin
+akun cuma untuk bayar 1 invoice.
+
+**`order.id` (UUID random) dipakai LANGSUNG sebagai identifier link** —
+TIDAK ada kolom token terpisah (§ ADR-0025 § Decision 3, presedan
+`jalajogja` production). Endpoint publik (prefix `/public`, TANPA
+`auth: true`):
+```
+GET   /public/orders/:id            → detail order (field di-filter SAMA
+                                       ketatnya dengan versi login — TIDAK
+                                       ada confirmedBy/rejectedBy)
+PATCH /public/orders/:id/method     → pilih metode bayar
+PATCH /public/orders/:id/proof      → upload bukti (bucket privat SAMA,
+                                       § "Bucket Bukti Pembayaran" di atas
+                                       — TIDAK berubah jadi publik)
+GET   /public/orders/:id/qris       → QR dinamis (kalau method="qris")
+```
+Guard SEMUA endpoint ini: **keberadaan order + status** (bukan ownership
+user — tidak ada sesi) — order `paid`/`rejected`/`cancelled`/`expired`
+menolak perubahan, identik guard versi login. **Rate limit WAJIB** di
+seluruh prefix `/public/orders` (`rateLimitPlugin`, § `architecture-security.md`
+§7) — endpoint publik tanpa auth adalah target abuse paling mudah.
+
+Halaman publik (`apps/web/app/landing/pay/[orderId]/page.tsx`) ditaruh
+di surface `landing` (satu-satunya surface tanpa auth guard di
+`proxy.ts`), `generateMetadata` set `robots: {index:false, follow:false}`
+(pola jalajogja — dokumen finansial personal, jangan ter-index mesin
+pencari).
 
 ## Konkurensi — Row Lock WAJIB di Konfirmasi Admin
 Pelajaran langsung dari bug produksi jalajogja (invoice nyangkut karena
@@ -213,6 +268,7 @@ lewat halaman admin — bukan environment variable server.
 - Riset pembanding lengkap (jalajogja, kode nyata terverifikasi manual)
   → `docs/decisions/adr-0022-payment-manual-qris-transfer.md`
 - Detail eksekusi → `docs/phases/phase-16-payment-manual.md`
+- Auto-decode payload EMV dari foto QRIS → `docs/phases/phase-42-qris-auto-decode.md`
 - Aktivasi langganan setelah bayar → `docs/architecture/architecture-subscription.md`
 - Model invoice/PDF → `docs/architecture/architecture-invoice.md`
 - Notifikasi konfirmasi/tolak ke user → `docs/architecture/architecture-notifications.md`

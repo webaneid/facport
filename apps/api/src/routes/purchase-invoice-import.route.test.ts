@@ -3,9 +3,10 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, settings } from "../db/schema";
 import { purchaseInvoiceImportRoute } from "./purchase-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
+import { TRIAL_MAX_ROWS_SETTING_KEY } from "../lib/trial";
 
 // § Dua Lapis Gate (architecture-auth.md) — route ini PERTAMA yang gabung
 // dua macro (`permission` dari permissionPlugin + `moduleAccess` dari
@@ -65,6 +66,46 @@ async function createProvisionedUser(email: string) {
 
   return { userId, cookie, subscriptionId: subscription!.id };
 }
+
+// § Fase 43 — versi TRIAL dari `createProvisionedUser` (isTrial: true) —
+// dipakai test wiring `checkTrialRowBudget` di confirm/retry (representative
+// module, logic murni `checkTrialRowBudget` sendiri sudah dites penuh di
+// `lib/trial.test.ts` — di sini cuma pastikan WIRING-nya benar).
+async function createTrialProvisionedUser(email: string) {
+  const userId = await signUp(email);
+  const cookie = await signIn(email);
+
+  const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+  await db.insert(userRoles).values({ userId, roleId: customerRole!.id }).onConflictDoNothing();
+
+  const [plan] = await db
+    .insert(plans)
+    .values({ name: `PI Trial Test Plan ${email}`, price: 0, durationDays: 30, modules: ["purchase_invoice"] })
+    .returning();
+  const [subscription] = await db
+    .insert(subscriptions)
+    .values({
+      userId,
+      planId: plan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      isTrial: true,
+    })
+    .returning();
+
+  return { userId, cookie, subscriptionId: subscription!.id };
+}
+
+const VALID_COLUMN_MAPPING = {
+  Vendor: "vendorNo",
+  Tanggal: "transDate",
+  Barang: "itemNo",
+  Harga: "unitPrice",
+  Qty: "quantity",
+  Satuan: "itemUnitName",
+  Gudang: "warehouseName",
+};
 
 describe("GET /purchase-invoice/import/template", () => {
   test("401 kalau tidak login", async () => {
@@ -182,5 +223,117 @@ describe("GET /purchase-invoice/import (list)", () => {
     expect(body.batches).toHaveLength(2);
     expect(body.batches.map((b) => b.fileName)).toEqual(["batch-3.xlsx", "batch-2.xlsx"]); // terbaru dulu
     expect(body.batches.some((b) => b.fileName === "punya-orang-lain.xlsx")).toBe(false);
+  });
+});
+
+// § Fase 43 — modul REPRESENTATIVE untuk verifikasi WIRING
+// `checkTrialRowBudget` di confirm+retry (12 titik total lintas 6 modul,
+// polanya identik — 5 modul lain diverifikasi manual via grep, bukan
+// re-tulis test yang sama persis 5×, § phase-43 doc § Verifikasi).
+describe("Fase 43 — batas baris trial di confirm/retry", () => {
+  test("400 TRIAL_ROW_LIMIT_EXCEEDED di confirm kalau totalRows batch MELEBIHI sisa kuota trial", async () => {
+    await db
+      .insert(settings)
+      .values({ key: TRIAL_MAX_ROWS_SETTING_KEY, value: 3, group: "data" })
+      .onConflictDoUpdate({ target: settings.key, set: { value: 3 } });
+
+    const trialUser = await createTrialProvisionedUser(`pi-trial-confirm-exceeded-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: trialUser.userId,
+        subscriptionId: trialUser.subscriptionId,
+        module: "purchase_invoice",
+        fileName: "trial-exceeded.xlsx",
+        totalRows: 5, // 5 > batas 3
+        status: "mapping_pending",
+      })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/confirm`, {
+        method: "POST",
+        headers: { cookie: trialUser.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ columnMapping: VALID_COLUMN_MAPPING }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; remaining: number; max: number };
+    expect(body.code).toBe("TRIAL_ROW_LIMIT_EXCEEDED");
+    expect(body.remaining).toBe(3);
+    expect(body.max).toBe(3);
+
+    // § batch TIDAK BOLEH ikut diproses (tolak SELURUH batch) — status
+    // TETAP "mapping_pending", bukan "processing".
+    const [reloaded] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(reloaded!.status).toBe("mapping_pending");
+  });
+
+  test("200 confirm tetap sukses kalau totalRows batch MASIH MUAT di sisa kuota trial", async () => {
+    await db
+      .insert(settings)
+      .values({ key: TRIAL_MAX_ROWS_SETTING_KEY, value: 10, group: "data" })
+      .onConflictDoUpdate({ target: settings.key, set: { value: 10 } });
+
+    const trialUser = await createTrialProvisionedUser(`pi-trial-confirm-ok-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: trialUser.userId,
+        subscriptionId: trialUser.subscriptionId,
+        module: "purchase_invoice",
+        fileName: "trial-ok.xlsx",
+        totalRows: 5, // 5 <= batas 10
+        status: "mapping_pending",
+      })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/confirm`, {
+        method: "POST",
+        headers: { cookie: trialUser.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ columnMapping: VALID_COLUMN_MAPPING }),
+      }),
+    );
+    expect(res.status).toBe(200);
+  });
+
+  test("400 TRIAL_ROW_LIMIT_EXCEEDED di retry kalau baris pending/failed yang AKAN diproses ulang melebihi sisa kuota", async () => {
+    await db
+      .insert(settings)
+      .values({ key: TRIAL_MAX_ROWS_SETTING_KEY, value: 3, group: "data" })
+      .onConflictDoUpdate({ target: settings.key, set: { value: 3 } });
+
+    const trialUser = await createTrialProvisionedUser(`pi-trial-retry-exceeded-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: trialUser.userId,
+        subscriptionId: trialUser.subscriptionId,
+        module: "purchase_invoice",
+        fileName: "trial-retry-exceeded.xlsx",
+        totalRows: 5,
+        status: "completed_with_errors",
+      })
+      .returning();
+    // § sudah 2 baris SUKSES (terpakai dari kuota) + 3 baris failed yang
+    // AKAN di-retry — 2 + 3 = 5 > batas 3, WAJIB ditolak.
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "success" });
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 2, rawData: {}, status: "success" });
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 3, rawData: {}, status: "failed" });
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 4, rawData: {}, status: "failed" });
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 5, rawData: {}, status: "failed" });
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/retry`, {
+        method: "POST",
+        headers: { cookie: trialUser.cookie },
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; remaining: number; max: number };
+    expect(body.code).toBe("TRIAL_ROW_LIMIT_EXCEEDED");
+    expect(body.remaining).toBe(1); // 3 - 2 sukses
+    expect(body.max).toBe(3);
   });
 });

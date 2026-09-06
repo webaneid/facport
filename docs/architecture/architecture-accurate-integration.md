@@ -1,8 +1,27 @@
-# Architecture — Integrasi Accurate Online (OAuth & Bulk Import)
+# Architecture — Integrasi Accurate Online (OAuth & Bulk Import — Infra Bersama)
 
 > Ini komponen INTI Facport — bukan integrasi opsional. Lihat
 > `docs/decisions/adr-0006-integrasi-accurate-api.md` untuk rasional
 > keputusan di balik pola di file ini.
+>
+> **Dirapikan 2026-09-05** (audit kematangan dokumentasi per-modul) —
+> file ini SEKARANG cuma infra BERSAMA yang dipakai SEMUA modul (OAuth,
+> skema `import_batches` generik, rate limit, error handling Accurate).
+> Detail modul SPESIFIK (endpoint, field mapping, keputusan per-fase)
+> sudah dipindah ke file masing-masing — sebelumnya semua numplek di
+> sini (765 baris, ada section yang duplikat 2x & judul fase yang basi
+> tidak pernah diupdate setelah selesai):
+> - `docs/architecture/architecture-purchase-invoice.md` (Faktur
+>   Pembelian — modul PERTAMA, paling matang/banyak iterasi)
+> - `docs/architecture/architecture-sales-invoice.md` (Faktur
+>   Penjualan)
+> - `docs/architecture/architecture-vendor-payable-account.md` (Akun
+>   Hutang Pemasok — kategori Data Master, bukan modul transaksi)
+>
+> Sales Receipt, Purchase Payment, Jurnal Umum **BELUM dikerjakan** (per
+> 2026-09-05) — cuma nama di katalog `MODULE_OPTIONS` + scope OAuth
+> disiapkan di `accurate-scopes.ts`, 0 route/halaman. Belum ada file
+> arsitektur modul untuk ketiganya sampai benar-benar dikerjakan.
 
 ## Dokumentasi Resmi
 - **https://account.accurate.id/open-api/json.do — SUMBER UTAMA, mulai
@@ -307,401 +326,23 @@ baris mana yang gagal dan kenapa, tanpa harus re-import ulang baris yang
 sudah sukses. Ini juga yang bikin retry batch idempotent (cuma proses ulang
 row berstatus `failed`/`pending`, skip yang sudah `success`).
 
-## 3. Import Mapping — Kolom Excel → Field Accurate
+## 3. Import Mapping — Kolom Excel → Field Accurate (Prinsip Umum)
 
-Tiap modul (Sales Invoice, Purchase Order, dst — lihat daftar lengkap di
-`docs/PROGRESS.md`) punya field wajib yang beda-beda di API Accurate.
-**JANGAN asumsikan nama kolom Excel user selalu sama persis dengan nama
-field Accurate** — user upload Excel dengan format mereka sendiri (nama
-kolom bisa "Tanggal", "Tgl Transaksi", dst).
+Tiap modul (Sales Invoice, Purchase Invoice, dst) punya field wajib
+yang beda-beda di API Accurate. **JANGAN asumsikan nama kolom Excel
+user selalu sama persis dengan nama field Accurate** — user upload
+Excel dengan format mereka sendiri (nama kolom bisa "Tanggal", "Tgl
+Transaksi", dst).
 
-UI upload WAJIB kasih langkah "cocokkan kolom" (preview kolom Excel vs field
-Accurate yang dibutuhkan) sebelum eksekusi import — bukan langsung
-tebak-tebakan otomatis tanpa konfirmasi user, supaya salah mapping ketahuan
-SEBELUM data masuk ke Accurate (data yang sudah masuk Accurate lebih susah
-di-rollback daripada dibatalkan sebelum submit).
+UI upload WAJIB kasih langkah "cocokkan kolom" (preview kolom Excel vs
+field Accurate yang dibutuhkan) sebelum eksekusi import — bukan
+langsung tebak-tebakan otomatis tanpa konfirmasi user, supaya salah
+mapping ketahuan SEBELUM data masuk ke Accurate (data yang sudah masuk
+Accurate lebih susah di-rollback daripada dibatalkan sebelum submit).
 
-### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
-Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
-otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error
-"tidak ditemukan") sebelum Faktur Pembelian dibuat — pakai field OPSIONAL
-tambahan (kategori, telepon, WhatsApp, email, alamat, negara, Akun Hutang
-untuk vendor baru). Kalau vendor/item SUDAH ada, field ini diabaikan sama
-sekali (tidak pernah update data existing). Detail lengkap (field, fungsi
-`findOrCreateVendor`/`findOrCreateItem`, keputusan desain) →
-`docs/phases/phase-05-purchase-invoice-auto-create.md`.
-
-### Purchase Invoice — Multi-Item per Faktur (Fase 06) 🆕 DIRENCANAKAN 2026-08-28
-Client feedback pasca-presentasi: 1 faktur pembelian nyata sering punya
-banyak barang, tapi Fase 02 sengaja di-scope "1 baris Excel = 1 faktur =
-TEPAT 1 `detailItem`" (Known Limitation eksplisit). Baris Excel sekarang
-dikelompokkan berdasarkan kolom **"Bill No"** (`billNumber`) — baris
-dengan Bill No sama digabung jadi 1 payload `save.do` dengan `detailItem[]`
-banyak elemen, bukan dikirim sebagai faktur terpisah. Baris dengan Bill No
-kosong tetap 1 grup isi 1 baris (non-breaking untuk user existing). Field
-header (`transDate`, `vendorNo`, dst) diambil dari baris pertama tiap
-grup; semua baris dalam grup WAJIB `vendorNo` sama (validasi sebelum
-kirim). Hasil (`accurateTransactionId`/status) di-apply ke semua baris
-`import_batch_rows` anggota grup yang sama, tanpa kolom DB baru. Rasional
-lengkap (kenapa Bill No, bukan kolom baru/Trans No, dan trade-off retry
-per-grup) → `docs/decisions/adr-0011-purchase-invoice-multi-item.md`.
-Detail eksekusi → `docs/phases/phase-06-purchase-invoice-multi-item.md`.
-
-### Purchase Invoice — Update Faktur Existing / Retry Cerdas (Fase 08) ✅ VERIFIED 2026-08-28
-Batch yang diproses SEBELUM Fase 06 ada bisa punya baris `success` (1
-faktur, 1 item) + baris `failed` lain dengan Bill No sama (ditolak
-Accurate sebagai duplikat nomor faktur). Retry biasa tidak bisa
-memperbaiki ini — mencoba CREATE ulang tetap ditolak dengan alasan sama.
-**Dikonfirmasi EMPIRIS** (test call nyata ke faktur `#150`, Data Usaha
-"PT Frozen Food"): `purchase-invoice/save.do` MENDUKUNG mode UPDATE kalau
-payload menyertakan `id` faktur — bukan cuma create. `detailItem` yang
-dikirim REPLACE seluruh array (bukan merge), jadi item lama WAJIB
-direferensikan lewat `id`-nya (`{ "id": <id lama> }`, tanpa field lain)
-supaya tidak hilang; item baru dikirim tanpa `id`. Field header lain
-(`vendorNo`, `transDate`, dst) TIDAK perlu disertakan di payload update —
-dipertahankan otomatis oleh Accurate. Ini mengoreksi klaim ADR-0011 yang
-bilang `save.do` tidak punya mode append — SALAH, dikoreksi di
-`docs/decisions/adr-0012-purchase-invoice-update-existing.md` (ADR-0011
-sendiri tidak diedit, sudah Accepted).
-
-Retry sekarang otomatis pilih CREATE vs UPDATE: cari lintas-batch apakah
-Bill No grup itu sudah pernah `success` di subscription yang sama — kalau
-ketemu, jalur UPDATE (dengan safety check vendor-match + duplicate-guard
-per item, lihat ADR-0012); kalau tidak, jalur CREATE seperti biasa (Fase
-06, tidak berubah). Tidak ada tombol/endpoint baru — logic ada di worker.
-Detail lengkap → ADR-0012 dan `docs/phases/phase-08-purchase-invoice-update-existing.md`.
-
-### Purchase Invoice — Batal Import / Hapus Faktur (Fase 09) ✅ VERIFIED 2026-08-28
-"Batal Import" menghapus/melepas transaksi Accurate yang dibuat oleh 1
-batch import — BUKAN cuma menyembunyikan record lokal. **Dikonfirmasi
-EMPIRIS** (create test invoice → hapus lagi, Data Usaha "PT Frozen
-Food"):
-- `purchase-invoice/delete.do` (`HTTP DELETE`, scope
-  `purchase_invoice_delete`) terima SATU `id` (Long) atau `number`
-  (String) per panggilan — BUKAN bulk. Menghapus SELURUH faktur (semua
-  `detailItem`), tidak ada mode hapus sebagian. Envelope respons `{s,
-  d}` (BUKAN `parseAccurateSaveEnvelope` — tidak ada field `r`, beda dari
-  `save.do`). Dikonfirmasi BENAR-BENAR menghapus (bukan soft-delete):
-  `detail.do` sesudahnya balas `{s:false, d:["Faktur Pembelian tidak
-  tepat"]}`.
-- `save.do` respons CREATE (`r`) **mengandung `detailItem[].id`** per
-  item (dikonfirmasi test nyata: item baru dapat `id` sendiri, terpisah
-  dari `id` faktur) — fondasi tracking per-item yang dipakai fase ini.
-- ⚠️ **`save.do` mode update TIDAK BISA menghapus 1 detailItem via omit
-  dari array** — DIKONFIRMASI EMPIRIS (buang 1 dari 2 item, tunggu 45
-  detik biar bukan isu timing kalkulasi biaya, `save.do` balas `s:true`
-  TANPA error, tapi `detail.do` fresh sesudahnya menunjukkan item yang
-  di-omit MASIH ADA). `detailItem[]` bersifat **upsert-only** (tambah/
-  update via `id`), BUKAN full-replace seperti draf awal ADR-0012/0013
-  duga. Koreksi lengkap → ADR-0014.
-
-**Masalah yang diselesaikan**: sejak Fase 08, 1 faktur bisa berisi item
-dari BEBERAPA batch (append lintas-batch) — `delete.do` polos bisa
-menghapus data batch LAIN yang menumpang di faktur yang sama. **Karena
-tidak ada cara aman "menyusutkan" faktur gabungan** (temuan di atas),
-solusinya: cek dulu lintas-batch siapa saja pemilik faktur itu — kalau
-murni 1 batch → `delete.do` (hapus utuh, SATU-SATUNYA kasus yang aman
-di-auto-cancel); kalau gabungan (batch lain juga punya item di faktur
-itu) → **DIBLOKIR**, sama seperti baris lama tanpa tracking id-per-item
-(`accurateDetailItemId` NULL). Detail lengkap keputusan → ADR-0013 (desain
-awal) dan ADR-0014 (koreksi "susutkan" → "blokir"), eksekusi →
-`docs/phases/phase-09-batal-import.md`.
-
-## Sales Invoice (Faktur Penjualan) — Fase 13
-> Client minta 5 sub-modul aktif (2026-09-04): Sales Invoice (SI),
-> Purchase Invoice (PI, sudah ada), Sales Receipt/"Customer Receipt" (CR),
-> Purchase Payment (PP), Journal Voucher/"Jurnal Umum" (JU). Fase 13 ini
-> Sales Invoice SAJA — PP/CR/JU menyusul fase terpisah (urutan: yang
-> paling mirip pola existing dulu). Semua endpoint/scope di bawah
-> diverifikasi langsung dari `docs/referencehtml/accurate-openapi.json`
-> (OpenAPI spec resmi Accurate, bukan tebakan).
-
-**Prinsip: SI adalah bayangan cermin PI** — `vendorNo`↔`customerNo`,
-Vendor↔Customer, semua pola generik yang sudah diputuskan untuk PI
-(grouping multi-item per ADR-0011, retry cerdas per ADR-0012, batal
-import per ADR-0013/ADR-0014) **diterapkan APA ADANYA ke resource baru
-ini**, bukan didesain ulang. Dibangun LANGSUNG lengkap (bukan bertahap
-seperti histori PI Fase 02→05→06→08→09) — keputusan eksplisit user
-2026-09-04, karena pola-nya sudah terbukti matang di PI.
-
-**Endpoint** (`/api/sales-invoice/*`, host dinamis dari sesi Data Usaha):
-| Endpoint | Method | Scope |
-|---|---|---|
-| `/save.do` | POST | `sales_invoice_save` |
-| `/detail.do` | GET | `sales_invoice_view` |
-| `/list.do` | GET | `sales_invoice_view` |
-| `/delete.do` | DELETE | `sales_invoice_delete` |
-
-Scope `sales_invoice_view`/`sales_invoice_save` **sudah ada** di
-`apps/api/src/lib/accurate-scopes.ts` (grup `penjualan`) sejak awal
-project — belum pernah dipakai endpoint/service sampai fase ini.
-
-**Field wajib** `save.do`: `detailItem[].itemNo`, `detailItem[].unitPrice`
-(persis PI). `customerNo` SECARA TEKNIS opsional di schema Accurate
-(beda dari PI yang `vendorNo` juga opsional secara schema tapi WAJIB
-secara bisnis) — tetap diperlakukan WAJIB di `requiredFields` mapping
-kita, konsisten dengan PI.
-
-**Customer (data master, setara Vendor di PI)** — `apps/api/src/lib/accurate-customer.ts`,
-mirror 1:1 `accurate-vendor.ts`:
-- `findCustomerByNo` — `customer/list.do` + `filter.no.val`, sama pola
-  `findVendorByNo`.
-- `findOrCreateCustomer` — auto-create kalau `customerNo` di Excel belum
-  ada, field opsional `customerName` (wajib diisi kalau memang mau buat
-  baru), kategori/telepon/WA/email/alamat/negara — SEMUA create-only
-  (tidak update customer existing), KECUALI:
-- **`customerReceivableAccountListNo`** ("Akun Piutang") — setara
-  `vendorPayableAccountListNo` di PI (§ Fase 04 & revisi 2026-08-22):
-  BOLEH update customer yang SUDAH ADA juga, bukan cuma saat create.
-  Field asli Accurate dikonfirmasi ada di `customer/save.do` schema
-  (`customerReceivableAccountListNo`, tipe String) — simetris persis
-  dengan vendor, TIDAK perlu modul "Import Data Pelanggan" terpisah
-  (beda dari PI yang punya Fase 04 sebagai modul mandiri — di sini
-  cukup jadi field opsional di Sales Invoice langsung karena tidak ada
-  permintaan client spesifik soal itu, gampang ditambah modul terpisah
-  nanti kalau ternyata dibutuhkan).
-
-**Multi-item, retry cerdas, batal import** — reuse fungsi generik dari
-`workers/index.ts` yang sudah ada untuk PI (`groupPurchaseInvoiceRows`,
-dst pola-nya), diterapkan lewat fungsi SI sendiri
-(`groupSalesInvoiceRows`, `processSalesInvoiceGroup`,
-`appendToExistingSalesInvoice`, `findExistingAccurateSalesInvoiceId`) —
-kolom pengelompokan pengganti "Bill No" adalah **"PO Number"**
-(`poNumber`, field resmi Accurate di `sales-invoice/save.do` — referensi
-nomor PO dari customer, peran sama seperti Bill No vendor di PI: nomor
-referensi EKSTERNAL yang dipakai user mengelompokkan baris jadi 1
-faktur, BUKAN nomor transaksi Accurate `number`).
-
-**Kolom Excel & UI** — pola 1:1 PI: `sales-invoice.mapping.ts`
-(`fieldToAccuratePath`, `defaultColumnMap`, `customerAutoCreateMapping`),
-halaman `app/app/(protected)/sales-invoice/import/*`, komponen
-`components/sales-invoice/*`. Detail field lengkap → baca kode langsung
-(bukan didokumentasikan ulang di sini, sesuai pola PI yang sudah settle
-— dokumen ini cukup jadi peta konsep + rujukan ADR, bukan duplikat kode).
-
-**Nav & dashboard difilter oleh langganan** (§ ADR-0018, BARU sejak fase
-ini) — menu "Import Faktur Penjualan" di sidebar customer HANYA muncul
-kalau plan langganan customer itu mencakup modul `"penjualan"`. Pola ini
-BAKU untuk semua modul baru berikutnya (PP, CR, JU), bukan kasus khusus
-SI.
-
-Detail eksekusi lengkap → `docs/phases/phase-13-sales-invoice.md`.
-
-### Purchase Invoice — Auto-create Vendor & Item (Fase 05) ✅ VERIFIED 2026-08-20
-Kalau `vendorNo`/`itemNo` di baris Excel BELUM ada di Accurate, dibuatkan
-otomatis dulu (`vendor/save.do`/`item/save.do` CREATE, bukan cuma error
-"tidak ditemukan") sebelum Faktur Pembelian dibuat — pakai field OPSIONAL
-tambahan (kategori, telepon, WhatsApp, email, alamat, negara, Akun Hutang
-untuk vendor baru). Kalau vendor/item SUDAH ada, field ini diabaikan sama
-sekali (tidak pernah update data existing). Detail lengkap (field, fungsi
-`findOrCreateVendor`/`findOrCreateItem`, keputusan desain) →
-`docs/phases/phase-05-purchase-invoice-auto-create.md`.
-
-### Purchase Invoice (Faktur Pembelian) — ✅ VERIFIED 2026-08-19
-Sumber: snapshot lokal `api-docs.do` (§ "Dokumentasi Resmi" di atas), bukan
-tebakan. Endpoint tersedia (semua di bawah `/api/purchase-invoice`, host
-dinamis dari sesi Data Usaha — § "Sesi Data Usaha" di atas):
-
-| Endpoint | Method | Scope |
-|---|---|---|
-| `/bulk-save.do` | POST | `purchase_invoice_save` |
-| `/save.do` | POST | `purchase_invoice_save` |
-| `/create-down-payment.do` | POST | `purchase_invoice_save` |
-| `/list.do` | GET | `purchase_invoice_view` |
-| `/detail.do` | GET | `purchase_invoice_view` |
-| `/delete.do` | DELETE | `purchase_invoice_delete` |
-
-`bulk-save.do` adalah yang dipakai import Excel (max 100 data per request —
-untuk file lebih besar, WAJIB dipecah jadi beberapa request oleh worker,
-bukan satu request raksasa). Field diprefix `data[n].` per baris (index
-mulai 0).
-
-**Field wajib (`required: true`)** untuk tiap baris transaksi:
-| Field | Tipe | Keterangan |
-|---|---|---|
-| `vendorNo` | String | Nomor identitas vendor (header transaksi) |
-| `detailItem.itemNo` | String | Kode barang (per baris item) |
-| `detailItem.unitPrice` | Money | Harga beli barang (per baris item) |
-
-**Field penting lain (opsional, tapi kemungkinan perlu di-mapping)**:
-`transDate` (Date, tanggal transaksi), `number` (String, nomor faktur —
-kosongkan untuk auto-number), `description` (String, catatan), `detailItem.quantity`
-(Money, jumlah), `detailItem.warehouseName`, `detailItem.itemUnitName`,
-`taxable`/`inclusiveTax` (Boolean, status pajak), `currencyCode`,
-`branchName`, `paymentTermName`, `detailItem.purchaseOrderNumber` (kalau
-faktur ini terhubung ke PO — TIDAK relevan untuk Fase 02 karena Purchase
-Order belum dikerjakan). Field lengkap (~90 field termasuk
-`detailExpense.*`, `detailDownPayment.*`, klasifikasi keuangan
-`dataClassification1Name`..`10Name`) ada di snapshot lokal — jangan
-duplikasi semuanya ke sini, cek file itu langsung saat implementasi Fase 02
-untuk field yang belum kepakai di atas.
-
-**Header wajib khusus OAuth**: `X-Session-ID` (§ "Sesi Data Usaha" di atas)
-— muncul di parameter tiap endpoint `/api/purchase-invoice/*` yang dicek,
-bukan cuma sekali di `save.do`.
-
-**Response schema `save.do` — ✅ TERVERIFIKASI 2026-08-19 via test call
-nyata** (bukan lagi "belum terverifikasi" seperti draf awal). Record hasil
-faktur ADA di field **`r`** (BUKAN `d` — `d` di endpoint save cuma pesan
-status `["Faktur Pembelian \"...\" berhasil disimpan"]`). `r` berisi objek
-faktur lengkap (puluhan field turunan Accurate: `id`, `number`, `apAccount`,
-`vendor`, `detailItem[]` dst) — kode kita cuma ambil `id`+`number` buat
-`accurateTransactionId`. **Parse pakai `parseAccurateSaveEnvelope()`**
-(`lib/accurate.ts`), BUKAN `parseAccurateEnvelope()` biasa — lihat
-`docs/lessons-learned.md` untuk detail & alasan kenapa 2 parser terpisah
-dibutuhkan (pola envelope Accurate TIDAK konsisten lintas jenis endpoint).
-
-**Soal "Akun Hutang" (Accounts Payable account)**: field ini BUKAN input
-yang bisa diisi manual saat `save.do` — tidak ada di schema request resmi.
-Accurate otomatis menentukannya dari **default AP account yang sudah
-di-setting di data Pemasok** (`vendor.apAccountId`/`apAccount`, muncul di
-field `r` hasil save sebagai output, bukan sebagai parameter input). Kalau
-user butuh AP account beda per transaksi, itu di luar cakupan `save.do`
-Purchase Invoice — bukan sesuatu yang bisa ditambahkan sebagai kolom
-mapping Excel. **Kalau kebutuhan sebenarnya adalah SET Akun Hutang per
-pemasok (bukan per transaksi)** → itu didukung, tapi lewat endpoint
-Vendor, bukan Purchase Invoice — lihat § "Vendor (Data Master)" di bawah.
-
-```ts
-// apps/api/src/lib/import-mapping/purchase-invoice.mapping.ts — draft, sesuaikan pas Fase 02
-export const purchaseInvoiceMapping = {
-  requiredFields: ["vendorNo", "detailItem.itemNo", "detailItem.unitPrice"] as const,
-  defaultColumnMap: {
-    "No Pemasok": "vendorNo",
-    "Tanggal": "transDate",
-    "Kode Barang": "detailItem.itemNo",
-    "Harga": "detailItem.unitPrice",
-    "Qty": "detailItem.quantity",
-  },
-};
-```
-
-### Vendor (Data Master, disebut "Pemasok" di UI Accurate) — 🆕 DIRENCANAKAN 2026-08-19, BELUM DIEKSEKUSI
-> Istilah: API/endpoint pakai nama Inggris "Vendor" (`/api/vendor/*`,
-> `vendorNo`, dst — tag resmi `open-api/json.do` untuk `/api/vendor` juga
-> literal berlabel **"Pemasok"**). Teks di bawah pakai "Pemasok" untuk
-> naratif, "Vendor" untuk nama literal endpoint/field.
-
-Latar belakang: client user (pemilik Facport) minta kolom "Akun Hutang" di
-import Faktur Pembelian. Setelah dicek langsung ke `open-api/json.do`
-resmi (bukan snapshot lokal — spec ini publik & selalu live, § "Dokumentasi
-Resmi"), field itu **tidak ada** di `purchase-invoice/save.do` (35 field,
-tidak satupun terkait akun) karena Akun Hutang memang properti Pemasok,
-bukan properti transaksi. Field yang dicari **ADA** di `vendor/save.do`:
-`vendorPayableAccountListNo` ("Kode Akun Hutang"). Jadi kebutuhan client
-sebenarnya adalah **import/update Data Master Pemasok** — modul BARU,
-terpisah dari Purchase Invoice, dan di luar 5 modul transaksi yang sudah
-di-listing di `docs/PROGRESS.md` (Penjualan/Pembelian/Persediaan/
-Manufaktur/Kas&Bank — semua itu modul TRANSAKSI, ini modul DATA MASTER).
-
-**Status:** baru tahap rencana (draf di `docs/phases/phase-04-import-vendor.md`),
-BELUM dieksekusi — user (pemilik Facport) masih konfirmasi kebutuhan detail
-ke client-nya dulu.
-
-Endpoint tersedia (`/api/vendor/*`, host dinamis dari sesi Data Usaha, sama
-pola dengan Purchase Invoice):
-| Endpoint | Method | Scope (dugaan, ikut pola `{resource}_{aksi}`) |
-|---|---|---|
-| `/bulk-save.do` | POST | `vendor_save` |
-| `/save.do` | POST | `vendor_save` |
-| `/list.do` | GET | `vendor_view` |
-| `/detail.do` | GET | `vendor_view` |
-| `/delete.do` | DELETE | `vendor_delete` |
-
-**Field wajib (`required: true`)** di schema resmi `save.do`: `name`,
-`transDate`.
-
-**✅ TERVERIFIKASI 2026-08-19 — konfirmasi langsung dari tim Support
-Accurate ke client user** (bukan asumsi lagi): client menghubungi Support
-Accurate perihal kebutuhan Akun Hutang ini, dan tim Support membalas
-langsung membenarkan `vendorPayableAccountListNo` adalah parameter yang
-tepat, sekaligus mengirim bukti test call nyata (screenshot Postman +
-UI Accurate, tersimpan di `docs/referencehtml/vendorPayableAccountListNo.png`
-dan `-2.png`):
-```json
-POST https://zeus.accurate.id/accurate/api/vendor/save.do
-{
-  "id": 100,
-  "name": "FastHauzz",
-  "transDate": "06/08/2026",
-  "vendorPayableAccountListNo": 210101
-}
-```
-→ `200 OK`, dan field "Akun Utang" di UI vendor tersebut (tab Pembelian →
-Akun Pembelian) benar berubah jadi `[210101] Utang Usaha IDR`.
-
-Temuan dari test call ini:
-- **`id` (internal numeric ID Accurate) WAJIB untuk update vendor
-  existing** — `optLock` di response naik (versi record), menandakan ini
-  UPDATE ke vendor yang SUDAH ADA (id: 100), bukan CREATE baru. Konsisten
-  dengan dugaan sebelumnya: alur Facport butuh `vendor/list.do` dulu
-  (cari `id` berdasarkan `vendorNo` yang di-input user di Excel) → baru
-  `save.do` pakai `id` itu untuk update.
-- **`vendorPayableAccountListNo` dikirim sebagai ANGKA TUNGGAL**
-  (`210101`), BUKAN array (`[210101]`) seperti tertulis di schema resmi
-  (`type: array`) — tapi tetap sukses. Kemungkinan API cukup toleran
-  (auto-wrap jadi array di belakang layar). Ikuti pola yang TERBUKTI
-  jalan ini (angka/string tunggal) saat implementasi.
-- **⚠️ Field ini OPSIONAL, bukan "akun hutang utama" tiap vendor** — dari
-  catatan resmi di UI Accurate (tab Vendor → Pembelian → Akun Pembelian):
-  *"[Opsional] Diisikan JIKA anda ingin MEMBEDAKAN jurnal akun utang/uang
-  muka pemasok ini dengan DEFAULT akun utang/uang muka yang ada pada Mata
-  Uang..."* — artinya ada **akun hutang default di level pengaturan Mata
-  Uang** (Settings perusahaan), dan field vendor ini cuma OVERRIDE kalau
-  vendor tertentu butuh beda dari default itu. Kalau vendor pakai akun
-  default, field ini boleh dikosongkan. **Ini mengubah framing fitur**:
-  bukan "semua vendor WAJIB di-set akun hutangnya", tapi "vendor TERTENTU
-  SAJA yang perlu override dari default" — perlu dikonfirmasi ke client
-  berapa banyak vendor yang benar-benar butuh field ini.
-
-**Field lain yang relevan** (dari 38 field total `save.do`):
-`vendorNo` (String, nomor identitas vendor), `vendorDownPaymentAccountListNo`
-(String, "Kode Akun Uang Muka" — kemungkinan relevan juga kalau client
-mau sekalian), `categoryName`, `currencyCode`, `termName` (syarat bayar
-default), `email`, `mobilePhone`, alamat penagihan (`billStreet`/
-`billCity`/`billProvince`/`billCountry`/`billZipCode`), data pajak
-(`npwpNo`/`pkpNo`/`wpNumber`/`wpName`).
-
-**Scope MVP yang disarankan** (tunggu konfirmasi user setelah client
-dikonfirmasi): cuma 2 kolom wajib — `vendorNo` (untuk cari vendor existing)
-+ `vendorPayableAccountListNo` (Akun Hutang) — TIDAK perlu semua 38 field
-sekaligus di iterasi pertama, field lain bisa menyusul kalau memang
-dibutuhkan.
-
-**⚠️ Jangan tertukar dengan `detailOpenBalance` (Saldo Awal Utang/Piutang)**
-— field array TERPISAH di `save.do` yang sama, deskripsi resmi field
-`detailOpenBalance[].asOf`: *"Tanggal transaksi saldo awal utang/piutang
-perusahaan"*. Ini BUKAN akun (COA), tapi **nilai saldo hutang** (Rupiah)
-yang sudah ada sebelum pemasok itu mulai dipakai di Accurate — input
-sekali per pemasok, JUGA tidak otomatis terhubung ke transaksi Faktur
-Pembelian ke depannya (Accurate menghitung saldo BERJALAN sendiri dari
-saldo awal ini + akumulasi Faktur Pembelian − Purchase Payment). Field
-utama di dalamnya: `amount` (nilai saldo), `asOf` (tanggal), `currencyCode`.
-**WAJIB dikonfirmasi ke client field mana yang sebenarnya dibutuhkan**
-(`vendorPayableAccountListNo` = pilih akun COA, ATAU `detailOpenBalance`
-= input nilai saldo hutang lama) — sebelum scope Fase 04 difinalisasi,
-lihat pertanyaan terbuka di `docs/phases/phase-04-import-vendor.md`.
-
-**✅ TERVERIFIKASI 2026-08-20 — cocok 1:1 dengan UI Accurate.** Tab Vendor
-→ "Utang Awal" di UI Accurate punya dialog tambah entry dengan kolom
-**Tanggal, Jumlah, Mata Uang, Syarat Pembayaran, Nomor#, Keterangan**
-(TANPA field item) — persis field `detailOpenBalance[].{asOf, amount,
-currencyCode, paymentTermName, number, description}`. Dicek via API
-langsung ke vendor real ("PT. Angin Ribut", Data Usaha "Tes"):
-```json
-detailOpenBalance: [
-  { "id": 50, "amount": 100000000, "asOf": "01/07/2026",
-    "number": "PI.2026.07.00001", ... }
-]
-```
-Field `number` di sini HANYA label/kategori referensi (tampil sebagai
-dropdown "Faktur Pembelian" di UI, TANPA ikon pencarian 🔍) — bukan link
-ke transaksi Faktur Pembelian sungguhan, murni catatan bebas. Juga
-dikonfirmasi: entry baru yang ditambah lewat dialog "+" di UI Accurate
-TIDAK langsung tersimpan ke server — baru ter-commit (dapat Nomor#
-otomatis) setelah tombol "Simpan" di level form Vendor keseluruhan
-diklik, bukan cuma menutup dialog kecilnya. Detail eksperimen lengkap →
-`docs/phases/phase-04-import-vendor.md` § "Eksperimen Manual 2026-08-20".
+**Detail field mapping per modul** (endpoint, field wajib, keputusan
+teknis per-fase) → file arsitektur modul masing-masing, § catatan di
+awal dokumen ini.
 
 ## 4. Rate Limiting Sisi Client
 ✅ **Angka pasti TERVERIFIKASI 2026-08-19**: **maksimal 8 request/detik DAN
@@ -757,3 +398,8 @@ dicampur dengan implementasi OAuth Facport.
 - Background job & retry → `docs/architecture/architecture-jobs.md`
 - Enkripsi token & validasi upload → `docs/architecture/architecture-security.md`
 - Istilah "import mapping", "modul" → `docs/glossary.md`
+- **Detail per modul** (endpoint, field mapping, keputusan per-fase):
+  - `docs/architecture/architecture-purchase-invoice.md` (Faktur Pembelian)
+  - `docs/architecture/architecture-sales-invoice.md` (Faktur Penjualan)
+  - `docs/architecture/architecture-vendor-payable-account.md` (Akun Hutang Pemasok, Data Master)
+  - Sales Receipt, Purchase Payment, Jurnal Umum: belum dikerjakan, belum ada file

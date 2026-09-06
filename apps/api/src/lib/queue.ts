@@ -16,6 +16,8 @@ export const JOBS = {
   IMPORT_TO_ACCURATE: "import-to-accurate",
   CANCEL_IMPORT: "cancel-import", // § Fase 09, ADR-0013
   PURGE_OLD_IMPORTS: "purge-old-imports", // § Fase 10 — retensi data import
+  NOTIFY_EXPIRING_SOON: "notify-expiring-soon", // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir
+  SEND_ANNOUNCEMENT: "send-announcement", // § Fase 45 — fan-out broadcast admin ke banyak penerima
 } as const;
 
 let started = false;

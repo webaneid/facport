@@ -63,9 +63,9 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
 // peran "Bill No" (pengelompokan multi-item), "Customer" pengganti "Vendor".
 export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Penjualan." },
-  { column: "PO Number", required: false, example: "PO-CUST-001", description: "Nomor PO referensi dari customer. PENTING: isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur dengan banyak barang (multi-item) — baris dengan PO Number kosong tetap dianggap 1 faktur sendiri." },
+  { column: "PO Number", required: false, example: "PO-CUST-001", description: "Nomor PO referensi dari customer. Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
   { column: "Customer No", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Trans No", required: false, example: "", description: "Nomor transaksi Accurate — kosongkan supaya nomor otomatis (disarankan)." },
+  { column: "Trans No", required: false, example: "", description: "Nomor transaksi Accurate — kosongkan supaya nomor otomatis, ATAU isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item (kalau diisi, LEBIH DIUTAMAKAN dari PO Number untuk penggabungan)." },
   { column: "Branch Name", required: false, example: "Cabang Jakarta", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
   { column: "Note", required: false, example: "Penjualan barang Agustus", description: "Catatan/keterangan bebas untuk transaksi ini." },
   { column: "Currency Code", required: false, example: "IDR", description: "Kode mata uang — kosongkan kalau transaksi dalam Rupiah." },
@@ -110,4 +110,63 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
 export const vendorPayableAccountTemplateGuide: TemplateFieldGuide[] = [
   { column: "Nomor Vendor", required: true, example: "V-0001", description: "Nomor/kode vendor PERSIS seperti terdaftar di Accurate Online (header alternatif yang juga diterima: \"Vendor No\")." },
   { column: "Akun Hutang", required: true, example: "2-10100", description: "Kode Akun Hutang (COA) yang mau di-assign ke vendor ini (header alternatif yang juga diterima: \"Kode Akun Hutang\")." },
+];
+
+// § architecture-purchase-payment.md — 1 baris = 1 pembayaran = 1 faktur.
+// Vendor DAN faktur WAJIB SUDAH ADA di Accurate (TIDAK auto-create),
+// beda dari Faktur Pembelian di atas.
+// § Fase 50 — label kolom diikutkan ke istilah kompetitor
+// (`FACPORT_purchase_payment.xlsx`, client sudah familiar), label
+// Indonesia lama tetap didukung sebagai alias (§ purchase-payment.mapping.ts).
+export const purchasePaymentTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Date", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi pembayaran (header alternatif: \"Tanggal\")." },
+  { column: "Purchase Payment No", required: false, example: "PP-2026-0001", description: "Nomor pembayaran (opsional). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 pembayaran yang bayar BANYAK faktur sekaligus — baris dengan kolom ini kosong tetap dianggap 1 pembayaran sendiri." },
+  { column: "No. Supplier", required: true, example: "V-0001", description: "Nomor/kode vendor PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA (header alternatif: \"No Pemasok\", \"Nomor Vendor\")." },
+  { column: "Invoice No", required: true, example: "PI-2026-001", description: "Nomor Faktur Pembelian yang dibayar, PERSIS seperti di Accurate — WAJIB SUDAH ADA. Isi faktur BEDA di tiap baris kalau 1 pembayaran (Purchase Payment No sama) bayar banyak faktur sekaligus (header alternatif: \"No Faktur\", \"Nomor Faktur\")." },
+  { column: "No. Bank Account", required: true, example: "1-10200", description: "Kode Akun (COA) bank/kas yang dipakai bayar, BUKAN nama bank literal (header alternatif: \"Akun Bank/Kas\", \"Kode Akun Bank\")." },
+  { column: "Payment", required: true, example: "5000000", description: "Nominal pembayaran UNTUK FAKTUR DI BARIS INI (bukan total keseluruhan kalau 1 pembayaran bayar banyak faktur — Facport yang jumlahkan otomatis). BUKAN kolom \"Cheque Amount\" (itu cuma dipakai kalau metode bayar cek fisik). Isi PENUH sesuai sisa tagihan untuk pelunasan, atau LEBIH KECIL untuk pembayaran sebagian. Angka polos, TANPA titik/koma pemisah ribuan (header alternatif: \"Jumlah Bayar\")." },
+];
+
+// § architecture-sales-receipt.md — bayangan cermin PERSIS Purchase
+// Payment di atas (Customer ganti peran Vendor, Faktur Penjualan ganti
+// Faktur Pembelian). Customer DAN faktur WAJIB SUDAH ADA di Accurate
+// (TIDAK auto-create).
+export const salesReceiptTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi penerimaan." },
+  { column: "No. Sales Receipt", required: false, example: "11010101.2026.01.00001", description: "Nomor struk penerimaan (opsional). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 penerimaan yang bayar BANYAK faktur sekaligus — baris dengan kolom ini kosong tetap dianggap 1 penerimaan sendiri (header alternatif: \"Nomor Penerimaan\", \"No Penerimaan\")." },
+  { column: "No Pelanggan", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA (header alternatif: \"Nomor Customer\", \"Customer No\")." },
+  { column: "No Faktur", required: true, example: "SI-2026-001", description: "Nomor Faktur Penjualan yang dibayar, PERSIS seperti di Accurate — WAJIB SUDAH ADA. Isi faktur BEDA di tiap baris kalau 1 penerimaan (No. Sales Receipt sama) bayar banyak faktur sekaligus (header alternatif: \"Nomor Faktur\")." },
+  { column: "Akun Bank/Kas", required: true, example: "1-10200", description: "Kode Akun (COA) bank/kas yang dipakai terima pembayaran, BUKAN nama bank literal (header alternatif: \"Kode Akun Bank\")." },
+  { column: "Jumlah Bayar", required: true, example: "5000000", description: "Nominal penerimaan UNTUK FAKTUR DI BARIS INI (bukan total keseluruhan kalau 1 penerimaan bayar banyak faktur — Facport yang jumlahkan otomatis). Isi PENUH sesuai sisa piutang faktur untuk pelunasan, atau LEBIH KECIL untuk penerimaan sebagian. Angka polos, TANPA titik/koma pemisah ribuan." },
+];
+
+// § architecture-journal-voucher.md — DUA FORMAT didukung (§ Fase 50),
+// PILIH SALAH SATU, jangan campur kolom dari dua-duanya di 1 file:
+//
+// FORMAT LEBAR (Opsi A, cocok jurnal SEDERHANA 2 akun) — kolom
+// "Tanggal"/"Akun Debit"/"Nominal Debit"/"Akun Kredit"/"Nominal
+// Kredit"/"Keterangan" di bawah. 1 baris Excel = 1 jurnal LENGKAP.
+//
+// FORMAT PANJANG (Opsi B, ala kompetitor — cocok jurnal N-akun,
+// client sudah familiar dengan istilah ini) — kolom "Transaction
+// Number"/"JV No"/"JV Amount"/"JV Amount Type"/"Trans Date"/"Trans
+// Description" di bawah. 1 baris Excel = 1 akun; baris dengan
+// "Transaction Number" SAMA digabung jadi 1 jurnal (bisa N akun).
+//
+// Akun COA WAJIB SUDAH ADA di Accurate (TIDAK auto-create), untuk
+// KEDUA format. Total DEBIT WAJIB SAMA PERSIS dengan total CREDIT
+// dalam 1 jurnal (aturan double-entry), divalidasi Facport SEBELUM
+// kirim ke Accurate — untuk format panjang, ini SUM semua baris
+// bertipe DEBIT vs SUM semua baris bertipe CREDIT dalam 1 grup.
+export const journalVoucherTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: false, format: DATE_FORMAT, example: "05/09/2026", description: "[FORMAT LEBAR] Tanggal transaksi jurnal (header alternatif format panjang: \"Trans Date\")." },
+  { column: "Akun Debit", required: false, example: "6-20500", description: "[FORMAT LEBAR] Kode Akun (COA) yang di-debit, PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA." },
+  { column: "Nominal Debit", required: false, example: "500000", description: "[FORMAT LEBAR] Nominal debit. WAJIB SAMA PERSIS dengan Nominal Kredit — Facport menolak baris kalau tidak seimbang. Angka polos, TANPA titik/koma pemisah ribuan." },
+  { column: "Akun Kredit", required: false, example: "1-10200", description: "[FORMAT LEBAR] Kode Akun (COA) yang di-kredit, PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA." },
+  { column: "Nominal Kredit", required: false, example: "500000", description: "[FORMAT LEBAR] Nominal kredit. WAJIB SAMA PERSIS dengan Nominal Debit. Angka polos, TANPA titik/koma pemisah ribuan." },
+  { column: "Keterangan", required: false, example: "Penyesuaian beban dibayar dimuka", description: "[FORMAT LEBAR] Catatan/keterangan bebas untuk transaksi jurnal ini (header alternatif format panjang: \"Trans Description\")." },
+  { column: "Transaction Number", required: false, example: "JV.2026.01.00001", description: "[FORMAT PANJANG] Nomor transaksi jurnal — isi SAMA di beberapa baris untuk menggabungkannya jadi 1 jurnal dengan BANYAK akun (N akun, tidak terbatas 2)." },
+  { column: "JV No", required: false, example: "6-20500", description: "[FORMAT PANJANG] Kode Akun (COA) untuk BARIS INI — nama kolom \"JV No\" ikut istilah kompetitor, isinya KODE AKUN (bukan nomor jurnal — itu di kolom Transaction Number)." },
+  { column: "JV Amount", required: false, example: "500000", description: "[FORMAT PANJANG] Nominal untuk baris/akun ini. Total semua baris DEBIT dalam 1 Transaction Number WAJIB SAMA PERSIS dengan total semua baris CREDIT." },
+  { column: "JV Amount Type", required: false, example: "DEBIT", description: "[FORMAT PANJANG] Tipe baris — isi \"DEBIT\" atau \"CREDIT\" (boleh singkatan \"D\"/\"K\")." },
 ];

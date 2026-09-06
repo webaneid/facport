@@ -53,7 +53,7 @@ export async function findOrCreateCustomer(
       return postCustomerSave(ctx, {
         id: existing.id,
         name: existing.name,
-        transDate: todayAccurateDate(),
+        transDate: await todayAccurateDate(),
         customerReceivableAccountListNo: createFields.customerReceivableAccountListNo,
       });
     }
@@ -66,7 +66,7 @@ export async function findOrCreateCustomer(
 
   return postCustomerSave(ctx, {
     customerNo,
-    transDate: todayAccurateDate(),
+    transDate: await todayAccurateDate(),
     categoryName: "Umum", // default, di-override kalau createFields punya categoryName sendiri
     ...createFields,
   });

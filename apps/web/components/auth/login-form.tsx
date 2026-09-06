@@ -2,10 +2,12 @@
 
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
+import { getSafeRedirect } from "@/lib/safe-redirect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 
@@ -42,7 +44,7 @@ function LoginFormInner() {
       setError("Email atau password salah.");
       return;
     }
-    router.push(searchParams.get("redirect") || "/");
+    router.push(getSafeRedirect(searchParams.get("redirect")));
     router.refresh();
   }
 
@@ -60,6 +62,9 @@ function LoginFormInner() {
       <Button type="submit" disabled={isSubmitting} className="w-full">
         {isSubmitting ? "Memproses..." : "Login"}
       </Button>
+      <Link href="/forgot-password" className="text-center text-xs text-muted-foreground hover:text-foreground">
+        Lupa password?
+      </Link>
     </form>
   );
 }

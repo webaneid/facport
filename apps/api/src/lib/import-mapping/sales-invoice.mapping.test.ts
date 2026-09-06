@@ -130,6 +130,49 @@ describe("groupSalesInvoiceRows", () => {
     expect(groups.length).toBe(1);
     expect(groups[0]!.rows.length).toBe(2);
   });
+
+  // § Fase 49 — audit data ASLI kompetitor (`docs/referencehtml`) menemukan
+  // PO Number SELALU KOSONG di praktik, padahal 52% faktur multi-item —
+  // "Trans No" (`number`) yang justru selalu terisi & konsisten per faktur.
+  describe("Fase 49 — prioritas Trans No", () => {
+    const mappingDenganKeduanya = { "Trans No": "number", "PO Number": "poNumber", "Customer No": "customerNo" };
+
+    test("Trans No terisi, PO Number kosong (persis kasus data kompetitor) -> tetap tergabung 1 faktur", () => {
+      const rows = [
+        row("1", { "Trans No": "SI.2026.01.00004", "Customer No": "C1" }),
+        row("2", { "Trans No": "SI.2026.01.00004", "Customer No": "C1" }),
+        row("3", { "Trans No": "SI.2026.01.00002", "Customer No": "C1" }),
+      ];
+      const groups = groupSalesInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(2);
+      expect(groups[0]!.rows.length).toBe(2);
+      expect(groups[0]!.groupKey).toBe("SI.2026.01.00004");
+      expect(groups[0]!.groupColumn).toBe("Trans No");
+    });
+
+    test("Trans No DAN PO Number sama-sama terisi -> Trans No yang dipakai", () => {
+      const rows = [
+        row("1", { "Trans No": "SI-001", "PO Number": "PO-999" }),
+        row("2", { "Trans No": "SI-001", "PO Number": "PO-999" }),
+      ];
+      const groups = groupSalesInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(1);
+      expect(groups[0]!.groupColumn).toBe("Trans No");
+    });
+
+    test("Trans No kosong tapi PO Number terisi -> fallback ke PO Number (behavior lama)", () => {
+      const rows = [row("1", { "PO Number": "PO-001" }), row("2", { "PO Number": "PO-001" })];
+      const groups = groupSalesInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(1);
+      expect(groups[0]!.groupColumn).toBe("PO Number");
+    });
+
+    test("keduanya kosong -> tetap 1 baris = 1 faktur sendiri", () => {
+      const rows = [row("1", { "Customer No": "C1" }), row("2", { "Customer No": "C1" })];
+      const groups = groupSalesInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(2);
+    });
+  });
 });
 
 describe("validateGroupCustomerConsistency", () => {
@@ -140,19 +183,19 @@ describe("validateGroupCustomerConsistency", () => {
   }
 
   test("customerNo beda dalam 1 grup -> return pesan error", () => {
-    const group = { poNumber: "PO-001", rows: [row("1", { "Customer No": "C1" }), row("2", { "Customer No": "C2" })] };
+    const group = { groupKey: "PO-001", groupColumn: "PO Number", rows: [row("1", { "Customer No": "C1" }), row("2", { "Customer No": "C2" })] };
     const result = validateGroupCustomerConsistency(group, columnMapping);
     expect(result).not.toBeNull();
     expect(result).toContain("PO-001");
   });
 
   test("customerNo sama dalam 1 grup -> return null", () => {
-    const group = { poNumber: "PO-001", rows: [row("1", { "Customer No": "C1" }), row("2", { "Customer No": "C1" })] };
+    const group = { groupKey: "PO-001", groupColumn: "PO Number", rows: [row("1", { "Customer No": "C1" }), row("2", { "Customer No": "C1" })] };
     expect(validateGroupCustomerConsistency(group, columnMapping)).toBeNull();
   });
 
   test("grup singleton -> selalu return null", () => {
-    const group = { poNumber: null, rows: [row("1", { "Customer No": "C1" })] };
+    const group = { groupKey: null, groupColumn: null, rows: [row("1", { "Customer No": "C1" })] };
     expect(validateGroupCustomerConsistency(group, columnMapping)).toBeNull();
   });
 });

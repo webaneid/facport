@@ -19,11 +19,11 @@ type EditableRow = {
 
 // § field internal yang dianggap tanggal — HARUS SINKRON dengan
 // `DATE_FIELDS` di `apps/api/src/lib/import-mapping/sales-invoice.mapping.ts`.
-const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § HARUS SINKRON dengan `salesInvoiceMapping.requiredFields`.
-const REQUIRED_INTERNAL_FIELDS = new Set(["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"]);
+export const REQUIRED_INTERNAL_FIELDS = new Set(["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"]);
 
 const FIELD_HINTS: Record<string, string> = {
   customerNo: "Kode Customer di Accurate, contoh: C.00001",

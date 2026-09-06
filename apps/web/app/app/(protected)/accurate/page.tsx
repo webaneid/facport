@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/api-client";
+import { moduleLabel } from "@/lib/module-options";
 
 type AccurateSubscriptionRow = {
   subscriptionId: string;
@@ -127,7 +128,7 @@ function SubscriptionConnectionCard({
       <Card>
         <CardHeader>
           <CardTitle>{row.planName}</CardTitle>
-          <CardDescription>Modul: {row.moduleKey ?? "-"}</CardDescription>
+          <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Badge variant="success" className="w-fit">
@@ -156,7 +157,7 @@ function SubscriptionConnectionCard({
     <Card>
       <CardHeader>
         <CardTitle>{row.planName}</CardTitle>
-        <CardDescription>Modul: {row.moduleKey ?? "-"}</CardDescription>
+        <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {!showReusePicker ? (
@@ -263,7 +264,7 @@ function SelectDatabaseCard({
     <Card>
       <CardHeader>
         <CardTitle>{row.planName}</CardTitle>
-        <CardDescription>Modul: {row.moduleKey ?? "-"}</CardDescription>
+        <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-foreground">Pilih Data Usaha (perusahaan) yang mau dihubungkan:</p>

@@ -91,12 +91,38 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
 ```
 GET  /me/invoices                → riwayat invoice caller SAJA (auth: true, filter userId dari session)
 GET  /admin/invoices             → SEMUA invoice, permission "invoices.view"
+POST /admin/invoices             → { userId, planIds: uuid[] } — buat invoice BARU untuk user
+                                    EXISTING (§ "Admin Membuat Invoice" di bawah), permission
+                                    "invoices.manage" (BARU, ADR-0025 — terpisah dari
+                                    "invoices.view" yang cuma baca)
 GET  /invoices/:id/pdf           → binary PDF (Content-Type: application/pdf).
                                     Ownership: invoice.userId === caller ATAU caller
                                     punya permission "invoices.view" (admin) — SELAIN itu 404
                                     (bukan 403 — hindari konfirmasi "invoice ID ini valid milik
                                     orang lain", pola sama endpoint ownership lain di project ini).
 ```
+
+## Admin Membuat Invoice untuk User Existing — ADR-0025
+Sebelumnya invoice CUMA tercipta otomatis sebagai efek samping: checkout
+self-service (Fase 16) atau admin bikin USER BARU sekaligus pilih paket
+(Fase 18, `POST /admin/users`). **ADR-0025** menambah jalur ketiga: admin
+pilih 1 user YANG SUDAH ADA + 1 atau lebih paket, buat invoice kapan saja
+setelah user itu terdaftar (mis. upsell paket tambahan, invoice ulang
+kontrak tahunan).
+
+`POST /admin/invoices` reuse **`createInvoiceAndOrder()`** (`lib/invoice-order.ts`,
+diekstrak Fase 18) di dalam `db.transaction()` — helper ini SUDAH
+mendukung multi-plan (`planRows: PlanRow[]`) sejak awal, TIDAK perlu
+diubah. `billToName` diambil dari `user.name` (user sudah ada, beda dari
+jalur Fase 18 "Kirim Invoice" yang ambil dari input form karena user
+BARU dibuat bersamaan).
+
+Invoice+order hasil endpoint ini otomatis dapat **link publik**
+(`{APP_URL}/pay/{orderId}`, § `architecture-payment.md` § "Link
+Pembayaran Publik") — admin bisa kirim link itu ke klien tanpa klien
+perlu login, SEKALIGUS klien yang PUNYA akun tetap bisa lihat/bayar
+invoice yang sama lewat `/billing` setelah login (2 jalur, 1 order, 1
+status — tidak ada duplikasi sumber kebenaran).
 
 ## Company Settings Tambahan (Group `billing`)
 Lihat `architecture-settings.md` § "Field Group `billing`" — `company.taxId`,

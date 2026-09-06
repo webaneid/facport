@@ -1,10 +1,38 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { settingsRoute } from "./settings.route";
 import { db } from "../lib/db";
-import { roles, userRoles, user as userTable } from "../db/schema";
+import { roles, userRoles, user as userTable, settings as settingsTable } from "../db/schema";
+
+// § ketemu 2026-09-06 — test di file ini PUT nilai LANGSUNG ke row
+// settings GLOBAL (`company.bankAccounts`/`company.qrisAccounts`/
+// `data.manualInputSecondsPerRow` — SATU baris per key, dipakai
+// BERSAMA seluruh DB, bukan data per-test) TANPA pernah mengembalikannya
+// — akibatnya QRIS/rekening ASLI yang sudah dikonfigurasi admin di DB
+// dev ke-timpa data dummy test SETIAP `bun run test` dijalankan
+// (kejadian nyata: QRIS wakaf customer ke-overwrite 3x dalam 1 sesi).
+// Fix: snapshot nilai ASLI sebelum test manapun jalan, kembalikan lagi
+// di `afterAll` — jalan APAPUN hasil testnya (pass/fail), § bun:test
+// `afterAll` tetap dieksekusi walau ada test yang gagal di file ini.
+const SETTINGS_KEYS_MUTATED_BY_THIS_FILE = ["company.bankAccounts", "company.qrisAccounts", "data.manualInputSecondsPerRow"] as const;
+let originalSettingsSnapshot: Map<string, unknown>;
+
+beforeAll(async () => {
+  const rows = await db.select().from(settingsTable).where(inArray(settingsTable.key, [...SETTINGS_KEYS_MUTATED_BY_THIS_FILE]));
+  originalSettingsSnapshot = new Map(rows.map((r) => [r.key, r.value]));
+});
+
+afterAll(async () => {
+  for (const key of SETTINGS_KEYS_MUTATED_BY_THIS_FILE) {
+    if (originalSettingsSnapshot.has(key)) {
+      await db.update(settingsTable).set({ value: originalSettingsSnapshot.get(key) }).where(eq(settingsTable.key, key));
+    } else {
+      await db.delete(settingsTable).where(eq(settingsTable.key, key));
+    }
+  }
+});
 
 // § Fase 16, security review 2026-09-04 (Medium) — `company.bankAccounts`/
 // `company.qrisAccounts` WAJIB divalidasi bentuknya SAAT SIMPAN (admin),
@@ -96,6 +124,78 @@ describe("PUT /settings — validasi company.bankAccounts/qrisAccounts", () => {
         group: "billing",
       },
     ]);
+    expect(res.status).toBe(200);
+  });
+
+  // § ketemu 2026-09-06 — payload EMV valid disalin dari alat scan/decode
+  // eksternal HAMPIR SELALU ikut bawa whitespace/newline di awal/akhir.
+  // SEBELUM fix: payload ini ditolak (regex `$`-anchored, nol toleransi)
+  // dengan pesan generik "Gagal menyimpan pengaturan" walau payload
+  // aslinya valid. Fix: trim SEBELUM validasi & SEBELUM simpan.
+  test("200 kalau emvPayload valid tapi ada whitespace/newline — di-trim SEBELUM validasi & SEBELUM disimpan", async () => {
+    const cookie = await makeAdminCookie();
+    const validPayload = "000201" + "6304" + "ABCD"; // struktural valid: mulai "0002", akhir "6304"+4 hex
+    const res = await putSettings(cookie, [
+      {
+        key: "company.qrisAccounts",
+        value: [
+          {
+            id: "q3-whitespace",
+            name: "QRIS Dinamis Copy-Paste",
+            imageUrl: "https://example.test/q3.png",
+            isDynamic: true,
+            emvPayload: `  \n${validPayload}\n  `, // whitespace/newline dari copy-paste
+          },
+        ],
+        group: "billing",
+      },
+    ]);
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(settingsTable).where(eq(settingsTable.key, "company.qrisAccounts"));
+    const stored = row!.value as { id: string; emvPayload: string }[];
+    // § disimpan versi TRIM, bukan versi mentah dengan whitespace.
+    expect(stored.find((a) => a.id === "q3-whitespace")?.emvPayload).toBe(validPayload);
+  });
+
+  test("400 INVALID_QRIS_ACCOUNTS + qrisId kalau payload BENERAN tidak valid (bukan cuma whitespace)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [
+      {
+        key: "company.qrisAccounts",
+        value: [{ id: "q4-invalid", name: "QRIS Rusak", imageUrl: "https://example.test/q4.png", isDynamic: true, emvPayload: "bukan-payload-emv-valid" }],
+        group: "billing",
+      },
+    ]);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; qrisId?: string };
+    expect(body.code).toBe("INVALID_QRIS_ACCOUNTS");
+    expect(body.qrisId).toBe("q4-invalid");
+  });
+});
+
+// § diminta user 2026-09-06 — angka ini dipakai LANGSUNG untuk hitung
+// "estimasi efisiensi waktu kerja" yang ditampilkan ke SEMUA customer
+// (`GET /me/stats`), jadi validasi server WAJIB dites (nilai cacat akan
+// menghasilkan klaim yang salah/menyesatkan ke semua pelanggan).
+describe("PUT /settings — validasi data.manualInputSecondsPerRow", () => {
+  test("400 INVALID_MANUAL_INPUT_SECONDS kalau bukan integer positif dalam batas", async () => {
+    const cookie = await makeAdminCookie();
+
+    const zero = await putSettings(cookie, [{ key: "data.manualInputSecondsPerRow", value: 0, group: "data" }]);
+    expect(zero.status).toBe(400);
+    expect(((await zero.json()) as { code: string }).code).toBe("INVALID_MANUAL_INPUT_SECONDS");
+
+    const tooHigh = await putSettings(cookie, [{ key: "data.manualInputSecondsPerRow", value: 3601, group: "data" }]);
+    expect(tooHigh.status).toBe(400);
+
+    const notInteger = await putSettings(cookie, [{ key: "data.manualInputSecondsPerRow", value: 30.5, group: "data" }]);
+    expect(notInteger.status).toBe(400);
+  });
+
+  test("200 kalau angka valid (30 detik, default)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "data.manualInputSecondsPerRow", value: 30, group: "data" }]);
     expect(res.status).toBe(200);
   });
 });
