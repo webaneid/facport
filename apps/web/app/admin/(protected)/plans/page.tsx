@@ -3,42 +3,39 @@
 import { useEffect, useState } from "react";
 import { Pencil, Ban } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
+import { PageHeader } from "@/components/ui/page-header";
+import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
+import { currencyFormatter } from "@/lib/utils";
+import { MODULE_OPTIONS, MODULE_GROUPS, type ModuleKey } from "@/lib/module-options";
+import { DURATION_UNIT_LABELS, formatDuration, inferDurationUnit, toDurationDays, type DurationUnit } from "@/lib/duration";
 
-// § Fase 14, ADR-0019 — katalog SEKARANG per SUB-MODUL (bukan grup
-// top-level lagi): "1 plan = 1 SKU per sub-modul", bundling multi-modul
-// terjadi di CART (Fase 16-17), bukan di sini. Cocok persis
-// `SUB_MODULE_KEYS` di `apps/api/src/routes/admin/plans.route.ts` —
-// diubah di 2 tempat kalau berubah.
-const MODULE_OPTIONS = [
-  { key: "sales_invoice", label: "Sales Invoice", group: "Penjualan" },
-  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", group: "Penjualan" },
-  { key: "purchase_invoice", label: "Purchase Invoice", group: "Pembelian" },
-  { key: "purchase_payment", label: "Purchase Payment", group: "Pembelian" },
-  { key: "journal_voucher", label: "Jurnal Umum", group: "Buku Besar" },
-] as const;
-const MODULE_GROUPS = [...new Set(MODULE_OPTIONS.map((m) => m.group))];
-type ModuleKey = (typeof MODULE_OPTIONS)[number]["key"];
-
-const currencyFormatter = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
-
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
+type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; trialEligible: boolean };
 
 function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(plan?.name ?? "");
   const [price, setPrice] = useState(String(plan?.price ?? ""));
-  const [durationDays, setDurationDays] = useState(String(plan?.durationDays ?? 30));
+  // § Fase 43 — input "Jumlah" + unit (Hari/Bulan/Tahun), bukan hari mentah.
+  // Infer unit dari `durationDays` existing saat edit (§ lib/duration.ts),
+  // supaya paket "1 Tahun" tetap tampil "1"+"Tahun", bukan "360"+"Hari".
+  const inferred = plan ? inferDurationUnit(plan.durationDays) : { amount: 30, unit: "hari" as const };
+  const [durationAmount, setDurationAmount] = useState(String(inferred.amount));
+  const [durationUnit, setDurationUnit] = useState<DurationUnit>(inferred.unit);
   // § 1 plan = 1 sub-modul (radio, bukan checkbox lagi sejak Fase 14)
   const [moduleKey, setModuleKey] = useState<ModuleKey | "">((plan?.modules[0] as ModuleKey) ?? "");
+  // § Fase 43 (koreksi) — trial BUKAN otomatis semua paket, admin WAJIB
+  // tandai eksplisit per paket. Default OFF untuk paket baru (bukan ON) —
+  // admin yang memutuskan, bukan sistem yang mengaktifkan diam-diam.
+  const [trialEligible, setTrialEligible] = useState(plan?.trialEligible ?? false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,18 +49,19 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
       setError("Harga harus angka bulat, minimal 0.");
       return;
     }
-    const days = Number(durationDays);
-    if (!Number.isInteger(days) || days < 1) {
-      setError("Durasi harus angka bulat, minimal 1 hari.");
+    const amount = Number(durationAmount);
+    if (!Number.isInteger(amount) || amount < 1) {
+      setError("Jumlah durasi harus angka bulat, minimal 1.");
       return;
     }
+    const days = toDurationDays(amount, durationUnit);
     if (!moduleKey) {
       setError("Pilih sub-modul untuk paket ini.");
       return;
     }
     setSubmitting(true);
     setError(null);
-    const body = { name: name.trim(), price: priceValue, durationDays: days, modules: [moduleKey], isActive: true };
+    const body = { name: name.trim(), price: priceValue, durationDays: days, modules: [moduleKey], isActive: true, trialEligible };
     const res = plan ? await api.admin.plans({ id: plan.id }).put(body) : await api.admin.plans.post(body);
     setSubmitting(false);
     if (res.error) {
@@ -101,10 +99,19 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             <span className="text-xs font-medium text-foreground">Harga (Rp)</span>
             <Input type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
           </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-foreground">Durasi (hari)</span>
-            <Input type="number" min={1} value={durationDays} onChange={(e) => setDurationDays(e.target.value)} />
-          </label>
+          <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-foreground">Durasi</span>
+            <div className="flex gap-2">
+              <Input type="number" min={1} className="flex-1" value={durationAmount} onChange={(e) => setDurationAmount(e.target.value)} />
+              <Select className="flex-1" value={durationUnit} onChange={(e) => setDurationUnit(e.target.value as DurationUnit)}>
+                {(Object.keys(DURATION_UNIT_LABELS) as DurationUnit[]).map((unit) => (
+                  <option key={unit} value={unit}>
+                    {DURATION_UNIT_LABELS[unit]}
+                  </option>
+                ))}
+              </Select>
+            </div>
+          </div>
           <div className="flex flex-col gap-3">
             <span className="text-xs font-medium text-foreground">Sub-Modul (1 paket = 1 sub-modul)</span>
             {MODULE_GROUPS.map((group) => (
@@ -121,6 +128,16 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
               </div>
             ))}
           </div>
+          <label className="flex items-start gap-2">
+            <Checkbox checked={trialEligible} onCheckedChange={(checked) => setTrialEligible(checked === true)} className="mt-0.5" />
+            <span className="flex flex-col">
+              <span className="text-xs font-medium text-foreground">Bisa Dicoba Gratis (Trial)</span>
+              <span className="text-xs text-muted-foreground">
+                Kalau diaktifkan, customer bisa coba paket ini gratis (dibatasi jumlah baris, § Pengaturan Trial) tanpa
+                bayar dulu. Nonaktif secara default — Anda yang menentukan paket mana yang boleh ditrial.
+              </span>
+            </span>
+          </label>
           {error && <p className="text-destructive">{error}</p>}
           <Button onClick={handleSave} disabled={submitting} className="self-end">
             {submitting ? "Menyimpan..." : "Simpan"}
@@ -130,6 +147,8 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     </Dialog>
   );
 }
+
+const columnHelper = createDataTableColumns<Plan>();
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState<Plan[] | null>(null);
@@ -154,15 +173,63 @@ export default function AdminPlansPage() {
     load();
   }
 
+  // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
+  const columns = [
+    columnHelper.accessor("name", {
+      header: "Nama",
+      cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
+    }),
+    columnHelper.accessor("price", { header: "Harga", cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
+    columnHelper.accessor("durationDays", { header: "Durasi", cell: (ctx) => formatDuration(ctx.getValue()) }),
+    columnHelper.display({
+      id: "modules",
+      header: "Sub-Modul",
+      cell: ({ row }) => (
+        <span className="text-muted-foreground">{row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}</span>
+      ),
+    }),
+    columnHelper.display({
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => <StatusBadge domain="plan" status={row.original.isActive ? "active" : "inactive"} />,
+    }),
+    columnHelper.display({
+      id: "trialEligible",
+      header: "Trial",
+      cell: ({ row }) => (
+        <span className={row.original.trialEligible ? "text-success" : "text-muted-foreground"}>
+          {row.original.trialEligible ? "Aktif" : "Nonaktif"}
+        </span>
+      ),
+    }),
+    columnHelper.display({
+      id: "actions",
+      header: "Aksi",
+      cell: ({ row }) => {
+        const plan = row.original;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <PlanFormDialog plan={plan} onSaved={load} />
+            {plan.isActive && (
+              <button
+                type="button"
+                onClick={() => handleDeactivate(plan)}
+                title="Nonaktifkan"
+                aria-label={`Nonaktifkan ${plan.name}`}
+                className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
+              >
+                <Ban className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        );
+      },
+    }),
+  ];
+
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Paket</h1>
-          <p className="text-sm text-muted-foreground">Kelola paket langganan per modul.</p>
-        </div>
-        <PlanFormDialog onSaved={load} />
-      </div>
+    <div className="flex flex-col gap-6">
+      <PageHeader title="Paket" description="Kelola paket langganan per modul." action={<PlanFormDialog onSaved={load} />} />
 
       <Card>
         <CardHeader>
@@ -170,55 +237,7 @@ export default function AdminPlansPage() {
           <CardDescription>Katalog per sub-modul — cart multi-modul dirakit saat checkout, bukan di sini.</CardDescription>
         </CardHeader>
         <CardContent>
-          {!plans ? (
-            <Skeleton className="h-40 w-full" />
-          ) : plans.length === 0 ? (
-            <EmptyState icon={Ban} title="Belum ada paket" />
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nama</TableHead>
-                  <TableHead>Harga</TableHead>
-                  <TableHead>Durasi</TableHead>
-                  <TableHead>Sub-Modul</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {plans.map((plan) => (
-                  <TableRow key={plan.id}>
-                    <TableCell className="font-medium text-foreground">{plan.name}</TableCell>
-                    <TableCell>{currencyFormatter.format(plan.price)}</TableCell>
-                    <TableCell>{plan.durationDays} hari</TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {plan.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={plan.isActive ? "success" : "default"}>{plan.isActive ? "Aktif" : "Nonaktif"}</Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center justify-end gap-1">
-                        <PlanFormDialog plan={plan} onSaved={load} />
-                        {plan.isActive && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeactivate(plan)}
-                            title="Nonaktifkan"
-                            aria-label={`Nonaktifkan ${plan.name}`}
-                            className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
-                          >
-                            <Ban className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+          {!plans ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={plans} emptyIcon={Ban} emptyTitle="Belum ada paket" />}
         </CardContent>
       </Card>
     </div>

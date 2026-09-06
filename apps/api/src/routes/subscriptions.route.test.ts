@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { subscriptionsRoute } from "./subscriptions.route";
 import { db } from "../lib/db";
-import { plans, subscriptions, invoices, invoiceItems, orders, user as userTable } from "../db/schema";
+import { plans, subscriptions, invoices, invoiceItems, orders, notifications, user as userTable } from "../db/schema";
 
 // § Fase 16, ADR-0022 — checkout REWORK: cart multi-modul `{planIds}`,
 // bikin invoice+order (BUKAN lagi subscription "pending_payment"
@@ -43,6 +43,16 @@ async function postCheckout(cookie: string, planIds: string[]) {
       method: "POST",
       headers: { cookie, "Content-Type": "application/json" },
       body: JSON.stringify({ planIds }),
+    }),
+  );
+}
+
+async function postTrial(cookie: string, planId: string) {
+  return testApp.handle(
+    new Request("http://localhost/subscriptions/trial", {
+      method: "POST",
+      headers: { cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ planId }),
     }),
   );
 }
@@ -171,5 +181,147 @@ describe("POST /subscriptions/checkout", () => {
     expect(order!.uniqueCode).toBeGreaterThanOrEqual(100);
     expect(order!.uniqueCode).toBeLessThanOrEqual(999);
     expect(body.amountDue).toBe(325000 + order!.uniqueCode);
+
+    // § Fase 45 — checkout WAJIB bikin notifikasi "order_created" ke user
+    const [notif] = await db.select().from(notifications).where(eq(notifications.entityId, body.orderId));
+    expect(notif!.type).toBe("order_created");
+    expect(notif!.entityType).toBe("order");
+  });
+});
+
+// § Fase 43 — self-service "Coba Gratis": TANPA invoice/order/pembayaran
+// sama sekali, subscription langsung "active" dengan `isTrial: true`.
+describe("POST /subscriptions/trial", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await postTrial("", "00000000-0000-0000-0000-000000000000");
+    expect(res.status).toBe(401);
+  });
+
+  test("404 PLAN_NOT_FOUND kalau planId tidak ada", async () => {
+    const email = `trial-notfound-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const res = await postTrial(cookie, "00000000-0000-0000-0000-000000000000");
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("PLAN_NOT_FOUND");
+  });
+
+  // § Fase 43 (koreksi) — trial BUKAN otomatis semua paket, admin WAJIB
+  // tandai eksplisit `plans.trialEligible`. Test ini pastikan paket yang
+  // TIDAK ditandai (default `trialEligible: false` kalau tidak diisi)
+  // ditolak, BUKAN diam-diam diizinkan.
+  test("400 TRIAL_NOT_AVAILABLE_FOR_PLAN kalau paket TIDAK ditandai admin boleh ditrial", async () => {
+    const email = `trial-not-eligible-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Non Trial Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_invoice"], trialEligible: false })
+      .returning();
+
+    const res = await postTrial(cookie, plan!.id);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("TRIAL_NOT_AVAILABLE_FOR_PLAN");
+  });
+
+  test("200 — trial langsung aktif, isTrial=true, TANPA invoice/order (paket trialEligible)", async () => {
+    const email = `trial-success-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Trial Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_invoice"], trialEligible: true })
+      .returning();
+
+    const res = await postTrial(cookie, plan!.id);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscriptionId: string };
+
+    const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, body.subscriptionId));
+    expect(subscription!.status).toBe("active");
+    expect(subscription!.isTrial).toBe(true);
+    expect(subscription!.orderId).toBeNull();
+    expect(subscription!.invoiceItemId).toBeNull();
+
+    // § Fase 45 — trial WAJIB bikin notifikasi "trial_started"
+    const [notif] = await db.select().from(notifications).where(eq(notifications.entityId, body.subscriptionId));
+    expect(notif!.type).toBe("trial_started");
+  });
+
+  test("400 TRIAL_ALREADY_USED kalau modul yang sama sudah pernah ditrial (1x seumur hidup)", async () => {
+    const email = `trial-reused-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Trial Reused Plan ${runId}`, price: 100000, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
+      .returning();
+
+    const firstRes = await postTrial(cookie, plan!.id);
+    expect(firstRes.status).toBe(200);
+
+    const [planSameModule] = await db
+      .insert(plans)
+      .values({ name: `Trial Reused Plan B ${runId}`, price: 120000, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
+      .returning();
+    const secondRes = await postTrial(cookie, planSameModule!.id);
+    expect(secondRes.status).toBe(400);
+    const body = (await secondRes.json()) as { code: string; moduleKey: string };
+    expect(body.code).toBe("TRIAL_ALREADY_USED");
+    expect(body.moduleKey).toBe("sales_invoice");
+  });
+
+  test("400 MODULE_ALREADY_SUBSCRIBED kalau modul sudah punya subscription AKTIF (paket asli)", async () => {
+    const email = `trial-dup-active-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+
+    const [existingPlan] = await db
+      .insert(plans)
+      .values({ name: `Real Plan ${runId}`, price: 100000, durationDays: 30, modules: ["vendor_payable_account"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: existingPlan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+    });
+
+    const [trialPlan] = await db
+      .insert(plans)
+      .values({ name: `Trial Attempt Plan ${runId}`, price: 90000, durationDays: 30, modules: ["vendor_payable_account"], trialEligible: true })
+      .returning();
+    const res = await postTrial(cookie, trialPlan!.id);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; moduleKey: string };
+    expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
+    expect(body.moduleKey).toBe("vendor_payable_account");
+  });
+
+  test("checkout TETAP bisa dipanggil untuk modul yang sedang trial (trial tidak memblokir upgrade ke paket asli)", async () => {
+    const email = `trial-then-checkout-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const [trialPlan] = await db
+      .insert(plans)
+      .values({ name: `Trial Upgrade Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_payment"], trialEligible: true })
+      .returning();
+    const trialRes = await postTrial(cookie, trialPlan!.id);
+    expect(trialRes.status).toBe(200);
+
+    const [realPlan] = await db
+      .insert(plans)
+      .values({ name: `Real Upgrade Plan ${runId}`, price: 150000, durationDays: 30, modules: ["purchase_payment"] })
+      .returning();
+    const checkoutRes = await postCheckout(cookie, [realPlan!.id]);
+    expect(checkoutRes.status).toBe(200);
   });
 });

@@ -7,6 +7,7 @@ import { minioClient, PUBLIC_MEDIA_BUCKET, ensurePublicBucket } from "../../lib/
 import { generateFaviconSizes } from "../../services/image-processing.service";
 import { permissionPlugin } from "../../lib/permission";
 import { env } from "../../lib/env";
+import { decodeQrisEmvPayload } from "../../lib/qris-decode";
 
 const ALLOWED_MIME = ["image/jpeg", "image/png", "image/webp"] as const;
 const MAX_SIZE_MB = 5;
@@ -167,7 +168,10 @@ export const brandingRoute = new Elysia({ prefix: "/admin/branding" })
 
       const id = randomUUID();
       const key = `branding/qris-${id}.webp`;
-      const webpBuffer = await sharp(buffer).webp({ quality: 90 }).toBuffer();
+      const [webpBuffer, emvPayload] = await Promise.all([
+        sharp(buffer).webp({ quality: 90 }).toBuffer(),
+        decodeQrisEmvPayload(buffer),
+      ]);
       await minioClient.putObject(PUBLIC_MEDIA_BUCKET, key, webpBuffer);
       const url = publicUrl(key);
 
@@ -180,7 +184,7 @@ export const brandingRoute = new Elysia({ prefix: "/admin/branding" })
         uploadedBy: user.id,
       });
 
-      return { url };
+      return { url, emvPayload };
     },
     {
       permission: "settings.update",

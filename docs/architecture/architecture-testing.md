@@ -37,6 +37,26 @@
 - E2E (Playwright, kalau dipakai) untuk **critical user flow** saja: login,
   checkout/submit form utama, bukan semua halaman.
 
+**Harness (§ Fase 32)**: `bun test` (SAMA dgn apps/api, bukan
+Vitest/Jest terpisah) + React Testing Library + `happy-dom` (DOM
+environment) + jest-dom (matcher `toBeInTheDocument()` dst). Setup ada
+di `apps/web/test/` (`happydom.ts` + `setup.ts`, urutan preload
+`bunfig.toml`) — **JANGAN gabung jadi 1 file preload**: `happydom.ts`
+WAJIB murni registrasi DOM tanpa import package testing-library apa
+pun, karena ES import hoisting bikin `@testing-library/dom`'s `screen`
+singleton "lahir rusak" (dihitung sekali saat modul dievaluasi, bukan
+lazy) kalau file yang sama juga import testing-library sebelum
+registrasi selesai (§ `docs/phases/phase-32-fondasi-test-frontend.md`
+detail lengkap). Network call (`authClient`, Eden `api` client) di-mock
+`mock.module()` bawaan Bun — bukan MSW/library mocking tambahan.
+
+**Gotcha `<input type="email">`**: browser (& `happy-dom`) MEMBLOKIR
+event `submit` TOTAL untuk value non-kosong yang gagal format email,
+SEBELUM sempat ke react-hook-form/Zod. Test validasi client-side untuk
+field ini WAJIB kosongkan field (lolos constraint browser tanpa
+`required`), BUKAN isi string yang "kelihatan salah" — kalau tidak,
+test salah diagnosis "validasi tidak jalan" padahal komponennya benar.
+
 ## Mocking
 - **DB**: pakai test database terpisah (docker container sementara / testcontainers)
   untuk test yang benar-benar butuh query nyata (mis. constraint unik, cascade

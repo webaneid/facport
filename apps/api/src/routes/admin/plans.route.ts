@@ -29,10 +29,17 @@ const planBody = t.Object({
       t.Literal("sales_receipt"),
       t.Literal("purchase_payment"),
       t.Literal("journal_voucher"),
+      // § ADR-0026 — dulu bundel gratis ke purchase_invoice, sekarang SKU sendiri.
+      t.Literal("vendor_payable_account"),
     ]),
     { minItems: 1, maxItems: 1 },
   ),
   isActive: t.Optional(t.Boolean()),
+  // § Fase 43 (koreksi) — admin WAJIB eksplisit menandai paket ini boleh
+  // dicoba trial atau tidak, default false kalau tidak diisi (form admin
+  // SELALU kirim field ini eksplisit, opsional di sini cuma jaga-jaga
+  // konsumen API lain).
+  trialEligible: t.Optional(t.Boolean()),
 });
 
 export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })

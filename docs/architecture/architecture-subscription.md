@@ -25,9 +25,13 @@ export const plans = pgTable("plans", {
   // hindari migration breaking), tapi KONVENSI-nya sekarang cuma 1
   // elemen per plan — bundling lintas-modul terjadi di CART (§ "Cart
   // Multi-Modul" di bawah), bukan didefinisikan sebagai 1 plan berisi
-  // banyak modul.
+  // banyak modul. § Fase 28, ADR-0026 — tambah `vendor_payable_account`
+  // (sub-modul ke-6, kategori "Data Master" bukan transaksi).
   modules: jsonb("modules").notNull(), // string[], konvensi: 1 elemen
   isActive: boolean("is_active").notNull().default(true), // paket yang di-nonaktifkan tidak hilang dari histori subscriber lama
+  // § Fase 43 — admin WAJIB tandai eksplisit per paket, default false
+  // (lihat § "Trial (Batas Baris)" di bawah untuk rasional per-plan).
+  trialEligible: boolean("trial_eligible").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -58,14 +62,20 @@ export const subscriptions = pgTable("subscriptions", {
   // (ditunda ke fase customer-settings terpisah) — lihat § "Retensi Data
   // Import" di bawah.
   importRetentionDaysOverride: integer("import_retention_days_override"),
+  // § Fase 43 — trial gratis self-service (1x seumur hidup per modul per
+  // user). `orderId`/`invoiceItemId` NULL untuk baris trial (dibuat
+  // LANGSUNG "active" tanpa order/invoice sama sekali) — lihat § "Trial
+  // (Batas Baris)" di bawah.
+  isTrial: boolean("is_trial").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 ```
 
 ## Cart Multi-Modul & 1 Subscription = 1 Sub-Modul (Fase 14, ADR-0019)
 Sejak Fase 14, **1 `subscriptions` row = 1 SUB-MODUL** (Sales Invoice,
-Purchase Invoice, Sales Receipt, Purchase Payment, atau Journal Voucher),
-BUKAN lagi 1 bundel berisi banyak modul. Customer BOLEH checkout/dibuatkan
+Purchase Invoice, Sales Receipt, Purchase Payment, Journal Voucher, atau
+Vendor Payable Account — 6 sejak Fase 28/ADR-0026, § catatan skema di
+atas), BUKAN lagi 1 bundel berisi banyak modul. Customer BOLEH checkout/dibuatkan
 admin **beberapa sub-modul sekaligus dalam 1 transaksi** (cart, § Fase 16
 payment) — hasilnya BUKAN 1 subscription gabungan, tapi **BANYAK
 subscription row terpisah**, 1 per sub-modul yang dibeli, masing-masing
@@ -108,6 +118,95 @@ gating (di bawah) tinggal cek keanggotaan array, bukan mapping nama berbeda.
 `plans.modules` juga menentukan **scope OAuth** yang diminta saat user
 menghubungkan akun Accurate mereka (§ `architecture-accurate-integration.md` § 1) —
 least privilege, jangan minta scope di luar modul yang dilanggan.
+
+## Durasi Fleksibel — Hari/Bulan/Tahun (Fase 43)
+`plans.durationDays` di database TETAP integer hari mentah (tidak ada
+kolom/skema baru) — fleksibilitas unit (Hari/Bulan/Tahun) murni fitur
+UI admin (`apps/web/lib/duration.ts`), dikonversi ke hari SEBELUM
+dikirim ke API:
+
+- **1 Bulan = 30 hari, 1 Tahun = 360 hari** (12×30, BUKAN kalender
+  asli/365) — konvensi TETAP dipakai konsisten di seluruh sistem
+  (termasuk konversi trial di bawah), supaya 1 Tahun selalu persis 12
+  Bulan tanpa sisa.
+- Form admin (`admin/plans/page.tsx`) input "Jumlah" + pilih unit,
+  `toDurationDays(amount, unit)` konversi saat submit. Saat EDIT plan
+  existing, `inferDurationUnit(durationDays)` pilih unit TERBESAR yang
+  habis dibagi bulat (mis. 360 → "1 Tahun", bukan "360 Hari"), fallback
+  "Hari" kalau tidak habis dibagi bulan/tahun (mis. 45 hari).
+- API (`POST`/`PUT /admin/plans`) TIDAK berubah sama sekali — tetap
+  terima `durationDays` integer, tidak tahu/tidak peduli soal unit.
+
+## Trial (Batas Baris) (Fase 43)
+Semua paket (semua sub-modul) punya jalur coba-gratis **self-service**
+— customer klik tombol "Coba Gratis" di `/subscribe`, TANPA approval
+admin, TANPA invoice/order/pembayaran sama sekali. Beda mendasar dari
+provisioning admin (§ "Dua Jalur Registrasi" di bawah): trial dibuat
+LANGSUNG `status: "active"` dengan `orderId`/`invoiceItemId` NULL (mirror
+pola `createManualSubscriptions`, § `lib/manual-subscription.ts`, Fase
+18) — helper terpisah `createTrialSubscription()` di `lib/trial.ts`.
+
+**Kenapa dibatasi jumlah BARIS, bukan jumlah hari**: batas hari bisa
+"dimanfaatkan waktu" tanpa batas nyata (customer tunda import sampai
+mendekati kadaluarsa lalu tetap import ribuan baris) — batas baris
+mencegah itu, sekali kuota habis customer tidak bisa import lagi APA PUN
+sisa hari trialnya.
+
+- **`plans.trialEligible`** (boolean, default `false`) — trial BUKAN
+  otomatis untuk semua paket. Admin WAJIB menandai eksplisit per paket
+  lewat toggle "Bisa Dicoba Gratis (Trial)" di form buat/edit paket
+  (`admin/plans/page.tsx`) — kalau tidak ditandai, tombol "Coba Gratis"
+  tidak muncul di `/subscribe` DAN `POST /subscriptions/trial` menolak
+  eksplisit (`TRIAL_NOT_AVAILABLE_FOR_PLAN`), bukan cuma disembunyikan
+  di UI. Ini SENGAJA per-plan (bukan flag global "trial nyala/mati")
+  supaya admin tetap punya otoritas penuh menentukan paket mana yang
+  boleh dicoba gratis — koreksi dari desain awal Fase 43 yang sempat
+  mengaktifkan trial untuk SEMUA paket tanpa kontrol admin.
+- **`trial.maxRows`** (default 100, admin-configurable di
+  `/admin/settings`, kartu "Pengaturan Trial") — batas GLOBAL, berlaku
+  SAMA untuk semua modul/paket yang `trialEligible` (BUKAN per-plan)
+  supaya admin tidak perlu input angka yang sama berkali-kali per paket.
+- **`trial.durationDays`** (default 30, TERPISAH dari `trial.maxRows`) —
+  backstop kadaluarsa hari, dipakai job `EXPIRE_SUBSCRIPTIONS` yang
+  SUDAH ADA (§ `architecture-jobs.md`) — trial yang tidak pernah dipakai
+  importnya TETAP kadaluarsa, tidak menggantung aktif selamanya.
+- **1x trial seumur hidup per modul per user** — subscription
+  `isTrial: true` APA PUN statusnya sekarang (aktif/expired/habis kuota)
+  dihitung "sudah pernah trial" modul itu. `GET /me/subscriptions`
+  mengembalikan `everTrialedModules: string[]` (union modul dari SEMUA
+  subscription trial user ini, apa pun status), dipakai frontend
+  men-disable tombol "Coba Gratis" permanen. Guard yang sama dicek ulang
+  server-side di `POST /subscriptions/trial` (`TRIAL_ALREADY_USED`) —
+  frontend cuma UX, bukan satu-satunya lapis pertahanan.
+- **Trial TIDAK memblokir pembelian paket ASLI modul yang sama** — guard
+  "modul sudah aktif" di `POST /subscriptions/checkout` SENGAJA
+  meng-exclude subscription `isTrial: true` saat membangun
+  `activeModules` (§ "API (Ringkas)" di bawah), supaya customer bisa
+  upgrade kapan saja tanpa menunggu trial habis/expired.
+- **Enforcement baris** — `checkTrialRowBudget(subscriptionId,
+  additionalRows)` (`lib/trial.ts`): subscription NON-trial SELALU
+  `{ok:true}` (paket asli tidak dibatasi baris). Untuk trial, hitung
+  baris `status:"success"` SCOPED ke subscription itu (BUKAN lintas
+  modul/subscription lain milik user yang sama), bandingkan dengan
+  `additionalRows` yang AKAN diproses terhadap `trial.maxRows`. Disisipkan
+  di **12 titik** (`:batchId/confirm` + `:batchId/retry` × 6 modul),
+  SEBELUM `boss.send(JOBS.IMPORT_TO_ACCURATE, ...)`:
+  - `confirm` — `additionalRows = batch.totalRows` (proses SEMUA baris
+    batch pertama kali).
+  - `retry` — `additionalRows` = COUNT baris `pending`/`failed` di batch
+    itu (yang AKAN diproses ulang).
+  - Gagal → 400 `TRIAL_ROW_LIMIT_EXCEEDED` + `{remaining, max}`, **SELURUH
+    batch ditolak** (bukan diproses sebagian) — customer memangkas
+    jumlah baris di file atau upgrade ke paket berbayar.
+- **Known limitation** — pengecekan ini TIDAK di dalam row-lock/transaction
+  (beda dari checkout yang row-lock `user` FOR UPDATE): 2 batch DIKONFIRMASI
+  BERSAMAAN oleh subscription trial yang sama secara teori bisa
+  sama-sama lolos cek kuota lalu gabungan keduanya melebihi
+  `trial.maxRows` (TOCTOU, mirror keterbatasan yang SUDAH ADA sebelum
+  Fase 43 pada confirm/retry — endpoint ini juga tidak row-lock terhadap
+  double-submit biasa). Diterima sebagai risiko RENDAH (kerugian bisnis
+  kecil — beberapa baris ekstra trial gratis — bukan celah keamanan/data
+  breach), didokumentasikan di sini alih-alih ditutup sekarang.
 
 ## Koneksi Accurate — Reusable Lintas Subscription (Fase 14, ADR-0020)
 > Supersede poin 3 ADR-0009. `accurate_connections` SEKARANG berelasi ke
@@ -157,27 +256,53 @@ Webhook payment sukses → subscriptions.status = "active", startAt/endAt diisi
 
 ### 2. Admin-Provisioned
 ```
-Admin (admin.facport.com) buat user baru manual (isi nama, email, pilih plan)
+Admin (admin.facport.com) buat user baru manual (isi nama, email)
       ↓
 User langsung berstatus verified (admin bertanggung jawab validitas data —
 dicatat di audit_logs siapa admin yang membuat, § architecture-security.md §11)
       ↓
-Admin pilih: kirim email undangan set-password KE user, ATAU set password
-sementara langsung (dicatat mana yang dipilih, WAJIB paksa ganti password
-di login pertama kalau opsi kedua)
+Password sementara DIGENERATE server (randomBytes, § POST /admin/users),
+DIKEMBALIKAN sekali di response (admin lihat sekali, JANGAN disimpan
+ulang) DAN dikirim otomatis lewat email selamat datang (§ Fase 18, job
+queue SEND_EMAIL — TIDAK ADA alur "kirim email undangan set-password"
+terpisah, force-change-password-di-login-pertama JUGA belum ada, § Known
+Limitations phase-01/phase-18 doc)
       ↓
-Admin pilih plan + input TANGGAL EXPIRED (endAt) secara manual — BUKAN
-otomatis dihitung dari plan.durationDays seperti jalur self-service (§
-ADR-0016). Alasan: kasus admin-provisioned justru sering butuh tanggal
-custom (kontrak korporat berakhir sesuai PO, bukan kelipatan durationDays).
-      ↓
-subscriptions dibuat LANGSUNG berstatus "active" (orderId = null, tidak
-lewat payment gateway — dianggap sudah dibayar di luar sistem, mis. invoice
-manual/kontrak korporat)
+Admin OPSIONAL sekalian centang 1+ sub-modul (§ Fase 18) — 2 hasil akhir
+(§ security review 2026-09-04, High — `markAsPaid` WAJIB dicek permission
+`subscriptions.manage` TERPISAH dari `users.manage`, SEBELUM user dibuat
+sama sekali: role yang cuma punya `users.manage` — mis. "staf onboarding"
+yang cuma boleh bikin akun, bukan urus billing — TIDAK BOLEH aktivasi
+subscription bebas-bayar lewat jalur ini, kode error `FORBIDDEN_MARK_AS_PAID`):
+  (a) "Kirim Invoice" (default) — bikin invoice+order SAMA PERSIS logic
+      checkout customer (`lib/invoice-order.ts`, dipakai bersama), status
+      "unpaid"/"pending", customer login lalu bayar sendiri lewat
+      `/billing/{orderId}/pay` (Fase 16). TIDAK ADA subscription tercipta
+      sampai admin confirm pembayaran (§ admin/orders.route.ts).
+  (b) "Tandai Sudah Dibayar" (`markAsPaid: true`) — subscriptions dibuat
+      LANGSUNG "active" (`lib/manual-subscription.ts`), orderId = null,
+      TIDAK lewat invoice/order sama sekali — endAt DIHITUNG OTOMATIS dari
+      plan.durationDays (BEDA dari `POST /admin/subscriptions` di bawah
+      yang endAt-nya manual — di alur onboarding cepat ini tidak ada UI
+      per-modul buat isi tanggal custom).
 ```
-Untuk perpanjang/perpendek `endAt` subscription admin-provisioned yang
-SUDAH aktif (tanpa bikin baris subscription baru) → `PATCH
+**`POST /admin/subscriptions`** (assign 1 plan ke user YANG SUDAH ADA,
+terpisah dari alur bikin-user-baru di atas) TETAP butuh `endAt` manual (§
+ADR-0016) — dipakai kasus kontrak korporat/tanggal custom yang tidak
+kelipatan `durationDays`. Untuk perpanjang/perpendek `endAt` subscription
+yang SUDAH aktif (tanpa bikin baris baru) → `PATCH
 /admin/subscriptions/:id`, § "API (Ringkas)" di bawah dan ADR-0016.
+
+> **§ ADR-0028 (koreksi 2026-09-06)** — `endAt` di sini diinput admin
+> lewat `<input type="date">` (tanggal-saja, "berlaku SAMPAI tanggal X").
+> Frontend (`admin/users/page.tsx`) WAJIB konversi lewat
+> `endOfDayInTimezone(dateStr, companyTimezone)` (§ `apps/web/lib/timezone.ts`)
+> SEBELUM kirim ke endpoint ini — versi lama (`new Date(dateStr).toISOString()`)
+> mem-parse sebagai UTC midnight, bikin subscription berhenti aktif
+> ~7 jam (Asia/Jakarta) LEBIH AWAL dari yang admin maksud. Endpoint ini
+> sendiri TIDAK berubah (tetap terima `endAt` ISO datetime string apa
+> adanya, tidak tahu soal timezone — konversi WAJIB terjadi di frontend
+> SEBELUM submit).
 
 ## Gating Akses Modul — Beda dari RBAC Permission
 
@@ -202,7 +327,13 @@ export async function getActiveSubscriptionsWithPlans(userId: string) {
     .select({ subscription: subscriptions, plan: plans })
     .from(subscriptions)
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
-    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")));
+    .where(and(eq(subscriptions.userId, userId), eq(subscriptions.status, "active")))
+    // § security review 2026-09-04 (Low) — urutan WAJIB deterministik.
+    // Invariant "1 modul aktif = 1 subscription" TIDAK dijaga unique
+    // constraint DB — `.find()` di moduleAccess macro (di bawah) harus
+    // konsisten ambil baris yang SAMA tiap request kalau somehow ada 2
+    // subscription aktif yang cover modul yang sama.
+    .orderBy(desc(subscriptions.createdAt));
   // § endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
   // (jalan tiap hari) yang jaga `status` selalu konsisten, pola yang
   // SUDAH ada sejak sebelum Fase 14, tidak berubah.
@@ -266,16 +397,31 @@ bergantung ada/tidaknya request aktif dari user yang bersangkutan.
 ## API (Ringkas)
 ```
 GET  /plans                          → daftar SKU per-sub-modul aktif (publik, landing page pricing)
-POST /subscriptions/checkout         → body: { planId } — buat order + return payment URL
-                                        (Fase 16 rework ke cart: { planIds: uuid[] }, lihat Fase 16 doc)
+POST /subscriptions/checkout         → body: { planIds: uuid[] } (cart, § Fase 16/ADR-0022) — buat
+                                        1 invoice (N invoiceItems) + 1 order status "pending", return
+                                        { invoiceId, orderId, amountDue }. BUKAN payment URL/redirect
+                                        gateway — metode bayar (transfer manual/QRIS) dipilih customer
+                                        di langkah TERPISAH (`/billing/{orderId}/pay`, § architecture-payment.md).
+                                        Subscription BELUM dibuat di sini — baru tercipta saat admin
+                                        confirm pembayaran (`POST /admin/orders/:id/confirm`).
 GET  /me/subscriptions               → § Fase 14 — SEMUA subscription aktif user (PLURAL, ganti
                                         GET /me/subscription singular) — dipakai sidebar/dashboard
-                                        buat tahu union modul yang dia langganan
+                                        buat tahu union modul yang dia langganan. § Fase 43 — juga
+                                        return `everTrialedModules: string[]` (union modul yang
+                                        PERNAH ditrial, apa pun status sekarang)
+POST /subscriptions/trial            → § Fase 43 — body: { planId: uuid }, self-service "Coba
+                                        Gratis". Subscription LANGSUNG "active", isTrial:true,
+                                        TANPA order/invoice. Guard: TRIAL_NOT_AVAILABLE_FOR_PLAN
+                                        (plan.trialEligible false), TRIAL_ALREADY_USED (modul ini
+                                        sudah pernah ditrial), MODULE_ALREADY_SUBSCRIBED (modul
+                                        sudah aktif, real atau trial)
 # Admin only:
 GET  /admin/plans                    → daftar SEMUA paket (aktif+nonaktif), § Fase 10
-POST/PUT/DELETE /admin/plans         → CRUD paket
+POST/PUT/DELETE /admin/plans         → CRUD paket. § Fase 43 — body juga terima `trialEligible`
+                                        (boolean, opsional — default false kalau tidak diisi)
 GET  /admin/users                    → daftar user + role + subscription aktif, § Fase 10
-POST /admin/users                    → provisioning user manual (§ Admin-Provisioned di atas)
+POST /admin/users                    → provisioning user manual, body { name, email, planIds?, markAsPaid? }
+                                        (§ Admin-Provisioned di atas, Fase 18)
 GET  /admin/subscriptions?userId=    → riwayat subscription 1 user, § Fase 10
 POST /admin/subscriptions            → assign plan manual ke user (tanpa payment), body WAJIB
                                         sertakan `endAt` (§ ADR-0016 — TIDAK dihitung otomatis
@@ -285,8 +431,12 @@ PATCH /admin/subscriptions/:id       → ubah `endAt` subscription "active" yang
 ```
 
 ## Referensi
-- Rasional keputusan → `docs/decisions/adr-0008-model-langganan.md`
+- Rasional keputusan model dasar → `docs/decisions/adr-0008-model-langganan.md`
+- Granularitas per sub-modul, katalog plan (Fase 14) → `docs/decisions/adr-0019-gating-per-sub-modul-dan-katalog-plan.md`
+- Koneksi Accurate reusable lintas subscription (Fase 14) → `docs/decisions/adr-0020-accurate-connection-reusable-lintas-subscription.md`
+- Sub-modul ke-6, Vendor Payable Account (Fase 28) → `docs/decisions/adr-0026-modul-akun-hutang-pemasok-terpisah.md`
 - Expired manual admin-provisioned + edit endAt → `docs/decisions/adr-0016-admin-subscription-expired-manual.md`
+- Timezone-aware date handling (fix bug endAt UTC-midnight, Fase 43/44) → `docs/decisions/adr-0028-timezone-aware-date-handling.md`
 - Payment & orders → `docs/architecture/architecture-payment.md`
 - RBAC & permission → `docs/architecture/architecture-auth.md`
 - Job terjadwal → `docs/architecture/architecture-jobs.md`

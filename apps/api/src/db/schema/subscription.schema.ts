@@ -19,6 +19,13 @@ export const plans = pgTable("plans", {
   // Tipe TETAP array (hindari migration breaking untuk data lama).
   modules: jsonb("modules").$type<string[]>().notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // § Fase 43 (koreksi) — admin HARUS eksplisit mengaktifkan trial per
+  // paket, BUKAN semua paket otomatis bisa trial (kalau otomatis, admin
+  // tidak punya otoritas atas paketnya sendiri). Default false — trial
+  // baru jalan untuk paket yang admin tandai eksplisit lewat toggle di
+  // form buat/edit paket. § architecture-subscription.md § "Trial (Batas
+  // Baris)".
+  trialEligible: boolean("trial_eligible").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
@@ -51,5 +58,16 @@ export const subscriptions = pgTable("subscriptions", {
   // SENGAJA belum dibangun (ditunda ke fase customer-settings terpisah)
   // — job `PURGE_OLD_IMPORTS` sudah baca kolom ini dari sekarang.
   importRetentionDaysOverride: integer("import_retention_days_override"),
+  // § Fase 43 — trial gratis (self-service, 1x seumur hidup per modul per
+  // user). Subscription trial dibuat LANGSUNG "active" tanpa order/invoice
+  // (orderId/invoiceItemId null), dibatasi jumlah baris berhasil-import
+  // (§ architecture-subscription.md § "Trial (Batas Baris)"), BUKAN cuma
+  // durasi hari — `endAt` tetap dipakai sebagai backstop kadaluarsa.
+  isTrial: boolean("is_trial").notNull().default(false),
+  // § Fase 45 — nilai terkecil H-berapa yang SUDAH dikirim notifikasi
+  // "akan berakhir"-nya (job `NOTIFY_EXPIRING_SOON`, threshold 7/3/1 utk
+  // subscription asli, 3/1 utk trial) — cegah reminder terkirim dobel
+  // tiap kali job harian jalan. Nullable — NULL = belum pernah diingatkan.
+  lastReminderThresholdDays: integer("last_reminder_threshold_days"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
 });

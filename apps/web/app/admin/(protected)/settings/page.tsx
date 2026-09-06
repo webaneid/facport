@@ -5,7 +5,11 @@ import { toast } from "sonner";
 import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Alert } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
 
@@ -20,12 +24,37 @@ type QrisAccount = { id: string; name: string; imageUrl: string; isDynamic: bool
 // (1-7) di CLIENT di sini, DAN di server (§ settings.route.ts PUT) —
 // jangan cuma andalkan satu sisi.
 const MAX_RETENTION_DAYS = 7;
+// § diminta user 2026-09-06 — batas wajar estimasi detik input manual
+// per baris (§ apps/api/src/lib/manual-input-estimate.ts, SATU sumber
+// kebenaran angka ini — jangan duplikasi batasnya di tempat lain).
+const MIN_MANUAL_INPUT_SECONDS = 1;
+// § ketemu 2026-09-06 — payload EMV disalin dari alat scan/decode QR
+// eksternal ke Textarea di bawah HAMPIR SELALU ikut bawa whitespace/
+// newline, bikin payload yang SEBENARNYA valid ditolak validasi
+// `$`-anchored di server (§ apps/api/src/lib/qris-emv.ts) dengan pesan
+// generik. Cek struktural yang SAMA (mirror, bukan import — apps/web
+// tidak boleh import runtime code apps/api) dijalankan di CLIENT juga,
+// terhadap versi TRIM, supaya admin dapat feedback SPESIFIK sebelum
+// submit, bukan cuma "Gagal menyimpan pengaturan".
+function isLikelyValidEmvPayload(payload: string): boolean {
+  return payload.startsWith("0002") && /6304[0-9A-Fa-f]{4}$/.test(payload);
+}
+const MAX_MANUAL_INPUT_SECONDS = 3600;
+// § Fase 43 — batas GLOBAL trial (§ apps/api/src/lib/trial.ts, SATU sumber
+// kebenaran angka ini — jangan duplikasi batasnya di tempat lain).
+const MIN_TRIAL_MAX_ROWS = 1;
+const MAX_TRIAL_MAX_ROWS = 100000;
+const MIN_TRIAL_DURATION_DAYS = 1;
+const MAX_TRIAL_DURATION_DAYS = 365;
 
 type FormState = {
   companyName: string;
   companyAddress: string;
   companyTimezone: string;
   retentionDays: string;
+  manualInputSeconds: string;
+  trialMaxRows: string;
+  trialDurationDays: string;
   // § Fase 15, ADR-0021 — dipakai footer PDF invoice ("Instruksi
   // Pembayaran"), group "billing" (§ architecture-settings.md).
   companyTaxId: string;
@@ -78,12 +107,27 @@ export default function AdminSettingsPage() {
         companyAddress: String(general["company.address"] ?? ""),
         companyTimezone: String(general["company.timezone"] ?? "Asia/Jakarta"),
         retentionDays: String(data["data.importRetentionDays"] ?? 2),
+        manualInputSeconds: String(data["data.manualInputSecondsPerRow"] ?? 30),
+        trialMaxRows: String(data["trial.maxRows"] ?? 100),
+        trialDurationDays: String(data["trial.durationDays"] ?? 30),
         companyTaxId: String(billing["company.taxId"] ?? ""),
         companyPhone: String(billing["company.phone"] ?? ""),
         companyEmail: String(billing["company.email"] ?? ""),
         companyBankAccount: String(billing["company.bankAccount"] ?? ""),
         bankAccounts: (billing["company.bankAccounts"] as BankAccount[] | undefined) ?? [],
-        qrisAccounts: (billing["company.qrisAccounts"] as QrisAccount[] | undefined) ?? [],
+        // § ketemu 2026-09-06 — entri QRIS lama (disimpan SEBELUM field
+        // `emvPayload` ada, § Fase 16 ADR-0022) tidak punya field ini sama
+        // sekali di DB — `undefined`, bukan `""`. Normalisasi DI SINI
+        // (bukan cuma di `handleSave`) supaya render (`account.emvPayload`
+        // di Textarea) juga tidak crash, dan state selalu konsisten
+        // dengan tipe `QrisAccount` (semua field WAJIB ada, bukan opsional).
+        qrisAccounts: ((billing["company.qrisAccounts"] as Partial<QrisAccount>[] | undefined) ?? []).map((a) => ({
+          id: a.id ?? crypto.randomUUID(),
+          name: a.name ?? "",
+          imageUrl: a.imageUrl ?? "",
+          isDynamic: a.isDynamic ?? false,
+          emvPayload: a.emvPayload ?? "",
+        })),
       });
     }
     load();
@@ -125,6 +169,14 @@ export default function AdminSettingsPage() {
     setForm({ ...form, qrisAccounts: form.qrisAccounts.filter((a) => a.id !== id) });
   }
 
+  // § diminta user 2026-09-06 — barcode QRIS yang diupload SUDAH berisi
+  // persis payload EMV yang dicari, server sekarang baca LANGSUNG dari
+  // gambarnya (§ apps/api/src/routes/admin/branding.route.ts,
+  // `decodeQrisEmvPayload`) — admin TIDAK PERLU lagi cari alat scan/decode
+  // eksternal & copy-paste manual (sumber bug whitespace, § lessons-learned.md
+  // 2026-09-06). Kalau decode berhasil, `isDynamic` diaktifkan OTOMATIS
+  // (itu tujuan utamanya, § permintaan user). Kalau gagal (foto buram/
+  // bukan QRIS), fallback ke isian manual TETAP ada — bukan dihilangkan.
   async function handleQrisImageChange(id: string, file: File | undefined) {
     if (!file) return;
     const res = await api.admin.branding["qris-image"].post({ file });
@@ -132,7 +184,14 @@ export default function AdminSettingsPage() {
       toast.error("Gagal upload foto QRIS — cek tipe file (JPEG/PNG/WebP) & ukuran (maks 5MB).");
       return;
     }
-    updateQrisAccount(id, { imageUrl: (res.data as { url: string }).url });
+    const { url, emvPayload } = res.data as { url: string; emvPayload: string | null };
+    if (emvPayload) {
+      updateQrisAccount(id, { imageUrl: url, emvPayload, isDynamic: true });
+      toast.success("Payload EMV terbaca otomatis dari barcode QRIS — QRIS ini jadi dinamis.");
+    } else {
+      updateQrisAccount(id, { imageUrl: url });
+      toast.warning("Payload EMV tidak terbaca otomatis dari foto ini — isi manual di bawah kalau QRIS ini mau dijadikan dinamis, atau biarkan sebagai QRIS statis.");
+    }
   }
 
   async function handleLogoChange(file: File | undefined) {
@@ -171,6 +230,23 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    const manualInputSeconds = Number(form.manualInputSeconds);
+    if (!Number.isInteger(manualInputSeconds) || manualInputSeconds < MIN_MANUAL_INPUT_SECONDS || manualInputSeconds > MAX_MANUAL_INPUT_SECONDS) {
+      setError(`Estimasi waktu input manual harus angka bulat ${MIN_MANUAL_INPUT_SECONDS}–${MAX_MANUAL_INPUT_SECONDS} detik.`);
+      return;
+    }
+
+    const trialMaxRows = Number(form.trialMaxRows);
+    if (!Number.isInteger(trialMaxRows) || trialMaxRows < MIN_TRIAL_MAX_ROWS || trialMaxRows > MAX_TRIAL_MAX_ROWS) {
+      setError(`Batas baris trial harus angka bulat ${MIN_TRIAL_MAX_ROWS}–${MAX_TRIAL_MAX_ROWS}.`);
+      return;
+    }
+    const trialDurationDays = Number(form.trialDurationDays);
+    if (!Number.isInteger(trialDurationDays) || trialDurationDays < MIN_TRIAL_DURATION_DAYS || trialDurationDays > MAX_TRIAL_DURATION_DAYS) {
+      setError(`Durasi trial harus angka bulat ${MIN_TRIAL_DURATION_DAYS}–${MAX_TRIAL_DURATION_DAYS} hari.`);
+      return;
+    }
+
     const incompleteBank = form.bankAccounts.some((a) => !a.bankName.trim() || !a.accountNumber.trim() || !a.accountName.trim());
     if (incompleteBank) {
       setError("Semua field rekening bank wajib diisi (atau hapus baris yang tidak dipakai).");
@@ -182,29 +258,63 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    // § trim SEBELUM validasi & kirim — root cause bug 2026-09-06 (payload
+    // valid ditolak gara-gara whitespace tersalin dari alat scan eksternal).
+    const normalizedQrisAccounts = form.qrisAccounts.map((a) => ({ ...a, emvPayload: (a.emvPayload ?? "").trim() }));
+    const invalidQris = normalizedQrisAccounts.find((a) => a.isDynamic && !isLikelyValidEmvPayload(a.emvPayload));
+    if (invalidQris) {
+      setError(
+        `Payload EMV untuk QRIS "${invalidQris.name}" tidak valid — pastikan payload disalin UTUH dari hasil scan/decode QRIS statis (harus diawali "0002" dan diakhiri kode CRC "6304XXXX").`,
+      );
+      return;
+    }
+
     setSaving(true);
     const res = await api.settings.put([
       { key: "company.name", value: form.companyName, group: "general" },
       { key: "company.address", value: form.companyAddress, group: "general" },
       { key: "company.timezone", value: form.companyTimezone, group: "general" },
       { key: "data.importRetentionDays", value: retentionDays, group: "data" },
+      { key: "data.manualInputSecondsPerRow", value: manualInputSeconds, group: "data" },
+      { key: "trial.maxRows", value: trialMaxRows, group: "data" },
+      { key: "trial.durationDays", value: trialDurationDays, group: "data" },
       { key: "company.taxId", value: form.companyTaxId, group: "billing" },
       { key: "company.phone", value: form.companyPhone, group: "billing" },
       { key: "company.email", value: form.companyEmail, group: "billing" },
       { key: "company.bankAccount", value: form.companyBankAccount, group: "billing" },
       { key: "company.bankAccounts", value: form.bankAccounts, group: "billing" },
-      { key: "company.qrisAccounts", value: form.qrisAccounts, group: "billing" },
+      { key: "company.qrisAccounts", value: normalizedQrisAccounts, group: "billing" },
     ]);
     setSaving(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; maxDays?: number } | undefined;
+      const value = res.error.value as {
+        code?: string;
+        maxDays?: number;
+        minDays?: number;
+        minSeconds?: number;
+        maxSeconds?: number;
+        qrisId?: string;
+        minRows?: number;
+        maxRows?: number;
+      } | undefined;
       setError(
         value?.code === "INVALID_RETENTION_DAYS"
           ? `Retensi data harus angka bulat 1–${value.maxDays} hari.`
-          : "Gagal menyimpan pengaturan.",
+          : value?.code === "INVALID_MANUAL_INPUT_SECONDS"
+            ? `Estimasi waktu input manual harus angka bulat ${value.minSeconds}–${value.maxSeconds} detik.`
+            : value?.code === "INVALID_TRIAL_MAX_ROWS"
+              ? `Batas baris trial harus angka bulat ${value.minRows}–${value.maxRows}.`
+              : value?.code === "INVALID_TRIAL_DURATION_DAYS"
+                ? `Durasi trial harus angka bulat ${value.minDays}–${value.maxDays} hari.`
+                : value?.code === "INVALID_QRIS_ACCOUNTS"
+                  ? `Payload EMV salah satu QRIS tidak valid (${normalizedQrisAccounts.find((a) => a.id === value.qrisId)?.name ?? "cek kembali entri QRIS"}) — pastikan disalin utuh dari hasil scan QRIS statis.`
+                  : value?.code === "INVALID_BANK_ACCOUNTS"
+                    ? "Data rekening bank tidak lengkap — pastikan semua field terisi."
+                    : "Gagal menyimpan pengaturan.",
       );
       return;
     }
+    setForm({ ...form, qrisAccounts: normalizedQrisAccounts });
     toast.success("Pengaturan disimpan.");
   }
 
@@ -219,10 +329,7 @@ export default function AdminSettingsPage() {
 
   return (
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Pengaturan</h1>
-        <p className="text-sm text-muted-foreground">Pengaturan umum Facport.</p>
-      </div>
+      <PageHeader title="Pengaturan" description="Pengaturan umum Facport." />
 
       <Card>
         <CardHeader>
@@ -308,8 +415,7 @@ export default function AdminSettingsPage() {
           </div>
           <label className="flex flex-col gap-1.5">
             <span className="text-sm font-medium text-foreground">Rekening Bank</span>
-            <textarea
-              className="flex w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10"
+            <Textarea
               rows={3}
               placeholder="mis. BCA 1234567890 a.n. PT Facport"
               value={form.companyBankAccount}
@@ -361,9 +467,10 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle>QRIS</CardTitle>
           <CardDescription>
-            Upload foto QRIS statis dari bank/penyedia QRIS kamu. Isi payload EMV (opsional) supaya nominal + kode unik
-            terkunci otomatis di QR yang dilihat customer — kosongkan kalau tidak tahu caranya (customer akan diminta
-            ketik manual nominalnya).
+            Upload foto QRIS statis dari bank/penyedia QRIS kamu — payload EMV di dalam barcode-nya DIBACA OTOMATIS
+            (tidak perlu scan/decode manual pakai alat lain), supaya nominal + kode unik terkunci otomatis di QR yang
+            dilihat customer. Kalau foto tidak bisa dibaca otomatis (misal buram), payload EMV bisa diisi manual, atau
+            biarkan sebagai QRIS statis biasa (customer ketik nominal sendiri).
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
@@ -389,18 +496,14 @@ export default function AdminSettingsPage() {
                 </button>
               </div>
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={account.isDynamic}
-                  onChange={(e) => updateQrisAccount(account.id, { isDynamic: e.target.checked })}
-                />
+                <Checkbox checked={account.isDynamic} onCheckedChange={(checked) => updateQrisAccount(account.id, { isDynamic: checked === true })} />
                 Dinamis (kunci nominal otomatis)
               </label>
               {account.isDynamic && (
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-xs font-medium text-foreground">Payload EMV (dari scan/decode QRIS statis di atas)</span>
-                  <textarea
-                    className="flex w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-xs outline-none transition-shadow placeholder:text-muted-foreground/70 focus:border-primary-500 focus:ring-4 focus:ring-primary-500/10"
+                  <span className="text-xs font-medium text-foreground">Payload EMV (terisi otomatis dari foto QRIS di atas — bisa diedit manual kalau perlu)</span>
+                  <Textarea
+                    className="font-mono text-xs"
                     rows={2}
                     value={account.emvPayload}
                     onChange={(e) => updateQrisAccount(account.id, { emvPayload: e.target.value })}
@@ -419,8 +522,9 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle>Retensi Data Import</CardTitle>
           <CardDescription>
-            Berapa hari riwayat import Excel (Faktur Pembelian, Akun Hutang Pemasok) disimpan sebelum dihapus otomatis.
-            Data client bersifat sensitif — maksimal {MAX_RETENTION_DAYS} hari, tidak bisa diatur lebih lama.
+            Berapa hari riwayat import Excel (semua modul — Faktur Pembelian, Faktur Penjualan, Akun Hutang Pemasok,
+            Purchase Payment, Sales Receipt, Jurnal Umum) disimpan sebelum dihapus otomatis. Data client bersifat
+            sensitif — maksimal {MAX_RETENTION_DAYS} hari, tidak bisa diatur lebih lama.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -437,7 +541,65 @@ export default function AdminSettingsPage() {
         </CardContent>
       </Card>
 
-      {error && <p className="text-sm text-destructive">{error}</p>}
+      <Card>
+        <CardHeader>
+          <CardTitle>Estimasi Waktu Input Manual per Baris</CardTitle>
+          <CardDescription>
+            Perkiraan rata-rata waktu (dalam detik) yang dibutuhkan staf untuk menginput 1 baris data transaksi secara
+            manual langsung di Accurate Online (tanpa Facport). Angka ini dipakai untuk menghitung estimasi
+            &ldquo;efisiensi waktu kerja&rdquo; yang ditampilkan ke pelanggan di dashboard mereka — semakin akurat
+            angkanya, semakin meyakinkan klaim penghematan waktunya.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <label className="flex max-w-xs flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Detik per Baris</span>
+            <Input
+              type="number"
+              min={MIN_MANUAL_INPUT_SECONDS}
+              max={MAX_MANUAL_INPUT_SECONDS}
+              value={form.manualInputSeconds}
+              onChange={(e) => setForm({ ...form, manualInputSeconds: e.target.value })}
+            />
+          </label>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Pengaturan Trial</CardTitle>
+          <CardDescription>
+            Semua paket bisa dicoba gratis oleh customer (1x seumur hidup per modul, tombol &ldquo;Coba Gratis&rdquo;
+            di halaman langganan). Dibatasi jumlah baris Excel yang berhasil diimport, BUKAN jumlah hari — begitu
+            kuota baris habis, customer wajib upgrade ke paket berbayar untuk lanjut import. Berlaku GLOBAL untuk
+            semua modul, tidak perlu diatur per-paket.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4">
+          <label className="flex max-w-xs flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Batas Baris Trial</span>
+            <Input
+              type="number"
+              min={MIN_TRIAL_MAX_ROWS}
+              max={MAX_TRIAL_MAX_ROWS}
+              value={form.trialMaxRows}
+              onChange={(e) => setForm({ ...form, trialMaxRows: e.target.value })}
+            />
+          </label>
+          <label className="flex max-w-xs flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Durasi Trial (Hari)</span>
+            <Input
+              type="number"
+              min={MIN_TRIAL_DURATION_DAYS}
+              max={MAX_TRIAL_DURATION_DAYS}
+              value={form.trialDurationDays}
+              onChange={(e) => setForm({ ...form, trialDurationDays: e.target.value })}
+            />
+          </label>
+        </CardContent>
+      </Card>
+
+      {error && <Alert variant="destructive">{error}</Alert>}
       <Button onClick={handleSave} disabled={saving} className="self-start">
         {saving ? "Menyimpan..." : "Simpan Pengaturan"}
       </Button>

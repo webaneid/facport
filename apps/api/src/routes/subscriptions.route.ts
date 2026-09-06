@@ -4,11 +4,12 @@ import { db } from "../lib/db";
 import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getActiveSubscriptionsWithPlans } from "../lib/subscription-gate";
-import { generateInvoiceNumber } from "../lib/invoice-number";
+import { createInvoiceAndOrder } from "../lib/invoice-order";
+import { createTrialSubscription } from "../lib/trial";
+import { createNotification, formatNotificationDate, NOTIFICATION_TYPES } from "../lib/notifications";
+import { getCompanyTimezone } from "../lib/company-timezone";
 
 const NON_TERMINAL_ORDER_STATUSES = ["pending", "submitted"] as const;
-
-const INVOICE_DUE_DAYS = 3;
 
 export const subscriptionsRoute = new Elysia()
   .use(permissionPlugin)
@@ -26,7 +27,19 @@ export const subscriptionsRoute = new Elysia()
         .innerJoin(plans, eq(plans.id, subscriptions.planId))
         .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.status, "active")))
         .orderBy(desc(subscriptions.createdAt));
-      return { subscriptions: rows };
+
+      // § Fase 43 — union modul yang PERNAH ditrial user ini, APA PUN
+      // status subscription-nya sekarang (aktif/expired/habis kuota) —
+      // dipakai frontend nentuin tombol "Coba Gratis" mana yang WAJIB
+      // di-disable permanen (1x trial seumur hidup per modul per user).
+      const everTrialedRows = await db
+        .select({ modules: plans.modules })
+        .from(subscriptions)
+        .innerJoin(plans, eq(plans.id, subscriptions.planId))
+        .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.isTrial, true)));
+      const everTrialedModules = [...new Set(everTrialedRows.flatMap((r) => r.modules))];
+
+      return { subscriptions: rows, everTrialedModules };
     },
     { auth: true },
   )
@@ -73,7 +86,11 @@ export const subscriptionsRoute = new Elysia()
           if (!me) throw new Error("USER_NOT_FOUND");
 
           const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
-          const activeModules = new Set(activeSubs.flatMap((s) => s.plan.modules));
+          // § Fase 43 — trial TIDAK memblokir pembelian paket ASLI modul
+          // yang sama, supaya user bisa upgrade kapan saja tanpa nunggu
+          // trial habis/expired. Guard "modul sudah aktif" cuma berlaku
+          // untuk subscription NON-trial.
+          const activeModules = new Set(activeSubs.filter((s) => !s.subscription.isTrial).flatMap((s) => s.plan.modules));
 
           const inFlightRows = await tx
             .select({ moduleKey: invoiceItems.moduleKey })
@@ -87,41 +104,28 @@ export const subscriptionsRoute = new Elysia()
           const alreadySubscribed = cartModules.find((m) => activeModules.has(m) || inFlightModules.has(m));
           if (alreadySubscribed) throw new Error(`MODULE_ALREADY_SUBSCRIBED:${alreadySubscribed}`);
 
-          const subtotal = planRows.reduce((sum, p) => sum + p.price, 0);
-          const invoiceNumber = await generateInvoiceNumber();
-          const dueDate = new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 60 * 60 * 1000);
+          // § Fase 18 — logic bikin invoice+items+order diekstrak ke
+          // `lib/invoice-order.ts` (dipakai ulang di `admin/users.route.ts`
+          // "Kirim Invoice"). Guard di atas (row lock + modul sudah
+          // aktif/in-flight) TETAP di sini — spesifik checkout customer.
+          const created = await createInvoiceAndOrder(tx, { userId: user.id, billToName: me.name, planRows });
 
-          const [invoice] = await tx
-            .insert(invoices)
-            .values({
-              invoiceNumber,
+          // § Fase 45 — notifikasi awal alur subscribe: "pesanan dibuat,
+          // selesaikan pembayaran". Ikut transaction yang sama (tx) — kalau
+          // checkout gagal di langkah manapun, notifikasi ikut rollback.
+          await createNotification(
+            {
               userId: user.id,
-              status: "unpaid",
-              billToName: me.name,
-              subtotal,
-              total: subtotal,
-              dueDate,
-            })
-            .returning();
-
-          await tx.insert(invoiceItems).values(
-            planRows.map((p) => ({
-              invoiceId: invoice!.id,
-              planId: p.id,
-              moduleKey: p.modules[0]!,
-              label: p.name,
-              price: p.price,
-            })),
+              type: NOTIFICATION_TYPES.ORDER_CREATED,
+              title: "Pesanan dibuat",
+              body: `Pesanan kamu untuk ${planRows.length} paket sudah dibuat — selesaikan pembayaran supaya langgananmu aktif.`,
+              entityType: "order",
+              entityId: created.orderId,
+            },
+            tx,
           );
 
-          // § kode unik 100-999 (§ architecture-payment.md § Skema
-          // Database) — ditambahkan ke invoice.total agar admin bisa
-          // cocokkan mutasi bank ke invoice yang tepat tanpa API
-          // cek-mutasi otomatis.
-          const uniqueCode = Math.floor(Math.random() * 900) + 100;
-          const [order] = await tx.insert(orders).values({ invoiceId: invoice!.id, uniqueCode }).returning();
-
-          return { invoiceId: invoice!.id, orderId: order!.id, amountDue: subtotal + uniqueCode };
+          return { invoiceId: created.invoiceId, orderId: created.orderId, amountDue: created.amountDue };
         });
 
         return result;
@@ -139,4 +143,93 @@ export const subscriptionsRoute = new Elysia()
       }
     },
     { auth: true, body: t.Object({ planIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }) }) },
+  )
+  // § Fase 43 — self-service "Coba Gratis": customer klik sendiri, TANPA
+  // approval admin, TANPA invoice/order/pembayaran sama sekali (langsung
+  // "active", § lib/trial.ts `createTrialSubscription`). Row lock + guard
+  // sama pola checkout (cegah race 2 klik/2 tab bikin 2 trial modul sama).
+  .post(
+    "/subscriptions/trial",
+    async ({ body, user, set }) => {
+      const [plan] = await db.select().from(plans).where(eq(plans.id, body.planId));
+      if (!plan) {
+        set.status = 404;
+        return { code: "PLAN_NOT_FOUND" };
+      }
+      if (!plan.isActive) {
+        set.status = 400;
+        return { code: "PLAN_NOT_ACTIVE" };
+      }
+      // § Fase 43 (koreksi) — trial BUKAN otomatis untuk semua paket,
+      // admin WAJIB tandai eksplisit per paket (`plans.trialEligible`)
+      // supaya admin tetap punya otoritas penuh atas paketnya sendiri.
+      if (!plan.trialEligible) {
+        set.status = 400;
+        return { code: "TRIAL_NOT_AVAILABLE_FOR_PLAN" };
+      }
+
+      try {
+        const result = await db.transaction(async (tx) => {
+          const [me] = await tx.select().from(userTable).where(sql`${userTable.id} = ${user.id} FOR UPDATE`).limit(1);
+          if (!me) throw new Error("USER_NOT_FOUND");
+
+          // § 1x trial SEUMUR HIDUP per modul per user — APA PUN status
+          // subscription trial sebelumnya (aktif/expired/habis kuota),
+          // sekali pernah trial modul X tidak bisa trial modul X lagi.
+          const everTrialedRows = await tx
+            .select({ modules: plans.modules })
+            .from(subscriptions)
+            .innerJoin(plans, eq(plans.id, subscriptions.planId))
+            .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.isTrial, true)));
+          const everTrialedModules = new Set(everTrialedRows.flatMap((r) => r.modules));
+          const alreadyTrialed = plan.modules.find((m) => everTrialedModules.has(m));
+          if (alreadyTrialed) throw new Error(`TRIAL_ALREADY_USED:${alreadyTrialed}`);
+
+          // § modul yang SUDAH aktif (paket asli ATAU trial lain yang
+          // somehow masih aktif) juga tidak boleh ditrial lagi — reuse
+          // guard yang sama seperti checkout, TANPA filter isTrial di sini
+          // (beda dari checkout: trial harus benar2 belum ada apa pun).
+          const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+          const activeModules = new Set(activeSubs.flatMap((s) => s.plan.modules));
+          const alreadySubscribed = plan.modules.find((m) => activeModules.has(m));
+          if (alreadySubscribed) throw new Error(`MODULE_ALREADY_SUBSCRIBED:${alreadySubscribed}`);
+
+          const subscription = await createTrialSubscription(tx, { userId: user.id, plan, actorId: user.id });
+
+          const companyTimezone = await getCompanyTimezone();
+          const endAtLabel = subscription.endAt ? formatNotificationDate(subscription.endAt, companyTimezone) : "-";
+          await createNotification(
+            {
+              userId: user.id,
+              type: NOTIFICATION_TYPES.TRIAL_STARTED,
+              title: `Trial ${plan.name} aktif`,
+              body: `Trial kamu berlaku sampai ${endAtLabel}, dibatasi jumlah baris import. Manfaatkan sebaik-baiknya!`,
+              entityType: "subscription",
+              entityId: subscription.id,
+            },
+            tx,
+          );
+
+          return { subscriptionId: subscription.id, endAt: subscription.endAt };
+        });
+
+        return result;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "TRIAL_FAILED";
+        if (message.startsWith("TRIAL_ALREADY_USED:")) {
+          set.status = 400;
+          return { code: "TRIAL_ALREADY_USED", moduleKey: message.split(":")[1] };
+        }
+        if (message.startsWith("MODULE_ALREADY_SUBSCRIBED:")) {
+          set.status = 400;
+          return { code: "MODULE_ALREADY_SUBSCRIBED", moduleKey: message.split(":")[1] };
+        }
+        if (message === "USER_NOT_FOUND") {
+          set.status = 404;
+          return { code: "USER_NOT_FOUND" };
+        }
+        throw err;
+      }
+    },
+    { auth: true, body: t.Object({ planId: t.String({ format: "uuid" }) }) },
   );
