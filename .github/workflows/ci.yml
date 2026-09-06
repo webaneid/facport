@@ -25,6 +25,27 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      # § test upload bukti transfer (orders.route.test.ts dst) beneran
+      # connect ke MinIO nyata — sebelumnya CUMA env var MINIO_* di bawah
+      # tanpa service ini, jadi selalu gagal connect (500). Pakai image
+      # bitnami/minio (BUKAN minio/minio resmi) — GitHub Actions `services:`
+      # tidak bisa override command/entrypoint container, sedangkan image
+      # resmi WAJIB command "server /data"; bitnami/minio start server
+      # otomatis dari env var saja. MINIO_DEFAULT_BUCKETS pre-create ke-3
+      # bucket app (lib/minio.ts) supaya tidak bergantung urutan request
+      # mana yang panggil ensureBucket() duluan.
+      minio:
+        image: bitnami/minio:latest
+        env:
+          MINIO_ROOT_USER: minioadmin
+          MINIO_ROOT_PASSWORD: minioadmin
+          MINIO_DEFAULT_BUCKETS: facport-media,facport-public,facport-payment-proofs
+        ports: ["9000:9000"]
+        options: >-
+          --health-cmd "mc ready local"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       # § Nilai DUMMY khusus CI (Postgres service di atas fresh tiap run,
       # tidak pernah persist) — BUKAN secret production sungguhan, aman
