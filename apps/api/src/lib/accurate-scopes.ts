@@ -16,13 +16,15 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   purchase_invoice: [
     "purchase_invoice_view",
     "purchase_invoice_save",
-    // § Fase 04/05 — Akun Hutang Pemasok & auto-create vendor, melekat ke
-    // alur Purchase Invoice (§ architecture-accurate-integration.md §
-    // "Vendor (Data Master)").
-    "vendor_view",
-    "vendor_save",
+    // § Fase 05 — auto-create item saat import Faktur Pembelian. TIDAK
+    // terkait fitur vendor (§ ADR-0026) — tetap di sini.
     "item_save",
   ],
+  // § ADR-0026 — dulu dibundel gratis ke `purchase_invoice` (Fase 04),
+  // sekarang sub-modul SENDIRI yang dijual terpisah. Koneksi Accurate
+  // yang connect SEBELUM perubahan ini WAJIB "Hubungkan Ulang" untuk
+  // dapat scope ini kalau baru sekarang subscribe.
+  vendor_payable_account: ["vendor_view", "vendor_save"],
   // § Fase 13 — SEHARUSNYA sudah ditambah saat itu (customer_view/save
   // dipakai `findOrCreateCustomer`, accurate-customer.ts), baru lengkap
   // sekarang di Fase 14 saat file ini dirombak total. Koneksi Accurate

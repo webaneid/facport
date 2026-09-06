@@ -1,9 +1,8 @@
 import { Elysia, t } from "elysia";
 import { eq } from "drizzle-orm";
-import { db } from "../lib/db";
-import { orders } from "../db/schema";
-import { permissionPlugin } from "../lib/permission";
-import { logger } from "../lib/logger";
+import { db } from "../../lib/db";
+import { orders } from "../../db/schema";
+import { logger } from "../../lib/logger";
 import {
   ALLOWED_PROOF_MIME,
   MAX_PROOF_SIZE_MB,
@@ -13,26 +12,27 @@ import {
   buildQrisResult,
   processProofImage,
   saveProofAndMarkSubmitted,
-} from "../lib/order-payment";
+} from "../../lib/order-payment";
 
-// § Fase 16, ADR-0022 — ownership dicek lewat invoice (invoice.userId),
-// BUKAN kolom userId langsung di `orders` (order tidak punya kolom itu —
-// 1 order SELALU nempel ke 1 invoice, ownership invoice = ownership order).
-// § Fase 27 — versi TANPA login (link publik) ada di
-// `routes/public/orders.route.ts`, pakai `lib/order-payment.ts` yang SAMA
-// (cuma beda cara menemukan order: ownership vs sekadar ID).
-async function getOwnedOrder(userId: string, orderId: string) {
-  const owned = await getOrderById(orderId);
-  if (!owned || owned.invoice.userId !== userId) return null;
-  return owned;
-}
-
-export const ordersRoute = new Elysia()
-  .use(permissionPlugin)
+// § Fase 27, ADR-0025 — link pembayaran PUBLIK (tanpa login), dipakai
+// invoice yang admin buat untuk user existing (§ architecture-invoice.md
+// § "Admin Membuat Invoice") — klien belum tentu mau/sempat bikin akun
+// Facport cuma untuk bayar 1 invoice. `order.id` (UUID random) dipakai
+// LANGSUNG sebagai identifier — TIDAK ada token terpisah (§ ADR-0025
+// Decision 3, presedan production `jalajogja`). Guard di SETIAP endpoint
+// di sini adalah KEBERADAAN + STATUS order — BUKAN ownership user, karena
+// memang tidak ada sesi login sama sekali. Logic setelah order ditemukan
+// SAMA PERSIS dengan `routes/orders.route.ts` (login) lewat
+// `lib/order-payment.ts` bersama — TIDAK ada 2 sumber kebenaran field
+// yang bisa drift.
+//
+// Rate limit dipasang di `app.ts` (prefix "/public", § architecture-security.md
+// §7) — endpoint publik tanpa auth adalah target abuse paling mudah.
+export const publicOrdersRoute = new Elysia({ prefix: "/public/orders" })
   .get(
-    "/orders/:id",
-    async ({ user, params, set }) => {
-      const owned = await getOwnedOrder(user.id, params.id);
+    "/:id",
+    async ({ params, set }) => {
+      const owned = await getOrderById(params.id);
       if (!owned) {
         set.status = 404;
         return { code: "ORDER_NOT_FOUND" };
@@ -40,12 +40,12 @@ export const ordersRoute = new Elysia()
       const { bankAccounts, qrisAccounts } = await getPaymentSettings();
       return toOrderDetailResponse(owned, bankAccounts, qrisAccounts);
     },
-    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
+    { params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
   .patch(
-    "/orders/:id/method",
-    async ({ user, params, body, set }) => {
-      const owned = await getOwnedOrder(user.id, params.id);
+    "/:id/method",
+    async ({ params, body, set }) => {
+      const owned = await getOrderById(params.id);
       if (!owned) {
         set.status = 404;
         return { code: "ORDER_NOT_FOUND" };
@@ -78,15 +78,14 @@ export const ordersRoute = new Elysia()
       return { ok: true };
     },
     {
-      auth: true,
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ method: t.Union([t.Literal("bank_transfer"), t.Literal("qris")]), accountRef: t.String({ minLength: 1 }) }),
     },
   )
   .get(
-    "/orders/:id/qris",
-    async ({ user, params, set }) => {
-      const owned = await getOwnedOrder(user.id, params.id);
+    "/:id/qris",
+    async ({ params, set }) => {
+      const owned = await getOrderById(params.id);
       if (!owned) {
         set.status = 404;
         return { code: "ORDER_NOT_FOUND" };
@@ -98,12 +97,12 @@ export const ordersRoute = new Elysia()
       }
       return result.body;
     },
-    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
+    { params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
   .patch(
-    "/orders/:id/proof",
-    async ({ user, params, body, set }) => {
-      const owned = await getOwnedOrder(user.id, params.id);
+    "/:id/proof",
+    async ({ params, body, set }) => {
+      const owned = await getOrderById(params.id);
       if (!owned) {
         set.status = 404;
         return { code: "ORDER_NOT_FOUND" };
@@ -121,7 +120,7 @@ export const ordersRoute = new Elysia()
       try {
         webpBuffer = await processProofImage(body.file);
       } catch (err) {
-        logger.error({ err, orderId: params.id }, "Gagal proses foto bukti transfer");
+        logger.error({ err, orderId: params.id }, "Gagal proses foto bukti transfer (publik)");
         set.status = 400;
         return { code: "INVALID_IMAGE_FILE" };
       }
@@ -130,7 +129,6 @@ export const ordersRoute = new Elysia()
       return { ok: true };
     },
     {
-      auth: true,
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({
         file: t.File({ type: [...ALLOWED_PROOF_MIME], maxSize: `${MAX_PROOF_SIZE_MB}m` }),

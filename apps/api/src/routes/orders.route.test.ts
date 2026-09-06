@@ -1,14 +1,37 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import sharp from "sharp";
 import { auth } from "../lib/auth";
 import { ordersRoute } from "./orders.route";
 import { db } from "../lib/db";
-import { plans, invoices, invoiceItems, orders, settings, user as userTable } from "../db/schema";
+import { plans, invoices, invoiceItems, orders, settings, notifications, roles, userRoles, user as userTable } from "../db/schema";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(ordersRoute);
+
+// § ketemu 2026-09-06 — `seedPaymentSettings()` di bawah upsert LANGSUNG
+// ke row settings GLOBAL (`company.bankAccounts`/`company.qrisAccounts`)
+// tanpa pernah mengembalikannya — QRIS/rekening ASLI admin ke-timpa
+// data dummy ("BCA"/"QRIS Statis") setiap file test ini jalan (kejadian
+// nyata). Snapshot SEBELUM test manapun jalan, kembalikan di `afterAll`.
+const PAYMENT_SETTINGS_KEYS = ["company.bankAccounts", "company.qrisAccounts"] as const;
+let originalPaymentSettingsSnapshot: Map<string, unknown>;
+
+beforeAll(async () => {
+  const rows = await db.select().from(settings).where(inArray(settings.key, [...PAYMENT_SETTINGS_KEYS]));
+  originalPaymentSettingsSnapshot = new Map(rows.map((r) => [r.key, r.value]));
+});
+
+afterAll(async () => {
+  for (const key of PAYMENT_SETTINGS_KEYS) {
+    if (originalPaymentSettingsSnapshot.has(key)) {
+      await db.update(settings).set({ value: originalPaymentSettingsSnapshot.get(key) }).where(eq(settings.key, key));
+    } else {
+      await db.delete(settings).where(eq(settings.key, key));
+    }
+  }
+});
 
 const validPngBuffer = await sharp({
   create: { width: 10, height: 10, channels: 3, background: { r: 0, g: 0, b: 255 } },
@@ -59,6 +82,18 @@ async function seedPaymentSettings() {
     .insert(settings)
     .values({ key: "company.qrisAccounts", value: qrisAccounts, group: "billing" })
     .onConflictDoUpdate({ target: settings.key, set: { value: qrisAccounts, updatedAt: new Date() } });
+}
+
+// § Fase 45 — dipakai test "admin_payment_proof_submitted" (fan-out ke
+// SIAPA PUN yang punya permission `orders.manage`, bukan hardcode role
+// "admin" — konsisten pola `getUserIdsWithPermission`).
+async function makeAdmin() {
+  const email = `orders-proof-admin-${runId}-${Math.random().toString(36).slice(2, 8)}@test.local`;
+  const adminId = await signUp(email);
+  const [role] = await db.select().from(roles).where(eq(roles.name, "admin"));
+  if (!role) throw new Error("Role admin belum ke-seed");
+  await db.insert(userRoles).values({ userId: adminId, roleId: role.id }).onConflictDoNothing();
+  return adminId;
 }
 
 async function createOrderForUser(userId: string) {
@@ -214,22 +249,13 @@ describe("PATCH /orders/:id/proof", () => {
     expect(body.code).toBe("METHOD_NOT_SELECTED");
   });
 
-  // § SKIP sengaja (BUKAN bug kode) — MinIO lokal di mesin sesi ini tidak
-  // reachable dengan credential `apps/api/.env` (instance native homebrew
-  // beda port/credential dari yang docker-compose.dev.yml harapkan,
-  // dikonfirmasi manual: `S3Error SignatureDoesNotMatch`, koneksi BERHASIL
-  // tersambung, cuma kredensial salah). Ditemukan & didiskusikan dengan
-  // user 2026-09-07 — infra MinIO belum dibereskan di mesin ini, dicatat
-  // sebagai Known Limitation Fase 16, BUKAN dianggap "selesai". Path
-  // 400 (validasi, ownership) TETAP tercakup test lain di file ini yang
-  // TIDAK butuh MinIO — cuma 2 test happy-path yang benar-benar upload
-  // yang di-skip.
-  test.skip("200 upload bukti — status jadi submitted, submittedAt terisi", async () => {
+  test("200 upload bukti — status jadi submitted, submittedAt terisi", async () => {
     await seedPaymentSettings();
     const email = `orders-proof-ok-${runId}@test.local`;
     const userId = await signUp(email);
     const cookie = await signIn(email);
     const { order } = await createOrderForUser(userId);
+    const adminId = await makeAdmin();
 
     await testApp.handle(
       new Request(`http://localhost/orders/${order.id}/method`, {
@@ -251,11 +277,26 @@ describe("PATCH /orders/:id/proof", () => {
     expect(updated!.status).toBe("submitted");
     expect(updated!.proofUrl).toBeTruthy();
     expect(updated!.submittedAt).toBeTruthy();
+
+    // § Fase 45 — customer dapat notifikasi "payment_proof_submitted"...
+    const [customerNotif] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, userId));
+    expect(customerNotif!.type).toBe("payment_proof_submitted");
+    expect(customerNotif!.entityId).toBe(order.id);
+
+    // ...DAN admin (siapa pun yang punya permission orders.manage) dapat
+    // notifikasi "admin_payment_proof_submitted" — fan-out, § ADR-0029.
+    const [adminNotif] = await db
+      .select()
+      .from(notifications)
+      .where(eq(notifications.userId, adminId));
+    expect(adminNotif!.type).toBe("admin_payment_proof_submitted");
+    expect(adminNotif!.entityId).toBe(order.id);
   });
 
-  // § SKIP — sama alasan test di atas, butuh upload PERTAMA berhasil
-  // dulu (MinIO) sebelum bisa tes upload KEDUA ditolak.
-  test.skip("400 ORDER_NOT_EDITABLE kalau upload bukti lagi setelah status submitted", async () => {
+  test("400 ORDER_NOT_EDITABLE kalau upload bukti lagi setelah status submitted", async () => {
     await seedPaymentSettings();
     const email = `orders-proof-twice-${runId}@test.local`;
     const userId = await signUp(email);
