@@ -61,6 +61,7 @@
 | 50   | Grouping Multi-Baris (Purchase Payment & Journal Voucher) | Done | (lihat phase doc) | `docs/phases/phase-50-grouping-purchase-payment-dan-journal-voucher.md` |
 | 51   | Grid Edit ala Excel untuk Baris Gagal Import | Done | (lihat phase doc) | `docs/phases/phase-51-grid-edit-baris-gagal.md` |
 | 52   | Perbaikan Deploy Production Pertama (facinstitute.id) | Done | `docs/deployment-new-domain-onboarding.md` | `docs/phases/phase-52-perbaikan-deploy-production-pertama.md` |
+| 53   | Multi-Tier Billing per Sub-Modul (Bulanan/Tahunan) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-53-multi-tier-billing-per-modul.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1646,3 +1647,22 @@ Server production online & terverifikasi manual: 5 subdomain HTTPS aktif
 landing page. Upload logo (media/MinIO) BELUM dikonfirmasi terverifikasi
 manual — lihat Known Limitations. Detail lengkap →
 `docs/phases/phase-52-perbaikan-deploy-production-pertama.md`.
+
+## Update 2026-09-07 — Fase 53 Done: Multi-Tier Billing per Sub-Modul
+1 sub-modul (mis. "Purchase Invoice") sekarang bisa punya beberapa tier
+durasi/harga (mis. Bulanan/Tahunan), tampil sebagai SATU kartu di
+landing dan `/subscribe` dengan pill pemilih tier — bukan 2 kartu modul
+terpisah yang membingungkan (diminta user eksplisit). Riset Plan Mode
+menemukan **backend tidak perlu diubah skemanya sama sekali** — checkout
+sudah plan-id-based dan guard modul sudah module-key-based sejak Fase
+16, jadi 2+ baris `plans` dengan `modules` sama otomatis bekerja benar
+(endAt per tier, guard modul-sudah-aktif, trial per modul). Grouping
+murni frontend (`apps/web/lib/use-grouped-plans.ts`, hook shared
+landing+subscribe). Tambahan 1 guard backend `DUPLICATE_MODULE_IN_CART`
+(defense-in-depth). Admin dapat helper text penamaan tier + sort tabel
+by modul (kosmetik).
+
+Test baru: 6 unit test hook + 1 test route. Full suite `apps/api` 413
+pass/0 fail, `apps/web` 21 pass/0 fail. Typecheck+lint 0 error. Build
+production sukses. Security review inline: 0 temuan. Detail lengkap →
+`docs/phases/phase-53-multi-tier-billing-per-modul.md`.

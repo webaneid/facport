@@ -137,6 +137,41 @@ dikirim ke API:
 - API (`POST`/`PUT /admin/plans`) TIDAK berubah sama sekali — tetap
   terima `durationDays` integer, tidak tahu/tidak peduli soal unit.
 
+## Multi-Tier per Sub-Modul (Fase 53)
+1 sub-modul BOLEH punya lebih dari 1 baris `plans` (tier durasi/harga
+berbeda, mis. "Purchase Invoice" Bulanan Rp X vs Tahunan Rp Y) — **tidak
+ada perubahan skema/backend sama sekali** untuk mendukung ini, murni
+konsekuensi dari fakta bahwa checkout SUDAH plan-id-based (bukan
+module-based) sejak awal:
+
+- `plans.modules` (array 1 elemen, § konvensi Fase 14) TIDAK unique —
+  admin bebas bikin 2+ baris dengan `modules` yang SAMA, beda
+  `price`/`durationDays`. Endpoint `admin/plans.route.ts` tidak berubah.
+- Guard "modul sudah aktif" di checkout (`subscriptions.route.ts`) SUDAH
+  keyed by `plan.modules[0]` (module key), BUKAN plan id, sejak Fase 16
+  — otomatis benar: customer yang sudah aktif salah satu tier modul X
+  tidak bisa checkout tier lain modul X yang sama.
+- `endAt` subscription dihitung LIVE dari `plan.durationDays` saat admin
+  confirm (bukan snapshot) — otomatis benar per tier yang dibeli.
+- `trialEligible` TETAP per baris plan (bukan per modul) — admin
+  biasanya nyalakan di 1 tier saja (mis. bulanan). Tombol "Coba Gratis"
+  di UI ikut tier yang sedang dipilih customer, BUKAN bug kalau
+  hilang/muncul saat customer ganti tier.
+- **Grouping (1 modul → 1 kartu, tier jadi pilihan pill) murni di
+  FRONTEND** — `apps/web/lib/use-grouped-plans.ts` (hook shared, dipakai
+  `landing/module-features.tsx` DAN `app/(protected)/subscribe/page.tsx`).
+  Backend TIDAK tahu konsep "grup" sama sekali, tetap terima `planIds`
+  polos di checkout.
+- Guard tambahan `DUPLICATE_MODULE_IN_CART` (defense-in-depth,
+  `subscriptions.route.ts`) menolak 1 checkout yang mengandung 2+ tier
+  modul yang sama — seharusnya mustahil lewat UI resmi (tier-picker
+  mutually-exclusive per modul), tapi tetap divalidasi server.
+
+**Implikasi untuk fase berikutnya**: JANGAN asumsikan "1 modul = 1 plan
+row" lagi di kode baru — selalu cek lewat `plan.modules[0]` (module key)
+untuk logic yang seharusnya per-modul (bukan per-plan-row), sama seperti
+guard checkout/trial yang sudah benar sejak awal.
+
 ## Trial (Batas Baris) (Fase 43)
 Semua paket (semua sub-modul) punya jalur coba-gratis **self-service**
 — customer klik tombol "Coba Gratis" di `/subscribe`, TANPA approval

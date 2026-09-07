@@ -10,8 +10,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
-import { moduleLabel } from "@/lib/module-options";
+import { moduleLabel, type ModuleKey } from "@/lib/module-options";
 import { currencyFormatter } from "@/lib/utils";
+import { formatDuration } from "@/lib/duration";
+import { useGroupedPlans } from "@/lib/use-grouped-plans";
+import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
 
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; trialEligible: boolean };
 
@@ -38,9 +41,15 @@ function SubscribePageInner() {
   // TETAP boleh diklik pilih ke cart untuk upgrade (§ isModuleBlocked).
   const [activeModuleMap, setActiveModuleMap] = useState<Map<string, boolean>>(new Map());
   const [everTrialedModules, setEverTrialedModules] = useState<Set<string>>(new Set());
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [checkingOut, setCheckingOut] = useState(false);
   const [tryingPlanId, setTryingPlanId] = useState<string | null>(null);
+
+  // § Fase 53 — 1 modul boleh punya >1 tier (Bulanan/Tahunan dst), 1
+  // kartu = 1 grup modul (bukan 1 kartu = 1 baris plan lagi). Grouping
+  // shared sama landing (`module-features.tsx`) via `useGroupedPlans`.
+  const { groups, isModuleSelected, isTierActive, activePlanFor, toggleModule, selectTier, setSelectedModules, selectedPlans } = useGroupedPlans(
+    plans ?? [],
+  );
 
   async function load() {
     const [plansRes, subsRes] = await Promise.all([api.plans.get(), api.me.subscriptions.get()]);
@@ -66,13 +75,21 @@ function SubscribePageInner() {
 
       // § pre-select dari query `?plans=` (dibawa dari landing, lewat
       // redirect login) — cuma plan yang BENAR ada & modulnya BELUM aktif
-      // (trial aktif TETAP boleh di-preselect, ini jalur upgrade).
+      // (trial aktif TETAP boleh di-preselect, ini jalur upgrade). Tier
+      // yang di-preselect landing WAJIB jadi tier aktif juga di sini
+      // (bukan cuma modulnya ke-toggle, tier bisa salah kalau tidak
+      // eksplisit di-set — default hook cuma tiers[0]).
       const preselect = searchParams.get("plans")?.split(",").filter(Boolean) ?? [];
       if (preselect.length > 0) {
-        const validIds = allPlans
-          .filter((p) => preselect.includes(p.id) && !p.modules.some((m) => moduleMap.has(m) && !moduleMap.get(m)))
-          .map((p) => p.id);
-        setSelected(new Set(validIds));
+        const validPlans = allPlans.filter((p) => preselect.includes(p.id) && !p.modules.some((m) => moduleMap.has(m) && !moduleMap.get(m)));
+        const moduleKeys = new Set<string>();
+        for (const p of validPlans) {
+          const moduleKey = p.modules[0];
+          if (!moduleKey) continue;
+          moduleKeys.add(moduleKey);
+          selectTier(moduleKey, p.id);
+        }
+        setSelectedModules(moduleKeys);
       }
     }
     init();
@@ -99,16 +116,6 @@ function SubscribePageInner() {
     load();
   }
 
-  function toggle(planId: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(planId)) next.delete(planId);
-      else next.add(planId);
-      return next;
-    });
-  }
-
-  const selectedPlans = useMemo(() => (plans ?? []).filter((p) => selected.has(p.id)), [plans, selected]);
   const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0), [selectedPlans]);
 
   async function handleCheckout() {
@@ -147,71 +154,115 @@ function SubscribePageInner() {
         <p className="text-sm text-muted-foreground">Pilih sub-modul yang kamu butuhkan — bisa lebih dari satu sekaligus.</p>
       </div>
 
-      {plans.length === 0 ? (
+      {groups.length === 0 ? (
         <EmptyState icon={Package} title="Belum ada paket tersedia" />
       ) : (
         <>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {plans.map((plan) => {
+            {groups.map((group) => {
               // § Fase 43 — "aktif" sekarang punya 2 rasa: paket ASLI
               // (blokir card, sama perilaku lama) vs trial (card TETAP
               // bisa diklik pilih ke cart, ini jalur upgrade).
-              const isRealActive = plan.modules.some((m) => activeModuleMap.get(m) === false);
-              const isTrialActive = plan.modules.some((m) => activeModuleMap.get(m) === true);
-              const hasEverTrialed = plan.modules.some((m) => everTrialedModules.has(m));
+              const isRealActive = activeModuleMap.get(group.moduleKey) === false;
+              const isTrialActive = activeModuleMap.get(group.moduleKey) === true;
+              const hasEverTrialed = everTrialedModules.has(group.moduleKey);
+              const isSelected = isModuleSelected(group.moduleKey);
+              const activePlan = activePlanFor(group);
               // § Fase 43 (koreksi) — tombol "Coba Gratis" cuma tampil
-              // untuk paket yang admin TANDAI eksplisit boleh ditrial
-              // (`plan.trialEligible`), BUKAN otomatis semua paket.
-              const isSelected = selected.has(plan.id);
-              const showTrialButton = plan.trialEligible && !isRealActive && !isTrialActive && !hasEverTrialed;
+              // untuk TIER YANG SEDANG DIPILIH kalau admin tandai eksplisit
+              // boleh ditrial (`trialEligible`) — kalau admin cuma nyalakan
+              // di 1 tier, tombol otomatis hilang/muncul ikut pill aktif.
+              const showTrialButton = activePlan?.trialEligible && !isRealActive && !isTrialActive && !hasEverTrialed;
+              const moduleKey = group.moduleKey as ModuleKey;
+              const Icon = LANDING_MODULE_ICON[moduleKey];
+              const tagline = LANDING_MODULE_TAGLINE[moduleKey];
               return (
-                // § dulu <button>, diganti <div role="button"> — "Coba
-                // Gratis" di dalamnya butuh <button> sendiri (stopPropagation
-                // dari toggle cart), dan <button> tidak boleh bersarang.
+                // § Fase 53 (revisi UX) — kartu TIDAK lagi diklik langsung
+                // (dulu whole-card-click toggle cart, ambigu begitu ada 2
+                // aksi berbeda: "Berlangganan" vs "Coba Gratis"). SEMUA
+                // aksi sekarang eksplisit lewat pill berlabel "Paket:".
                 <div
-                  key={plan.id}
-                  role="button"
-                  tabIndex={isRealActive ? -1 : 0}
-                  aria-disabled={isRealActive}
-                  onClick={() => !isRealActive && toggle(plan.id)}
-                  onKeyDown={(e) => {
-                    if (!isRealActive && (e.key === "Enter" || e.key === " ")) toggle(plan.id);
-                  }}
-                  className={`rounded-xl border p-5 text-left transition-colors ${
-                    isRealActive ? "cursor-not-allowed opacity-50" : "cursor-pointer"
-                  } ${isSelected ? "border-primary-600 bg-primary-50 ring-1 ring-primary-600" : "border-border/60 hover:bg-muted/50"}`}
+                  key={group.moduleKey}
+                  className={`rounded-xl border p-5 transition-colors ${isRealActive ? "opacity-50" : ""} ${
+                    isSelected ? "border-primary-600 bg-primary-50" : "border-border/60"
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h3 className="font-medium text-foreground">{plan.name}</h3>
-                      <p className="mt-1 text-xs text-muted-foreground">{plan.modules.map(moduleLabel).join(", ")}</p>
+                    <div className="flex items-center gap-3">
+                      {Icon && (
+                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white">
+                          <Icon className="h-5 w-5" />
+                        </span>
+                      )}
+                      <h3 className="font-medium text-foreground">{moduleLabel(group.moduleKey)}</h3>
                     </div>
-                    {isRealActive ? (
-                      <Badge variant="success">Sudah Berlangganan</Badge>
-                    ) : isTrialActive ? (
-                      <Badge variant="warning">Sedang Trial</Badge>
-                    ) : (
-                      <span
-                        className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 ${
-                          isSelected ? "border-primary-600 bg-primary-600" : "border-border"
-                        }`}
-                      >
-                        {isSelected && <Check className="h-3.5 w-3.5 text-white" />}
-                      </span>
-                    )}
+                    {isRealActive && <Badge variant="success">Sudah Berlangganan</Badge>}
+                    {isTrialActive && <Badge variant="warning">Sedang Trial</Badge>}
                   </div>
-                  <p className="mt-3 text-2xl font-semibold text-foreground">
-                    {currencyFormatter.format(plan.price)}
-                    <span className="text-sm font-normal text-muted-foreground"> /{plan.durationDays} hari</span>
-                  </p>
-                  {showTrialButton ? (
-                    <Button variant="outline" size="sm" className="mt-3" disabled={tryingPlanId === plan.id} onClick={(e) => handleStartTrial(e, plan)}>
-                      {tryingPlanId === plan.id ? "Memproses..." : "Coba Gratis"}
-                    </Button>
-                  ) : (
-                    !isRealActive &&
-                    !isTrialActive &&
-                    hasEverTrialed && <p className="mt-3 text-xs text-muted-foreground">Trial sudah pernah dipakai</p>
+                  {tagline && <p className="mt-2 text-xs text-muted-foreground">{tagline}</p>}
+
+                  {activePlan && (
+                    <p className="mt-3 text-2xl font-semibold text-foreground">
+                      {currencyFormatter.format(activePlan.price)}
+                      <span className="text-sm font-normal text-muted-foreground"> / {formatDuration(activePlan.durationDays)}</span>
+                    </p>
+                  )}
+
+                  {/* § border pemisah — pisahkan info (nama/deskripsi/harga) dari area pilihan interaktif di bawahnya */}
+                  <div className="mt-4 border-t border-border" />
+
+                  {group.tiers.length > 1 && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Periode</span>
+                      <div className="flex gap-1.5">
+                        {group.tiers.map((tier) => (
+                          <button
+                            key={tier.id}
+                            type="button"
+                            disabled={isRealActive}
+                            onClick={() => selectTier(group.moduleKey, tier.id)}
+                            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                              isTierActive(group, tier.id)
+                                ? "border-primary-600 bg-primary-600 text-white"
+                                : "border-border text-muted-foreground hover:border-primary-300"
+                            }`}
+                          >
+                            {formatDuration(tier.durationDays)}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {!isRealActive && !isTrialActive && activePlan && (
+                    <div className="mt-4 flex flex-col gap-2">
+                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Paket</span>
+                      <div className="flex gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => toggleModule(group.moduleKey)}
+                          className={`flex items-center gap-1.5 rounded-[3px] border border-primary-600 px-3 py-1.5 text-xs font-medium transition-colors ${
+                            isSelected ? "bg-primary-600 text-white" : "text-primary-700 hover:bg-primary-50"
+                          }`}
+                        >
+                          {isSelected && <Check className="h-3 w-3" />}
+                          Berlangganan
+                        </button>
+                        {showTrialButton && (
+                          <button
+                            type="button"
+                            disabled={tryingPlanId === activePlan.id}
+                            onClick={(e) => handleStartTrial(e, activePlan)}
+                            className="rounded-[3px] border border-primary-600 px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {tryingPlanId === activePlan.id ? "Memproses..." : "Coba Gratis"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  {!isRealActive && !isTrialActive && !showTrialButton && hasEverTrialed && (
+                    <p className="mt-2 text-xs text-muted-foreground">Trial sudah pernah dipakai</p>
                   )}
                 </div>
               );
@@ -230,7 +281,9 @@ function SubscribePageInner() {
                 <div className="flex flex-col gap-2">
                   {selectedPlans.map((p) => (
                     <div key={p.id} className="flex items-center justify-between text-sm">
-                      <span className="text-foreground">{p.name}</span>
+                      <span className="text-foreground">
+                        {moduleLabel(p.modules[0] ?? "")} <span className="text-muted-foreground">({formatDuration(p.durationDays)})</span>
+                      </span>
                       <span className="text-muted-foreground">{currencyFormatter.format(p.price)}</span>
                     </div>
                   ))}
