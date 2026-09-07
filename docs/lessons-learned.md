@@ -6,6 +6,42 @@
 
 ---
 
+## 2026-09-08 — `new Map(rows.map((r) => [key, r]))` diam-diam buang duplikat key (kolom "Langganan Aktif" `/admin/users` cuma tampil 1 dari beberapa)
+**Masalah:** User laporkan 2 klien production yang sebelumnya
+berlangganan SEMUA modul sekarang cuma tampil 1 modul di kolom
+"Langganan Aktif" laman `/admin/users`. Sempat dikira data hilang di
+database — ternyata bukan.
+
+**Root cause:** `GET /admin/users` (`admin/users.route.ts`) bangun peta
+subscription-per-user dengan `new Map(subRows.map((s) => [s.userId, s]))`.
+Kalau 1 `userId` muncul lebih dari sekali di `subRows` (user punya >1
+subscription `active` sekaligus — jadi kondisi NORMAL sejak Fase 53
+multi-tier per modul), `Map` cuma simpan entry TERAKHIR, sisanya
+ke-overwrite diam-diam TANPA error/warning apa pun. Response field
+`activeSubscription` didesain singular (nullable) sejak awal (Fase 10,
+sebelum multi-tier ada), jadi bug ini laten sampai ada customer real
+dengan >1 modul aktif.
+
+**Fix:** Ganti jadi `Map<userId, subscription[]>` (accumulate, bukan
+overwrite), response field jadi `activeSubscriptions` (array). Frontend
+render semua badge, bukan 1.
+
+**Pencegahan:** `new Map(array.map(x => [x.someKey, x]))` HANYA aman
+kalau `someKey` dijamin unik di `array` itu — begitu ada kemungkinan 1
+key punya banyak baris (relasi one-to-many, bukan one-to-one), pola ini
+membuang data diam-diam tanpa exception. Kalau relasinya bisa
+one-to-many (apalagi kalau desain sebelumnya cuma didasarkan asumsi
+"biasanya 1 aktif" yang berubah seiring fitur baru), pakai
+`Map<key, T[]>` (accumulate via spread/push) sejak awal, bukan tunggu
+sampai kejadian di production. Waspadai KHUSUS kode yang ditulis waktu
+suatu relasi memang masih 1:1 lalu jadi 1:N setelah fitur baru (di sini:
+Fase 53 multi-tier bikin "1 modul aktif per user" jadi "banyak modul
+aktif per user") — endpoint listing/agregasi lama yang mengasumsikan
+1:1 TIDAK otomatis ikut disesuaikan cuma karena fitur baru lolos
+typecheck & test-nya sendiri.
+
+---
+
 ## 2026-09-08 — Batch import "failed" tapi baris-barisnya kosong tanpa error message (gagal-dini sebelum loop per-baris)
 **Masalah:** User temukan batch production nyata
 (`379b65d8-90e4-4f29-8abb-70af74ddff74`) — status batch `"failed"`

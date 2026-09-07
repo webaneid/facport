@@ -65,6 +65,7 @@
 | 54   | Perbaikan Logika Upgrade Trial → Paket Asli | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md` |
 | 55   | Atribut Tambahan (Data Classification) di Import Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-55-atribut-tambahan-sales-invoice.md` |
 | 56   | Fix Error Message Batch Gagal Dini (Semua Modul) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md` |
+| 57   | Fix Daftar Langganan Aktif Hilang Diam-diam di `/admin/users` | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1743,3 +1744,22 @@ di luar scope fix ini).
 Full suite `apps/api` 415 pass/0 fail (tidak ada test baru — worker
 sulit di-unit-test tanpa refactor tambahan). Typecheck 0 error. Detail
 lengkap → `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`.
+
+## Update 2026-09-08 — Fase 57 Done: Fix Daftar Langganan Aktif Hilang Diam-diam di `/admin/users`
+User laporkan 2 klien production yang sebelumnya berlangganan SEMUA modul
+sekarang cuma tampil 1 modul di kolom "Langganan Aktif" laman
+`/admin/users`. Root cause: `GET /admin/users` bangun `subByUser` pakai
+`new Map(subRows.map((s) => [s.userId, s]))` — kalau user punya >1
+subscription aktif (normal sejak Fase 53 multi-tier per modul), cuma
+entry TERAKHIR di Map yang selamat, sisanya ke-overwrite diam-diam. Bug
+murni tampilan — data subscription di database tetap utuh, tidak hilang.
+
+Fix: `subByUser` jadi `Map<userId, subscription[]>`, response field
+diganti `activeSubscriptions` (array, sebelumnya `activeSubscription`
+singular nullable). Frontend (`admin/users/page.tsx`) render semua badge
+plan per user, bukan cuma 1. Test baru: user dengan 2 subscription aktif
+modul berbeda, verifikasi keduanya muncul di response.
+
+Full suite `apps/api` 416 pass/0 fail (1 baru). Typecheck 0 error
+(api+web). Build `apps/web` sukses. Security review inline: 0 temuan.
+Detail lengkap → `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md`.
