@@ -1,10 +1,10 @@
 import { LoginForm } from "@/components/auth/login-form";
+import { AuthLayout } from "@/components/auth/auth-layout";
 
 export default function AdminLoginPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-xl font-semibold">Login Admin</h1>
+    <AuthLayout title="Login Admin" subtitle="Kelola paket, pengguna, dan pengumuman Facport.">
       <LoginForm />
-    </main>
+    </AuthLayout>
   );
 }

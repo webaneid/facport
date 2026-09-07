@@ -4,9 +4,10 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { Mail } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { IconInput } from "@/components/auth/icon-input";
 
 const schema = z.object({ email: z.string().email("Email tidak valid") });
 type FormValues = z.infer<typeof schema>;
@@ -43,11 +44,11 @@ export function ForgotPasswordForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex w-full max-w-sm flex-col gap-3">
       <div>
-        <Input type="email" placeholder="Email" {...register("email")} />
+        <IconInput icon={Mail} type="email" placeholder="Email" {...register("email")} />
         {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
       </div>
-      <Button type="submit" disabled={isSubmitting} className="w-full">
-        {isSubmitting ? "Mengirim..." : "Kirim Link Reset Password"}
+      <Button type="submit" loading={isSubmitting} className="w-full">
+        Kirim Link Reset Password
       </Button>
     </form>
   );

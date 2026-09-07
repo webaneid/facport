@@ -60,6 +60,9 @@
 | 49   | Perbaiki Grouping Multi-Baris (Sales Receipt & Sales Invoice) | Done | (lihat phase doc) | `docs/phases/phase-49-grouping-sales-receipt-dan-invoice.md` |
 | 50   | Grouping Multi-Baris (Purchase Payment & Journal Voucher) | Done | (lihat phase doc) | `docs/phases/phase-50-grouping-purchase-payment-dan-journal-voucher.md` |
 | 51   | Grid Edit ala Excel untuk Baris Gagal Import | Done | (lihat phase doc) | `docs/phases/phase-51-grid-edit-baris-gagal.md` |
+| 52   | Perbaikan Deploy Production Pertama (facinstitute.id) | Done | `docs/deployment-new-domain-onboarding.md` | `docs/phases/phase-52-perbaikan-deploy-production-pertama.md` |
+| 53   | Multi-Tier Billing per Sub-Modul (Bulanan/Tahunan) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-53-multi-tier-billing-per-modul.md` |
+| 54   | Perbaikan Logika Upgrade Trial → Paket Asli | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1615,3 +1618,71 @@ Full test suite `apps/api`: 412 pass/0 fail (13 baru). Typecheck & lint
 0 error. Security review inline: 1 temuan Low (diterima — `body.rows`
 tanpa limit eksplisit, endpoint tetap di balik auth+subscription-gate).
 Detail lengkap → `docs/phases/phase-51-grid-edit-baris-gagal.md`.
+
+## Update 2026-09-07 — Fase 52 Done: Perbaikan Deploy Production Pertama (facinstitute.id)
+Deploy production PERTAMA KALI Facport ke domain asli (5 subdomain
+`facinstitute.id`, server `wasugi@76.13.18.136`, instance baru `/opt/facport`
+terpisah dari demo lama `ane.web.id`) mengungkap 3 bug infrastruktur nyata
+yang baru "teruji" sekarang — semuanya cuma muncul saat jalur tertentu
+BENAR-BENAR dieksekusi untuk pertama kali:
+1. MinIO tidak pernah ada di `ci.yml`/`release.yml`/`deploy-staging.yml`
+   (env var doang tanpa server) — baru ketahuan karena test upload bukti
+   transfer baru di-unskip beberapa hari sebelumnya.
+2. `pdfkit` gagal resolve subpath import Node (`#standard-fonts/*`) di
+   production build — baru ketahuan karena fitur invoice PDF (Fase 15)
+   baru pertama kali di-build jadi image Docker di v1.13.0.
+3. Image production tidak bisa `db:migrate`/`db:seed` (Dockerfile tidak
+   copy `drizzle.config.ts`/`drizzle/`/`src/`) — baru ketahuan karena baru
+   kali ini ada yang migrate DB KOSONG dari dalam image production.
+
+Rilis `v1.13.0` → `v1.13.1` → `v1.13.2` (2 hotfix beruntun, masing-masing
+lewat alur PR develop→main penuh, CI hijau sebelum merge). Prosedur
+bootstrap admin pertama untuk instance baru didokumentasikan (belum
+pernah ada sebelumnya — panel admin tidak punya self-register by design).
+Auto-login-setelah-verifikasi (Fase 48) diinvestigasi ulang lewat
+reproduksi `curl -v` langsung — dikonfirmasi BEKERJA NORMAL di production
+(bukan bug, kejadian awal kemungkinan token verifikasi expired).
+
+Server production online & terverifikasi manual: 5 subdomain HTTPS aktif
+(SSL certbot), login Super Admin sukses, 5 paket sub-modul tampil di
+landing page. Upload logo (media/MinIO) BELUM dikonfirmasi terverifikasi
+manual — lihat Known Limitations. Detail lengkap →
+`docs/phases/phase-52-perbaikan-deploy-production-pertama.md`.
+
+## Update 2026-09-07 — Fase 53 Done: Multi-Tier Billing per Sub-Modul
+1 sub-modul (mis. "Purchase Invoice") sekarang bisa punya beberapa tier
+durasi/harga (mis. Bulanan/Tahunan), tampil sebagai SATU kartu di
+landing dan `/subscribe` dengan pill pemilih tier — bukan 2 kartu modul
+terpisah yang membingungkan (diminta user eksplisit). Riset Plan Mode
+menemukan **backend tidak perlu diubah skemanya sama sekali** — checkout
+sudah plan-id-based dan guard modul sudah module-key-based sejak Fase
+16, jadi 2+ baris `plans` dengan `modules` sama otomatis bekerja benar
+(endAt per tier, guard modul-sudah-aktif, trial per modul). Grouping
+murni frontend (`apps/web/lib/use-grouped-plans.ts`, hook shared
+landing+subscribe). Tambahan 1 guard backend `DUPLICATE_MODULE_IN_CART`
+(defense-in-depth). Admin dapat helper text penamaan tier + sort tabel
+by modul (kosmetik).
+
+Test baru: 6 unit test hook + 1 test route. Full suite `apps/api` 413
+pass/0 fail, `apps/web` 21 pass/0 fail. Typecheck+lint 0 error. Build
+production sukses. Security review inline: 0 temuan. Detail lengkap →
+`docs/phases/phase-53-multi-tier-billing-per-modul.md`.
+
+## Update 2026-09-07 — Fase 54 Done: Perbaikan Logika Upgrade Trial → Paket Asli
+User memberi catatan eksplisit: trial itu OPSIONAL, tidak boleh
+memblokir upgrade ke paket asli kapan saja selama trial masih berjalan.
+2 bug ditemukan: (1) **regresi UI** dari redesain Fase 53 — tombol
+"Berlangganan" ikut disembunyikan total selama modul sedang trial
+aktif (seharusnya tetap tampil), (2) **bug data laten sejak Fase 43** —
+saat admin confirm pembayaran paket asli untuk modul yang usernya
+sedang trial, subscription trial lama tidak pernah ditutup, user jadi
+punya 2 subscription "active" bersamaan untuk modul yang sama (status
+yang ditampilkan jadi order-dependent/tidak konsisten).
+
+Fix: hapus gate `!isTrialActive` di section "Pilih Paket" (`/subscribe`),
+dan subscription trial lama otomatis di-set `status: "cancelled"`
+begitu paket asli confirm — diterapkan di 2 titik (`admin/orders.route.ts`
+confirm, `admin/subscriptions.route.ts` assign manual). Test baru: 1
+test route verifikasi trial lama ter-cancel + subscription baru aktif
+non-trial. Full suite `apps/api` 414 pass/0 fail, `apps/web` 21 pass/0
+fail. Detail lengkap → `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md`.

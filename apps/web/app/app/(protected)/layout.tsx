@@ -43,7 +43,9 @@ export default async function AppProtectedLayout({ children }: { children: React
   return (
     <AppShell
       surface="app"
-      logoUrl={settings["company.logo"]}
+      // § favicon (kotak, kecil), BUKAN company.logo — lihat catatan sama
+      // di admin/(protected)/layout.tsx.
+      logoUrl={settings["company.favicon"]?.["180"]}
       subscriptionModules={subscriptionModules}
       modulePlanNames={modulePlanNames}
       user={{ name: me.name, email: me.email }}

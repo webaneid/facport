@@ -226,6 +226,43 @@ describe("POST /admin/orders/:id/confirm", () => {
     const body = (await res2.json()) as { code: string };
     expect(body.code).toBe("ORDER_NOT_SUBMITTED");
   });
+
+  // § ditemukan 2026-09-07 (feedback user soal logika trial) — trial
+  // TIDAK BOLEH blokir upgrade ke paket asli, TAPI subscription trial
+  // lama juga TIDAK BOLEH tetap "active" bersamaan dengan paket asli
+  // baru untuk modul yang sama (2 subscription aktif = ambigu, bikin
+  // UI/gate salah nunjukkin status). Confirm WAJIB "tutup" trial lama.
+  test("confirm menutup (cancelled) subscription trial LAMA untuk modul yang sama, bukan biarkan 2 subscription aktif bersamaan", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-confirm-supersede-trial-${runId}@test.local`);
+
+    const [trialPlan] = await db
+      .insert(plans)
+      .values({ name: `Trial Plan Supersede ${runId}`, price: 0, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
+      .returning();
+    const [oldTrialSub] = await db
+      .insert(subscriptions)
+      .values({
+        userId: customerId,
+        planId: trialPlan!.id,
+        status: "active",
+        isTrial: true,
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      })
+      .returning();
+
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "sales_invoice", price: 100000, durationDays: 30 }]);
+    const res = await testApp.handle(new Request(`http://localhost/admin/orders/${order.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+
+    const [refreshedOldSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, oldTrialSub!.id));
+    expect(refreshedOldSub!.status).toBe("cancelled");
+
+    const [newSub] = await db.select().from(subscriptions).where(eq(subscriptions.orderId, order.id));
+    expect(newSub!.status).toBe("active");
+    expect(newSub!.isTrial).toBe(false);
+  });
 });
 
 describe("POST /admin/orders/:id/reject", () => {

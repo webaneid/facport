@@ -77,6 +77,25 @@ export const subscriptionsRoute = new Elysia()
         return { code: "PLAN_NOT_ACTIVE" };
       }
 
+      // § Fase 53 — 1 modul sekarang boleh punya >1 baris plan (tier
+      // durasi/harga beda, mis. Bulanan/Tahunan). UI resmi (tier-picker)
+      // mutually-exclusive per modul jadi ini harusnya mustahil lewat
+      // jalur normal, TAPI tetap divalidasi di server sebagai pertahanan
+      // berlapis (defense-in-depth, § architecture-security.md) — cegah
+      // 1 checkout bikin 2 invoiceItems utk modul yang sama (endAt beda
+      // per tier saat admin confirm nanti, ambigu kalau dibiarkan lolos).
+      const cartModuleCounts = new Map<string, number>();
+      for (const p of planRows) {
+        const moduleKey = p.modules[0];
+        if (!moduleKey) continue;
+        cartModuleCounts.set(moduleKey, (cartModuleCounts.get(moduleKey) ?? 0) + 1);
+      }
+      const duplicateModule = [...cartModuleCounts.entries()].find(([, count]) => count > 1);
+      if (duplicateModule) {
+        set.status = 400;
+        return { code: "DUPLICATE_MODULE_IN_CART", moduleKey: duplicateModule[0] };
+      }
+
       try {
         const result = await db.transaction(async (tx) => {
           // § lock baris user ini — serialisasi SEMUA checkout request

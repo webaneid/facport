@@ -94,6 +94,14 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">Nama Paket</span>
             <Input value={name} onChange={(e) => setName(e.target.value)} />
+            {/* § Fase 53 — 1 sub-modul boleh punya beberapa baris paket
+               (tier durasi/harga beda) tampil sebagai 1 kartu di
+               landing/subscribe dengan pilihan tier — cukup bikin baris
+               baru dengan modul yang sama, beri nama yang jelas. */}
+            <span className="text-xs text-muted-foreground">
+              Mau bikin opsi Bulanan &amp; Tahunan untuk modul yang sama? Bikin 2 paket dengan modul yang sama (beda durasi/harga) — otomatis
+              tampil 1 kartu dengan pilihan tier di halaman pelanggan. Beri nama yang jelas, mis. &quot;Purchase Invoice - Bulanan&quot;.
+            </span>
           </label>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">Harga (Rp)</span>
@@ -155,7 +163,14 @@ export default function AdminPlansPage() {
 
   async function load() {
     const res = await api.admin.plans.get();
-    if (res.data) setPlans((res.data as unknown as { plans: Plan[] }).plans);
+    if (!res.data) return;
+    // § Fase 53 — sort by modul lalu durasi, supaya beberapa tier paket
+    // untuk modul yang sama (Bulanan/Tahunan dst) tampil berdekatan di
+    // tabel, bukan tersebar sesuai urutan dibuat.
+    const rows = [...(res.data as unknown as { plans: Plan[] }).plans].sort(
+      (a, b) => (a.modules[0] ?? "").localeCompare(b.modules[0] ?? "") || a.durationDays - b.durationDays,
+    );
+    setPlans(rows);
   }
 
   useEffect(() => {

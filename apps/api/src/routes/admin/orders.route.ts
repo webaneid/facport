@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, desc, sql } from "drizzle-orm";
+import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -101,8 +101,34 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             .innerJoin(plans, eq(plans.id, invoiceItems.planId))
             .where(eq(invoiceItems.invoiceId, lockedInvoice.id));
 
+          // § ditemukan 2026-09-07 (feedback user soal logika trial) —
+          // trial SENGAJA tidak memblokir beli paket asli modul yang sama
+          // (§ komentar checkout, subscriptions.route.ts) supaya user bisa
+          // upgrade kapan saja tanpa nunggu trial habis. TAPI sebelum fix
+          // ini, subscription trial LAMA tidak pernah ditutup begitu paket
+          // asli confirm — user jadi punya 2 subscription "active"
+          // bersamaan utk modul yang sama (trial + asli), bikin
+          // `activeModuleMap` (subscribe/page.tsx) bisa salah nunjukkin
+          // "Sedang Trial" padahal sudah bayar (urutan iterasi array yang
+          // nentukan, bukan yang mana yang benar). Tutup SEMUA subscription
+          // aktif modul yang sama SEBELUM insert yang baru — 1 modul aktif
+          // = 1 subscription lagi beneran terjaga (invariant yang sebelumnya
+          // cuma dijaga best-effort via `orderBy(desc(createdAt))` di
+          // beberapa query, § subscription-gate.ts).
+          const activeSubs = await tx
+            .select({ id: subscriptions.id, modules: plans.modules })
+            .from(subscriptions)
+            .innerJoin(plans, eq(plans.id, subscriptions.planId))
+            .where(and(eq(subscriptions.userId, lockedInvoice.userId), eq(subscriptions.status, "active")));
+
           const createdSubscriptionIds: string[] = [];
           for (const { item, plan } of items) {
+            const moduleKey = plan.modules[0];
+            const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
+            for (const s of superseded) {
+              await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+            }
+
             const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
             const [sub] = await tx
               .insert(subscriptions)

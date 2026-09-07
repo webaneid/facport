@@ -90,6 +90,27 @@ describe("POST /subscriptions/checkout", () => {
     expect(body.code).toBe("PLAN_NOT_ACTIVE");
   });
 
+  test("400 DUPLICATE_MODULE_IN_CART kalau 1 checkout mengandung 2 tier plan untuk modul yang sama (Fase 53)", async () => {
+    const email = `checkout-dup-tier-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+
+    const [monthly] = await db
+      .insert(plans)
+      .values({ name: `Plan Bulanan ${runId}`, price: 100000, durationDays: 30, modules: ["sales_invoice"], isActive: true })
+      .returning();
+    const [yearly] = await db
+      .insert(plans)
+      .values({ name: `Plan Tahunan ${runId}`, price: 1000000, durationDays: 360, modules: ["sales_invoice"], isActive: true })
+      .returning();
+
+    const res = await postCheckout(cookie, [monthly!.id, yearly!.id]);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; moduleKey: string };
+    expect(body.code).toBe("DUPLICATE_MODULE_IN_CART");
+    expect(body.moduleKey).toBe("sales_invoice");
+  });
+
   test("400 MODULE_ALREADY_SUBSCRIBED kalau user sudah punya subscription aktif untuk modul yang sama", async () => {
     const email = `checkout-dup-${runId}@test.local`;
     const userId = await signUp(email);

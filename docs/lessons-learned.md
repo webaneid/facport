@@ -6,6 +6,101 @@
 
 ---
 
+## 2026-09-07 — Subscription trial LAMA tidak pernah ditutup saat upgrade ke paket asli (bug laten sejak Fase 43)
+**Masalah:** Trial (Fase 43) sengaja didesain TIDAK memblokir checkout
+paket asli untuk modul yang sama (`activeModules` di guard checkout
+cuma hitung subscription NON-trial) — tapi arah sebaliknya tidak pernah
+diurus: begitu admin confirm pembayaran paket asli, subscription trial
+LAMA untuk modul yang sama dibiarkan tetap `status: "active"`. User
+jadi punya 2 subscription "active" bersamaan untuk 1 modul (trial +
+asli) — konsumer yang beda (`getActiveSubscriptionsWithPlans` pakai
+`orderBy(desc(createdAt))` lalu `.find()` ambil pertama; `/subscribe`
+`activeModuleMap` pakai `for...of` + `Map.set()` yang efeknya kebalik,
+row PALING AWAL diproses menang kalau ada duplikat) bisa kasih jawaban
+BEDA soal modul yang sama — user bisa lihat badge "Sedang Trial" padahal
+sudah bayar.
+
+**Fix:** `admin/orders.route.ts` (confirm) dan `admin/subscriptions.route.ts`
+(assign manual) sekarang tutup (`status: "cancelled"`) SEMUA subscription
+aktif lain untuk modul yang sama SEBELUM insert subscription baru —
+invariant "1 modul aktif = 1 subscription" jadi benar-benar dijaga oleh
+kode, bukan cuma best-effort lewat urutan query di beberapa tempat.
+
+**Pencegahan:** Kalau ada fitur "downgrade-tapi-tidak-blokir" serupa
+(status A tidak menghalangi upgrade ke status B) — WAJIB cek juga ARAH
+SEBALIKNYA: begitu B tercipta, apakah A ditutup? "Tidak saling blokir"
+BUKAN berarti "boleh koeksis selamanya tanpa transisi" — kalau ada
+invariant "cuma 1 yang aktif", tegakkan di titik PENCIPTAAN record baru
+(bukan cuma di titik pembacaan lewat urutan query), supaya tidak
+order-dependent di banyak tempat berbeda.
+
+---
+
+## 2026-09-07 — Deploy production PERTAMA: 3 bug infrastruktur baru ketahuan karena jalur-jalur ini belum pernah benar-benar dieksekusi
+**Masalah:** Deploy production pertama kali ke domain asli (`facinstitute.id`,
+instance baru terpisah dari demo `ane.web.id`) langsung kena 3 bug beruntun,
+semuanya bug LAMA yang baru "teruji" sekarang:
+1. **CI**: `ci.yml`/`release.yml`/`deploy-staging.yml` set env var MINIO_*
+   tanpa server MinIO beneran (tidak ada `services:`/container) — 3 test
+   upload bukti transfer selalu gagal (500) begitu benar-benar dijalankan.
+   Baru ketahuan karena test itu baru di-unskip beberapa hari sebelumnya.
+2. **Docker `apps/api`**: `pdfkit` (dependency fitur invoice PDF, Fase 15)
+   di-bundle `bun build` ke `dist/index.js` — Node subpath import
+   (`#standard-fonts/*` di package.json pdfkit sendiri) cuma resolve benar
+   relatif ke package.json ASLI, gagal total begitu dibundle ke file lain.
+   Container crash-loop. Baru ketahuan karena fitur PDF baru pertama kali
+   di-build jadi image Docker di rilis ini.
+3. **Docker `apps/api`**: image production cuma copy `dist/`+`node_modules`+
+   `package.json` — TIDAK menyertakan `drizzle.config.ts`, folder migration
+   `drizzle/`, atau `src/` asli (dibutuhkan `db:seed` yang jalan dari
+   source, bukan dist). `db:migrate`/`db:seed` gagal total di container
+   yang sudah jalan. Baru ketahuan karena baru kali ini ada yang migrate
+   DB KOSONG dari dalam image production ini.
+
+**Root cause umum:** ketiga bug ini SUDAH ADA sejak lama (bug #2/#3 sejak
+fitur PDF/pertama kali Dockerfile ditulis, bug #1 sejak test-nya di-unskip)
+tapi tidak pernah ketahuan karena CI/redeploy rutin sebelumnya tidak pernah
+benar-benar exercise jalur itu (test upload di-skip, fitur PDF belum ada
+saat image terakhir di-build, tidak pernah ada instance BARU dengan DB
+kosong yang di-migrate dari dalam container production).
+
+**Fix:** § detail lengkap di `docs/phases/phase-52-perbaikan-deploy-production-pertama.md`.
+Rilis `v1.13.0` → `v1.13.1` → `v1.13.2` (2 hotfix beruntun).
+
+**Pencegahan:** Kalau nambah dependency baru yang PERNAH dipakai library
+lain dengan Node subpath imports (`#foo` di package.json), ATAU nambah
+command baru yang jalan dari `src/` (bukan `dist/`) di dalam container
+production — WAJIB coba build+jalankan image Docker-nya SUNGGUHAN sebelum
+anggap selesai, jangan cuma percaya `bun run typecheck`/`bun run test`
+lokal (keduanya jalan dari source lengkap, tidak exercise apa yang
+BENERAN ke-copy ke image final). Pola sama seperti entri 2026-08-27
+("`deploy.yml` belum pernah jalan sejak v1.0.0") — CI hijau BUKAN bukti
+Docker image-nya benar, cuma bukti source code-nya benar.
+
+## 2026-09-07 — Admin-provisioned user WAJIB `email_verified=true` manual, lupa = "Email atau password salah" yang menyesatkan
+**Masalah:** Bootstrap akun Super Admin pertama di instance production baru
+via script one-off (`auth.api.signUpEmail()`, jalur resmi Better Auth) —
+login gagal terus dengan pesan generik "Email atau password salah" (403),
+padahal password sudah benar dan sudah di-reset ulang. Root cause: lupa
+langkah `db.update(userTable).set({emailVerified: true})` setelah
+`signUpEmail()` — `requireEmailVerification: true` di Better Auth menolak
+SEMUA sign-in akun belum verifikasi, tapi pesan error di frontend generik
+("Email atau password salah") sehingga user (dan Claude) awalnya curiga
+ke password/cookie/CORS, bukan status verifikasi.
+
+**Fix:** `UPDATE "user" SET email_verified = true WHERE email = '...'`
+manual (sekali saja, per akun admin-provisioned).
+
+**Pencegahan:** Kalau bikin user LEWAT `auth.api.signUpEmail()` di luar
+jalur `admin/users.route.ts`/`admin/staff.route.ts` yang sudah ada (mis.
+script bootstrap one-off), WAJIB ikut copy langkah `emailVerified: true`
+juga — jangan asumsikan "signUpEmail sudah cukup". Kalau ketemu error
+login generik yang tidak masuk akal (password sudah benar tapi tetap
+gagal), cek `email_verified` di DB SEBELUM curiga ke hal lain (cookie
+domain, CORS, rate limit) — cek paling cepat & paling murah duluan.
+
+---
+
 ## 2026-09-06 — Asumsi kunci grouping Excel ("PO Number") ternyata SELALU KOSONG di data asli — verifikasi ke OpenAPI spec resmi TIDAK CUKUP
 **Masalah:** User minta cek apakah modul import Facport sudah "follow up"
 file Excel contoh kompetitor di `docs/referencehtml/`. Dibandingkan

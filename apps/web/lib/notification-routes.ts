@@ -31,7 +31,13 @@ export function notificationLink(type: string, surface: Surface): string {
     case "admin_payment_proof_submitted":
       return "/admin/orders";
     case "announcement":
-      return surface === "admin" ? "/admin/announcements" : "/";
+      // § ditemukan 2026-09-07 di production — sebelumnya "/" (dashboard
+      // kosong, tidak nunjukin apa-apa soal pengumuman). Isi lengkap
+      // (`notif.body`) SUDAH tampil langsung di dropdown/arsip notifikasi
+      // (`NotificationList`), TIDAK perlu halaman detail baru — cukup
+      // arahkan ke arsip `/notifications` yang sudah ada, konsisten
+      // dengan tempat user sebenarnya lihat isinya.
+      return surface === "admin" ? "/admin/announcements" : "/notifications";
     default:
       return surface === "admin" ? "/admin" : "/";
   }
