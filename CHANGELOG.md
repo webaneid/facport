@@ -1,3 +1,10 @@
+## 1.15.0 (2026-09-07)
+
+* Merge pull request #33 from webaneid/develop ([15301ce](https://github.com/webaneid/facport/commit/15301ce)), closes [#33](https://github.com/webaneid/facport/issues/33)
+* fix(workers): baris import dapat error message saat batch gagal dini (semua modul) ([26dc9ba](https://github.com/webaneid/facport/commit/26dc9ba))
+* docs(sales-invoice): catat status rilis Fase 55 — kode selesai, belum di-release ([368d8ef](https://github.com/webaneid/facport/commit/368d8ef))
+* feat(sales-invoice): dukung Atribut Tambahan (Data Classification) di import Excel ([7a1774e](https://github.com/webaneid/facport/commit/7a1774e))
+
 ## 1.14.0 (2026-09-07)
 
 * Merge pull request #32 from webaneid/develop ([97d078d](https://github.com/webaneid/facport/commit/97d078d)), closes [#32](https://github.com/webaneid/facport/issues/32)
