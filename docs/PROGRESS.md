@@ -64,6 +64,7 @@
 | 53   | Multi-Tier Billing per Sub-Modul (Bulanan/Tahunan) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-53-multi-tier-billing-per-modul.md` |
 | 54   | Perbaikan Logika Upgrade Trial → Paket Asli | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md` |
 | 55   | Atribut Tambahan (Data Classification) di Import Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-55-atribut-tambahan-sales-invoice.md` |
+| 56   | Fix Error Message Batch Gagal Dini (Semua Modul) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1720,3 +1721,25 @@ arsitektur generik yang sudah ada.
 Test baru: 1 unit test. Full suite `apps/api` 415 pass/0 fail.
 Typecheck 0 error. Detail lengkap →
 `docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 56 Done: Fix Error Message Batch Gagal Dini (Semua Modul)
+User temukan batch production nyata
+(`379b65d8-90e4-4f29-8abb-70af74ddff74`) — status batch "failed", tapi
+baris-barisnya masih "pending" tanpa error message sama sekali, admin
+tidak tahu penyebabnya. Root cause: job `IMPORT_TO_ACCURATE` punya 2
+titik "gagal dini" SEBELUM loop per-baris (koneksi Accurate belum ada,
+atau gagal buka sesi Data Usaha) yang cuma update status batch, tidak
+pernah sentuh baris-barisnya — bug SISTEMIK karena kode ini shared
+sebelum percabangan per modul, berpotensi kena SEMUA 6 modul import.
+
+Fix: helper `failAllPendingRows()` dipanggil di kedua titik gagal-dini,
+ditaruh SEBELUM percabangan per modul supaya otomatis berlaku ke ke-6
+modul sekaligus (bukan cuma modul tempat bug ditemukan). Security
+review inline: `err.message` yang disurfacekan diverifikasi tidak
+pernah berisi token/secret. Diketahui: `workers/index.ts` tidak punya
+test file sama sekali (gap pre-existing, dicatat di Known Limitations,
+di luar scope fix ini).
+
+Full suite `apps/api` 415 pass/0 fail (tidak ada test baru — worker
+sulit di-unit-test tanpa refactor tambahan). Typecheck 0 error. Detail
+lengkap → `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`.

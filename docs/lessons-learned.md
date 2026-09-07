@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-09-08 — Batch import "failed" tapi baris-barisnya kosong tanpa error message (gagal-dini sebelum loop per-baris)
+**Masalah:** User temukan batch production nyata
+(`379b65d8-90e4-4f29-8abb-70af74ddff74`) — status batch `"failed"`
+(sudah `completed_at`), tapi kedua baris di dalamnya masih `"pending"`
+tanpa `errorMessage` sama sekali. Admin lihat kolom "ID Transaksi
+Accurate / Error" kosong total, tidak tahu penyebab gagal.
+
+**Root cause:** Job `IMPORT_TO_ACCURATE` (`workers/index.ts`) punya 2
+titik "gagal dini" SEBELUM loop per-baris mulai (koneksi Accurate
+belum ada, atau `openAccurateSession()` gagal) — di titik ini cuma
+`importBatches.status` yang di-set `"failed"`, baris-barisnya TIDAK
+PERNAH disentuh. Ini bug SISTEMIK — kode ini SHARED, dieksekusi SEBELUM
+percabangan per modul, jadi berpotensi kena SEMUA 6 modul import, bukan
+cuma modul tempat ditemukan (Purchase Invoice).
+
+**Fix:** Helper `failAllPendingRows(batchId, errorMessage)` dipanggil
+di kedua titik gagal-dini, update SEMUA baris `pending`/`failed` di
+batch itu dengan error message actionable. Ditaruh SEBELUM percabangan
+per modul supaya otomatis berlaku ke ke-6 modul sekaligus.
+
+**Pencegahan:** Kalau ada proses BATCH (bukan cuma per-baris) yang bisa
+gagal di LEVEL BATCH sebelum baris-barisnya sempat diproses — WAJIB
+tetap propagasikan alasan kegagalan itu ke level BARIS juga (bukan
+cuma level batch), kalau UI yang dilihat user itu tabel per-baris
+(bukan status batch). "Update status parent" TIDAK OTOMATIS berarti
+"user tahu kenapa" kalau child records (baris) yang jadi sumber
+informasi utama di UI dibiarkan kosong. Cek SEMUA early-return/exit
+path sebuah job batch, bukan cuma jalur "happy path" per-baris yang
+biasanya sudah dapat perhatian lebih waktu development.
+
+---
+
 ## 2026-09-07 — Subscription trial LAMA tidak pernah ditutup saat upgrade ke paket asli (bug laten sejak Fase 43)
 **Masalah:** Trial (Fase 43) sengaja didesain TIDAK memblokir checkout
 paket asli untuk modul yang sama (`activeModules` di guard checkout
