@@ -234,7 +234,15 @@ function SubscribePageInner() {
                     </div>
                   )}
 
-                  {!isRealActive && !isTrialActive && activePlan && (
+                  {/* § ditemukan 2026-09-07 (feedback user) — trial itu OPSIONAL,
+                     TIDAK boleh blokir upgrade ke paket asli. Sebelumnya
+                     section ini ikut disembunyikan kalau `isTrialActive`,
+                     bikin user yang lagi trial TIDAK BISA klik
+                     "Berlangganan" sama sekali (harus nunggu trial habis
+                     dulu) — salah, bukan itu maksud trial. `showTrialButton`
+                     di bawah TETAP correctly exclude "Coba Gratis" saat
+                     trial aktif (tidak masuk akal re-trial modul yang sama). */}
+                  {!isRealActive && activePlan && (
                     <div className="mt-4 flex flex-col gap-2">
                       <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Paket</span>
                       <div className="flex gap-1.5">

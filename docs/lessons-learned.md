@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-09-07 — Subscription trial LAMA tidak pernah ditutup saat upgrade ke paket asli (bug laten sejak Fase 43)
+**Masalah:** Trial (Fase 43) sengaja didesain TIDAK memblokir checkout
+paket asli untuk modul yang sama (`activeModules` di guard checkout
+cuma hitung subscription NON-trial) — tapi arah sebaliknya tidak pernah
+diurus: begitu admin confirm pembayaran paket asli, subscription trial
+LAMA untuk modul yang sama dibiarkan tetap `status: "active"`. User
+jadi punya 2 subscription "active" bersamaan untuk 1 modul (trial +
+asli) — konsumer yang beda (`getActiveSubscriptionsWithPlans` pakai
+`orderBy(desc(createdAt))` lalu `.find()` ambil pertama; `/subscribe`
+`activeModuleMap` pakai `for...of` + `Map.set()` yang efeknya kebalik,
+row PALING AWAL diproses menang kalau ada duplikat) bisa kasih jawaban
+BEDA soal modul yang sama — user bisa lihat badge "Sedang Trial" padahal
+sudah bayar.
+
+**Fix:** `admin/orders.route.ts` (confirm) dan `admin/subscriptions.route.ts`
+(assign manual) sekarang tutup (`status: "cancelled"`) SEMUA subscription
+aktif lain untuk modul yang sama SEBELUM insert subscription baru —
+invariant "1 modul aktif = 1 subscription" jadi benar-benar dijaga oleh
+kode, bukan cuma best-effort lewat urutan query di beberapa tempat.
+
+**Pencegahan:** Kalau ada fitur "downgrade-tapi-tidak-blokir" serupa
+(status A tidak menghalangi upgrade ke status B) — WAJIB cek juga ARAH
+SEBALIKNYA: begitu B tercipta, apakah A ditutup? "Tidak saling blokir"
+BUKAN berarti "boleh koeksis selamanya tanpa transisi" — kalau ada
+invariant "cuma 1 yang aktif", tegakkan di titik PENCIPTAAN record baru
+(bukan cuma di titik pembacaan lewat urutan query), supaya tidak
+order-dependent di banyak tempat berbeda.
+
+---
+
 ## 2026-09-07 — Deploy production PERTAMA: 3 bug infrastruktur baru ketahuan karena jalur-jalur ini belum pernah benar-benar dieksekusi
 **Masalah:** Deploy production pertama kali ke domain asli (`facinstitute.id`,
 instance baru terpisah dari demo `ane.web.id`) langsung kena 3 bug beruntun,

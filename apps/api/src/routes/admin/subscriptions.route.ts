@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, desc } from "drizzle-orm";
+import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -49,6 +49,21 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       if (endAt.getTime() <= startAt.getTime()) {
         set.status = 400;
         return { code: "END_AT_MUST_BE_FUTURE" };
+      }
+
+      // § ditemukan 2026-09-07 — sama fix-nya seperti admin/orders.route.ts
+      // POST /:id/confirm: tutup subscription aktif LAIN utk modul yang
+      // sama SEBELUM insert baru (mis. user punya trial aktif, admin
+      // assign manual paket asli) — cegah 2 subscription "active"
+      // bersamaan utk 1 modul yang sama.
+      const moduleKey = plan.modules[0];
+      const existingActive = await db
+        .select({ id: subscriptions.id, modules: plans.modules })
+        .from(subscriptions)
+        .innerJoin(plans, eq(plans.id, subscriptions.planId))
+        .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active")));
+      for (const s of existingActive.filter((s) => s.modules[0] === moduleKey)) {
+        await db.update(subscriptions).set({ status: "cancelled", endAt: startAt }).where(eq(subscriptions.id, s.id));
       }
 
       // orderId = null — dianggap sudah dibayar di luar sistem (invoice

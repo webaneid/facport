@@ -62,6 +62,7 @@
 | 51   | Grid Edit ala Excel untuk Baris Gagal Import | Done | (lihat phase doc) | `docs/phases/phase-51-grid-edit-baris-gagal.md` |
 | 52   | Perbaikan Deploy Production Pertama (facinstitute.id) | Done | `docs/deployment-new-domain-onboarding.md` | `docs/phases/phase-52-perbaikan-deploy-production-pertama.md` |
 | 53   | Multi-Tier Billing per Sub-Modul (Bulanan/Tahunan) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-53-multi-tier-billing-per-modul.md` |
+| 54   | Perbaikan Logika Upgrade Trial → Paket Asli | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1666,3 +1667,22 @@ Test baru: 6 unit test hook + 1 test route. Full suite `apps/api` 413
 pass/0 fail, `apps/web` 21 pass/0 fail. Typecheck+lint 0 error. Build
 production sukses. Security review inline: 0 temuan. Detail lengkap →
 `docs/phases/phase-53-multi-tier-billing-per-modul.md`.
+
+## Update 2026-09-07 — Fase 54 Done: Perbaikan Logika Upgrade Trial → Paket Asli
+User memberi catatan eksplisit: trial itu OPSIONAL, tidak boleh
+memblokir upgrade ke paket asli kapan saja selama trial masih berjalan.
+2 bug ditemukan: (1) **regresi UI** dari redesain Fase 53 — tombol
+"Berlangganan" ikut disembunyikan total selama modul sedang trial
+aktif (seharusnya tetap tampil), (2) **bug data laten sejak Fase 43** —
+saat admin confirm pembayaran paket asli untuk modul yang usernya
+sedang trial, subscription trial lama tidak pernah ditutup, user jadi
+punya 2 subscription "active" bersamaan untuk modul yang sama (status
+yang ditampilkan jadi order-dependent/tidak konsisten).
+
+Fix: hapus gate `!isTrialActive` di section "Pilih Paket" (`/subscribe`),
+dan subscription trial lama otomatis di-set `status: "cancelled"`
+begitu paket asli confirm — diterapkan di 2 titik (`admin/orders.route.ts`
+confirm, `admin/subscriptions.route.ts` assign manual). Test baru: 1
+test route verifikasi trial lama ter-cancel + subscription baru aktif
+non-trial. Full suite `apps/api` 414 pass/0 fail, `apps/web` 21 pass/0
+fail. Detail lengkap → `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md`.
