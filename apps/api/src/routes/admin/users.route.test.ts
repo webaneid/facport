@@ -261,6 +261,39 @@ describe("GET /admin/users — permission split users.view vs users.manage", () 
     expect(emails).not.toContain(adminEmail);
     expect(emails).not.toContain(staffEmail);
   });
+
+  // § bug ditemukan 2026-09-08 (feedback user, 2 klien production dengan
+  // langganan SEMUA modul cuma tampil 1 di /admin/users) — `subByUser`
+  // sebelumnya `Map` 1-value-per-user, overwrite diam-diam kalau user
+  // punya >1 subscription aktif.
+  test("user dengan >1 subscription aktif — SEMUA muncul di activeSubscriptions, bukan cuma 1", async () => {
+    const adminCookie = await makeAdminCookie();
+    const { userId } = await makePlainCustomer();
+    const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+    await db.insert(userRoles).values({ userId, roleId: customerRole!.id }).onConflictDoNothing();
+    const [planA] = await db
+      .insert(plans)
+      .values({ name: `Multi Sub Plan A ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [planB] = await db
+      .insert(plans)
+      .values({ name: `Multi Sub Plan B ${runId}`, price: 200000, durationDays: 30, modules: ["journal_voucher"] })
+      .returning();
+    const now = new Date();
+    const endAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    await db.insert(subscriptions).values([
+      { userId, planId: planA!.id, status: "active", startAt: now, endAt },
+      { userId, planId: planB!.id, status: "active", startAt: now, endAt },
+    ]);
+
+    const res = await testApp.handle(new Request("http://localhost/admin/users?limit=100", { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { users: { id: string; activeSubscriptions: { planName: string }[] }[] };
+    const target = body.users.find((u) => u.id === userId);
+    expect(target).toBeTruthy();
+    const planNames = target!.activeSubscriptions.map((s) => s.planName).sort();
+    expect(planNames).toEqual([planA!.name, planB!.name].sort());
+  });
 });
 
 describe("PATCH /admin/users/:id/disable & /enable", () => {

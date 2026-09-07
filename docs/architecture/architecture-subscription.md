@@ -172,6 +172,17 @@ row" lagi di kode baru — selalu cek lewat `plan.modules[0]` (module key)
 untuk logic yang seharusnya per-modul (bukan per-plan-row), sama seperti
 guard checkout/trial yang sudah benar sejak awal.
 
+> **Bug ditemukan 2026-09-08 (Fase 57)**: implikasi di atas juga berlaku
+> untuk kode LISTING/AGREGASI (bukan cuma checkout/trial) — `GET
+> /admin/users` masih asumsi "1 user = maks 1 subscription aktif" (peta
+> `Map<userId, subscription>` bukan array), jadi user dengan >1 modul
+> aktif sekaligus (normal sejak fase ini) cuma tampil 1 di UI admin. Fix
+> & detail lengkap → `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md`,
+> `docs/lessons-learned.md` entri tanggal sama. Kalau ada endpoint
+> listing/agregasi LAIN yang masih pakai pola serupa (`new Map(rows.map(r
+> => [r.userId, r]))` untuk relasi yang sekarang bisa one-to-many),
+> waspadai kelas bug yang sama.
+
 ## Trial (Batas Baris) (Fase 43)
 Semua paket (semua sub-modul) punya jalur coba-gratis **self-service**
 — customer klik tombol "Coba Gratis" di `/subscribe`, TANPA approval

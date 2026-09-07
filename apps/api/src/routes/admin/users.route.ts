@@ -84,7 +84,16 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
 
       const rolesByUser = new Map<string, string[]>();
       for (const r of roleRows) rolesByUser.set(r.userId, [...(rolesByUser.get(r.userId) ?? []), r.roleName]);
-      const subByUser = new Map(subRows.map((s) => [s.userId, s]));
+      // § bug ditemukan 2026-09-08 (feedback user, 2 klien production
+      // dengan langganan SEMUA modul cuma tampil 1 di /admin/users) —
+      // sebelumnya `new Map(subRows.map((s) => [s.userId, s]))` CUMA
+      // simpan subscription TERAKHIR per userId (Map key unik), yang lain
+      // ke-overwrite diam-diam. User dengan >1 modul aktif (kasus normal
+      // sejak Fase 53 multi-tier) jadi cuma nampilin 1 badge padahal
+      // subscription lain masih aktif di DB (bukan data hilang, murni
+      // bug tampilan). Fix: grouping jadi array per user.
+      const subByUser = new Map<string, (typeof subRows)[number][]>();
+      for (const s of subRows) subByUser.set(s.userId, [...(subByUser.get(s.userId) ?? []), s]);
 
       return {
         users: rows.map((u) => ({
@@ -95,7 +104,7 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
           disabled: u.disabled,
           createdAt: u.createdAt,
           roles: rolesByUser.get(u.id) ?? [],
-          activeSubscription: subByUser.get(u.id) ?? null,
+          activeSubscriptions: subByUser.get(u.id) ?? [],
         })),
         total: totalRows[0]?.total ?? 0,
       };

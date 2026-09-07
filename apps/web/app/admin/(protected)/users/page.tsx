@@ -26,7 +26,7 @@ import { moduleLabel } from "@/lib/module-options";
 
 const PAGE_SIZE = 20;
 
-type ActiveSubscription = { status: string; planName: string; endAt: string | null } | null;
+type ActiveSubscription = { status: string; planName: string; endAt: string | null };
 type UserRow = {
   id: string;
   name: string;
@@ -35,7 +35,7 @@ type UserRow = {
   disabled: boolean;
   createdAt: string;
   roles: string[];
-  activeSubscription: ActiveSubscription;
+  activeSubscriptions: ActiveSubscription[];
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
 type SubscriptionHistoryItem = {
@@ -483,8 +483,14 @@ export default function AdminUsersPage() {
       id: "activeSubscription",
       header: "Langganan Aktif",
       cell: ({ row }) =>
-        row.original.activeSubscription ? (
-          <Badge variant="success">{row.original.activeSubscription.planName}</Badge>
+        row.original.activeSubscriptions.length > 0 ? (
+          <div className="flex flex-wrap gap-1">
+            {row.original.activeSubscriptions.map((s, i) => (
+              <Badge key={i} variant="success">
+                {s.planName}
+              </Badge>
+            ))}
+          </div>
         ) : (
           <span className="text-xs text-muted-foreground">Tidak ada</span>
         ),
