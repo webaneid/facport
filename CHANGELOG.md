@@ -1,3 +1,9 @@
+## 1.16.0 (2026-09-07)
+
+* Merge pull request #35 from webaneid/develop ([d1b0283](https://github.com/webaneid/facport/commit/d1b0283)), closes [#35](https://github.com/webaneid/facport/issues/35)
+* feat(admin): redesign dashboard admin dengan chart & fix bug userCount ([40c4e7e](https://github.com/webaneid/facport/commit/40c4e7e))
+* feat(subscribe): prioritaskan tier tahunan sebagai default auto-select ([459be56](https://github.com/webaneid/facport/commit/459be56))
+
 ## <small>1.15.1 (2026-09-07)</small>
 
 * Merge pull request #34 from webaneid/develop ([f9a39a2](https://github.com/webaneid/facport/commit/f9a39a2)), closes [#34](https://github.com/webaneid/facport/issues/34)
