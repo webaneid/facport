@@ -25,8 +25,12 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
 
   const settings = await getPublicSettings();
 
+  // § favicon (kotak, kecil), BUKAN company.logo (biasanya panjang/lebar) —
+  // dipaksa muat ke box persegi 36px di IdentityCard sidebar, logo lebar
+  // jadi kelihatan aneh (letterboxed) di situ. Ditemukan feedback user
+  // 2026-09-07.
   return (
-    <AppShell surface="admin" logoUrl={settings["company.logo"]} user={{ name: me.name, email: me.email }}>
+    <AppShell surface="admin" logoUrl={settings["company.favicon"]?.["180"]} user={{ name: me.name, email: me.email }}>
       {children}
     </AppShell>
   );
