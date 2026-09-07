@@ -109,11 +109,11 @@ ADA perubahan kode untuk ini.
   dikonfirmasi manual — subdomain + SSL sudah aktif dan `MINIO_PUBLIC_URL`
   sudah benar di `.env.production`, tapi belum ada verifikasi end-to-end
   nyata (klik upload di Settings, cek gambar tampil).
-- `RESEND_API_KEY` masih kosong di production — email verifikasi/reset
-  password/notifikasi belum terkirim beneran, sementara diambil manual
-  dari `docker logs facport-worker-1` (workaround, bukan solusi permanen).
-  Setup Resend (akun + verifikasi domain `facinstitute.id`) BELUM dilakukan,
-  menyusul terpisah.
+- ~~`RESEND_API_KEY` masih kosong~~ **RESOLVED 2026-09-07** — domain
+  `facinstitute.id` diverifikasi di Resend, API key dibuat & diisi ke
+  `.env.production`, `api`+`worker` di-restart. Diverifikasi end-to-end
+  nyata: trigger forgot-password dari `app.facinstitute.id`, email
+  benar-benar masuk ke inbox (bukan cuma log no-op lagi).
 - Deploy otomatis ke server (`deploy-to-server` di `deploy.yml`/
   `deploy-staging.yml`) masih gagal by design — secret SSH GitHub Actions
   belum diisi, provisioning production ini SEMUA manual via runbook.
