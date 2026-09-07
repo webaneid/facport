@@ -1,3 +1,9 @@
+## <small>1.15.1 (2026-09-07)</small>
+
+* Merge pull request #34 from webaneid/develop ([f9a39a2](https://github.com/webaneid/facport/commit/f9a39a2)), closes [#34](https://github.com/webaneid/facport/issues/34)
+* fix(admin): tampilkan semua langganan aktif user di /admin/users, bukan cuma 1 ([1efd51d](https://github.com/webaneid/facport/commit/1efd51d))
+* fix(notifications): link admin double-prefix /admin/admin/... jadi bare path ([8808bc1](https://github.com/webaneid/facport/commit/8808bc1))
+
 ## 1.15.0 (2026-09-07)
 
 * Merge pull request #33 from webaneid/develop ([15301ce](https://github.com/webaneid/facport/commit/15301ce)), closes [#33](https://github.com/webaneid/facport/issues/33)
