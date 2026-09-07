@@ -29,7 +29,14 @@ export function notificationLink(type: string, surface: Surface): string {
     case "accurate_connection_expired":
       return "/accurate";
     case "admin_payment_proof_submitted":
-      return "/admin/orders";
+      // § bug ditemukan 2026-09-08 (feedback user) — SEBELUMNYA "/admin/orders".
+      // Href di sini HARUS bare path (tanpa prefix surface) — `proxy.ts`
+      // SENDIRI yang rewrite `/${surface}${pathname}` (§ baris 50), jadi
+      // "/admin/orders" di sini bikin double-prefix jadi "/admin/admin/orders"
+      // (404, folder itu tidak ada) begitu diklik di admin.facinstitute.id.
+      // Konvensi yang benar sama seperti sidebar admin (`app-shell/sidebar.tsx`
+      // pakai `href: "/orders"` bare, BUKAN "/admin/orders").
+      return "/orders";
     case "announcement":
       // § ditemukan 2026-09-07 di production — sebelumnya "/" (dashboard
       // kosong, tidak nunjukin apa-apa soal pengumuman). Isi lengkap
@@ -37,8 +44,13 @@ export function notificationLink(type: string, surface: Surface): string {
       // (`NotificationList`), TIDAK perlu halaman detail baru — cukup
       // arahkan ke arsip `/notifications` yang sudah ada, konsisten
       // dengan tempat user sebenarnya lihat isinya.
-      return surface === "admin" ? "/admin/announcements" : "/notifications";
+      // § bug 2026-09-08 — "/admin/announcements" (double-prefix, sama
+      // kelas bug dengan "admin_payment_proof_submitted" di atas) diganti
+      // bare "/announcements".
+      return surface === "admin" ? "/announcements" : "/notifications";
     default:
-      return surface === "admin" ? "/admin" : "/";
+      // § bug 2026-09-08 — "/admin" (double-prefix jadi "/admin/admin",
+      // 404) diganti "/", sama kelas bug di atas.
+      return "/";
   }
 }

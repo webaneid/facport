@@ -66,6 +66,7 @@
 | 55   | Atribut Tambahan (Data Classification) di Import Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-55-atribut-tambahan-sales-invoice.md` |
 | 56   | Fix Error Message Batch Gagal Dini (Semua Modul) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md` |
 | 57   | Fix Daftar Langganan Aktif Hilang Diam-diam di `/admin/users` | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md` |
+| 58   | Fix URL Notifikasi Admin Double-Prefix (`/admin/admin/...`) | Done | (lihat phase doc) | `docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1763,3 +1764,22 @@ modul berbeda, verifikasi keduanya muncul di response.
 Full suite `apps/api` 416 pass/0 fail (1 baru). Typecheck 0 error
 (api+web). Build `apps/web` sukses. Security review inline: 0 temuan.
 Detail lengkap → `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md`.
+
+## Update 2026-09-08 — Fase 58 Done: Fix URL Notifikasi Admin Double-Prefix (`/admin/admin/...`)
+User laporkan link notifikasi admin salah:
+`https://admin.facinstitute.id/admin/orders`, harusnya `.../orders`.
+Root cause: `apps/web/proxy.ts` sudah rewrite `/${surface}${pathname}`
+untuk semua request ke subdomain admin/app — href di kode HARUS bare
+path, proxy sendiri yang nambah prefix. `lib/notification-routes.ts`
+(Fase 45/46) tidak ikuti konvensi ini — 3 return value untuk surface
+admin (`admin_payment_proof_submitted`, `announcement`, default) sudah
+menyertakan `/admin` manual, jadi double-prefix `/admin/admin/...` —
+BUKAN cuma salah tampilan, link ini 404 (tidak ada folder route itu).
+
+Fix: hapus prefix manual di ketiganya, konsisten dengan sidebar admin
+(`href: "/orders"` bare). Test baru assert SEMUA tipe notifikasi untuk
+surface admin tidak pernah menghasilkan link berawalan `/admin`.
+
+Typecheck 0 error. Full suite `apps/web` 27 pass/0 fail (6 baru). Build
+sukses. Security review inline: 0 temuan. Detail lengkap →
+`docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md`.

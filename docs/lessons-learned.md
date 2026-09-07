@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-09-08 — Link notifikasi admin double-prefix `/admin/admin/...` (404) karena href tidak ikut konvensi bare-path proxy
+**Masalah:** User laporkan link notifikasi di admin
+(`https://admin.facinstitute.id/admin/orders`) salah, seharusnya
+`.../orders`. Bukan cuma kosmetik — link itu sebenarnya 404 kalau
+diklik.
+
+**Root cause:** `apps/web/proxy.ts` rewrite SEMUA request subdomain
+admin/app jadi `/${surface}${pathname}` (mis. request browser ke
+`/orders` di-rewrite jadi `/admin/orders` secara internal untuk resolve
+folder route Next.js). Konsekuensinya: SEMUA href yang ditulis di kode
+WAJIB bare path (`/orders`, `/announcements`, `/`), TIDAK BOLEH sudah
+menyertakan prefix surface — proxy yang nambahin. `lib/notification-routes.ts`
+(Fase 45/46) lupa konvensi ini, 3 return value untuk surface admin
+sudah include `/admin` manual → double-prefix `/admin/admin/orders`
+begitu di-rewrite, TIDAK ADA folder route itu.
+
+**Fix:** Hapus prefix manual, konsisten dengan sidebar admin
+(`app-shell/sidebar.tsx` → `href: "/orders"` bare) yang dari awal sudah
+benar.
+
+**Pencegahan:** Kalau ada middleware/proxy yang REWRITE path secara
+otomatis berdasar subdomain/context (pola "1 sumber kebenaran nambah
+prefix di 1 tempat"), SEMUA kode lain yang generate href/URL untuk
+konteks itu WAJIB diverifikasi TIDAK ikut menambahkan prefix yang sama
+secara manual — grep utility function yang mengembalikan path string
+(bukan cuma komponen JSX `<Link>`) untuk cek konsistensi, jangan cuma
+review komponen yang paling sering dilihat (sidebar nav di sini sudah
+benar sejak awal, tapi util terpisah yang jarang disentuh — dipakai
+notifikasi — luput).
+
+---
+
 ## 2026-09-08 — `new Map(rows.map((r) => [key, r]))` diam-diam buang duplikat key (kolom "Langganan Aktif" `/admin/users` cuma tampil 1 dari beberapa)
 **Masalah:** User laporkan 2 klien production yang sebelumnya
 berlangganan SEMUA modul sekarang cuma tampil 1 modul di kolom
