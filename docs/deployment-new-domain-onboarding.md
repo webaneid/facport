@@ -58,6 +58,10 @@ scp .env.production.example user@76.13.18.136:/opt/<nama-project-baru>/.env.prod
 ## Langkah 3 — Isi `.env.production`
 Edit `.env.production` di server, isi nilai **BARU dan UNIK** untuk instance
 ini (jangan pernah reuse punya `ane.web.id`):
+- `PORT=3001` — **JANGAN LEWATKAN**, `.env.production.example` sempat tidak
+  pernah mencantumkan ini sejak awal (ketemu nyata 2026-09-07, sudah
+  diperbaiki di example-nya juga, tapi cek lagi kalau copy dari versi lama)
+  — tanpa ini `apps/api` gagal boot total ("Environment variable tidak valid").
 - `DB_USER`/`DB_PASSWORD`/`DB_NAME` — DB terpisah (Postgres SATU container
   per compose project, jadi otomatis terisolasi selama `DB_NAME` beda).
 - `MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` — generate baru, jangan reuse.
@@ -102,6 +106,44 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 docker exec -it <nama-project-baru>-api-1 bun run db:migrate
 docker exec -it <nama-project-baru>-api-1 bun run db:seed
 ```
+
+## Langkah 6b — Bootstrap Admin Pertama (WAJIB, DB Baru Tidak Punya Akun Sama Sekali)
+`db:seed` di Langkah 6 CUMA bikin role (`admin`="Super Admin", `staff`="Admin",
+`customer`) — TIDAK bikin akun user apa pun. Panel admin TIDAK PUNYA halaman
+self-register (by design, staff/admin dibuat admin lain), jadi instance baru
+tidak punya cara bikin admin pertama lewat UI (chicken-and-egg). Jalankan
+SEKALI per instance baru (ganti email/password sesuai kebutuhan):
+```bash
+docker exec -i <nama-project-baru>-api-1 tee /repo/apps/api/bootstrap-admin.ts > /dev/null <<'EOF'
+import "./src/lib/env";
+import { eq } from "drizzle-orm";
+import { auth } from "./src/lib/auth";
+import { db } from "./src/lib/db";
+import { roles, userRoles, user } from "./src/db/schema";
+
+const email = "admin@ganti-ini.id";
+const password = "GantiPasswordIni!";
+const name = "Admin";
+
+const result = await auth.api.signUpEmail({ body: { email, password, name } });
+const [adminRole] = await db.select().from(roles).where(eq(roles.name, "admin"));
+await db.insert(userRoles).values({ userId: result.user.id, roleId: adminRole.id }).onConflictDoNothing();
+// WAJIB — admin-provisioned DIKECUALIKAN dari requireEmailVerification
+// (§ komentar admin/users.route.ts). LUPA langkah ini = login gagal
+// terus dengan pesan generik "Email atau password salah" (403), padahal
+// password benar — ketemu nyata 2026-09-07, § lessons-learned.md.
+await db.update(user).set({ emailVerified: true }).where(eq(user.id, result.user.id));
+console.log("Admin dibuat:", result.user.id, email);
+process.exit(0);
+EOF
+docker exec -it <nama-project-baru>-api-1 bun run bootstrap-admin.ts
+docker exec -it <nama-project-baru>-api-1 rm bootstrap-admin.ts
+```
+Script dihapus lagi setelah dipakai (`rm`) — tidak perlu persist, cuma
+dipakai sekali. Butuh `src/` ikut ter-copy ke image production (§ fix
+2026-09-07 di Dockerfile, sudah default sejak `apps/api` versi terbaru —
+kalau pakai image LAMA yang belum ada fix ini, `docker exec` akan gagal
+"Cannot find module").
 
 ## Langkah 7 — nginx per Subdomain
 Facport butuh 4 subdomain: `app.`, `admin.`, `api.`, dan (kalau pakai fitur
