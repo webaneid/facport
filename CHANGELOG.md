@@ -1,3 +1,8 @@
+## <small>1.13.2 (2026-09-07)</small>
+
+* Merge pull request #31 from webaneid/develop ([4d932c6](https://github.com/webaneid/facport/commit/4d932c6)), closes [#31](https://github.com/webaneid/facport/issues/31)
+* fix(docker): sertakan drizzle.config.ts + drizzle/ + src/ di image api ([4717717](https://github.com/webaneid/facport/commit/4717717))
+
 ## <small>1.13.1 (2026-09-06)</small>
 
 * Merge pull request #28 from webaneid/develop ([19459eb](https://github.com/webaneid/facport/commit/19459eb)), closes [#28](https://github.com/webaneid/facport/issues/28)
