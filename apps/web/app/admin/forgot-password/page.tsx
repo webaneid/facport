@@ -1,10 +1,10 @@
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
+import { AuthLayout } from "@/components/auth/auth-layout";
 
 export default function AdminForgotPasswordPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-xl font-semibold">Lupa Password</h1>
+    <AuthLayout title="Lupa Password" subtitle="Masukkan email kamu, kami kirim link untuk atur password baru.">
       <ForgotPasswordForm />
-    </main>
+    </AuthLayout>
   );
 }

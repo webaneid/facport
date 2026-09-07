@@ -7,8 +7,8 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { authClient } from "@/lib/auth-client";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { PasswordInput } from "@/components/auth/password-input";
 
 const schema = z
   .object({
@@ -71,16 +71,16 @@ function ResetPasswordFormInner() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex w-full max-w-sm flex-col gap-3">
       <div>
-        <Input type="password" placeholder="Password Baru" {...register("newPassword")} />
+        <PasswordInput placeholder="Password Baru" {...register("newPassword")} />
         {errors.newPassword && <p className="mt-1 text-xs text-red-600">{errors.newPassword.message}</p>}
       </div>
       <div>
-        <Input type="password" placeholder="Konfirmasi Password Baru" {...register("confirmPassword")} />
+        <PasswordInput placeholder="Konfirmasi Password Baru" {...register("confirmPassword")} />
         {errors.confirmPassword && <p className="mt-1 text-xs text-red-600">{errors.confirmPassword.message}</p>}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button type="submit" disabled={isSubmitting} className="w-full">
-        {isSubmitting ? "Menyimpan..." : "Simpan Password Baru"}
+      <Button type="submit" loading={isSubmitting} className="w-full">
+        Simpan Password Baru
       </Button>
     </form>
   );

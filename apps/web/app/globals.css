@@ -12,33 +12,40 @@
    (lihat docs/decisions/adr-0024-admin-ui-kit-v2.md § Decision 1). */
 :root {
   color-scheme: light;
-  --admin-canvas: #f4f8fc;
-  --admin-canvas-deep: #ebf2fa;
+  --admin-canvas: #f5f1e8;
+  --admin-canvas-deep: #ece4d1;
   --admin-panel: rgba(255, 255, 255, 0.92);
   --admin-panel-solid: #ffffff;
-  --admin-spot: #dce8f5;
+  --admin-spot: #e3dcc7;
   --admin-ink: #0f1b2e;
   --admin-muted: #55647d;
   --admin-line: rgba(15, 27, 46, 0.12);
   --admin-line-strong: rgba(15, 27, 46, 0.22);
-  --admin-accent: #023e8a;
-  --admin-accent-strong: #03045e;
-  --admin-warm: #b8742e;
+  /* § koreksi brand 2026-09-07 — warna resmi Facport (dikasih user
+     langsung, BUKAN hasil desain bebas ADR-0024 lagi): primary #178549,
+     dark #184e30, light #f5f1e8. `--admin-warm` NAMANYA tetap
+     dipertahankan (dipakai 2 file, gradient dekoratif doang — lihat
+     grep sebelum ubah) walau isinya sekarang warna "secondary" (cyan),
+     bukan warna "warm" (oranye) lagi — ganti VALUE cukup, TIDAK perlu
+     rename token + migrasi caller, sama prinsipnya ADR-0024 sendiri. */
+  --admin-accent: #178549;
+  --admin-accent-strong: #184e30;
+  --admin-warm: #55b4d6;
   --admin-danger: #dc2626;
   --admin-warning: #d97706;
   --admin-ok: #16a34a;
 }
 
-/* § Fase 47 — token warna KHUSUS landing page (hijau, ala desain
-   referensi) — SENGAJA TERPISAH dari `--color-primary-*`/`--admin-*`
-   (biru, identitas produk dipakai admin/app). Marketing site vs
-   identitas produk BOLEH beda warna — pola sama pemisahan `--admin-*`
-   vs token lama sebelumnya (Fase 24). Cuma light-mode (landing tidak
-   punya toggle dark-mode terpisah, konsisten kebanyakan situs publik). */
+/* § koreksi brand 2026-09-07 — landing DISATUKAN ke warna resmi yang
+   SAMA dengan admin/app (di atas), bukan lagi sengaja beda (keputusan
+   Fase 47/ADR-0024 soal "marketing site boleh beda warna" DIGANTIKAN
+   temuan user: ini bukan pilihan desain, ini SALAH warna brand). Token
+   `--landing-*` TETAP DIPERTAHANKAN NAMANYA (dipakai landing/page.tsx
+   dkk), cuma nilainya disamakan. */
 :root {
-  --landing-primary: #16a34a;
-  --landing-primary-dark: #15803d;
-  --landing-primary-light: #e8fbf0;
+  --landing-primary: #178549;
+  --landing-primary-dark: #184e30;
+  --landing-primary-light: #f5f1e8;
 }
 
 @theme inline {
@@ -65,26 +72,29 @@
 
 /* § Fase 24, ADR-0024 — token "lama" (nama TETAP DIPERTAHANKAN — dipakai
    ~70 file di seluruh app, mengganti NAMA berarti migrasi masif tanpa
-   manfaat visual) TAPI NILAINYA DIGANTI TOTAL jadi skala biru turunan
+   manfaat visual) TAPI NILAINYA DIGANTI TOTAL jadi skala turunan
    `--admin-accent`/`--admin-accent-strong` + alias ke token netral
    `--admin-*`. Ini KEPUTUSAN EKSEKUSI UTAMA Fase 24: reskin visual
    TOTAL tercapai lewat 1 file ini, BUKAN menulis ulang Button/Card/Badge
    + migrasi puluhan caller satu-satu (§ phase-24 doc § Keputusan Kecil
    untuk rasional lengkap). `--color-primary-700` SENGAJA persis
-   `--admin-accent` (nilai user) dan `--color-primary-900` persis
+   `--admin-accent` dan `--color-primary-900` persis
    `--admin-accent-strong` — 2 titik jangkar yang sama, skala 50-600
-   diinterpolasi supaya progresinya mulus. */
+   diinterpolasi supaya progresinya mulus.
+   § koreksi brand 2026-09-07 — skala di-generate ulang total (dulu
+   biru, sekarang hijau) mengikuti 2 anchor resmi yang sama (#178549/
+   #184e30), pola interpolasi TIDAK berubah, cuma nilainya. */
 @theme {
-  --color-primary-50: #eef4fc;
-  --color-primary-100: #d9e7f8;
-  --color-primary-200: #b3cef2;
-  --color-primary-300: #82adea;
-  --color-primary-400: #5087dd;
-  --color-primary-500: #2c66c8;
-  --color-primary-600: #124aa6;
-  --color-primary-700: #023e8a;
-  --color-primary-800: #022c66;
-  --color-primary-900: #03045e;
+  --color-primary-50: #eaf7ef;
+  --color-primary-100: #cdecda;
+  --color-primary-200: #9ddab8;
+  --color-primary-300: #69c393;
+  --color-primary-400: #3fac74;
+  --color-primary-500: #269a5e;
+  --color-primary-600: #1b8f51;
+  --color-primary-700: #178549;
+  --color-primary-800: #14663b;
+  --color-primary-900: #184e30;
 
   --color-background: var(--admin-panel-solid);
   --color-foreground: var(--admin-ink);

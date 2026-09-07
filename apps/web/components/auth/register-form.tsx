@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import { User, Mail } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { getSafeRedirect } from "@/lib/safe-redirect";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { IconInput } from "@/components/auth/icon-input";
+import { PasswordInput } from "@/components/auth/password-input";
 
 const schema = z.object({
   name: z.string().min(1, "Nama wajib diisi"),
@@ -88,20 +90,20 @@ function RegisterFormInner() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex w-full max-w-sm flex-col gap-3">
       <div>
-        <Input placeholder="Nama" {...register("name")} />
+        <IconInput icon={User} placeholder="Nama" {...register("name")} />
         {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
       </div>
       <div>
-        <Input type="email" placeholder="Email" {...register("email")} />
+        <IconInput icon={Mail} type="email" placeholder="Email" {...register("email")} />
         {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}
       </div>
       <div>
-        <Input type="password" placeholder="Password" {...register("password")} />
+        <PasswordInput placeholder="Password" {...register("password")} />
         {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      <Button type="submit" disabled={isSubmitting} className="w-full">
-        {isSubmitting ? "Memproses..." : "Daftar"}
+      <Button type="submit" loading={isSubmitting} className="w-full">
+        Daftar
       </Button>
     </form>
   );

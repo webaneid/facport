@@ -1,10 +1,10 @@
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
+import { AuthLayout } from "@/components/auth/auth-layout";
 
 export default function AdminResetPasswordPage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-6 p-8">
-      <h1 className="text-xl font-semibold">Atur Password Baru</h1>
+    <AuthLayout title="Atur Password Baru" subtitle="Pilih password baru yang kuat dan mudah kamu ingat.">
       <ResetPasswordForm />
-    </main>
+    </AuthLayout>
   );
 }
