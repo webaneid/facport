@@ -102,11 +102,18 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55, DIRENCANAKAN
-**Status: direncanakan, BELUM diimplementasi** — menunggu file Excel
-asli dari client (dijanjikan sore hari yang sama dengan permintaan ini)
-untuk konfirmasi nama/jumlah kolom sungguhan sebelum eksekusi. Detail
-lengkap → `docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+## Atribut Tambahan (Data Classification) — Fase 55
+**Status kode: SELESAI diimplementasi (2026-09-08), ada di branch
+`develop`.** **Status rilis: BELUM di-release ke production** — sengaja
+ditahan dulu, menunggu file Excel asli dari client (dijanjikan sore
+hari yang sama dengan permintaan ini) untuk konfirmasi nama kolom
+sungguhan (`defaultColumnMap` masih placeholder "Karakter 1"-"Karakter
+10", § detail di bawah) sebelum PR `develop`→`main`. Kalau nama kolom
+client ternyata beda, TIDAK perlu code change (cukup remap manual saat
+import ATAU update `defaultColumnMap` kalau polanya konsisten) — jadi
+menunggu di titik RILIS (bukan titik implementasi) murni soal
+kehati-hatian, bukan blocker teknis. Detail lengkap →
+`docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
 
 ### Konteks
 Client (lewat screenshot menu Accurate "Faktur Penjualan" → "Rancangan
