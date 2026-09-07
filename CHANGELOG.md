@@ -1,3 +1,15 @@
+## 1.14.0 (2026-09-07)
+
+* Merge pull request #32 from webaneid/develop ([97d078d](https://github.com/webaneid/facport/commit/97d078d)), closes [#32](https://github.com/webaneid/facport/issues/32)
+* fix: trial tidak boleh blokir upgrade ke paket asli (Fase 54) ([2b39cd4](https://github.com/webaneid/facport/commit/2b39cd4))
+* fix(branding): sidebar pakai favicon (persegi), bukan logo (panjang) ([109283f](https://github.com/webaneid/facport/commit/109283f))
+* fix(notifications): link pengumuman customer ke /notifications, bukan / ([02be873](https://github.com/webaneid/facport/commit/02be873))
+* feat: multi-tier billing per sub-modul (Bulanan/Tahunan dalam 1 kartu) ([c1960fa](https://github.com/webaneid/facport/commit/c1960fa))
+* feat(auth): redesain 7 halaman auth + koreksi warna brand resmi Facport ([7ab409d](https://github.com/webaneid/facport/commit/7ab409d)), closes [#023e8a](https://github.com/webaneid/facport/issues/023e8a) [#178549](https://github.com/webaneid/facport/issues/178549) [#184e30](https://github.com/webaneid/facport/issues/184e30) [#55b4d6](https://github.com/webaneid/facport/issues/55b4d6) [#f5f1e8](https://github.com/webaneid/facport/issues/f5f1e8) [#178549](https://github.com/webaneid/facport/issues/178549) [#184e30](https://github.com/webaneid/facport/issues/184e30) [#023e8a](https://github.com/webaneid/facport/issues/023e8a)
+* feat(notifications): popup detail saat klik notifikasi dari lonceng ([89572d4](https://github.com/webaneid/facport/commit/89572d4))
+* docs: tutup Fase 52 — dokumentasi deploy production pertama facinstitute.id ([9922731](https://github.com/webaneid/facport/commit/9922731))
+* docs: update Fase 52 — Resend email production resolved ([9b4ab66](https://github.com/webaneid/facport/commit/9b4ab66))
+
 ## <small>1.13.2 (2026-09-07)</small>
 
 * Merge pull request #31 from webaneid/develop ([4d932c6](https://github.com/webaneid/facport/commit/4d932c6)), closes [#31](https://github.com/webaneid/facport/issues/31)
