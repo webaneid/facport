@@ -12,6 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
@@ -40,6 +41,13 @@ export function NotificationBell({ surface }: { surface: Surface }) {
   const [open, setOpen] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [items, setItems] = useState<Notification[] | null>(null);
+  // § diminta user 2026-09-07 — klik notifikasi (mis. pengumuman) dulu
+  // cuma navigasi (badan teks di dropdown ke-`line-clamp-2`, sering
+  // kepotong), orang harus ke halaman "Lihat semua" dulu buat baca utuh
+  // — tidak user-friendly. Sekarang klik = popup isi lengkap dulu,
+  // "Lihat Detail" di popup baru navigasi kalau tipe notifikasinya
+  // memang punya halaman tujuan yang berguna (§ notificationLink).
+  const [detailNotif, setDetailNotif] = useState<Notification | null>(null);
 
   async function loadUnreadCount() {
     const res = await api.me.notifications["unread-count"].get();
@@ -64,6 +72,7 @@ export function NotificationBell({ surface }: { surface: Surface }) {
   }
 
   async function handleItemClick(notif: Notification) {
+    setDetailNotif(notif);
     if (!notif.isRead) {
       await api.me.notifications({ id: notif.id }).read.patch();
       setUnreadCount((c) => Math.max(0, c - 1));
@@ -114,15 +123,15 @@ export function NotificationBell({ surface }: { surface: Surface }) {
         ) : (
           <div className="flex max-h-80 flex-col overflow-y-auto">
             {items.map((notif) => (
-              <DropdownMenuItem key={notif.id} asChild className="items-start">
-                <Link href={notificationLink(notif.type, surface)} onClick={() => handleItemClick(notif)}>
-                  <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${notif.isRead ? "bg-transparent" : "bg-primary-600"}`} />
-                  <span className="flex flex-col gap-0.5">
-                    <span className={`text-sm ${notif.isRead ? "text-muted-foreground" : "font-medium text-foreground"}`}>{notif.title}</span>
-                    <span className="line-clamp-2 text-xs text-muted-foreground">{notif.body}</span>
-                    <span className="text-[10px] text-muted-foreground">{formatDate(notif.createdAt, companyTimezone)}</span>
-                  </span>
-                </Link>
+              // § popup detail (bukan navigasi langsung) — lihat catatan
+              // di deklarasi `detailNotif` di atas.
+              <DropdownMenuItem key={notif.id} className="items-start" onClick={() => handleItemClick(notif)}>
+                <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${notif.isRead ? "bg-transparent" : "bg-primary-600"}`} />
+                <span className="flex flex-col gap-0.5">
+                  <span className={`text-sm ${notif.isRead ? "text-muted-foreground" : "font-medium text-foreground"}`}>{notif.title}</span>
+                  <span className="line-clamp-2 text-xs text-muted-foreground">{notif.body}</span>
+                  <span className="text-[10px] text-muted-foreground">{formatDate(notif.createdAt, companyTimezone)}</span>
+                </span>
               </DropdownMenuItem>
             ))}
           </div>
@@ -134,6 +143,27 @@ export function NotificationBell({ surface }: { surface: Surface }) {
           </Link>
         </DropdownMenuItem>
       </DropdownMenuContent>
+
+      <Dialog open={detailNotif !== null} onOpenChange={(next) => !next && setDetailNotif(null)}>
+        <DialogContent>
+          {detailNotif && (
+            <>
+              <DialogTitle>{detailNotif.title}</DialogTitle>
+              <DialogDescription asChild>
+                <p className="whitespace-pre-wrap text-sm text-foreground">{detailNotif.body}</p>
+              </DialogDescription>
+              <p className="mt-1 text-xs text-muted-foreground">{formatDate(detailNotif.createdAt, companyTimezone)}</p>
+              <Link
+                href={notificationLink(detailNotif.type, surface)}
+                onClick={() => setDetailNotif(null)}
+                className="mt-4 inline-flex justify-center rounded-xl bg-primary-600 px-4 py-2 text-sm font-medium text-white hover:bg-primary-700"
+              >
+                Lihat Detail
+              </Link>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
     </DropdownMenu>
   );
 }
