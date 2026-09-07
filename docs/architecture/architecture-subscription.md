@@ -157,6 +157,20 @@ module-based) sejak awal:
   biasanya nyalakan di 1 tier saja (mis. bulanan). Tombol "Coba Gratis"
   di UI ikut tier yang sedang dipilih customer, BUKAN bug kalau
   hilang/muncul saat customer ganti tier.
+  > **Update 2026-09-08** — tier PILL & auto-select default DIBALIK jadi
+  > durasi terpanjang dulu (tahunan → bulanan → harian kalau ada), lihat
+  > poin di bawah. Konsekuensi: kalau admin cuma nyalakan `trialEligible`
+  > di tier bulanan (konvensi lama), tombol "Coba Gratis" TIDAK muncul
+  > lagi secara default (customer harus pindah pill ke bulanan dulu) —
+  > BUKAN bug, tapi kalau ingin trial tetap terlihat langsung, admin
+  > perlu nyalakan `trialEligible` juga di tier tahunan.
+- **Urutan tier & auto-select default = durasi TERPANJANG dulu** (diminta
+  user 2026-09-08): tahunan → bulanan → harian (kalau ada), BUKAN lagi
+  ASC durasi-terpendek-dulu seperti desain awal Fase 53. Diimplementasi
+  di SATU tempat (`useGroupedPlans` — sort `durationDays` DESC, default
+  tier aktif = `tiers[0]`), otomatis berlaku ke pill DAN auto-select di
+  `landing/module-features.tsx` maupun `/subscribe` sekaligus (1 sumber
+  kebenaran, konsisten kedua tempat, tidak perlu diubah 2x).
 - **Grouping (1 modul → 1 kartu, tier jadi pilihan pill) murni di
   FRONTEND** — `apps/web/lib/use-grouped-plans.ts` (hook shared, dipakai
   `landing/module-features.tsx` DAN `app/(protected)/subscribe/page.tsx`).

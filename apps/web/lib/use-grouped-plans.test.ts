@@ -16,18 +16,18 @@ describe("useGroupedPlans", () => {
     expect(siGroup?.tiers).toHaveLength(1);
   });
 
-  test("tiers diurutkan ASC by durationDays (bulanan sebelum tahunan)", () => {
+  test("tiers diurutkan DESC by durationDays (tahunan sebelum bulanan) — diminta user 2026-09-08", () => {
     // sengaja dibalik urutan input, hook yang harus urutkan
-    const { result } = renderHook(() => useGroupedPlans([purchaseInvoiceYearly, purchaseInvoiceMonthly]));
+    const { result } = renderHook(() => useGroupedPlans([purchaseInvoiceMonthly, purchaseInvoiceYearly]));
     const piGroup = result.current.groups.find((g) => g.moduleKey === "purchase_invoice")!;
-    expect(piGroup.tiers[0]!.id).toBe("pi-monthly");
-    expect(piGroup.tiers[1]!.id).toBe("pi-yearly");
+    expect(piGroup.tiers[0]!.id).toBe("pi-yearly");
+    expect(piGroup.tiers[1]!.id).toBe("pi-monthly");
   });
 
-  test("default tier aktif = tier durasi terpendek (tiers[0])", () => {
-    const { result } = renderHook(() => useGroupedPlans([purchaseInvoiceYearly, purchaseInvoiceMonthly]));
+  test("default tier aktif = tier durasi terpanjang/tahunan (tiers[0]) — diminta user 2026-09-08", () => {
+    const { result } = renderHook(() => useGroupedPlans([purchaseInvoiceMonthly, purchaseInvoiceYearly]));
     const piGroup = result.current.groups.find((g) => g.moduleKey === "purchase_invoice")!;
-    expect(result.current.activePlanFor(piGroup)?.id).toBe("pi-monthly");
+    expect(result.current.activePlanFor(piGroup)?.id).toBe("pi-yearly");
   });
 
   test("selectTier mengganti tier aktif tanpa mengubah status selected modul", () => {
@@ -36,12 +36,12 @@ describe("useGroupedPlans", () => {
 
     act(() => result.current.toggleModule("purchase_invoice"));
     expect(result.current.isModuleSelected("purchase_invoice")).toBe(true);
-    expect(result.current.selectedPlanIds).toEqual(["pi-monthly"]);
+    expect(result.current.selectedPlanIds).toEqual(["pi-yearly"]); // default = tahunan
 
-    act(() => result.current.selectTier("purchase_invoice", "pi-yearly"));
+    act(() => result.current.selectTier("purchase_invoice", "pi-monthly"));
     expect(result.current.isModuleSelected("purchase_invoice")).toBe(true); // tetap terpilih, cuma tier-nya ganti
-    expect(result.current.isTierActive(piGroup, "pi-yearly")).toBe(true);
-    expect(result.current.selectedPlanIds).toEqual(["pi-yearly"]);
+    expect(result.current.isTierActive(piGroup, "pi-monthly")).toBe(true);
+    expect(result.current.selectedPlanIds).toEqual(["pi-monthly"]);
   });
 
   test("toggleModule menambah lalu menghapus dari selectedPlanIds", () => {

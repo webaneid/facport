@@ -1,17 +1,19 @@
 import { headers } from "next/headers";
-import { Users, Package, CreditCard, History, FileCheck2 } from "lucide-react";
+import { Users, Package, CreditCard, FileCheck2, TrendingUp, Timer, Hourglass } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StatCard } from "@/components/ui/stat-card";
 import { PageHeader } from "@/components/ui/page-header";
-import { EmptyState } from "@/components/ui/empty-state";
-import { formatDate } from "@/lib/utils";
-import { getPublicSettings } from "@/lib/get-public-settings";
-import { DEFAULT_COMPANY_TIMEZONE } from "@/lib/timezone";
+import { formatWorkTimeSaved } from "@/lib/utils";
+import { UserSubscriptionBarChart } from "@/components/admin/dashboard/user-subscription-bar-chart";
+import { UserGrowthAreaChart } from "@/components/admin/dashboard/user-growth-area-chart";
+import { ModulePopularityBarChart } from "@/components/admin/dashboard/module-popularity-bar-chart";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
 type Stats = { userCount: number; planCount: number; activeSubscriptionCount: number; successfulRowCount: number };
-type AuditLog = { id: string; entityType: string; entityId: string; action: string; createdAt: string };
+type MonthlyEntry = { month: string; newUserCount: number; cumulativeUserCount: number; newSubscribingUserCount: number };
+type ModulePopularityEntry = { moduleKey: string; count: number };
+type EfficiencyStats = { rowsThisMonth: number; rowsLastMonth: number; rowGrowthPercent: number; efficiencyPercent: number; totalEfficiencySeconds: number };
 
 // § architecture-app-dashboard.md — Server Component fetch DENGAN cookie
 // forward manual (pola sama app/app/(protected)/page.tsx).
@@ -22,24 +24,20 @@ async function fetchJson<T>(path: string, cookie: string): Promise<T | null> {
   return text ? (JSON.parse(text) as T) : null;
 }
 
-const ACTION_LABEL: Record<string, string> = {
-  create: "membuat",
-  update: "mengubah",
-  delete: "menghapus",
-};
+function formatPercent(value: number): string {
+  const rounded = Math.round(value * 10) / 10;
+  return `${rounded > 0 ? "+" : ""}${rounded.toLocaleString("id-ID")}%`;
+}
 
 export default async function AdminDashboardPage() {
   const cookie = (await headers()).get("cookie") ?? "";
-  // § Fase 43 (audit timezone 2026-09-06) — Server Component, tidak bisa
-  // pakai `useCompanyTimezone()`.
-  const publicSettings = await getPublicSettings();
-  const companyTimezone = publicSettings["company.timezone"] ?? DEFAULT_COMPANY_TIMEZONE;
 
-  const [stats, auditLogsResult] = await Promise.all([
+  const [stats, monthly, modulePopularity, efficiency] = await Promise.all([
     fetchJson<Stats>("/admin/stats", cookie),
-    fetchJson<{ auditLogs: AuditLog[] }>("/admin/audit-logs?limit=10", cookie),
+    fetchJson<MonthlyEntry[]>("/admin/stats/monthly", cookie),
+    fetchJson<ModulePopularityEntry[]>("/admin/stats/module-popularity", cookie),
+    fetchJson<EfficiencyStats>("/admin/stats/efficiency", cookie),
   ]);
-  const auditLogs = auditLogsResult?.auditLogs ?? [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -50,34 +48,63 @@ export default async function AdminDashboardPage() {
           icon={FileCheck2}
           label="Baris Berhasil Diimport"
           value={stats ? stats.successfulRowCount.toLocaleString("id-ID") : "-"}
+          tone="success"
         />
-        <StatCard icon={Users} label="Pengguna" value={stats?.userCount ?? "-"} />
-        <StatCard icon={Package} label="Paket Aktif" value={stats?.planCount ?? "-"} />
-        <StatCard icon={CreditCard} label="Langganan Aktif" value={stats?.activeSubscriptionCount ?? "-"} />
+        {/* § Fase 59 — HANYA role customer (bug lama: ikut hitung admin/staff) */}
+        <StatCard icon={Users} label="Pengguna" value={stats?.userCount ?? "-"} tone="primary" />
+        <StatCard icon={Package} label="Paket Aktif" value={stats?.planCount ?? "-"} tone="success" />
+        <StatCard icon={CreditCard} label="Langganan Aktif" value={stats?.activeSubscriptionCount ?? "-"} tone="primary" />
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard
+          icon={TrendingUp}
+          label="Pertumbuhan Baris Bulan Ini"
+          value={efficiency ? formatPercent(efficiency.rowGrowthPercent) : "-"}
+          trend={efficiency ? `${efficiency.rowsThisMonth.toLocaleString("id-ID")} baris (bulan lalu: ${efficiency.rowsLastMonth.toLocaleString("id-ID")})` : undefined}
+          tone={efficiency && efficiency.rowGrowthPercent < 0 ? "warning" : "success"}
+        />
+        <StatCard
+          icon={Timer}
+          label="Efisiensi Waktu"
+          value={efficiency ? `${(Math.round(efficiency.efficiencyPercent * 10) / 10).toLocaleString("id-ID")}%` : "-"}
+          trend="Dibanding estimasi input manual ke Accurate"
+          tone="primary"
+        />
+        <StatCard
+          icon={Hourglass}
+          label="Total Waktu Dihemat"
+          value={efficiency ? formatWorkTimeSaved(efficiency.totalEfficiencySeconds) : "-"}
+          trend="Sepanjang waktu, seluruh pengguna"
+          tone="success"
+        />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Pengguna & Langganan Baru (12 Bulan Terakhir)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <UserSubscriptionBarChart data={monthly ?? []} />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Popularitas Sub-Modul</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ModulePopularityBarChart data={modulePopularity ?? []} />
+          </CardContent>
+        </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <History className="h-4 w-4 text-primary-600" />
-            <CardTitle>Aktivitas Terakhir</CardTitle>
-          </div>
+          <CardTitle>Kenaikan Total Pengguna (12 Bulan Terakhir)</CardTitle>
         </CardHeader>
         <CardContent>
-          {auditLogs.length === 0 ? (
-            <EmptyState icon={History} title="Belum ada aktivitas tercatat" />
-          ) : (
-            <ul className="flex flex-col divide-y divide-border">
-              {auditLogs.map((log) => (
-                <li key={log.id} className="flex items-center justify-between py-2 text-sm">
-                  <span className="text-foreground">
-                    {ACTION_LABEL[log.action] ?? log.action} <strong>{log.entityType}</strong>
-                  </span>
-                  <span className="text-xs text-muted-foreground">{formatDate(log.createdAt, companyTimezone)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
+          <UserGrowthAreaChart data={monthly ?? []} />
         </CardContent>
       </Card>
     </div>
