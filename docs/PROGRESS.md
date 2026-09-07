@@ -63,6 +63,8 @@
 | 52   | Perbaikan Deploy Production Pertama (facinstitute.id) | Done | `docs/deployment-new-domain-onboarding.md` | `docs/phases/phase-52-perbaikan-deploy-production-pertama.md` |
 | 53   | Multi-Tier Billing per Sub-Modul (Bulanan/Tahunan) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-53-multi-tier-billing-per-modul.md` |
 | 54   | Perbaikan Logika Upgrade Trial → Paket Asli | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md` |
+| 55   | Atribut Tambahan (Data Classification) di Import Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-55-atribut-tambahan-sales-invoice.md` |
+| 56   | Fix Error Message Batch Gagal Dini (Semua Modul) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1686,3 +1688,58 @@ confirm, `admin/subscriptions.route.ts` assign manual). Test baru: 1
 test route verifikasi trial lama ter-cancel + subscription baru aktif
 non-trial. Full suite `apps/api` 414 pass/0 fail, `apps/web` 21 pass/0
 fail. Detail lengkap → `docs/phases/phase-54-perbaikan-logika-upgrade-trial.md`.
+
+## Update 2026-09-08 — Fase 55 Direncanakan: Atribut Tambahan (Data Classification) di Import Sales Invoice
+Client minta 10 kolom teks bebas tambahan ("Karakter 1"-"Karakter 10",
+istilah Accurate: "Atribut Tambahan") bisa diisi lewat import Excel
+Sales Invoice — file asli client dijanjikan sore hari ini, jadi
+**eksekusi kode SENGAJA ditunda**, cuma disiapkan dokumen arsitektur
+lengkap dulu. Temuan kunci: field resmi Accurate
+`detailItem[].dataClassification1Name` s/d `...10Name` (diverifikasi
+ke `docs/referencehtml/accurate-openapi.json`, per baris item, tipe
+string) — arsitektur mapping import SUDAH generik penuh, jadi TIDAK
+perlu migration DB/endpoint baru/perubahan frontend, cukup tambah
+entri di `sales-invoice.mapping.ts`. Posisi/nama kolom Excel
+(`defaultColumnMap`) cuma default/auto-suggest — user tetap bisa
+remap manual per-import (mekanisme sudah ada), jadi aman disesuaikan
+lagi begitu file client asli diterima tanpa risiko "kolom salah
+posisi". Detail lengkap → `docs/architecture/architecture-sales-invoice.md`
+§ "Atribut Tambahan", `docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 55 Done: Eksekusi Atribut Tambahan Sales Invoice
+Setelah dokumentasi arsitektur selesai, user memutuskan LANGSUNG
+eksekusi kode (bukan tunggu file client asli sore ini) — karena field
+API-nya (`dataClassification1Name`..`10Name`) fixed terlepas dari nama
+kolom Excel apa pun, dan penyesuaian nama kolom nanti tidak butuh
+deploy ulang (remap manual di UI import, mekanisme sudah ada). Tambah
+10 field opsional (`attribut1`..`attribut10`) di
+`sales-invoice.mapping.ts` + `template-guide.ts`, nama kolom default
+"Karakter 1"-"Karakter 10" (istilah asli Accurate). Tidak ada
+migration/endpoint/frontend baru — murni penambahan mapping mengikuti
+arsitektur generik yang sudah ada.
+
+Test baru: 1 unit test. Full suite `apps/api` 415 pass/0 fail.
+Typecheck 0 error. Detail lengkap →
+`docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 56 Done: Fix Error Message Batch Gagal Dini (Semua Modul)
+User temukan batch production nyata
+(`379b65d8-90e4-4f29-8abb-70af74ddff74`) — status batch "failed", tapi
+baris-barisnya masih "pending" tanpa error message sama sekali, admin
+tidak tahu penyebabnya. Root cause: job `IMPORT_TO_ACCURATE` punya 2
+titik "gagal dini" SEBELUM loop per-baris (koneksi Accurate belum ada,
+atau gagal buka sesi Data Usaha) yang cuma update status batch, tidak
+pernah sentuh baris-barisnya — bug SISTEMIK karena kode ini shared
+sebelum percabangan per modul, berpotensi kena SEMUA 6 modul import.
+
+Fix: helper `failAllPendingRows()` dipanggil di kedua titik gagal-dini,
+ditaruh SEBELUM percabangan per modul supaya otomatis berlaku ke ke-6
+modul sekaligus (bukan cuma modul tempat bug ditemukan). Security
+review inline: `err.message` yang disurfacekan diverifikasi tidak
+pernah berisi token/secret. Diketahui: `workers/index.ts` tidak punya
+test file sama sekali (gap pre-existing, dicatat di Known Limitations,
+di luar scope fix ini).
+
+Full suite `apps/api` 415 pass/0 fail (tidak ada test baru — worker
+sulit di-unit-test tanpa refactor tambahan). Typecheck 0 error. Detail
+lengkap → `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`.

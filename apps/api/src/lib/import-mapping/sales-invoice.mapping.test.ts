@@ -268,6 +268,27 @@ describe("buildDetailItemFromRow", () => {
 
     expect(buildDetailItemFromRow(rawRow, columnMapping)).toEqual({ itemNo: "BRG-1" });
   });
+
+  // § Fase 55 — "Atribut Tambahan" Accurate (Data Classification),
+  // diminta client, § architecture-sales-invoice.md.
+  test("Fase 55 — kolom Atribut Tambahan (Karakter 1-10) ter-map ke dataClassificationNName", () => {
+    const rawRow = {
+      "Kode Barang": "BRG-1",
+      "Karakter 1": "SPK-2026-001",
+      "Karakter 10": "Batch A",
+    };
+    const columnMapping = {
+      "Kode Barang": "itemNo",
+      "Karakter 1": "attribut1",
+      "Karakter 10": "attribut10",
+    };
+
+    expect(buildDetailItemFromRow(rawRow, columnMapping)).toEqual({
+      itemNo: "BRG-1",
+      dataClassification1Name: "SPK-2026-001",
+      dataClassification10Name: "Batch A",
+    });
+  });
 });
 
 describe("poNumberColumnOf", () => {

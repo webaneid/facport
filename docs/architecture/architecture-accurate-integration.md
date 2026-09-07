@@ -378,6 +378,22 @@ dipahami user (bukan raw JSON error API) — terjemahkan kode/pesan error
 umum Accurate ke bahasa yang actionable ("Nomor pelanggan XYZ tidak
 ditemukan di Accurate" lebih berguna daripada "400 Bad Request").
 
+> ⚠️ **Bug ditemukan & diperbaiki 2026-09-08 (Fase 56)** — aturan di
+> atas TERNYATA cuma ditegakkan untuk kegagalan DI DALAM loop per-baris
+> (per modul). Batch yang gagal SEBELUM loop mulai sama sekali (koneksi
+> Accurate belum ada, atau `openAccurateSession()` gagal) cuma nge-set
+> `importBatches.status = "failed"` — baris-barisnya dibiarkan
+> `"pending"` TANPA `errorMessage`, admin lihat tabel kosong total tanpa
+> tahu penyebabnya (ketemu nyata dari batch production
+> `379b65d8-90e4-4f29-8abb-70af74ddff74`). Fix: helper
+> `failAllPendingRows()` di `workers/index.ts`, dipanggil di kedua titik
+> gagal-dini itu, SEBELUM percabangan per modul — otomatis berlaku ke
+> SEMUA modul import. **Pelajaran untuk kode baru**: kalau nambah titik
+> gagal-dini serupa (early-return SEBELUM loop per-baris), WAJIB ikut
+> panggil `failAllPendingRows()` juga, jangan cuma update
+> `importBatches.status`. Detail lengkap →
+> `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`.
+
 ## 6. Metode Otorisasi Alternatif — "API Token" (TIDAK Dipakai Facport)
 Selain OAuth2 Authorization Code Grant (§ 1, yang dipakai Facport), Accurate
 juga punya metode auth lain bernama **"API Token"**: token+secret statis

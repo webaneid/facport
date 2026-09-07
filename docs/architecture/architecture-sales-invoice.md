@@ -102,6 +102,80 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
+## Atribut Tambahan (Data Classification) — Fase 55
+**Status kode: SELESAI diimplementasi (2026-09-08), ada di branch
+`develop`.** **Status rilis: BELUM di-release ke production** — sengaja
+ditahan dulu, menunggu file Excel asli dari client (dijanjikan sore
+hari yang sama dengan permintaan ini) untuk konfirmasi nama kolom
+sungguhan (`defaultColumnMap` masih placeholder "Karakter 1"-"Karakter
+10", § detail di bawah) sebelum PR `develop`→`main`. Kalau nama kolom
+client ternyata beda, TIDAK perlu code change (cukup remap manual saat
+import ATAU update `defaultColumnMap` kalau polanya konsisten) — jadi
+menunggu di titik RILIS (bukan titik implementasi) murni soal
+kehati-hatian, bukan blocker teknis. Detail lengkap →
+`docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+
+### Konteks
+Client (lewat screenshot menu Accurate "Faktur Penjualan" → "Rancangan
+Formulir" → tab "Atribut Tambahan") minta 10 kolom teks bebas
+tambahan ("Karakter 1" s/d "Karakter 10") bisa diisi lewat import
+Excel. Di UI Accurate, admin Accurate BOLEH me-rename label tiap slot
+(mis. "Karakter 1" → "Nomor SPK") lewat menu Preferensi — tapi
+identitas field di API TETAP `dataClassificationNName` terlepas dari
+label custom itu (rename cuma kosmetik sisi Accurate, tidak mengubah
+nama field API).
+
+### Temuan API (diverifikasi ke `docs/referencehtml/accurate-openapi.json`, BUKAN tebakan)
+- Field resmi: `detailItem[].dataClassification1Name` s/d
+  `dataClassification10Name` (`POST /api/sales-invoice/save.do`), tipe
+  **string**, **per BARIS ITEM** (bukan per-header invoice).
+- Tab "Tipe Angka" (Angka 1-10) di screenshot client **TIDAK diminta**
+  client dan **TIDAK ADA field numerik setara** di API resmi (cuma
+  varian `...Name`, string) — non-issue, selaras dengan permintaan yang
+  memang cuma "Karakter".
+- Field yang SAMA (`dataClassificationNName`) juga sudah ada di
+  `detailExpense[]` (baris biaya) — TIDAK relevan untuk permintaan ini
+  (client minta di level item barang/jasa, bukan biaya).
+
+### Desain (kenapa TIDAK perlu ubah skema DB / migration sama sekali)
+Arsitektur mapping import SUDAH generik sejak awal
+(`sales-invoice.mapping.ts`):
+- `fieldToAccuratePath`: `Record<internalFieldKey, "detailItem.<accurateFieldName>">`
+- `defaultColumnMap`: `Record<"Nama Kolom Excel", internalFieldKey>` — cuma DEFAULT/tebakan awal, BUKAN posisi kaku
+- `buildDetailItemFromRow()` iterasi generik atas `columnMapping` yang benar-benar dikonfirmasi user saat import (`POST .../confirm`, body `{columnMapping: Record<string,string>}`) — TIDAK hardcode field apa pun
+
+**Implikasi penting**: posisi/nama kolom Excel yang client kirim TIDAK
+PERLU sama persis dengan `defaultColumnMap` yang kita siapkan duluan.
+`defaultColumnMap` cuma auto-suggest (match nama kolom case-insensitive)
+— kalau nama kolom file client beda, user cukup **remap manual di UI
+saat konfirmasi import** (mekanisme SUDAH ADA, dipakai semua modul,
+bukan fitur baru). Jadi "mesin"-nya (`fieldToAccuratePath` + generic
+builder) WAJIB disiapkan duluan (baru 10 field baru + isi
+`dataClassificationNName`), tapi `defaultColumnMap`-nya BOLEH/WAJAR
+disesuaikan lagi setelah lihat file asli client — 2 keputusan
+terpisah, satu teknis-permanen (field ada di sistem), satu
+kosmetik-fleksibel (nama kolom default).
+
+### Rencana Eksekusi (setelah file client diterima & dikonfirmasi)
+Tambah ke `sales-invoice.mapping.ts` SAJA (tidak ada file lain yang
+perlu disentuh — tidak ada endpoint baru, tidak ada migration, tidak
+ada perubahan frontend, arsitektur sudah generik penuh):
+```ts
+// fieldToAccuratePath (tambahan)
+attribut1: "detailItem.dataClassification1Name",
+attribut2: "detailItem.dataClassification2Name",
+// ... s/d attribut10
+
+// defaultColumnMap (tambahan, NAMA KOLOM INI YANG AKAN DISESUAIKAN
+// begitu file client asli diterima — placeholder aman dulu)
+"Karakter 1": "attribut1",
+"Karakter 2": "attribut2",
+// ... s/d "Karakter 10"
+```
+Semua field OPSIONAL (tidak masuk `requiredFields`) — import yang
+sudah berjalan (tanpa kolom atribut ini) TIDAK terpengaruh sama sekali
+(backward compatible penuh).
+
 ## Nav & Dashboard Difilter oleh Langganan
 
 § ADR-0018, mulai fase ini — menu "Import Faktur Penjualan" di sidebar

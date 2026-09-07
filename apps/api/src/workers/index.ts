@@ -734,6 +734,30 @@ async function main() {
   // "Keputusan Kecil"). Sesi Data Usaha dibuka SEKALI per job run, bukan
   // per-row (§ "Sesi Data Usaha" — session/host ephemeral, tidak di-cache
   // lintas job).
+  // § ditemukan 2026-09-08 (feedback user, batch NYATA di production
+  // 379b65d8-...) — batch bisa gagal SEBELUM loop per-baris mulai sama
+  // sekali (koneksi Accurate belum ada, atau sesi Data Usaha gagal
+  // dibuka). Sebelum fix ini, cuma `importBatches.status` yang di-set
+  // "failed" — baris-barisnya DIBIARKAN "pending" selamanya, TANPA
+  // `errorMessage`. Admin lihat batch "failed" tapi tabel baris kosong
+  // total ("-" di semua baris), TIDAK tahu penyebabnya sama sekali —
+  // padahal architecture-accurate-integration.md § 5 EKSPLISIT
+  // mewajibkan errorMessage actionable untuk SEMUA kegagalan. Helper ini
+  // dipanggil di KEDUA titik gagal-dini itu — SEBELUM percabangan per
+  // modul (baris ~790), jadi otomatis berlaku utk KE-6 modul import
+  // (bukan cuma purchase_invoice), tidak perlu diulang per modul.
+  async function failAllPendingRows(targetBatchId: string, errorMessage: string) {
+    await db
+      .update(importBatchRows)
+      .set({ status: "failed", errorMessage, processedAt: new Date() })
+      .where(
+        and(
+          eq(importBatchRows.batchId, targetBatchId),
+          or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
+        ),
+      );
+  }
+
   await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE, async ([job]) => {
     if (!job) return;
     const { batchId } = job.data;
@@ -747,10 +771,9 @@ async function main() {
     const connection = await getConnectionForBatch(batch.subscriptionId);
 
     if (!connection || !connection.accurateDbId) {
-      await db
-        .update(importBatches)
-        .set({ status: "failed", completedAt: new Date() })
-        .where(eq(importBatches.id, batch.id));
+      const errorMessage = "Koneksi Accurate belum dipilih atau tidak valid — hubungkan/pilih Data Usaha Accurate dulu sebelum import.";
+      await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
+      await failAllPendingRows(batch.id, errorMessage);
       logger.error({ batchId }, "Import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
       return;
     }
@@ -759,10 +782,9 @@ async function main() {
     try {
       session = await openAccurateSession(connection);
     } catch (err) {
-      await db
-        .update(importBatches)
-        .set({ status: "failed", completedAt: new Date() })
-        .where(eq(importBatches.id, batch.id));
+      const detail = err instanceof Error ? err.message : String(err);
+      await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
+      await failAllPendingRows(batch.id, `Gagal membuka sesi Data Usaha Accurate: ${detail}`);
       logger.error({ err, batchId }, "Import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
       return;
