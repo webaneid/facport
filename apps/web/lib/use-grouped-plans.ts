@@ -12,7 +12,7 @@ export type PlanLike = {
 
 export type ModuleGroup<T extends PlanLike> = {
   moduleKey: string;
-  tiers: T[]; // diurutkan durationDays ASC (tier durasi terpendek dulu, mis. bulanan sebelum tahunan)
+  tiers: T[]; // diurutkan durationDays DESC (tier durasi terpanjang dulu, mis. tahunan, lalu bulanan, lalu harian kalau ada)
 };
 
 // § Fase 53 — 1 sub-modul sekarang boleh punya BEBERAPA baris `plans`
@@ -34,12 +34,16 @@ export function useGroupedPlans<T extends PlanLike>(plans: T[], initialSelectedM
     }
     return [...byModule.entries()].map(([moduleKey, tiers]) => ({
       moduleKey,
-      tiers: [...tiers].sort((a, b) => a.durationDays - b.durationDays),
+      // § diminta user 2026-09-08 — SEBELUMNYA ASC (bulanan dulu, jadi
+      // default auto-select). Prioritas auto-select & urutan tampil pill
+      // HARUS tahunan dulu, baru bulanan, baru harian (kalau ada) — jadi
+      // DESC by durationDays (durasi terpanjang dulu).
+      tiers: [...tiers].sort((a, b) => b.durationDays - a.durationDays),
     }));
   }, [plans]);
 
   const [selectedModules, setSelectedModules] = useState<Set<string>>(initialSelectedModules);
-  // default tier aktif = durasi terpendek (tiers[0], sudah ASC) per modul
+  // default tier aktif = durasi terpanjang (tiers[0], sudah DESC) per modul
   const [activeTier, setActiveTier] = useState<Record<string, string>>({});
 
   function tierIdFor(group: ModuleGroup<T>): string | undefined {

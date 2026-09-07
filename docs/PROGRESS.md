@@ -68,6 +68,7 @@
 | 57   | Fix Daftar Langganan Aktif Hilang Diam-diam di `/admin/users` | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md` |
 | 58   | Fix URL Notifikasi Admin Double-Prefix (`/admin/admin/...`) | Done | (lihat phase doc) | `docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md` |
 | 59   | Redesign Dashboard Admin (Statistik & Chart) | Done | `docs/architecture/architecture-admin-dashboard.md` | `docs/phases/phase-59-redesign-dashboard-admin.md` |
+| 60   | Prioritas Tier Tahunan sebagai Default Auto-Select | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-60-prioritas-tier-tahunan-default.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1808,3 +1809,17 @@ baru). Full suite `apps/web` 27 pass/0 fail. Build `apps/web` sukses.
 Security review inline: 0 temuan. Verifikasi visual browser tidak
 dilakukan (ekstensi Chrome tidak tersambung, § Known Limitations). Detail
 lengkap → `docs/phases/phase-59-redesign-dashboard-admin.md`.
+
+## Update 2026-09-08 — Fase 60 Done: Prioritas Tier Tahunan sebagai Default Auto-Select
+User minta tier auto-select di card paket (landing & `/subscribe`)
+diprioritaskan tahunan dulu, baru bulanan, terakhir harian kalau ada —
+sebelumnya (Fase 53) ASC durasi-terpendek-dulu (bulanan jadi default).
+Fix: balik comparator sort di `useGroupedPlans` (hook shared 1 sumber
+kebenaran) jadi DESC — otomatis berlaku ke urutan pill DAN default
+auto-select di KEDUA tempat sekaligus. Konsekuensi disengaja dicatat:
+kalau admin cuma nyalakan `trialEligible` di tier bulanan (konvensi
+lama), tombol "Coba Gratis" tidak muncul default lagi.
+
+Typecheck 0 error. Full suite `apps/web` 27 pass/0 fail (5 test
+diupdate). Build sukses. Detail lengkap →
+`docs/phases/phase-60-prioritas-tier-tahunan-default.md`.
