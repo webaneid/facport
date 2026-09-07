@@ -96,6 +96,20 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
+  // § Fase 55 — "Atribut Tambahan" Accurate (menu Rancangan Formulir),
+  // per baris barang. Label di Accurate BISA di-rename beda oleh admin
+  // client (mis. "Nomor SPK") — kalau begitu, nama kolom Excel WAJIB
+  // ikut label custom itu (remap manual saat import), bukan "Karakter N".
+  { column: "Karakter 1", required: false, example: "", description: "Atribut Tambahan 1 (Kategori Keuangan) khusus barang ini — nama kolom ikuti label yang di-set admin Accurate di menu Preferensi kalau sudah di-rename." },
+  { column: "Karakter 2", required: false, example: "", description: "Atribut Tambahan 2 — sama pola Karakter 1." },
+  { column: "Karakter 3", required: false, example: "", description: "Atribut Tambahan 3 — sama pola Karakter 1." },
+  { column: "Karakter 4", required: false, example: "", description: "Atribut Tambahan 4 — sama pola Karakter 1." },
+  { column: "Karakter 5", required: false, example: "", description: "Atribut Tambahan 5 — sama pola Karakter 1." },
+  { column: "Karakter 6", required: false, example: "", description: "Atribut Tambahan 6 — sama pola Karakter 1." },
+  { column: "Karakter 7", required: false, example: "", description: "Atribut Tambahan 7 — sama pola Karakter 1." },
+  { column: "Karakter 8", required: false, example: "", description: "Atribut Tambahan 8 — sama pola Karakter 1." },
+  { column: "Karakter 9", required: false, example: "", description: "Atribut Tambahan 9 — sama pola Karakter 1." },
+  { column: "Karakter 10", required: false, example: "", description: "Atribut Tambahan 10 — sama pola Karakter 1." },
   { column: "Nama Customer", required: false, example: "PT Pembeli Jaya", description: "Nama customer — WAJIB diisi HANYA kalau Customer No di atas BELUM terdaftar di Accurate (dipakai untuk bikin customer baru otomatis)." },
   { column: "Kategori Customer", required: false, example: "Umum", description: "Kategori customer baru — kosongkan untuk pakai default \"Umum\"." },
   { column: "Telepon Bisnis", required: false, example: "0211234567", description: "Nomor telepon kantor customer baru." },

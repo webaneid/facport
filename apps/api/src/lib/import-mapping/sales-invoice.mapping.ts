@@ -44,6 +44,22 @@ export const salesInvoiceMapping = {
     useTax1: "detailItem.useTax1", // PPN
     useTax2: "detailItem.useTax2", // PPnBM
     useTax3: "detailItem.useTax3", // PPh23
+    // § Fase 55 — "Atribut Tambahan" Accurate (menu Rancangan Formulir
+    // Faktur Penjualan, screenshot client) = fitur "Data Classification"
+    // di API resmi (diverifikasi ke accurate-openapi.json). Per BARIS
+    // ITEM (bukan header), tipe string, 10 slot bebas — label yang
+    // client lihat di Accurate BISA di-rename beda (mis. "Nomor SPK"),
+    // TAPI nama field API tetap dataClassificationNName, tidak berubah.
+    attribut1: "detailItem.dataClassification1Name",
+    attribut2: "detailItem.dataClassification2Name",
+    attribut3: "detailItem.dataClassification3Name",
+    attribut4: "detailItem.dataClassification4Name",
+    attribut5: "detailItem.dataClassification5Name",
+    attribut6: "detailItem.dataClassification6Name",
+    attribut7: "detailItem.dataClassification7Name",
+    attribut8: "detailItem.dataClassification8Name",
+    attribut9: "detailItem.dataClassification9Name",
+    attribut10: "detailItem.dataClassification10Name",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
@@ -80,6 +96,21 @@ export const salesInvoiceMapping = {
     PPN: "useTax1",
     PPnBM: "useTax2",
     PPH: "useTax3",
+    // § Fase 55 — nama kolom di bawah cuma DEFAULT/auto-suggest (§
+    // catatan architecture-sales-invoice.md "Atribut Tambahan") — kalau
+    // file Excel client asli pakai nama beda (mis. sudah ikut label
+    // custom yang di-rename di Accurate), user tinggal remap manual
+    // saat konfirmasi import, TIDAK perlu ubah kode ini lagi.
+    "Karakter 1": "attribut1",
+    "Karakter 2": "attribut2",
+    "Karakter 3": "attribut3",
+    "Karakter 4": "attribut4",
+    "Karakter 5": "attribut5",
+    "Karakter 6": "attribut6",
+    "Karakter 7": "attribut7",
+    "Karakter 8": "attribut8",
+    "Karakter 9": "attribut9",
+    "Karakter 10": "attribut10",
   } as Record<string, string>,
 };
 
