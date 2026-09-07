@@ -28,6 +28,7 @@ dibahas dalam satu sesi supaya tidak tersebar di banyak ADR kecil-kecil.
 | Notifikasi UI | `sonner` | Pasangan lazim shadcn/ui, hindari 5 gaya toast beda-beda di 5 fitur |
 | Data table/listing | `@tanstack/react-table` (+ shadcn data-table pattern) | Kebutuhan berulang di hampir semua project (listing user, produk, dll) |
 | Timezone | DB selalu `timestamptz` UTC, convert cuma saat tampil (`date-fns-tz`/`Intl`) | Sumber bug paling sering — 1 aturan tunggal menghilangkan seluruh kelas bug ini |
+| Chart/grafik data | `recharts` (Fase 59) | Kompatibel React 19, MIT, pasangan lazim shadcn/ui, styling ikut token desain existing — lihat `docs/architecture/architecture-admin-dashboard.md` |
 
 ## Alternatif yang Dipertimbangkan (Ringkas)
 - **Icon font (Font Awesome dkk)** ditolak — bawa seluruh font-file walau

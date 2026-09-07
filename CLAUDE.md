@@ -141,6 +141,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Model langganan, paket, gating akses modul | `docs/architecture/architecture-subscription.md` |
 | Routing 3 surface (landing/admin/app), subdomain | `docs/architecture/architecture-domain-routing.md` |
 | Dashboard pelanggan, App Shell (sidebar/nav modul baru) | `docs/architecture/architecture-app-dashboard.md` |
+| Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan
 > Komponen** yang diisi user saat `project-init` (lihat

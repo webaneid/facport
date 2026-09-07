@@ -67,6 +67,7 @@
 | 56   | Fix Error Message Batch Gagal Dini (Semua Modul) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md` |
 | 57   | Fix Daftar Langganan Aktif Hilang Diam-diam di `/admin/users` | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-57-fix-daftar-langganan-aktif-admin-users.md` |
 | 58   | Fix URL Notifikasi Admin Double-Prefix (`/admin/admin/...`) | Done | (lihat phase doc) | `docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md` |
+| 59   | Redesign Dashboard Admin (Statistik & Chart) | Done | `docs/architecture/architecture-admin-dashboard.md` | `docs/phases/phase-59-redesign-dashboard-admin.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1783,3 +1784,27 @@ surface admin tidak pernah menghasilkan link berawalan `/admin`.
 Typecheck 0 error. Full suite `apps/web` 27 pass/0 fail (6 baru). Build
 sukses. Security review inline: 0 temuan. Detail lengkap →
 `docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md`.
+
+## Update 2026-09-08 — Fase 59 Done: Redesign Dashboard Admin (Statistik & Chart)
+User minta dashboard admin lebih informatif (chart data aktual), sekalian
+ditemukan bug: card "Pengguna" ikut menghitung akun admin/staff (harusnya
+role customer saja). Card "Aktivitas Terakhir" yang rancu dihapus.
+
+Ditambah: `GET /admin/stats/monthly` (12 bulan rolling — pengguna baru,
+kumulatif, user mulai berlangganan), `GET /admin/stats/module-popularity`
+(popularitas sub-modul), `GET /admin/stats/efficiency` (growth baris
+bulanan, efisiensi waktu vs estimasi input manual, total detik dihemat
+all-time). Formula diekstrak ke `lib/admin-stats.ts` (fungsi murni, diuji
+lepas dari DB — angka dashboard admin global, tidak bisa diasersi eksak
+kalau bergantung DB dev shared). Frontend: 3 chart Recharts (bar
+pengguna+langganan, area kumulatif "EKG-style", bar horizontal
+popularitas modul) + `StatCard` dapat prop `tone` (badge icon warna).
+
+Dokumentasi baru `architecture-admin-dashboard.md` + baris Recharts di
+ADR-0004 + sinkron `CLAUDE.md` § Peta Dokumen.
+
+Typecheck 0 error (api+web). Full suite `apps/api` 438 pass/0 fail (22
+baru). Full suite `apps/web` 27 pass/0 fail. Build `apps/web` sukses.
+Security review inline: 0 temuan. Verifikasi visual browser tidak
+dilakukan (ekstensi Chrome tidak tersambung, § Known Limitations). Detail
+lengkap → `docs/phases/phase-59-redesign-dashboard-admin.md`.

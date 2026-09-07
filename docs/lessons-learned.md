@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-09-08 — Card "Pengguna" dashboard admin ikut hitung akun admin/staff (COUNT tanpa filter role)
+**Masalah:** `GET /admin/stats` (dipakai card "Pengguna" di `/admin`)
+menghitung `count()` polos dari tabel `user`, TANPA filter role sama
+sekali — akun admin/staff ikut dianggap "pengguna" (harusnya cuma role
+`customer`). Ditemukan saat user minta redesign dashboard (Fase 59), BUKAN
+laporan bug langsung — bug lama, baru ketahuan waktu re-audit endpoint
+lama untuk fitur baru.
+
+**Root cause:** `db.select({ userCount: count() }).from(user)` — tidak
+ada JOIN/filter role apa pun sejak endpoint ini dibuat (Fase 10). Pola
+fix yang BENAR sudah ada di endpoint lain sejak awal
+(`admin/users.route.ts`, subquery `userRoles`+`roles` WHERE `name =
+'customer'`) — endpoint stats ini yang lupa ikut pola itu, kelas bug SAMA
+dengan `new Map(rows.map(r => [r.userId, r]))` yang ditemukan hari yang
+sama (§ entri lain tanggal ini) — 2 endpoint BEDA, gejala beda, tapi
+akar masalah sama: **fitur baru (role customer eksplisit) tidak otomatis
+menjalar ke SEMUA endpoint lama yang implisit mengasumsikan "semua user
+= customer"**.
+
+**Fix:** Ganti jadi subquery JOIN `userRoles`+`roles` (REUSE fungsi yang
+sama semangatnya dengan `admin/users.route.ts`), difaktorkan jadi
+`getCustomerIdsSubquery()` di `stats.route.ts`.
+
+**Pencegahan:** Begitu sebuah project punya KONSEP role/tipe akun yang
+jelas (di sini: `customer` vs `admin`/`staff`), SETIAP query `count()`/
+`select` dari tabel `user` yang TIDAK secara eksplisit filter role WAJIB
+dicurigai — apakah ini benar-benar bermaksud "semua akun tanpa
+pandang bulu" (jarang, biasanya cuma internal ops) atau "pengguna
+produk" (paling sering, dan yang paling sering salah asumsi). Kalau
+project ini nambah endpoint admin BARU yang query tabel `user`, grep
+dulu apakah butuh filter role customer sebelum menganggap `count()`
+polos sudah benar.
+
+---
+
 ## 2026-09-08 — Link notifikasi admin double-prefix `/admin/admin/...` (404) karena href tidak ikut konvensi bare-path proxy
 **Masalah:** User laporkan link notifikasi di admin
 (`https://admin.facinstitute.id/admin/orders`) salah, seharusnya
