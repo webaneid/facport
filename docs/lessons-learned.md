@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-09-08 — Salah asumsi 2 field API berbeda itu "sinonim", padahal client cuma pakai istilah sendiri untuk field yang SUDAH ADA
+**Masalah:** Client verifikasi field Atribut Tambahan item-level
+(Kategori Keuangan) berhasil, lalu tunjukkan kolom Excel kita
+"ITEM:CUSTOM CHARACTER N" tidak cocok istilah Accurate — DIASUMSIKAN
+(Fase 69) itu SINONIM untuk "Kategori Keuangan", langsung diganti nama
+kolomnya tanpa verifikasi lebih lanjut. Ternyata KELIRU: client tunjukkan
+file Excel mereka sendiri yang highlight "ITEM: CUSTOM CHARACTER 1-10"
+sebagai kolom TERPISAH dari "Kategori Keuangan" (ada di kolom lain di
+file yang sama) — sempat memicu dugaan ada field API KETIGA yang belum
+teridentifikasi (mirip kasus `charField` dulu), sampai akhirnya
+dikonfirmasi via balasan resmi Accurate Support: field yang tersedia
+CUMA 2 kelompok (`charField`/`numericField`/`dateField` level faktur,
+`dataClassificationNName` level item/expense) — TIDAK ADA field ketiga.
+"ITEM: CUSTOM CHARACTER" TERNYATA cuma istilah client sendiri untuk
+salah satu dari 2 field yang SUDAH kita implementasi — bukan field baru,
+murni beda persepsi/istilah.
+
+**Root cause:** Ketika 2 label kolom kelihatan "berhubungan" (sama-sama
+bahas "custom field"/"atribut tambahan"), terlalu cepat disimpulkan
+sebagai sinonim TANPA verifikasi independen (screenshot Accurate,
+konfirmasi Support) — padahal istilah yang MIRIP secara bahasa bisa
+merujuk ke 2 KONSEP TEKNIS BERBEDA, atau sebaliknya (seperti kasus ini)
+1 konsep yang SAMA cuma disebut client dengan istilah yang beda dari
+istilah resmi Accurate.
+
+**Fix:** Sinonim salah dihapus (Fase 71) SEBELUM sempat di-deploy ke
+production (untung ditahan dulu, § feedback user "jgn push dulu" jadi
+penyelamat di sini) — kalau sempat live, user lain yang pakai nama
+kolom lama "ITEM:CUSTOM CHARACTER N" akan SALAH KIRIM data ke Kategori
+Keuangan tanpa error apa pun (silent data mismatch).
+
+**Pencegahan:** Sebelum menyimpulkan "kolom A itu sinonim kolom B" (rename
+massal, gabung field), verifikasi ke SUMBER RESMI dulu (screenshot
+konfigurasi Accurate langsung, atau tanya Accurate Support seperti tiket
+#357901) — JANGAN cukup dari kemiripan nama/istilah client saja. Kalau
+ternyata ada 2 sebutan yang mirip untuk hal yang KELIHATANNYA sama,
+TANYAKAN dulu ke client: "apakah nilai ini harus SAMA untuk seluruh
+transaksi, atau BOLEH beda per baris?" — jawaban itu langsung
+membedakan field level HEADER (charField) vs level ITEM
+(dataClassificationNName) tanpa perlu tebak-tebakan istilah.
+
+---
+
 ## 2026-09-08 — Atribut Tambahan item-level (`dataClassificationNName`) BUKAN teks bebas, wajib referensi master data existing
 **Masalah:** Client retest Sales Invoice (Trans No baru, setelah fix
 Fase 67) dapat error dari Accurate: `Kategori Keuangan TES 1 tidak

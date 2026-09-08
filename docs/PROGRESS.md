@@ -79,6 +79,8 @@
 | 68   | Auto-Create Kategori Keuangan (Atribut Tambahan Item-Level) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md` |
 | 69   | Rename Kolom Excel "ITEM:CUSTOM CHARACTER N" -> "Kategori Keuangan N" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md` |
 | 70   | Reorder Kolom Kategori Keuangan + Rename "PO Number" -> "Bill No" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-70-reorder-kolom-dan-rename-bill-no-sales-invoice.md` |
+| 71   | Koreksi Sinonim Salah "ITEM:CUSTOM CHARACTER N" (Terbukti Tidak Ada Field-nya) | Done (belum push) | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md` |
+| 72   | Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada | Done (belum push) | (lihat phase doc) | `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1995,3 +1997,34 @@ berubah, sinonim lama "PO Number" tetap didukung.
 
 Typecheck 0 error. Full suite `apps/api` 461 pass/0 fail (1 baru). Lihat
 `docs/phases/phase-70-reorder-kolom-dan-rename-bill-no-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 71 Done (belum push): Koreksi Sinonim Salah "ITEM:CUSTOM CHARACTER N"
+Client tunjukkan Excel mereka sendiri (highlight kolom "ITEM: CUSTOM
+CHARACTER 1-10", terpisah dari "Kategori Keuangan") + screenshot
+Rancangan Formulir Accurate ("Tipe Karakter"/"Tipe Angka") — sempat
+diduga field API ketiga yang belum teridentifikasi. Konfirmasi resmi
+Accurate Support: TIDAK ADA field ketiga — cuma ada `charField` (level
+faktur, Fase 64) dan `dataClassificationNName` (Kategori Keuangan,
+level item, Fase 68). "ITEM: CUSTOM CHARACTER" cuma istilah client
+sendiri untuk salah satu dari 2 field itu — murni beda persepsi, bukan
+gap fitur. Sinonim SALAH Fase 69 (yang memetakan "ITEM:CUSTOM CHARACTER
+N" ke Kategori Keuangan secara keliru) dihapus.
+
+Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. SENGAJA BELUM
+di-push (instruksi user) — akan digabung fase Expense berikutnya. Lihat
+`docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md`.
+
+## Update 2026-09-09 — Fase 72 Done (belum push): Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada
+Client retest isi 6 slot Kategori Keuangan sekaligus ("ATES 1"-"ATES 6")
+— batch gagal total, error Accurate "Sudah ada data lain dengan Nama
+'ATES 1'" (penolakan `save.do` CREATE, bukan validasi biasa). Root
+cause: `findDataClassificationByName` (Fase 68) mengasumsikan response
+`list.do` (TIDAK terdokumentasi resmi) punya field `index` yang cocok
+persis — asumsi ini salah, jadi lookup SELALU gagal kenali record yang
+sudah ada, kode lanjut coba create ulang dan ditolak Accurate. Fix:
+lookup diperlonggar (cocokkan by name saja, tidak syaratkan field index
+response), plus catch defensif untuk error "sudah ada data lain" jadi
+lapis kedua.
+
+Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. SENGAJA BELUM
+di-push. Lihat `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md`.

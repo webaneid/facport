@@ -292,36 +292,27 @@ describe("buildDetailItemFromRow", () => {
     });
   });
 
-  // § diperbarui 2026-09-08 setelah file Excel ASLI client diterima
-  // (`format_sales_inv_v7 (PLAN).xlsx`) — nama kolom asli "ITEM:CUSTOM
-  // CHARACTER 1..10" (LEVEL ITEM), BUKAN "Karakter 1..10" (tebakan
-  // lama). Riset ke SELURUH endpoint API Accurate (30+ jenis transaksi)
-  // konfirmasi `dataClassificationNName` KONSISTEN cuma 1-10 di mana
-  // pun (Item/Expense/dst) — tidak pernah sampai 15 meski Excel client
-  // punya slot sampai "ITEM:CUSTOM CHARACTER 15".
-  test("defaultColumnMap Atribut Tambahan pakai nama kolom ASLI client (ITEM:CUSTOM CHARACTER 1-10), bukan tebakan lama", () => {
-    for (let i = 1; i <= 10; i++) {
-      expect(salesInvoiceMapping.defaultColumnMap[`ITEM:CUSTOM CHARACTER ${i}`]).toBe(`attribut${i}`);
-    }
-    // slot 11-15 SENGAJA TIDAK ada di default map — tidak ada padanan
-    // API Accurate-nya sama sekali (bukan cuma dibatasi kode ini).
-    expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 11"]).toBeUndefined();
-    expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
-  });
-
-  // § Fase 69 (2026-09-08) — client konfirmasi via screenshot Accurate:
-  // field ini TAMPIL di UI Accurate dengan label default "Kategori
-  // Keuangan N" (nama resmi Accurate untuk /api/data-classification),
-  // BUKAN "ITEM:CUSTOM CHARACTER N" (istilah lama kita yang TIDAK PERNAH
-  // muncul di Accurate). "Kategori Keuangan N" jadi sinonim BARU (judul
-  // kolom template terbaru), "ITEM:CUSTOM CHARACTER N" TETAP dipertahankan
-  // (backward compat, tidak regresi client existing).
-  test("defaultColumnMap punya sinonim 'Kategori Keuangan N' (istilah resmi Accurate) untuk attribut1-10", () => {
+  // § Fase 55/61 diperbarui 2026-09-08 setelah file Excel ASLI client
+  // diterima — nama kolom "ITEM:CUSTOM CHARACTER 1..10" SEMPAT dipetakan
+  // ke attribut1-10 di sini. § Fase 69 SEMPAT ganti jadi "Kategori
+  // Keuangan N" (dikira sinonim). § Fase 71 (2026-09-08) DIKOREKSI:
+  // client tunjukkan file Excel mereka sendiri (highlight kuning) yang
+  // membuktikan "ITEM:CUSTOM CHARACTER N" itu field API BERBEDA dari
+  // Kategori Keuangan (dataClassificationNName) — field-nya sendiri
+  // belum teridentifikasi. Sinonim SALAH itu DIHAPUS — "Kategori
+  // Keuangan N" SEKARANG SATU-SATUNYA nama kolom untuk attribut1-10.
+  test("defaultColumnMap Atribut Tambahan pakai 'Kategori Keuangan N' (istilah resmi Accurate) untuk attribut1-10", () => {
     for (let i = 1; i <= 10; i++) {
       expect(salesInvoiceMapping.defaultColumnMap[`Kategori Keuangan ${i}`]).toBe(`attribut${i}`);
-      // sinonim lama TETAP ada, bukan diganti
-      expect(salesInvoiceMapping.defaultColumnMap[`ITEM:CUSTOM CHARACTER ${i}`]).toBe(`attribut${i}`);
     }
+    // slot 11 SENGAJA TIDAK ada — tidak ada padanan API Accurate-nya.
+    expect(salesInvoiceMapping.defaultColumnMap["Kategori Keuangan 11"]).toBeUndefined();
+    expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
+    // § Fase 71 — "ITEM:CUSTOM CHARACTER N" BUKAN LAGI sinonim attribut1-10
+    // (field API BERBEDA, belum teridentifikasi) — pastikan tidak salah
+    // auto-suggest ke Kategori Keuangan.
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 1"]).toBeUndefined();
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM CHARACTER 1"]).toBeUndefined();
   });
 
   // § Fase 70 (2026-09-08) — client minta judul kolom "PO Number" ->
@@ -366,9 +357,9 @@ describe("buildDetailItemFromRow", () => {
     expect(detail.dataClassification1Name).toBeUndefined();
   });
 
-  test("Fase 64 — defaultColumnMap level HEADER (tanpa prefix ITEM:) BEDA dari level item (dengan prefix ITEM:)", () => {
+  test("Fase 64 — defaultColumnMap level HEADER (tanpa prefix ITEM:) BEDA dari level item (Kategori Keuangan)", () => {
     expect(salesInvoiceMapping.defaultColumnMap["CUSTOM CHARACTER 1"]).toBe("attributHeaderKarakter1");
-    expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 1"]).toBe("attribut1");
+    expect(salesInvoiceMapping.defaultColumnMap["Kategori Keuangan 1"]).toBe("attribut1");
     for (let i = 1; i <= 10; i++) {
       expect(salesInvoiceMapping.defaultColumnMap[`CUSTOM NUMBER ${i}`]).toBe(`attributHeaderAngka${i}`);
     }
