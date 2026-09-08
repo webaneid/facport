@@ -179,41 +179,17 @@ export const salesInvoiceMapping = {
     "ITEM: CASH DISC %": "itemDiscPercent",
     "ITEM: DEPT": "departmentName",
     "ITEM: PROJECT NO": "projectNo",
-    // § Fase 55, diperbarui 2026-09-08 setelah file Excel ASLI client
-    // diterima (`format_sales_inv_v7 (PLAN).xlsx`) — nama kolom asli
-    // client "ITEM:CUSTOM CHARACTER 1..10" (LEVEL ITEM/baris, bukan
-    // "Karakter 1..10" yang sebelumnya cuma tebakan). Diriset ulang ke
-    // SELURUH endpoint API Accurate (30+ jenis transaksi): field
-    // `dataClassificationNName` KONSISTEN cuma ada 1-10 di mana pun,
-    // TIDAK PERNAH sampai 15 — jadi "ITEM:CUSTOM CHARACTER 11-15" di
-    // Excel client TIDAK BISA diimport via API sama sekali (bukan
-    // dibatasi kode ini, field-nya memang tidak ada). "ITEM:CUSTOM
-    // NUMBER"/"ITEM:CUSTOM DATE"/"ITEM:CUSTOM FINANCE CATEGORY" di Excel
-    // client JUGA TIDAK BISA — `detailItem` Accurate cuma punya varian
-    // "Character" (dataClassificationNName), tidak ada varian
-    // Number/Date/FinanceCategory sama sekali. Ini tetap cuma
-    // DEFAULT/auto-suggest — kalau nanti client rename lagi label
-    // kolomnya, user tinggal remap manual saat konfirmasi import.
-    "ITEM:CUSTOM CHARACTER 1": "attribut1",
-    "ITEM:CUSTOM CHARACTER 2": "attribut2",
-    "ITEM:CUSTOM CHARACTER 3": "attribut3",
-    "ITEM:CUSTOM CHARACTER 4": "attribut4",
-    "ITEM:CUSTOM CHARACTER 5": "attribut5",
-    "ITEM:CUSTOM CHARACTER 6": "attribut6",
-    "ITEM:CUSTOM CHARACTER 7": "attribut7",
-    "ITEM:CUSTOM CHARACTER 8": "attribut8",
-    "ITEM:CUSTOM CHARACTER 9": "attribut9",
-    "ITEM:CUSTOM CHARACTER 10": "attribut10",
-    // § Fase 69 (2026-09-08) — client konfirmasi via screenshot Accurate
-    // langsung: field ini TAMPIL di UI Accurate dengan label DEFAULT
-    // "Kategori Keuangan N" (nama resmi Accurate untuk
-    // `/api/data-classification`, § Fase 68), BUKAN "ITEM:CUSTOM
-    // CHARACTER N" — istilah lama itu TIDAK PERNAH muncul di Accurate
-    // sama sekali, sumber kebingungan berulang di sesi ini. Template
-    // BARU (`template-guide.ts`) sekarang pakai "Kategori Keuangan N"
-    // sebagai judul kolom resmi — sinonim lama TETAP dipertahankan di
-    // atas (harmless, client existing yang masih pakai nama lama tidak
-    // regresi).
+    // § Fase 55/61 — SEBELUMNYA "ITEM:CUSTOM CHARACTER 1..10" dipetakan
+    // ke sini (attribut1-10). § Fase 71 (2026-09-08) DIKOREKSI/DIHAPUS:
+    // client tunjukkan file Excel mereka sendiri (highlight kuning) yang
+    // membuktikan "ITEM:CUSTOM CHARACTER N" itu field API BERBEDA dari
+    // "Kategori Keuangan" (dataClassificationNName) — bukan sinonim,
+    // field-nya sendiri BELUM teridentifikasi (lihat komentar
+    // `template-guide.ts`). Sinonim SALAH ini DIHAPUS supaya tidak
+    // auto-suggest keliru (data client bisa salah kirim ke Kategori
+    // Keuangan padahal maksudnya field lain). "Kategori Keuangan N" di
+    // bawah adalah SATU-SATUNYA nama kolom resmi untuk attribut1-10
+    // sekarang.
     "Kategori Keuangan 1": "attribut1",
     "Kategori Keuangan 2": "attribut2",
     "Kategori Keuangan 3": "attribut3",

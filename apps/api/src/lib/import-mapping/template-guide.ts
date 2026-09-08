@@ -111,6 +111,21 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
+  // § Fase 71 (2026-09-08) — SEMPAT dikira ada field "ITEM: CUSTOM
+  // CHARACTER N" terpisah dari Kategori Keuangan (client tunjukkan
+  // Excel + screenshot Rancangan Formulir "Tipe Karakter"/"Tipe
+  // Angka") — DIKONFIRMASI TIDAK ADA lewat balasan resmi Accurate
+  // Support (2026-09-08): field "Atribut Tambahan" yang tersedia CUMA
+  // charField1-10/numericField1-10/dateField1-2 (level FAKTUR, § Fase
+  // 64 di bawah — "CUSTOM CHARACTER/NUMBER/DATE" TANPA prefix "ITEM:")
+  // dan dataClassification1-10Name ("Kategori Keuangan", § Fase 68 di
+  // bawah, level ITEM/EXPENSE). TIDAK ADA field API ketiga. Kolom
+  // "ITEM: CUSTOM CHARACTER N" di Excel client TERNYATA cuma istilah
+  // mereka sendiri untuk salah satu dari 2 field di atas (tergantung
+  // apakah nilainya perlu SAMA untuk seluruh faktur -> charField, atau
+  // BEDA per baris barang -> dataClassificationNName) — BUKAN field
+  // baru. Sengaja TIDAK ditambahkan lagi ke template supaya tidak
+  // membingungkan client dengan kolom yang tidak ada padanan API-nya.
   // § Fase 64 — Atribut Tambahan level HEADER/FAKTUR (BEDA dari level
   // ITEM di atas — TANPA prefix "ITEM:"). Ditemukan dari email resmi
   // Accurate Support (tiket #357901): field API `charField1-10`,
