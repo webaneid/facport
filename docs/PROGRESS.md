@@ -69,6 +69,7 @@
 | 58   | Fix URL Notifikasi Admin Double-Prefix (`/admin/admin/...`) | Done | (lihat phase doc) | `docs/phases/phase-58-fix-url-notifikasi-admin-double-prefix.md` |
 | 59   | Redesign Dashboard Admin (Statistik & Chart) | Done | `docs/architecture/architecture-admin-dashboard.md` | `docs/phases/phase-59-redesign-dashboard-admin.md` |
 | 60   | Prioritas Tier Tahunan sebagai Default Auto-Select | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-60-prioritas-tier-tahunan-default.md` |
+| 61   | Koreksi Mapping Sales Invoice dengan Format Excel Asli Client | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1823,3 +1824,24 @@ lama), tombol "Coba Gratis" tidak muncul default lagi.
 Typecheck 0 error. Full suite `apps/web` 27 pass/0 fail (5 test
 diupdate). Build sukses. Detail lengkap →
 `docs/phases/phase-60-prioritas-tier-tahunan-default.md`.
+
+## Update 2026-09-08 — Fase 61 Done: Koreksi Mapping Sales Invoice dengan Format Excel Asli Client
+File Excel asli Sales Invoice dari client diterima
+(`format_sales_inv_v7 (PLAN).xlsx`). Koreksi placeholder Fase 55: nama
+kolom Atribut Tambahan asli client ternyata `ITEM:CUSTOM CHARACTER
+1-10` (bukan "Karakter 1-10"). Riset menyeluruh ke SEMUA 30+ endpoint
+transaksi API Accurate mengonfirmasi batas 10 slot `dataClassificationNName`
+bersifat UNIVERSAL (bukan spesifik Sales Invoice) — kolom Excel client
+yang lebih dari itu (character 11-15, number/date/finance category di
+level item, dan semua kolom header tanpa prefix) dikonfirmasi TIDAK
+BISA diimport via API dalam kondisi apa pun. `requiredFields` juga
+disamakan dengan sheet "Penjelasan Kolom" resmi client: Trans No jadi
+wajib, Item Unit Name jadi tidak wajib (sebaliknya dari sebelumnya).
+
+Ditemukan juga: `detailExpense` (baris biaya) Accurate PUNYA field
+`dataClassificationNName` sendiri (cocok kolom Excel `EXPENSE:FINANCIAL
+CATEGORY 1-10`) — TAPI belum diimplementasi sama sekali di import Sales
+Invoice kita, menunggu konfirmasi client apakah dibutuhkan.
+
+Typecheck 0 error. Full suite `apps/api` 440 pass/0 fail (2 baru).
+Detail lengkap → `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`.

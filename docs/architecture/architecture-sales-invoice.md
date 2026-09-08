@@ -102,18 +102,48 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55
-**Status kode: SELESAI diimplementasi (2026-09-08), ada di branch
-`develop`.** **Status rilis: BELUM di-release ke production** — sengaja
-ditahan dulu, menunggu file Excel asli dari client (dijanjikan sore
-hari yang sama dengan permintaan ini) untuk konfirmasi nama kolom
-sungguhan (`defaultColumnMap` masih placeholder "Karakter 1"-"Karakter
-10", § detail di bawah) sebelum PR `develop`→`main`. Kalau nama kolom
-client ternyata beda, TIDAK perlu code change (cukup remap manual saat
-import ATAU update `defaultColumnMap` kalau polanya konsisten) — jadi
-menunggu di titik RILIS (bukan titik implementasi) murni soal
-kehati-hatian, bukan blocker teknis. Detail lengkap →
-`docs/phases/phase-55-atribut-tambahan-sales-invoice.md`.
+## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61
+**Status: SELESAI diimplementasi & DIKOREKSI dengan file Excel ASLI
+client (2026-09-08).** `defaultColumnMap` sudah diperbarui ke nama
+kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
+"Penjelasan Kolom" resmi client. Detail lengkap →
+`docs/phases/phase-55-atribut-tambahan-sales-invoice.md` (implementasi
+awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
+(koreksi setelah file asli diterima).
+
+> **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
+> (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet
+> "Sales_Invoice" + "Penjelasan Kolom"). Riset MENYELURUH ke SEMUA 30+
+> endpoint transaksi API Accurate (bukan cuma Sales Invoice) untuk
+> pastikan batas field `dataClassificationNName` konsisten:
+> - **Nama kolom ASLI**: `ITEM:CUSTOM CHARACTER 1` s/d `10` (LEVEL
+>   ITEM) — BUKAN "Karakter 1-10" yang cuma tebakan awal.
+>   `defaultColumnMap` sudah diupdate ke nama asli ini.
+> - **Batas 10 dikonfirmasi UNIVERSAL** — dicek SEMUA endpoint
+>   transaksi Accurate (Purchase Invoice, Sales Order, Journal Voucher,
+>   Job Order, dst, 30+ jenis), field `dataClassificationNName`
+>   KONSISTEN cuma ada 1-10 di MANA PUN, tidak pernah sampai 15. Excel
+>   client punya slot sampai `ITEM:CUSTOM CHARACTER 15` (dan
+>   `ITEM:CUSTOM NUMBER 1-10`, `ITEM:CUSTOM DATE 1-2`, `ITEM:CUSTOM
+>   FINANCE CATEGORY 1-10`) — SEMUA itu (character 11-15, number, date,
+>   finance category) **TIDAK PUNYA padanan field di API sama sekali**,
+>   bukan soal jumlah/batasan kode kita.
+> - **`detailExpense[]` (baris biaya) JUGA punya**
+>   `dataClassification1Name`-`10Name` sendiri (field API sama, array
+>   beda) — cocok dengan kolom Excel `EXPENSE:FINANCIAL CATEGORY 1-10`.
+>   **BELUM diimplementasi** (Sales Invoice import kita cuma proses
+>   `detailItem`, TIDAK ada `detailExpense` sama sekali) — kalau client
+>   butuh ini, itu FITUR BARU terpisah (bukan remapping), status:
+>   **menunggu konfirmasi client apakah dibutuhkan**.
+> - Kolom "CUSTOM CHARACTER/NUMBER/DATE" TANPA prefix (level
+>   header/faktur, bukan item/expense) — dikonfirmasi ULANG TIDAK ADA
+>   padanan field API sama sekali untuk Sales Invoice, di level apa
+>   pun. Tidak bisa diimport, titik.
+> - **`requiredFields` disamakan ke sheet "Penjelasan Kolom" resmi
+>   client**: `number` (Trans No) DITAMBAH jadi wajib (sebelumnya tidak
+>   — juga MEMPERKUAT grouping multi-item Fase 49 yang sudah pakai
+>   `number` sebagai kunci grouping), `itemUnitName` (Item Unit Name)
+>   DIHAPUS dari wajib (sebelumnya keliru diwajibkan).
 
 ### Konteks
 Client (lewat screenshot menu Accurate "Faktur Penjualan" → "Rancangan
@@ -156,25 +186,24 @@ disesuaikan lagi setelah lihat file asli client — 2 keputusan
 terpisah, satu teknis-permanen (field ada di sistem), satu
 kosmetik-fleksibel (nama kolom default).
 
-### Rencana Eksekusi (setelah file client diterima & dikonfirmasi)
-Tambah ke `sales-invoice.mapping.ts` SAJA (tidak ada file lain yang
-perlu disentuh — tidak ada endpoint baru, tidak ada migration, tidak
-ada perubahan frontend, arsitektur sudah generik penuh):
+### Implementasi Final (Fase 55 + koreksi Fase 61)
+Semua di `sales-invoice.mapping.ts` SAJA (tidak ada file lain yang
+disentuh — tidak ada endpoint baru, tidak ada migration, tidak ada
+perubahan frontend, arsitektur sudah generik penuh):
 ```ts
-// fieldToAccuratePath (tambahan)
+// fieldToAccuratePath
 attribut1: "detailItem.dataClassification1Name",
 attribut2: "detailItem.dataClassification2Name",
 // ... s/d attribut10
 
-// defaultColumnMap (tambahan, NAMA KOLOM INI YANG AKAN DISESUAIKAN
-// begitu file client asli diterima — placeholder aman dulu)
-"Karakter 1": "attribut1",
-"Karakter 2": "attribut2",
-// ... s/d "Karakter 10"
+// defaultColumnMap — NAMA KOLOM ASLI client (Fase 61), bukan tebakan
+"ITEM:CUSTOM CHARACTER 1": "attribut1",
+"ITEM:CUSTOM CHARACTER 2": "attribut2",
+// ... s/d "ITEM:CUSTOM CHARACTER 10"
 ```
-Semua field OPSIONAL (tidak masuk `requiredFields`) — import yang
-sudah berjalan (tanpa kolom atribut ini) TIDAK terpengaruh sama sekali
-(backward compatible penuh).
+Field `attributN` tetap OPSIONAL (tidak masuk `requiredFields`) — import
+yang sudah berjalan (tanpa kolom atribut ini) TIDAK terpengaruh sama
+sekali (backward compatible penuh).
 
 ## Nav & Dashboard Difilter oleh Langganan
 

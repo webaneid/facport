@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import {
+  salesInvoiceMapping,
   buildSalesInvoicePayload,
   buildDetailItemFromRow,
   poNumberColumnOf,
@@ -288,6 +289,35 @@ describe("buildDetailItemFromRow", () => {
       dataClassification1Name: "SPK-2026-001",
       dataClassification10Name: "Batch A",
     });
+  });
+
+  // § diperbarui 2026-09-08 setelah file Excel ASLI client diterima
+  // (`format_sales_inv_v7 (PLAN).xlsx`) — nama kolom asli "ITEM:CUSTOM
+  // CHARACTER 1..10" (LEVEL ITEM), BUKAN "Karakter 1..10" (tebakan
+  // lama). Riset ke SELURUH endpoint API Accurate (30+ jenis transaksi)
+  // konfirmasi `dataClassificationNName` KONSISTEN cuma 1-10 di mana
+  // pun (Item/Expense/dst) — tidak pernah sampai 15 meski Excel client
+  // punya slot sampai "ITEM:CUSTOM CHARACTER 15".
+  test("defaultColumnMap Atribut Tambahan pakai nama kolom ASLI client (ITEM:CUSTOM CHARACTER 1-10), bukan tebakan lama", () => {
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`ITEM:CUSTOM CHARACTER ${i}`]).toBe(`attribut${i}`);
+    }
+    // slot 11-15 SENGAJA TIDAK ada di default map — tidak ada padanan
+    // API Accurate-nya sama sekali (bukan cuma dibatasi kode ini).
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 11"]).toBeUndefined();
+    expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
+  });
+});
+
+// § disamakan 2026-09-08 dengan sheet "Penjelasan Kolom" di Excel resmi
+// client — "Trans No" WAJIB (dipakai juga sebagai kunci grouping
+// multi-item, § Fase 49), "Item Unit Name" JUSTRU TIDAK WAJIB (beda
+// dari asumsi awal implementasi).
+describe("requiredFields", () => {
+  test("cocok persis aturan WAJIB/TIDAK WAJIB di sheet Penjelasan Kolom Excel client", () => {
+    const required: string[] = [...salesInvoiceMapping.requiredFields];
+    expect(required.sort()).toEqual(["customerNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "warehouseName"].sort());
+    expect(required).not.toContain("itemUnitName");
   });
 });
 

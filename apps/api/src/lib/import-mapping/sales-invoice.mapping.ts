@@ -5,10 +5,15 @@
 // Accurate di `fieldToAccuratePath` diverifikasi dari OpenAPI spec resmi
 // (`docs/referencehtml/accurate-openapi.json`), BUKAN tebakan.
 export const salesInvoiceMapping = {
-  // Sama filosofi PI — lebih ketat dari minimum API Accurate (yang cuma
-  // itemNo+unitPrice) karena tanpa quantity/itemUnitName/warehouseName
-  // faktur nyaris tidak bermakna secara bisnis.
-  requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"] as const,
+  // § disamakan persis dengan aturan WAJIB/TIDAK WAJIB di format Excel
+  // resmi client (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`,
+  // sheet "Penjelasan Kolom", dikonfirmasi 2026-09-08) — BUKAN cuma
+  // tebakan minimum API Accurate: "number" (Trans No) WAJIB (dipakai
+  // juga sebagai kunci grouping multi-item, § Fase 49, jadi mewajibkan
+  // ini sekaligus memperkuat grouping supaya selalu ada kunci valid),
+  // "itemUnitName" (Item Unit Name) JUSTRU TIDAK WAJIB menurut client
+  // (sebelumnya diwajibkan di sini, keliru).
+  requiredFields: ["customerNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "warehouseName"] as const,
   fieldToAccuratePath: {
     customerNo: "customerNo",
     transDate: "transDate",
@@ -96,21 +101,31 @@ export const salesInvoiceMapping = {
     PPN: "useTax1",
     PPnBM: "useTax2",
     PPH: "useTax3",
-    // § Fase 55 — nama kolom di bawah cuma DEFAULT/auto-suggest (§
-    // catatan architecture-sales-invoice.md "Atribut Tambahan") — kalau
-    // file Excel client asli pakai nama beda (mis. sudah ikut label
-    // custom yang di-rename di Accurate), user tinggal remap manual
-    // saat konfirmasi import, TIDAK perlu ubah kode ini lagi.
-    "Karakter 1": "attribut1",
-    "Karakter 2": "attribut2",
-    "Karakter 3": "attribut3",
-    "Karakter 4": "attribut4",
-    "Karakter 5": "attribut5",
-    "Karakter 6": "attribut6",
-    "Karakter 7": "attribut7",
-    "Karakter 8": "attribut8",
-    "Karakter 9": "attribut9",
-    "Karakter 10": "attribut10",
+    // § Fase 55, diperbarui 2026-09-08 setelah file Excel ASLI client
+    // diterima (`format_sales_inv_v7 (PLAN).xlsx`) — nama kolom asli
+    // client "ITEM:CUSTOM CHARACTER 1..10" (LEVEL ITEM/baris, bukan
+    // "Karakter 1..10" yang sebelumnya cuma tebakan). Diriset ulang ke
+    // SELURUH endpoint API Accurate (30+ jenis transaksi): field
+    // `dataClassificationNName` KONSISTEN cuma ada 1-10 di mana pun,
+    // TIDAK PERNAH sampai 15 — jadi "ITEM:CUSTOM CHARACTER 11-15" di
+    // Excel client TIDAK BISA diimport via API sama sekali (bukan
+    // dibatasi kode ini, field-nya memang tidak ada). "ITEM:CUSTOM
+    // NUMBER"/"ITEM:CUSTOM DATE"/"ITEM:CUSTOM FINANCE CATEGORY" di Excel
+    // client JUGA TIDAK BISA — `detailItem` Accurate cuma punya varian
+    // "Character" (dataClassificationNName), tidak ada varian
+    // Number/Date/FinanceCategory sama sekali. Ini tetap cuma
+    // DEFAULT/auto-suggest — kalau nanti client rename lagi label
+    // kolomnya, user tinggal remap manual saat konfirmasi import.
+    "ITEM:CUSTOM CHARACTER 1": "attribut1",
+    "ITEM:CUSTOM CHARACTER 2": "attribut2",
+    "ITEM:CUSTOM CHARACTER 3": "attribut3",
+    "ITEM:CUSTOM CHARACTER 4": "attribut4",
+    "ITEM:CUSTOM CHARACTER 5": "attribut5",
+    "ITEM:CUSTOM CHARACTER 6": "attribut6",
+    "ITEM:CUSTOM CHARACTER 7": "attribut7",
+    "ITEM:CUSTOM CHARACTER 8": "attribut8",
+    "ITEM:CUSTOM CHARACTER 9": "attribut9",
+    "ITEM:CUSTOM CHARACTER 10": "attribut10",
   } as Record<string, string>,
 };
 

@@ -1,19 +1,16 @@
 # Fase 55 — Atribut Tambahan (Data Classification) di Import Sales Invoice
 
-**Status:** Done (kode) — **BELUM di-release ke production**
+**Status:** Done
 **Mulai:** 2026-09-08
 **Selesai:** 2026-09-08
 
-> **Status rilis (2026-09-08):** Kode sudah commit+push ke branch
-> `develop` (commit `7a1774e`), CI `validate`/`build-and-push` hijau —
-> TAPI SENGAJA belum di-PR/merge ke `main`, jadi belum ke-tag versi
-> baru dan belum ke production. Menunggu file Excel asli dari client
-> (dijanjikan sore hari yang sama) untuk konfirmasi nama kolom
-> sungguhan sebelum rilis — kalau ternyata beda dari default "Karakter
-> 1"-"Karakter 10", cukup disesuaikan (code change kecil di
-> `defaultColumnMap` ATAU remap manual saat import, TIDAK perlu ubah
-> `fieldToAccuratePath`) lalu digabung jadi 1 rilis, bukan 2 rilis
-> terpisah. Update baris ini begitu benar-benar di-release.
+> **Update rilis**: Sudah di-release ke production sebagai bagian
+> v1.15.0 (commit `7a1774e`, PR #33). Placeholder `defaultColumnMap`
+> ("Karakter 1"-"Karakter 10") disebut di bawah SUDAH DIKOREKSI ke nama
+> kolom asli client setelah file Excel diterima — lihat
+> `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
+> untuk detail koreksinya (`requiredFields` juga ikut disesuaikan di
+> fase itu).
 
 ## Tujuan
 Client minta 10 kolom teks bebas tambahan ("Karakter 1" s/d "Karakter
