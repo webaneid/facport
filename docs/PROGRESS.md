@@ -71,6 +71,7 @@
 | 60   | Prioritas Tier Tahunan sebagai Default Auto-Select | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-60-prioritas-tier-tahunan-default.md` |
 | 61   | Koreksi Mapping Sales Invoice dengan Format Excel Asli Client | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md` |
 | 62   | Login/Register dengan Google (OAuth) | Done | `docs/architecture/architecture-auth.md` | `docs/phases/phase-62-login-register-google-oauth.md` |
+| 63   | Fix Nomor Transaksi Sales Invoice (Sinkron Grouping Fase 49) | Done | (lihat phase doc) | `docs/phases/phase-63-fix-nomor-transaksi-sales-invoice-display.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1869,3 +1870,20 @@ Security review inline: 0 temuan tersisa. Setup Google Cloud Console
 (eksternal) diberikan terpisah ke user — verifikasi end-to-end
 menunggu itu selesai. Detail lengkap →
 `docs/phases/phase-62-login-register-google-oauth.md`.
+
+## Update 2026-09-08 — Fase 63 Done: Fix Nomor Transaksi Sales Invoice (Sinkron Grouping Fase 49)
+Client evaluasi fitur Sales Invoice, poin 1: PO Number/Bill No boleh
+sama walau beda transaksi, tapi Trans No harus unik per transaksi —
+minta halaman ringkasan hasil import tampilkan Nomor Transaksi, bukan
+PO Number. Root cause: kolom "Nomor Faktur" di halaman batch detail
+peninggalan Fase 13, TIDAK PERNAH disinkronkan ke backend
+`groupSalesInvoiceRows` yang sejak Fase 49 sudah mengutamakan Trans No.
+Fix: label diganti "Nomor Transaksi", logic diutamakan Trans No
+(fallback PO Number), diekstrak ke `lib/sales-invoice-batch-helpers.ts`
+supaya testable.
+
+Typecheck 0 error. Full suite `apps/web` 36 pass/0 fail (8 baru). Build
+sukses. Poin lain dari evaluasi client (Karakter/Unit Price tidak
+muncul di form edit; permintaan Number/Date custom field) masih
+menunggu klarifikasi user. Detail lengkap →
+`docs/phases/phase-63-fix-nomor-transaksi-sales-invoice-display.md`.
