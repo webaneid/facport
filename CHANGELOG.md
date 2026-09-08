@@ -1,3 +1,8 @@
+## <small>1.18.2 (2026-09-08)</small>
+
+* Merge pull request #42 from webaneid/develop ([1ae5c2e](https://github.com/webaneid/facport/commit/1ae5c2e)), closes [#42](https://github.com/webaneid/facport/issues/42)
+* fix: koreksi kolom Kategori Keuangan + fix lookup gagal kenali record existing ([a168cfd](https://github.com/webaneid/facport/commit/a168cfd))
+
 ## <small>1.18.1 (2026-09-08)</small>
 
 * Merge pull request #41 from webaneid/develop ([abc0be2](https://github.com/webaneid/facport/commit/abc0be2)), closes [#41](https://github.com/webaneid/facport/issues/41)
