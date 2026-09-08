@@ -152,6 +152,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Pilih mode kerja & hemat token          | `docs/WORKFLOW-MODES.md`                              |
 | Deploy, versioning, release ke server  | `docs/architecture/architecture-deployment.md`         |
 | Setup VPS awal (Hostinger/lainnya)     | `docs/deployment-server-setup.md`                       |
+| Setup Login/Register Google (OAuth), portable ke project lain | `docs/google-oauth-login-setup.md` |
 
 ## Command Umum (root)
 ```bash

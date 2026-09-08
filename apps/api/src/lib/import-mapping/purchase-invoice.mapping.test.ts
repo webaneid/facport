@@ -297,3 +297,39 @@ describe("extractItemCreateFields", () => {
     expect(payload).toEqual({ name: "Meja Kantor", unit1Name: "Unit", itemCategoryName: "Umum" });
   });
 });
+
+// § Fase 66 — mirror fix `sales-invoice.mapping.ts` (bug sama persis,
+// modul ini shared builder pattern). Feedback client (via Sales
+// Invoice): isi kolom diskon & pajak -> gagal "Faktur Penjualan tidak
+// tepat" (pesan generik Accurate), hapus -> berhasil. Root cause: field
+// boolean (Taxable, PPN/PPnBM/PPh23, dst) WAJIB JSON `boolean` murni di
+// Accurate, tapi template minta teks "TRUE"/"FALSE" — SheetJS baca
+// sebagai STRING. `cashDiscPercent`/`itemDiscPercent` WAJIB `string`
+// (bukan number).
+describe("konversi tipe data (Fase 66) — boolean & percent discount", () => {
+  test("field boolean (taxable, useTax1-3) — teks 'TRUE'/'Y'/'1' jadi JSON boolean true, bukan string", () => {
+    const rawRow = { "Kode Barang": "BRG-1", Taxable: "TRUE", PPN: "Y", PPnBM: "1", PPH: "FALSE" };
+    const columnMapping = { "Kode Barang": "itemNo", Taxable: "taxable", PPN: "useTax1", PPnBM: "useTax2", PPH: "useTax3" };
+
+    const header = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(header.taxable).toBe(true);
+
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.useTax1).toBe(true);
+    expect(detail.useTax2).toBe(true);
+    expect(detail.useTax3).toBe(false);
+  });
+
+  test("cashDiscPercent/itemDiscPercent — angka polos dari Excel dikonversi ke STRING, bukan number", () => {
+    const rawRow = { "Kode Barang": "BRG-1", "Cash Disc (%)": 5, "Item Disc (%)": 10 };
+    const columnMapping = { "Kode Barang": "itemNo", "Cash Disc (%)": "cashDiscPercent", "Item Disc (%)": "itemDiscPercent" };
+
+    const header = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(header.cashDiscPercent).toBe("5");
+    expect(typeof header.cashDiscPercent).toBe("string");
+
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.itemDiscPercent).toBe("10");
+    expect(typeof detail.itemDiscPercent).toBe("string");
+  });
+});

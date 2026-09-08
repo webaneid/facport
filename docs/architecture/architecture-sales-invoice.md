@@ -135,10 +135,14 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 >   `detailItem`, TIDAK ada `detailExpense` sama sekali) — kalau client
 >   butuh ini, itu FITUR BARU terpisah (bukan remapping), status:
 >   **menunggu konfirmasi client apakah dibutuhkan**.
-> - Kolom "CUSTOM CHARACTER/NUMBER/DATE" TANPA prefix (level
->   header/faktur, bukan item/expense) — dikonfirmasi ULANG TIDAK ADA
->   padanan field API sama sekali untuk Sales Invoice, di level apa
->   pun. Tidak bisa diimport, titik.
+> - ~~Kolom "CUSTOM CHARACTER/NUMBER/DATE" TANPA prefix (level
+>   header/faktur)... TIDAK ADA padanan field API sama sekali.~~
+>   **DIKOREKSI Fase 64 (2026-09-08) — klaim ini SALAH**, bukan karena
+>   field-nya tidak ada, tapi karena `accurate-openapi.json` yang jadi
+>   acuan riset ini TIDAK LENGKAP. Field resmi (dikonfirmasi email
+>   Accurate Support, § "Atribut Tambahan LEVEL HEADER/FAKTUR — Fase 64"
+>   di bawah): `charField1-10`, `numericField1-10`, `dateField1-2` — SUDAH
+>   diimplementasi.
 > - **`requiredFields` disamakan ke sheet "Penjelasan Kolom" resmi
 >   client**: `number` (Trans No) DITAMBAH jadi wajib (sebelumnya tidak
 >   — juga MEMPERKUAT grouping multi-item Fase 49 yang sudah pakai
@@ -204,6 +208,87 @@ attribut2: "detailItem.dataClassification2Name",
 Field `attributN` tetap OPSIONAL (tidak masuk `requiredFields`) — import
 yang sudah berjalan (tanpa kolom atribut ini) TIDAK terpengaruh sama
 sekali (backward compatible penuh).
+
+## Atribut Tambahan LEVEL HEADER/FAKTUR — Fase 64 (KOREKSI Fase 61)
+> **PENTING — koreksi klaim Fase 61**: Fase 61 sebelumnya menyimpulkan
+> "level header/faktur TIDAK ADA field custom apa pun di API Accurate,
+> tidak bisa diimport apa pun" berdasarkan `docs/referencehtml/accurate-openapi.json`
+> (0 kemunculan field custom di level top-level payload). **Kesimpulan
+> itu SALAH** — bukan karena API-nya tidak ada, tapi karena **spec yang
+> jadi acuan TIDAK LENGKAP**. Dikoreksi 2026-09-08 setelah client
+> forward email resmi Accurate Support (tiket #357901, dijawab
+> 2026-04-24) yang eksplisit mengonfirmasi field ini ADA & BERFUNGSI.
+
+### Field Resmi (dari Accurate Support, BUKAN dari OpenAPI spec)
+Level HEADER (top-level payload, SEJAJAR `customerNo`/`transDate`,
+BUKAN di dalam `detailItem`):
+- **Karakter**: `charField1` s/d `charField10` (string)
+- **Angka**: `numericField1` s/d `numericField10` (number)
+- **Tanggal**: `dateField1`, `dateField2` (format DD/MM/YYYY, sama
+  aturan tanggal lain)
+
+Contoh body resmi dari Accurate Support (Purchase Invoice, tapi API
+Accurate konsisten lintas jenis transaksi — dikonfirmasi juga independen
+lewat kecocokan struktur Excel client, lihat di bawah):
+```json
+{
+  "vendorNo": "V.00001",
+  "transDate": "03/03/2025",
+  "charField1": "atribut tambahan karakter 1",
+  "charField2": "atribut tambahan karakter 2",
+  "detailItem": [{ "itemNo": "100001", "unitPrice": 2000, ... }]
+}
+```
+
+### Kenapa Ini Konsisten dengan Bukti Lain (Bukan Cuma "Percaya Email")
+Excel asli client (`format_sales_inv_v7 (PLAN).xlsx`) SECARA INDEPENDEN
+punya PERSIS 10 kolom "CUSTOM CHARACTER" + 10 "CUSTOM NUMBER" + 2
+"CUSTOM DATE" TANPA prefix "ITEM:" (beda dari "ITEM:CUSTOM CHARACTER"
+yang levelnya item) — cocok PERSIS jumlah `charField1-10`/
+`numericField1-10`/`dateField1-2`. Client kemungkinan besar sudah
+pernah tanya konsultan Accurate mereka sendiri saat menyusun template
+ini, independen dari email yang di-forward ke kita.
+
+### Implementasi (`sales-invoice.mapping.ts`)
+```ts
+// fieldToAccuratePath — TANPA prefix "detailItem." = otomatis masuk
+// ROOT payload (logic generik `buildSalesInvoicePayload` yang sudah
+// ada sejak awal, TIDAK perlu kode baru)
+attributHeaderKarakter1: "charField1", // ... s/d attributHeaderKarakter10
+attributHeaderAngka1: "numericField1", // ... s/d attributHeaderAngka10
+attributHeaderTanggal1: "dateField1", attributHeaderTanggal2: "dateField2",
+
+// defaultColumnMap — TANPA prefix "ITEM:" (beda dari level item)
+"CUSTOM CHARACTER 1": "attributHeaderKarakter1", // ... s/d 10
+"CUSTOM NUMBER 1": "attributHeaderAngka1", // ... s/d 10
+"CUSTOM DATE 1": "attributHeaderTanggal1", "CUSTOM DATE 2": "attributHeaderTanggal2",
+```
+`attributHeaderTanggal1`/`2` ditambahkan ke `DATE_FIELDS` (konversi
+format sama seperti `transDate`/`taxDate`/`shipDate`) — DAN ke
+`DATE_INTERNAL_FIELDS` di frontend (`edit-row-dialog.tsx`, WAJIB
+sinkron manual, tidak ada mekanisme share otomatis FE↔BE).
+
+### Belum Terverifikasi End-to-End untuk Sales Invoice
+Email Accurate Support secara eksplisit contoh-nya untuk **Purchase
+Invoice**. BELUM ada konfirmasi tertulis terpisah bahwa `charField`/
+`numericField`/`dateField` PERSIS berfungsi sama di endpoint
+`/api/sales-invoice/save.do` — diasumsikan iya (API Accurate konsisten
+lintas transaksi, § pola `dataClassificationNName` yang terbukti
+seragam di 30+ endpoint, DIPERKUAT bukti independen Excel client di
+atas), tapi WAJIB diverifikasi nyata begitu ada data test sungguhan
+dari client (kirim 1 faktur test dengan kolom ini terisi, cek hasilnya
+muncul benar di Accurate).
+
+### Lesson Learned
+**Spec API vendor pihak ketiga (`accurate-openapi.json`) TIDAK BOLEH
+diperlakukan sebagai satu-satunya sumber kebenaran** — dokumen itu bisa
+tidak lengkap tanpa pemberitahuan. Kalau ada permintaan fitur yang
+"kelihatannya tidak didukung" berdasarkan spec, DAN ada indikasi kuat
+lain (client sudah pakai fitur itu di UI Accurate, ATAU official
+support vendor bisa dihubungi) — jangan berhenti di kesimpulan "tidak
+bisa" hanya dari spec, minta konfirmasi tertulis ke vendor/support
+resmi dulu sebelum menutup permintaan sebagai "keterbatasan platform".
+§ `docs/lessons-learned.md` entri 2026-09-08.
 
 ## Nav & Dashboard Difilter oleh Langganan
 

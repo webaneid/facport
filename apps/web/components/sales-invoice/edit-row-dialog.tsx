@@ -19,7 +19,7 @@ type EditableRow = {
 
 // § field internal yang dianggap tanggal — HARUS SINKRON dengan
 // `DATE_FIELDS` di `apps/api/src/lib/import-mapping/sales-invoice.mapping.ts`.
-export const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate"]);
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate", "attributHeaderTanggal1", "attributHeaderTanggal2"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § HARUS SINKRON dengan `salesInvoiceMapping.requiredFields`.
@@ -145,7 +145,7 @@ export function EditRowDialog({
           )}
           {siblingRowNumbers.length > 0 && (
             <p className="rounded-md bg-warning-bg px-3 py-2 text-warning">
-              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (PO Number sama) — Nomor Customer wajib
+              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (Nomor Transaksi/PO Number sama) — Nomor Customer wajib
               sama persis dengan baris-baris itu, kalau tidak seluruh faktur ikut gagal.
             </p>
           )}

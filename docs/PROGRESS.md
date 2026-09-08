@@ -71,6 +71,10 @@
 | 60   | Prioritas Tier Tahunan sebagai Default Auto-Select | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-60-prioritas-tier-tahunan-default.md` |
 | 61   | Koreksi Mapping Sales Invoice dengan Format Excel Asli Client | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md` |
 | 62   | Login/Register dengan Google (OAuth) | Done | `docs/architecture/architecture-auth.md` | `docs/phases/phase-62-login-register-google-oauth.md` |
+| 63   | Fix Nomor Transaksi Sales Invoice (Sinkron Grouping Fase 49) | Done | (lihat phase doc) | `docs/phases/phase-63-fix-nomor-transaksi-sales-invoice-display.md` |
+| 64   | Atribut Tambahan Level Header Sales Invoice (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-64-atribut-tambahan-level-header-sales-invoice.md` |
+| 65   | Fix Dropdown Mapping & Sinkron Header Sales Invoice | Done | (lihat phase doc) | `docs/phases/phase-65-fix-dropdown-mapping-dan-sinkron-header-sales-invoice.md` |
+| 66   | Fix Tipe Data Boolean & Persen Diskon (Sales Invoice + Purchase Invoice) | Done | (lihat phase doc) | `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1869,3 +1873,65 @@ Security review inline: 0 temuan tersisa. Setup Google Cloud Console
 (eksternal) diberikan terpisah ke user — verifikasi end-to-end
 menunggu itu selesai. Detail lengkap →
 `docs/phases/phase-62-login-register-google-oauth.md`.
+
+## Update 2026-09-08 — Fase 63 Done: Fix Nomor Transaksi Sales Invoice (Sinkron Grouping Fase 49)
+Client evaluasi fitur Sales Invoice, poin 1: PO Number/Bill No boleh
+sama walau beda transaksi, tapi Trans No harus unik per transaksi —
+minta halaman ringkasan hasil import tampilkan Nomor Transaksi, bukan
+PO Number. Root cause: kolom "Nomor Faktur" di halaman batch detail
+peninggalan Fase 13, TIDAK PERNAH disinkronkan ke backend
+`groupSalesInvoiceRows` yang sejak Fase 49 sudah mengutamakan Trans No.
+Fix: label diganti "Nomor Transaksi", logic diutamakan Trans No
+(fallback PO Number), diekstrak ke `lib/sales-invoice-batch-helpers.ts`
+supaya testable.
+
+Typecheck 0 error. Full suite `apps/web` 36 pass/0 fail (8 baru). Build
+sukses. Poin lain dari evaluasi client (Karakter/Unit Price tidak
+muncul di form edit; permintaan Number/Date custom field) masih
+menunggu klarifikasi user. Detail lengkap →
+`docs/phases/phase-63-fix-nomor-transaksi-sales-invoice-display.md`.
+
+## Update 2026-09-08 — Fase 64 Done: Atribut Tambahan Level Header Sales Invoice (charField/numericField/dateField)
+Client forward email resmi Accurate Support (tiket #357901) yang
+MENGOREKSI kesimpulan Fase 61: field custom level header/faktur
+TERNYATA ADA (`charField1-10`, `numericField1-10`, `dateField1-2`,
+dikirim di ROOT payload) — sebelumnya disimpulkan "tidak ada" karena
+`accurate-openapi.json` yang jadi acuan TIDAK LENGKAP, bukan karena
+API-nya benar-benar tidak punya field itu. Diperkuat bukti independen:
+Excel asli client punya persis 10+10+2 kolom custom tanpa prefix ITEM:,
+cocok jumlahnya. Diimplementasi mengikuti pola generik yang sudah ada
+(root payload, tanpa kode baru).
+
+Typecheck 0 error. Full suite `apps/api` 444 pass/0 fail (2 baru).
+Belum diverifikasi end-to-end nyata untuk Sales Invoice (email resmi
+contohnya Purchase Invoice). Detail lengkap →
+`docs/phases/phase-64-atribut-tambahan-level-header-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 65 Done: Fix Dropdown Mapping & Sinkron Header Sales Invoice
+Client evaluasi poin 2 & 6: "Karakter belum masuk di edit", "Unit
+Price juga belum masuk". Ketemu 2 bug: (1) dropdown pilihan field di
+UI konfirmasi mapping (`ACCURATE_FIELDS`, import/page.tsx) TIDAK
+PERNAH ditambah field Atribut Tambahan sejak Fase 55 — mustahil
+dipetakan sama sekali; (2) mayoritas `defaultColumnMap` tidak cocok
+header standar EXPORT ASLI Accurate (mis. "Unit Price" vs "ITEM UNIT
+PRICE" — kata beda, bukan cuma huruf besar/kecil), 15 field gagal
+auto-suggest walau tetap bisa dipetakan manual. Keduanya diperbaiki:
+32 entri baru di dropdown, 15 sinonim header baru di defaultColumnMap
+(tebakan lama dipertahankan).
+
+Typecheck 0 error. Full suite `apps/api` 444 pass/0 fail (2 baru). Full
+suite `apps/web` 36 pass/0 fail. Build sukses. Detail lengkap →
+`docs/phases/phase-65-fix-dropdown-mapping-dan-sinkron-header-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 66 Done: Fix Tipe Data Boolean & Persen Diskon (Sales Invoice + Purchase Invoice)
+Client evaluasi poin 7: import gagal "Faktur Penjualan tidak tepat"
+(pesan generik) saat kolom Diskon & Pajak diisi, berhasil setelah
+dihapus. Root cause: field boolean (Taxable, PPN/PPnBM/PPh23, dst)
+WAJIB JSON `boolean` murni di Accurate, tapi template kita minta user
+ketik teks "TRUE"/"FALSE" — SheetJS baca sebagai STRING, terkirim salah
+tipe. `cashDiscPercent`/`itemDiscPercent` WAJIB `string` (bukan
+number). Fix diterapkan konsisten di Sales Invoice DAN Purchase Invoice
+(modul lain dicek, tidak punya field ini).
+
+Typecheck 0 error. Full suite `apps/api` 452 pass/0 fail (6 baru).
+Detail lengkap → `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md`.

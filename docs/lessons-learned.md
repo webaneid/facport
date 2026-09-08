@@ -6,6 +6,108 @@
 
 ---
 
+## 2026-09-08 — Field boolean/persen dikirim salah tipe JSON ke Accurate, pesan error generik tidak menyebut penyebab sebenarnya
+**Masalah:** Client laporkan: isi kolom Diskon (%) dan kolom Pajak
+(Taxable/PPN/PPnBM/PPh23) di Excel Sales Invoice → import gagal dengan
+pesan "Faktur Penjualan tidak tepat" (generik, tidak jelas kolom mana
+yang salah). Hapus kolom itu → import berhasil.
+
+**Root cause:** `accurate-openapi.json` mewajibkan `taxable`/
+`inclusiveTax`/`reverseInvoice`/`useTax1-3` bertipe JSON `boolean`
+MURNI, dan `cashDiscPercent`/`itemDiscPercent` bertipe `string` (BUKAN
+`number`, beda dari `cashDiscount`/`itemCashDiscount` yang justru wajib
+`number`). Kode kita (`extractRowValues` di `sales-invoice.mapping.ts`
+DAN `purchase-invoice.mapping.ts`, mirror 1:1) TIDAK melakukan konversi
+tipe sama sekali — nilai mentah dari SheetJS (string "TRUE" untuk
+boolean, number untuk persen) diteruskan APA ADANYA ke payload JSON.
+Accurate menolak dengan pesan CATCH-ALL yang tidak menyebut field
+spesifik — masalah tipe data jadi sangat sulit didiagnosis dari sisi
+user (mereka cuma tahu "kalau kolom ini diisi, gagal", tanpa tahu KENAPA).
+
+**Fix:** `toAccurateBoolean()` (terima variasi teks truthy: true/y/yes/
+1/ya, case-insensitive) untuk field boolean; `String()` paksa untuk
+field persen. Diterapkan di KEDUA modul yang punya field ini (Sales
+Invoice & Purchase Invoice — dicek 4 modul lain, tidak ada field
+serupa).
+
+**Pencegahan:** Kalau membangun payload JSON untuk API pihak ketiga
+dari data Excel (yang SELALU longgar tipe — semua bisa jadi string),
+JANGAN asumsikan "field ini kelihatannya boolean/number jadi pasti
+sudah tipe yang benar setelah parsing Excel" — SELALU cek tipe JSON
+yang benar-benar diwajibkan di spec resmi API tujuan, dan TULIS konversi
+eksplisit untuk SETIAP field yang tipenya BUKAN string biasa (boolean,
+number presisi khusus, string-yang-terlihat-seperti-number seperti
+`cashDiscPercent` di sini). Kalau ada BEBERAPA modul yang mirror pola
+mapping yang sama (§ komentar "mirror 1:1" di kode), bug tipe data di
+satu modul KEMUNGKINAN BESAR ada juga di modul lain — cek semua modul
+yang share pola sama sebelum menganggap fix di 1 tempat sudah cukup.
+
+---
+
+## 2026-09-08 — Spec API vendor pihak ketiga (`accurate-openapi.json`) TIDAK LENGKAP, jangan dijadikan satu-satunya sumber kebenaran untuk "field ini tidak ada"
+**Masalah:** Fase 61 menyimpulkan "Atribut Tambahan level header/faktur
+Sales Invoice TIDAK ADA field custom apa pun di API Accurate" — riset
+dilakukan dengan scan MENYELURUH `accurate-openapi.json` (0 kemunculan
+field custom di top-level payload SEMUA 30+ endpoint transaksi).
+Kesimpulan ini DIBAWA ke client sebagai "tidak bisa secara teknis".
+Client kemudian forward email resmi Accurate Support (tiket #357901)
+yang MENGONFIRMASI field itu ADA (`charField1-10`, `numericField1-10`,
+`dateField1-2`) dan BERFUNGSI, lengkap dengan contoh body JSON nyata.
+
+**Root cause:** Spec OpenAPI yang disimpan di
+`docs/referencehtml/accurate-openapi.json` adalah SALINAN yang
+TERNYATA TIDAK LENGKAP — field ini nyata ada di API produksi Accurate,
+cuma tidak terdokumentasi di file spec yang kita punya. Bukan
+kesalahan LOGIKA riset (scan-nya sendiri sudah benar & menyeluruh),
+tapi kesalahan ASUMSI bahwa dokumen spec = kebenaran mutlak & lengkap.
+
+**Fix:** Field `charField1-10`/`numericField1-10`/`dateField1-2`
+ditambahkan ke mapping (Fase 64) berdasarkan email resmi vendor,
+BUKAN spec. Diperkuat bukti independen (Excel asli client punya
+jumlah kolom custom level header yang PERSIS cocok).
+
+**Pencegahan:** Kalau kesimpulan "fitur X tidak didukung API" HANYA
+berdasarkan 1 dokumen spec (openapi.json, dst) — SEBELUM menyampaikan
+itu sebagai kebenaran final ke user/client, cek dulu apakah ada sinyal
+lain yang BERTENTANGAN (client sudah pakai fitur itu di UI vendor,
+ATAU ada channel official support yang bisa ditanya). Kalau ada sinyal
+kuat yang kontradiktif, SARANKAN verifikasi ke vendor/support resmi
+dulu sebelum menutup permintaan sebagai "keterbatasan platform" —
+jangan berhenti di "spec bilang tidak ada" begitu saja, terutama untuk
+API vendor pihak ketiga yang dokumentasinya bisa kadaluarsa/tidak
+lengkap tanpa pemberitahuan.
+
+---
+
+## 2026-09-08 — UI konfirmasi mapping import (dropdown pilihan field) TIDAK OTOMATIS ikut update saat field baru ditambah ke backend
+**Masalah:** Fase 55 menambah 10 field baru (`attribut1-10`, Atribut
+Tambahan) ke `sales-invoice.mapping.ts` (backend) — TAPI dropdown
+pilihan field di UI konfirmasi mapping
+(`apps/web/app/app/(protected)/sales-invoice/import/page.tsx`,
+konstanta `ACCURATE_FIELDS`) TIDAK PERNAH ditambah field yang sama.
+Akibat: field itu sudah didukung backend 100%, tapi client TIDAK BISA
+memetakannya sama sekali via UI — opsinya tidak ada di dropdown.
+Ketemu 3 fase kemudian (Fase 65) lewat evaluasi client, bukan lewat
+review kode saat Fase 55 ditutup.
+
+**Root cause:** `ACCURATE_FIELDS` adalah daftar STATIS yang di-maintain
+MANUAL, terpisah dari `salesInvoiceMapping.fieldToAccuratePath`
+(backend) — tidak ada mekanisme yang memaksa keduanya tetap sinkron
+kalau field baru ditambah di satu sisi saja.
+
+**Fix:** 32 entri ditambahkan ke `ACCURATE_FIELDS` (attribut1-10 dari
+Fase 55 yang terlewat + field baru Fase 64).
+
+**Pencegahan:** Setiap kali menambah field baru ke
+`fieldToAccuratePath` (`sales-invoice.mapping.ts` atau mapping modul
+manapun), WAJIB cek juga apakah ada daftar dropdown/pilihan field
+di FRONTEND (`ACCURATE_FIELDS` atau setara di modul lain) yang perlu
+ditambah field yang sama — 2 lokasi ini TIDAK share satu sumber
+kebenaran, jadi harus diupdate manual bersamaan, JANGAN anggap
+"backend sudah dukung" berarti otomatis bisa dipakai dari UI.
+
+---
+
 ## 2026-09-08 — `databaseHooks.user.create.after` (Better Auth) fires untuk SEMUA metode pembuatan user, termasuk panggilan server-side `auth.api.X()`
 **Masalah:** Menambah Google OAuth login (Fase 62), butuh assign role
 "customer" ke user baru dari Google (jalur ini belum ke-cover mekanisme

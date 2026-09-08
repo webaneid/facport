@@ -11,6 +11,7 @@ import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@
 import { EditableGrid } from "@/components/import/editable-grid";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { findNumberColumn, findPoNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/sales-invoice-batch-helpers";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/[batchId]/page.tsx`
 // (PO Number ganti peran Bill No).
@@ -35,35 +36,12 @@ type BatchDetail = {
   rows: Row[];
 };
 
-function findPoNumberColumn(columnMapping: Record<string, string> | null): string | null {
-  if (!columnMapping) return null;
-  const entry = Object.entries(columnMapping).find(([, field]) => field === "poNumber");
-  return entry?.[0] ?? null;
-}
-
-function invoiceNumberOf(row: Row, poNumberColumn: string | null): string {
-  if (!poNumberColumn) return "";
-  const value = row.rawData[poNumberColumn];
-  return value === undefined || value === null ? "" : String(value).trim();
-}
-
-function siblingRowNumbersOf(row: Row, allRows: Row[], poNumberColumn: string | null): number[] {
-  const inv = invoiceNumberOf(row, poNumberColumn);
-  if (!inv) return [];
-  return allRows.filter((r) => r.id !== row.id && invoiceNumberOf(r, poNumberColumn).toLowerCase() === inv.toLowerCase()).map((r) => r.rowNumber);
-}
-
-function sortByInvoiceNumber(rows: Row[], poNumberColumn: string | null): Row[] {
-  return [...rows].sort((a, b) => {
-    const invA = invoiceNumberOf(a, poNumberColumn);
-    const invB = invoiceNumberOf(b, poNumberColumn);
-    if (!invA && !invB) return a.rowNumber - b.rowNumber;
-    if (!invA) return 1;
-    if (!invB) return -1;
-    const cmp = invA.localeCompare(invB, undefined, { numeric: true, sensitivity: "base" });
-    return cmp !== 0 ? cmp : a.rowNumber - b.rowNumber;
-  });
-}
+// § Fase 63 — logic penentuan "Nomor Transaksi" (Trans No diutamakan,
+// fallback PO Number — feedback client: PO Number/Bill No boleh sama
+// walau beda transaksi, Trans No harus unik) diekstrak ke
+// `lib/sales-invoice-batch-helpers.ts` (dites terpisah di sana, tanpa
+// import modul page.tsx ini — hindari konflik `mock.module("next/navigation")`
+// dari test file lain).
 
 const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
   success: { label: "Sukses", variant: "success" },
@@ -136,8 +114,9 @@ export default function SalesInvoiceImportResultPage() {
 
   const { batch, summary, rows } = detail;
   const isProcessing = batch.status === "processing";
+  const numberColumn = findNumberColumn(batch.columnMapping);
   const poNumberColumn = findPoNumberColumn(batch.columnMapping);
-  const sortedRows = sortByInvoiceNumber(rows, poNumberColumn);
+  const sortedRows = sortByInvoiceNumber(rows, numberColumn, poNumberColumn);
 
   return (
     <div className="flex flex-col gap-6">
@@ -199,7 +178,7 @@ export default function SalesInvoiceImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nomor Faktur</TableHead>
+                <TableHead>Nomor Transaksi</TableHead>
                 <TableHead>Baris</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ID Transaksi Accurate / Error</TableHead>
@@ -209,7 +188,7 @@ export default function SalesInvoiceImportResultPage() {
             <TableBody>
               {sortedRows.map((row) => (
                 <TableRow key={row.id}>
-                  <TableCell className="font-medium text-foreground">{invoiceNumberOf(row, poNumberColumn) || "-"}</TableCell>
+                  <TableCell className="font-medium text-foreground">{invoiceNumberOf(row, numberColumn, poNumberColumn) || "-"}</TableCell>
                   <TableCell>{row.rowNumber}</TableCell>
                   <TableCell>
                     <StatusBadge status={row.status} />
@@ -222,7 +201,7 @@ export default function SalesInvoiceImportResultPage() {
                           batchId={batch.id}
                           row={row}
                           columnMapping={batch.columnMapping}
-                          siblingRowNumbers={siblingRowNumbersOf(row, rows, poNumberColumn)}
+                          siblingRowNumbers={siblingRowNumbersOf(row, rows, numberColumn, poNumberColumn)}
                           onSaved={load}
                         />
                       </div>
