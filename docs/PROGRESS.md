@@ -70,6 +70,7 @@
 | 59   | Redesign Dashboard Admin (Statistik & Chart) | Done | `docs/architecture/architecture-admin-dashboard.md` | `docs/phases/phase-59-redesign-dashboard-admin.md` |
 | 60   | Prioritas Tier Tahunan sebagai Default Auto-Select | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-60-prioritas-tier-tahunan-default.md` |
 | 61   | Koreksi Mapping Sales Invoice dengan Format Excel Asli Client | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md` |
+| 62   | Login/Register dengan Google (OAuth) | Done | `docs/architecture/architecture-auth.md` | `docs/phases/phase-62-login-register-google-oauth.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1845,3 +1846,26 @@ Invoice kita, menunggu konfirmasi client apakah dibutuhkan.
 
 Typecheck 0 error. Full suite `apps/api` 440 pass/0 fail (2 baru).
 Detail lengkap → `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`.
+
+## Update 2026-09-08 — Fase 62 Done: Login/Register dengan Google (OAuth)
+Customer sekarang bisa login/daftar pakai akun Google (surface `app`
+saja, admin tetap provisioning manual) — tombol "Lanjutkan dengan
+Google" di `/login` dan `/register`, aktif otomatis setelah
+`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET` diisi di server.
+
+**Bug ditemukan & diperbaiki SEBELUM tutup fase**: versi awal
+`databaseHooks.user.create.after` (role assignment) fires untuk SEMUA
+metode pembuatan user Better Auth, TERMASUK provisioning admin/staff
+server-side — akun admin/staff baru ikut ditandai "customer", merusak
+invariant `userCount` Fase 59. Ditangkap OTOMATIS oleh test integrasi
+Fase 59 sendiri. Fix: filter `context.path === "/callback/:id"` (path
+generik OAuth, tidak pernah dipakai admin provisioning) — jalur
+email/password TETAP diserahkan ke mekanisme `app.ts` yang sudah benar.
+Detail lengkap § ADR-0030.
+
+Typecheck 0 error (api+web). Full suite `apps/api` 442 pass/0 fail (2
+baru). Full suite `apps/web` 28 pass/0 fail (1 baru). Build sukses.
+Security review inline: 0 temuan tersisa. Setup Google Cloud Console
+(eksternal) diberikan terpisah ke user — verifikasi end-to-end
+menunggu itu selesai. Detail lengkap →
+`docs/phases/phase-62-login-register-google-oauth.md`.

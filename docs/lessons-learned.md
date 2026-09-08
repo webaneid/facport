@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-09-08 — `databaseHooks.user.create.after` (Better Auth) fires untuk SEMUA metode pembuatan user, termasuk panggilan server-side `auth.api.X()`
+**Masalah:** Menambah Google OAuth login (Fase 62), butuh assign role
+"customer" ke user baru dari Google (jalur ini belum ke-cover mekanisme
+lama yang cuma jalan untuk HTTP `/api/auth/sign-up/email`). Ditambah
+`databaseHooks.user.create.after` di `lib/auth.ts` — TERNYATA hook ini
+fires untuk SEMUA metode pembuatan user Better Auth, BUKAN cuma
+self-service: `auth.api.signUpEmail()` yang dipanggil LANGSUNG
+server-side dari `admin/users.route.ts`/`admin/staff.route.ts` (buat
+provisioning admin/staff) JUGA memicu hook yang sama. Akibat: akun
+admin/staff baru ikut ditandai role "customer", merusak invariant
+`userCount` (Fase 59, "Pengguna" cuma hitung role customer). Ditangkap
+OTOMATIS oleh test integrasi Fase 59 sebelum sempat dianggap selesai.
+
+**Root cause:** `databaseHooks` beroperasi di level DATABASE ADAPTER
+(setiap kali Better Auth benar-benar membuat baris `user`), BUKAN level
+HTTP routing — jadi TIDAK PEDULI apakah pembuatan user dipicu request
+HTTP asli atau panggilan fungsi `auth.api.X()` langsung dalam proses
+yang sama (server-to-server). `context.path` yang diterima hook JUGA
+SAMA PERSIS untuk kedua cara pemanggilan (endpoint internal yang sama),
+jadi TIDAK BISA dipakai membedakan "self-service" vs "admin-provisioned"
+untuk endpoint yang sama-sama email/password.
+
+**Fix:** Filter hook berdasarkan `context.path` KHUSUS untuk path yang
+SECARA STRUKTURAL tidak mungkin dipakai jalur lain (`/callback/:id`,
+path generik SEMUA social-provider OAuth callback — tidak ada
+"OAuth admin-provisioned" di codebase ini). Untuk email/password, TETAP
+andalkan intercept HTTP-level yang sudah ada (`app.ts`), yang justru
+BENAR karena panggilan server-side literal TIDAK PERNAH melewati
+routing HTTP Elysia sama sekali.
+
+**Pencegahan:** Sebelum pakai `databaseHooks`/hook level-adapter
+manapun di Better Auth (atau library serupa) untuk logic yang harus
+BEDA per "cara" resource dibuat (self-service vs admin-provisioned,
+publik vs internal), WAJIB cek apakah hook itu benar-benar bisa
+membedakan sumber panggilan — kalau tidak bisa (kasus di sini:
+`context.path` sama untuk keduanya), filter berdasarkan sesuatu yang
+STRUKTURAL BEDA (path endpoint yang secara desain cuma dipakai 1 jalur,
+seperti OAuth callback di sini), BUKAN asumsi "hook ini pasti cuma
+untuk kasus yang saya maksud".
+
+---
+
 ## 2026-09-08 — Card "Pengguna" dashboard admin ikut hitung akun admin/staff (COUNT tanpa filter role)
 **Masalah:** `GET /admin/stats` (dipakai card "Pengguna" di `/admin`)
 menghitung `count()` polos dari tabel `user`, TANPA filter role sama

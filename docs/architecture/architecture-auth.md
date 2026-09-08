@@ -28,7 +28,9 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 hari
     cookieCache: { enabled: true, maxAge: 60 * 5 }, // cache 5 menit, kurangi query DB tiap request
   },
-  // socialProviders: {} — TIDAK diaktifkan (tidak diminta, hindari kompleksitas scope OAuth tambahan)
+  // § Fase 62, ADR-0030 — Login/Register Google, lihat section di bawah
+  socialProviders: { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } }, // kondisional, hanya kalau kedua env var terisi
+  databaseHooks: { user: { create: { after: async (user, context) => { /* lihat § "Login/Register Google" — assign role customer HANYA untuk jalur OAuth */ } } } },
   advanced: { crossSubDomainCookies: { /* lihat § "Cookie Lintas-Subdomain" di bawah */ } },
 });
 ```
@@ -151,6 +153,57 @@ Facport punya dua cara user masuk sistem: daftar sendiri lewat
 Registrasi" — role yang di-assign ke user baru selalu `customer` di kedua
 jalur, cuma proses verifikasinya beda (self-service verifikasi email,
 admin-provisioned dianggap terverifikasi karena admin yang buat).
+
+## Login/Register Google (OAuth) — Fase 62, ADR-0030
+Surface `app` SAJA (customer) — admin/staff SELALU provisioning manual
+oleh Super Admin, tidak pernah self-register, jadi tombol Google TIDAK
+ada di `admin.facport.com`. Aktif kondisional: `GOOGLE_CLIENT_ID`/
+`GOOGLE_CLIENT_SECRET` (§ `lib/env.ts`, Optional, pola sama
+`ACCURATE_CLIENT_ID`) — kosong = fitur "mati" tanpa error boot, bukan
+required env var.
+
+**Redirect URI** (didaftarkan di Google Cloud Console, WAJIB persis):
+dev `http://localhost:3001/api/auth/callback/google`, prod
+`https://api.facinstitute.id/api/auth/callback/google` (dari
+`BETTER_AUTH_URL`).
+
+**Bug ditemukan & diperbaiki SEBELUM tutup fase (2026-09-08)**:
+`databaseHooks.user.create.after` fires untuk **SEMUA** metode
+pembuatan user Better Auth, TERMASUK `auth.api.signUpEmail()` yang
+dipanggil LANGSUNG (server-side, BUKAN lewat HTTP) dari
+`admin/users.route.ts`/`admin/staff.route.ts` untuk admin provisioning.
+Versi awal hook ini assign role "customer" ke SEMUA user tanpa filter
+— ikut menandai akun admin/staff sebagai "customer" juga, merusak
+invariant `userCount` (Fase 59). Test Fase 59 sendiri yang menangkap
+bug ini sebelum sempat dianggap selesai.
+
+**Fix**: `context.path` (dari `better-call`) SAMA PERSIS untuk endpoint
+email baik dipanggil via HTTP asli maupun `auth.api.X()` server-side
+(keduanya `/sign-up/email`) — TIDAK BISA dipakai bedakan self-service
+vs admin-provisioned untuk email/password. Jalur email/password TETAP
+diserahkan SEPENUHNYA ke intercept HTTP-level `app.ts`
+(`.post("/api/auth/sign-up/email", ...)`, § baris ~147 — HANYA jalan
+untuk request HTTP ASLI, TIDAK PERNAH jalan untuk panggilan langsung
+dalam proses yang sama). Hook `databaseHooks` di `lib/auth.ts` DIFILTER
+`context?.path === "/callback/:id"` (path generik SEMUA social
+provider Better Auth, TIDAK PERNAH dipakai admin provisioning — aman)
+— jadi HANYA menutup gap Google OAuth, tidak menyentuh jalur email
+sama sekali. `assignCustomerRole()` (`lib/assign-customer-role.ts`)
+diekstrak jadi fungsi terpisah supaya bisa dites langsung.
+
+**`accountLinking`** SENGAJA TIDAK di-override — default Better Auth
+(`enabled: true`, `requireLocalEmailVerified: true`) sudah pas: akun
+password yang emailnya SUDAH terverifikasi otomatis di-link ke sign-in
+Google dengan email sama (bukan bikin akun duplikat); akun password
+yang BELUM terverifikasi TIDAK di-link (proteksi bawaan cegah account
+takeover) — konsisten `requireEmailVerification: true`.
+
+**Known limitation dev `.localhost`**: SAMA PERSIS limitasi
+auto-login-setelah-verifikasi-email (§ `register-form.tsx`) —
+`crossSubDomainCookies` nonaktif khusus `.localhost`, cookie sesi hasil
+OAuth callback (di-set `apps/api`) tidak ikut kebaca `app.localhost:6209`.
+Production TIDAK kena ini. Verifikasi end-to-end WAJIB di
+staging/production.
 
 ## Role Admin vs Customer — Bukan Multi-Tenant
 Facport punya 2 role yang benar-benar di-seed (`apps/api/src/db/seed.ts`):

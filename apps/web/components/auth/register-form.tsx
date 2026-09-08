@@ -11,6 +11,7 @@ import { getSafeRedirect } from "@/lib/safe-redirect";
 import { Button } from "@/components/ui/button";
 import { IconInput } from "@/components/auth/icon-input";
 import { PasswordInput } from "@/components/auth/password-input";
+import { GoogleSignInButton } from "@/components/auth/google-signin-button";
 
 const schema = z.object({
   name: z.string().min(1, "Nama wajib diisi"),
@@ -89,6 +90,12 @@ function RegisterFormInner() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex w-full max-w-sm flex-col gap-3">
+      <GoogleSignInButton />
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        atau
+        <div className="h-px flex-1 bg-border" />
+      </div>
       <div>
         <IconInput icon={User} placeholder="Nama" {...register("name")} />
         {errors.name && <p className="mt-1 text-xs text-red-600">{errors.name.message}</p>}
