@@ -3,6 +3,7 @@ import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { db } from "./db";
 import { env, webOriginsProd } from "./env";
 import { boss, JOBS, startQueue } from "./queue";
+import { assignCustomerRole } from "./assign-customer-role";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -63,8 +64,55 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7, // 7 hari
     cookieCache: { enabled: true, maxAge: 60 * 5 },
   },
-  // socialProviders: {} — aktifkan kalau project butuh Google/dst login,
-  // JANGAN aktifkan default kalau tidak diminta.
+  // § Fase 62, ADR-0030 — Login/Register Google (surface `app` SAJA,
+  // admin/staff selalu provisioning manual, § architecture-subscription.md
+  // § "Dua Jalur Registrasi"). Kondisional (bukan selalu di-set) — dev/CI
+  // tanpa `GOOGLE_CLIENT_ID`/`SECRET` (§ lib/env.ts, keduanya Optional)
+  // tetap boot normal, fitur otomatis "mati" tanpa error, BUKAN required
+  // env var (pola sama ACCURATE_CLIENT_ID/SECRET).
+  ...(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET
+    ? { socialProviders: { google: { clientId: env.GOOGLE_CLIENT_ID, clientSecret: env.GOOGLE_CLIENT_SECRET } } }
+    : {}),
+  // `accountLinking` SENGAJA TIDAK di-override — default Better Auth
+  // (`enabled: true`, `requireLocalEmailVerified: true`) sudah pas:
+  // akun password yang emailnya SUDAH terverifikasi otomatis di-link ke
+  // sign-in Google dengan email sama (bukan bikin akun duplikat), akun
+  // password yang BELUM terverifikasi TIDAK di-link (proteksi bawaan
+  // cegah account takeover) — konsisten `requireEmailVerification: true`
+  // di atas. § ADR-0030.
+  //
+  // § databaseHooks.user.create.after FIRES untuk SEMUA metode pembuatan
+  // user, TERMASUK `auth.api.signUpEmail()` yang dipanggil LANGSUNG dari
+  // `admin/users.route.ts`/`admin/staff.route.ts` (server-side, admin
+  // provisioning akun admin/staff) — BUKAN cuma jalur self-service
+  // seperti dugaan awal. Bug ditemukan test Fase 59 sendiri (2026-09-08):
+  // versi awal hook ini assign "customer" ke SEMUA user tanpa filter,
+  // ikut menandai akun admin/staff sebagai "customer" juga (merusak
+  // invariant `userCount` yang baru diperbaiki Fase 59).
+  //
+  // FIX: `context.path` (dari `better-call`, § riset ADR-0030) SAMA
+  // PERSIS baik dipanggil via HTTP asli maupun `auth.api.X()` server-side
+  // untuk endpoint EMAIL (keduanya `/sign-up/email`) — TIDAK BISA
+  // dipakai bedakan self-service vs admin-provisioned untuk email/
+  // password. Makanya jalur email/password TETAP SEPENUHNYA diserahkan
+  // ke intercept HTTP-level `app.ts` (`.post("/api/auth/sign-up/email", ...)`
+  // — HANYA jalan untuk request HTTP ASLI ke Elysia, TIDAK PERNAH jalan
+  // untuk `auth.api.signUpEmail()` yang dipanggil langsung dalam proses
+  // yang sama, jadi otomatis benar). Hook DI SINI di-filter HANYA untuk
+  // path OAuth callback (`/callback/:id` — dipakai SEMUA social provider,
+  // `params.id` = nama provider, mis. "google") — jalur ini TIDAK PERNAH
+  // dipakai admin provisioning (tidak ada "OAuth admin-provisioned" di
+  // codebase ini), jadi aman filter dengan cara ini.
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (user, context) => {
+          if (context?.path !== "/callback/:id") return;
+          await assignCustomerRole(user.id);
+        },
+      },
+    },
+  },
 
   // § architecture-domain-routing.md, Fase 01 M5 — session cookie di-set
   // dengan Domain=.facport.com (prod) / .localhost (dev) supaya otomatis

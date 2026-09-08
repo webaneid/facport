@@ -54,6 +54,13 @@ const envSchema = t.Object({
   // key derivation scrypt lebih kuat dengan secret masukan lebih panjang.
   // Generate dev/prod: `openssl rand -base64 32`.
   ACCURATE_TOKEN_ENCRYPTION_KEY: t.String({ minLength: 32 }),
+  // § Fase 62 — Login/Register Google (OAuth). Optional (pola sama
+  // ACCURATE_CLIENT_ID/SECRET di atas) — app WAJIB tetap bisa boot tanpa
+  // ini terisi (dev/CI belum setup Google Cloud Console), `lib/auth.ts`
+  // yang cek kondisional & "matikan" `socialProviders.google` kalau
+  // kosong, bukan env validation di boot time. § ADR-0030.
+  GOOGLE_CLIENT_ID: t.Optional(t.String({ minLength: 1 })),
+  GOOGLE_CLIENT_SECRET: t.Optional(t.String({ minLength: 1 })),
 });
 
 if (!Value.Check(envSchema, process.env)) {

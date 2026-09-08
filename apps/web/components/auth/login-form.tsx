@@ -12,6 +12,7 @@ import { getSafeRedirect } from "@/lib/safe-redirect";
 import { Button } from "@/components/ui/button";
 import { IconInput } from "@/components/auth/icon-input";
 import { PasswordInput } from "@/components/auth/password-input";
+import { GoogleSignInButton } from "@/components/auth/google-signin-button";
 
 const schema = z.object({
   email: z.string().email("Email tidak valid"),
@@ -52,6 +53,12 @@ function LoginFormInner() {
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="flex w-full max-w-sm flex-col gap-3">
+      <GoogleSignInButton />
+      <div className="flex items-center gap-3 text-xs text-muted-foreground">
+        <div className="h-px flex-1 bg-border" />
+        atau
+        <div className="h-px flex-1 bg-border" />
+      </div>
       <div>
         <IconInput icon={Mail} type="email" placeholder="Email" {...register("email")} />
         {errors.email && <p className="mt-1 text-xs text-red-600">{errors.email.message}</p>}

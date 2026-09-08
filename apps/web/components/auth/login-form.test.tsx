@@ -10,11 +10,12 @@ import userEvent from "@testing-library/user-event";
 // benar-benar dapat versi mock-nya, bukan modul asli yang keburu
 // ter-resolve).
 const signInEmail = mock(async (): Promise<{ error: { message: string } | null }> => ({ error: null }));
+const signInSocial = mock(async () => ({ error: null }));
 const routerPush = mock(() => {});
 const routerRefresh = mock(() => {});
 
 mock.module("@/lib/auth-client", () => ({
-  authClient: { signIn: { email: signInEmail } },
+  authClient: { signIn: { email: signInEmail, social: signInSocial } },
 }));
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
@@ -73,5 +74,20 @@ describe("LoginForm", () => {
   test("link 'Lupa password?' mengarah ke /forgot-password", () => {
     render(<LoginForm />);
     expect(screen.getByRole("link", { name: "Lupa password?" })).toHaveAttribute("href", "/forgot-password");
+  });
+
+  // § Fase 62 — klik tombol Google panggil `signIn.social` dengan
+  // provider yang benar, BUKAN `signIn.email` (§ google-signin-button.tsx).
+  test("klik 'Lanjutkan dengan Google' panggil authClient.signIn.social dengan provider google", async () => {
+    const user = userEvent.setup();
+    render(<LoginForm />);
+
+    await user.click(screen.getByRole("button", { name: /Lanjutkan dengan Google/ }));
+
+    await waitFor(() =>
+      expect(signInSocial).toHaveBeenCalledWith(
+        expect.objectContaining({ provider: "google", callbackURL: expect.any(String), errorCallbackURL: expect.any(String) }),
+      ),
+    );
   });
 });
