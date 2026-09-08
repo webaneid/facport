@@ -1,3 +1,10 @@
+## <small>1.17.1 (2026-09-08)</small>
+
+* Merge pull request #38 from webaneid/develop ([8ed5659](https://github.com/webaneid/facport/commit/8ed5659)), closes [#38](https://github.com/webaneid/facport/issues/38)
+* fix(invoice-import): atribut tambahan level header, dropdown mapping, tipe data boolean/persen ([7725a44](https://github.com/webaneid/facport/commit/7725a44))
+* fix(sales-invoice): tampilkan Nomor Transaksi, sinkron grouping Fase 49 ([4a3dce8](https://github.com/webaneid/facport/commit/4a3dce8))
+* docs(auth): panduan step-by-step Login/Register Google, portable ke project lain ([7738038](https://github.com/webaneid/facport/commit/7738038))
+
 ## 1.17.0 (2026-09-08)
 
 * Merge pull request #37 from webaneid/develop ([d00d9c8](https://github.com/webaneid/facport/commit/d00d9c8)), closes [#37](https://github.com/webaneid/facport/issues/37)
