@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-09-08 — Guard idempotent "Retry Cerdas" (ADR-0012) salah anggap upload baru sebagai retry, data baru silent tidak terkirim
+**Masalah:** Client testing Atribut Tambahan Sales Invoice (Fase 64)
+lapor PPN & Atribut Tambahan "belum bisa terbaca" di Accurate, padahal
+kode sudah diverifikasi benar (Fase 64-66). Simulasi payload dari data
+production TERBUKTI benar. Query historis membuktikan 2 batch BERBEDA
+(`de033564-...` 11:34, `977775bc-...` 11:44) hasilkan
+`accurate_transaction_id`/`accurate_detail_item_id` yang **identik** —
+artinya `save.do` (panggilan yang bawa field baru) TIDAK PERNAH
+dieksekusi untuk batch kedua, tapi baris tetap dilaporkan "success".
+
+**Root cause:** Mekanisme "Retry Cerdas" (ADR-0012, Fase 08/09,
+`appendToExistingPurchaseInvoice`/`appendToExistingSalesInvoice`) skip
+`save.do` TOTAL kalau semua item baris grup (itemNo+unitPrice+quantity)
+sudah match dengan faktur existing — didesain untuk retry-safety (cegah
+duplikat item kalau tombol Retry diklik berkali-kali PADA BATCH YANG
+SAMA). Tapi kriteria match-nya TIDAK membedakan "retry batch yang sama"
+vs "upload baru yang KEBETULAN Trans No + item + harga + qty-nya identik
+dengan batch test sebelumnya" (skenario wajar: client re-upload file
+template yang sama setelah nambah kolom baru) — keduanya sama-sama
+`newRows.length === 0`, jadi diperlakukan sama (silent success), padahal
+maksudnya beda total.
+
+**Fix:** `findExistingAccurateInvoiceId`/`findExistingAccurateSalesInvoiceId`
+sekarang ikut kembalikan `batchId` sumber match. Fungsi murni baru
+`isCoincidentalDuplicateAcrossBatches` (`apps/api/src/lib/append-invoice-guard.ts`)
+membedakan: match di batch SAMA + tidak ada baris baru → tetap silent
+success (retry-safety asli, TIDAK berubah); match di batch LAIN + tidak
+ada baris baru → reject dengan pesan error jelas (row jadi `failed`).
+Diterapkan konsisten ke Sales Invoice DAN Purchase Invoice (mirror 1:1
+sejak ADR-0012, bug yang sama pasti ada di keduanya). Detail keputusan →
+`docs/decisions/adr-0031-batasi-idempotent-guard-append-invoice-ke-batch-sama.md`.
+
+**Pencegahan:** Kalau bikin guard "idempotent/skip kalau sudah pernah
+diproses", JANGAN cuma cek "apakah hasilnya sama" — cek juga "apakah
+konteks pemanggilan ini SAMA dengan konteks yang menghasilkan data itu
+sebelumnya" (di sini: batch yang sama). Kesamaan HASIL tidak selalu
+berarti ini PERCOBAAN ULANG dari proses yang sama; bisa juga kebetulan
+input baru yang identik dengan input lama — dan silent-success untuk
+kasus kedua itu berbahaya karena user tidak tahu data barunya tidak
+pernah benar-benar terkirim. Kalau ragu, tolak dengan pesan jelas —
+JANGAN silent-succeed.
+
+---
+
 ## 2026-09-08 — Field boolean/persen dikirim salah tipe JSON ke Accurate, pesan error generik tidak menyebut penyebab sebenarnya
 **Masalah:** Client laporkan: isi kolom Diskon (%) dan kolom Pajak
 (Taxable/PPN/PPnBM/PPh23) di Excel Sales Invoice → import gagal dengan

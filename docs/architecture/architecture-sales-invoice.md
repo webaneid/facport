@@ -77,6 +77,17 @@ kolom pengelompokan AWALNYA cuma **"PO Number"** (`poNumber`, field
 resmi Accurate di `sales-invoice/save.do` — referensi nomor PO dari
 customer, peran sama seperti Bill No vendor di PI).
 
+> **Refinement Fase 67 (2026-09-08)**: guard idempotent
+> `appendToExistingSalesInvoice` (skip `save.do` kalau semua item grup
+> sudah match faktur existing, § ADR-0012) tadinya berlaku untuk SEMUA
+> match lintas-batch — termasuk upload BARU yang kebetulan Nomor
+> Transaksi + item + harga + qty-nya identik dengan batch test
+> sebelumnya (bukan retry beneran), akibatnya field baru (PPN, Atribut
+> Tambahan) tidak pernah terkirim tapi baris dilaporkan "success".
+> Sekarang guard HANYA silent-success untuk match di BATCH YANG SAMA;
+> match di batch lain tanpa baris baru → ditolak dengan pesan jelas.
+> Detail → `docs/decisions/adr-0031-batasi-idempotent-guard-append-invoice-ke-batch-sama.md`.
+
 **§ Fase 49 — DIREVISI, kolom pengelompokan DIGENERALISASI.** Audit
 terhadap file Excel ASLI kompetitor (`docs/referencehtml/format_sales_inv_v7.xlsx`,
 833 baris) menemukan **"PO Number" SELALU KOSONG** di praktik nyata,

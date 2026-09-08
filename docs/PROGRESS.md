@@ -75,6 +75,7 @@
 | 64   | Atribut Tambahan Level Header Sales Invoice (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-64-atribut-tambahan-level-header-sales-invoice.md` |
 | 65   | Fix Dropdown Mapping & Sinkron Header Sales Invoice | Done | (lihat phase doc) | `docs/phases/phase-65-fix-dropdown-mapping-dan-sinkron-header-sales-invoice.md` |
 | 66   | Fix Tipe Data Boolean & Persen Diskon (Sales Invoice + Purchase Invoice) | Done | (lihat phase doc) | `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md` |
+| 67   | Fix Guard Idempotent Append Faktur: Batasi ke Retry Batch yang Sama | Done | (lihat phase doc) | `docs/phases/phase-67-fix-duplikat-nomor-transaksi-lintas-batch.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1935,3 +1936,23 @@ number). Fix diterapkan konsisten di Sales Invoice DAN Purchase Invoice
 
 Typecheck 0 error. Full suite `apps/api` 452 pass/0 fail (6 baru).
 Detail lengkap → `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md`.
+
+## Update 2026-09-08 — Fase 67 Done: Fix Guard Idempotent Append Faktur — Batasi ke Retry Batch yang Sama
+Client lapor PPN/Atribut Tambahan Sales Invoice "belum bisa terbaca"
+meski Fase 64-66 sudah benar. Investigasi payload production membuktikan
+kode sudah benar; query historis lintas batch (2 batch beda,
+`de033564-...` & `977775bc-...`) membuktikan `accurate_transaction_id`
+DAN `accurate_detail_item_id` IDENTIK — artinya `save.do` TIDAK PERNAH
+dipanggil untuk batch kedua. Root cause: guard idempotent "Retry Cerdas"
+(ADR-0012, Fase 08/09) salah anggap upload baru yang kebetulan Trans No
++ item + harga + qty sama sebagai "retry", skip `save.do` total, field
+baru (PPN/Atribut Tambahan) tidak pernah terkirim tapi baris dilaporkan
+"success". Fix: guard sekarang hanya berlaku untuk retry DALAM batch
+yang sama; duplikat kebetulan lintas batch di-reject dengan pesan error
+jelas. Diterapkan konsisten ke Sales Invoice DAN Purchase Invoice.
+
+Typecheck 0 error. Full suite `apps/api` 456 pass/0 fail (4 baru). Lihat
+ADR-0031 dan `docs/phases/phase-67-fix-duplikat-nomor-transaksi-lintas-batch.md`.
+Known limitation: poin PPN/Atribut Tambahan "belum terbaca" client masih
+menunggu retest dengan Trans No baru + klarifikasi lanjutan sebelum
+dianggap tuntas sepenuhnya.
