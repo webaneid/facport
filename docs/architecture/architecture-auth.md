@@ -155,6 +155,11 @@ jalur, cuma proses verifikasinya beda (self-service verifikasi email,
 admin-provisioned dianggap terverifikasi karena admin yang buat).
 
 ## Login/Register Google (OAuth) — Fase 62, ADR-0030
+> Panduan step-by-step portable (setup Google Cloud Console + kode,
+> ditulis supaya bisa diduplikasi ke project lain) →
+> `docs/google-oauth-login-setup.md`. Section di bawah ini fokus ke
+> keputusan & histori SPESIFIK Facport.
+
 Surface `app` SAJA (customer) — admin/staff SELALU provisioning manual
 oleh Super Admin, tidak pernah self-register, jadi tombol Google TIDAK
 ada di `admin.facport.com`. Aktif kondisional: `GOOGLE_CLIENT_ID`/
