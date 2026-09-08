@@ -26,7 +26,10 @@ const ACCURATE_FIELDS = [
   { value: "warehouseName", label: "Gudang (wajib)" },
   { value: "branchName", label: "Nama Cabang (wajib kalau akun multi-cabang)" },
   { value: "number", label: "Nomor Transaksi (wajib, unik per transaksi)" },
-  { value: "poNumber", label: "Nomor PO Customer (isi sama untuk gabung jadi 1 faktur)" },
+  // § Fase 70 — label diganti "Nomor PO Customer" -> "Bill No",
+  // konsisten dengan judul kolom template (client minta samakan istilah
+  // dengan Purchase Invoice).
+  { value: "poNumber", label: "Bill No (Nomor PO Customer, isi sama untuk gabung jadi 1 faktur)" },
   { value: "description", label: "Keterangan" },
   { value: "currencyCode", label: "Kode Mata Uang" },
   { value: "rate", label: "Nilai Tukar" },
@@ -65,16 +68,19 @@ const ACCURATE_FIELDS = [
   // ke list dropdown INI — client tidak bisa memetakan kolom Karakter
   // sama sekali walau kolomnya sudah termapping otomatis via
   // `defaultColumnMap`, karena opsi field-nya tidak ada di dropdown.
-  { value: "attribut1", label: "Atribut Tambahan Karakter 1 (per barang)" },
-  { value: "attribut2", label: "Atribut Tambahan Karakter 2 (per barang)" },
-  { value: "attribut3", label: "Atribut Tambahan Karakter 3 (per barang)" },
-  { value: "attribut4", label: "Atribut Tambahan Karakter 4 (per barang)" },
-  { value: "attribut5", label: "Atribut Tambahan Karakter 5 (per barang)" },
-  { value: "attribut6", label: "Atribut Tambahan Karakter 6 (per barang)" },
-  { value: "attribut7", label: "Atribut Tambahan Karakter 7 (per barang)" },
-  { value: "attribut8", label: "Atribut Tambahan Karakter 8 (per barang)" },
-  { value: "attribut9", label: "Atribut Tambahan Karakter 9 (per barang)" },
-  { value: "attribut10", label: "Atribut Tambahan Karakter 10 (per barang)" },
+  // § Fase 69 (2026-09-08) — label diganti "Karakter N" -> "Kategori
+  // Keuangan N", mengikuti istilah RESMI yang tampil di UI Accurate
+  // (dikonfirmasi client via screenshot, § Fase 68 auto-create).
+  { value: "attribut1", label: "Kategori Keuangan 1 (per barang)" },
+  { value: "attribut2", label: "Kategori Keuangan 2 (per barang)" },
+  { value: "attribut3", label: "Kategori Keuangan 3 (per barang)" },
+  { value: "attribut4", label: "Kategori Keuangan 4 (per barang)" },
+  { value: "attribut5", label: "Kategori Keuangan 5 (per barang)" },
+  { value: "attribut6", label: "Kategori Keuangan 6 (per barang)" },
+  { value: "attribut7", label: "Kategori Keuangan 7 (per barang)" },
+  { value: "attribut8", label: "Kategori Keuangan 8 (per barang)" },
+  { value: "attribut9", label: "Kategori Keuangan 9 (per barang)" },
+  { value: "attribut10", label: "Kategori Keuangan 10 (per barang)" },
   { value: "attributHeaderKarakter1", label: "Atribut Tambahan Karakter 1 (per faktur)" },
   { value: "attributHeaderKarakter2", label: "Atribut Tambahan Karakter 2 (per faktur)" },
   { value: "attributHeaderKarakter3", label: "Atribut Tambahan Karakter 3 (per faktur)" },

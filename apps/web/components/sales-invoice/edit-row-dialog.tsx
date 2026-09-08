@@ -145,7 +145,7 @@ export function EditRowDialog({
           )}
           {siblingRowNumbers.length > 0 && (
             <p className="rounded-md bg-warning-bg px-3 py-2 text-warning">
-              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (Nomor Transaksi/PO Number sama) — Nomor Customer wajib
+              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (Nomor Transaksi/Bill No sama) — Nomor Customer wajib
               sama persis dengan baris-baris itu, kalau tidak seluruh faktur ikut gagal.
             </p>
           )}

@@ -59,11 +59,19 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Kategori Barang", required: false, example: "Umum", description: "Kategori barang baru — dipakai HANYA kalau Item No belum terdaftar di Accurate, kosongkan untuk pakai default \"Umum\"." },
 ];
 
-// § Fase 13 — mirror `purchaseInvoiceTemplateGuide`, "PO Number" pengganti
-// peran "Bill No" (pengelompokan multi-item), "Customer" pengganti "Vendor".
+// § Fase 13 — mirror `purchaseInvoiceTemplateGuide` (field API `poNumber`
+// berperan sama seperti "Bill No" PI — pengelompokan multi-item),
+// "Customer" pengganti "Vendor". § Fase 70 — judul kolom Excel disamakan
+// jadi "Bill No" juga (sebelumnya "PO Number", client minta konsisten).
 export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Penjualan." },
-  { column: "PO Number", required: false, example: "PO-CUST-001", description: "Nomor PO referensi dari customer. Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
+  // § Fase 70 (2026-09-08) — client minta judul kolom diganti "PO
+  // Number" -> "Bill No" (konsisten dengan istilah "Bill No" di modul
+  // Purchase Invoice) — field API TETAP `poNumber` (§ ADR/komentar
+  // `fieldToAccuratePath`), murni rename judul kolom Excel. Sinonim
+  // lama "PO Number"/"PURCHASE ORDER NO" TETAP didukung di
+  // `defaultColumnMap`.
+  { column: "Bill No", required: false, example: "PO-CUST-001", description: "Nomor PO/referensi dari customer (field API poNumber). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
   { column: "Customer No", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
   // § Fase 61/64 — WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
   // resmi client) — SEBELUMNYA opsional/"kosongkan supaya otomatis",
@@ -103,22 +111,6 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
-  // § Fase 55, nama kolom dikoreksi Fase 61 setelah Excel asli client
-  // diterima — SEBELUMNYA "Karakter N" (tebakan), nama ASLI client
-  // "ITEM:CUSTOM CHARACTER N". Level ITEM (per baris barang), field API
-  // `dataClassificationNName`. Label BISA di-rename beda oleh admin
-  // client di menu Preferensi Accurate — kalau begitu, nama kolom Excel
-  // WAJIB ikut label custom itu (remap manual saat import).
-  { column: "ITEM:CUSTOM CHARACTER 1", required: false, example: "", description: "Atribut Tambahan 1 level ITEM (per baris barang) — nama kolom ikuti label yang di-set admin Accurate di menu Preferensi kalau sudah di-rename. Maksimal 10 (11-15 tidak didukung API Accurate)." },
-  { column: "ITEM:CUSTOM CHARACTER 2", required: false, example: "", description: "Atribut Tambahan 2 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 3", required: false, example: "", description: "Atribut Tambahan 3 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 4", required: false, example: "", description: "Atribut Tambahan 4 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 5", required: false, example: "", description: "Atribut Tambahan 5 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 6", required: false, example: "", description: "Atribut Tambahan 6 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 7", required: false, example: "", description: "Atribut Tambahan 7 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 8", required: false, example: "", description: "Atribut Tambahan 8 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 9", required: false, example: "", description: "Atribut Tambahan 9 level ITEM — sama pola nomor 1." },
-  { column: "ITEM:CUSTOM CHARACTER 10", required: false, example: "", description: "Atribut Tambahan 10 level ITEM — sama pola nomor 1." },
   // § Fase 64 — Atribut Tambahan level HEADER/FAKTUR (BEDA dari level
   // ITEM di atas — TANPA prefix "ITEM:"). Ditemukan dari email resmi
   // Accurate Support (tiket #357901): field API `charField1-10`,
@@ -155,6 +147,32 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Negara Customer", required: false, example: "Indonesia", description: "Negara customer baru." },
   { column: "Akun Piutang", required: false, example: "1-10500", description: "Kode Akun Piutang (COA) — kalau diisi, akan meng-update akun piutang customer (berlaku untuk customer baru MAUPUN yang sudah ada)." },
   { column: "Kategori Barang", required: false, example: "Umum", description: "Kategori barang baru — dipakai HANYA kalau Item No belum terdaftar di Accurate, kosongkan untuk pakai default \"Umum\"." },
+  // § Fase 55, nama kolom dikoreksi Fase 61 ("Karakter N" -> "ITEM:CUSTOM
+  // CHARACTER N" setelah Excel asli client diterima), dikoreksi LAGI
+  // Fase 69 (2026-09-08) setelah client konfirmasi langsung via
+  // screenshot Accurate: field ini TAMPIL di Accurate dengan label
+  // default "Kategori Keuangan N" (nama resmi Accurate untuk
+  // `/api/data-classification`, § Fase 68) — BUKAN "ITEM:CUSTOM
+  // CHARACTER N" (istilah lama kita yang TIDAK muncul di UI Accurate
+  // sama sekali, sumber kebingungan berulang). Label BISA di-rename
+  // beda oleh admin client di menu Preferensi | Atribut Tambahan
+  // Accurate — kalau begitu, nama kolom Excel WAJIB ikut label custom
+  // itu (remap manual saat import) — sinonim "ITEM:CUSTOM CHARACTER N"
+  // TETAP didukung di `defaultColumnMap` (client lama/existing yang
+  // sudah terlanjur pakai nama itu tidak regresi). Dipindah ke PALING
+  // AKHIR template Fase 70 (2026-09-08, permintaan client) — sebelumnya
+  // di tengah (dekat field item lain), sekarang setelah "Kategori
+  // Barang" supaya tidak "menyempil" di antara field inti.
+  { column: "Kategori Keuangan 1", required: false, example: "", description: "Atribut Tambahan 1 level ITEM (per baris barang, field API dataClassification1Name) — nama kolom ikuti label yang di-set admin Accurate di menu Preferensi | Atribut Tambahan kalau sudah di-rename. Maksimal 10 (11-15 tidak didukung API Accurate). Nilai yang belum ada sebagai master data Kategori Keuangan akan otomatis dibuatkan." },
+  { column: "Kategori Keuangan 2", required: false, example: "", description: "Atribut Tambahan 2 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 3", required: false, example: "", description: "Atribut Tambahan 3 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 4", required: false, example: "", description: "Atribut Tambahan 4 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 5", required: false, example: "", description: "Atribut Tambahan 5 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 6", required: false, example: "", description: "Atribut Tambahan 6 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 7", required: false, example: "", description: "Atribut Tambahan 7 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 8", required: false, example: "", description: "Atribut Tambahan 8 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 9", required: false, example: "", description: "Atribut Tambahan 9 level ITEM — sama pola nomor 1." },
+  { column: "Kategori Keuangan 10", required: false, example: "", description: "Atribut Tambahan 10 level ITEM — sama pola nomor 1." },
 ];
 
 export const vendorPayableAccountTemplateGuide: TemplateFieldGuide[] = [

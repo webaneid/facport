@@ -113,7 +113,7 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68
+## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68, rename kolom Fase 69
 **Status: SELESAI diimplementasi & DIKOREKSI dengan file Excel ASLI
 client (2026-09-08).** `defaultColumnMap` sudah diperbarui ke nama
 kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
@@ -138,6 +138,17 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 > (`accurate-scopes.ts`) — koneksi Accurate yang connect SEBELUM fase
 > ini WAJIB disconnect & reconnect ulang. Detail →
 > `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md`.
+
+> **Update 2026-09-08 (Fase 69)** — Client verifikasi Fase 68 berhasil
+> (screenshot Accurate: field label default "TES 1" = value "HWGRIO"
+> persis seperti dikirim), lalu tunjukkan nama kolom Excel kita
+> ("ITEM:CUSTOM CHARACTER N", § Fase 61) TIDAK cocok dengan label yang
+> TAMPIL di UI Accurate sendiri — Accurate pakai "Kategori Keuangan N"
+> sebagai label default (istilah resmi, § Fase 68). Kolom Excel di
+> template download & dropdown konfirmasi mapping diganti ke "Kategori
+> Keuangan N" — sinonim lama "ITEM:CUSTOM CHARACTER N" TETAP didukung
+> (backward compat). Detail →
+> `docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md`.
 
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet
