@@ -1,3 +1,8 @@
+## 1.17.0 (2026-09-08)
+
+* Merge pull request #37 from webaneid/develop ([d00d9c8](https://github.com/webaneid/facport/commit/d00d9c8)), closes [#37](https://github.com/webaneid/facport/issues/37)
+* feat(auth): login/register dengan Google OAuth (surface app saja) ([2264c66](https://github.com/webaneid/facport/commit/2264c66))
+
 ## <small>1.16.1 (2026-09-08)</small>
 
 * Merge pull request #36 from webaneid/develop ([9cd53d9](https://github.com/webaneid/facport/commit/9cd53d9)), closes [#36](https://github.com/webaneid/facport/issues/36)
