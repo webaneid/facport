@@ -1,3 +1,8 @@
+## <small>1.18.1 (2026-09-08)</small>
+
+* Merge pull request #41 from webaneid/develop ([abc0be2](https://github.com/webaneid/facport/commit/abc0be2)), closes [#41](https://github.com/webaneid/facport/issues/41)
+* fix: rename kolom template Sales Invoice sesuai istilah resmi Accurate ([cb201b3](https://github.com/webaneid/facport/commit/cb201b3))
+
 ## 1.18.0 (2026-09-08)
 
 * Merge pull request #40 from webaneid/develop ([320aa9a](https://github.com/webaneid/facport/commit/320aa9a)), closes [#40](https://github.com/webaneid/facport/issues/40)
