@@ -309,6 +309,29 @@ describe("buildDetailItemFromRow", () => {
     expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
   });
 
+  // § Fase 69 (2026-09-08) — client konfirmasi via screenshot Accurate:
+  // field ini TAMPIL di UI Accurate dengan label default "Kategori
+  // Keuangan N" (nama resmi Accurate untuk /api/data-classification),
+  // BUKAN "ITEM:CUSTOM CHARACTER N" (istilah lama kita yang TIDAK PERNAH
+  // muncul di Accurate). "Kategori Keuangan N" jadi sinonim BARU (judul
+  // kolom template terbaru), "ITEM:CUSTOM CHARACTER N" TETAP dipertahankan
+  // (backward compat, tidak regresi client existing).
+  test("defaultColumnMap punya sinonim 'Kategori Keuangan N' (istilah resmi Accurate) untuk attribut1-10", () => {
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`Kategori Keuangan ${i}`]).toBe(`attribut${i}`);
+      // sinonim lama TETAP ada, bukan diganti
+      expect(salesInvoiceMapping.defaultColumnMap[`ITEM:CUSTOM CHARACTER ${i}`]).toBe(`attribut${i}`);
+    }
+  });
+
+  // § Fase 70 (2026-09-08) — client minta judul kolom "PO Number" ->
+  // "Bill No" (konsisten dengan istilah Purchase Invoice). "PO Number"
+  // TETAP dipertahankan sebagai sinonim lama.
+  test("defaultColumnMap punya sinonim 'Bill No' untuk poNumber, 'PO Number' TETAP ada", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Bill No"]).toBe("poNumber");
+    expect(salesInvoiceMapping.defaultColumnMap["PO Number"]).toBe("poNumber");
+  });
+
   // § Fase 64 — Atribut Tambahan LEVEL HEADER (charField/numericField/
   // dateField), ditemukan dari email resmi Accurate Support (tiket
   // #357901) — field ini TIDAK ADA di accurate-openapi.json (spec tidak

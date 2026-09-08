@@ -77,6 +77,8 @@
 | 66   | Fix Tipe Data Boolean & Persen Diskon (Sales Invoice + Purchase Invoice) | Done | (lihat phase doc) | `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md` |
 | 67   | Fix Guard Idempotent Append Faktur: Batasi ke Retry Batch yang Sama | Done | (lihat phase doc) | `docs/phases/phase-67-fix-duplikat-nomor-transaksi-lintas-batch.md` |
 | 68   | Auto-Create Kategori Keuangan (Atribut Tambahan Item-Level) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md` |
+| 69   | Rename Kolom Excel "ITEM:CUSTOM CHARACTER N" -> "Kategori Keuangan N" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md` |
+| 70   | Reorder Kolom Kategori Keuangan + Rename "PO Number" -> "Bill No" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-70-reorder-kolom-dan-rename-bill-no-sales-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1972,3 +1974,24 @@ koneksi Accurate existing WAJIB disconnect & reconnect ulang.
 
 Typecheck 0 error. Full suite `apps/api` 459 pass/0 fail (3 baru). Lihat
 `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md`.
+
+## Update 2026-09-08 — Fase 69 Done: Rename Kolom Excel "ITEM:CUSTOM CHARACTER N" -> "Kategori Keuangan N"
+Client verifikasi Fase 68 (screenshot Accurate: field "TES 1" = "HWGRIO"
+persis seperti dikirim) lalu tunjukkan nama kolom Excel kita
+("ITEM:CUSTOM CHARACTER N") tidak cocok dengan label yang tampil di UI
+Accurate sendiri ("Kategori Keuangan N", istilah resmi). Diganti di
+template download + defaultColumnMap (sinonim baru ditambah, lama
+dipertahankan) + dropdown konfirmasi mapping.
+
+Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail (1 baru). Lihat
+`docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md`.
+
+## Update 2026-09-08 — Fase 70 Done: Reorder Kolom Kategori Keuangan + Rename "PO Number" -> "Bill No"
+Client minta 2 penyesuaian lanjutan template Sales Invoice: kolom
+"Kategori Keuangan 1-10" dipindah ke PALING AKHIR template (setelah
+"Kategori Barang"), dan "PO Number" diganti judul jadi "Bill No"
+(konsisten istilah Purchase Invoice). Field API `poNumber` tidak
+berubah, sinonim lama "PO Number" tetap didukung.
+
+Typecheck 0 error. Full suite `apps/api` 461 pass/0 fail (1 baru). Lihat
+`docs/phases/phase-70-reorder-kolom-dan-rename-bill-no-sales-invoice.md`.

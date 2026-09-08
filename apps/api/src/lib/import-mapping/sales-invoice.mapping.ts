@@ -110,6 +110,11 @@ export const salesInvoiceMapping = {
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
+    // § Fase 70 (2026-09-08) — "Bill No" jadi judul kolom BARU (client
+    // minta konsisten dengan istilah "Bill No" di Purchase Invoice),
+    // "PO Number" TETAP dipertahankan sebagai sinonim lama (backward
+    // compat, § pola sama Fase 69 untuk Kategori Keuangan).
+    "Bill No": "poNumber",
     "PO Number": "poNumber",
     "Customer No": "customerNo",
     "Trans No": "number",
@@ -199,6 +204,26 @@ export const salesInvoiceMapping = {
     "ITEM:CUSTOM CHARACTER 8": "attribut8",
     "ITEM:CUSTOM CHARACTER 9": "attribut9",
     "ITEM:CUSTOM CHARACTER 10": "attribut10",
+    // § Fase 69 (2026-09-08) — client konfirmasi via screenshot Accurate
+    // langsung: field ini TAMPIL di UI Accurate dengan label DEFAULT
+    // "Kategori Keuangan N" (nama resmi Accurate untuk
+    // `/api/data-classification`, § Fase 68), BUKAN "ITEM:CUSTOM
+    // CHARACTER N" — istilah lama itu TIDAK PERNAH muncul di Accurate
+    // sama sekali, sumber kebingungan berulang di sesi ini. Template
+    // BARU (`template-guide.ts`) sekarang pakai "Kategori Keuangan N"
+    // sebagai judul kolom resmi — sinonim lama TETAP dipertahankan di
+    // atas (harmless, client existing yang masih pakai nama lama tidak
+    // regresi).
+    "Kategori Keuangan 1": "attribut1",
+    "Kategori Keuangan 2": "attribut2",
+    "Kategori Keuangan 3": "attribut3",
+    "Kategori Keuangan 4": "attribut4",
+    "Kategori Keuangan 5": "attribut5",
+    "Kategori Keuangan 6": "attribut6",
+    "Kategori Keuangan 7": "attribut7",
+    "Kategori Keuangan 8": "attribut8",
+    "Kategori Keuangan 9": "attribut9",
+    "Kategori Keuangan 10": "attribut10",
     // § Fase 64 — Atribut Tambahan LEVEL HEADER (nama kolom Excel client
     // TANPA prefix "ITEM:", beda dari yang di atas). `charField`/
     // `numericField`/`dateField` — lihat komentar `fieldToAccuratePath`.
