@@ -1,3 +1,8 @@
+## <small>1.17.2 (2026-09-08)</small>
+
+* Merge pull request #39 from webaneid/develop ([d6adc5f](https://github.com/webaneid/facport/commit/d6adc5f)), closes [#39](https://github.com/webaneid/facport/issues/39)
+* fix: batasi guard idempotent append faktur ke retry batch yang sama ([391e649](https://github.com/webaneid/facport/commit/391e649))
+
 ## <small>1.17.1 (2026-09-08)</small>
 
 * Merge pull request #38 from webaneid/develop ([8ed5659](https://github.com/webaneid/facport/commit/8ed5659)), closes [#38](https://github.com/webaneid/facport/issues/38)
