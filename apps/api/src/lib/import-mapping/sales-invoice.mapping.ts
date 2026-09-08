@@ -65,6 +65,48 @@ export const salesInvoiceMapping = {
     attribut8: "detailItem.dataClassification8Name",
     attribut9: "detailItem.dataClassification9Name",
     attribut10: "detailItem.dataClassification10Name",
+    // § Fase 64 — Atribut Tambahan LEVEL HEADER/FAKTUR (BEDA dari
+    // attribut1-10 di atas yang level ITEM). Ditemukan lewat email
+    // resmi Accurate Support (forward dari client, tiket #357901,
+    // 2026-04-24) — field ini TIDAK ADA di `accurate-openapi.json`
+    // (dicek: 0 kemunculan "charField"/"numericField"/"dateField" di
+    // seluruh file) — spec yang jadi acuan Fase 55/61 TERNYATA TIDAK
+    // LENGKAP untuk fitur ini, BUKAN berarti field-nya tidak ada di API
+    // sungguhan. Contoh body resmi dari Accurate Support (utk Purchase
+    // Invoice, field TOP-LEVEL sejajar `vendorNo`/`transDate`, BUKAN di
+    // dalam `detailItem`): `{"vendorNo":"V.00001","charField1":"...",
+    // "detailItem":[...]}`. Diasumsikan berlaku sama untuk Sales
+    // Invoice (API Accurate konsisten lintas jenis transaksi, § riset
+    // dataClassificationNName Fase 61 yang konsisten di 30+ endpoint)
+    // — DIPERKUAT bukti independen: Excel asli client (`format_sales_inv_v7 (PLAN).xlsx`)
+    // punya PERSIS 10 kolom "CUSTOM CHARACTER" + 10 "CUSTOM NUMBER" + 2
+    // "CUSTOM DATE" TANPA prefix "ITEM:" (level header) — cocok PERSIS
+    // jumlah charField1-10/numericField1-10/dateField1-2. BELUM
+    // diverifikasi end-to-end ke Accurate sungguhan untuk Sales Invoice
+    // spesifik (baru dikonfirmasi resmi untuk Purchase Invoice) — catat
+    // di Known Limitations kalau ternyata beda.
+    attributHeaderKarakter1: "charField1",
+    attributHeaderKarakter2: "charField2",
+    attributHeaderKarakter3: "charField3",
+    attributHeaderKarakter4: "charField4",
+    attributHeaderKarakter5: "charField5",
+    attributHeaderKarakter6: "charField6",
+    attributHeaderKarakter7: "charField7",
+    attributHeaderKarakter8: "charField8",
+    attributHeaderKarakter9: "charField9",
+    attributHeaderKarakter10: "charField10",
+    attributHeaderAngka1: "numericField1",
+    attributHeaderAngka2: "numericField2",
+    attributHeaderAngka3: "numericField3",
+    attributHeaderAngka4: "numericField4",
+    attributHeaderAngka5: "numericField5",
+    attributHeaderAngka6: "numericField6",
+    attributHeaderAngka7: "numericField7",
+    attributHeaderAngka8: "numericField8",
+    attributHeaderAngka9: "numericField9",
+    attributHeaderAngka10: "numericField10",
+    attributHeaderTanggal1: "dateField1",
+    attributHeaderTanggal2: "dateField2",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
@@ -101,6 +143,37 @@ export const salesInvoiceMapping = {
     PPN: "useTax1",
     PPnBM: "useTax2",
     PPH: "useTax3",
+    // § Fase 65 — bug ditemukan (feedback client, "Unit Price belum
+    // masuk" dkk): dibandingkan header ASLI Excel standar Accurate
+    // (`format_sales_inv_v7 (PLAN).xlsx`), TERNYATA MAYORITAS tebakan
+    // `defaultColumnMap` di atas TIDAK COCOK — bukan cuma beda huruf
+    // besar/kecil (matching SUDAH case-insensitive, § `sales-invoice-import.route.ts`),
+    // tapi KATA-NYA SENDIRI beda (mis. "Unit Price" vs "ITEM UNIT PRICE",
+    // "Note" vs "DESCRIPTION", "Pay Term" vs "PAYMENT TERM NAME"). Field
+    // TETAP bisa dipetakan manual (semua ADA di dropdown
+    // `ACCURATE_FIELDS`/`import/page.tsx`), tapi TIDAK auto-suggest —
+    // client kemungkinan besar melihat "(tidak dipetakan)" dan
+    // mengira field itu tidak didukung. Sinonim di bawah nama ASLI
+    // template standar Accurate ("format_sales_inv_v7" — kemungkinan
+    // besar nama file EXPORT BAKU Accurate, bukan custom 1 client,
+    // jadi perbaikan ini menguntungkan SEMUA pengguna modul ini) —
+    // tebakan lama TETAP DIPERTAHANKAN (bukan dihapus, harmless sebagai
+    // sinonim tambahan kalau ada format lain yang kebetulan pakai itu).
+    "TRANS DATE": "transDate",
+    "PURCHASE ORDER NO": "poNumber",
+    DESCRIPTION: "description",
+    "PAYMENT TERM NAME": "paymentTermName",
+    "REVERSE INVOICE": "reverseInvoice",
+    "CASH DISC": "cashDiscount",
+    "CASH DISC %": "cashDiscPercent",
+    "DOCUMENT TRANSACTION": "documentTransaction",
+    "ITEM UNIT PRICE": "unitPrice",
+    "ITEM: WAREHOUSE": "warehouseName",
+    "ITEM NOTE": "itemNotes",
+    "ITEM: CASH DISCOUNT": "itemCashDiscount",
+    "ITEM: CASH DISC %": "itemDiscPercent",
+    "ITEM: DEPT": "departmentName",
+    "ITEM: PROJECT NO": "projectNo",
     // § Fase 55, diperbarui 2026-09-08 setelah file Excel ASLI client
     // diterima (`format_sales_inv_v7 (PLAN).xlsx`) — nama kolom asli
     // client "ITEM:CUSTOM CHARACTER 1..10" (LEVEL ITEM/baris, bukan
@@ -126,6 +199,31 @@ export const salesInvoiceMapping = {
     "ITEM:CUSTOM CHARACTER 8": "attribut8",
     "ITEM:CUSTOM CHARACTER 9": "attribut9",
     "ITEM:CUSTOM CHARACTER 10": "attribut10",
+    // § Fase 64 — Atribut Tambahan LEVEL HEADER (nama kolom Excel client
+    // TANPA prefix "ITEM:", beda dari yang di atas). `charField`/
+    // `numericField`/`dateField` — lihat komentar `fieldToAccuratePath`.
+    "CUSTOM CHARACTER 1": "attributHeaderKarakter1",
+    "CUSTOM CHARACTER 2": "attributHeaderKarakter2",
+    "CUSTOM CHARACTER 3": "attributHeaderKarakter3",
+    "CUSTOM CHARACTER 4": "attributHeaderKarakter4",
+    "CUSTOM CHARACTER 5": "attributHeaderKarakter5",
+    "CUSTOM CHARACTER 6": "attributHeaderKarakter6",
+    "CUSTOM CHARACTER 7": "attributHeaderKarakter7",
+    "CUSTOM CHARACTER 8": "attributHeaderKarakter8",
+    "CUSTOM CHARACTER 9": "attributHeaderKarakter9",
+    "CUSTOM CHARACTER 10": "attributHeaderKarakter10",
+    "CUSTOM NUMBER 1": "attributHeaderAngka1",
+    "CUSTOM NUMBER 2": "attributHeaderAngka2",
+    "CUSTOM NUMBER 3": "attributHeaderAngka3",
+    "CUSTOM NUMBER 4": "attributHeaderAngka4",
+    "CUSTOM NUMBER 5": "attributHeaderAngka5",
+    "CUSTOM NUMBER 6": "attributHeaderAngka6",
+    "CUSTOM NUMBER 7": "attributHeaderAngka7",
+    "CUSTOM NUMBER 8": "attributHeaderAngka8",
+    "CUSTOM NUMBER 9": "attributHeaderAngka9",
+    "CUSTOM NUMBER 10": "attributHeaderAngka10",
+    "CUSTOM DATE 1": "attributHeaderTanggal1",
+    "CUSTOM DATE 2": "attributHeaderTanggal2",
   } as Record<string, string>,
 };
 
@@ -170,8 +268,36 @@ export const itemAutoCreateMapping = {
 export type ItemAutoCreateField = keyof typeof itemAutoCreateMapping.fieldToAccuratePath;
 
 // § lessons-learned.md 2026-08-19 — Accurate WAJIB format tanggal DD/MM/YYYY.
-const DATE_FIELDS = new Set<SalesInvoiceField>(["transDate", "taxDate", "shipDate"]);
+const DATE_FIELDS = new Set<SalesInvoiceField>(["transDate", "taxDate", "shipDate", "attributHeaderTanggal1", "attributHeaderTanggal2"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+// § Fase 66 — bug ditemukan (feedback client: "isi kolom diskon & pajak
+// -> gagal 'Faktur Penjualan tidak tepat', hapus -> berhasil"). Dicek ke
+// `accurate-openapi.json`: field ini WAJIB tipe JSON `boolean` MURNI
+// (`true`/`false`, § deskripsi resmi "Cth: true / false"), TAPI
+// `template-guide.ts` instruksikan user ketik teks "TRUE"/"FALSE" di
+// Excel — SheetJS baca cell teks sebagai STRING JS ("TRUE"), BUKAN
+// boolean asli. Payload yang terkirim `"taxable": "TRUE"` (string) —
+// Accurate reject dengan pesan generik yang TIDAK menyebut field
+// spesifiknya sama sekali, bikin sulit didiagnosis dari sisi user.
+const BOOLEAN_FIELDS = new Set<SalesInvoiceField>(["taxable", "inclusiveTax", "reverseInvoice", "useTax1", "useTax2", "useTax3"]);
+const TRUE_TEXT_VALUES = new Set(["true", "y", "yes", "1", "ya"]);
+
+function toAccurateBoolean(value: unknown): unknown {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return TRUE_TEXT_VALUES.has(value.trim().toLowerCase());
+  return value;
+}
+
+// § Fase 66 — `cashDiscPercent`/`itemDiscPercent` WAJIB tipe JSON
+// `string` di Accurate (BUKAN number — beda dari `cashDiscount`/
+// `itemCashDiscount` yang justru WAJIB `number`), supaya bisa terima
+// format diskon bertingkat ("5 + 2" = diskon 5% lalu 2%). Kalau user
+// isi angka polos di Excel (mis. "5"), SheetJS baca sebagai JS number
+// — dikirim sebagai number ke field yang expect string, Accurate
+// reject dengan pesan generik yang sama.
+const PERCENT_STRING_FIELDS = new Set<SalesInvoiceField>(["cashDiscPercent", "itemDiscPercent"]);
 
 function toAccurateDate(value: unknown): unknown {
   let date: Date | null = null;
@@ -198,7 +324,11 @@ function extractRowValues(
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
     if (rawRow[excelColumn] !== undefined && rawRow[excelColumn] !== "") {
       const f = field as SalesInvoiceField;
-      values[f] = DATE_FIELDS.has(f) ? toAccurateDate(rawRow[excelColumn]) : rawRow[excelColumn];
+      const raw = rawRow[excelColumn];
+      if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
+      else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
+      else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
+      else values[f] = raw;
     }
   }
   return values;

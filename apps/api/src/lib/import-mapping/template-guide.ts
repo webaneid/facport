@@ -65,7 +65,12 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Penjualan." },
   { column: "PO Number", required: false, example: "PO-CUST-001", description: "Nomor PO referensi dari customer. Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
   { column: "Customer No", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Trans No", required: false, example: "", description: "Nomor transaksi Accurate — kosongkan supaya nomor otomatis, ATAU isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item (kalau diisi, LEBIH DIUTAMAKAN dari PO Number untuk penggabungan)." },
+  // § Fase 61/64 — WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
+  // resmi client) — SEBELUMNYA opsional/"kosongkan supaya otomatis",
+  // KELIRU. Trans No JUGA kunci grouping multi-item (Fase 49, DIUTAMAKAN
+  // dari PO Number) — WAJIB unik per transaksi, BEDA dari PO Number/Bill
+  // No yang boleh sama walau beda transaksi (§ feedback client, Fase 63).
+  { column: "Trans No", required: true, example: "SI-2026-0001", description: "Nomor transaksi — WAJIB DIISI dan UNIK per transaksi (beda dari PO Number yang boleh sama). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item." },
   { column: "Branch Name", required: false, example: "Cabang Jakarta", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
   { column: "Note", required: false, example: "Penjualan barang Agustus", description: "Catatan/keterangan bebas untuk transaksi ini." },
   { column: "Currency Code", required: false, example: "IDR", description: "Kode mata uang — kosongkan kalau transaksi dalam Rupiah." },
@@ -85,7 +90,9 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online." },
   { column: "Unit Price", required: true, example: "50000", description: "Harga jual barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000)." },
   { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dijual." },
-  { column: "Item Unit Name", required: true, example: "PCS", description: "Satuan barang PERSIS seperti di Accurate (mis. PCS, KG, BOX)." },
+  // § Fase 61 — TIDAK WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
+  // resmi client) — SEBELUMNYA diwajibkan di sini, KELIRU.
+  { column: "Item Unit Name", required: false, example: "PCS", description: "Satuan barang PERSIS seperti di Accurate (mis. PCS, KG, BOX)." },
   { column: "Item Warehouse", required: true, example: "Gudang Utama", description: "Nama gudang asal barang PERSIS seperti di Accurate." },
   { column: "Item Name", required: false, example: "Kertas A4 80gsm", description: "Nama barang — dipakai untuk BIKIN barang baru otomatis kalau Item No belum terdaftar di Accurate." },
   { column: "Item Notes", required: false, example: "", description: "Catatan khusus untuk baris barang ini." },
@@ -96,20 +103,49 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
-  // § Fase 55 — "Atribut Tambahan" Accurate (menu Rancangan Formulir),
-  // per baris barang. Label di Accurate BISA di-rename beda oleh admin
-  // client (mis. "Nomor SPK") — kalau begitu, nama kolom Excel WAJIB
-  // ikut label custom itu (remap manual saat import), bukan "Karakter N".
-  { column: "Karakter 1", required: false, example: "", description: "Atribut Tambahan 1 (Kategori Keuangan) khusus barang ini — nama kolom ikuti label yang di-set admin Accurate di menu Preferensi kalau sudah di-rename." },
-  { column: "Karakter 2", required: false, example: "", description: "Atribut Tambahan 2 — sama pola Karakter 1." },
-  { column: "Karakter 3", required: false, example: "", description: "Atribut Tambahan 3 — sama pola Karakter 1." },
-  { column: "Karakter 4", required: false, example: "", description: "Atribut Tambahan 4 — sama pola Karakter 1." },
-  { column: "Karakter 5", required: false, example: "", description: "Atribut Tambahan 5 — sama pola Karakter 1." },
-  { column: "Karakter 6", required: false, example: "", description: "Atribut Tambahan 6 — sama pola Karakter 1." },
-  { column: "Karakter 7", required: false, example: "", description: "Atribut Tambahan 7 — sama pola Karakter 1." },
-  { column: "Karakter 8", required: false, example: "", description: "Atribut Tambahan 8 — sama pola Karakter 1." },
-  { column: "Karakter 9", required: false, example: "", description: "Atribut Tambahan 9 — sama pola Karakter 1." },
-  { column: "Karakter 10", required: false, example: "", description: "Atribut Tambahan 10 — sama pola Karakter 1." },
+  // § Fase 55, nama kolom dikoreksi Fase 61 setelah Excel asli client
+  // diterima — SEBELUMNYA "Karakter N" (tebakan), nama ASLI client
+  // "ITEM:CUSTOM CHARACTER N". Level ITEM (per baris barang), field API
+  // `dataClassificationNName`. Label BISA di-rename beda oleh admin
+  // client di menu Preferensi Accurate — kalau begitu, nama kolom Excel
+  // WAJIB ikut label custom itu (remap manual saat import).
+  { column: "ITEM:CUSTOM CHARACTER 1", required: false, example: "", description: "Atribut Tambahan 1 level ITEM (per baris barang) — nama kolom ikuti label yang di-set admin Accurate di menu Preferensi kalau sudah di-rename. Maksimal 10 (11-15 tidak didukung API Accurate)." },
+  { column: "ITEM:CUSTOM CHARACTER 2", required: false, example: "", description: "Atribut Tambahan 2 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 3", required: false, example: "", description: "Atribut Tambahan 3 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 4", required: false, example: "", description: "Atribut Tambahan 4 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 5", required: false, example: "", description: "Atribut Tambahan 5 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 6", required: false, example: "", description: "Atribut Tambahan 6 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 7", required: false, example: "", description: "Atribut Tambahan 7 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 8", required: false, example: "", description: "Atribut Tambahan 8 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 9", required: false, example: "", description: "Atribut Tambahan 9 level ITEM — sama pola nomor 1." },
+  { column: "ITEM:CUSTOM CHARACTER 10", required: false, example: "", description: "Atribut Tambahan 10 level ITEM — sama pola nomor 1." },
+  // § Fase 64 — Atribut Tambahan level HEADER/FAKTUR (BEDA dari level
+  // ITEM di atas — TANPA prefix "ITEM:"). Ditemukan dari email resmi
+  // Accurate Support (tiket #357901): field API `charField1-10`,
+  // `numericField1-10`, `dateField1-2`, dikirim di ROOT payload (sejajar
+  // Customer No/Tanggal), BUKAN per baris barang.
+  { column: "CUSTOM CHARACTER 1", required: false, example: "", description: "Atribut Tambahan 1 level FAKTUR (bukan per barang) — nama kolom ikuti label custom di Accurate kalau sudah di-rename." },
+  { column: "CUSTOM CHARACTER 2", required: false, example: "", description: "Atribut Tambahan 2 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 3", required: false, example: "", description: "Atribut Tambahan 3 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 4", required: false, example: "", description: "Atribut Tambahan 4 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 5", required: false, example: "", description: "Atribut Tambahan 5 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 6", required: false, example: "", description: "Atribut Tambahan 6 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 7", required: false, example: "", description: "Atribut Tambahan 7 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 8", required: false, example: "", description: "Atribut Tambahan 8 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 9", required: false, example: "", description: "Atribut Tambahan 9 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM CHARACTER 10", required: false, example: "", description: "Atribut Tambahan 10 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 1", required: false, example: "", description: "Atribut Tambahan Angka 1 level FAKTUR — angka polos, tanpa titik/koma pemisah ribuan." },
+  { column: "CUSTOM NUMBER 2", required: false, example: "", description: "Atribut Tambahan Angka 2 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 3", required: false, example: "", description: "Atribut Tambahan Angka 3 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 4", required: false, example: "", description: "Atribut Tambahan Angka 4 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 5", required: false, example: "", description: "Atribut Tambahan Angka 5 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 6", required: false, example: "", description: "Atribut Tambahan Angka 6 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 7", required: false, example: "", description: "Atribut Tambahan Angka 7 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 8", required: false, example: "", description: "Atribut Tambahan Angka 8 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 9", required: false, example: "", description: "Atribut Tambahan Angka 9 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM NUMBER 10", required: false, example: "", description: "Atribut Tambahan Angka 10 level FAKTUR — sama pola nomor 1." },
+  { column: "CUSTOM DATE 1", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Atribut Tambahan Tanggal 1 level FAKTUR." },
+  { column: "CUSTOM DATE 2", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Atribut Tambahan Tanggal 2 level FAKTUR — sama pola nomor 1." },
   { column: "Nama Customer", required: false, example: "PT Pembeli Jaya", description: "Nama customer — WAJIB diisi HANYA kalau Customer No di atas BELUM terdaftar di Accurate (dipakai untuk bikin customer baru otomatis)." },
   { column: "Kategori Customer", required: false, example: "Umum", description: "Kategori customer baru — kosongkan untuk pakai default \"Umum\"." },
   { column: "Telepon Bisnis", required: false, example: "0211234567", description: "Nomor telepon kantor customer baru." },

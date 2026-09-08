@@ -307,6 +307,50 @@ describe("buildDetailItemFromRow", () => {
     expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 11"]).toBeUndefined();
     expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
   });
+
+  // § Fase 64 — Atribut Tambahan LEVEL HEADER (charField/numericField/
+  // dateField), ditemukan dari email resmi Accurate Support (tiket
+  // #357901) — field ini TIDAK ADA di accurate-openapi.json (spec tidak
+  // lengkap), BEDA dari attribut1-10 (Fase 55) yang level ITEM.
+  test("Fase 64 — Atribut Tambahan level HEADER (charField/numericField/dateField) masuk ke ROOT payload, BUKAN detailItem", () => {
+    const rawRows = [
+      {
+        "Customer No": "C-1",
+        Tanggal: "19/08/2026",
+        "CUSTOM CHARACTER 1": "Proyek A",
+        "CUSTOM NUMBER 1": "100",
+        "CUSTOM DATE 1": "20/08/2026",
+        "Kode Barang": "BRG-1",
+      },
+    ];
+    const columnMapping = {
+      "Customer No": "customerNo",
+      Tanggal: "transDate",
+      "CUSTOM CHARACTER 1": "attributHeaderKarakter1",
+      "CUSTOM NUMBER 1": "attributHeaderAngka1",
+      "CUSTOM DATE 1": "attributHeaderTanggal1",
+      "Kode Barang": "itemNo",
+    };
+
+    const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+    expect(payload.charField1).toBe("Proyek A");
+    expect(payload.numericField1).toBe("100");
+    expect(payload.dateField1).toBe("20/08/2026");
+    // TIDAK ikut ke detailItem
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.charField1).toBeUndefined();
+    expect(detail.dataClassification1Name).toBeUndefined();
+  });
+
+  test("Fase 64 — defaultColumnMap level HEADER (tanpa prefix ITEM:) BEDA dari level item (dengan prefix ITEM:)", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["CUSTOM CHARACTER 1"]).toBe("attributHeaderKarakter1");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 1"]).toBe("attribut1");
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`CUSTOM NUMBER ${i}`]).toBe(`attributHeaderAngka${i}`);
+    }
+    expect(salesInvoiceMapping.defaultColumnMap["CUSTOM DATE 1"]).toBe("attributHeaderTanggal1");
+    expect(salesInvoiceMapping.defaultColumnMap["CUSTOM DATE 2"]).toBe("attributHeaderTanggal2");
+  });
 });
 
 // § disamakan 2026-09-08 dengan sheet "Penjelasan Kolom" di Excel resmi
@@ -343,5 +387,93 @@ describe("extractItemCreateFields", () => {
     const payload = extractItemCreateFields(rawRow, columnMapping);
 
     expect(payload).toEqual({ name: "Meja Kantor", unit1Name: "Unit", itemCategoryName: "Umum" });
+  });
+});
+
+// § Fase 65 — bug ditemukan (feedback client): mayoritas defaultColumnMap
+// tidak cocok dengan header ASLI template standar Accurate (ALL CAPS,
+// mis. "ITEM UNIT PRICE" bukan "Unit Price") — field TETAP bisa
+// dipetakan manual tapi TIDAK auto-suggest, klien mengira tidak
+// didukung. Sinonim standar Accurate ditambahkan, tebakan lama TETAP
+// dipertahankan (harmless).
+describe("defaultColumnMap — sinonim header standar Accurate (Fase 65)", () => {
+  test("field yang sebelumnya TIDAK match header standar Accurate sekarang punya sinonim yang benar", () => {
+    const expected: Record<string, string> = {
+      "TRANS DATE": "transDate",
+      "PURCHASE ORDER NO": "poNumber",
+      DESCRIPTION: "description",
+      "PAYMENT TERM NAME": "paymentTermName",
+      "REVERSE INVOICE": "reverseInvoice",
+      "CASH DISC": "cashDiscount",
+      "CASH DISC %": "cashDiscPercent",
+      "DOCUMENT TRANSACTION": "documentTransaction",
+      "ITEM UNIT PRICE": "unitPrice",
+      "ITEM: WAREHOUSE": "warehouseName",
+      "ITEM NOTE": "itemNotes",
+      "ITEM: CASH DISCOUNT": "itemCashDiscount",
+      "ITEM: CASH DISC %": "itemDiscPercent",
+      "ITEM: DEPT": "departmentName",
+      "ITEM: PROJECT NO": "projectNo",
+    };
+    for (const [column, field] of Object.entries(expected)) {
+      expect(salesInvoiceMapping.defaultColumnMap[column]).toBe(field);
+    }
+  });
+
+  test("tebakan lama TETAP ada (tidak dihapus, harmless sebagai sinonim tambahan)", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Unit Price"]).toBe("unitPrice");
+    expect(salesInvoiceMapping.defaultColumnMap["Note"]).toBe("description");
+    expect(salesInvoiceMapping.defaultColumnMap["Item Warehouse"]).toBe("warehouseName");
+  });
+});
+
+// § Fase 66 — bug ditemukan (feedback client: isi kolom diskon & pajak
+// -> gagal "Faktur Penjualan tidak tepat" (pesan generik Accurate),
+// hapus kolom itu -> berhasil). Root cause: field boolean (Taxable,
+// Inclusive Tax, PPN/PPnBM/PPH, Reverse Inv) WAJIB JSON `boolean` murni
+// di Accurate, tapi template minta user ketik teks "TRUE"/"FALSE" —
+// SheetJS baca sebagai STRING, terkirim salah tipe. `cashDiscPercent`/
+// `itemDiscPercent` WAJIB `string` (bukan number, support diskon
+// bertingkat "5 + 2") — kalau user isi angka polos, SheetJS baca
+// sebagai number, juga salah tipe.
+describe("konversi tipe data (Fase 66) — boolean & percent discount", () => {
+  test("field boolean (Taxable dkk) — teks 'TRUE'/'Y'/'1' jadi JSON boolean true, bukan string", () => {
+    const rawRow = { "Kode Barang": "BRG-1", Taxable: "TRUE", PPN: "Y", PPnBM: "1", PPH: "FALSE" };
+    const columnMapping = { "Kode Barang": "itemNo", Taxable: "taxable", PPN: "useTax1", PPnBM: "useTax2", PPH: "useTax3" };
+
+    const header = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(header.taxable).toBe(true);
+
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.useTax1).toBe(true); // "Y"
+    expect(detail.useTax2).toBe(true); // "1"
+    expect(detail.useTax3).toBe(false); // "FALSE"
+  });
+
+  test("field boolean sudah berupa JS boolean asli (bukan string) — dibiarkan apa adanya", () => {
+    const rawRow = { "Kode Barang": "BRG-1", Taxable: true };
+    const columnMapping = { "Kode Barang": "itemNo", Taxable: "taxable" };
+    expect(buildSalesInvoicePayload([rawRow], columnMapping).taxable).toBe(true);
+  });
+
+  test("cashDiscPercent/itemDiscPercent — angka polos dari Excel dikonversi ke STRING, bukan number", () => {
+    const rawRow = { "Kode Barang": "BRG-1", "Cash Disc (%)": 5, "Item Disc (%)": 10 };
+    const columnMapping = { "Kode Barang": "itemNo", "Cash Disc (%)": "cashDiscPercent", "Item Disc (%)": "itemDiscPercent" };
+
+    const header = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(header.cashDiscPercent).toBe("5");
+    expect(typeof header.cashDiscPercent).toBe("string");
+
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.itemDiscPercent).toBe("10");
+    expect(typeof detail.itemDiscPercent).toBe("string");
+  });
+
+  test("cashDiscount/itemCashDiscount (nilai fix, BUKAN persen) TETAP number, tidak ikut dikonversi ke string", () => {
+    const rawRow = { "Kode Barang": "BRG-1", "Cash Discount": 2500 };
+    const columnMapping = { "Kode Barang": "itemNo", "Cash Discount": "cashDiscount" };
+    const header = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(header.cashDiscount).toBe(2500);
+    expect(typeof header.cashDiscount).toBe("number");
   });
 });

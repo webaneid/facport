@@ -169,6 +169,29 @@ export type ItemAutoCreateField = keyof typeof itemAutoCreateMapping.fieldToAccu
 const DATE_FIELDS = new Set<PurchaseInvoiceField>(["transDate", "taxDate", "shipDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
+// § Fase 66 — bug ditemukan di Sales Invoice (mirror 1:1 modul ini,
+// field & builder sama persis) — feedback client: "isi kolom diskon &
+// pajak -> gagal 'Faktur Penjualan tidak tepat', hapus -> berhasil".
+// `accurate-openapi.json`: field ini WAJIB tipe JSON `boolean` MURNI
+// (`true`/`false`), TAPI `template-guide.ts` instruksikan user ketik
+// teks "TRUE"/"FALSE" — SheetJS baca sebagai STRING, terkirim salah
+// tipe, Accurate reject dengan pesan generik yang tidak menyebut field
+// spesifik. § detail lengkap `sales-invoice.mapping.ts`.
+const BOOLEAN_FIELDS = new Set<PurchaseInvoiceField>(["taxable", "inclusiveTax", "reverseInvoice", "useTax1", "useTax2", "useTax3"]);
+const TRUE_TEXT_VALUES = new Set(["true", "y", "yes", "1", "ya"]);
+
+function toAccurateBoolean(value: unknown): unknown {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return TRUE_TEXT_VALUES.has(value.trim().toLowerCase());
+  return value;
+}
+
+// § Fase 66 — `cashDiscPercent`/`itemDiscPercent` WAJIB tipe JSON
+// `string` di Accurate (support diskon bertingkat "5 + 2"), BUKAN
+// number — kalau user isi angka polos, SheetJS baca sebagai JS number.
+const PERCENT_STRING_FIELDS = new Set<PurchaseInvoiceField>(["cashDiscPercent", "itemDiscPercent"]);
+
 function toAccurateDate(value: unknown): unknown {
   let date: Date | null = null;
   if (typeof value === "number") {
@@ -194,7 +217,11 @@ function extractRowValues(
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
     if (rawRow[excelColumn] !== undefined && rawRow[excelColumn] !== "") {
       const f = field as PurchaseInvoiceField;
-      values[f] = DATE_FIELDS.has(f) ? toAccurateDate(rawRow[excelColumn]) : rawRow[excelColumn];
+      const raw = rawRow[excelColumn];
+      if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
+      else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
+      else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
+      else values[f] = raw;
     }
   }
   return values;
