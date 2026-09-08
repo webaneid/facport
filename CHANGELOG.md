@@ -1,3 +1,8 @@
+## 1.18.0 (2026-09-08)
+
+* Merge pull request #40 from webaneid/develop ([320aa9a](https://github.com/webaneid/facport/commit/320aa9a)), closes [#40](https://github.com/webaneid/facport/issues/40)
+* feat: auto-create Kategori Keuangan (Atribut Tambahan item-level) Sales Invoice ([ca11766](https://github.com/webaneid/facport/commit/ca11766))
+
 ## <small>1.17.2 (2026-09-08)</small>
 
 * Merge pull request #39 from webaneid/develop ([d6adc5f](https://github.com/webaneid/facport/commit/d6adc5f)), closes [#39](https://github.com/webaneid/facport/issues/39)
