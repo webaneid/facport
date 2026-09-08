@@ -1,3 +1,8 @@
+## <small>1.16.1 (2026-09-08)</small>
+
+* Merge pull request #36 from webaneid/develop ([9cd53d9](https://github.com/webaneid/facport/commit/9cd53d9)), closes [#36](https://github.com/webaneid/facport/issues/36)
+* fix(sales-invoice): koreksi mapping atribut tambahan & requiredFields ke format client asli ([5dabdb7](https://github.com/webaneid/facport/commit/5dabdb7))
+
 ## 1.16.0 (2026-09-07)
 
 * Merge pull request #35 from webaneid/develop ([d1b0283](https://github.com/webaneid/facport/commit/d1b0283)), closes [#35](https://github.com/webaneid/facport/issues/35)
