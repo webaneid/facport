@@ -141,6 +141,16 @@ seperti biasa (Fase 06, tidak berubah). Tidak ada tombol/endpoint baru
 — logic ada di worker. Detail lengkap → ADR-0012 dan
 `docs/phases/phase-08-purchase-invoice-update-existing.md`.
 
+> **Refinement Fase 67 (2026-09-08)**: guard "semua item sudah match →
+> skip `save.do`, anggap sukses" tadinya berlaku untuk SEMUA match
+> lintas-batch, termasuk kalau ternyata batch itu BUKAN retry (upload
+> baru yang kebetulan Bill No + item + harga + qty-nya identik dengan
+> batch lama) — akibatnya field lain (pajak/atribut tambahan) di baris
+> baru itu TIDAK PERNAH terkirim tapi dilaporkan "success". Sekarang
+> guard HANYA silent-success kalau match ditemukan di BATCH YANG SAMA;
+> match di batch lain tanpa baris baru → ditolak dengan pesan jelas.
+> Detail → `docs/decisions/adr-0031-batasi-idempotent-guard-append-invoice-ke-batch-sama.md`.
+
 ## Fase 09 — Batal Import / Hapus Faktur ✅ VERIFIED 2026-08-28
 
 "Batal Import" menghapus/melepas transaksi Accurate yang dibuat oleh 1

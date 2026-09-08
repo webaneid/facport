@@ -52,6 +52,7 @@ import {
 } from "../lib/import-mapping/journal-voucher.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
+import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guard";
 // § Fase 13 — Sales Invoice, mirror 1:1 import Purchase Invoice di atas.
 // Alias pada nama yang collide (`buildDetailItemFromRow`/`extractItemCreateFields`
 // ADA di kedua mapping file, isinya identik tapi tetap 2 fungsi berbeda
@@ -185,9 +186,9 @@ async function findExistingAccurateInvoiceId(
   subscriptionId: string,
   billNumber: string,
   billNumberColumn: string,
-): Promise<number | null> {
+): Promise<{ id: number; batchId: string } | null> {
   const [row] = await db
-    .select({ accurateTransactionId: importBatchRows.accurateTransactionId })
+    .select({ accurateTransactionId: importBatchRows.accurateTransactionId, batchId: importBatchRows.batchId })
     .from(importBatchRows)
     .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
     .where(
@@ -202,7 +203,7 @@ async function findExistingAccurateInvoiceId(
 
   if (!row?.accurateTransactionId) return null;
   const id = Number(row.accurateTransactionId);
-  return Number.isFinite(id) ? id : null;
+  return Number.isFinite(id) ? { id, batchId: row.batchId } : null;
 }
 
 // § Fase 08, ADR-0012 — grup ini punya Bill No yang SUDAH PUNYA faktur di
@@ -213,6 +214,8 @@ async function findExistingAccurateInvoiceId(
 export async function appendToExistingPurchaseInvoice(
   ctx: AccurateSessionContext,
   existingId: number,
+  existingBatchId: string,
+  currentBatchId: string,
   group: PurchaseInvoiceGroup,
   columnMapping: Record<string, string>,
 ): Promise<PurchaseInvoiceGroupResult> {
@@ -256,9 +259,20 @@ export async function appendToExistingPurchaseInvoice(
   const newRows = perRow.filter((r) => !r.existingMatch);
 
   if (newRows.length === 0) {
-    // § idempotent — semua item baris ini sudah ada di faktur existing,
-    // dianggap sukses TANPA panggil save.do lagi (hemat API call & rate
-    // limit, § architecture-accurate-integration.md § 4).
+    // § Fase 67 — bedakan retry-safety ASLI (match dari batch YANG SAMA,
+    // § lib/append-invoice-guard.ts) dari batch BARU yang KEBETULAN
+    // identik (match dari batch LAIN) — kasus kedua BUKAN retry, harus
+    // gagal dengan pesan jelas, BUKAN silent success (bug nyata
+    // ditemukan client: field baru PPN/Atribut Tambahan tidak pernah
+    // benar-benar terkirim karena save.do di-skip sepenuhnya di sini).
+    if (isCoincidentalDuplicateAcrossBatches({ newRowsCount: newRows.length, existingBatchId, currentBatchId })) {
+      throw new Error(
+        `Bill No "${group.billNumber}" dengan barang, harga, dan qty yang PERSIS SAMA sudah ada di Faktur Pembelian #${existingId} (dari batch import SEBELUMNYA) — tidak ada baris baru untuk dikirim, jadi field lain (Pajak/Diskon/Atribut Tambahan/dst) di baris ini TIDAK ikut diperbarui di Accurate. Kalau ini transaksi baru, gunakan Bill No yang berbeda. Kalau bermaksud mengubah data pada faktur ini, update manual di Accurate (fitur update-in-place belum didukung).`,
+      );
+    }
+    // § idempotent — retry-safety asli (partial completion dalam batch
+    // yang sama), dianggap sukses TANPA panggil save.do lagi (hemat API
+    // call & rate limit, § architecture-accurate-integration.md § 4).
     return {
       invoiceId: existingId,
       rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: r.existingMatch!.id })),
@@ -344,9 +358,13 @@ export async function processSalesInvoiceGroup(
 // Number, scoped `module = "sales_invoice"` (BEDA dari PI yang scoped
 // "purchase_invoice" — dua modul tidak pernah saling cari faktur satu
 // sama lain, walau kebetulan nomor referensinya sama).
-async function findExistingAccurateSalesInvoiceId(subscriptionId: string, groupKey: string, groupColumn: string): Promise<number | null> {
+async function findExistingAccurateSalesInvoiceId(
+  subscriptionId: string,
+  groupKey: string,
+  groupColumn: string,
+): Promise<{ id: number; batchId: string } | null> {
   const [row] = await db
-    .select({ accurateTransactionId: importBatchRows.accurateTransactionId })
+    .select({ accurateTransactionId: importBatchRows.accurateTransactionId, batchId: importBatchRows.batchId })
     .from(importBatchRows)
     .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
     .where(
@@ -361,12 +379,14 @@ async function findExistingAccurateSalesInvoiceId(subscriptionId: string, groupK
 
   if (!row?.accurateTransactionId) return null;
   const id = Number(row.accurateTransactionId);
-  return Number.isFinite(id) ? id : null;
+  return Number.isFinite(id) ? { id, batchId: row.batchId } : null;
 }
 
 export async function appendToExistingSalesInvoice(
   ctx: AccurateSessionContext,
   existingId: number,
+  existingBatchId: string,
+  currentBatchId: string,
   group: SalesInvoiceGroup,
   columnMapping: Record<string, string>,
 ): Promise<SalesInvoiceGroupResult> {
@@ -396,6 +416,17 @@ export async function appendToExistingSalesInvoice(
   const newRows = perRow.filter((r) => !r.existingMatch);
 
   if (newRows.length === 0) {
+    // § Fase 67 — bedakan retry-safety ASLI (match dari batch YANG SAMA)
+    // dari batch BARU yang KEBETULAN identik (match dari batch LAIN) —
+    // kasus kedua BUKAN retry, harus gagal dengan pesan jelas, BUKAN
+    // silent success (bug nyata: client isi PPN/Atribut Tambahan di file
+    // yang item/harga/qty-nya sama persis dengan test sebelumnya, save.do
+    // di-skip total, field baru tidak pernah terkirim ke Accurate).
+    if (isCoincidentalDuplicateAcrossBatches({ newRowsCount: newRows.length, existingBatchId, currentBatchId })) {
+      throw new Error(
+        `Nomor Transaksi "${group.groupKey}" dengan barang, harga, dan qty yang PERSIS SAMA sudah ada di Faktur Penjualan #${existingId} (dari batch import SEBELUMNYA) — tidak ada baris baru untuk dikirim, jadi field lain (PPN/Pajak/Diskon/Atribut Tambahan/dst) di baris ini TIDAK ikut diperbarui di Accurate. Kalau ini transaksi baru, gunakan Nomor Transaksi yang berbeda. Kalau bermaksud mengubah data pada faktur ini, update manual di Accurate (fitur update-in-place belum didukung).`,
+      );
+    }
     return {
       invoiceId: existingId,
       rows: perRow.map((r) => ({ rowId: r.row.id, detailItemId: r.existingMatch!.id })),
@@ -826,12 +857,12 @@ async function main() {
           // yang bakal ditolak Accurate sebagai duplikat nomor. Grup
           // tanpa Bill No (singleton) selalu lewat jalur CREATE seperti
           // biasa — tidak ada identitas untuk dicari.
-          const existingId =
+          const existing =
             group.billNumber && billNumberColumn
               ? await findExistingAccurateInvoiceId(batch.subscriptionId, group.billNumber, billNumberColumn)
               : null;
-          const result = existingId
-            ? await appendToExistingPurchaseInvoice(session, existingId, group, columnMapping)
+          const result = existing
+            ? await appendToExistingPurchaseInvoice(session, existing.id, existing.batchId, batch.id, group, columnMapping)
             : await processPurchaseInvoiceGroup(session, group, columnMapping);
           // § Fase 09, ADR-0013 — update PER BARIS (bukan bulk inArray
           // seperti sebelumnya) supaya tiap baris dapat
@@ -870,12 +901,12 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
-          const existingId =
+          const existing =
             group.groupKey && group.groupColumn
               ? await findExistingAccurateSalesInvoiceId(batch.subscriptionId, group.groupKey, group.groupColumn)
               : null;
-          const result = existingId
-            ? await appendToExistingSalesInvoice(session, existingId, group, columnMapping)
+          const result = existing
+            ? await appendToExistingSalesInvoice(session, existing.id, existing.batchId, batch.id, group, columnMapping)
             : await processSalesInvoiceGroup(session, group, columnMapping);
           for (const r of result.rows) {
             await db
