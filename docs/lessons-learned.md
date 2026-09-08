@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-09-08 — Atribut Tambahan item-level (`dataClassificationNName`) BUKAN teks bebas, wajib referensi master data existing
+**Masalah:** Client retest Sales Invoice (Trans No baru, setelah fix
+Fase 67) dapat error dari Accurate: `Kategori Keuangan TES 1 tidak
+ditemukan atau sudah dihapus`. Sempat tidak jelas field mana yang
+dimaksud karena istilah "Kategori Keuangan" tidak muncul di kode/dokumen
+kita sama sekali.
+
+**Root cause:** "Kategori Keuangan" adalah LABEL RESMI Accurate untuk
+endpoint `/api/data-classification` (dikonfirmasi di `accurate-openapi.json`
+baris 62-63) — PERSIS fitur "Atribut Tambahan" item-level
+(`detailItem.dataClassificationNName`) yang diimplementasi Fase 55/61.
+Field ini diasumsikan teks bebas (mirip field Character biasa) sejak
+awal — TERNYATA Accurate memvalidasinya sebagai REFERENSI ke master
+data "Kategori Keuangan" yang sudah ada, bukan string sembarang. Nilai
+apa pun yang belum pernah dibuat di Accurate akan ditolak dengan pesan
+ini.
+
+**Fix (Fase 68):** Karena aplikasi belum publish (masih testing internal
+tim client), diimplementasi auto-create (`findOrCreateDataClassification`,
+`accurate-data-classification.ts`) — mirror pola auto-create Customer
+(Fase 13)/Item (Fase 05): cek dulu via `/api/data-classification/list.do`
+(filter `index`+`keywords`, index HARUS cocok slot attributN 1-10),
+kalau belum ada baru `save.do` untuk membuatnya. Butuh scope OAuth baru
+(`data_classification_view`/`_save`) — koneksi existing wajib
+reconnect.
+
+**Pencegahan:** Kalau Accurate menolak dengan pesan generik yang
+menyebut ISTILAH BAHASA INDONESIA yang tidak ada di kode/dokumen kita
+(bukan nama field API), JANGAN asumsikan itu typo/istilah baru — cari
+dulu istilah itu di `accurate-openapi.json` (field `description`,
+biasanya berupa terjemahan Indonesia dari endpoint/field resmi) SEBELUM
+menyimpulkan ini bug baru yang tidak diketahui. Juga: field custom
+Accurate yang KELIHATANNYA seperti "text bebas" (dataClassification,
+kemungkinan customField lain) TIDAK BOLEH diasumsikan begitu tanpa cek
+apakah field itu sebenarnya REFERENSI ke suatu master data — cek dulu
+apakah ada endpoint list/save terpisah untuk "master data" bernama
+sama sebelum asumsi.
+
+---
+
 ## 2026-09-08 — Guard idempotent "Retry Cerdas" (ADR-0012) salah anggap upload baru sebagai retry, data baru silent tidak terkirim
 **Masalah:** Client testing Atribut Tambahan Sales Invoice (Fase 64)
 lapor PPN & Atribut Tambahan "belum bisa terbaca" di Accurate, padahal

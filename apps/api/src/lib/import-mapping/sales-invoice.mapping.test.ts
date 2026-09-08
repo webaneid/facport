@@ -6,6 +6,7 @@ import {
   poNumberColumnOf,
   extractCustomerCreateFields,
   extractItemCreateFields,
+  extractDataClassificationValues,
   groupSalesInvoiceRows,
   validateGroupCustomerConsistency,
   type ImportRowRecord,
@@ -387,6 +388,32 @@ describe("extractItemCreateFields", () => {
     const payload = extractItemCreateFields(rawRow, columnMapping);
 
     expect(payload).toEqual({ name: "Meja Kantor", unit1Name: "Unit", itemCategoryName: "Umum" });
+  });
+});
+
+// § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`):
+// Accurate menolak `dataClassificationNName` yang belum ada sebagai master
+// data ("Kategori Keuangan X tidak ditemukan atau sudah dihapus"). Worker
+// butuh daftar (index,name) yang TERISI di baris ini untuk auto-create
+// SEBELUM kirim payload faktur.
+describe("extractDataClassificationValues", () => {
+  test("ambil index+name dari kolom attribut1-10 yang terisi, skip yang kosong", () => {
+    const rawRow = { "Custom 1": "TES 1", "Custom 3": "Proyek A", "Custom 2": "" };
+    const columnMapping = { "Custom 1": "attribut1", "Custom 2": "attribut2", "Custom 3": "attribut3" };
+
+    expect(extractDataClassificationValues(rawRow, columnMapping)).toEqual([
+      { index: 1, name: "TES 1" },
+      { index: 3, name: "Proyek A" },
+    ]);
+  });
+
+  test("baris tanpa kolom attribut termapping -> array kosong", () => {
+    expect(extractDataClassificationValues({ "Kode Barang": "9900012" }, { "Kode Barang": "itemNo" })).toEqual([]);
+  });
+
+  test("nilai di-trim sebelum dipakai sebagai name", () => {
+    const rawRow = { "Custom 1": "  TES 1  " };
+    expect(extractDataClassificationValues(rawRow, { "Custom 1": "attribut1" })).toEqual([{ index: 1, name: "TES 1" }]);
   });
 });
 

@@ -113,7 +113,7 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61
+## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68
 **Status: SELESAI diimplementasi & DIKOREKSI dengan file Excel ASLI
 client (2026-09-08).** `defaultColumnMap` sudah diperbarui ke nama
 kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
@@ -121,6 +121,23 @@ kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
 `docs/phases/phase-55-atribut-tambahan-sales-invoice.md` (implementasi
 awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 (koreksi setelah file asli diterima).
+
+> **Update 2026-09-08 (Fase 68)** — Client retest (dengan Trans No baru,
+> setelah fix Fase 67) dapat error Accurate: `Kategori Keuangan TES 1
+> tidak ditemukan atau sudah dihapus`. Ternyata "Kategori Keuangan"
+> adalah nama resmi Accurate untuk endpoint `/api/data-classification`
+> — PERSIS field `dataClassificationNName` ini. Field ini **BUKAN teks
+> bebas**: nilainya WAJIB sudah ada sebagai master data "Kategori
+> Keuangan" di pembukuan Accurate, kalau belum ada ditolak. Karena
+> aplikasi belum publish (masih testing internal tim client),
+> diimplementasi **auto-create** (`findOrCreateDataClassification`,
+> `apps/api/src/lib/accurate-data-classification.ts`, mirror pola
+> auto-create Customer/Item Fase 05/13) — dipanggil untuk tiap nilai
+> Atribut Tambahan yang terisi, SEBELUM `saveSalesInvoice`. Butuh scope
+> OAuth baru `data_classification_view`/`data_classification_save`
+> (`accurate-scopes.ts`) — koneksi Accurate yang connect SEBELUM fase
+> ini WAJIB disconnect & reconnect ulang. Detail →
+> `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md`.
 
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet

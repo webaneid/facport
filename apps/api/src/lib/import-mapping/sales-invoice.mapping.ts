@@ -483,3 +483,23 @@ export function extractItemCreateFields(rawRow: Record<string, unknown>, columnM
   }
   return payload;
 }
+
+// § Fase 68 — daftar (index, name) Atribut Tambahan item-level yang
+// TERISI di 1 baris, dipakai worker untuk auto-create Kategori Keuangan
+// (`findOrCreateDataClassification`, accurate-data-classification.ts)
+// SEBELUM kirim payload faktur. `index` 1-10 HARUS persis cocok slot
+// `attributN` (`dataClassificationNName`) — lihat komentar Fase 55 di
+// `fieldToAccuratePath`.
+export function extractDataClassificationValues(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): { index: number; name: string }[] {
+  const result: { index: number; name: string }[] = [];
+  for (let index = 1; index <= 10; index++) {
+    const value = rawValueFor(rawRow, columnMapping, `attribut${index}`);
+    if (value === undefined) continue;
+    const name = String(value).trim();
+    if (name !== "") result.push({ index, name });
+  }
+  return result;
+}

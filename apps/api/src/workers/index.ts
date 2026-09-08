@@ -66,11 +66,36 @@ import {
   buildDetailItemFromRow as buildDetailItemFromRowSI,
   extractCustomerCreateFields,
   extractItemCreateFields as extractItemCreateFieldsSI,
+  extractDataClassificationValues,
   groupSalesInvoiceRows,
   validateGroupCustomerConsistency,
   type SalesInvoiceGroup,
 } from "../lib/import-mapping/sales-invoice.mapping";
 import { findOrCreateCustomer } from "../lib/accurate-customer";
+import { findOrCreateDataClassification } from "../lib/accurate-data-classification";
+
+// § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
+// § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
+// item-level yang TERISI di baris-baris ini, SEBELUM `saveSalesInvoice`
+// dipanggil (Accurate menolak `dataClassificationNName` yang belum ada
+// sebagai master data — "Kategori Keuangan X tidak ditemukan atau sudah
+// dihapus"). Dedupe per (index,name) supaya tidak panggil API berkali-
+// kali untuk nilai yang sama diulang di banyak baris.
+async function ensureDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValues(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
 
 // § Fase 14, ADR-0020 — koneksi Accurate SEKARANG milik user, reusable
 // lintas subscription (bukan 1:1 ke subscription lagi). Resolve 2 langkah:
@@ -347,6 +372,8 @@ export async function processSalesInvoiceGroup(
     await findOrCreateItem(ctx, detailItem, extractItemCreateFieldsSI(rawRow, columnMapping));
   }
 
+  await ensureDataClassifications(ctx, rawRows, columnMapping);
+
   const result = await saveSalesInvoice(ctx, payload);
   return {
     invoiceId: result.id,
@@ -440,6 +467,8 @@ export async function appendToExistingSalesInvoice(
     seenItemNo.add(itemNo);
     await findOrCreateItem(ctx, itemNo, extractItemCreateFieldsSI(rawRow, columnMapping));
   }
+
+  await ensureDataClassifications(ctx, newRows.map((r) => r.rawRow), columnMapping);
 
   const result = await saveSalesInvoice(ctx, {
     id: existingId,

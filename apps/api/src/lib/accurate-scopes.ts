@@ -30,7 +30,19 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // sekarang di Fase 14 saat file ini dirombak total. Koneksi Accurate
   // existing yang connect SEBELUM scope ini ditambah TETAP perlu
   // re-authorize manual utk dapat scope baru — pola sama seperti Fase 04.
-  sales_invoice: ["sales_invoice_view", "sales_invoice_save", "customer_view", "customer_save", "item_save"],
+  // § Fase 68 — `data_classification_view`/`_save` ditambah untuk
+  // auto-create Kategori Keuangan (Atribut Tambahan item-level,
+  // `findOrCreateDataClassification`) — koneksi existing SEBELUM
+  // penambahan ini juga wajib re-authorize ulang.
+  sales_invoice: [
+    "sales_invoice_view",
+    "sales_invoice_save",
+    "customer_view",
+    "customer_save",
+    "item_save",
+    "data_classification_view",
+    "data_classification_save",
+  ],
   // § Fase 15+ — belum ada endpoint/service yang memakai, scope-nya
   // disiapkan sekarang (VERIFIED ke OpenAPI spec, § riset Fase 13 §
   // "Feasibility Check — 5 Sub-Modul") supaya siap dipakai begitu
