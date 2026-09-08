@@ -76,6 +76,7 @@
 | 65   | Fix Dropdown Mapping & Sinkron Header Sales Invoice | Done | (lihat phase doc) | `docs/phases/phase-65-fix-dropdown-mapping-dan-sinkron-header-sales-invoice.md` |
 | 66   | Fix Tipe Data Boolean & Persen Diskon (Sales Invoice + Purchase Invoice) | Done | (lihat phase doc) | `docs/phases/phase-66-fix-tipe-data-boolean-persen-invoice-import.md` |
 | 67   | Fix Guard Idempotent Append Faktur: Batasi ke Retry Batch yang Sama | Done | (lihat phase doc) | `docs/phases/phase-67-fix-duplikat-nomor-transaksi-lintas-batch.md` |
+| 68   | Auto-Create Kategori Keuangan (Atribut Tambahan Item-Level) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1956,3 +1957,18 @@ ADR-0031 dan `docs/phases/phase-67-fix-duplikat-nomor-transaksi-lintas-batch.md`
 Known limitation: poin PPN/Atribut Tambahan "belum terbaca" client masih
 menunggu retest dengan Trans No baru + klarifikasi lanjutan sebelum
 dianggap tuntas sepenuhnya.
+
+## Update 2026-09-08 — Fase 68 Done: Auto-Create Kategori Keuangan (Atribut Tambahan Item-Level) Sales Invoice
+Client retest (Trans No baru, setelah Fase 67) dapat error Accurate:
+"Kategori Keuangan TES 1 tidak ditemukan atau sudah dihapus". Ternyata
+"Kategori Keuangan" = nama resmi Accurate untuk `/api/data-classification`,
+PERSIS field Atribut Tambahan item-level (`dataClassificationNName`)
+yang sudah diimplementasi — field ini BUKAN teks bebas, wajib referensi
+master data yang sudah ada. Karena aplikasi belum publish (masih
+testing internal tim client), diimplementasi auto-create
+(`findOrCreateDataClassification`, mirror pola Customer/Item Fase
+05/13) — butuh scope OAuth baru `data_classification_view`/`_save`,
+koneksi Accurate existing WAJIB disconnect & reconnect ulang.
+
+Typecheck 0 error. Full suite `apps/api` 459 pass/0 fail (3 baru). Lihat
+`docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md`.
