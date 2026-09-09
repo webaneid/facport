@@ -100,6 +100,7 @@ async function createTrialProvisionedUser(email: string) {
 const VALID_COLUMN_MAPPING = {
   Vendor: "vendorNo",
   Tanggal: "transDate",
+  "Trans No": "number",
   Barang: "itemNo",
   Harga: "unitPrice",
   Qty: "quantity",

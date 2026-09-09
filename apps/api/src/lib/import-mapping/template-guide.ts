@@ -13,9 +13,13 @@ const BOOLEAN_FORMAT = "TRUE atau FALSE";
 
 export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Pembelian." },
-  { column: "Bill No", required: false, example: "INV-VENDOR-001", description: "Nomor referensi tagihan dari vendor (beda dari nomor transaksi Accurate). PENTING: isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur dengan banyak barang (multi-item) — baris dengan Bill No kosong tetap dianggap 1 faktur sendiri." },
+  // § Fase 81 (2026-09-09) — client konfirmasi "Bill No boleh sama walau
+  // beda transaksi, Trans No harus unik" (mirror feedback Fase 63 Sales
+  // Invoice) — Bill No sekarang HANYA dipakai grouping kalau Trans No di
+  // bawah tidak diisi, "Trans No" DIJADIKAN WAJIB (sebelumnya opsional).
+  { column: "Bill No", required: false, example: "INV-VENDOR-001", description: "Nomor referensi tagihan dari vendor (beda dari nomor transaksi Accurate). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
   { column: "Vendor No", required: true, example: "V-0001", description: "Nomor/kode vendor PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Trans No", required: false, example: "", description: "Nomor transaksi Accurate — kosongkan supaya nomor otomatis (disarankan)." },
+  { column: "Trans No", required: true, example: "PI-2026-0001", description: "Nomor transaksi — WAJIB DIISI dan UNIK per transaksi (beda dari Bill No yang boleh sama). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item." },
   { column: "Branch Name", required: false, example: "Cabang Jakarta", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
   { column: "Note", required: false, example: "Pembelian bahan baku Agustus", description: "Catatan/keterangan bebas untuk transaksi ini." },
   { column: "Currency Code", required: false, example: "IDR", description: "Kode mata uang — kosongkan kalau transaksi dalam Rupiah." },

@@ -276,6 +276,23 @@ dua-duanya terisi). Detail lengkap →
 > konsisten field Beban PI lain) ditaruh DI DALAM grup Beban. Detail →
 > `docs/phases/phase-80-expense-project-no.md`.
 
+> **Update 2026-09-09 (Fase 81)** — Grouping multi-item DIGENERALISASI,
+> mirror Sales Invoice (Fase 49/61/63) — evaluasi client: "Bill No boleh
+> sama walau beda transaksi, Trans No harus unik". Sebelumnya grouping
+> MURNI by Bill No (`groupPurchaseInvoiceRows`, ADR-0011) — kalau Bill
+> No dipakai ulang di faktur BERBEDA, baris-baris itu SALAH digabung
+> jadi 1 faktur. Sekarang **Trans No (`number`) DIUTAMAKAN** (dan
+> **DIJADIKAN WAJIB**, sebelumnya opsional), Bill No cuma fallback kalau
+> Trans No kosong. `PurchaseInvoiceGroup.billNumber` diganti
+> `groupKey`/`groupColumn` (bentuk sama dengan `SalesInvoiceGroup`).
+> Kolom tabel hasil import "Nomor Faktur" → **"Nomor Transaksi"**
+> (`apps/web/lib/purchase-invoice-batch-helpers.ts`, BARU, mirror
+> `sales-invoice-batch-helpers.ts`). ⚠️ Halaman generic admin
+> (`/admin/import-batches/:id`) **SENGAJA TIDAK ikut diubah** — gap
+> pre-existing di KEDUA modul (Sales Invoice-nya sendiri juga belum
+> di-backfill sejak Fase 63), dianggap di luar scope. Detail →
+> `docs/phases/phase-81-trans-no-grouping-purchase-invoice.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

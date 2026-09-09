@@ -6,6 +6,7 @@ import {
   openDatabase,
   parseAccurateSaveEnvelope,
   AccurateApiError,
+  isAccurateRecordNotFound,
 } from "./accurate";
 
 // § Known Limitations phase-01 — TIDAK bisa full end-to-end tanpa akun
@@ -146,5 +147,30 @@ describe("parseAccurateSaveEnvelope", () => {
 
     const res = await fetch("http://dummy");
     await expect(parseAccurateSaveEnvelope(res)).rejects.toThrow("Pemasok X tidak ditemukan");
+  });
+});
+
+// § Fase 82 (2026-09-10) — TERKONFIRMASI test call nyata: `detail.do`
+// pada transaksi yang sudah dihapus LANGSUNG di Accurate balas HTTP 200
+// (bukan 404) dengan `{"s":false,"d":["Faktur Penjualan tidak tepat"]}`.
+// Dipakai `appendToExistingPurchaseInvoice`/`appendToExistingSalesInvoice`
+// (workers/index.ts) untuk bedain "faktur sudah dihapus" (fallback CREATE)
+// dari error lain (tetap gagal seperti biasa).
+describe("isAccurateRecordNotFound", () => {
+  test("true untuk AccurateApiError dengan pesan mengandung 'tidak tepat' (Sales Invoice)", () => {
+    expect(isAccurateRecordNotFound(new AccurateApiError("Faktur Penjualan tidak tepat", 200))).toBe(true);
+  });
+
+  test("true untuk pesan 'tidak tepat' modul Purchase Invoice juga (deteksi generik, bukan spesifik 1 modul)", () => {
+    expect(isAccurateRecordNotFound(new AccurateApiError("Faktur Pembelian tidak tepat", 200))).toBe(true);
+  });
+
+  test("false untuk AccurateApiError dengan pesan LAIN (error asli, bukan 'sudah dihapus')", () => {
+    expect(isAccurateRecordNotFound(new AccurateApiError("Pemasok X tidak ditemukan", 400))).toBe(false);
+  });
+
+  test("false untuk error yang BUKAN AccurateApiError (mis. error jaringan biasa)", () => {
+    expect(isAccurateRecordNotFound(new Error("tidak tepat"))).toBe(false);
+    expect(isAccurateRecordNotFound("tidak tepat")).toBe(false);
   });
 });
