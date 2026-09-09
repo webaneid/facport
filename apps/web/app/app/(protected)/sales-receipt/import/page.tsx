@@ -55,6 +55,11 @@ const ACCURATE_FIELDS = [
   { value: "invoiceDepartmentName", label: "Department (per baris faktur)" },
   { value: "paidPph", label: "Paid PPH (isi \"Y\" atau kosongkan)" },
   { value: "pphNumber", label: "PPh No" },
+  // § Fase 86 (2026-09-10) — validasi-only, TIDAK dikirim ke Accurate
+  // sebagai field transaksi (tidak ada field ini di sales-receipt/save.do)
+  // — dicocokkan ke Data Master Pajak Accurate sebelum import, gagal
+  // kalau tidak ditemukan. Lihat architecture-sales-receipt.md § Fase 86.
+  { value: "taxId", label: "Tax ID (opsional — divalidasi ke Data Master Pajak Accurate, TIDAK diubah/dikirim sebagai field transaksi)" },
   { value: "discountAmount", label: "Discount (wajib bersama Discount Acc)" },
   { value: "discountAccountNo", label: "Discount Acc (wajib bersama Discount)" },
   { value: "discountNotes", label: "Discount Note" },

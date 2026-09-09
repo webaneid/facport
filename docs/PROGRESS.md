@@ -94,6 +94,7 @@
 | 83   | Copywriting: "Modul"/"Sub-Modul" Jadi "Fitur" di Semua UI | Done | — | `docs/phases/phase-83-copywriting-modul-jadi-fitur.md` |
 | 84   | Fix Dropdown "No. Sales Receipt" Hilang & Komentar Basi (Sales Receipt) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md` |
 | 85   | Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-85-ekspansi-field-sales-receipt.md` |
+| 86   | Validasi "Tax ID" Sales Receipt | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-86-validasi-tax-id-sales-receipt.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2327,3 +2328,29 @@ modul lain. Detail lengkap → architecture-sales-receipt.md § Keputusan
 Desain #5 (dikoreksi). Re-run typecheck (0 error) + full suite
 (`apps/api` 533 pass, `apps/web` 44 pass) setelah reorder — tidak ada
 regresi.
+
+## Update 2026-09-10 — Fase 86 Done: Validasi "Tax ID" Sales Receipt
+Fase 85 sempat men-skip "Tax ID" — user tolak alasan "di luar scope API
+fitur" (project SUDAH biasa gabung >1 API Accurate per import, pola
+`findOrCreateVendor`/`findOrCreateItem`/`findOrCreateDataClassification`).
+Disiapkan environment test PROPER (bukan workaround pinjam scope modul
+lain, yang sempat diusulkan dan DITOLAK eksplisit user): plan+subscription
+Sales Receipt baru di dev DB, connect manual ke company Accurate demo
+via OAuth. Audit ulang 556 baris data ASLI kompetitor: Tax ID (+3 field
+skip lain) 0% pernah diisi, deskripsi resminya justru mengarah ke
+"Fitur Facport" (bukan Accurate) — TAPI user tegaskan *"JANGAN IKUTI
+KOMPETITOR .. kita punya data cukup untuk memanggil tax berfungsi
+dengan benar"*, jadi dibangun berdasarkan test call NYATA ke
+`/api/tax/list.do` (scope `tax_view`), bukan asumsi dokumentasi.
+Ditemukan `taxCode` TIDAK UNIK untuk PPh23 (banyak jenis jasa share kode
+sama) — didokumentasikan sebagai Known Limitation, template guide
+diarahkan pakai `description` (unik). Field `taxId` diimplementasikan
+VALIDASI-ONLY: dicocokkan ke Master Data Pajak Accurate SEBELUM payload
+dibangun, TIDAK PERNAH dikirim ke `sales-receipt/save.do` (field itu
+tidak ada di sana) — gagal SELURUH grup dengan pesan jelas kalau tidak
+ditemukan, BUKAN auto-create (beda dari vendor/item/kategori keuangan —
+Master Data Pajak dianggap konfigurasi akuntansi sensitif). File baru
+`accurate-tax.ts`. `bun run typecheck` 0 error, `apps/api` 537 pass/0
+fail (5 baru), `apps/web` 44 pass/0 fail. Dev DB test-run dibersihkan
+(subscription/plan Sales Receipt dev sengaja dipertahankan untuk
+testing lanjutan, bukan data disposable).

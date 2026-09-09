@@ -41,8 +41,10 @@ import {
   buildSalesReceiptPayload,
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
+  extractTaxIdsFromRows,
   type SalesReceiptGroup,
 } from "../lib/import-mapping/sales-receipt.mapping";
+import { findTaxByIdentifier } from "../lib/accurate-tax";
 import { saveJournalVoucher } from "../lib/accurate-journal-voucher";
 import {
   buildJournalVoucherPayload,
@@ -578,6 +580,25 @@ export type SalesReceiptGroupResult = {
   rowIds: string[];
 };
 
+// § Fase 86 (2026-09-10) — "Tax ID" VALIDASI-ONLY (§ komentar
+// `fieldToAccuratePath` sales-receipt.mapping.ts): dicocokkan ke Master
+// Data Pajak Accurate (`/api/tax/list.do`, scope `tax_view`) SEBELUM
+// payload dibangun — gagal SELURUH grup dengan pesan jelas kalau ada
+// nilai yang tidak ditemukan (bukan cuma warning diam-diam), supaya
+// client tahu ada typo/kode pajak yang belum ada di company mereka.
+// TIDAK ada auto-create (beda dari `findOrCreateVendor`/`findOrCreateItem`)
+// — Master Data Pajak adalah konfigurasi akuntansi sensitif, bukan
+// referensi ringan seperti vendor/item.
+async function validateTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+  const taxIds = extractTaxIdsFromRows(rawRows, columnMapping);
+  for (const taxId of taxIds) {
+    const found = await findTaxByIdentifier(ctx, taxId);
+    if (!found) {
+      throw new Error(`Tax ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "Tax ID" kalau tidak diperlukan.`);
+    }
+  }
+}
+
 export async function processSalesReceiptGroup(
   ctx: AccurateSessionContext,
   group: SalesReceiptGroup,
@@ -587,6 +608,7 @@ export async function processSalesReceiptGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
+  await validateTaxIdsForReceipt(ctx, rawRows, columnMapping);
   const payload = buildSalesReceiptPayload(rawRows, columnMapping);
 
   const result = await saveSalesReceipt(ctx, payload);

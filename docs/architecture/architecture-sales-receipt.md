@@ -252,7 +252,7 @@ dikirim ke Accurate akan SALAH/tidak lengkap.
 | **Existing Credit** | ❌ SKIP (CONFIRMED, § screenshot UI) | — | Terkonfirmasi lewat screenshot UI Accurate ASLI dari client: ini **"Sisa Kredit"** — nilai TAMPILAN read-only (saldo kredit customer, dihitung Accurate dari data akun customer), BUKAN field input. Memang tidak ada yang perlu di-set, bukan cuma "tidak ketemu". |
 | **Return Overpay** | ❌ SKIP (CONFIRMED nyata tapi tidak ada di API) | — | Screenshot UI client TUNJUKKAN field ini NYATA ADA — checkbox **"Retur Kredit"**, BISA DI-TOGGLE user (BUKAN read-only/tampilan agregat — beda dari "Existing Credit"). TAPI dicek EXHAUSTIF ke SEMUA 17 property root `sales-receipt/save.do`, TIDAK ADA kandidat nama field sama sekali (beda dari kasus charField/projectNo dulu yang punya pola field lain untuk dijadikan hipotesis kuat) — fitur UI-only Accurate yang tidak diekspos ke API publik (dikonfirmasi juga via second opinion 2026-09-10). |
 | **Tax Amount** | ❌ SKIP (CONFIRMED, 4 sumber) | — | Screenshot UI client TUNJUKKAN nilai ini muncul sebagai **hasil KOMPUTASI OTOMATIS** ("Jasa Kebersihan: Rp 40.000", dihitung Accurate dari `paidPph`+kategori jasa di faktur asli) — BUKAN field yang diisi user/API. DIPERKUAT (2026-09-10) oleh dokumentasi resmi `/api/tax/*` (`docs/referencehtml/pph-api.html`, dikirim client): enum `pph23Type` di situ PUNYA nilai `JASA_LAIN_KEBERSIHAN` — cocok PERSIS dengan label di screenshot, membuktikan nilai ini berasal dari klasifikasi Master Data Pajak yang sudah di-set di faktur asli, bukan input Sales Receipt. |
-| **Tax ID** | ❌ SKIP | — | Deskripsi kompetitor mengindikasikan referensi master data — DIKONFIRMASI (2026-09-10) via dokumentasi resmi `/api/tax/*`: ini ID record di endpoint TERPISAH `/api/tax/list.do` (master data Pajak: `taxType`, `pph23Type`, `rate`, dst), BUKAN atribut transaksi `sales-receipt/save.do`. Tidak relevan untuk fase ini, bisa jadi konteks kalau nanti ada fitur validasi/sinkronisasi Master Data Pajak. |
+| **Tax ID** | ✅ DIIMPLEMENTASI — VALIDASI-ONLY (Fase 86, § di bawah) | — (TIDAK ada path payload, cuma lookup) | ID record di endpoint TERPISAH `/api/tax/list.do` (master data Pajak), BUKAN atribut transaksi `sales-receipt/save.do` — TAPI keputusan awal "skip" DIREVISI: dicocokkan (bukan dikirim) ke Master Data Pajak Accurate SEBELUM import, gagal kalau tidak ditemukan. Lihat § "Fase 86 — Validasi Tax ID". |
 
 **18 field baru dikonfirmasi** (spec resmi + template kompetitor + screenshot UI Accurate asli dari client — 3 sumber independen),
 **4 field TETAP di-skip** — TAPI sekarang dengan alasan PASTI/terkonfirmasi
@@ -410,18 +410,120 @@ SAMA (izinkan hingga 6 desimal) demi konsistensi.
   MATANG (2026-09-10)**, dikonfirmasi via 7 screenshot UI Accurate asli
   + dokumentasi resmi `/api/tax` dari client: Existing Credit & Tax
   Amount TERBUKTI nilai read-only/komputasi otomatis (memang tidak ada
-  yang perlu di-set), Tax ID = ID record master data pajak terpisah.
-  **Return Overpay** ("Retur Kredit") TERBUKTI NYATA ada di UI tapi
-  TIDAK ADA di API manapun (dicek exhaustif) — DIDOKUMENTASIKAN LENGKAP
-  (lihat Tabel Keputusan) untuk ditanyakan ke Accurate CS langsung
-  kalau diperlukan nanti, TIDAK diimplementasikan dengan tebakan.
+  yang perlu di-set). **Return Overpay** ("Retur Kredit") TERBUKTI NYATA
+  ada di UI tapi TIDAK ADA di API manapun (dicek exhaustif) —
+  DIDOKUMENTASIKAN LENGKAP (lihat Tabel Keputusan) untuk ditanyakan ke
+  Accurate CS langsung kalau diperlukan nanti, TIDAK diimplementasikan
+  dengan tebakan. **Tax ID** — keputusan "skip" AWAL DIREVISI (2026-09-10,
+  instruksi eksplisit user "jangan ikuti kompetitor, kita punya data
+  cukup untuk memanggil tax berfungsi dengan benar") jadi DIIMPLEMENTASI
+  sebagai validasi-only ke Master Data Pajak Accurate — lihat § "Fase 86
+  — Validasi Tax ID" di bawah.
 
-### Belum Diputuskan (Di Luar Scope Fase Ini)
+## Fase 86 — Validasi "Tax ID" (✅ DIEKSEKUSI, 2026-09-10)
+
+### Latar Belakang
+Fase 85 awalnya men-SKIP "Tax ID" (dianggap ID record master data pajak
+Accurate, tidak relevan). User eksplisit minta ditinjau ulang — sempat
+dieksplorasi sebagai "kombinasi 2 API" (pola sama `findOrCreateVendor`/
+`findOrCreateItem`), lalu sempat DIJEDA karena local dev tidak punya
+subscription Sales Receipt untuk test nyata. Alih-alih workaround
+(ditolak eksplisit user, "jangan bikin baru"), disiapkan environment
+test PROPER: plan+subscription Sales Receipt baru dibuat di dev DB,
+di-connect user ke company Accurate demo ("Retail Demo") secara manual
+lewat OAuth — bukan data customer produksi (project masih tahap
+building, belum ada customer nyata).
+
+**Temuan penting SEBELUM eksekusi** (audit ulang data ASLI kompetitor,
+556 baris `FACPORT_Sales Receipt_v5.xlsx`): kolom "Tax ID" (juga
+Existing Credit/Return Overpay/Tax Amount) **0% pernah diisi** di
+seluruh data nyata. Deskripsi resmi kompetitor untuk "Tax ID": *"No
+Pajak. Keterangan: lihat di **Data Master Pajak pada Fitur Facport**"*
+— SATU-SATUNYA kolom yang mereferensikan "Fitur Facport" (bukan
+"Accurate Online" seperti kolom lain), mengindikasikan field ini
+awalnya dimaksudkan untuk fitur internal produk lama bernama sama
+("Facport"), BUKAN field Accurate API.
+
+**Keputusan final (instruksi eksplisit user)**: *"JANGAN IKUTI
+KOMPETITOR .. ini aplikasi kita.. kita punya data cukup untuk memanggil
+tax berfungsi dengan benar.."* — TIDAK mengikuti asumsi/pola kompetitor
+begitu saja, bangun validasi Tax ID sendiri berdasarkan API Accurate
+`/api/tax/*` yang SUDAH dikonfirmasi bisa dipanggil (scope `tax_view`,
+lihat `accurate-scopes.ts`).
+
+### Test Call Nyata (2026-09-10, company "Retail Demo")
+`GET /api/tax/list.do` — **200 OK**, scope `tax_view` terbukti berfungsi.
+Struktur record ASLI (bukan asumsi dari dokumentasi):
+```json
+{
+  "id": 1800,
+  "taxCode": "Pajak Penghasilan Ps.23",
+  "description": "Jasa Kebersihan",
+  "pph23Type": "JASA_LAIN_KEBERSIHAN",
+  "taxType": "PPH23",
+  "rate": 2
+}
+```
+**Temuan kritis**: `taxCode` **TIDAK UNIK** — "Pajak Penghasilan Ps.23"
+dipakai banyak `description` berbeda (Jasa Kebersihan, Jasa Software
+Komputer, Jasa Teknik, dst — SEMUA record PPh23 share taxCode yang
+sama). Hanya `id` (Long, internal) dan `description` yang unik per
+record. `taxCode` UNIK cuma untuk pajak non-PPh23 (mis. "PPN").
+
+### Desain
+**Field baru**: `taxId` (Excel kolom "Tax ID", opsional, per baris
+faktur — posisi PERSIS antara "PPh No" dan "Discount", sama seperti
+urutan asli client).
+
+**VALIDASI-ONLY, TIDAK PERNAH masuk payload** — `sales-receipt/save.do`
+TIDAK punya field untuk ini (dikonfirmasi exhaustif Fase 85), jadi
+BEDA dari `findOrCreateVendor`/`findOrCreateItem`/`findOrCreateDataClassification`
+(yang auto-create DAN hasilnya dikirim ke payload utama): Tax ID cuma
+DICOCOKKAN ke Master Data Pajak Accurate SEBELUM payload dibangun —
+kalau tidak ditemukan, SELURUH grup GAGAL dengan pesan jelas (bukan
+warning diam-diam atau auto-create). Alasan TIDAK auto-create: Master
+Data Pajak adalah konfigurasi akuntansi sensitif (tarif pajak resmi),
+beda dari vendor/item/kategori yang aman dibuat otomatis.
+
+**Pencarian fleksibel** (`accurate-tax.ts` § `findTaxByIdentifier`):
+angka → cocok ke `id`; teks → cocok ke `taxCode` ATAU `description`
+(case-insensitive). **Disarankan pakai `description`** (unik) di
+template guide — `taxCode` ambigu untuk PPh23 (lihat temuan di atas),
+kalau user isi kode yang dipakai banyak record, `.find()` balikin match
+PERTAMA di urutan list (BISA salah jenis pajak TANPA notifikasi) — ini
+Known Limitation yang didokumentasikan, bukan bug tersembunyi.
+
+**File baru**: `apps/api/src/lib/accurate-tax.ts` — `findTaxByIdentifier`,
+fetch `/api/tax/list.do` (pageSize 200, company biasanya jauh di bawah
+itu).
+
+**File diubah**:
+- `sales-receipt.mapping.ts` — `taxId` ditambah ke `fieldToAccuratePath`
+  (path placeholder "(validasi-only)", BUKAN path Accurate asli — SATU-SATUNYA
+  field begini di modul ini) & `defaultColumnMap`. Fungsi baru
+  `extractTaxIdsFromRows` (dedupe, dipakai worker).
+- `workers/index.ts` — fungsi baru `validateTaxIdsForReceipt` dipanggil
+  di `processSalesReceiptGroup` SEBELUM `buildSalesReceiptPayload`,
+  throw `Error` jelas kalau ada Tax ID tidak ditemukan.
+- `template-guide.ts`, dropdown `import/page.tsx` — opsi/deskripsi baru,
+  posisi sesuai urutan client.
+
+### Known Limitations
+- `taxCode` ambigu untuk PPh23 (lihat § Desain) — mitigasi: guide
+  sarankan pakai `description`, bukan validasi tambahan (biar simpel,
+  konsisten filosofi project "biarkan Accurate/data asli yang jadi
+  sumber kebenaran").
+- Belum ada UI khusus untuk melihat daftar Master Data Pajak yang valid
+  di Facport sendiri (user harus buka Accurate langsung untuk tahu
+  nama pastinya) — di luar scope fase ini, bisa jadi fitur "referensi
+  master data" terpisah kalau dibutuhkan.
+
+## Belum Diputuskan (Di Luar Scope Fase Ini)
 - Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment (modul
   bayangan cermin PERSIS modul ini) — belum diminta eksplisit untuk
   Purchase Payment, tapi pola sebelumnya (Fase 75 PI mirror SI)
   menunjukkan client cenderung minta simetri lintas modul serupa. TIDAK
-  dikerjakan di Fase 85 (scope KHUSUS Sales Receipt) — bisa jadi fase
+  dikerjakan di Fase 85/86 (scope KHUSUS Sales Receipt) — bisa jadi fase
   terpisah nanti kalau diminta.
 
 ## Referensi

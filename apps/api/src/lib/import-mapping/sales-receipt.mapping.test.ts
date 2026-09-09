@@ -4,6 +4,7 @@ import {
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
   receiptNumberColumnOf,
+  extractTaxIdsFromRows,
   type ImportRowRecord,
 } from "./sales-receipt.mapping";
 
@@ -361,5 +362,49 @@ describe("buildSalesReceiptPayload — Fase 85 (detailInvoice[].detailDiscount[]
     const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
     const discount = (detail.detailDiscount as Record<string, unknown>[])[0]!;
     expect(discount.amount).toBe(95275.123456);
+  });
+});
+
+// § Fase 86 (2026-09-10) — "Tax ID" VALIDASI-ONLY: `sales-receipt/save.do`
+// TIDAK punya field ini, jadi nilai kolom Excel "Tax ID" TIDAK PERNAH
+// boleh muncul di payload manapun (root ATAU detailInvoice[]) — cuma
+// dipakai worker (`validateTaxIdsForReceipt`) untuk lookup ke Master
+// Data Pajak Accurate SEBELUM payload dibangun.
+describe("extractTaxIdsFromRows — Fase 86", () => {
+  const mapping = { ...columnMapping, "Tax ID": "taxId" };
+
+  test("kumpulkan nilai Tax ID unik dari semua baris, dedupe", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan" },
+      { "No Pelanggan": "C1", "No Faktur": "SI-2", "Jumlah Bayar": 500000, "Tax ID": "Jasa Kebersihan" },
+      { "No Pelanggan": "C1", "No Faktur": "SI-3", "Jumlah Bayar": 250000, "Tax ID": "PPN" },
+    ];
+    expect(extractTaxIdsFromRows(rawRows, mapping)).toEqual(["Jasa Kebersihan", "PPN"]);
+  });
+
+  test("baris tanpa Tax ID (kosong/tidak di-mapping) diabaikan", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "" },
+      { "No Pelanggan": "C1", "No Faktur": "SI-2", "Jumlah Bayar": 500000 },
+    ];
+    expect(extractTaxIdsFromRows(rawRows, mapping)).toEqual([]);
+  });
+
+  test("kolom Tax ID tidak di-mapping sama sekali -> tetap array kosong, tidak error", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000 }];
+    expect(extractTaxIdsFromRows(rawRows, columnMapping)).toEqual([]);
+  });
+});
+
+describe("buildSalesReceiptPayload — Fase 86 (Tax ID TIDAK PERNAH masuk payload)", () => {
+  const mapping = { ...columnMapping, "Tax ID": "taxId" };
+
+  test("Tax ID terisi -> tidak muncul di root payload maupun detailInvoice[]", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan" }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    expect(payload.taxId).toBeUndefined();
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail.taxId).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain("Jasa Kebersihan");
   });
 });

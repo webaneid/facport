@@ -71,6 +71,14 @@ export const salesReceiptMapping = {
     discountNotes: "detailInvoice[].detailDiscount[].discountNotes",
     discountDepartmentName: "detailInvoice[].detailDiscount[].departmentName",
     discountProjectNo: "detailInvoice[].detailDiscount[].projectNo",
+    // § Fase 86 (2026-09-10) — "Tax ID", VALIDASI-ONLY. `sales-receipt/save.do`
+    // TIDAK punya field ini (dikonfirmasi exhaustif Fase 85) — nilainya
+    // TIDAK PERNAH masuk payload, cuma dicocokkan ke Master Data Pajak
+    // Accurate (`/api/tax/list.do`, scope `tax_view`) SEBELUM baris
+    // diproses — cegah client salah ketik kode/nama pajak yang tidak
+    // ada di company mereka. Lihat `accurate-tax.ts` & `workers/index.ts`
+    // § `validateTaxIdsForReceipt`.
+    taxId: "(validasi-only — TIDAK dikirim ke sales-receipt/save.do)",
   } as const,
   // § Fase 86 (2026-09-10) — URUTAN entri di bawah SENGAJA mengikuti
   // PERSIS urutan sheet "NOTE" client (= template kompetitor
@@ -107,6 +115,7 @@ export const salesReceiptMapping = {
     "Department": "invoiceDepartmentName",
     "Paid PPH": "paidPph",
     "PPh No": "pphNumber",
+    "Tax ID": "taxId",
     "Discount": "discountAmount",
     "Discount Acc": "discountAccountNo",
     "Discount Note": "discountNotes",
@@ -278,6 +287,28 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
     }
   }
   return values;
+}
+
+// § Fase 86 — kumpulkan nilai "Tax ID" UNIK dari semua baris grup, untuk
+// divalidasi ke Master Data Pajak Accurate SEBELUM payload dibangun
+// (§ `workers/index.ts` § `validateTaxIdsForReceipt`, `accurate-tax.ts`).
+// Dedupe (Set) — 1 nilai yang sama dipakai berkali-kali cuma perlu 1x
+// lookup, mirror pola `ensureDataClassifications`. TIDAK PERNAH dipakai
+// untuk mengisi payload — lihat `buildSalesReceiptPayload`, field ini
+// sengaja tidak pernah ditulis ke `entry`.
+export function extractTaxIdsFromRows(
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): string[] {
+  const ids = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = extractRowValues(rawRow, columnMapping);
+    if (values.taxId !== undefined) {
+      const trimmed = String(values.taxId).trim();
+      if (trimmed !== "") ids.add(trimmed);
+    }
+  }
+  return [...ids];
 }
 
 // § Fase 85 — mirror `buildDetailExpenseFromRow` (Sales Invoice):
