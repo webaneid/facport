@@ -33,7 +33,7 @@ type UserOption = { id: string; name: string; email: string };
 
 const TARGET_LABEL: Record<Announcement["target"], string> = {
   all_customers: "Semua Customer",
-  specific_modules: "Modul Tertentu",
+  specific_modules: "Fitur Tertentu",
   specific_users: "User Tertentu",
 };
 
@@ -90,7 +90,7 @@ function AnnouncementFormDialog({ onCreated }: { onCreated: () => void }) {
       return;
     }
     if (target === "specific_modules" && selectedModules.size === 0) {
-      setError("Pilih minimal 1 modul target.");
+      setError("Pilih minimal 1 fitur target.");
       return;
     }
     if (target === "specific_users" && selectedUsers.length === 0) {
@@ -222,7 +222,7 @@ export default function AdminAnnouncementsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Pengumuman" description="Kirim pengumuman ke customer — semua, modul tertentu, atau user tertentu." action={<AnnouncementFormDialog onCreated={load} />} />
+      <PageHeader title="Pengumuman" description="Kirim pengumuman ke customer — semua, fitur tertentu, atau user tertentu." action={<AnnouncementFormDialog onCreated={load} />} />
 
       <Card>
         <CardHeader>

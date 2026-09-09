@@ -81,7 +81,7 @@ export default function AdminUserDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>Riwayat Import</CardTitle>
-          <CardDescription>{total} batch total, lintas semua modul.</CardDescription>
+          <CardDescription>{total} batch total, lintas semua fitur.</CardDescription>
         </CardHeader>
         <CardContent>
           {batches.length === 0 ? (
@@ -91,7 +91,7 @@ export default function AdminUserDetailPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>File</TableHead>
-                  <TableHead>Modul</TableHead>
+                  <TableHead>Fitur</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Baris</TableHead>
                   <TableHead>Tanggal</TableHead>

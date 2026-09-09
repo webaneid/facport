@@ -91,6 +91,7 @@
 | 80   | Field "Proyek" Level EXPENSE (Sales Invoice & Purchase Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-80-expense-project-no.md` |
 | 81   | Grouping Prioritas Trans No untuk Purchase Invoice (Mirror Fase 49/61/63 SI) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-81-trans-no-grouping-purchase-invoice.md` |
 | 82   | Fix Guard Idempotent Saat Faktur Dihapus Langsung di Accurate (SI & PI) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md` |
+| 83   | Copywriting: "Modul"/"Sub-Modul" Jadi "Fitur" di Semua UI | Done | — | `docs/phases/phase-83-copywriting-modul-jadi-fitur.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2219,3 +2220,18 @@ lintas-batch supaya retry berikutnya ambil riwayat paling baru.
 Typecheck 0 error. Full suite `apps/api` 507 pass/0 fail (4 baru). Dev
 DB dibersihkan. Lihat
 `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md`.
+
+## Update 2026-09-10 — Fase 83 Done: Copywriting "Modul"/"Sub-Modul" Jadi "Fitur" di Semua UI
+User minta istilah komunikasi ke client & di semua UI diseragamkan jadi
+"Fitur" — "modul"/"sub-modul" cuma istilah teknis internal (kode,
+komentar, identifier), TIDAK BOLEH muncul di teks yang dibaca user
+(customer MAUPUN admin — dikonfirmasi eksplisit ke user, scope-nya
+SEMUA UI bukan cuma customer-facing). 14 file `apps/web` diperbarui
+(landing, dashboard customer, dashboard admin, beberapa komponen) —
+semua teks JSX/label/pesan error yang bilang "modul"/"sub-modul" diganti
+"fitur". Nama variabel/fungsi/tipe (`moduleKey`, `moduleLabel`, dst)
+TIDAK disentuh. `apps/api` tidak ada perubahan (backend cuma balikin
+error code, terjemahan teks semua di frontend).
+
+Typecheck 0 error. Full suite `apps/web` 44 pass/0 fail. Lihat
+`docs/phases/phase-83-copywriting-modul-jadi-fitur.md`.

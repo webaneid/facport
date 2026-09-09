@@ -14,7 +14,7 @@ type ModulePopularityEntry = { moduleKey: string; count: number };
 // terbalik dari intuisi "vertical/horizontal" biasa.
 export function ModulePopularityBarChart({ data }: { data: ModulePopularityEntry[] }) {
   if (data.length === 0) {
-    return <EmptyState icon={PackageSearch} title="Belum ada langganan aktif" description="Popularitas modul muncul begitu ada subscription aktif." />;
+    return <EmptyState icon={PackageSearch} title="Belum ada langganan aktif" description="Popularitas fitur muncul begitu ada subscription aktif." />;
   }
 
   const chartData = data.map((d) => ({ ...d, label: moduleLabel(d.moduleKey) }));

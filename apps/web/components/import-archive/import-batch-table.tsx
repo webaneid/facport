@@ -46,7 +46,7 @@ export function ImportBatchTable({ batches, onChanged, timezone }: { batches: Un
       <TableHeader>
         <TableRow>
           <TableHead>File</TableHead>
-          <TableHead>Modul</TableHead>
+          <TableHead>Fitur</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Baris</TableHead>
           <TableHead>Tanggal</TableHead>

@@ -164,11 +164,11 @@ export function ModuleFeatures({ plans, appUrl }: { plans: Plan[]; appUrl: strin
 
       <div className="mx-auto flex w-full max-w-md flex-col items-center gap-3 rounded-xl border border-slate-200 p-5 text-center">
         {selectedPlans.length === 0 ? (
-          <p className="text-sm text-slate-500">Pilih sub-modul di atas untuk mulai berlangganan.</p>
+          <p className="text-sm text-slate-500">Pilih fitur di atas untuk mulai berlangganan.</p>
         ) : (
           <>
             <p className="text-sm text-slate-500">
-              {selectedPlans.length} sub-modul dipilih — total {currencyFormatter.format(total)}
+              {selectedPlans.length} fitur dipilih — total {currencyFormatter.format(total)}
             </p>
           </>
         )}

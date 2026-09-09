@@ -105,9 +105,9 @@ function SubscribePageInner() {
       const code = (res.error.value as { code?: string } | undefined)?.code;
       toast.error(
         code === "TRIAL_ALREADY_USED"
-          ? "Trial untuk sub-modul ini sudah pernah dipakai."
+          ? "Trial untuk fitur ini sudah pernah dipakai."
           : code === "MODULE_ALREADY_SUBSCRIBED"
-            ? "Sub-modul ini sudah aktif."
+            ? "Fitur ini sudah aktif."
             : "Gagal memulai trial. Coba lagi.",
       );
       return;
@@ -127,7 +127,7 @@ function SubscribePageInner() {
       const code = (res.error.value as { code?: string; moduleKey?: string } | undefined)?.code;
       toast.error(
         code === "MODULE_ALREADY_SUBSCRIBED"
-          ? "Salah satu sub-modul yang dipilih sudah kamu langgan atau masih menunggu pembayaran."
+          ? "Salah satu fitur yang dipilih sudah kamu langgan atau masih menunggu pembayaran."
           : code === "PLAN_NOT_ACTIVE"
             ? "Salah satu paket sudah tidak tersedia."
             : "Gagal membuat pesanan. Coba lagi.",
@@ -151,7 +151,7 @@ function SubscribePageInner() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Berlangganan</h1>
-        <p className="text-sm text-muted-foreground">Pilih sub-modul yang kamu butuhkan — bisa lebih dari satu sekaligus.</p>
+        <p className="text-sm text-muted-foreground">Pilih fitur yang kamu butuhkan — bisa lebih dari satu sekaligus.</p>
       </div>
 
       {groups.length === 0 ? (
@@ -284,7 +284,7 @@ function SubscribePageInner() {
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               {selectedPlans.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Pilih sub-modul di atas untuk melanjutkan.</p>
+                <p className="text-sm text-muted-foreground">Pilih fitur di atas untuk melanjutkan.</p>
               ) : (
                 <div className="flex flex-col gap-2">
                   {selectedPlans.map((p) => (

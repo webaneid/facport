@@ -155,7 +155,7 @@ export default async function DashboardPage() {
                     <span className="font-medium text-foreground">{row.plan.name}</span>
                     <StatusBadge domain="subscription" status={row.subscription.status} />
                   </div>
-                  <p className="text-xs text-muted-foreground">Modul: {row.plan.modules.map(moduleLabel).join(", ")}</p>
+                  <p className="text-xs text-muted-foreground">Fitur: {row.plan.modules.map(moduleLabel).join(", ")}</p>
                   {row.subscription.endAt && <p className="text-xs text-muted-foreground">Berlaku sampai {formatDate(row.subscription.endAt, companyTimezone)}</p>}
                 </div>
               ))
@@ -174,7 +174,7 @@ export default async function DashboardPage() {
             {accurateSubscriptions.length === 0 ? (
               <EmptyState icon={Link2} title="Belum punya langganan aktif" className="py-4" />
             ) : accurateSubscriptions.every((row) => row.connected) ? (
-              <Badge variant="success">✓ Semua modul terhubung</Badge>
+              <Badge variant="success">✓ Semua fitur terhubung</Badge>
             ) : (
               <>
                 {accurateSubscriptions.map((row) => (
@@ -200,7 +200,7 @@ export default async function DashboardPage() {
                 <FileSpreadsheet className="h-4 w-4 text-primary-600" />
                 <CardTitle>Import Terakhir</CardTitle>
               </div>
-              <CardDescription>5 import terakhir dari semua modul.</CardDescription>
+              <CardDescription>5 import terakhir dari semua fitur.</CardDescription>
             </div>
             <Link href="/import/arsip" className={buttonVariants("outline")}>
               Tampilkan Arsip Lain

@@ -56,7 +56,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     }
     const days = toDurationDays(amount, durationUnit);
     if (!moduleKey) {
-      setError("Pilih sub-modul untuk paket ini.");
+      setError("Pilih fitur untuk paket ini.");
       return;
     }
     setSubmitting(true);
@@ -99,7 +99,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
                landing/subscribe dengan pilihan tier — cukup bikin baris
                baru dengan modul yang sama, beri nama yang jelas. */}
             <span className="text-xs text-muted-foreground">
-              Mau bikin opsi Bulanan &amp; Tahunan untuk modul yang sama? Bikin 2 paket dengan modul yang sama (beda durasi/harga) — otomatis
+              Mau bikin opsi Bulanan &amp; Tahunan untuk fitur yang sama? Bikin 2 paket dengan fitur yang sama (beda durasi/harga) — otomatis
               tampil 1 kartu dengan pilihan tier di halaman pelanggan. Beri nama yang jelas, mis. &quot;Purchase Invoice - Bulanan&quot;.
             </span>
           </label>
@@ -121,7 +121,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             </div>
           </div>
           <div className="flex flex-col gap-3">
-            <span className="text-xs font-medium text-foreground">Sub-Modul (1 paket = 1 sub-modul)</span>
+            <span className="text-xs font-medium text-foreground">Fitur (1 paket = 1 fitur)</span>
             {MODULE_GROUPS.map((group) => (
               <div key={group} className="flex flex-col gap-1.5">
                 <span className="text-xs text-muted-foreground">{group}</span>
@@ -198,7 +198,7 @@ export default function AdminPlansPage() {
     columnHelper.accessor("durationDays", { header: "Durasi", cell: (ctx) => formatDuration(ctx.getValue()) }),
     columnHelper.display({
       id: "modules",
-      header: "Sub-Modul",
+      header: "Fitur",
       cell: ({ row }) => (
         <span className="text-muted-foreground">{row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}</span>
       ),
@@ -244,12 +244,12 @@ export default function AdminPlansPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Paket" description="Kelola paket langganan per modul." action={<PlanFormDialog onSaved={load} />} />
+      <PageHeader title="Paket" description="Kelola paket langganan per fitur." action={<PlanFormDialog onSaved={load} />} />
 
       <Card>
         <CardHeader>
           <CardTitle>Semua Paket</CardTitle>
-          <CardDescription>Katalog per sub-modul — cart multi-modul dirakit saat checkout, bukan di sini.</CardDescription>
+          <CardDescription>Katalog per fitur — cart multi-fitur dirakit saat checkout, bukan di sini.</CardDescription>
         </CardHeader>
         <CardContent>
           {!plans ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={plans} emptyIcon={Ban} emptyTitle="Belum ada paket" />}
