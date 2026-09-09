@@ -1,3 +1,8 @@
+## 1.19.0 (2026-09-09)
+
+* Merge pull request #43 from webaneid/develop ([67efe79](https://github.com/webaneid/facport/commit/67efe79)), closes [#43](https://github.com/webaneid/facport/issues/43)
+* feat: tambah Atribut Tambahan level ITEM (charField/numericField/dateField) ([eaff3c9](https://github.com/webaneid/facport/commit/eaff3c9))
+
 ## <small>1.18.2 (2026-09-08)</small>
 
 * Merge pull request #42 from webaneid/develop ([1ae5c2e](https://github.com/webaneid/facport/commit/1ae5c2e)), closes [#42](https://github.com/webaneid/facport/issues/42)
