@@ -82,6 +82,7 @@
 | 71   | Koreksi Sinonim Salah "ITEM:CUSTOM CHARACTER N" (Terbukti Tidak Ada Field-nya, DIKOREKSI LAGI Fase 73) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md` |
 | 72   | Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada | Done | (lihat phase doc) | `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md` |
 | 73   | Atribut Tambahan Level ITEM (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md` |
+| 74   | Kategori Keuangan Level EXPENSE (Baris Beban) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2048,3 +2049,29 @@ bukan 2 seperti sempat disimpulkan Fase 71.
 Typecheck 0 error. Full suite `apps/api` 463 pass/0 fail (3 baru, 1
 diperbarui). Lihat
 `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md`.
+
+**Penutup saga Fase 73**: retest via API tetap gagal setelah field
+teridentifikasi benar — ternyata BUKAN bug kode/Accurate. Root cause:
+**worker production tidak ikut di-restart** saat deploy v1.19.0 (cuma
+`api`+`web`, dianggap "cukup" karena perubahan "cuma mapping" — KELIRU,
+worker jalan container terpisah, image-nya tidak ikut ter-update kalau
+tidak di-restart eksplisit). Dibuktikan via test di environment LOCAL
+(worker jalan kode terbaru) yang berhasil. Worker production di-restart
+manual ke v1.19.0, retest berhasil. **Aturan baru**: perubahan apa pun
+di `apps/api/src/lib/import-mapping/*.ts` (atau file lain yang dipakai
+worker) WAJIB Full runbook (restart worker), tidak boleh Minimal,
+meski "cuma" mapping/data. Dicatat di `docs/lessons-learned.md`.
+
+## Update 2026-09-09 — Fase 74 Done: Kategori Keuangan Level EXPENSE (Baris Beban) Sales Invoice
+Melengkapi Kategori Keuangan (`dataClassificationNName`) untuk level
+EXPENSE (`detailExpense[]`, sibling dari `detailItem[]`) — field API
+SAMA PERSIS dengan level Item (Fase 68), cuma array beda. Field dasar
+Expense (`accountNo`, `expenseName`, `expenseAmount`, `expenseNotes`,
+`departmentName`) ditambahkan juga. 15 kolom Excel baru ditaruh PALING
+AKHIR template (setelah "Kategori Keuangan 10"). 1 baris Excel bisa
+menyumbang 1 baris Barang DAN/ATAU 1 baris Beban sekaligus, tergantung
+kolom mana yang terisi — `accountNo`+`expenseAmount` wajib dua-duanya
+terisi supaya baris dianggap punya data Beban.
+
+Typecheck 0 error. Full suite `apps/api` 473 pass/0 fail (13 baru).
+Lihat `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md`.

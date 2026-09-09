@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-09-09 — "Minimal runbook" (skip restart worker) SALAH untuk perubahan file mapping — bikin investigasi 1+ hari sia-sia
+**Masalah:** Deploy v1.19.0 (Fase 73, field Atribut Tambahan level ITEM)
+pakai runbook Minimal (restart `api`+`web` saja) — dengan alasan
+perubahannya "cuma mapping/template, bukan logic worker". SETELAH itu,
+client retest berkali-kali (5+ percobaan, eliminasi 5 hipotesis:
+aktivasi field, "Pilihan"/predefined choices, tabrakan nama field
+header-vs-item, slot yang belum dikonfigurasi, bahkan manual entry di
+Accurate dites segala) — SEMUA gagal menampilkan data padahal API
+selalu balas sukses. Baru ketahuan setelah setup environment LOCAL
+terpisah (Accurate app OAuth baru, reconnect, dsb — makan waktu
+signifikan) dan test yang SAMA PERSIS berhasil di situ.
+
+**Root cause:** `apps/api/src/lib/import-mapping/sales-invoice.mapping.ts`
+(file yang diubah Fase 73) di-import LANGSUNG oleh `workers/index.ts` —
+worker jalan sebagai **container Docker TERPISAH** dengan **image
+sendiri**. Restart `api`+`web` TIDAK menyentuh container `worker` sama
+sekali — dia tetap jalan pakai image LAMA (v1.18.2) yang belum kenal
+field baru (`attributItemKarakter1` dkk). `column_mapping` tersimpan
+benar di DB (API sudah versi baru, dropdown-nya ada), tapi saat WORKER
+membangun payload ke Accurate, field yang tidak dikenal di versi
+lamanya itu diam-diam TIDAK PERNAH masuk ke payload — bukan error,
+cuma hilang. Baris tetap `success` karena field wajib lain tetap valid.
+
+**Fix:** Restart manual `facport-worker-1` ke image yang sama
+(`v1.19.0`) — retest langsung berhasil, TANPA perubahan kode apa pun
+(kode sudah benar sejak awal).
+
+**Pencegahan:** **"Minimal runbook" (skip restart worker) HANYA boleh
+dipakai kalau perubahan BENAR-BENAR TIDAK menyentuh file yang di-import
+`workers/index.ts`** — cek dengan `grep` import path sebelum
+memutuskan, JANGAN menilai dari "kategori" perubahan ("cuma
+mapping/data" TERASA aman tapi TIDAK berarti worker tidak
+memakainya). Kalau ragu SAMA SEKALI, default ke Full runbook (restart
+semua service termasuk worker) — biaya restart worker itu murah
+(hitungan detik), sementara biaya salah asumsi ini adalah 1+ hari
+investigasi buntu yang menyalahkan Accurate/konfigurasi client padahal
+akar masalahnya di proses deploy kita sendiri.
+
+---
+
 ## 2026-09-09 — Spec Accurate TIDAK LENGKAP untuk SELURUH keluarga fitur "Atribut Tambahan", bukan cuma 1 field terisolasi — pertanyaan ke Support harus sespesifik mungkin
 **Masalah:** Investigasi Fase 67-73 (lintas 2 hari) berulang kali salah
 simpul soal field "Atribut Tambahan" Sales Invoice: sempat dikira

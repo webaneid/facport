@@ -217,6 +217,29 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Kategori Keuangan 8", required: false, example: "", description: "Atribut Tambahan 8 level ITEM — sama pola nomor 1." },
   { column: "Kategori Keuangan 9", required: false, example: "", description: "Atribut Tambahan 9 level ITEM — sama pola nomor 1." },
   { column: "Kategori Keuangan 10", required: false, example: "", description: "Atribut Tambahan 10 level ITEM — sama pola nomor 1." },
+  // § Fase 74 (2026-09-09) — level EXPENSE (baris Beban, `detailExpense[]`
+  // di payload, ARRAY TERPISAH dari `detailItem[]`). Ditaruh PALING
+  // AKHIR (setelah "Kategori Keuangan 10") sesuai permintaan. 1 baris
+  // Excel BISA menyumbang 1 baris Barang DAN/ATAU 1 baris Beban
+  // sekaligus — kolom "Akun Beban" + "Jumlah Beban" WAJIB DUA-DUANYA
+  // terisi supaya baris ini dianggap punya data Beban (kalau salah satu
+  // kosong, baris ini dianggap TIDAK ada data Beban-nya, kolom Beban
+  // lain di baris itu diabaikan).
+  { column: "Akun Beban", required: false, example: "6-10100", description: "Kode Akun Perkiraan (COA) untuk baris Beban ini — WAJIB diisi bersama \"Jumlah Beban\" supaya baris ini dianggap punya data Beban." },
+  { column: "Nama Beban", required: false, example: "Ongkos Kirim", description: "Nama/keterangan Beban." },
+  { column: "Jumlah Beban", required: false, example: "50000", description: "Nominal Beban. Angka polos, TANPA titik/koma pemisah ribuan — WAJIB diisi bersama \"Akun Beban\"." },
+  { column: "Catatan Beban", required: false, example: "", description: "Catatan tambahan untuk Beban ini." },
+  { column: "Beban - Department", required: false, example: "", description: "Nama departemen untuk Beban ini (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Kategori Keuangan Beban 1", required: false, example: "", description: "Atribut Tambahan 1 level EXPENSE (per baris Beban, field API SAMA dengan Kategori Keuangan level Item — detailExpense.dataClassification1Name). Maksimal 10 slot." },
+  { column: "Kategori Keuangan Beban 2", required: false, example: "", description: "Atribut Tambahan 2 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 3", required: false, example: "", description: "Atribut Tambahan 3 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 4", required: false, example: "", description: "Atribut Tambahan 4 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 5", required: false, example: "", description: "Atribut Tambahan 5 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 6", required: false, example: "", description: "Atribut Tambahan 6 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 7", required: false, example: "", description: "Atribut Tambahan 7 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 8", required: false, example: "", description: "Atribut Tambahan 8 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 9", required: false, example: "", description: "Atribut Tambahan 9 level EXPENSE — sama pola nomor 1." },
+  { column: "Kategori Keuangan Beban 10", required: false, example: "", description: "Atribut Tambahan 10 level EXPENSE — sama pola nomor 1." },
 ];
 
 export const vendorPayableAccountTemplateGuide: TemplateFieldGuide[] = [

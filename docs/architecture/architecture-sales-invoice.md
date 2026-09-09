@@ -113,7 +113,7 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68, rename kolom Fase 69, dikoreksi lagi Fase 71, field ITEM baru Fase 73
+## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68, rename kolom Fase 69, dikoreksi lagi Fase 71, field ITEM baru Fase 73, level EXPENSE Fase 74
 **Status: SELESAI diimplementasi & DIKOREKSI dengan file Excel ASLI
 client (2026-09-08).** `defaultColumnMap` sudah diperbarui ke nama
 kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
@@ -181,6 +181,40 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 > `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md`,
 > `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md`,
 > `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md`.
+
+> **§ Penutup saga Fase 73 (2026-09-09)**: setelah field API-nya
+> teridentifikasi benar, retest via API tetap gagal menampilkan data —
+> ternyata BUKAN bug kode/Accurate sama sekali. Root cause SEBENARNYA:
+> **worker production tidak ikut di-restart** saat deploy v1.19.0
+> (cuma `api`+`web` yang di-restart, dianggap "cukup" karena perubahan
+> "cuma mapping" — KELIRU, file mapping dipakai LANGSUNG oleh proses
+> worker terpisah). Worker jalan dengan image LAMA (v1.18.2, sebelum
+> field Fase 73 ada) sehingga field baru diam-diam diabaikan. Dibuktikan
+> via test di environment LOCAL (worker JALAN dengan kode terbaru) yang
+> BERHASIL — konfirmasi payload+konfigurasi Accurate sudah benar sejak
+> awal. **Aturan baru**: perubahan APA PUN di `apps/api/src/lib/import-mapping/*.ts`
+> atau file lain yang dipakai `workers/index.ts` WAJIB pakai Full
+> runbook (termasuk restart `worker`), TIDAK BOLEH Minimal runbook,
+> meski perubahannya "cuma" data/mapping — worker jalan sebagai
+> container terpisah dengan image sendiri yang TIDAK ikut ter-update
+> kalau tidak di-restart eksplisit. Dicatat di
+> `docs/lessons-learned.md`.
+
+> **Update 2026-09-09 (Fase 74)** — Kategori Keuangan level EXPENSE
+> (`detailExpense.dataClassificationNName`) diimplementasikan, melengkapi
+> versi level Item (Fase 68). Field dasar Expense (`accountNo`,
+> `expenseName`, `expenseAmount`, `expenseNotes`, `departmentName`) juga
+> ditambahkan — field API dikonfirmasi dari spec resmi
+> (`detailExpense.items.properties`). Kolom Excel baru ("Akun Beban",
+> "Nama Beban", "Jumlah Beban", "Catatan Beban", "Beban - Department",
+> "Kategori Keuangan Beban 1-10") ditaruh PALING AKHIR template. 1 baris
+> Excel bisa menyumbang 1 baris Barang DAN/ATAU 1 baris Beban sekaligus
+> (tergantung kolom mana yang terisi, TIDAK ada kolom "Tipe Baris"
+> terpisah). `accountNo`+`expenseAmount` WAJIB dua-duanya terisi supaya
+> baris dianggap punya data Beban. BELUM diterapkan ke jalur
+> `appendToExistingSalesInvoice` (Fase 67, retry lintas-batch) — cuma
+> CREATE faktur baru. Detail →
+> `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md`.
 
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet

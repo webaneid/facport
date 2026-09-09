@@ -67,6 +67,7 @@ import {
   extractCustomerCreateFields,
   extractItemCreateFields as extractItemCreateFieldsSI,
   extractDataClassificationValues,
+  extractExpenseDataClassificationValues,
   groupSalesInvoiceRows,
   validateGroupCustomerConsistency,
   type SalesInvoiceGroup,
@@ -81,6 +82,11 @@ import { findOrCreateDataClassification } from "../lib/accurate-data-classificat
 // sebagai master data — "Kategori Keuangan X tidak ditemukan atau sudah
 // dihapus"). Dedupe per (index,name) supaya tidak panggil API berkali-
 // kali untuk nilai yang sama diulang di banyak baris.
+// § Fase 74 — nilai level EXPENSE (`expenseKategoriKeuanganN`) IKUT
+// diproses di sini juga, DEDUPE BARENG dengan yang level item — field
+// API-nya SAMA (`dataClassificationNName`), master data-nya SATU set
+// per index terlepas nempel di baris Barang atau Beban, jadi kalau nama
+// yang sama kebetulan dipakai di keduanya, cukup 1x panggilan create.
 async function ensureDataClassifications(
   ctx: AccurateSessionContext,
   rawRows: Record<string, unknown>[],
@@ -88,7 +94,8 @@ async function ensureDataClassifications(
 ): Promise<void> {
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
-    for (const { index, name } of extractDataClassificationValues(rawRow, columnMapping)) {
+    const values = [...extractDataClassificationValues(rawRow, columnMapping), ...extractExpenseDataClassificationValues(rawRow, columnMapping)];
+    for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
