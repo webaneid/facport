@@ -203,6 +203,19 @@ export const salesInvoiceMapping = {
     // ADA di sini TETAP: `salesOrderNumber` > `salesQuotationNumber`.
     expenseSalesOrderNo: "detailExpense.salesOrderNumber",
     expenseSalesQuotationNo: "detailExpense.salesQuotationNumber",
+    // § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE
+    // (`detailExpense.projectNo`), TERKONFIRMASI lewat TEST CALL NYATA
+    // (bukan tebakan, bukan cuma dari spec) — dikirim ke
+    // `/api/sales-invoice/save.do` dengan `projectNo: "TES01"`, Accurate
+    // BERHASIL simpan & resolve ke project yang benar (dibuktikan lewat
+    // `detail.do` sesudahnya, `project.no` balik "TES01"). Field ini
+    // TIDAK ADA di spec resmi publik (`accurate-openapi.json`) — pola
+    // SAMA PERSIS dengan saga charField/numericField/dateField (Fase
+    // 64/73): spec resmi TIDAK LENGKAP, field-nya TETAP benar-benar ada
+    // di API sungguhan. Field API SAMA dengan `detailItem.projectNo`
+    // (§ Fase 02/61) yang sudah lama diimplementasikan di level ITEM,
+    // cuma nempel di array `detailExpense` di sini.
+    expenseProjectNo: "detailExpense.projectNo",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
@@ -375,6 +388,8 @@ export const salesInvoiceMapping = {
     "Catatan Beban": "expenseNotes",
     "Expense Department": "expenseDepartmentName",
     "Beban - Department": "expenseDepartmentName",
+    // § Fase 80 — lihat komentar `fieldToAccuratePath`.
+    "Expense Project No": "expenseProjectNo",
     "Expense Financial Category 1": "expenseKategoriKeuangan1",
     "Expense Financial Category 2": "expenseKategoriKeuangan2",
     "Expense Financial Category 3": "expenseKategoriKeuangan3",

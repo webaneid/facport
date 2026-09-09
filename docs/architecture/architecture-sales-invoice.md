@@ -252,6 +252,21 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 > template. Detail →
 > `docs/phases/phase-77-po-no-rename-expense-english-link-expense.md`.
 
+> **Update 2026-09-09 (Fase 80)** — Field **"Proyek"** level EXPENSE
+> (`detailExpense.projectNo`) ditambahkan — client tunjukkan form
+> Accurate "Biaya Lainnya" yang punya field ini, awalnya disimpulkan
+> KELIRU "tidak ada" dari cek spec resmi (pola kesalahan SAMA seperti
+> saga charField Fase 61/73). Dikoreksi lewat **TEST CALL NYATA**: kirim
+> payload `detailExpense: [{..., projectNo: "TES01"}]` ke
+> `/api/sales-invoice/save.do` via environment local dev —
+> **BERHASIL**, `detail.do` sesudahnya konfirmasi project ter-resolve
+> benar (`project.no: "TES01"`). Field API SAMA PERSIS dengan
+> `detailItem.projectNo` yang sudah lama ada di level ITEM (Fase 02/61),
+> TIDAK ADA di spec resmi publik. Kolom "Expense Project No" ditaruh DI
+> DALAM grup Beban (setelah "Expense Department"), BUKAN di ujung
+> bersama field link Fase 76/77. Detail →
+> `docs/phases/phase-80-expense-project-no.md`.
+
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet
 > "Sales_Invoice" + "Penjelasan Kolom"). Riset MENYELURUH ke SEMUA 30+

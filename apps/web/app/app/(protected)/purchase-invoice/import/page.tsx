@@ -136,6 +136,9 @@ const ACCURATE_FIELDS = [
   { value: "expenseAmount", label: "Jumlah Beban (wajib bersama Akun Beban)" },
   { value: "expenseNotes", label: "Catatan Beban" },
   { value: "expenseDepartmentName", label: "Departemen Beban" },
+  // § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE, dikonfirmasi
+  // test call nyata untuk Sales Invoice, diasumsikan konsisten di sini.
+  { value: "expenseProjectNo", label: "Proyek Beban (per baris Beban)" },
   { value: "expenseKategoriKeuangan1", label: "Kategori Keuangan Beban 1 (per baris Beban)" },
   { value: "expenseKategoriKeuangan2", label: "Kategori Keuangan Beban 2 (per baris Beban)" },
   { value: "expenseKategoriKeuangan3", label: "Kategori Keuangan Beban 3 (per baris Beban)" },

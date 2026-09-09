@@ -173,6 +173,18 @@ export const purchaseInvoiceMapping = {
     // `purchaseRequisitionNumber` di array ini, jadi TIDAK ADA masalah
     // prioritas seperti level ITEM di atas.
     expensePurchaseOrderNo: "detailExpense.purchaseOrderNumber",
+    // § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE
+    // (`detailExpense.projectNo`), mirror Sales Invoice. TERKONFIRMASI
+    // lewat TEST CALL NYATA untuk Sales Invoice (`save.do` dengan
+    // `projectNo: "TES01"` berhasil disimpan & di-resolve benar oleh
+    // Accurate) — field ini TIDAK ADA di spec resmi publik, pola SAMA
+    // dengan saga charField/numericField/dateField. BELUM dites
+    // langsung untuk Purchase Invoice (local dev tidak punya scope
+    // vendor_view buat test call penuh) — DIASUMSIKAN konsisten (field
+    // API SAMA dengan `detailItem.projectNo` yang sudah lama
+    // diimplementasikan di kedua modul, "Proyek" konsep universal
+    // Accurate lintas transaksi). Catat di Known Limitations.
+    expenseProjectNo: "detailExpense.projectNo",
   } as const,
   // Mapping default (bisa di-override user lewat UI "cocokkan kolom" saat
   // upload) — key = nama kolom Excel yang diharapkan (ikut pola template
@@ -281,6 +293,8 @@ export const purchaseInvoiceMapping = {
     "Jumlah Beban": "expenseAmount",
     "Catatan Beban": "expenseNotes",
     "Beban - Department": "expenseDepartmentName",
+    // § Fase 80 — lihat komentar `fieldToAccuratePath`.
+    "Beban - Proyek": "expenseProjectNo",
     "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1",
     "Kategori Keuangan Beban 2": "expenseKategoriKeuangan2",
     "Kategori Keuangan Beban 3": "expenseKategoriKeuangan3",

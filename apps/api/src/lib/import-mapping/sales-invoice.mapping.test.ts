@@ -818,3 +818,23 @@ describe("link alur penjualan level EXPENSE — Fase 77", () => {
     ).toBeNull();
   });
 });
+
+// § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE
+// (`detailExpense.projectNo`), DIKONFIRMASI lewat test call NYATA ke
+// `/api/sales-invoice/save.do` (payload projectNo: "TES01" berhasil
+// disimpan & di-resolve Accurate ke project yang benar) — TIDAK ADA di
+// spec resmi publik, pola sama dengan saga charField/numericField/dateField.
+describe("Expense Project No (detailExpense.projectNo) — Fase 80", () => {
+  test("masuk ke detailExpense, BUKAN root", () => {
+    const rawRow = { "Akun Beban": "6-10100", "Jumlah Beban": 50000, "Expense Project No": "TES01" };
+    const columnMapping = { "Akun Beban": "expenseAccountNo", "Jumlah Beban": "expenseAmount", "Expense Project No": "expenseProjectNo" };
+    const payload = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(payload.projectNo).toBeUndefined();
+    const detail = (payload.detailExpense as Record<string, unknown>[])[0]!;
+    expect(detail.projectNo).toBe("TES01");
+  });
+
+  test("defaultColumnMap — nama kolom sesuai", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Project No"]).toBe("expenseProjectNo");
+  });
+});

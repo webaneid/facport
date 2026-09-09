@@ -265,6 +265,17 @@ dua-duanya terisi). Detail lengkap →
 > instruksi eksplisit user soal urutan penempatan kolom baru. Detail →
 > `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md`.
 
+> **Update 2026-09-09 (Fase 80)** — Field **"Proyek"** level EXPENSE
+> (`detailExpense.projectNo`) ditambahkan, mirror Sales Invoice. ⚠️
+> **BELUM diverifikasi langsung untuk Purchase Invoice** (koneksi local
+> dev tidak punya scope `vendor_view` yang dibutuhkan buat test call
+> penuh) — DIASUMSIKAN konsisten dari field API yang sama
+> (`detailItem.projectNo` sudah lama terbukti konsisten di kedua
+> modul), TAPI ini murni asumsi, BUKAN dikonfirmasi test call nyata
+> seperti di Sales Invoice. Kolom "Beban - Proyek" (naming Indonesia,
+> konsisten field Beban PI lain) ditaruh DI DALAM grup Beban. Detail →
+> `docs/phases/phase-80-expense-project-no.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`
