@@ -1,3 +1,12 @@
+## 1.23.0 (2026-09-09)
+
+* Merge pull request #48 from webaneid/develop ([601d10e](https://github.com/webaneid/facport/commit/601d10e)), closes [#48](https://github.com/webaneid/facport/issues/48)
+* docs: perbaiki komentar/dokumentasi basi Sales Receipt (validasi menyeluruh) ([88f1148](https://github.com/webaneid/facport/commit/88f1148))
+* feat: fix dropdown No. Sales Receipt & ekspansi 18 field opsional Sales Receipt ([9a6d07c](https://github.com/webaneid/facport/commit/9a6d07c))
+* feat: siapkan scope tax_view untuk riset Tax ID Sales Receipt ([4c5365a](https://github.com/webaneid/facport/commit/4c5365a))
+* feat: validasi Tax ID Sales Receipt ke Master Data Pajak Accurate ([476bab2](https://github.com/webaneid/facport/commit/476bab2))
+* chore: ganti istilah "modul"/"sub-modul" jadi "fitur" di semua teks UI ([32c2484](https://github.com/webaneid/facport/commit/32c2484))
+
 ## <small>1.22.1 (2026-09-09)</small>
 
 * Merge pull request #47 from webaneid/develop ([eda5d2c](https://github.com/webaneid/facport/commit/eda5d2c)), closes [#47](https://github.com/webaneid/facport/issues/47)
