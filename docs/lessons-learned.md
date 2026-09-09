@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-09-09 — Spec Accurate TIDAK LENGKAP untuk SELURUH keluarga fitur "Atribut Tambahan", bukan cuma 1 field terisolasi — pertanyaan ke Support harus sespesifik mungkin
+**Masalah:** Investigasi Fase 67-73 (lintas 2 hari) berulang kali salah
+simpul soal field "Atribut Tambahan" Sales Invoice: sempat dikira
+`charField`/`numericField`/`dateField` cuma level HEADER (Fase 64),
+sempat dikira "ITEM: CUSTOM CHARACTER" = sinonim Kategori Keuangan
+(Fase 69, SALAH), sempat dikira field itu TIDAK ADA SAMA SEKALI setelah
+jawaban PERTAMA Accurate Support (Fase 71) — baru KETEMU field yang
+BENAR setelah pertanyaan KEDUA yang SPESIFIK ("Atribut Tambahan pada
+DETAIL ITEM di transaksi Sales Invoice", Fase 73): ternyata
+`charField`/`numericField`/`dateField` PUNYA VERSI ITEM-LEVEL JUGA
+(15 slot Karakter, beda dari 10 slot di level header), field API SAMA
+tapi lokasi payload beda (root vs nested `detailItem`).
+
+**Root cause:** `accurate-openapi.json` (spec resmi yang jadi acuan
+sejak awal project) TIDAK LENGKAP untuk **SELURUH keluarga fitur**
+Atribut Tambahan — bukan cuma 1 field yang kebetulan lupa
+didokumentasikan (dugaan awal tiap kali ketemu kasus baru), tapi
+POLA BERULANG: charField header (Fase 64), charField item (Fase 73)
+— dua-duanya SAMA SEKALI tidak ada di spec, cuma dataClassificationNName
+("Kategori Keuangan") yang terdokumentasi resmi. Pertanyaan PERTAMA ke
+Accurate Support (Fase 71) juga TERBUKTI tidak cukup — jawabannya benar
+tapi tidak lengkap karena pertanyaannya sendiri tidak menyebut level
+(header vs item vs expense) secara eksplisit, jadi Support cuma jawab
+apa yang secara harfiah ditanyakan.
+
+**Fix:** Field item-level charField/numericField/dateField
+diimplementasikan (Fase 73) — 27 field baru
+(`attributItemKarakter1-15`/`Angka1-10`/`Tanggal1-2`), kolom Excel
+"ITEM: CUSTOM CHARACTER/NUMBER/DATE" dikembalikan dengan field API yang
+BENAR kali ini (bukan salah kirim ke Kategori Keuangan seperti Fase 69).
+
+**Pencegahan:** (1) Untuk fitur "Atribut Tambahan"/custom-field apa pun
+di Accurate, ASUMSIKAN spec TIDAK LENGKAP sejak awal (bukan baru curiga
+setelah ketemu masalah) — field seperti ini SERING tidak terdokumentasi
+resmi. (2) Kalau tanya ke Accurate Support soal field API, SPESIFIKKAN
+level/konteks secara eksplisit dalam pertanyaan ("level header/faktur"
+vs "level item/detail" vs "level expense") — jangan tanya generik
+"field apa untuk Atribut Tambahan", karena jawabannya cuma akan
+menjawab APA YANG DITANYAKAN, bukan mengungkap SELURUH variasi yang
+ada. (3) Kalau client punya file Excel/screenshot ASLI yang menyebut
+suatu kolom/field spesifik dan itu TIDAK cocok dengan pemahaman kita
+saat ini, JANGAN buru-buru simpulkan "itu sinonim" atau "itu tidak
+ada" — anggap itu sebagai petunjuk kuat field tersebut BENAR-BENAR ADA
+tapi belum ditemukan cara memetakannya, sampai ada bukti definitif
+(test nyata / balasan Support yang SPESIFIK) yang membuktikan
+sebaliknya.
+
+---
+
 ## 2026-09-08 — Salah asumsi 2 field API berbeda itu "sinonim", padahal client cuma pakai istilah sendiri untuk field yang SUDAH ADA
 **Masalah:** Client verifikasi field Atribut Tambahan item-level
 (Kategori Keuangan) berhasil, lalu tunjukkan kolom Excel kita

@@ -111,21 +111,50 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
-  // § Fase 71 (2026-09-08) — SEMPAT dikira ada field "ITEM: CUSTOM
-  // CHARACTER N" terpisah dari Kategori Keuangan (client tunjukkan
-  // Excel + screenshot Rancangan Formulir "Tipe Karakter"/"Tipe
-  // Angka") — DIKONFIRMASI TIDAK ADA lewat balasan resmi Accurate
-  // Support (2026-09-08): field "Atribut Tambahan" yang tersedia CUMA
-  // charField1-10/numericField1-10/dateField1-2 (level FAKTUR, § Fase
-  // 64 di bawah — "CUSTOM CHARACTER/NUMBER/DATE" TANPA prefix "ITEM:")
-  // dan dataClassification1-10Name ("Kategori Keuangan", § Fase 68 di
-  // bawah, level ITEM/EXPENSE). TIDAK ADA field API ketiga. Kolom
-  // "ITEM: CUSTOM CHARACTER N" di Excel client TERNYATA cuma istilah
-  // mereka sendiri untuk salah satu dari 2 field di atas (tergantung
-  // apakah nilainya perlu SAMA untuk seluruh faktur -> charField, atau
-  // BEDA per baris barang -> dataClassificationNName) — BUKAN field
-  // baru. Sengaja TIDAK ditambahkan lagi ke template supaya tidak
-  // membingungkan client dengan kolom yang tidak ada padanan API-nya.
+  // § Fase 71 (2026-09-08) — SEMPAT dikira "ITEM: CUSTOM CHARACTER N"
+  // itu sinonim Kategori Keuangan (Fase 69, KELIRU), lalu sempat
+  // dianggap TIDAK ADA field API-nya sama sekali setelah balasan
+  // PERTAMA Accurate Support (yang cuma jawab soal charField level
+  // FAKTUR & dataClassificationNName, belum spesifik soal level item).
+  // § Fase 73 (2026-09-09) — DIKOREKSI LAGI dengan balasan KEDUA
+  // Accurate Support yang SPESIFIK menjawab "Atribut Tambahan pada
+  // detail item di transaksi Sales Invoice": field API-nya ADA dan
+  // BENAR adalah charField1-15 (15 slot, BUKAN 10!), numericField1-10,
+  // dateField1-2 — NESTED di `detailItem`, BEDA dari charField/
+  // numericField/dateField level FAKTUR di bawah (yang nempel di ROOT
+  // payload). Field-field ini TIDAK ADA di `accurate-openapi.json`
+  // (pola sama seperti level faktur — spec resmi memang tidak lengkap
+  // untuk seluruh keluarga fitur Atribut Tambahan). Excel ASLI client
+  // (Fase 55/61) PUNYA PERSIS 15 kolom "ITEM:CUSTOM CHARACTER" — cocok
+  // PERSIS jumlah slotnya, membuktikan Fase 61 KELIRU menyimpulkan
+  // field ini "tidak mungkin ada".
+  { column: "ITEM: CUSTOM CHARACTER 1", required: false, example: "", description: "Atribut Tambahan 1 level ITEM (per baris barang, field API detailItem.charField1) — BEDA dari Kategori Keuangan. Maksimal 15 slot." },
+  { column: "ITEM: CUSTOM CHARACTER 2", required: false, example: "", description: "Atribut Tambahan 2 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 3", required: false, example: "", description: "Atribut Tambahan 3 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 4", required: false, example: "", description: "Atribut Tambahan 4 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 5", required: false, example: "", description: "Atribut Tambahan 5 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 6", required: false, example: "", description: "Atribut Tambahan 6 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 7", required: false, example: "", description: "Atribut Tambahan 7 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 8", required: false, example: "", description: "Atribut Tambahan 8 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 9", required: false, example: "", description: "Atribut Tambahan 9 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 10", required: false, example: "", description: "Atribut Tambahan 10 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 11", required: false, example: "", description: "Atribut Tambahan 11 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 12", required: false, example: "", description: "Atribut Tambahan 12 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 13", required: false, example: "", description: "Atribut Tambahan 13 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 14", required: false, example: "", description: "Atribut Tambahan 14 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM CHARACTER 15", required: false, example: "", description: "Atribut Tambahan 15 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 1", required: false, example: "", description: "Atribut Tambahan Angka 1 level ITEM (per baris barang, field API detailItem.numericField1) — angka polos, tanpa titik/koma pemisah ribuan. Maksimal 10 slot." },
+  { column: "ITEM: CUSTOM NUMBER 2", required: false, example: "", description: "Atribut Tambahan Angka 2 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 3", required: false, example: "", description: "Atribut Tambahan Angka 3 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 4", required: false, example: "", description: "Atribut Tambahan Angka 4 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 5", required: false, example: "", description: "Atribut Tambahan Angka 5 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 6", required: false, example: "", description: "Atribut Tambahan Angka 6 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 7", required: false, example: "", description: "Atribut Tambahan Angka 7 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 8", required: false, example: "", description: "Atribut Tambahan Angka 8 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 9", required: false, example: "", description: "Atribut Tambahan Angka 9 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM NUMBER 10", required: false, example: "", description: "Atribut Tambahan Angka 10 level ITEM — sama pola nomor 1." },
+  { column: "ITEM: CUSTOM DATE 1", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Atribut Tambahan Tanggal 1 level ITEM (per baris barang, field API detailItem.dateField1). Maksimal 2 slot." },
+  { column: "ITEM: CUSTOM DATE 2", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Atribut Tambahan Tanggal 2 level ITEM — sama pola nomor 1." },
   // § Fase 64 — Atribut Tambahan level HEADER/FAKTUR (BEDA dari level
   // ITEM di atas — TANPA prefix "ITEM:"). Ditemukan dari email resmi
   // Accurate Support (tiket #357901): field API `charField1-10`,

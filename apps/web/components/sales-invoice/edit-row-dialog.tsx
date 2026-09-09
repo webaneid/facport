@@ -19,7 +19,16 @@ type EditableRow = {
 
 // § field internal yang dianggap tanggal — HARUS SINKRON dengan
 // `DATE_FIELDS` di `apps/api/src/lib/import-mapping/sales-invoice.mapping.ts`.
-export const DATE_INTERNAL_FIELDS = new Set(["transDate", "taxDate", "shipDate", "attributHeaderTanggal1", "attributHeaderTanggal2"]);
+// § Fase 73 — attributItemTanggal1/2 (Atribut Tambahan Tanggal level ITEM) ikut ditambahkan.
+export const DATE_INTERNAL_FIELDS = new Set([
+  "transDate",
+  "taxDate",
+  "shipDate",
+  "attributHeaderTanggal1",
+  "attributHeaderTanggal2",
+  "attributItemTanggal1",
+  "attributItemTanggal2",
+]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § HARUS SINKRON dengan `salesInvoiceMapping.requiredFields`.

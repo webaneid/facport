@@ -103,6 +103,38 @@ const ACCURATE_FIELDS = [
   { value: "attributHeaderAngka10", label: "Atribut Tambahan Angka 10 (per faktur)" },
   { value: "attributHeaderTanggal1", label: "Atribut Tambahan Tanggal 1 (per faktur)" },
   { value: "attributHeaderTanggal2", label: "Atribut Tambahan Tanggal 2 (per faktur)" },
+  // § Fase 73 (2026-09-09) — Atribut Tambahan level ITEM
+  // (charField/numericField/dateField NESTED di detailItem, BEDA dari
+  // Kategori Keuangan/attribut1-10 di atas MAUPUN dari versi header di
+  // atas). Dikonfirmasi resmi Accurate Support khusus utk "detail item
+  // di transaksi Sales Invoice" — 15 slot Karakter (bukan 10).
+  { value: "attributItemKarakter1", label: "Atribut Tambahan Karakter 1 (per barang)" },
+  { value: "attributItemKarakter2", label: "Atribut Tambahan Karakter 2 (per barang)" },
+  { value: "attributItemKarakter3", label: "Atribut Tambahan Karakter 3 (per barang)" },
+  { value: "attributItemKarakter4", label: "Atribut Tambahan Karakter 4 (per barang)" },
+  { value: "attributItemKarakter5", label: "Atribut Tambahan Karakter 5 (per barang)" },
+  { value: "attributItemKarakter6", label: "Atribut Tambahan Karakter 6 (per barang)" },
+  { value: "attributItemKarakter7", label: "Atribut Tambahan Karakter 7 (per barang)" },
+  { value: "attributItemKarakter8", label: "Atribut Tambahan Karakter 8 (per barang)" },
+  { value: "attributItemKarakter9", label: "Atribut Tambahan Karakter 9 (per barang)" },
+  { value: "attributItemKarakter10", label: "Atribut Tambahan Karakter 10 (per barang)" },
+  { value: "attributItemKarakter11", label: "Atribut Tambahan Karakter 11 (per barang)" },
+  { value: "attributItemKarakter12", label: "Atribut Tambahan Karakter 12 (per barang)" },
+  { value: "attributItemKarakter13", label: "Atribut Tambahan Karakter 13 (per barang)" },
+  { value: "attributItemKarakter14", label: "Atribut Tambahan Karakter 14 (per barang)" },
+  { value: "attributItemKarakter15", label: "Atribut Tambahan Karakter 15 (per barang)" },
+  { value: "attributItemAngka1", label: "Atribut Tambahan Angka 1 (per barang)" },
+  { value: "attributItemAngka2", label: "Atribut Tambahan Angka 2 (per barang)" },
+  { value: "attributItemAngka3", label: "Atribut Tambahan Angka 3 (per barang)" },
+  { value: "attributItemAngka4", label: "Atribut Tambahan Angka 4 (per barang)" },
+  { value: "attributItemAngka5", label: "Atribut Tambahan Angka 5 (per barang)" },
+  { value: "attributItemAngka6", label: "Atribut Tambahan Angka 6 (per barang)" },
+  { value: "attributItemAngka7", label: "Atribut Tambahan Angka 7 (per barang)" },
+  { value: "attributItemAngka8", label: "Atribut Tambahan Angka 8 (per barang)" },
+  { value: "attributItemAngka9", label: "Atribut Tambahan Angka 9 (per barang)" },
+  { value: "attributItemAngka10", label: "Atribut Tambahan Angka 10 (per barang)" },
+  { value: "attributItemTanggal1", label: "Atribut Tambahan Tanggal 1 (per barang)" },
+  { value: "attributItemTanggal2", label: "Atribut Tambahan Tanggal 2 (per barang)" },
 ] as const;
 
 const uploadSchema = z.object({
