@@ -1,3 +1,9 @@
+## 1.20.0 (2026-09-09)
+
+* Merge pull request #44 from webaneid/develop ([728d85c](https://github.com/webaneid/facport/commit/728d85c)), closes [#44](https://github.com/webaneid/facport/issues/44)
+* feat: tambah Atribut Tambahan & Kategori Keuangan Purchase Invoice ([33df07b](https://github.com/webaneid/facport/commit/33df07b))
+* feat: tambah Kategori Keuangan level EXPENSE (baris Beban) Sales Invoice ([51b30e6](https://github.com/webaneid/facport/commit/51b30e6))
+
 ## 1.19.0 (2026-09-09)
 
 * Merge pull request #43 from webaneid/develop ([67efe79](https://github.com/webaneid/facport/commit/67efe79)), closes [#43](https://github.com/webaneid/facport/issues/43)
