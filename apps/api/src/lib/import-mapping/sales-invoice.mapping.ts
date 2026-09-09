@@ -151,6 +151,34 @@ export const salesInvoiceMapping = {
     attributItemAngka10: "detailItem.numericField10",
     attributItemTanggal1: "detailItem.dateField1",
     attributItemTanggal2: "detailItem.dateField2",
+    // § Fase 74 (2026-09-09) — Level EXPENSE (baris Beban, `detailExpense[]`
+    // di payload — array TERPISAH dari `detailItem[]`), diverifikasi dari
+    // spec resmi (`/api/sales-invoice/save.do` § `detailExpense.items.properties`):
+    // `accountNo` (Kode Akun Perkiraan, WAJIB secara logis), `expenseName`,
+    // `expenseAmount`, `expenseNotes`, `departmentName`, dan
+    // `dataClassification1Name`-`10Name` (Kategori Keuangan — field API
+    // SAMA PERSIS dengan level Item, § Fase 68, cuma nempel di array
+    // berbeda — `findOrCreateDataClassification` di-reuse langsung,
+    // tidak perlu fungsi auto-create baru). 1 baris Excel BISA
+    // menyumbang 1 baris Barang (`detailItem`) DAN/ATAU 1 baris Beban
+    // (`detailExpense`) sekaligus — kalau `expenseAccountNo` DAN
+    // `expenseAmount` terisi di baris itu, baris itu ikut jadi 1 entri
+    // expense terpisah (§ `buildDetailExpenseFromRow`).
+    expenseAccountNo: "detailExpense.accountNo",
+    expenseName: "detailExpense.expenseName",
+    expenseAmount: "detailExpense.expenseAmount",
+    expenseNotes: "detailExpense.expenseNotes",
+    expenseDepartmentName: "detailExpense.departmentName",
+    expenseKategoriKeuangan1: "detailExpense.dataClassification1Name",
+    expenseKategoriKeuangan2: "detailExpense.dataClassification2Name",
+    expenseKategoriKeuangan3: "detailExpense.dataClassification3Name",
+    expenseKategoriKeuangan4: "detailExpense.dataClassification4Name",
+    expenseKategoriKeuangan5: "detailExpense.dataClassification5Name",
+    expenseKategoriKeuangan6: "detailExpense.dataClassification6Name",
+    expenseKategoriKeuangan7: "detailExpense.dataClassification7Name",
+    expenseKategoriKeuangan8: "detailExpense.dataClassification8Name",
+    expenseKategoriKeuangan9: "detailExpense.dataClassification9Name",
+    expenseKategoriKeuangan10: "detailExpense.dataClassification10Name",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
@@ -303,6 +331,24 @@ export const salesInvoiceMapping = {
     "CUSTOM NUMBER 10": "attributHeaderAngka10",
     "CUSTOM DATE 1": "attributHeaderTanggal1",
     "CUSTOM DATE 2": "attributHeaderTanggal2",
+    // § Fase 74 — level EXPENSE (baris Beban), lihat komentar
+    // `fieldToAccuratePath`. Ditaruh PALING AKHIR di template (setelah
+    // "Kategori Keuangan 10") sesuai permintaan — lihat `template-guide.ts`.
+    "Akun Beban": "expenseAccountNo",
+    "Nama Beban": "expenseName",
+    "Jumlah Beban": "expenseAmount",
+    "Catatan Beban": "expenseNotes",
+    "Beban - Department": "expenseDepartmentName",
+    "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1",
+    "Kategori Keuangan Beban 2": "expenseKategoriKeuangan2",
+    "Kategori Keuangan Beban 3": "expenseKategoriKeuangan3",
+    "Kategori Keuangan Beban 4": "expenseKategoriKeuangan4",
+    "Kategori Keuangan Beban 5": "expenseKategoriKeuangan5",
+    "Kategori Keuangan Beban 6": "expenseKategoriKeuangan6",
+    "Kategori Keuangan Beban 7": "expenseKategoriKeuangan7",
+    "Kategori Keuangan Beban 8": "expenseKategoriKeuangan8",
+    "Kategori Keuangan Beban 9": "expenseKategoriKeuangan9",
+    "Kategori Keuangan Beban 10": "expenseKategoriKeuangan10",
   } as Record<string, string>,
 };
 
@@ -432,12 +478,25 @@ export function buildSalesInvoicePayload(
 
   const payload: Record<string, unknown> = {};
   for (const [field, accuratePath] of Object.entries(salesInvoiceMapping.fieldToAccuratePath)) {
-    if (accuratePath.startsWith("detailItem.")) continue;
+    // § Fase 74 — "detailExpense." JUGA di-skip di sini (bukan cuma
+    // "detailItem."), field itu masuk ke array `detailExpense[]`
+    // terpisah (§ `buildDetailExpenseFromRow`), BUKAN root payload.
+    if (accuratePath.startsWith("detailItem.") || accuratePath.startsWith("detailExpense.")) continue;
     const value = headerValues[field as SalesInvoiceField];
     if (value !== undefined) payload[accuratePath] = value;
   }
 
   payload.detailItem = rawRows.map((rawRow) => buildDetailItemFromRow(rawRow, columnMapping));
+
+  // § Fase 74 — 1 baris Excel BISA sumbang 1 entri `detailExpense`
+  // TERPISAH dari `detailItem`-nya (kalau kolom Beban terisi di baris
+  // itu) — `buildDetailExpenseFromRow` balikin `null` kalau baris itu
+  // tidak punya data Beban sama sekali. Array `detailExpense` cuma
+  // disertakan di payload KALAU ada minimal 1 baris yang isi Beban
+  // (Accurate default-kan array kosong sendiri kalau field ini tidak
+  // dikirim — konsisten pola field opsional lain di codebase ini).
+  const detailExpense = rawRows.map((rawRow) => buildDetailExpenseFromRow(rawRow, columnMapping)).filter((entry): entry is Record<string, unknown> => entry !== null);
+  if (detailExpense.length > 0) payload.detailExpense = detailExpense;
 
   return payload;
 }
@@ -454,6 +513,28 @@ export function buildDetailItemFromRow(
     if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
   }
   return detailItem;
+}
+
+// § Fase 74 — mirror `buildDetailItemFromRow`, tapi untuk array
+// `detailExpense` (baris Beban, § komentar `fieldToAccuratePath`).
+// `accountNo`+`expenseAmount` dianggap syarat MINIMAL 1 baris punya
+// data Beban yang valid (tanpa akun perkiraan & nominal, entri Beban
+// tidak ada artinya) — kalau salah satu kosong, baris ini dianggap
+// TIDAK punya data Beban sama sekali (return `null`), bukan dikirim
+// setengah-setengah ke Accurate.
+export function buildDetailExpenseFromRow(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): Record<string, unknown> | null {
+  const rowValues = extractRowValues(rawRow, columnMapping);
+  const detailExpense: Record<string, unknown> = {};
+  for (const [field, accuratePath] of Object.entries(salesInvoiceMapping.fieldToAccuratePath)) {
+    if (!accuratePath.startsWith("detailExpense.")) continue;
+    const value = rowValues[field as SalesInvoiceField];
+    if (value !== undefined) detailExpense[accuratePath.slice("detailExpense.".length)] = value;
+  }
+  if (detailExpense.accountNo === undefined || detailExpense.expenseAmount === undefined) return null;
+  return detailExpense;
 }
 
 // § mirror grouping PI (ADR-0011) — awalnya pengganti kolom "Bill No"
@@ -585,6 +666,25 @@ export function extractDataClassificationValues(
   const result: { index: number; name: string }[] = [];
   for (let index = 1; index <= 10; index++) {
     const value = rawValueFor(rawRow, columnMapping, `attribut${index}`);
+    if (value === undefined) continue;
+    const name = String(value).trim();
+    if (name !== "") result.push({ index, name });
+  }
+  return result;
+}
+
+// § Fase 74 — mirror `extractDataClassificationValues`, tapi untuk
+// Kategori Keuangan level EXPENSE (`expenseKategoriKeuanganN`, field API
+// SAMA `dataClassificationNName`, cuma nempel di `detailExpense[]`).
+// Worker reuse `findOrCreateDataClassification` yang SAMA (fungsi itu
+// tidak peduli item/expense, cuma peduli index+name).
+export function extractExpenseDataClassificationValues(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): { index: number; name: string }[] {
+  const result: { index: number; name: string }[] = [];
+  for (let index = 1; index <= 10; index++) {
+    const value = rawValueFor(rawRow, columnMapping, `expenseKategoriKeuangan${index}`);
     if (value === undefined) continue;
     const name = String(value).trim();
     if (name !== "") result.push({ index, name });

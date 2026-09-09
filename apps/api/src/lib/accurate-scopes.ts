@@ -13,12 +13,18 @@
 // benar-benar dibangun (pola sama seperti sebelumnya: scope disiapkan
 // SAAT modul itu jadi giliran, bukan mendahului).
 export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
+  // § Fase 75 — `data_classification_view`/`_save` ditambah untuk
+  // auto-create Kategori Keuangan (Atribut Tambahan item/expense-level,
+  // `findOrCreateDataClassification`, mirror Fase 68 Sales Invoice) —
+  // koneksi existing SEBELUM penambahan ini wajib re-authorize ulang.
   purchase_invoice: [
     "purchase_invoice_view",
     "purchase_invoice_save",
     // § Fase 05 — auto-create item saat import Faktur Pembelian. TIDAK
     // terkait fitur vendor (§ ADR-0026) — tetap di sini.
     "item_save",
+    "data_classification_view",
+    "data_classification_save",
   ],
   // § ADR-0026 — dulu dibundel gratis ke `purchase_invoice` (Fase 04),
   // sekarang sub-modul SENDIRI yang dijual terpisah. Koneksi Accurate

@@ -2,9 +2,13 @@ import { describe, test, expect } from "bun:test";
 import {
   buildPurchaseInvoicePayload,
   buildDetailItemFromRow,
+  buildDetailExpenseFromRow,
   billNumberColumnOf,
   extractVendorCreateFields,
   extractItemCreateFields,
+  extractDataClassificationValues,
+  extractExpenseDataClassificationValues,
+  purchaseInvoiceMapping,
   groupPurchaseInvoiceRows,
   validateGroupVendorConsistency,
   type ImportRowRecord,
@@ -331,5 +335,147 @@ describe("konversi tipe data (Fase 66) — boolean & percent discount", () => {
     const detail = buildDetailItemFromRow(rawRow, columnMapping);
     expect(detail.itemDiscPercent).toBe("10");
     expect(typeof detail.itemDiscPercent).toBe("string");
+  });
+});
+
+// § Fase 75 (2026-09-09) — mirror LENGKAP dari Sales Invoice (Fase
+// 55/61/64/68/73/74): Kategori Keuangan level ITEM, Atribut Tambahan
+// level FAKTUR & ITEM (charField/numericField/dateField), dan level
+// EXPENSE (Kategori Keuangan + field dasar Beban).
+describe("Atribut Tambahan & Kategori Keuangan — Fase 75", () => {
+  test("Kategori Keuangan level ITEM (dataClassificationNName) masuk ke detailItem", () => {
+    const rawRow = { "Kode Barang": "BRG-1", "Kategori Keuangan 1": "KATKEG 1" };
+    const columnMapping = { "Kode Barang": "itemNo", "Kategori Keuangan 1": "attribut1" };
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.dataClassification1Name).toBe("KATKEG 1");
+  });
+
+  test("Atribut Tambahan level FAKTUR (charField/numericField/dateField) masuk ke ROOT payload, BUKAN detailItem", () => {
+    const rawRows = [
+      {
+        "Vendor No": "V-1",
+        "Kode Barang": "BRG-1",
+        "CUSTOM CHARACTER 1": "Proyek A",
+        "CUSTOM NUMBER 1": "100",
+        "CUSTOM DATE 1": "20/08/2026",
+      },
+    ];
+    const columnMapping = {
+      "Vendor No": "vendorNo",
+      "Kode Barang": "itemNo",
+      "CUSTOM CHARACTER 1": "attributHeaderKarakter1",
+      "CUSTOM NUMBER 1": "attributHeaderAngka1",
+      "CUSTOM DATE 1": "attributHeaderTanggal1",
+    };
+    const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+    expect(payload.charField1).toBe("Proyek A");
+    expect(payload.numericField1).toBe("100");
+    expect(payload.dateField1).toBe("20/08/2026");
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.charField1).toBeUndefined();
+  });
+
+  test("Atribut Tambahan level ITEM (charField 15 slot/numericField/dateField) masuk ke detailItem, BUKAN root, BUKAN dataClassification", () => {
+    const rawRow = {
+      "Kode Barang": "BRG-1",
+      "ITEM: CUSTOM CHARACTER 1": "Karakter Item 1",
+      "ITEM: CUSTOM CHARACTER 15": "Slot Terakhir",
+      "ITEM: CUSTOM NUMBER 1": "500",
+      "ITEM: CUSTOM DATE 1": "21/08/2026",
+    };
+    const columnMapping = {
+      "Kode Barang": "itemNo",
+      "ITEM: CUSTOM CHARACTER 1": "attributItemKarakter1",
+      "ITEM: CUSTOM CHARACTER 15": "attributItemKarakter15",
+      "ITEM: CUSTOM NUMBER 1": "attributItemAngka1",
+      "ITEM: CUSTOM DATE 1": "attributItemTanggal1",
+    };
+    const payload = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(payload.charField1).toBeUndefined();
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.charField1).toBe("Karakter Item 1");
+    expect(detail.charField15).toBe("Slot Terakhir");
+    expect(detail.numericField1).toBe("500");
+    expect(detail.dateField1).toBe("21/08/2026");
+    expect(detail.dataClassification1Name).toBeUndefined();
+  });
+
+  test("defaultColumnMap — kolom Atribut Tambahan/Kategori Keuangan lengkap & posisi terpisah antar level", () => {
+    for (let i = 1; i <= 10; i++) {
+      expect(purchaseInvoiceMapping.defaultColumnMap[`CUSTOM CHARACTER ${i}`]).toBe(`attributHeaderKarakter${i}`);
+      expect(purchaseInvoiceMapping.defaultColumnMap[`Kategori Keuangan ${i}`]).toBe(`attribut${i}`);
+    }
+    for (let i = 1; i <= 15; i++) {
+      expect(purchaseInvoiceMapping.defaultColumnMap[`ITEM: CUSTOM CHARACTER ${i}`]).toBe(`attributItemKarakter${i}`);
+    }
+    expect(purchaseInvoiceMapping.defaultColumnMap["CUSTOM DATE 1"]).toBe("attributHeaderTanggal1");
+    expect(purchaseInvoiceMapping.defaultColumnMap["ITEM: CUSTOM DATE 1"]).toBe("attributItemTanggal1");
+  });
+});
+
+describe("buildDetailExpenseFromRow — Fase 75", () => {
+  test("accountNo + expenseAmount terisi -> detailExpense terbentuk dengan field lain ikut", () => {
+    const rawRow = {
+      "Akun Beban": "6-10100",
+      "Nama Beban": "Ongkos Kirim",
+      "Jumlah Beban": 50000,
+      "Catatan Beban": "Kirim dari Surabaya",
+      "Beban - Department": "Logistik",
+    };
+    const columnMapping = {
+      "Akun Beban": "expenseAccountNo",
+      "Nama Beban": "expenseName",
+      "Jumlah Beban": "expenseAmount",
+      "Catatan Beban": "expenseNotes",
+      "Beban - Department": "expenseDepartmentName",
+    };
+    const expense = buildDetailExpenseFromRow(rawRow, columnMapping);
+    expect(expense).toEqual({
+      accountNo: "6-10100",
+      expenseName: "Ongkos Kirim",
+      expenseAmount: 50000,
+      expenseNotes: "Kirim dari Surabaya",
+      departmentName: "Logistik",
+    });
+  });
+
+  test("accountNo TANPA expenseAmount (atau sebaliknya) -> null", () => {
+    expect(buildDetailExpenseFromRow({ "Akun Beban": "6-10100" }, { "Akun Beban": "expenseAccountNo" })).toBeNull();
+    expect(buildDetailExpenseFromRow({ "Jumlah Beban": 50000 }, { "Jumlah Beban": "expenseAmount" })).toBeNull();
+  });
+
+  test("Kategori Keuangan Beban (dataClassificationNName) ikut masuk ke detailExpense", () => {
+    const rawRow = { "Akun Beban": "6-10100", "Jumlah Beban": 50000, "Kategori Keuangan Beban 1": "KATKEG BEBAN 1" };
+    const columnMapping = { "Akun Beban": "expenseAccountNo", "Jumlah Beban": "expenseAmount", "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1" };
+    const expense = buildDetailExpenseFromRow(rawRow, columnMapping);
+    expect(expense?.dataClassification1Name).toBe("KATKEG BEBAN 1");
+  });
+});
+
+describe("buildPurchaseInvoicePayload — detailExpense (Fase 75)", () => {
+  test("baris dengan data Beban -> payload.detailExpense terisi, TIDAK masuk root ATAU detailItem", () => {
+    const rawRows = [{ "Vendor No": "V-1", "Kode Barang": "BRG-1", "Akun Beban": "6-10100", "Jumlah Beban": 50000 }];
+    const columnMapping = { "Vendor No": "vendorNo", "Kode Barang": "itemNo", "Akun Beban": "expenseAccountNo", "Jumlah Beban": "expenseAmount" };
+    const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+    expect(payload.accountNo).toBeUndefined();
+    expect(payload.detailExpense).toEqual([{ accountNo: "6-10100", expenseAmount: 50000 }]);
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.accountNo).toBeUndefined();
+  });
+
+  test("TIDAK ada baris yang punya data Beban -> payload.detailExpense TIDAK disertakan sama sekali", () => {
+    const rawRows = [{ "Vendor No": "V-1", "Kode Barang": "BRG-1" }];
+    const columnMapping = { "Vendor No": "vendorNo", "Kode Barang": "itemNo" };
+    const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+    expect(payload.detailExpense).toBeUndefined();
+  });
+});
+
+describe("extractDataClassificationValues & extractExpenseDataClassificationValues — Fase 75", () => {
+  test("ambil index+name dari kolom attribut1-10/expenseKategoriKeuanganN yang terisi, skip yang kosong", () => {
+    const rawRow = { "KK 1": "KATKEG 1", "KK Beban 1": "KATKEG BEBAN 1" };
+    const columnMapping = { "KK 1": "attribut1", "KK Beban 1": "expenseKategoriKeuangan1" };
+    expect(extractDataClassificationValues(rawRow, columnMapping)).toEqual([{ index: 1, name: "KATKEG 1" }]);
+    expect(extractExpenseDataClassificationValues(rawRow, columnMapping)).toEqual([{ index: 1, name: "KATKEG BEBAN 1" }]);
   });
 });

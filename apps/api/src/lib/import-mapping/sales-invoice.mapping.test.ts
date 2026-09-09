@@ -3,10 +3,12 @@ import {
   salesInvoiceMapping,
   buildSalesInvoicePayload,
   buildDetailItemFromRow,
+  buildDetailExpenseFromRow,
   poNumberColumnOf,
   extractCustomerCreateFields,
   extractItemCreateFields,
   extractDataClassificationValues,
+  extractExpenseDataClassificationValues,
   groupSalesInvoiceRows,
   validateGroupCustomerConsistency,
   type ImportRowRecord,
@@ -586,5 +588,138 @@ describe("konversi tipe data (Fase 66) — boolean & percent discount", () => {
     const header = buildSalesInvoicePayload([rawRow], columnMapping);
     expect(header.cashDiscount).toBe(2500);
     expect(typeof header.cashDiscount).toBe("number");
+  });
+});
+
+// § Fase 74 (2026-09-09) — level EXPENSE (baris Beban, `detailExpense[]`
+// di payload, ARRAY TERPISAH dari `detailItem[]`). Field API dikonfirmasi
+// dari spec resmi (`detailExpense.items.properties`): accountNo,
+// expenseName, expenseAmount, expenseNotes, departmentName,
+// dataClassification1-10Name (SAMA field dengan Kategori Keuangan level
+// Item, § Fase 68 — cuma nempel di array berbeda).
+describe("buildDetailExpenseFromRow — Fase 74", () => {
+  test("accountNo + expenseAmount terisi -> detailExpense terbentuk dengan field lain ikut", () => {
+    const rawRow = {
+      "Akun Beban": "6-10100",
+      "Nama Beban": "Ongkos Kirim",
+      "Jumlah Beban": 50000,
+      "Catatan Beban": "Kirim ke Jakarta",
+      "Beban - Department": "Logistik",
+    };
+    const columnMapping = {
+      "Akun Beban": "expenseAccountNo",
+      "Nama Beban": "expenseName",
+      "Jumlah Beban": "expenseAmount",
+      "Catatan Beban": "expenseNotes",
+      "Beban - Department": "expenseDepartmentName",
+    };
+
+    const expense = buildDetailExpenseFromRow(rawRow, columnMapping);
+    expect(expense).toEqual({
+      accountNo: "6-10100",
+      expenseName: "Ongkos Kirim",
+      expenseAmount: 50000,
+      expenseNotes: "Kirim ke Jakarta",
+      departmentName: "Logistik",
+    });
+  });
+
+  test("accountNo TANPA expenseAmount (atau sebaliknya) -> null, baris dianggap TIDAK punya data Beban", () => {
+    expect(buildDetailExpenseFromRow({ "Akun Beban": "6-10100" }, { "Akun Beban": "expenseAccountNo" })).toBeNull();
+    expect(buildDetailExpenseFromRow({ "Jumlah Beban": 50000 }, { "Jumlah Beban": "expenseAmount" })).toBeNull();
+  });
+
+  test("baris tanpa kolom Beban sama sekali -> null", () => {
+    expect(buildDetailExpenseFromRow({ "Kode Barang": "BRG-1" }, { "Kode Barang": "itemNo" })).toBeNull();
+  });
+
+  test("Kategori Keuangan Beban (dataClassificationNName) ikut masuk ke detailExpense, field yang SAMA dengan level item tapi array beda", () => {
+    const rawRow = { "Akun Beban": "6-10100", "Jumlah Beban": 50000, "Kategori Keuangan Beban 1": "KATKEG BEBAN 1" };
+    const columnMapping = { "Akun Beban": "expenseAccountNo", "Jumlah Beban": "expenseAmount", "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1" };
+    const expense = buildDetailExpenseFromRow(rawRow, columnMapping);
+    expect(expense?.dataClassification1Name).toBe("KATKEG BEBAN 1");
+  });
+});
+
+describe("buildSalesInvoicePayload — detailExpense (Fase 74)", () => {
+  test("baris dengan data Beban -> payload.detailExpense terisi, TIDAK masuk root ATAU detailItem", () => {
+    const rawRows = [
+      {
+        "Customer No": "C-1",
+        "Kode Barang": "BRG-1",
+        "Akun Beban": "6-10100",
+        "Jumlah Beban": 50000,
+      },
+    ];
+    const columnMapping = {
+      "Customer No": "customerNo",
+      "Kode Barang": "itemNo",
+      "Akun Beban": "expenseAccountNo",
+      "Jumlah Beban": "expenseAmount",
+    };
+
+    const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+    expect(payload.accountNo).toBeUndefined();
+    expect(payload.expenseAmount).toBeUndefined();
+    expect(payload.detailExpense).toEqual([{ accountNo: "6-10100", expenseAmount: 50000 }]);
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.accountNo).toBeUndefined();
+  });
+
+  test("TIDAK ada baris yang punya data Beban -> payload.detailExpense TIDAK disertakan sama sekali", () => {
+    const rawRows = [{ "Customer No": "C-1", "Kode Barang": "BRG-1" }];
+    const columnMapping = { "Customer No": "customerNo", "Kode Barang": "itemNo" };
+    const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+    expect(payload.detailExpense).toBeUndefined();
+  });
+
+  test("multi-baris: cuma baris yang punya data Beban lengkap yang masuk detailExpense", () => {
+    const rawRows = [
+      { "Customer No": "C-1", "Kode Barang": "BRG-1", "Akun Beban": "6-10100", "Jumlah Beban": 50000 },
+      { "Customer No": "C-1", "Kode Barang": "BRG-2" }, // tanpa data Beban
+      { "Customer No": "C-1", "Kode Barang": "BRG-3", "Akun Beban": "6-10200", "Jumlah Beban": 25000 },
+    ];
+    const columnMapping = {
+      "Customer No": "customerNo",
+      "Kode Barang": "itemNo",
+      "Akun Beban": "expenseAccountNo",
+      "Jumlah Beban": "expenseAmount",
+    };
+    const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+    expect(payload.detailExpense).toEqual([
+      { accountNo: "6-10100", expenseAmount: 50000 },
+      { accountNo: "6-10200", expenseAmount: 25000 },
+    ]);
+    // detailItem TETAP 3 baris (item tidak terpengaruh Beban)
+    expect((payload.detailItem as unknown[]).length).toBe(3);
+  });
+});
+
+describe("extractExpenseDataClassificationValues — Fase 74", () => {
+  test("ambil index+name dari kolom expenseKategoriKeuanganN yang terisi, skip yang kosong", () => {
+    const rawRow = { "KK Beban 1": "KATKEG 1", "KK Beban 3": "KATKEG 3", "KK Beban 2": "" };
+    const columnMapping = { "KK Beban 1": "expenseKategoriKeuangan1", "KK Beban 2": "expenseKategoriKeuangan2", "KK Beban 3": "expenseKategoriKeuangan3" };
+
+    expect(extractExpenseDataClassificationValues(rawRow, columnMapping)).toEqual([
+      { index: 1, name: "KATKEG 1" },
+      { index: 3, name: "KATKEG 3" },
+    ]);
+  });
+
+  test("baris tanpa kolom Kategori Keuangan Beban -> array kosong", () => {
+    expect(extractExpenseDataClassificationValues({ "Akun Beban": "6-10100" }, { "Akun Beban": "expenseAccountNo" })).toEqual([]);
+  });
+});
+
+describe("defaultColumnMap — kolom Expense (Fase 74)", () => {
+  test("kolom Beban terpetakan ke field expense*, terpisah dari field item", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Akun Beban"]).toBe("expenseAccountNo");
+    expect(salesInvoiceMapping.defaultColumnMap["Nama Beban"]).toBe("expenseName");
+    expect(salesInvoiceMapping.defaultColumnMap["Jumlah Beban"]).toBe("expenseAmount");
+    expect(salesInvoiceMapping.defaultColumnMap["Catatan Beban"]).toBe("expenseNotes");
+    expect(salesInvoiceMapping.defaultColumnMap["Beban - Department"]).toBe("expenseDepartmentName");
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`Kategori Keuangan Beban ${i}`]).toBe(`expenseKategoriKeuangan${i}`);
+    }
   });
 });

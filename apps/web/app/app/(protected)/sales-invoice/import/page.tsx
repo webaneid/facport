@@ -135,6 +135,25 @@ const ACCURATE_FIELDS = [
   { value: "attributItemAngka10", label: "Atribut Tambahan Angka 10 (per barang)" },
   { value: "attributItemTanggal1", label: "Atribut Tambahan Tanggal 1 (per barang)" },
   { value: "attributItemTanggal2", label: "Atribut Tambahan Tanggal 2 (per barang)" },
+  // § Fase 74 (2026-09-09) — level EXPENSE (baris Beban, `detailExpense[]`,
+  // ARRAY TERPISAH dari baris Barang). "Akun Beban" + "Jumlah Beban"
+  // WAJIB dua-duanya terisi di 1 baris supaya baris itu dianggap punya
+  // data Beban.
+  { value: "expenseAccountNo", label: "Akun Beban (wajib bersama Jumlah Beban)" },
+  { value: "expenseName", label: "Nama Beban" },
+  { value: "expenseAmount", label: "Jumlah Beban (wajib bersama Akun Beban)" },
+  { value: "expenseNotes", label: "Catatan Beban" },
+  { value: "expenseDepartmentName", label: "Departemen Beban" },
+  { value: "expenseKategoriKeuangan1", label: "Kategori Keuangan Beban 1 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan2", label: "Kategori Keuangan Beban 2 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan3", label: "Kategori Keuangan Beban 3 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan4", label: "Kategori Keuangan Beban 4 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan5", label: "Kategori Keuangan Beban 5 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan6", label: "Kategori Keuangan Beban 6 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan7", label: "Kategori Keuangan Beban 7 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan8", label: "Kategori Keuangan Beban 8 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan9", label: "Kategori Keuangan Beban 9 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan10", label: "Kategori Keuangan Beban 10 (per baris Beban)" },
 ] as const;
 
 const uploadSchema = z.object({
