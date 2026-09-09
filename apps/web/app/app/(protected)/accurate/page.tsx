@@ -48,7 +48,7 @@ export default function AccuratePage() {
     <div className="mx-auto flex max-w-2xl flex-col gap-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Koneksi Accurate Online</h1>
-        <p className="text-sm text-muted-foreground">Hubungkan tiap modul langganan kamu ke Data Usaha (perusahaan) Accurate Online.</p>
+        <p className="text-sm text-muted-foreground">Hubungkan tiap fitur langganan kamu ke Data Usaha (perusahaan) Accurate Online.</p>
       </div>
 
       {subscriptions === null && <p className="text-sm text-muted-foreground">Memuat...</p>}
@@ -57,7 +57,7 @@ export default function AccuratePage() {
         <EmptyState
           icon={Link2}
           title="Belum punya langganan aktif"
-          description="Berlangganan sub-modul dulu untuk bisa menghubungkan Accurate."
+          description="Berlangganan fitur dulu untuk bisa menghubungkan Accurate."
         />
       )}
 
@@ -100,7 +100,7 @@ function SubscriptionConnectionCard({
         code === "ACCURATE_NOT_CONFIGURED"
           ? "Integrasi Accurate belum dikonfigurasi di server (dev)."
           : code === "ALREADY_CONNECTED"
-            ? "Modul ini sudah terhubung."
+            ? "Fitur ini sudah terhubung."
             : "Gagal memulai koneksi Accurate.",
       );
       return;
@@ -128,7 +128,7 @@ function SubscriptionConnectionCard({
       <Card>
         <CardHeader>
           <CardTitle>{row.planName}</CardTitle>
-          <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
+          <CardDescription>Fitur: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-2">
           <Badge variant="success" className="w-fit">
@@ -157,7 +157,7 @@ function SubscriptionConnectionCard({
     <Card>
       <CardHeader>
         <CardTitle>{row.planName}</CardTitle>
-        <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
+        <CardDescription>Fitur: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         {!showReusePicker ? (
@@ -264,7 +264,7 @@ function SelectDatabaseCard({
     <Card>
       <CardHeader>
         <CardTitle>{row.planName}</CardTitle>
-        <CardDescription>Modul: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
+        <CardDescription>Fitur: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
       </CardHeader>
       <CardContent className="flex flex-col gap-3">
         <p className="text-sm text-foreground">Pilih Data Usaha (perusahaan) yang mau dihubungkan:</p>

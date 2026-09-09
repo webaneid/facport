@@ -91,7 +91,7 @@ export default async function AdminDashboardPage() {
         </Card>
         <Card>
           <CardHeader>
-            <CardTitle>Popularitas Sub-Modul</CardTitle>
+            <CardTitle>Popularitas Fitur</CardTitle>
           </CardHeader>
           <CardContent>
             <ModulePopularityBarChart data={modulePopularity ?? []} />

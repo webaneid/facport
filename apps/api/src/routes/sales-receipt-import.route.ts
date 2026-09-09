@@ -34,8 +34,12 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 
 // § architecture-sales-receipt.md — aplikasi penerimaan ke Faktur
 // Penjualan yang SUDAH ADA di Accurate (BUKAN mirror Sales Invoice).
-// 1 baris Excel = 1 penerimaan = 1 faktur, diproses per-baris (pola
-// sama purchase-payment-import.route.ts), TIDAK ada grouping.
+// § Fase 49 — 1 baris Excel = 1 penerimaan = 1 faktur SECARA DEFAULT,
+// TAPI bisa digabung jadi 1 penerimaan yang bayar BANYAK faktur
+// sekaligus kalau kolom "No. Sales Receipt" diisi sama di beberapa
+// baris (grouping, § `groupSalesReceiptRows` — dipakai worker, BUKAN
+// di route ini, jadi route tetap sesederhana ini per-baris untuk
+// upload/edit/retry).
 export const salesReceiptImportRoute = new Elysia()
   .use(permissionPlugin)
   .use(subscriptionGatePlugin)

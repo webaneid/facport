@@ -15,15 +15,56 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-sales-receipt.md — aplikasi penerimaan pembayaran ke
 // Faktur Penjualan yang SUDAH ADA di Accurate (customer & faktur WAJIB
-// sudah terdaftar, TIDAK auto-create). 1 baris Excel = 1 penerimaan =
-// 1 faktur.
+// sudah terdaftar, TIDAK auto-create). § Fase 49 — 1 baris Excel = 1
+// penerimaan = 1 faktur SECARA DEFAULT, TAPI bisa digabung jadi 1
+// penerimaan yang bayar BANYAK faktur sekaligus kalau kolom "No. Sales
+// Receipt" (`receiptNumber`) diisi sama di beberapa baris.
+// § Fase 85 (2026-09-10, dikoreksi susunannya sebelum push) — URUTAN
+// opsi di bawah SENGAJA mengikuti PERSIS urutan kolom sheet "NOTE"
+// client (disalin dari template kompetitor `FACPORT_Sales Receipt_v5.xlsx`),
+// BUKAN urutan "field lama dulu, field baru ditambah di akhir" yang
+// biasa dipakai modul lain — permintaan eksplisit user supaya susunan
+// Excel/dropdown sama dengan file yang sudah familiar bagi client.
+// Detail lengkap 18 field baru (dikonfirmasi 4 sumber: spec resmi,
+// template kompetitor, screenshot UI Accurate asli, dokumentasi resmi
+// /api/tax) → architecture-sales-receipt.md § "Ekspansi Field Opsional
+// — Fase 85".
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
-  { value: "customerNo", label: "Nomor Customer (wajib)" },
-  { value: "invoiceNo", label: "Nomor Faktur (wajib)" },
-  { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
-  { value: "chequeAmount", label: "Jumlah Bayar (wajib)" },
   { value: "transDate", label: "Tanggal (wajib)" },
+  // § Fase 84 (2026-09-10) — field ini SUDAH ADA di backend sejak Fase
+  // 49, tapi TIDAK PERNAH ditambahkan ke dropdown ini — cuma bisa
+  // ke-mapping otomatis kalau nama kolom Excel PERSIS "No. Sales
+  // Receipt"/"Nomor Penerimaan"/"No Penerimaan". Ditambahkan supaya
+  // bisa dipetakan manual juga kalau client pakai nama kolom lain.
+  { value: "receiptNumber", label: "No. Sales Receipt (opsional — isi sama untuk gabung jadi 1 penerimaan multi-faktur)" },
+  { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
+  { value: "customerNo", label: "Nomor Customer (wajib)" },
+  { value: "description", label: "Description" },
+  { value: "branchName", label: "Branch" },
+  { value: "currencyCode", label: "Currency Code" },
+  { value: "rate", label: "kurs" },
+  { value: "receiptTotalAmount", label: "Cheque Amount (opsional — total eksplisit, kosongkan untuk auto-jumlah)" },
+  { value: "chequeNo", label: "Cheque No" },
+  { value: "chequeDate", label: "Cheque Date" },
+  { value: "paymentMethod", label: "Payment Method (Tunai/Cek-Giro/Transfer Bank/EDC/Kartu Debit/Kartu Kredit/QRIS/Payment Link/Virtual Account/Dompet Digital/Non Tunai Lainnya)" },
+  { value: "passValidateInvoiceDate", label: "Pass Validate Inv Date (isi \"Y\" atau kosongkan)" },
+  { value: "useCredit", label: "Use credit (isi \"Y\" atau kosongkan)" },
+  { value: "invoiceNo", label: "Nomor Faktur (wajib)" },
+  { value: "chequeAmount", label: "Jumlah Bayar (wajib)" },
+  { value: "invoiceDepartmentName", label: "Department (per baris faktur)" },
+  { value: "paidPph", label: "Paid PPH (isi \"Y\" atau kosongkan)" },
+  { value: "pphNumber", label: "PPh No" },
+  // § Fase 86 (2026-09-10) — validasi-only, TIDAK dikirim ke Accurate
+  // sebagai field transaksi (tidak ada field ini di sales-receipt/save.do)
+  // — dicocokkan ke Data Master Pajak Accurate sebelum import, gagal
+  // kalau tidak ditemukan. Lihat architecture-sales-receipt.md § Fase 86.
+  { value: "taxId", label: "Tax ID (opsional — divalidasi ke Data Master Pajak Accurate, TIDAK diubah/dikirim sebagai field transaksi)" },
+  { value: "discountAmount", label: "Discount (wajib bersama Discount Acc)" },
+  { value: "discountAccountNo", label: "Discount Acc (wajib bersama Discount)" },
+  { value: "discountNotes", label: "Discount Note" },
+  { value: "discountDepartmentName", label: "Diskon - Dept" },
+  { value: "discountProjectNo", label: "Diskon - Project No" },
 ] as const;
 
 const uploadSchema = z.object({

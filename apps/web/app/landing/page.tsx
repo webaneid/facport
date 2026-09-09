@@ -122,7 +122,7 @@ export default async function LandingPage() {
           <p className="text-xs font-semibold uppercase tracking-wide text-landing-primary">Harga</p>
           <h2 className="text-3xl font-extrabold text-slate-900">Hemat Waktu, Minim Kesalahan, Maksimalkan Akurasi!</h2>
           <p className="text-sm text-slate-500">
-            Mulai dari paket sub-modul yang kamu butuhkan — lihat daftar lengkap &amp; harga di section Fitur di atas.
+            Mulai dari paket fitur yang kamu butuhkan — lihat daftar lengkap &amp; harga di section Fitur di atas.
           </p>
           <a
             href="#fitur"

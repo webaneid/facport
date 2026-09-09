@@ -21,7 +21,8 @@ type EditableRow = {
 
 // § HARUS SINKRON dengan `salesReceiptMapping` di
 // `apps/api/src/lib/import-mapping/sales-receipt.mapping.ts`.
-export const DATE_INTERNAL_FIELDS = new Set(["transDate"]);
+// § Fase 85 (2026-09-10) — "chequeDate" ditambahkan ke DATE_INTERNAL_FIELDS.
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "chequeDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 export const REQUIRED_INTERNAL_FIELDS = new Set(["customerNo", "bankNo", "chequeAmount", "transDate", "invoiceNo"]);
 
@@ -30,6 +31,11 @@ const FIELD_HINTS: Record<string, string> = {
   bankNo: "Kode Akun Bank/Kas (COA) di Accurate, contoh: 1-10200",
   chequeAmount: "Contoh: 5000000 (angka saja, tanpa titik/koma)",
   invoiceNo: "Nomor Faktur Penjualan yang SUDAH ADA di Accurate",
+  paymentMethod: "Tunai/Cek-Giro/Transfer Bank/EDC/Kartu Debit/Kartu Kredit/QRIS/Payment Link/Virtual Account/Dompet Digital/Non Tunai Lainnya",
+  passValidateInvoiceDate: "Isi \"Y\" atau kosongkan",
+  useCredit: "Isi \"Y\" atau kosongkan",
+  paidPph: "Isi \"Y\" atau kosongkan",
+  taxId: "Nama pajak PERSIS seperti di Accurate, contoh: Jasa Kebersihan (opsional, divalidasi ke Accurate)",
 };
 
 function toDisplayDate(value: unknown): string {

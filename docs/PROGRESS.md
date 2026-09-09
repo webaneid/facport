@@ -91,6 +91,10 @@
 | 80   | Field "Proyek" Level EXPENSE (Sales Invoice & Purchase Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-80-expense-project-no.md` |
 | 81   | Grouping Prioritas Trans No untuk Purchase Invoice (Mirror Fase 49/61/63 SI) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-81-trans-no-grouping-purchase-invoice.md` |
 | 82   | Fix Guard Idempotent Saat Faktur Dihapus Langsung di Accurate (SI & PI) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md` |
+| 83   | Copywriting: "Modul"/"Sub-Modul" Jadi "Fitur" di Semua UI | Done | — | `docs/phases/phase-83-copywriting-modul-jadi-fitur.md` |
+| 84   | Fix Dropdown "No. Sales Receipt" Hilang & Komentar Basi (Sales Receipt) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md` |
+| 85   | Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-85-ekspansi-field-sales-receipt.md` |
+| 86   | Validasi "Tax ID" Sales Receipt | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-86-validasi-tax-id-sales-receipt.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2219,3 +2223,134 @@ lintas-batch supaya retry berikutnya ambil riwayat paling baru.
 Typecheck 0 error. Full suite `apps/api` 507 pass/0 fail (4 baru). Dev
 DB dibersihkan. Lihat
 `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md`.
+
+## Update 2026-09-10 — Fase 83 Done: Copywriting "Modul"/"Sub-Modul" Jadi "Fitur" di Semua UI
+User minta istilah komunikasi ke client & di semua UI diseragamkan jadi
+"Fitur" — "modul"/"sub-modul" cuma istilah teknis internal (kode,
+komentar, identifier), TIDAK BOLEH muncul di teks yang dibaca user
+(customer MAUPUN admin — dikonfirmasi eksplisit ke user, scope-nya
+SEMUA UI bukan cuma customer-facing). 14 file `apps/web` diperbarui
+(landing, dashboard customer, dashboard admin, beberapa komponen) —
+semua teks JSX/label/pesan error yang bilang "modul"/"sub-modul" diganti
+"fitur". Nama variabel/fungsi/tipe (`moduleKey`, `moduleLabel`, dst)
+TIDAK disentuh. `apps/api` tidak ada perubahan (backend cuma balikin
+error code, terjemahan teks semua di frontend).
+
+Typecheck 0 error. Full suite `apps/web` 44 pass/0 fail. Lihat
+`docs/phases/phase-83-copywriting-modul-jadi-fitur.md`.
+
+## Update 2026-09-10 — Fase 84 Done: Fix Dropdown "No. Sales Receipt" Hilang & Komentar Basi (Sales Receipt)
+User minta review kolom fitur Sales Receipt + cek kesesuaian dokumentasi
+arsitektur — dokumentasi terbukti akurat, tapi ditemukan 2 gap frontend
+yang tidak disebut dokumentasi manapun: (1) dropdown mapping kolom
+manual tidak punya opsi "No. Sales Receipt" (`receiptNumber`) sama
+sekali walau field ini sudah ada di backend sejak Fase 49 — cuma bisa
+ke-mapping otomatis kalau nama kolom Excel persis cocok 3 nama yang
+dikenali; (2) komentar kode masih bilang "1 baris = 1 penerimaan = 1
+faktur", deskripsi lama sebelum Fase 49. Fix: tambah opsi dropdown +
+perbaiki komentar. Backend tidak perlu diubah (sudah menerima field ini
+sejak awal).
+
+Typecheck 0 error. Full suite `apps/web` 44 pass/0 fail. Lihat
+`docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md`.
+
+## Update 2026-09-10 — Fase 85 Direncanakan: Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client)
+Client kirim sheet "NOTE" (28 kolom wishlist) — ternyata COPY PERSIS
+template kompetitor `FACPORT_Sales Receipt_v5.xlsx` yang sudah dipakai
+nyata di lapangan. Riset cross-check ganda (spec resmi Accurate +
+template kompetitor + sheet "Penjelasan Kolom"-nya) menghasilkan: 18
+field baru dikonfirmasi valid (description/branchName/currencyCode/rate/
+chequeAmount eksplisit/chequeNo/chequeDate/paymentMethod enum/
+passValidateInvoiceDate/useCredit/departmentName/paidPph/pphNumber +
+5 field `detailDiscount[]`), 4 field DI-SKIP (Existing Credit/Return
+Overpay/Tax Amount/Tax ID — tidak ada padanan API valid, bahkan
+kompetitor sendiri tidak bisa jelaskan). Arsitektur lengkap sudah
+ditulis. **EKSEKUSI BELUM DIMULAI** — user minta tunggu info tambahan
+dulu sebelum lanjut coding. Lihat
+`docs/phases/phase-85-ekspansi-field-sales-receipt.md` dan
+`docs/architecture/architecture-sales-receipt.md` § "Ekspansi Field
+Opsional — Fase 85".
+
+## Update 2026-09-10 — Fase 85 Riset MATANG (Verifikasi Tambahan via 7 Screenshot UI Accurate Asli)
+Client kirim 7 screenshot UI Accurate ASLI (form Penerimaan Penjualan
+sungguhan) untuk verifikasi final rencana Fase 85. Hasil: (1) enum
+`paymentMethod` yang direncanakan sebelumnya (8 nilai, dari dokumentasi
+kompetitor) TERNYATA KURANG 3 nilai (`CREDIT_CARD`/`DEBIT_CARD`/
+`E_WALLET`) — dikoreksi ke 11 nilai yang benar (dicek ulang ke spec
+resmi, cocok persis screenshot dropdown); (2) 4 field yang di-skip
+SEKARANG punya alasan TERKONFIRMASI PASTI (bukan lagi dugaan): Existing
+Credit ("Sisa Kredit") & Tax Amount ("Jasa Kebersihan: Rp 40.000")
+TERBUKTI nilai read-only/komputasi otomatis Accurate, BUKAN field
+input; Return Overpay ("Retur Kredit") TERBUKTI NYATA ada di UI tapi
+TIDAK ADA di API manapun (dicek exhaustif 17 property root); Tax ID
+tidak ada info baru. 18 field yang akan diimplementasikan TIDAK
+berubah. Arsitektur & phase doc diperbarui dengan semua temuan ini.
+Eksekusi TETAP belum dimulai — masih menunggu keputusan final soal
+"Cheque Amount" & apakah mirror ke Purchase Payment.
+
+## Update 2026-09-10 — Fase 85 Done: Eksekusi 18 Field Opsional Sales Receipt
+User beri 2 sumber verifikasi tambahan (7 screenshot UI Accurate asli +
+dokumentasi resmi `/api/tax`, plus second opinion Gemini yang dicek
+silang) — semua MEMPERKUAT rencana, cuma 1 koreksi (enum `paymentMethod`
+8→11 nilai). "Cheque Amount" diputuskan nama field internal
+`receiptTotalAmount` (delegasi user "eksekusi yang bisa"). 18 field
+BERHASIL diimplementasikan di `sales-receipt.mapping.ts`: 9 root
+(description/branchName/currencyCode/rate/receiptTotalAmount/chequeNo/
+chequeDate/paymentMethod/passValidateInvoiceDate/useCredit), 3
+per-invoice (invoiceDepartmentName/paidPph/pphNumber), 5
+`detailDiscount[]` nested (amount/accountNo/discountNotes/departmentName/projectNo).
+Infrastruktur baru: konvensi boolean "Y"/kosong, translasi label
+Indonesia→enum `paymentMethod`, `detailDiscount[]` nested DI DALAM
+`detailInvoice[]` (beda dari `detailExpense[]` SI/PI yang sibling).
+"Cheque Amount" eksplisit menang atas auto-SUM (fallback tetap ada,
+zero regression Fase 49). 4 field TETAP di-skip (Existing Credit/Return
+Overpay/Tax Amount/Tax ID) — didokumentasikan lengkap untuk Accurate CS
+kalau diperlukan. Mirror ke Purchase Payment TIDAK dikerjakan (di luar
+scope, belum diminta).
+
+Typecheck 0 error. Full suite `apps/api` 533 pass/0 fail (26 baru),
+`apps/web` 44 pass/0 fail. Dev DB dibersihkan. Lihat
+`docs/phases/phase-85-ekspansi-field-sales-receipt.md`.
+
+## Update 2026-09-10 — Fase 85 Koreksi: Urutan Kolom Excel Disamakan Persis dengan File Client
+Setelah eksekusi awal (18 field ditaruh di AKHIR template, konsisten
+konvensi Fase 70-84), user eksplisit minta susunan kolom Excel Sales
+Receipt disamakan PERSIS dengan urutan asli file client ("susunan excel
+harus sama dengan yg dibuat client, karena itu permintaannya") — bukan
+konvensi "field baru selalu di ujung". Direorder di 3 tempat sekaligus
+supaya konsisten: `defaultColumnMap` (`sales-receipt.mapping.ts`),
+`salesReceiptTemplateGuide` (`template-guide.ts`), dropdown
+`ACCURATE_FIELDS` (`import/page.tsx`). Field lama (customerNo, bankNo,
+invoiceNo, chequeAmount, transDate, receiptNumber) ikut disisipkan ulang
+ke posisi asli client, bukan tetap di depan. 4 field skip dilewati tanpa
+celah. Ini pengecualian KHUSUS Sales Receipt, bukan perubahan konvensi
+modul lain. Detail lengkap → architecture-sales-receipt.md § Keputusan
+Desain #5 (dikoreksi). Re-run typecheck (0 error) + full suite
+(`apps/api` 533 pass, `apps/web` 44 pass) setelah reorder — tidak ada
+regresi.
+
+## Update 2026-09-10 — Fase 86 Done: Validasi "Tax ID" Sales Receipt
+Fase 85 sempat men-skip "Tax ID" — user tolak alasan "di luar scope API
+fitur" (project SUDAH biasa gabung >1 API Accurate per import, pola
+`findOrCreateVendor`/`findOrCreateItem`/`findOrCreateDataClassification`).
+Disiapkan environment test PROPER (bukan workaround pinjam scope modul
+lain, yang sempat diusulkan dan DITOLAK eksplisit user): plan+subscription
+Sales Receipt baru di dev DB, connect manual ke company Accurate demo
+via OAuth. Audit ulang 556 baris data ASLI kompetitor: Tax ID (+3 field
+skip lain) 0% pernah diisi, deskripsi resminya justru mengarah ke
+"Fitur Facport" (bukan Accurate) — TAPI user tegaskan *"JANGAN IKUTI
+KOMPETITOR .. kita punya data cukup untuk memanggil tax berfungsi
+dengan benar"*, jadi dibangun berdasarkan test call NYATA ke
+`/api/tax/list.do` (scope `tax_view`), bukan asumsi dokumentasi.
+Ditemukan `taxCode` TIDAK UNIK untuk PPh23 (banyak jenis jasa share kode
+sama) — didokumentasikan sebagai Known Limitation, template guide
+diarahkan pakai `description` (unik). Field `taxId` diimplementasikan
+VALIDASI-ONLY: dicocokkan ke Master Data Pajak Accurate SEBELUM payload
+dibangun, TIDAK PERNAH dikirim ke `sales-receipt/save.do` (field itu
+tidak ada di sana) — gagal SELURUH grup dengan pesan jelas kalau tidak
+ditemukan, BUKAN auto-create (beda dari vendor/item/kategori keuangan —
+Master Data Pajak dianggap konfigurasi akuntansi sensitif). File baru
+`accurate-tax.ts`. `bun run typecheck` 0 error, `apps/api` 537 pass/0
+fail (5 baru), `apps/web` 44 pass/0 fail. Dev DB test-run dibersihkan
+(subscription/plan Sales Receipt dev sengaja dipertahankan untuk
+testing lanjutan, bukan data disposable).

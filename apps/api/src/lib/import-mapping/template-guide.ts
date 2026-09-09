@@ -10,6 +10,11 @@ import type { TemplateFieldGuide } from "../excel";
 // template unduhan, sinonimnya disebut di kolom "Keterangan" saja.
 const DATE_FORMAT = "DD/MM/YYYY (mis. 19/08/2026) — WAJIB, format lain ditolak Accurate";
 const BOOLEAN_FORMAT = "TRUE atau FALSE";
+// § Fase 85 (2026-09-10) — Sales Receipt pakai konvensi kompetitor
+// "isikan Y jika ..., kosongkan jika tidak" (BEDA dari TRUE/FALSE Sales
+// Invoice/Purchase Invoice) — field internal SUDAH terima "y"/"ya"
+// case-insensitive (§ `TRUE_TEXT_VALUES` di `sales-receipt.mapping.ts`).
+const Y_BOOLEAN_FORMAT = "Isi \"Y\" atau kosongkan";
 
 export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Pembelian." },
@@ -404,13 +409,42 @@ export const purchasePaymentTemplateGuide: TemplateFieldGuide[] = [
 // Payment di atas (Customer ganti peran Vendor, Faktur Penjualan ganti
 // Faktur Pembelian). Customer DAN faktur WAJIB SUDAH ADA di Accurate
 // (TIDAK auto-create).
+// § Fase 86 (2026-09-10) — URUTAN kolom di bawah SENGAJA mengikuti
+// PERSIS urutan sheet "NOTE" client (= copy template kompetitor
+// `FACPORT_Sales Receipt_v5.xlsx`), BUKAN pola "field baru selalu di
+// ujung" yang dipakai modul lain (Fase 70-84) — permintaan eksplisit
+// user: "susunan excel harus sama dengan yg dibuat client, karena itu
+// permintaannya". 4 kolom yang di-skip (Existing Credit/Return
+// Overpay/Tax Amount/Tax ID) dilewati sesuai posisi aslinya (tidak
+// bikin lubang kosong). Field API tetap SAMA seperti sebelumnya, cuma
+// URUTAN BARIS array ini yang berubah — TIDAK ADA breaking change
+// (matching kolom saat upload tetap by NAME, bukan posisi).
 export const salesReceiptTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi penerimaan." },
   { column: "No. Sales Receipt", required: false, example: "11010101.2026.01.00001", description: "Nomor struk penerimaan (opsional). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 penerimaan yang bayar BANYAK faktur sekaligus — baris dengan kolom ini kosong tetap dianggap 1 penerimaan sendiri (header alternatif: \"Nomor Penerimaan\", \"No Penerimaan\")." },
-  { column: "No Pelanggan", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA (header alternatif: \"Nomor Customer\", \"Customer No\")." },
-  { column: "No Faktur", required: true, example: "SI-2026-001", description: "Nomor Faktur Penjualan yang dibayar, PERSIS seperti di Accurate — WAJIB SUDAH ADA. Isi faktur BEDA di tiap baris kalau 1 penerimaan (No. Sales Receipt sama) bayar banyak faktur sekaligus (header alternatif: \"Nomor Faktur\")." },
   { column: "Akun Bank/Kas", required: true, example: "1-10200", description: "Kode Akun (COA) bank/kas yang dipakai terima pembayaran, BUKAN nama bank literal (header alternatif: \"Kode Akun Bank\")." },
-  { column: "Jumlah Bayar", required: true, example: "5000000", description: "Nominal penerimaan UNTUK FAKTUR DI BARIS INI (bukan total keseluruhan kalau 1 penerimaan bayar banyak faktur — Facport yang jumlahkan otomatis). Isi PENUH sesuai sisa piutang faktur untuk pelunasan, atau LEBIH KECIL untuk penerimaan sebagian. Angka polos, TANPA titik/koma pemisah ribuan." },
+  { column: "No Pelanggan", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA (header alternatif: \"Nomor Customer\", \"Customer No\")." },
+  { column: "Description", required: false, example: "", description: "Catatan tambahan untuk transaksi penerimaan ini." },
+  { column: "Branch", required: false, example: "", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
+  { column: "Currency Code", required: false, example: "IDR", description: "Kode mata uang — kosongkan kalau transaksi dalam Rupiah." },
+  { column: "kurs", required: false, example: "1", description: "Nilai tukar mata uang — isi kalau Currency Code bukan IDR. Boleh sampai 6 angka di belakang koma." },
+  { column: "Cheque Amount", required: false, example: "", description: "Total nilai penerimaan EKSPLISIT untuk SELURUH struk (beda dari \"Jumlah Bayar\" yang per-faktur) — isi SAMA di semua baris 1 penerimaan kalau mau kontrol manual. KOSONGKAN untuk pakai default: dijumlahkan otomatis dari semua \"Jumlah Bayar\" dalam 1 penerimaan. Boleh sampai 6 angka di belakang koma." },
+  { column: "Cheque No", required: false, example: "", description: "Nomor cek/giro — relevan kalau Payment Method-nya Cek/Giro." },
+  { column: "Cheque Date", required: false, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal cek/giro — relevan kalau Payment Method-nya Cek/Giro. Kosongkan untuk pakai tanggal transaksi." },
+  { column: "Payment Method", required: false, example: "Transfer Bank", description: "Metode pembayaran. Nilai valid: Tunai, Cek/Giro, Transfer Bank, EDC, Kartu Debit, Kartu Kredit, QRIS, Payment Link, Virtual Account, Dompet Digital, Non Tunai Lainnya." },
+  { column: "Pass Validate Inv Date", required: false, format: Y_BOOLEAN_FORMAT, example: "", description: "Isi \"Y\" untuk bypass validasi tanggal pembayaran lebih kecil dari tanggal faktur. Kosongkan kalau tidak perlu." },
+  { column: "Use credit", required: false, format: Y_BOOLEAN_FORMAT, example: "", description: "Isi \"Y\" untuk pakai saldo kredit customer sebagai bagian pembayaran. Kosongkan kalau tidak perlu." },
+  { column: "No Faktur", required: true, example: "SI-2026-001", description: "Nomor Faktur Penjualan yang dibayar, PERSIS seperti di Accurate — WAJIB SUDAH ADA. Isi faktur BEDA di tiap baris kalau 1 penerimaan (No. Sales Receipt sama) bayar banyak faktur sekaligus (header alternatif: \"Nomor Faktur\")." },
+  { column: "Jumlah Bayar", required: true, example: "5000000", description: "Nominal penerimaan UNTUK FAKTUR DI BARIS INI (bukan total keseluruhan kalau 1 penerimaan bayar banyak faktur — Facport yang jumlahkan otomatis). Isi PENUH sesuai sisa piutang faktur untuk pelunasan, atau LEBIH KECIL untuk penerimaan sebagian. Angka polos, TANPA titik/koma pemisah ribuan, TAPI BOLEH sampai 6 angka di belakang koma kalau perlu presisi (mis. 5000000.123456)." },
+  { column: "Department", required: false, example: "", description: "Nama departemen untuk baris faktur ini (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Paid PPH", required: false, format: Y_BOOLEAN_FORMAT, example: "", description: "Isi \"Y\" kalau faktur ini kena potong PPh23. Kosongkan kalau tidak. Nominal PPh DIHITUNG OTOMATIS oleh Accurate dari kategori jasa di faktur asli — TIDAK ada kolom nominal terpisah." },
+  { column: "PPh No", required: false, example: "", description: "Nomor bukti potong PPh23 — isi kalau tidak pakai penomoran otomatis Accurate." },
+  { column: "Tax ID", required: false, example: "Jasa Kebersihan", description: "Nama pajak PERSIS seperti di Data Master Pajak Accurate (mis. \"Jasa Kebersihan\") untuk validasi — LEBIH DISARANKAN dari kode (mis. \"Pajak Penghasilan Ps.23\") karena 1 kode dipakai banyak jenis jasa PPh23 sekaligus (kode saja bisa cocok ke jenis yang SALAH). Facport CEK ke Accurate dulu sebelum import, GAGAL kalau tidak ditemukan (cegah salah ketik). TIDAK mengubah nominal PPh — itu dihitung otomatis oleh Accurate." },
+  { column: "Discount", required: false, example: "", description: "Nominal diskon untuk baris faktur ini — WAJIB diisi bersama \"Discount Acc\" supaya baris ini dianggap punya data diskon. Boleh sampai 6 angka di belakang koma." },
+  { column: "Discount Acc", required: false, example: "", description: "Kode Akun Diskon (COA) — WAJIB diisi bersama \"Discount\"." },
+  { column: "Discount Note", required: false, example: "", description: "Catatan tambahan untuk diskon ini." },
+  { column: "Diskon - Dept", required: false, example: "", description: "Nama departemen untuk diskon ini (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Diskon - Project No", required: false, example: "", description: "Nomor proyek untuk diskon ini (kalau akun Accurate pakai tracking proyek)." },
 ];
 
 // § architecture-journal-voucher.md — DUA FORMAT didukung (§ Fase 50),

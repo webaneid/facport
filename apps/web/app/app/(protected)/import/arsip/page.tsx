@@ -109,7 +109,7 @@ export default function ImportArchivePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Arsip Import" description="Semua import kamu, dari semua modul, termasuk yang lebih lama." />
+      <PageHeader title="Arsip Import" description="Semua import kamu, dari semua fitur, termasuk yang lebih lama." />
 
       <RetentionNotice retentionDays={retentionDays} />
 

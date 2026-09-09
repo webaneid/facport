@@ -4,9 +4,14 @@ import type { AccurateSessionContext } from "./accurate-session";
 
 // § architecture-sales-receipt.md — bayangan cermin PERSIS
 // accurate-purchase-payment.ts (customerNo ganti vendorNo). save.do
-// PER-BARIS (bukan bulk-save.do), TIDAK ada lookup customer/faktur
-// sebelum panggil ini — `customerNo`/`invoiceNo` dikirim APA ADANYA
-// sebagai string, Accurate yang validasi eksistensinya.
+// PER-GRUP (§ Fase 49 — 1 grup bisa berisi banyak faktur via
+// `detailInvoice[]`, bukan cuma 1 baris Excel), bukan bulk-save.do —
+// TIDAK ada lookup customer/faktur sebelum panggil ini —
+// `customerNo`/`invoiceNo` dikirim APA ADANYA sebagai string, Accurate
+// yang validasi eksistensinya. § Fase 86 — "Tax ID" (kalau diisi) SUDAH
+// divalidasi terpisah SEBELUM fungsi ini dipanggil (`workers/index.ts`
+// § `validateTaxIdsForReceipt`), payload di sini TIDAK PERNAH berisi
+// field itu.
 export type SalesReceiptSaveResult = {
   id: number;
   number: string;

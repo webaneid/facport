@@ -54,13 +54,13 @@ export default function BillingPage() {
           {!invoices ? (
             <Skeleton className="h-40 w-full" />
           ) : invoices.length === 0 ? (
-            <EmptyState icon={FileText} title="Belum ada invoice" description="Invoice muncul di sini setelah kamu berlangganan sub-modul." />
+            <EmptyState icon={FileText} title="Belum ada invoice" description="Invoice muncul di sini setelah kamu berlangganan fitur." />
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Nomor</TableHead>
-                  <TableHead>Modul</TableHead>
+                  <TableHead>Fitur</TableHead>
                   <TableHead>Total</TableHead>
                   <TableHead>Jatuh Tempo</TableHead>
                   <TableHead>Status</TableHead>

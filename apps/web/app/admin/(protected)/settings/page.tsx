@@ -522,7 +522,7 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle>Retensi Data Import</CardTitle>
           <CardDescription>
-            Berapa hari riwayat import Excel (semua modul — Faktur Pembelian, Faktur Penjualan, Akun Hutang Pemasok,
+            Berapa hari riwayat import Excel (semua fitur — Faktur Pembelian, Faktur Penjualan, Akun Hutang Pemasok,
             Purchase Payment, Sales Receipt, Jurnal Umum) disimpan sebelum dihapus otomatis. Data client bersifat
             sensitif — maksimal {MAX_RETENTION_DAYS} hari, tidak bisa diatur lebih lama.
           </CardDescription>
@@ -569,10 +569,10 @@ export default function AdminSettingsPage() {
         <CardHeader>
           <CardTitle>Pengaturan Trial</CardTitle>
           <CardDescription>
-            Semua paket bisa dicoba gratis oleh customer (1x seumur hidup per modul, tombol &ldquo;Coba Gratis&rdquo;
+            Semua paket bisa dicoba gratis oleh customer (1x seumur hidup per fitur, tombol &ldquo;Coba Gratis&rdquo;
             di halaman langganan). Dibatasi jumlah baris Excel yang berhasil diimport, BUKAN jumlah hari — begitu
             kuota baris habis, customer wajib upgrade ke paket berbayar untuk lanjut import. Berlaku GLOBAL untuk
-            semua modul, tidak perlu diatur per-paket.
+            semua fitur, tidak perlu diatur per-paket.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-4">

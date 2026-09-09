@@ -157,7 +157,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             )}
             {created.subscriptionIds && (
               <p className="text-muted-foreground">
-                {created.subscriptionIds.length} sub-modul langsung AKTIF (ditandai sudah dibayar). Email undangan otomatis terkirim.
+                {created.subscriptionIds.length} fitur langsung AKTIF (ditandai sudah dibayar). Email undangan otomatis terkirim.
               </p>
             )}
             <Button onClick={() => handleClose(false)} className="self-end">
@@ -176,7 +176,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             </label>
 
             <div className="flex flex-col gap-2 border-t border-border pt-3">
-              <span className="text-xs font-medium text-foreground">Sub-Modul (opsional)</span>
+              <span className="text-xs font-medium text-foreground">Fitur (opsional)</span>
               {!plans ? (
                 <Skeleton className="h-16 w-full" />
               ) : plans.length === 0 ? (
