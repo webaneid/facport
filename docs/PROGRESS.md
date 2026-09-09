@@ -95,6 +95,7 @@
 | 84   | Fix Dropdown "No. Sales Receipt" Hilang & Komentar Basi (Sales Receipt) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md` |
 | 85   | Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-85-ekspansi-field-sales-receipt.md` |
 | 86   | Validasi "Tax ID" Sales Receipt | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-86-validasi-tax-id-sales-receipt.md` |
+| 87   | Indikator Progres Import (Reusable) | Done | (tidak ada, komponen frontend generic — lihat phase doc) | `docs/phases/phase-87-import-progress-indicator.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2354,3 +2355,25 @@ Master Data Pajak dianggap konfigurasi akuntansi sensitif). File baru
 fail (5 baru), `apps/web` 44 pass/0 fail. Dev DB test-run dibersihkan
 (subscription/plan Sales Receipt dev sengaja dipertahankan untuk
 testing lanjutan, bukan data disposable).
+
+## Update 2026-09-09 — Fase 87 Done: Indikator Progres Import (Reusable)
+User minta progress bar + teks berputar bergaya "thinking" Claude untuk
+import besar (1000-20000 baris) — dipakai lintas SEMUA fitur import.
+Riset awal ketemu kabar baik: database SUDAH simpan progress granular
+(`importBatchRows.status` di-update per baris/grup saat proses jalan)
+dan frontend SUDAH polling 3 detik di 6 halaman detail batch — jadi
+fitur ini murni FRONTEND, 0 perubahan backend/database. Komponen baru
+`ImportProgress` (`components/import/import-progress.tsx`, generic
+mirror `editable-grid.tsx` Fase 51): progress bar % ASLI dari data
+polling, teks berputar di bawahnya CUMA aktif saat `processing` —
+DIKLARIFIKASI eksplisit ke user bahwa teks itu cosmetic (siklus
+berbasis waktu, bukan sinkron ke baris literal, karena project tidak
+punya event stream real-time backend) — user pilih opsi ini vs
+alternatif "presisi per-baris" yang butuh backend besar. Koreksi kecil
+user: "Mengirim transaksi" → "Mengirim data" (istilah universal lintas
+sub-modul). Dipasang di 6 halaman (Sales Receipt, Purchase Invoice,
+Sales Invoice, Purchase Payment, Journal Voucher, Vendor Payable
+Account). `bun run typecheck` 0 error, `apps/web` 50 pass/0 fail (6
+baru). **Verifikasi visual browser TERTUNDA** — browser automation
+gagal connect sesi ini (mismatch akun OAuth extension), didelegasikan
+ke user untuk cek manual sebelum dianggap tuntas 100%.
