@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-09-09 — ADR-0026 tidak sengaja hapus scope `vendor_view`/`vendor_save` yang dibutuhkan fitur LAIN — semua subscriber Purchase Invoice (tanpa Akun Hutang Pemasok) 403 sejak deploy
+**Masalah:** Client retest Purchase Invoice (setelah koneksi Accurate-nya
+AKTIF & scope Fase 75 sudah termasuk) — SEMUA baris gagal di grup
+manapun dengan `Accurate API gagal: HTTP 403`, persis di baris PERTAMA
+tiap grup.
+
+**Root cause:** ADR-0026 (commit `1bc9256`, "Import Akun Hutang Pemasok"
+jadi sub-modul berbayar terpisah) memindahkan scope `vendor_view`/
+`vendor_save` SEPENUHNYA dari daftar scope `purchase_invoice` ke
+`vendor_payable_account` — dengan asumsi 2 scope itu CUMA dipakai fitur
+"Import Akun Hutang Pemasok" (`vendor-payable-account-import.route.ts`).
+Asumsi itu KELIRU: `findOrCreateVendor` (Fase 05, `accurate-vendor.ts`)
+— fitur auto-create/lookup vendor yang dipanggil **UNCONDITIONAL** di
+`processPurchaseInvoiceGroup` untuk SETIAP grup import Faktur Pembelian
+(fitur INTI Purchase Invoice, TIDAK ADA hubungannya dengan Akun Hutang
+Pemasok) — JUGA butuh scope yang SAMA (`vendor/list.do` buat cek
+existing, `vendor/save.do` buat auto-create). Sejak commit itu deploy,
+SEMUA subscriber Purchase Invoice yang TIDAK JUGA subscribe Akun Hutang
+Pemasok kehilangan scope ini diam-diam — importnya SELALU gagal 403 di
+lookup vendor paling awal, baru ketahuan sekarang (client sudah lama
+tidak retest Purchase Invoice sejak deploy itu).
+
+**Fix:** `vendor_view`/`vendor_save` DIKEMBALIKAN ke daftar scope
+`purchase_invoice` (`accurate-scopes.ts`, Fase 78) — TETAP juga ada di
+`vendor_payable_account` (2 modul sama-sama butuh scope Accurate yang
+sama, untuk 2 fitur BERBEDA — bukan dipindah lagi). Test regresi
+ditambah (`accurate-scopes.test.ts`) supaya scope ini tidak "kepindah"
+tanpa sadar lagi. Koneksi Purchase Invoice yang SUDAH ada WAJIB
+disconnect+reconnect setelah fix ini deploy.
+
+**Pencegahan:** **Sebelum memindahkan/menghapus scope dari 1 modul ke
+modul lain, `grep` SEMUA pemanggil endpoint Accurate terkait dulu**
+(bukan cuma cek endpoint yang jadi TUJUAN perubahan) — 1 scope Accurate
+bisa dipakai lebih dari 1 fitur/endpoint kode kita, walau secara bisnis
+fitur-fitur itu dijual sebagai produk terpisah. ADR yang mengubah scope
+WAJIB eksplisit cantumkan HASIL grep itu di bagian "Konsekuensi", bukan
+cuma asumsi dari nama fitur.
+
+---
+
 ## 2026-09-09 — "Minimal runbook" (skip restart worker) SALAH untuk perubahan file mapping — bikin investigasi 1+ hari sia-sia
 **Masalah:** Deploy v1.19.0 (Fase 73, field Atribut Tambahan level ITEM)
 pakai runbook Minimal (restart `api`+`web` saja) — dengan alasan

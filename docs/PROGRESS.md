@@ -84,6 +84,10 @@
 | 73   | Atribut Tambahan Level ITEM (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md` |
 | 74   | Kategori Keuangan Level EXPENSE (Baris Beban) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md` |
 | 75   | Atribut Tambahan & Kategori Keuangan Purchase Invoice (Mirror Sales Invoice) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-75-atribut-tambahan-purchase-invoice.md` |
+| 76   | Link Alur Penjualan Level ITEM (Sales Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-76-link-alur-penjualan-item-sales-invoice.md` |
+| 77   | "PO No" Rename, Expense Bahasa Inggris, Link Alur Penjualan Level EXPENSE (Sales Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-77-po-no-rename-expense-english-link-expense.md` |
+| 78   | Fix Scope `vendor_view`/`vendor_save` Hilang dari Purchase Invoice (Bug ADR-0026) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-78-fix-scope-vendor-purchase-invoice.md` |
+| 79   | Link Alur Pembelian Level ITEM & EXPENSE (Purchase Invoice) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2091,3 +2095,72 @@ ekstrapolasi dari Sales Invoice (belum dikonfirmasi resmi khusus PI).
 
 Typecheck 0 error. Full suite `apps/api` 483 pass/0 fail (15 baru).
 Lihat `docs/phases/phase-75-atribut-tambahan-purchase-invoice.md`.
+
+## Update 2026-09-09 — Fase 76 Done: Link Alur Penjualan Level ITEM (Sales Invoice)
+Field link alur penjualan (Penawaran → Pesanan → Pengiriman → Faktur)
+level ITEM ditambahkan: `deliveryOrderNumber`/`salesOrderNumber`/
+`salesQuotationNumber` — dikonfirmasi RESMI di spec Accurate (bukan
+tebakan seperti saga charField). Kolom "ITEM: DELIVERY ORDER NO"/"ITEM:
+SALES ORDER NO"/"ITEM: SALES QUOT NO" ditaruh paling akhir template.
+Ketiga field saling terhubung — Accurate cuma proses satu kalau diisi
+bersamaan (prioritas: Delivery > Sales Order > Sales Quotation). "ITEM:
+PURCHASE ORDER NO" sengaja tidak ditambahkan (tidak ada field API
+setara, sudah tercakup "Bill No" level header).
+
+Typecheck 0 error. Full suite `apps/api` 485 pass/0 fail (2 baru). Lihat
+`docs/phases/phase-76-link-alur-penjualan-item-sales-invoice.md`.
+
+## Update 2026-09-09 — Fase 77 Done: "PO No" Rename, Expense Bahasa Inggris, Link Alur Penjualan Level EXPENSE (Sales Invoice)
+3 permintaan client digabung 1 fase: (1) judul kolom "Bill No" (Fase 70)
+dikembalikan jadi "PO No" supaya singkron nama field ASLI Accurate
+`poNumber` — "Bill No"/"PO Number" tetap didukung sebagai sinonim lama;
+(2) semua judul kolom Expense (Fase 74) diganti Bahasa Inggris ("Expense
+Acc No"/"Expense Name"/"Expense Amount"/"Expense Note"/"Expense
+Department"/"Expense Financial Category 1-10") — nama Indonesia lama
+tetap didukung sebagai sinonim; (3) 2 field baru level EXPENSE
+(`detailExpense.salesOrderNumber`/`salesQuotationNumber`, mirror Fase 76
+yang sebelumnya cuma di level ITEM) — dikonfirmasi resmi di spec
+Accurate, ditaruh paling akhir template. `detailExpense` TIDAK punya
+`deliveryOrderNumber` (beda dari `detailItem`), jadi "Expense Delivery
+Order No" sengaja tidak ditambahkan walau deskripsi resmi field ini
+menyebutnya (quirk dokumentasi Accurate).
+
+Typecheck 0 error. Full suite `apps/api` 489 pass/0 fail (4 baru). Dev DB
+dibersihkan dari data test. Lihat
+`docs/phases/phase-77-po-no-rename-expense-english-link-expense.md`.
+
+## Update 2026-09-09 — Fase 78 Done: Fix Scope `vendor_view`/`vendor_save` Hilang dari Purchase Invoice (Bug ADR-0026)
+Client retest Purchase Invoice (koneksi Accurate AKTIF, scope Fase 75
+sudah termasuk) — SEMUA baris gagal `HTTP 403` di baris pertama tiap
+grup. Root cause: ADR-0026 (commit `1bc9256`, "Import Akun Hutang
+Pemasok" jadi sub-modul terpisah) memindahkan scope `vendor_view`/
+`vendor_save` SEPENUHNYA dari `purchase_invoice` ke
+`vendor_payable_account`, dengan asumsi cuma dipakai fitur Akun Hutang
+Pemasok — TAPI `findOrCreateVendor` (Fase 05, dipanggil UNCONDITIONAL
+setiap import Purchase Invoice, fitur INTI yang tidak terkait Akun
+Hutang Pemasok) JUGA butuh scope ini. Sejak commit itu deploy, SEMUA
+subscriber Purchase Invoice TANPA subscribe Akun Hutang Pemasok gagal
+403 diam-diam. Fix: scope dikembalikan ke `purchase_invoice` (tetap juga
+ada di `vendor_payable_account`, 2 modul sama-sama butuh). Koneksi
+Purchase Invoice existing WAJIB disconnect+reconnect setelah deploy ini.
+
+Typecheck 0 error. Full suite `apps/api` 492 pass/0 fail (3 baru, test
+regresi scope). Dev DB dibersihkan. Lihat
+`docs/phases/phase-78-fix-scope-vendor-purchase-invoice.md` dan
+`docs/lessons-learned.md` 2026-09-09.
+
+## Update 2026-09-09 — Fase 79 Done: Link Alur Pembelian Level ITEM & EXPENSE (Purchase Invoice)
+Mirror Fase 76+77 (Sales Invoice) ke Purchase Invoice, field API beda
+(sisi pembelian, bukan penjualan) — dikonfirmasi resmi di spec Accurate.
+Level ITEM: `itemReceiveItemNo`/`itemPurchaseOrderNo`/
+`itemPurchaseRequisitionNo` → `detailItem.receiveItemNumber`/
+`purchaseOrderNumber`/`purchaseRequisitionNumber` (prioritas: Receive
+Item > Purchase Order > Purchase Requisition). Level EXPENSE:
+`expensePurchaseOrderNo` → `detailExpense.purchaseOrderNumber` (cuma 1
+field, tanpa masalah prioritas). Field Beban baru ("Beban - PO No")
+ditaruh DI DALAM grup Beban, field ITEM di paling akhir SETELAH seluruh
+grup Expense — sesuai klarifikasi eksplisit user soal urutan penempatan.
+
+Typecheck 0 error. Full suite `apps/api` 495 pass/0 fail (3 baru). Dev
+DB dibersihkan. Lihat
+`docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md`.

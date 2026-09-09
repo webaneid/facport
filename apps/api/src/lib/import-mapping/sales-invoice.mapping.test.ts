@@ -323,9 +323,12 @@ describe("buildDetailItemFromRow", () => {
   });
 
   // § Fase 70 (2026-09-08) — client minta judul kolom "PO Number" ->
-  // "Bill No" (konsisten dengan istilah Purchase Invoice). "PO Number"
-  // TETAP dipertahankan sebagai sinonim lama.
-  test("defaultColumnMap punya sinonim 'Bill No' untuk poNumber, 'PO Number' TETAP ada", () => {
+  // "Bill No" (konsisten dengan istilah Purchase Invoice).
+  // § Fase 77 (2026-09-09) — DIKEMBALIKAN ke "PO No" jadi sinonim utama
+  // (client minta singkron nama field ASLI Accurate `poNumber`). "Bill
+  // No" dan "PO Number" TETAP dipertahankan sebagai sinonim lama.
+  test("defaultColumnMap punya 'PO No' sebagai sinonim utama untuk poNumber, 'Bill No' & 'PO Number' TETAP ada", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["PO No"]).toBe("poNumber");
     expect(salesInvoiceMapping.defaultColumnMap["Bill No"]).toBe("poNumber");
     expect(salesInvoiceMapping.defaultColumnMap["PO Number"]).toBe("poNumber");
   });
@@ -712,7 +715,7 @@ describe("extractExpenseDataClassificationValues — Fase 74", () => {
 });
 
 describe("defaultColumnMap — kolom Expense (Fase 74)", () => {
-  test("kolom Beban terpetakan ke field expense*, terpisah dari field item", () => {
+  test("kolom Beban (Indonesia, sinonim lama) terpetakan ke field expense*, terpisah dari field item", () => {
     expect(salesInvoiceMapping.defaultColumnMap["Akun Beban"]).toBe("expenseAccountNo");
     expect(salesInvoiceMapping.defaultColumnMap["Nama Beban"]).toBe("expenseName");
     expect(salesInvoiceMapping.defaultColumnMap["Jumlah Beban"]).toBe("expenseAmount");
@@ -721,5 +724,97 @@ describe("defaultColumnMap — kolom Expense (Fase 74)", () => {
     for (let i = 1; i <= 10; i++) {
       expect(salesInvoiceMapping.defaultColumnMap[`Kategori Keuangan Beban ${i}`]).toBe(`expenseKategoriKeuangan${i}`);
     }
+  });
+
+  // § Fase 77 (2026-09-09) — client minta "expense diubah semua jadi bhs
+  // inggris" — nama Inggris jadi sinonim BARU, nama Indonesia lama
+  // (test di atas) TETAP didukung, tidak regresi.
+  test("kolom Beban (Inggris, Fase 77) terpetakan ke field expense* yang SAMA", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Acc No"]).toBe("expenseAccountNo");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Name"]).toBe("expenseName");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Amount"]).toBe("expenseAmount");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Note"]).toBe("expenseNotes");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Department"]).toBe("expenseDepartmentName");
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`Expense Financial Category ${i}`]).toBe(`expenseKategoriKeuangan${i}`);
+    }
+  });
+});
+
+// § Fase 76 (2026-09-09) — link alur penjualan (Penawaran -> Pesanan ->
+// Pengiriman -> Faktur), level ITEM. DIKONFIRMASI RESMI di spec
+// Accurate (`deliveryOrderNumber`/`salesOrderNumber`/`salesQuotationNumber`
+// di `detailItem`). "Purchase Order No" SENGAJA TIDAK ada padanan
+// (sudah tercakup field header `poNumber`/"Bill No").
+describe("link alur penjualan level ITEM — Fase 76", () => {
+  test("Delivery Order No/Sales Order No/Sales Quotation No masuk ke detailItem, BUKAN root", () => {
+    const rawRow = {
+      "Kode Barang": "BRG-1",
+      "ITEM: DELIVERY ORDER NO": "DO-001",
+      "ITEM: SALES ORDER NO": "SO-001",
+      "ITEM: SALES QUOT NO": "SQ-001",
+    };
+    const columnMapping = {
+      "Kode Barang": "itemNo",
+      "ITEM: DELIVERY ORDER NO": "itemDeliveryOrderNo",
+      "ITEM: SALES ORDER NO": "itemSalesOrderNo",
+      "ITEM: SALES QUOT NO": "itemSalesQuotationNo",
+    };
+    const payload = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(payload.deliveryOrderNumber).toBeUndefined();
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.deliveryOrderNumber).toBe("DO-001");
+    expect(detail.salesOrderNumber).toBe("SO-001");
+    expect(detail.salesQuotationNumber).toBe("SQ-001");
+  });
+
+  test("defaultColumnMap — nama kolom sesuai, tidak ada padanan Purchase Order No", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: DELIVERY ORDER NO"]).toBe("itemDeliveryOrderNo");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: SALES ORDER NO"]).toBe("itemSalesOrderNo");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: SALES QUOT NO"]).toBe("itemSalesQuotationNo");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: PURCHASE ORDER NO"]).toBeUndefined();
+  });
+});
+
+// § Fase 77 (2026-09-09) — mirror Fase 76, tapi level EXPENSE
+// (`detailExpense`, array TERPISAH dari `detailItem`). DIKONFIRMASI
+// RESMI di spec Accurate (`salesOrderNumber`/`salesQuotationNumber` di
+// `detailExpense.items.properties`). Array ini TIDAK punya
+// `deliveryOrderNumber` sama sekali (beda dari `detailItem`).
+describe("link alur penjualan level EXPENSE — Fase 77", () => {
+  test("Expense Sales Order No/Expense Sales Quotation No masuk ke detailExpense, BUKAN root/detailItem", () => {
+    const rawRow = {
+      "Akun Beban": "6-10100",
+      "Jumlah Beban": 50000,
+      "Expense Sales Order No": "SO-EXP-001",
+      "Expense Sales Quotation No": "SQ-EXP-001",
+    };
+    const columnMapping = {
+      "Akun Beban": "expenseAccountNo",
+      "Jumlah Beban": "expenseAmount",
+      "Expense Sales Order No": "expenseSalesOrderNo",
+      "Expense Sales Quotation No": "expenseSalesQuotationNo",
+    };
+    const payload = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(payload.salesOrderNumber).toBeUndefined();
+    const detail = (payload.detailExpense as Record<string, unknown>[])[0]!;
+    expect(detail.salesOrderNumber).toBe("SO-EXP-001");
+    expect(detail.salesQuotationNumber).toBe("SQ-EXP-001");
+    expect(detail.deliveryOrderNumber).toBeUndefined();
+  });
+
+  test("defaultColumnMap — nama kolom sesuai, tidak ada padanan Expense Delivery Order No", () => {
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Sales Order No"]).toBe("expenseSalesOrderNo");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Sales Quotation No"]).toBe("expenseSalesQuotationNo");
+    expect(salesInvoiceMapping.defaultColumnMap["Expense Delivery Order No"]).toBeUndefined();
+  });
+
+  test("buildDetailExpenseFromRow tetap null kalau accountNo/amount kosong, walau link field terisi", () => {
+    expect(
+      buildDetailExpenseFromRow(
+        { "Expense Sales Order No": "SO-EXP-001" },
+        { "Expense Sales Order No": "expenseSalesOrderNo" },
+      ),
+    ).toBeNull();
   });
 });

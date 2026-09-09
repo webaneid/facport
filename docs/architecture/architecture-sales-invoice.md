@@ -216,6 +216,42 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 > CREATE faktur baru. Detail →
 > `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md`.
 
+> **Update 2026-09-09 (Fase 76)** — Field link alur penjualan
+> (Penawaran → Pesanan → Pengiriman → Faktur) level ITEM ditambahkan:
+> `detailItem.deliveryOrderNumber`/`salesOrderNumber`/
+> `salesQuotationNumber` — DIKONFIRMASI RESMI di spec Accurate (beda
+> dari saga Atribut Tambahan Fase 67-73, field ini SUDAH terdokumentasi
+> lengkap sejak awal). Kolom Excel "ITEM: DELIVERY ORDER NO"/"ITEM:
+> SALES ORDER NO"/"ITEM: SALES QUOT NO" ditaruh PALING AKHIR. ⚠️ Ketiga
+> field SALING TERHUBUNG — Accurate cuma proses SATU kalau diisi
+> bersamaan, prioritas: Delivery Order > Sales Order > Sales Quotation
+> (deskripsi resmi Accurate). "ITEM: PURCHASE ORDER NO" SENGAJA TIDAK
+> ditambahkan — tidak ada field API setara di level ITEM (sudah
+> tercakup `poNumber`/"Bill No" level header). Detail →
+> `docs/phases/phase-76-link-alur-penjualan-item-sales-invoice.md`.
+
+> **Update 2026-09-09 (Fase 77)** — 3 perubahan digabung 1 fase: (1)
+> judul kolom "Bill No" (Fase 70) DIKEMBALIKAN jadi **"PO No"** (client
+> minta singkron nama field ASLI Accurate `poNumber`) — "Bill No"/"PO
+> Number" TETAP didukung sebagai sinonim lama di `defaultColumnMap`,
+> bukan dihapus; (2) SEMUA judul kolom Expense (Fase 74) diganti Bahasa
+> Inggris: "Expense Acc No"/"Expense Name"/"Expense Amount"/"Expense
+> Note"/"Expense Department"/"Expense Financial Category 1-10" — nama
+> Indonesia lama ("Akun Beban" dkk) TETAP didukung sebagai sinonim; (3)
+> field link alur penjualan level EXPENSE BARU:
+> `detailExpense.salesOrderNumber`/`salesQuotationNumber` (mirror Fase
+> 76 yang sebelumnya cuma di level ITEM) — DIKONFIRMASI RESMI di spec
+> Accurate. ⚠️ **`detailExpense` TIDAK PUNYA `deliveryOrderNumber` sama
+> sekali** (beda dari `detailItem` yang punya ketiganya) — deskripsi
+> resmi Accurate untuk field ini TETAP menyebut `deliveryOrderNumber` di
+> teksnya walau field itu tidak ada di array ini (kemungkinan besar
+> quirk copy-paste deskripsi dari field `detailItem`, dicatat tapi TIDAK
+> jadi alasan menambah field yang tidak ada) — prioritas yang berlaku
+> cuma antara `salesOrderNumber` > `salesQuotationNumber`. Kolom "Expense
+> Sales Order No"/"Expense Sales Quotation No" ditaruh PALING AKHIR
+> template. Detail →
+> `docs/phases/phase-77-po-no-rename-expense-english-link-expense.md`.
+
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet
 > "Sales_Invoice" + "Penjelasan Kolom"). Riset MENYELURUH ke SEMUA 30+

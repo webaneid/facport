@@ -179,13 +179,40 @@ export const salesInvoiceMapping = {
     expenseKategoriKeuangan8: "detailExpense.dataClassification8Name",
     expenseKategoriKeuangan9: "detailExpense.dataClassification9Name",
     expenseKategoriKeuangan10: "detailExpense.dataClassification10Name",
+    // § Fase 76 (2026-09-09) — field LINK ALUR PENJUALAN (Penawaran →
+    // Pesanan → Pengiriman → Faktur), level ITEM (`detailItem`),
+    // DIKONFIRMASI RESMI ada di spec Accurate (`accurate-openapi.json`),
+    // BUKAN tebakan. ⚠️ Deskripsi resmi: ketiga field ini SALING
+    // TERHUBUNG, Accurate cuma proses SATU kalau diisi bersamaan —
+    // prioritas: `deliveryOrderNumber` > `salesOrderNumber` >
+    // `salesQuotationNumber`. "Purchase Order No" TIDAK ADA field
+    // setara di level item Sales Invoice — sudah tercakup field header
+    // `poNumber` ("Bill No", § Fase 13/70).
+    itemDeliveryOrderNo: "detailItem.deliveryOrderNumber",
+    itemSalesOrderNo: "detailItem.salesOrderNumber",
+    itemSalesQuotationNo: "detailItem.salesQuotationNumber",
+    // § Fase 77 (2026-09-09) — mirror Fase 76, tapi level EXPENSE
+    // (`detailExpense`, BEDA array dari `detailItem`). Dikonfirmasi RESMI
+    // di spec Accurate (`accurate-openapi.json` § `detailExpense.items.properties`):
+    // `salesOrderNumber`/`salesQuotationNumber` ADA di `detailExpense`,
+    // TAPI `deliveryOrderNumber` TIDAK ADA di array ini (beda dari
+    // `detailItem` yang punya ketiganya) — deskripsi resmi field ini
+    // TETAP menyebut `deliveryOrderNumber` di teksnya (kemungkinan
+    // deskripsi copy-paste dari field `detailItem`, bukan ditulis ulang
+    // khusus utk `detailExpense`), tapi prioritas antara dua field yang
+    // ADA di sini TETAP: `salesOrderNumber` > `salesQuotationNumber`.
+    expenseSalesOrderNo: "detailExpense.salesOrderNumber",
+    expenseSalesQuotationNo: "detailExpense.salesQuotationNumber",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
-    // § Fase 70 (2026-09-08) — "Bill No" jadi judul kolom BARU (client
-    // minta konsisten dengan istilah "Bill No" di Purchase Invoice),
-    // "PO Number" TETAP dipertahankan sebagai sinonim lama (backward
-    // compat, § pola sama Fase 69 untuk Kategori Keuangan).
+    // § Fase 77 (2026-09-09) — "PO No" jadi judul kolom BARU/UTAMA (client
+    // minta DIKEMBALIKAN supaya singkron dengan nama field ASLI Accurate
+    // `poNumber`, setelah sempat diganti "Bill No" di Fase 70). "Bill No"
+    // (Fase 70) DAN "PO Number" (nama paling lama) TETAP dipertahankan
+    // sebagai sinonim — client/template lama yang sudah terlanjur pakai
+    // salah satu nama itu TIDAK regresi.
+    "PO No": "poNumber",
     "Bill No": "poNumber",
     "PO Number": "poNumber",
     "Customer No": "customerNo",
@@ -334,11 +361,30 @@ export const salesInvoiceMapping = {
     // § Fase 74 — level EXPENSE (baris Beban), lihat komentar
     // `fieldToAccuratePath`. Ditaruh PALING AKHIR di template (setelah
     // "Kategori Keuangan 10") sesuai permintaan — lihat `template-guide.ts`.
+    // § Fase 77 (2026-09-09) — judul kolom Expense DIGANTI ke Bahasa
+    // Inggris (client minta "expense diubah semua jadi bhs inggris"),
+    // nama Indonesia lama ("Akun Beban" dkk) TETAP dipertahankan sebagai
+    // sinonim (pola sama dengan "PO No"/"Bill No" di atas).
+    "Expense Acc No": "expenseAccountNo",
     "Akun Beban": "expenseAccountNo",
+    "Expense Name": "expenseName",
     "Nama Beban": "expenseName",
+    "Expense Amount": "expenseAmount",
     "Jumlah Beban": "expenseAmount",
+    "Expense Note": "expenseNotes",
     "Catatan Beban": "expenseNotes",
+    "Expense Department": "expenseDepartmentName",
     "Beban - Department": "expenseDepartmentName",
+    "Expense Financial Category 1": "expenseKategoriKeuangan1",
+    "Expense Financial Category 2": "expenseKategoriKeuangan2",
+    "Expense Financial Category 3": "expenseKategoriKeuangan3",
+    "Expense Financial Category 4": "expenseKategoriKeuangan4",
+    "Expense Financial Category 5": "expenseKategoriKeuangan5",
+    "Expense Financial Category 6": "expenseKategoriKeuangan6",
+    "Expense Financial Category 7": "expenseKategoriKeuangan7",
+    "Expense Financial Category 8": "expenseKategoriKeuangan8",
+    "Expense Financial Category 9": "expenseKategoriKeuangan9",
+    "Expense Financial Category 10": "expenseKategoriKeuangan10",
     "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1",
     "Kategori Keuangan Beban 2": "expenseKategoriKeuangan2",
     "Kategori Keuangan Beban 3": "expenseKategoriKeuangan3",
@@ -349,6 +395,15 @@ export const salesInvoiceMapping = {
     "Kategori Keuangan Beban 8": "expenseKategoriKeuangan8",
     "Kategori Keuangan Beban 9": "expenseKategoriKeuangan9",
     "Kategori Keuangan Beban 10": "expenseKategoriKeuangan10",
+    // § Fase 76 — ditaruh PALING AKHIR juga, konsisten permintaan user.
+    "ITEM: DELIVERY ORDER NO": "itemDeliveryOrderNo",
+    "ITEM: SALES ORDER NO": "itemSalesOrderNo",
+    "ITEM: SALES QUOT NO": "itemSalesQuotationNo",
+    // § Fase 77 — mirror Fase 76 tapi level EXPENSE, lihat komentar
+    // `fieldToAccuratePath`. Ditaruh PALING AKHIR (setelah "ITEM: SALES
+    // QUOT NO"), sesuai permintaan.
+    "Expense Sales Order No": "expenseSalesOrderNo",
+    "Expense Sales Quotation No": "expenseSalesQuotationNo",
   } as Record<string, string>,
 };
 

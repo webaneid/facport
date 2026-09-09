@@ -155,6 +155,24 @@ export const purchaseInvoiceMapping = {
     expenseKategoriKeuangan8: "detailExpense.dataClassification8Name",
     expenseKategoriKeuangan9: "detailExpense.dataClassification9Name",
     expenseKategoriKeuangan10: "detailExpense.dataClassification10Name",
+    // § Fase 79 (2026-09-09) — field LINK ALUR PEMBELIAN (Permintaan
+    // Pembelian → Pesanan Pembelian → Penerimaan Barang → Faktur), level
+    // ITEM (`detailItem`). Mirror Fase 76 (Sales Invoice), TAPI field API
+    // BEDA — sisi PEMBELIAN, bukan penjualan. DIKONFIRMASI RESMI di spec
+    // Accurate (`accurate-openapi.json` § `/api/purchase-invoice/save.do`
+    // `detailItem`). ⚠️ Deskripsi resmi: ketiga field ini SALING
+    // TERHUBUNG, Accurate cuma proses SATU kalau diisi bersamaan —
+    // prioritas: `receiveItemNumber` > `purchaseOrderNumber` >
+    // `purchaseRequisitionNumber`.
+    itemReceiveItemNo: "detailItem.receiveItemNumber",
+    itemPurchaseOrderNo: "detailItem.purchaseOrderNumber",
+    itemPurchaseRequisitionNo: "detailItem.purchaseRequisitionNumber",
+    // § Fase 79 — mirror Fase 77 (Sales Invoice) level EXPENSE, TAPI
+    // `detailExpense` Purchase Invoice CUMA punya 1 field link
+    // (`purchaseOrderNumber`) — TIDAK ada `receiveItemNumber`/
+    // `purchaseRequisitionNumber` di array ini, jadi TIDAK ADA masalah
+    // prioritas seperti level ITEM di atas.
+    expensePurchaseOrderNo: "detailExpense.purchaseOrderNumber",
   } as const,
   // Mapping default (bisa di-override user lewat UI "cocokkan kolom" saat
   // upload) — key = nama kolom Excel yang diharapkan (ikut pola template
@@ -273,6 +291,18 @@ export const purchaseInvoiceMapping = {
     "Kategori Keuangan Beban 8": "expenseKategoriKeuangan8",
     "Kategori Keuangan Beban 9": "expenseKategoriKeuangan9",
     "Kategori Keuangan Beban 10": "expenseKategoriKeuangan10",
+    // § Fase 79 (2026-09-09) — field Beban baru, TETAP di dalam grup
+    // Beban (bukan dipisah) — user eksplisit minta field baru selalu
+    // ditaruh PALING AKHIR *setelah grup Expense*, jadi field Beban baru
+    // ini masuk grup Beban dulu, field link level ITEM (bukan Beban) di
+    // bawahnya.
+    "Beban - PO No": "expensePurchaseOrderNo",
+    // § Fase 79 — link alur pembelian level ITEM, lihat komentar
+    // `fieldToAccuratePath`. Ditaruh PALING AKHIR (setelah SELURUH grup
+    // Expense), konsisten permintaan user (pola Fase 70-77).
+    "ITEM: RECEIVE ITEM NO": "itemReceiveItemNo",
+    "ITEM: PURCHASE ORDER NO": "itemPurchaseOrderNo",
+    "ITEM: PURCHASE REQUISITION NO": "itemPurchaseRequisitionNo",
   } as Record<string, string>,
 };
 

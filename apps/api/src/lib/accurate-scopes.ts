@@ -17,19 +17,41 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // auto-create Kategori Keuangan (Atribut Tambahan item/expense-level,
   // `findOrCreateDataClassification`, mirror Fase 68 Sales Invoice) —
   // koneksi existing SEBELUM penambahan ini wajib re-authorize ulang.
+  // § Fase 78 (2026-09-09) — BUG DITEMUKAN & DIPERBAIKI: `vendor_view`/
+  // `vendor_save` DIKEMBALIKAN ke sini. ADR-0026 (commit `1bc9256`)
+  // memindahkan KEDUA scope ini SEPENUHNYA ke `vendor_payable_account`
+  // dengan asumsi cuma dipakai fitur "Import Akun Hutang Pemasok"
+  // (`vendor-payable-account-import.route.ts`) — TAPI `findOrCreateVendor`
+  // (Fase 05, dipanggil UNCONDITIONAL di `processPurchaseInvoiceGroup`
+  // untuk cek/bikin vendor SETIAP kali import Faktur Pembelian, fitur
+  // INTI Purchase Invoice yang TIDAK ADA hubungannya dengan fitur Akun
+  // Hutang Pemasok) JUGA butuh scope ini (`vendor/list.do` buat cek
+  // existing, `vendor/save.do` buat auto-create). Akibat ADR-0026:
+  // SEMUA subscriber Purchase Invoice yang TIDAK JUGA subscribe Akun
+  // Hutang Pemasok gagal 403 di baris PERTAMA setiap grup, sejak commit
+  // itu di-deploy — baru ketahuan sekarang lewat retest client
+  // (`docs/lessons-learned.md` 2026-09-09). Scope INI TETAP juga ada di
+  // `vendor_payable_account` di bawah (2 modul sama-sama butuh, alasan
+  // pakai beda) — BUKAN dipindah lagi, supaya keduanya jalan independen.
   purchase_invoice: [
     "purchase_invoice_view",
     "purchase_invoice_save",
-    // § Fase 05 — auto-create item saat import Faktur Pembelian. TIDAK
-    // terkait fitur vendor (§ ADR-0026) — tetap di sini.
+    // § Fase 05 — auto-create item saat import Faktur Pembelian.
     "item_save",
     "data_classification_view",
     "data_classification_save",
+    // § Fase 78 — auto-create/lookup vendor (`findOrCreateVendor`),
+    // lihat komentar di atas.
+    "vendor_view",
+    "vendor_save",
   ],
   // § ADR-0026 — dulu dibundel gratis ke `purchase_invoice` (Fase 04),
-  // sekarang sub-modul SENDIRI yang dijual terpisah. Koneksi Accurate
-  // yang connect SEBELUM perubahan ini WAJIB "Hubungkan Ulang" untuk
-  // dapat scope ini kalau baru sekarang subscribe.
+  // sekarang sub-modul SENDIRI yang dijual terpisah (fitur "Import Akun
+  // Hutang Pemasok" — endpoint bulk-update terpisah, BEDA dari
+  // auto-create vendor di dalam import Purchase Invoice sendiri, § Fase
+  // 78 di atas). Koneksi Accurate yang connect SEBELUM perubahan ini
+  // WAJIB "Hubungkan Ulang" untuk dapat scope ini kalau baru sekarang
+  // subscribe.
   vendor_payable_account: ["vendor_view", "vendor_save"],
   // § Fase 13 — SEHARUSNYA sudah ditambah saat itu (customer_view/save
   // dipakai `findOrCreateCustomer`, accurate-customer.ts), baru lengkap

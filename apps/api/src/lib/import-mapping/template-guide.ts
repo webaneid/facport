@@ -140,6 +140,19 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Kategori Keuangan Beban 8", required: false, example: "", description: "Atribut Tambahan 8 level EXPENSE — sama pola nomor 1." },
   { column: "Kategori Keuangan Beban 9", required: false, example: "", description: "Atribut Tambahan 9 level EXPENSE — sama pola nomor 1." },
   { column: "Kategori Keuangan Beban 10", required: false, example: "", description: "Atribut Tambahan 10 level EXPENSE — sama pola nomor 1." },
+  // § Fase 79 (2026-09-09) — field link alur pembelian (Permintaan
+  // Pembelian -> Pesanan Pembelian -> Penerimaan Barang -> Faktur).
+  // DIKONFIRMASI RESMI di spec Accurate. "Beban - PO No" (level EXPENSE)
+  // ditaruh DI DALAM grup Beban (masih bagian Expense), field level ITEM
+  // di bawahnya PALING AKHIR — sesuai permintaan user (field baru selalu
+  // di ujung, SETELAH grup Expense).
+  { column: "Beban - PO No", required: false, example: "", description: "Nomor transaksi Pesanan Pembelian (Purchase Order) yang terhubung dengan baris Beban ini." },
+  // ⚠️ Ketiga field level ITEM berikut SALING TERHUBUNG — Accurate cuma
+  // proses SATU kalau diisi bersamaan, prioritas: "ITEM: RECEIVE ITEM
+  // NO" > "ITEM: PURCHASE ORDER NO" > "ITEM: PURCHASE REQUISITION NO".
+  { column: "ITEM: RECEIVE ITEM NO", required: false, example: "", description: "Nomor transaksi Penerimaan Barang (Receive Item) yang terhubung dengan baris barang ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Purchase Order No/Purchase Requisition No — yang lain diabaikan." },
+  { column: "ITEM: PURCHASE ORDER NO", required: false, example: "", description: "Nomor transaksi Pesanan Pembelian (Purchase Order) yang terhubung dengan baris barang ini. Diabaikan kalau Receive Item No juga terisi di baris yang sama." },
+  { column: "ITEM: PURCHASE REQUISITION NO", required: false, example: "", description: "Nomor transaksi Permintaan Pembelian (Purchase Requisition) yang terhubung dengan baris barang ini. PRIORITAS TERENDAH — diabaikan kalau Receive Item No ATAU Purchase Order No juga terisi di baris yang sama." },
 ];
 
 // § Fase 13 — mirror `purchaseInvoiceTemplateGuide` (field API `poNumber`
@@ -151,10 +164,12 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // § Fase 70 (2026-09-08) — client minta judul kolom diganti "PO
   // Number" -> "Bill No" (konsisten dengan istilah "Bill No" di modul
   // Purchase Invoice) — field API TETAP `poNumber` (§ ADR/komentar
-  // `fieldToAccuratePath`), murni rename judul kolom Excel. Sinonim
-  // lama "PO Number"/"PURCHASE ORDER NO" TETAP didukung di
+  // `fieldToAccuratePath`), murni rename judul kolom Excel.
+  // § Fase 77 (2026-09-09) — DIKEMBALIKAN ke "PO No" (client minta
+  // singkron dengan nama field ASLI Accurate `poNumber`). Sinonim lama
+  // "Bill No"/"PO Number"/"PURCHASE ORDER NO" TETAP didukung di
   // `defaultColumnMap`.
-  { column: "Bill No", required: false, example: "PO-CUST-001", description: "Nomor PO/referensi dari customer (field API poNumber). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
+  { column: "PO No", required: false, example: "PO-CUST-001", description: "Nomor PO/referensi dari customer (field API poNumber). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
   { column: "Customer No", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
   // § Fase 61/64 — WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
   // resmi client) — SEBELUMNYA opsional/"kosongkan supaya otomatis",
@@ -308,21 +323,46 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // terisi supaya baris ini dianggap punya data Beban (kalau salah satu
   // kosong, baris ini dianggap TIDAK ada data Beban-nya, kolom Beban
   // lain di baris itu diabaikan).
-  { column: "Akun Beban", required: false, example: "6-10100", description: "Kode Akun Perkiraan (COA) untuk baris Beban ini — WAJIB diisi bersama \"Jumlah Beban\" supaya baris ini dianggap punya data Beban." },
-  { column: "Nama Beban", required: false, example: "Ongkos Kirim", description: "Nama/keterangan Beban." },
-  { column: "Jumlah Beban", required: false, example: "50000", description: "Nominal Beban. Angka polos, TANPA titik/koma pemisah ribuan — WAJIB diisi bersama \"Akun Beban\"." },
-  { column: "Catatan Beban", required: false, example: "", description: "Catatan tambahan untuk Beban ini." },
-  { column: "Beban - Department", required: false, example: "", description: "Nama departemen untuk Beban ini (kalau akun Accurate pakai tracking departemen)." },
-  { column: "Kategori Keuangan Beban 1", required: false, example: "", description: "Atribut Tambahan 1 level EXPENSE (per baris Beban, field API SAMA dengan Kategori Keuangan level Item — detailExpense.dataClassification1Name). Maksimal 10 slot." },
-  { column: "Kategori Keuangan Beban 2", required: false, example: "", description: "Atribut Tambahan 2 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 3", required: false, example: "", description: "Atribut Tambahan 3 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 4", required: false, example: "", description: "Atribut Tambahan 4 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 5", required: false, example: "", description: "Atribut Tambahan 5 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 6", required: false, example: "", description: "Atribut Tambahan 6 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 7", required: false, example: "", description: "Atribut Tambahan 7 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 8", required: false, example: "", description: "Atribut Tambahan 8 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 9", required: false, example: "", description: "Atribut Tambahan 9 level EXPENSE — sama pola nomor 1." },
-  { column: "Kategori Keuangan Beban 10", required: false, example: "", description: "Atribut Tambahan 10 level EXPENSE — sama pola nomor 1." },
+  // § Fase 77 (2026-09-09) — judul kolom Expense DIGANTI ke Bahasa
+  // Inggris (client minta "expense diubah semua jadi bhs inggris"),
+  // nama Indonesia lama ("Akun Beban" dkk) TETAP didukung sebagai
+  // sinonim di `defaultColumnMap` — cuma judul kolom TEMPLATE UNDUHAN
+  // yang berubah di sini.
+  { column: "Expense Acc No", required: false, example: "6-10100", description: "Kode Akun Perkiraan (COA) untuk baris Beban ini — WAJIB diisi bersama \"Expense Amount\" supaya baris ini dianggap punya data Beban." },
+  { column: "Expense Name", required: false, example: "Ongkos Kirim", description: "Nama/keterangan Beban." },
+  { column: "Expense Amount", required: false, example: "50000", description: "Nominal Beban. Angka polos, TANPA titik/koma pemisah ribuan — WAJIB diisi bersama \"Expense Acc No\"." },
+  { column: "Expense Note", required: false, example: "", description: "Catatan tambahan untuk Beban ini." },
+  { column: "Expense Department", required: false, example: "", description: "Nama departemen untuk Beban ini (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Expense Financial Category 1", required: false, example: "", description: "Atribut Tambahan 1 level EXPENSE (per baris Beban, field API SAMA dengan Kategori Keuangan level Item — detailExpense.dataClassification1Name). Maksimal 10 slot." },
+  { column: "Expense Financial Category 2", required: false, example: "", description: "Atribut Tambahan 2 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 3", required: false, example: "", description: "Atribut Tambahan 3 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 4", required: false, example: "", description: "Atribut Tambahan 4 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 5", required: false, example: "", description: "Atribut Tambahan 5 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 6", required: false, example: "", description: "Atribut Tambahan 6 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 7", required: false, example: "", description: "Atribut Tambahan 7 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 8", required: false, example: "", description: "Atribut Tambahan 8 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 9", required: false, example: "", description: "Atribut Tambahan 9 level EXPENSE — sama pola nomor 1." },
+  { column: "Expense Financial Category 10", required: false, example: "", description: "Atribut Tambahan 10 level EXPENSE — sama pola nomor 1." },
+  // § Fase 76 (2026-09-09) — field LINK ALUR PENJUALAN (Penawaran ->
+  // Pesanan -> Pengiriman -> Faktur), level ITEM. DIKONFIRMASI RESMI di
+  // spec Accurate. Ditaruh PALING AKHIR sesuai permintaan. ⚠️ Ketiga
+  // field ini SALING TERHUBUNG — kalau diisi bersamaan di 1 baris,
+  // Accurate cuma proses SATU dengan prioritas: "ITEM: DELIVERY ORDER
+  // NO" > "ITEM: SALES ORDER NO" > "ITEM: SALES QUOT NO", sisanya
+  // diabaikan diam-diam (bukan error). "ITEM: PURCHASE ORDER NO" TIDAK
+  // ditambahkan — TIDAK ADA field setara di level item Sales Invoice
+  // (sudah tercakup field header "PO No").
+  { column: "ITEM: DELIVERY ORDER NO", required: false, example: "", description: "Nomor transaksi Pengiriman (Delivery Order) yang terhubung dengan baris barang ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Sales Order No/Sales Quot No — yang lain diabaikan." },
+  { column: "ITEM: SALES ORDER NO", required: false, example: "", description: "Nomor transaksi Pesanan Penjualan (Sales Order) yang terhubung dengan baris barang ini. Diabaikan kalau Delivery Order No juga terisi di baris yang sama." },
+  { column: "ITEM: SALES QUOT NO", required: false, example: "", description: "Nomor transaksi Penawaran Penjualan (Sales Quotation) yang terhubung dengan baris barang ini. PRIORITAS TERENDAH — diabaikan kalau Delivery Order No ATAU Sales Order No juga terisi di baris yang sama." },
+  // § Fase 77 (2026-09-09) — mirror Fase 76 tapi level EXPENSE
+  // (`detailExpense`, array TERPISAH dari `detailItem`). DIKONFIRMASI
+  // RESMI di spec Accurate. ⚠️ Array ini TIDAK punya field
+  // `deliveryOrderNumber` (beda dari `detailItem`) — cuma 2 field yang
+  // SALING TERHUBUNG di sini, prioritas: "Expense Sales Order No" >
+  // "Expense Sales Quotation No".
+  { column: "Expense Sales Order No", required: false, example: "", description: "Nomor transaksi Pesanan Penjualan (Sales Order) yang terhubung dengan baris Beban ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Expense Sales Quotation No — yang lain diabaikan." },
+  { column: "Expense Sales Quotation No", required: false, example: "", description: "Nomor transaksi Penawaran Penjualan (Sales Quotation) yang terhubung dengan baris Beban ini. PRIORITAS TERENDAH — diabaikan kalau Expense Sales Order No juga terisi di baris yang sama." },
 ];
 
 export const vendorPayableAccountTemplateGuide: TemplateFieldGuide[] = [
