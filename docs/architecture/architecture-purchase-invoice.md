@@ -188,6 +188,49 @@ itu) → **DIBLOKIR**, sama seperti baris lama tanpa tracking id-per-item
 dan ADR-0014 (koreksi "susutkan" → "blokir"), eksekusi →
 `docs/phases/phase-09-batal-import.md`.
 
+## Fase 75 — Atribut Tambahan & Kategori Keuangan (mirror Sales Invoice)
+
+**Status: Done (2026-09-09), BELUM diverifikasi end-to-end nyata.** Mirror
+LENGKAP dari implementasi Sales Invoice (Fase 55/61/64/68/73/74) — lihat
+`docs/architecture/architecture-sales-invoice.md` § "Atribut Tambahan"
+untuk narasi lengkap saga penemuan field-nya (Fase 67-73). Tiga
+mekanisme yang sama diterapkan di sini:
+
+1. **Kategori Keuangan level ITEM** (`detailItem.dataClassification1-10Name`,
+   kolom "Kategori Keuangan 1-10") — auto-create via
+   `findOrCreateDataClassification` (fungsi SAMA yang dipakai Sales
+   Invoice, reusable lintas modul). **DIKONFIRMASI ADA di spec resmi
+   Accurate untuk Purchase Invoice langsung** (`accurate-openapi.json`,
+   beda dari 2 poin di bawah).
+2. **Atribut Tambahan level FAKTUR** (`charField`/`numericField`/`dateField`
+   1-10 slot, ROOT payload, kolom "CUSTOM CHARACTER/NUMBER/DATE") dan
+   **level ITEM** (`detailItem.charField1-15`/`numericField1-10`/
+   `dateField1-2`, kolom "ITEM: CUSTOM CHARACTER/NUMBER/DATE") — field
+   API **DIASUMSIKAN konsisten** dengan Sales Invoice (API Accurate
+   konsisten lintas jenis transaksi, terbukti berulang kali untuk
+   `dataClassificationNName`), TAPI **BELUM dikonfirmasi resmi oleh
+   Accurate Support khusus untuk Purchase Invoice** (baru dikonfirmasi
+   untuk Sales Invoice, § Fase 73). Kalau ternyata beda, ini yang paling
+   mungkin perlu dikoreksi.
+3. **Level EXPENSE** (`detailExpense.accountNo`/`expenseName`/
+   `expenseAmount`/`expenseNotes`/`departmentName`/`dataClassification1-10Name`,
+   kolom "Akun Beban" dst + "Kategori Keuangan Beban 1-10") — SEMUA
+   field (termasuk `dataClassificationNName`) dikonfirmasi ADA di spec
+   resmi untuk `detailExpense` Purchase Invoice, DENGAN field TAMBAHAN
+   yang TIDAK diimplementasikan di sini (`allocateToItemCost`,
+   `chargedVendorName`, `amountCurrency`, `expenseCurrencyCode` — di
+   luar scope, bisa ditambah nanti kalau dibutuhkan).
+
+Semua kolom Excel baru (73 kolom) ditaruh **PALING AKHIR** template
+(setelah "Kategori Barang"), TIDAK diselipkan di tengah — permintaan
+eksplisit user. Scope OAuth `data_classification_view`/
+`data_classification_save` ditambah ke modul `purchase_invoice`
+(`accurate-scopes.ts`) — koneksi existing WAJIB disconnect & reconnect
+untuk dapat scope baru. 1 baris Excel bisa menyumbang 1 baris Barang
+DAN/ATAU 1 baris Beban sekaligus (`accountNo`+`expenseAmount` wajib
+dua-duanya terisi). Detail lengkap →
+`docs/phases/phase-75-atribut-tambahan-purchase-invoice.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

@@ -21,6 +21,8 @@ import {
   billNumberColumnOf,
   extractVendorCreateFields,
   extractItemCreateFields,
+  extractDataClassificationValues as extractDataClassificationValuesPI,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesPI,
   groupPurchaseInvoiceRows,
   validateGroupVendorConsistency,
   type ImportRowRecord,
@@ -95,6 +97,30 @@ async function ensureDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValues(rawRow, columnMapping), ...extractExpenseDataClassificationValues(rawRow, columnMapping)];
+    for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 75 — mirror `ensureDataClassifications` di atas, TAPI untuk
+// Purchase Invoice (extractor beda file/module, § alias
+// `extractDataClassificationValuesPI`/`extractExpenseDataClassificationValuesPI`).
+// SENGAJA fungsi terpisah (bukan 1 fungsi generik) — konsisten pola
+// "3 baris mirip lebih baik dari abstraksi prematur" yang sudah dipakai
+// di seluruh file ini (mis. `buildDetailItemFromRow` ADA di kedua
+// mapping file, isinya identik tapi tetap 2 fungsi berbeda per modul).
+async function ensurePurchaseInvoiceDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesPI(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPI(rawRow, columnMapping)];
     for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
@@ -184,6 +210,8 @@ export async function processPurchaseInvoiceGroup(
     seenItemNo.add(detailItem);
     await findOrCreateItem(ctx, detailItem, extractItemCreateFields(rawRow, columnMapping));
   }
+
+  await ensurePurchaseInvoiceDataClassifications(ctx, rawRows, columnMapping);
 
   // § Fase 09 — `result.detailItem[]` urutannya SAMA dengan `payload.detailItem`
   // yang dikirim (= `rawRows` = `group.rows`, DIKONFIRMASI test call nyata
@@ -321,6 +349,8 @@ export async function appendToExistingPurchaseInvoice(
     seenItemNo.add(itemNo);
     await findOrCreateItem(ctx, itemNo, extractItemCreateFields(rawRow, columnMapping));
   }
+
+  await ensurePurchaseInvoiceDataClassifications(ctx, newRows.map((r) => r.rawRow), columnMapping);
 
   const result = await savePurchaseInvoice(ctx, {
     id: existingId,

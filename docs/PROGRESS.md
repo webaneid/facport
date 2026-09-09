@@ -83,6 +83,7 @@
 | 72   | Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada | Done | (lihat phase doc) | `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md` |
 | 73   | Atribut Tambahan Level ITEM (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md` |
 | 74   | Kategori Keuangan Level EXPENSE (Baris Beban) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md` |
+| 75   | Atribut Tambahan & Kategori Keuangan Purchase Invoice (Mirror Sales Invoice) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-75-atribut-tambahan-purchase-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2075,3 +2076,18 @@ terisi supaya baris dianggap punya data Beban.
 
 Typecheck 0 error. Full suite `apps/api` 473 pass/0 fail (13 baru).
 Lihat `docs/phases/phase-74-atribut-tambahan-level-expense-sales-invoice.md`.
+
+## Update 2026-09-09 — Fase 75 Done: Atribut Tambahan & Kategori Keuangan Purchase Invoice (Mirror Sales Invoice)
+Mirror LENGKAP dari Sales Invoice (Fase 55/61/64/68/73/74) ke Purchase
+Invoice: Atribut Tambahan level Faktur (`charField`/`numericField`/
+`dateField` root), level Item (nested `detailItem`, 15 slot Karakter),
+Kategori Keuangan level Item (`dataClassificationNName`), dan level
+Expense (`detailExpense` + field dasar Beban). 73 kolom Excel baru,
+SEMUA ditaruh paling akhir template (tidak diselipkan di tengah, sesuai
+permintaan). Scope OAuth `data_classification_view`/`_save` ditambah ke
+modul `purchase_invoice`. `dataClassificationNName` dikonfirmasi resmi
+di spec utk PI; `charField`/`numericField`/`dateField` masih
+ekstrapolasi dari Sales Invoice (belum dikonfirmasi resmi khusus PI).
+
+Typecheck 0 error. Full suite `apps/api` 483 pass/0 fail (15 baru).
+Lihat `docs/phases/phase-75-atribut-tambahan-purchase-invoice.md`.

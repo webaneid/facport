@@ -60,6 +60,101 @@ export const purchaseInvoiceMapping = {
     useTax1: "detailItem.useTax1", // PPN
     useTax2: "detailItem.useTax2", // PPnBM
     useTax3: "detailItem.useTax3", // PPh23
+    // § Fase 75 (2026-09-09) — mirror LENGKAP dari Sales Invoice
+    // (Fase 55/61/64/68/73/74), field API SEMUA sudah diverifikasi dari
+    // spec resmi + (untuk charField/numericField/dateField) balasan
+    // resmi Accurate Support pada modul Sales Invoice — DIASUMSIKAN
+    // konsisten untuk Purchase Invoice (API Accurate konsisten lintas
+    // jenis transaksi, § riset dataClassificationNName Fase 61 yang
+    // sudah terbukti benar di 30+ endpoint). `dataClassificationNName`
+    // SUDAH dikonfirmasi ADA di `detailItem`/`detailExpense` Purchase
+    // Invoice langsung dari spec resmi (`accurate-openapi.json`) — beda
+    // dari charField/numericField/dateField yang TETAP tidak
+    // terdokumentasi resmi untuk modul mana pun (pola yang sudah
+    // berulang kali terbukti sejak Fase 64). BELUM diverifikasi end-to-
+    // end nyata khusus utk Purchase Invoice — catat di Known Limitations
+    // kalau ternyata beda.
+    //
+    // Kategori Keuangan level ITEM (dataClassificationNName).
+    attribut1: "detailItem.dataClassification1Name",
+    attribut2: "detailItem.dataClassification2Name",
+    attribut3: "detailItem.dataClassification3Name",
+    attribut4: "detailItem.dataClassification4Name",
+    attribut5: "detailItem.dataClassification5Name",
+    attribut6: "detailItem.dataClassification6Name",
+    attribut7: "detailItem.dataClassification7Name",
+    attribut8: "detailItem.dataClassification8Name",
+    attribut9: "detailItem.dataClassification9Name",
+    attribut10: "detailItem.dataClassification10Name",
+    // Atribut Tambahan level FAKTUR/HEADER (charField/numericField/dateField, ROOT payload).
+    attributHeaderKarakter1: "charField1",
+    attributHeaderKarakter2: "charField2",
+    attributHeaderKarakter3: "charField3",
+    attributHeaderKarakter4: "charField4",
+    attributHeaderKarakter5: "charField5",
+    attributHeaderKarakter6: "charField6",
+    attributHeaderKarakter7: "charField7",
+    attributHeaderKarakter8: "charField8",
+    attributHeaderKarakter9: "charField9",
+    attributHeaderKarakter10: "charField10",
+    attributHeaderAngka1: "numericField1",
+    attributHeaderAngka2: "numericField2",
+    attributHeaderAngka3: "numericField3",
+    attributHeaderAngka4: "numericField4",
+    attributHeaderAngka5: "numericField5",
+    attributHeaderAngka6: "numericField6",
+    attributHeaderAngka7: "numericField7",
+    attributHeaderAngka8: "numericField8",
+    attributHeaderAngka9: "numericField9",
+    attributHeaderAngka10: "numericField10",
+    attributHeaderTanggal1: "dateField1",
+    attributHeaderTanggal2: "dateField2",
+    // Atribut Tambahan level ITEM (charField 15 slot/numericField 10 slot/dateField 2 slot, NESTED detailItem).
+    attributItemKarakter1: "detailItem.charField1",
+    attributItemKarakter2: "detailItem.charField2",
+    attributItemKarakter3: "detailItem.charField3",
+    attributItemKarakter4: "detailItem.charField4",
+    attributItemKarakter5: "detailItem.charField5",
+    attributItemKarakter6: "detailItem.charField6",
+    attributItemKarakter7: "detailItem.charField7",
+    attributItemKarakter8: "detailItem.charField8",
+    attributItemKarakter9: "detailItem.charField9",
+    attributItemKarakter10: "detailItem.charField10",
+    attributItemKarakter11: "detailItem.charField11",
+    attributItemKarakter12: "detailItem.charField12",
+    attributItemKarakter13: "detailItem.charField13",
+    attributItemKarakter14: "detailItem.charField14",
+    attributItemKarakter15: "detailItem.charField15",
+    attributItemAngka1: "detailItem.numericField1",
+    attributItemAngka2: "detailItem.numericField2",
+    attributItemAngka3: "detailItem.numericField3",
+    attributItemAngka4: "detailItem.numericField4",
+    attributItemAngka5: "detailItem.numericField5",
+    attributItemAngka6: "detailItem.numericField6",
+    attributItemAngka7: "detailItem.numericField7",
+    attributItemAngka8: "detailItem.numericField8",
+    attributItemAngka9: "detailItem.numericField9",
+    attributItemAngka10: "detailItem.numericField10",
+    attributItemTanggal1: "detailItem.dateField1",
+    attributItemTanggal2: "detailItem.dateField2",
+    // Level EXPENSE (baris Beban, `detailExpense[]` — array TERPISAH
+    // dari `detailItem[]`). Kategori Keuangan level Expense pakai field
+    // API SAMA (`dataClassificationNName`), cuma nempel array beda.
+    expenseAccountNo: "detailExpense.accountNo",
+    expenseName: "detailExpense.expenseName",
+    expenseAmount: "detailExpense.expenseAmount",
+    expenseNotes: "detailExpense.expenseNotes",
+    expenseDepartmentName: "detailExpense.departmentName",
+    expenseKategoriKeuangan1: "detailExpense.dataClassification1Name",
+    expenseKategoriKeuangan2: "detailExpense.dataClassification2Name",
+    expenseKategoriKeuangan3: "detailExpense.dataClassification3Name",
+    expenseKategoriKeuangan4: "detailExpense.dataClassification4Name",
+    expenseKategoriKeuangan5: "detailExpense.dataClassification5Name",
+    expenseKategoriKeuangan6: "detailExpense.dataClassification6Name",
+    expenseKategoriKeuangan7: "detailExpense.dataClassification7Name",
+    expenseKategoriKeuangan8: "detailExpense.dataClassification8Name",
+    expenseKategoriKeuangan9: "detailExpense.dataClassification9Name",
+    expenseKategoriKeuangan10: "detailExpense.dataClassification10Name",
   } as const,
   // Mapping default (bisa di-override user lewat UI "cocokkan kolom" saat
   // upload) — key = nama kolom Excel yang diharapkan (ikut pola template
@@ -100,6 +195,84 @@ export const purchaseInvoiceMapping = {
     PPN: "useTax1",
     PPnBM: "useTax2",
     PPH: "useTax3",
+    // § Fase 75 (2026-09-09) — SEMUA ditaruh PALING AKHIR (setelah
+    // seluruh kolom existing), TIDAK diselipkan di tengah — sesuai
+    // permintaan. Nama kolom PERSIS sama dengan Sales Invoice supaya
+    // konsisten lintas modul.
+    "CUSTOM CHARACTER 1": "attributHeaderKarakter1",
+    "CUSTOM CHARACTER 2": "attributHeaderKarakter2",
+    "CUSTOM CHARACTER 3": "attributHeaderKarakter3",
+    "CUSTOM CHARACTER 4": "attributHeaderKarakter4",
+    "CUSTOM CHARACTER 5": "attributHeaderKarakter5",
+    "CUSTOM CHARACTER 6": "attributHeaderKarakter6",
+    "CUSTOM CHARACTER 7": "attributHeaderKarakter7",
+    "CUSTOM CHARACTER 8": "attributHeaderKarakter8",
+    "CUSTOM CHARACTER 9": "attributHeaderKarakter9",
+    "CUSTOM CHARACTER 10": "attributHeaderKarakter10",
+    "CUSTOM NUMBER 1": "attributHeaderAngka1",
+    "CUSTOM NUMBER 2": "attributHeaderAngka2",
+    "CUSTOM NUMBER 3": "attributHeaderAngka3",
+    "CUSTOM NUMBER 4": "attributHeaderAngka4",
+    "CUSTOM NUMBER 5": "attributHeaderAngka5",
+    "CUSTOM NUMBER 6": "attributHeaderAngka6",
+    "CUSTOM NUMBER 7": "attributHeaderAngka7",
+    "CUSTOM NUMBER 8": "attributHeaderAngka8",
+    "CUSTOM NUMBER 9": "attributHeaderAngka9",
+    "CUSTOM NUMBER 10": "attributHeaderAngka10",
+    "CUSTOM DATE 1": "attributHeaderTanggal1",
+    "CUSTOM DATE 2": "attributHeaderTanggal2",
+    "ITEM: CUSTOM CHARACTER 1": "attributItemKarakter1",
+    "ITEM: CUSTOM CHARACTER 2": "attributItemKarakter2",
+    "ITEM: CUSTOM CHARACTER 3": "attributItemKarakter3",
+    "ITEM: CUSTOM CHARACTER 4": "attributItemKarakter4",
+    "ITEM: CUSTOM CHARACTER 5": "attributItemKarakter5",
+    "ITEM: CUSTOM CHARACTER 6": "attributItemKarakter6",
+    "ITEM: CUSTOM CHARACTER 7": "attributItemKarakter7",
+    "ITEM: CUSTOM CHARACTER 8": "attributItemKarakter8",
+    "ITEM: CUSTOM CHARACTER 9": "attributItemKarakter9",
+    "ITEM: CUSTOM CHARACTER 10": "attributItemKarakter10",
+    "ITEM: CUSTOM CHARACTER 11": "attributItemKarakter11",
+    "ITEM: CUSTOM CHARACTER 12": "attributItemKarakter12",
+    "ITEM: CUSTOM CHARACTER 13": "attributItemKarakter13",
+    "ITEM: CUSTOM CHARACTER 14": "attributItemKarakter14",
+    "ITEM: CUSTOM CHARACTER 15": "attributItemKarakter15",
+    "ITEM: CUSTOM NUMBER 1": "attributItemAngka1",
+    "ITEM: CUSTOM NUMBER 2": "attributItemAngka2",
+    "ITEM: CUSTOM NUMBER 3": "attributItemAngka3",
+    "ITEM: CUSTOM NUMBER 4": "attributItemAngka4",
+    "ITEM: CUSTOM NUMBER 5": "attributItemAngka5",
+    "ITEM: CUSTOM NUMBER 6": "attributItemAngka6",
+    "ITEM: CUSTOM NUMBER 7": "attributItemAngka7",
+    "ITEM: CUSTOM NUMBER 8": "attributItemAngka8",
+    "ITEM: CUSTOM NUMBER 9": "attributItemAngka9",
+    "ITEM: CUSTOM NUMBER 10": "attributItemAngka10",
+    "ITEM: CUSTOM DATE 1": "attributItemTanggal1",
+    "ITEM: CUSTOM DATE 2": "attributItemTanggal2",
+    "Kategori Keuangan 1": "attribut1",
+    "Kategori Keuangan 2": "attribut2",
+    "Kategori Keuangan 3": "attribut3",
+    "Kategori Keuangan 4": "attribut4",
+    "Kategori Keuangan 5": "attribut5",
+    "Kategori Keuangan 6": "attribut6",
+    "Kategori Keuangan 7": "attribut7",
+    "Kategori Keuangan 8": "attribut8",
+    "Kategori Keuangan 9": "attribut9",
+    "Kategori Keuangan 10": "attribut10",
+    "Akun Beban": "expenseAccountNo",
+    "Nama Beban": "expenseName",
+    "Jumlah Beban": "expenseAmount",
+    "Catatan Beban": "expenseNotes",
+    "Beban - Department": "expenseDepartmentName",
+    "Kategori Keuangan Beban 1": "expenseKategoriKeuangan1",
+    "Kategori Keuangan Beban 2": "expenseKategoriKeuangan2",
+    "Kategori Keuangan Beban 3": "expenseKategoriKeuangan3",
+    "Kategori Keuangan Beban 4": "expenseKategoriKeuangan4",
+    "Kategori Keuangan Beban 5": "expenseKategoriKeuangan5",
+    "Kategori Keuangan Beban 6": "expenseKategoriKeuangan6",
+    "Kategori Keuangan Beban 7": "expenseKategoriKeuangan7",
+    "Kategori Keuangan Beban 8": "expenseKategoriKeuangan8",
+    "Kategori Keuangan Beban 9": "expenseKategoriKeuangan9",
+    "Kategori Keuangan Beban 10": "expenseKategoriKeuangan10",
   } as Record<string, string>,
 };
 
@@ -166,7 +339,9 @@ export type ItemAutoCreateField = keyof typeof itemAutoCreateMapping.fieldToAccu
 // ditolak "Invalid field value"). Excel bisa kasih tanggal dalam berbagai
 // bentuk (serial number, Date object, string ISO, string DD/MM/YYYY) —
 // normalisasi semua ke format yang Accurate terima.
-const DATE_FIELDS = new Set<PurchaseInvoiceField>(["transDate", "taxDate", "shipDate"]);
+// § Fase 75 — attributHeaderTanggal1/2 (level FAKTUR) dan
+// attributItemTanggal1/2 (level ITEM) ikut ditambahkan.
+const DATE_FIELDS = new Set<PurchaseInvoiceField>(["transDate", "taxDate", "shipDate", "attributHeaderTanggal1", "attributHeaderTanggal2", "attributItemTanggal1", "attributItemTanggal2"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § Fase 66 — bug ditemukan di Sales Invoice (mirror 1:1 modul ini,
@@ -241,12 +416,21 @@ export function buildPurchaseInvoicePayload(
 
   const payload: Record<string, unknown> = {};
   for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
-    if (accuratePath.startsWith("detailItem.")) continue;
+    // § Fase 75 — "detailExpense." JUGA di-skip (mirror Sales Invoice
+    // Fase 74), field itu masuk array `detailExpense[]` terpisah.
+    if (accuratePath.startsWith("detailItem.") || accuratePath.startsWith("detailExpense.")) continue;
     const value = headerValues[field as PurchaseInvoiceField];
     if (value !== undefined) payload[accuratePath] = value;
   }
 
   payload.detailItem = rawRows.map((rawRow) => buildDetailItemFromRow(rawRow, columnMapping));
+
+  // § Fase 75 — mirror Sales Invoice Fase 74: 1 baris BISA sumbang 1
+  // entri `detailExpense` TERPISAH dari `detailItem`-nya, kalau kolom
+  // Beban terisi di baris itu. `payload.detailExpense` cuma disertakan
+  // kalau ADA minimal 1 baris yang isi Beban.
+  const detailExpense = rawRows.map((rawRow) => buildDetailExpenseFromRow(rawRow, columnMapping)).filter((entry): entry is Record<string, unknown> => entry !== null);
+  if (detailExpense.length > 0) payload.detailExpense = detailExpense;
 
   return payload;
 }
@@ -267,6 +451,27 @@ export function buildDetailItemFromRow(
     if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
   }
   return detailItem;
+}
+
+// § Fase 75 — mirror `buildDetailItemFromRow`/Sales Invoice
+// `buildDetailExpenseFromRow` (Fase 74), untuk array `detailExpense`
+// (baris Beban). `accountNo`+`expenseAmount` WAJIB dua-duanya terisi
+// supaya baris dianggap punya data Beban yang valid — kalau salah satu
+// kosong, baris ini dianggap TIDAK punya data Beban sama sekali
+// (return `null`).
+export function buildDetailExpenseFromRow(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): Record<string, unknown> | null {
+  const rowValues = extractRowValues(rawRow, columnMapping);
+  const detailExpense: Record<string, unknown> = {};
+  for (const [field, accuratePath] of Object.entries(purchaseInvoiceMapping.fieldToAccuratePath)) {
+    if (!accuratePath.startsWith("detailExpense.")) continue;
+    const value = rowValues[field as PurchaseInvoiceField];
+    if (value !== undefined) detailExpense[accuratePath.slice("detailExpense.".length)] = value;
+  }
+  if (detailExpense.accountNo === undefined || detailExpense.expenseAmount === undefined) return null;
+  return detailExpense;
 }
 
 // § Fase 06, ADR-0011 — grouping baris Excel jadi 1 Faktur Pembelian
@@ -395,4 +600,38 @@ export function extractItemCreateFields(
     if (value !== undefined) payload[accuratePath] = value;
   }
   return payload;
+}
+
+// § Fase 75 — mirror `extractDataClassificationValues` Sales Invoice
+// (Fase 68). Daftar (index, name) Kategori Keuangan level ITEM yang
+// TERISI di 1 baris, dipakai worker untuk auto-create
+// (`findOrCreateDataClassification`) SEBELUM kirim payload faktur.
+export function extractDataClassificationValues(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): { index: number; name: string }[] {
+  const result: { index: number; name: string }[] = [];
+  for (let index = 1; index <= 10; index++) {
+    const value = rawValueFor(rawRow, columnMapping, `attribut${index}`);
+    if (value === undefined) continue;
+    const name = String(value).trim();
+    if (name !== "") result.push({ index, name });
+  }
+  return result;
+}
+
+// § Fase 75 — mirror `extractExpenseDataClassificationValues` Sales
+// Invoice (Fase 74). Kategori Keuangan level EXPENSE.
+export function extractExpenseDataClassificationValues(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): { index: number; name: string }[] {
+  const result: { index: number; name: string }[] = [];
+  for (let index = 1; index <= 10; index++) {
+    const value = rawValueFor(rawRow, columnMapping, `expenseKategoriKeuangan${index}`);
+    if (value === undefined) continue;
+    const name = String(value).trim();
+    if (name !== "") result.push({ index, name });
+  }
+  return result;
 }
