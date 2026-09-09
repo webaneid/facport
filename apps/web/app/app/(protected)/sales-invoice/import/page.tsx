@@ -28,8 +28,9 @@ const ACCURATE_FIELDS = [
   { value: "number", label: "Nomor Transaksi (wajib, unik per transaksi)" },
   // § Fase 70 — label diganti "Nomor PO Customer" -> "Bill No",
   // konsisten dengan judul kolom template (client minta samakan istilah
-  // dengan Purchase Invoice).
-  { value: "poNumber", label: "Bill No (Nomor PO Customer, isi sama untuk gabung jadi 1 faktur)" },
+  // dengan Purchase Invoice). § Fase 77 (2026-09-09) — DIKEMBALIKAN ke
+  // "PO No" (client minta singkron dengan nama field ASLI Accurate).
+  { value: "poNumber", label: "PO No (Nomor PO Customer, isi sama untuk gabung jadi 1 faktur)" },
   { value: "description", label: "Keterangan" },
   { value: "currencyCode", label: "Kode Mata Uang" },
   { value: "rate", label: "Nilai Tukar" },
@@ -136,24 +137,38 @@ const ACCURATE_FIELDS = [
   { value: "attributItemTanggal1", label: "Atribut Tambahan Tanggal 1 (per barang)" },
   { value: "attributItemTanggal2", label: "Atribut Tambahan Tanggal 2 (per barang)" },
   // § Fase 74 (2026-09-09) — level EXPENSE (baris Beban, `detailExpense[]`,
-  // ARRAY TERPISAH dari baris Barang). "Akun Beban" + "Jumlah Beban"
-  // WAJIB dua-duanya terisi di 1 baris supaya baris itu dianggap punya
-  // data Beban.
-  { value: "expenseAccountNo", label: "Akun Beban (wajib bersama Jumlah Beban)" },
-  { value: "expenseName", label: "Nama Beban" },
-  { value: "expenseAmount", label: "Jumlah Beban (wajib bersama Akun Beban)" },
-  { value: "expenseNotes", label: "Catatan Beban" },
-  { value: "expenseDepartmentName", label: "Departemen Beban" },
-  { value: "expenseKategoriKeuangan1", label: "Kategori Keuangan Beban 1 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan2", label: "Kategori Keuangan Beban 2 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan3", label: "Kategori Keuangan Beban 3 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan4", label: "Kategori Keuangan Beban 4 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan5", label: "Kategori Keuangan Beban 5 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan6", label: "Kategori Keuangan Beban 6 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan7", label: "Kategori Keuangan Beban 7 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan8", label: "Kategori Keuangan Beban 8 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan9", label: "Kategori Keuangan Beban 9 (per baris Beban)" },
-  { value: "expenseKategoriKeuangan10", label: "Kategori Keuangan Beban 10 (per baris Beban)" },
+  // ARRAY TERPISAH dari baris Barang). "Expense Acc No" + "Expense
+  // Amount" WAJIB dua-duanya terisi di 1 baris supaya baris itu dianggap
+  // punya data Beban. § Fase 77 (2026-09-09) — label diganti ke Bahasa
+  // Inggris (client minta "expense diubah semua jadi bhs inggris").
+  { value: "expenseAccountNo", label: "Expense Acc No (wajib bersama Expense Amount)" },
+  { value: "expenseName", label: "Expense Name" },
+  { value: "expenseAmount", label: "Expense Amount (wajib bersama Expense Acc No)" },
+  { value: "expenseNotes", label: "Expense Note" },
+  { value: "expenseDepartmentName", label: "Expense Department" },
+  { value: "expenseKategoriKeuangan1", label: "Expense Financial Category 1 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan2", label: "Expense Financial Category 2 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan3", label: "Expense Financial Category 3 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan4", label: "Expense Financial Category 4 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan5", label: "Expense Financial Category 5 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan6", label: "Expense Financial Category 6 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan7", label: "Expense Financial Category 7 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan8", label: "Expense Financial Category 8 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan9", label: "Expense Financial Category 9 (per baris Beban)" },
+  { value: "expenseKategoriKeuangan10", label: "Expense Financial Category 10 (per baris Beban)" },
+  // § Fase 76 (2026-09-09) — link alur penjualan (Penawaran -> Pesanan
+  // -> Pengiriman -> Faktur), level ITEM. Saling terhubung — cuma 1
+  // yang diproses kalau diisi bersamaan (prioritas: Delivery > Sales
+  // Order > Sales Quotation).
+  { value: "itemDeliveryOrderNo", label: "No. Delivery Order (per barang, prioritas tertinggi)" },
+  { value: "itemSalesOrderNo", label: "No. Sales Order (per barang)" },
+  { value: "itemSalesQuotationNo", label: "No. Sales Quotation (per barang, prioritas terendah)" },
+  // § Fase 77 (2026-09-09) — mirror Fase 76 tapi level EXPENSE
+  // (`detailExpense`, array TERPISAH). Array ini TIDAK punya field
+  // Delivery Order — cuma 2 field yang saling terhubung (prioritas:
+  // Sales Order > Sales Quotation).
+  { value: "expenseSalesOrderNo", label: "Expense Sales Order No (per baris Beban, prioritas tertinggi)" },
+  { value: "expenseSalesQuotationNo", label: "Expense Sales Quotation No (per baris Beban, prioritas terendah)" },
 ] as const;
 
 const uploadSchema = z.object({

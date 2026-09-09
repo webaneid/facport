@@ -479,3 +479,59 @@ describe("extractDataClassificationValues & extractExpenseDataClassificationValu
     expect(extractExpenseDataClassificationValues(rawRow, columnMapping)).toEqual([{ index: 1, name: "KATKEG BEBAN 1" }]);
   });
 });
+
+// § Fase 79 (2026-09-09) — mirror Fase 76/77 (Sales Invoice), tapi field
+// API sisi PEMBELIAN: `detailItem.receiveItemNumber`/`purchaseOrderNumber`/
+// `purchaseRequisitionNumber` (DIKONFIRMASI RESMI di spec Accurate) dan
+// `detailExpense.purchaseOrderNumber` (cuma 1 field, TIDAK ada
+// receiveItemNumber/purchaseRequisitionNumber di array Expense).
+describe("link alur pembelian level ITEM & EXPENSE — Fase 79", () => {
+  test("Receive Item No/Purchase Order No/Purchase Requisition No masuk ke detailItem, BUKAN root", () => {
+    const rawRow = {
+      "Vendor No": "V-1",
+      "Kode Barang": "BRG-1",
+      "ITEM: RECEIVE ITEM NO": "RI-001",
+      "ITEM: PURCHASE ORDER NO": "PO-001",
+      "ITEM: PURCHASE REQUISITION NO": "PR-001",
+    };
+    const columnMapping = {
+      "Vendor No": "vendorNo",
+      "Kode Barang": "itemNo",
+      "ITEM: RECEIVE ITEM NO": "itemReceiveItemNo",
+      "ITEM: PURCHASE ORDER NO": "itemPurchaseOrderNo",
+      "ITEM: PURCHASE REQUISITION NO": "itemPurchaseRequisitionNo",
+    };
+    const payload = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(payload.receiveItemNumber).toBeUndefined();
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.receiveItemNumber).toBe("RI-001");
+    expect(detail.purchaseOrderNumber).toBe("PO-001");
+    expect(detail.purchaseRequisitionNumber).toBe("PR-001");
+  });
+
+  test("PO No Beban masuk ke detailExpense, BUKAN detailItem", () => {
+    const rawRow = {
+      "Vendor No": "V-1",
+      "Akun Beban": "6-10100",
+      "Jumlah Beban": 50000,
+      "Beban - PO No": "PO-EXP-001",
+    };
+    const columnMapping = {
+      "Vendor No": "vendorNo",
+      "Akun Beban": "expenseAccountNo",
+      "Jumlah Beban": "expenseAmount",
+      "Beban - PO No": "expensePurchaseOrderNo",
+    };
+    const payload = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    const detail = (payload.detailExpense as Record<string, unknown>[])[0]!;
+    expect(detail.purchaseOrderNumber).toBe("PO-EXP-001");
+    expect(detail.receiveItemNumber).toBeUndefined();
+  });
+
+  test("defaultColumnMap — nama kolom sesuai", () => {
+    expect(purchaseInvoiceMapping.defaultColumnMap["ITEM: RECEIVE ITEM NO"]).toBe("itemReceiveItemNo");
+    expect(purchaseInvoiceMapping.defaultColumnMap["ITEM: PURCHASE ORDER NO"]).toBe("itemPurchaseOrderNo");
+    expect(purchaseInvoiceMapping.defaultColumnMap["ITEM: PURCHASE REQUISITION NO"]).toBe("itemPurchaseRequisitionNo");
+    expect(purchaseInvoiceMapping.defaultColumnMap["Beban - PO No"]).toBe("expensePurchaseOrderNo");
+  });
+});

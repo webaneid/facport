@@ -231,6 +231,40 @@ DAN/ATAU 1 baris Beban sekaligus (`accountNo`+`expenseAmount` wajib
 dua-duanya terisi). Detail lengkap →
 `docs/phases/phase-75-atribut-tambahan-purchase-invoice.md`.
 
+> **Update 2026-09-09 (Fase 78) — BUG DITEMUKAN & DIPERBAIKI**: sejak
+> ADR-0026 (commit `1bc9256`), scope OAuth `vendor_view`/`vendor_save`
+> TIDAK ADA LAGI di daftar scope `purchase_invoice` (dipindah SEPENUHNYA
+> ke `vendor_payable_account` dengan asumsi keliru cuma dipakai fitur
+> "Import Akun Hutang Pemasok"). Padahal `findOrCreateVendor` (Fase 05)
+> — dipanggil UNCONDITIONAL di SETIAP grup import Purchase Invoice untuk
+> cek/bikin vendor, fitur INTI yang tidak terkait Akun Hutang Pemasok
+> sama sekali — JUGA butuh scope ini. Akibatnya SEMUA subscriber
+> Purchase Invoice TANPA subscribe Akun Hutang Pemasok gagal `HTTP 403`
+> di baris pertama SETIAP grup, sejak commit itu deploy — baru ketahuan
+> sekarang lewat retest client. **Fix**: `vendor_view`/`vendor_save`
+> DIKEMBALIKAN ke scope `purchase_invoice` (TETAP juga ada di
+> `vendor_payable_account`, 2 modul sama-sama butuh scope yang sama
+> untuk 2 fitur berbeda). Koneksi Purchase Invoice existing WAJIB
+> disconnect+reconnect setelah fix ini deploy. Detail →
+> `docs/phases/phase-78-fix-scope-vendor-purchase-invoice.md`,
+> `docs/lessons-learned.md` 2026-09-09.
+
+> **Update 2026-09-09 (Fase 79)** — Field link alur PEMBELIAN
+> (Permintaan Pembelian → Pesanan Pembelian → Penerimaan Barang →
+> Faktur) ditambahkan, mirror Fase 76/77 Sales Invoice tapi field API
+> BEDA (sisi beli, bukan jual) — DIKONFIRMASI RESMI di spec Accurate.
+> Level ITEM: `detailItem.receiveItemNumber`/`purchaseOrderNumber`/
+> `purchaseRequisitionNumber` (⚠️ SALING TERHUBUNG, prioritas:
+> `receiveItemNumber` > `purchaseOrderNumber` >
+> `purchaseRequisitionNumber`). Level EXPENSE:
+> `detailExpense.purchaseOrderNumber` (cuma 1 field, tanpa masalah
+> prioritas — `detailExpense` Purchase Invoice TIDAK punya
+> `receiveItemNumber`/`purchaseRequisitionNumber`). Kolom "Beban - PO
+> No" TETAP di dalam grup Beban template, kolom ITEM ("ITEM: RECEIVE
+> ITEM NO" dst) di PALING AKHIR (setelah SELURUH grup Expense) — sesuai
+> instruksi eksplisit user soal urutan penempatan kolom baru. Detail →
+> `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

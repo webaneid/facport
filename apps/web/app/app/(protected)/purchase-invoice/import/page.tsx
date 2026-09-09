@@ -146,6 +146,14 @@ const ACCURATE_FIELDS = [
   { value: "expenseKategoriKeuangan8", label: "Kategori Keuangan Beban 8 (per baris Beban)" },
   { value: "expenseKategoriKeuangan9", label: "Kategori Keuangan Beban 9 (per baris Beban)" },
   { value: "expenseKategoriKeuangan10", label: "Kategori Keuangan Beban 10 (per baris Beban)" },
+  // § Fase 79 (2026-09-09) — link alur pembelian (Permintaan Pembelian
+  // -> Pesanan Pembelian -> Penerimaan Barang -> Faktur). "PO No Beban"
+  // tetap bagian grup Beban, field level ITEM saling terhubung (prioritas:
+  // Receive Item > Purchase Order > Purchase Requisition).
+  { value: "expensePurchaseOrderNo", label: "PO No Beban (per baris Beban)" },
+  { value: "itemReceiveItemNo", label: "No. Receive Item (per barang, prioritas tertinggi)" },
+  { value: "itemPurchaseOrderNo", label: "No. Purchase Order (per barang)" },
+  { value: "itemPurchaseRequisitionNo", label: "No. Purchase Requisition (per barang, prioritas terendah)" },
 ] as const;
 
 const uploadSchema = z.object({
