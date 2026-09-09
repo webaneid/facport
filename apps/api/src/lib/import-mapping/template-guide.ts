@@ -130,6 +130,10 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Jumlah Beban", required: false, example: "50000", description: "Nominal Beban. Angka polos, TANPA titik/koma pemisah ribuan — WAJIB diisi bersama \"Akun Beban\"." },
   { column: "Catatan Beban", required: false, example: "", description: "Catatan tambahan untuk Beban ini." },
   { column: "Beban - Department", required: false, example: "", description: "Nama departemen untuk Beban ini (kalau akun Accurate pakai tracking departemen)." },
+  // § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE, dikonfirmasi
+  // lewat test call nyata untuk Sales Invoice (field API TIDAK ADA di
+  // spec resmi publik, pola sama dengan charField/numericField/dateField).
+  { column: "Beban - Proyek", required: false, example: "", description: "Kode proyek untuk Beban ini PERSIS seperti terdaftar di Accurate (kalau akun Accurate pakai tracking proyek)." },
   { column: "Kategori Keuangan Beban 1", required: false, example: "", description: "Atribut Tambahan 1 level EXPENSE (per baris Beban, field API SAMA dengan Kategori Keuangan level Item — detailExpense.dataClassification1Name). Maksimal 10 slot." },
   { column: "Kategori Keuangan Beban 2", required: false, example: "", description: "Atribut Tambahan 2 level EXPENSE — sama pola nomor 1." },
   { column: "Kategori Keuangan Beban 3", required: false, example: "", description: "Atribut Tambahan 3 level EXPENSE — sama pola nomor 1." },
@@ -333,6 +337,13 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Expense Amount", required: false, example: "50000", description: "Nominal Beban. Angka polos, TANPA titik/koma pemisah ribuan — WAJIB diisi bersama \"Expense Acc No\"." },
   { column: "Expense Note", required: false, example: "", description: "Catatan tambahan untuk Beban ini." },
   { column: "Expense Department", required: false, example: "", description: "Nama departemen untuk Beban ini (kalau akun Accurate pakai tracking departemen)." },
+  // § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE
+  // (`detailExpense.projectNo`), DIKONFIRMASI lewat TEST CALL NYATA ke
+  // `/api/sales-invoice/save.do` (bukan tebakan) — field ini TIDAK ADA
+  // di spec resmi publik, pola sama dengan saga charField/numericField/
+  // dateField (Fase 64/73): spec resmi tidak lengkap, field-nya tetap
+  // benar-benar ada di API sungguhan.
+  { column: "Expense Project No", required: false, example: "", description: "Kode proyek untuk Beban ini PERSIS seperti terdaftar di Accurate (kalau akun Accurate pakai tracking proyek)." },
   { column: "Expense Financial Category 1", required: false, example: "", description: "Atribut Tambahan 1 level EXPENSE (per baris Beban, field API SAMA dengan Kategori Keuangan level Item — detailExpense.dataClassification1Name). Maksimal 10 slot." },
   { column: "Expense Financial Category 2", required: false, example: "", description: "Atribut Tambahan 2 level EXPENSE — sama pola nomor 1." },
   { column: "Expense Financial Category 3", required: false, example: "", description: "Atribut Tambahan 3 level EXPENSE — sama pola nomor 1." },

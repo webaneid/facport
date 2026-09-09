@@ -88,6 +88,7 @@
 | 77   | "PO No" Rename, Expense Bahasa Inggris, Link Alur Penjualan Level EXPENSE (Sales Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-77-po-no-rename-expense-english-link-expense.md` |
 | 78   | Fix Scope `vendor_view`/`vendor_save` Hilang dari Purchase Invoice (Bug ADR-0026) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-78-fix-scope-vendor-purchase-invoice.md` |
 | 79   | Link Alur Pembelian Level ITEM & EXPENSE (Purchase Invoice) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md` |
+| 80   | Field "Proyek" Level EXPENSE (Sales Invoice & Purchase Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-80-expense-project-no.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2164,3 +2165,19 @@ grup Expense — sesuai klarifikasi eksplisit user soal urutan penempatan.
 Typecheck 0 error. Full suite `apps/api` 495 pass/0 fail (3 baru). Dev
 DB dibersihkan. Lihat
 `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md`.
+
+## Update 2026-09-09 — Fase 80 Done: Field "Proyek" Level EXPENSE (Sales Invoice & Purchase Invoice)
+Client tunjukkan form Accurate "Biaya Lainnya" yang punya field
+"Proyek" — cek awal ke spec resmi bilang field ini tidak ada (kesimpulan
+KELIRU, sama pola dengan saga charField dulu). Dikoreksi lewat TEST CALL
+NYATA: kirim payload `detailExpense: [{..., projectNo: "TES01"}]` ke
+`/api/sales-invoice/save.do` via environment local dev — BERHASIL
+disimpan, `detail.do` konfirmasi project ter-resolve benar. Field API
+`detailExpense.projectNo` CONFIRMED (bukan tebakan) untuk Sales Invoice;
+mirror ke Purchase Invoice DIASUMSIKAN konsisten (belum diverifikasi
+langsung, dicatat di Known Limitations). Kolom "Expense Project No"
+(SI)/"Beban - Proyek" (PI) ditaruh DI DALAM grup Beban.
+
+Typecheck 0 error. Full suite `apps/api` 499 pass/0 fail (4 baru). Dev
+DB dibersihkan, transaksi test verifikasi dihapus. Lihat
+`docs/phases/phase-80-expense-project-no.md`.

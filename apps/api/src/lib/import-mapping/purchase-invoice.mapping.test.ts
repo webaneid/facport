@@ -535,3 +535,22 @@ describe("link alur pembelian level ITEM & EXPENSE — Fase 79", () => {
     expect(purchaseInvoiceMapping.defaultColumnMap["Beban - PO No"]).toBe("expensePurchaseOrderNo");
   });
 });
+
+// § Fase 80 (2026-09-09) — field "Proyek" level EXPENSE
+// (`detailExpense.projectNo`), mirror Sales Invoice (dikonfirmasi test
+// call nyata di sana; DIASUMSIKAN konsisten di Purchase Invoice, BELUM
+// dites langsung — § Known Limitations phase doc).
+describe("Beban - Proyek (detailExpense.projectNo) — Fase 80", () => {
+  test("masuk ke detailExpense, BUKAN root", () => {
+    const rawRow = { "Vendor No": "V-1", "Akun Beban": "6-10100", "Jumlah Beban": 50000, "Beban - Proyek": "TES01" };
+    const columnMapping = { "Vendor No": "vendorNo", "Akun Beban": "expenseAccountNo", "Jumlah Beban": "expenseAmount", "Beban - Proyek": "expenseProjectNo" };
+    const payload = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(payload.projectNo).toBeUndefined();
+    const detail = (payload.detailExpense as Record<string, unknown>[])[0]!;
+    expect(detail.projectNo).toBe("TES01");
+  });
+
+  test("defaultColumnMap — nama kolom sesuai", () => {
+    expect(purchaseInvoiceMapping.defaultColumnMap["Beban - Proyek"]).toBe("expenseProjectNo");
+  });
+});
