@@ -1,3 +1,8 @@
+## <small>1.22.1 (2026-09-09)</small>
+
+* Merge pull request #47 from webaneid/develop ([eda5d2c](https://github.com/webaneid/facport/commit/eda5d2c)), closes [#47](https://github.com/webaneid/facport/issues/47)
+* fix: grouping Trans No untuk Purchase Invoice, guard idempotent saat faktur dihapus di Accurate ([c9175b4](https://github.com/webaneid/facport/commit/c9175b4))
+
 ## 1.22.0 (2026-09-09)
 
 * Merge pull request #46 from webaneid/develop ([5789068](https://github.com/webaneid/facport/commit/5789068)), closes [#46](https://github.com/webaneid/facport/issues/46)
