@@ -153,6 +153,49 @@ describe("groupPurchaseInvoiceRows", () => {
     expect(groups.length).toBe(1);
     expect(groups[0]!.rows.length).toBe(2);
   });
+
+  // § Fase 81 (2026-09-09) — mirror Fase 49 Sales Invoice: client
+  // konfirmasi "Bill No boleh sama walau beda transaksi, Trans No harus
+  // unik" — Trans No (`number`) DIUTAMAKAN, Bill No cuma fallback.
+  describe("Fase 81 — prioritas Trans No", () => {
+    const mappingDenganKeduanya = { "Trans No": "number", "Bill No": "billNumber", "Vendor No": "vendorNo" };
+
+    test("Trans No terisi, Bill No kosong -> tetap tergabung 1 faktur", () => {
+      const rows = [
+        row("1", { "Trans No": "PI.2026.01.00004", "Vendor No": "V1" }),
+        row("2", { "Trans No": "PI.2026.01.00004", "Vendor No": "V1" }),
+        row("3", { "Trans No": "PI.2026.01.00002", "Vendor No": "V1" }),
+      ];
+      const groups = groupPurchaseInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(2);
+      expect(groups[0]!.rows.length).toBe(2);
+      expect(groups[0]!.groupKey).toBe("PI.2026.01.00004");
+      expect(groups[0]!.groupColumn).toBe("Trans No");
+    });
+
+    test("Trans No DAN Bill No sama-sama terisi -> Trans No yang dipakai", () => {
+      const rows = [
+        row("1", { "Trans No": "PI-001", "Bill No": "INV-999" }),
+        row("2", { "Trans No": "PI-001", "Bill No": "INV-999" }),
+      ];
+      const groups = groupPurchaseInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(1);
+      expect(groups[0]!.groupColumn).toBe("Trans No");
+    });
+
+    test("Trans No kosong tapi Bill No terisi -> fallback ke Bill No (behavior lama)", () => {
+      const rows = [row("1", { "Bill No": "INV-001" }), row("2", { "Bill No": "INV-001" })];
+      const groups = groupPurchaseInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(1);
+      expect(groups[0]!.groupColumn).toBe("Bill No");
+    });
+
+    test("keduanya kosong -> tetap 1 baris = 1 faktur sendiri", () => {
+      const rows = [row("1", { "Vendor No": "V1" }), row("2", { "Vendor No": "V1" })];
+      const groups = groupPurchaseInvoiceRows(rows, mappingDenganKeduanya);
+      expect(groups.length).toBe(2);
+    });
+  });
 });
 
 describe("validateGroupVendorConsistency", () => {
@@ -164,7 +207,8 @@ describe("validateGroupVendorConsistency", () => {
 
   test("vendorNo beda dalam 1 grup -> return pesan error", () => {
     const group = {
-      billNumber: "INV-001",
+      groupKey: "INV-001",
+      groupColumn: "Bill No",
       rows: [row("1", { "Vendor No": "V1" }), row("2", { "Vendor No": "V2" })],
     };
     const result = validateGroupVendorConsistency(group, columnMapping);
@@ -174,14 +218,15 @@ describe("validateGroupVendorConsistency", () => {
 
   test("vendorNo sama dalam 1 grup -> return null", () => {
     const group = {
-      billNumber: "INV-001",
+      groupKey: "INV-001",
+      groupColumn: "Bill No",
       rows: [row("1", { "Vendor No": "V1" }), row("2", { "Vendor No": "V1" })],
     };
     expect(validateGroupVendorConsistency(group, columnMapping)).toBeNull();
   });
 
   test("grup singleton -> selalu return null", () => {
-    const group = { billNumber: null, rows: [row("1", { "Vendor No": "V1" })] };
+    const group = { groupKey: null, groupColumn: null, rows: [row("1", { "Vendor No": "V1" })] };
     expect(validateGroupVendorConsistency(group, columnMapping)).toBeNull();
   });
 });

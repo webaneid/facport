@@ -48,9 +48,13 @@ const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 // cuma tipe via Eden, lihat apps/web/CLAUDE.md). Dipakai buat tanda "*" +
 // styling wajib di form, BUKAN sumber kebenaran validasi (itu tetap di
 // backend, form ini cuma kasih feedback lebih cepat sebelum submit).
+// § Fase 81 (2026-09-09) — "number" (Trans No) ditambahkan, mirror
+// keputusan Fase 61 Sales Invoice (grouping multi-item butuh kunci yang
+// reliable, Bill No boleh sama di faktur berbeda).
 export const REQUIRED_INTERNAL_FIELDS = new Set([
   "vendorNo",
   "transDate",
+  "number",
   "itemNo",
   "unitPrice",
   "quantity",
@@ -211,7 +215,7 @@ export function EditRowDialog({
           )}
           {siblingRowNumbers.length > 0 && (
             <p className="rounded-md bg-warning-bg px-3 py-2 text-warning">
-              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (Bill No sama) — Nomor Pemasok wajib
+              Baris ini satu faktur dengan baris {siblingRowNumbers.join(", ")} (Nomor Transaksi/Bill No sama) — Nomor Pemasok wajib
               sama persis dengan baris-baris itu, kalau tidak seluruh faktur ikut gagal.
             </p>
           )}

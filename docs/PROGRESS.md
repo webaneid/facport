@@ -89,6 +89,8 @@
 | 78   | Fix Scope `vendor_view`/`vendor_save` Hilang dari Purchase Invoice (Bug ADR-0026) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-78-fix-scope-vendor-purchase-invoice.md` |
 | 79   | Link Alur Pembelian Level ITEM & EXPENSE (Purchase Invoice) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-79-link-alur-pembelian-purchase-invoice.md` |
 | 80   | Field "Proyek" Level EXPENSE (Sales Invoice & Purchase Invoice) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-80-expense-project-no.md` |
+| 81   | Grouping Prioritas Trans No untuk Purchase Invoice (Mirror Fase 49/61/63 SI) | Done | `docs/architecture/architecture-purchase-invoice.md` | `docs/phases/phase-81-trans-no-grouping-purchase-invoice.md` |
+| 82   | Fix Guard Idempotent Saat Faktur Dihapus Langsung di Accurate (SI & PI) | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2181,3 +2183,39 @@ langsung, dicatat di Known Limitations). Kolom "Expense Project No"
 Typecheck 0 error. Full suite `apps/api` 499 pass/0 fail (4 baru). Dev
 DB dibersihkan, transaksi test verifikasi dihapus. Lihat
 `docs/phases/phase-80-expense-project-no.md`.
+
+## Update 2026-09-09 — Fase 81 Done: Grouping Prioritas Trans No untuk Purchase Invoice (Mirror Fase 49/61/63 Sales Invoice)
+Evaluasi client: "Bill No boleh sama walau beda transaksi, Trans No
+harus unik" — Purchase Invoice masih grouping murni by Bill No,
+sedangkan Sales Invoice sudah dibenahi total untuk masalah identik ini
+(Fase 49/61/63). Di-port 1:1: `groupPurchaseInvoiceRows` digeneralisasi
+(`groupKey`/`groupColumn`, Trans No diutamakan, Bill No fallback), Trans
+No (`number`) DITAMBAHKAN jadi field wajib, `findExistingAccurateInvoiceId`/
+`appendToExistingPurchaseInvoice` disesuaikan, helper frontend baru
+`lib/purchase-invoice-batch-helpers.ts` (mirror Sales Invoice), kolom
+tabel hasil import "Nomor Faktur" → "Nomor Transaksi". Admin generic
+batch view SENGAJA tidak diubah (gap pre-existing di KEDUA modul, di
+luar scope evaluasi ini).
+
+Typecheck 0 error. Full suite `apps/api` 503 pass/0 fail, `apps/web` 44
+pass/0 fail. Dev DB dibersihkan. Lihat
+`docs/phases/phase-81-trans-no-grouping-purchase-invoice.md`.
+
+## Update 2026-09-10 — Fase 82 Done: Fix Guard Idempotent Saat Faktur Dihapus Langsung di Accurate (Sales Invoice & Purchase Invoice)
+Evaluasi client poin 3: upload ulang Trans No yang sama gagal setelah
+faktur dihapus manual di Accurate, karena DB lokal masih catat baris itu
+"sukses". Root cause dikonfirmasi test call nyata: `detail.do` pada id
+yang sudah dihapus balas **HTTP 200** (bukan 404) dengan
+`{"s":false,"d":["Faktur Penjualan tidak tepat"]}` — HTTP status tidak
+bisa dipakai deteksi, cuma pesan "tidak tepat" yang reliable. Fix:
+`appendToExistingPurchaseInvoice`/`appendToExistingSalesInvoice`
+sekarang verifikasi ke Accurate SUNGGUHAN dulu (fungsi baru
+`isAccurateRecordNotFound`) — kalau faktur ternyata sudah tidak ada,
+fallback ke jalur CREATE biasa alih-alih gagal. Diterapkan ke KEDUA
+modul (client cuma laporin Purchase Invoice, tapi Sales Invoice punya
+struktur kode identik). `orderBy(desc(processedAt))` ditambah di lookup
+lintas-batch supaya retry berikutnya ambil riwayat paling baru.
+
+Typecheck 0 error. Full suite `apps/api` 507 pass/0 fail (4 baru). Dev
+DB dibersihkan. Lihat
+`docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md`.

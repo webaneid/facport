@@ -6,6 +6,48 @@
 
 ---
 
+## 2026-09-10 — Guard "faktur existing" cuma percaya DB lokal, tidak pernah verifikasi ke Accurate sungguhan — upload gagal terus kalau faktur dihapus manual di Accurate
+**Masalah:** Client hapus faktur langsung di Accurate (bukan lewat
+Facport) karena salah input, lalu upload ulang dengan Trans No yang
+sama — SELALU gagal, padahal seharusnya dibuatkan faktur baru.
+
+**Root cause:** `appendToExistingPurchaseInvoice`/`appendToExistingSalesInvoice`
+(`workers/index.ts`, ADR-0012) menentukan "apakah faktur ini sudah
+pernah dibuat" HANYA dari catatan `import_batch_rows` status "sukses"
+di DB lokal — begitu ketemu record lama, LANGSUNG diasumsikan faktur
+itu MASIH ADA di Accurate, tanpa pernah verifikasi ulang ke Accurate
+sungguhan. Kalau user hapus faktur itu manual di Accurate, DB lokal
+tetap bilang "sukses" selamanya (tidak ada mekanisme sinkronisasi
+balik), jadi retry berikutnya SELALU coba "tambah ke faktur yang sudah
+tidak ada" dan gagal.
+
+**Temuan tambahan (test call nyata)**: `detail.do` pada id transaksi
+yang sudah dihapus balas **HTTP 200** (BUKAN 404!) dengan body
+`{"s":false,"d":["Faktur Penjualan tidak tepat"]}` — kalau cuma cek
+`res.status`/`res.ok`, kondisi ini TIDAK KETAHUAN sama sekali (kode
+sudah lolos `res.ok` check, packing envelope `s:false` yang bawa
+pesannya).
+
+**Fix:** `getPurchaseInvoiceDetail`/`getSalesInvoiceDetail` (verifikasi
+state faktur existing) dibungkus try/catch — kalau errornya mengandung
+pesan "tidak tepat" (`isAccurateRecordNotFound`, `lib/accurate.ts`),
+fallback ke jalur CREATE biasa alih-alih gagalkan baris. Diterapkan ke
+KEDUA modul (Sales Invoice DAN Purchase Invoice) sekaligus, walau
+client cuma laporin untuk satu, karena strukturnya identik.
+
+**Pencegahan:** **DB lokal Facport adalah CACHE hasil transaksi masa
+lalu, BUKAN sumber kebenaran soal state Accurate saat ini** — kapan pun
+kode mau mengasumsikan sesuatu "masih berlaku" di Accurate berdasar
+catatan lokal (existing invoice, existing customer/vendor, dst), WAJIB
+verifikasi ulang ke Accurate sungguhan sebelum bertindak, dan WAJIB
+tangani kasus "ternyata sudah tidak ada/berubah" secara eksplisit —
+jangan biarkan exception generik dari situ menggagalkan seluruh alur.
+Ingat juga: Accurate SERING balas `s:false` dengan HTTP 200 untuk
+kegagalan logis (§ `architecture-accurate-integration.md`) — `res.ok`
+TIDAK CUKUP untuk deteksi kondisi spesifik, harus baca isi `d`/pesannya.
+
+---
+
 ## 2026-09-09 — ADR-0026 tidak sengaja hapus scope `vendor_view`/`vendor_save` yang dibutuhkan fitur LAIN — semua subscriber Purchase Invoice (tanpa Akun Hutang Pemasok) 403 sejak deploy
 **Masalah:** Client retest Purchase Invoice (setelah koneksi Accurate-nya
 AKTIF & scope Fase 75 sudah termasuk) — SEMUA baris gagal di grup

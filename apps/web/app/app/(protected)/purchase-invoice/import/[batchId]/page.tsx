@@ -11,6 +11,7 @@ import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@
 import { EditableGrid } from "@/components/import/editable-grid";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { findNumberColumn, findBillNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/purchase-invoice-batch-helpers";
 
 type Row = {
   id: string;
@@ -33,49 +34,12 @@ type BatchDetail = {
   rows: Row[];
 };
 
-// Kolom Excel yang di-mapping user ke field "billNumber" (Nomor Faktur) —
-// columnMapping arahnya excelColumn -> field internal, jadi WAJIB di-invert
-// buat cari nama kolom aslinya.
-function findBillNumberColumn(columnMapping: Record<string, string> | null): string | null {
-  if (!columnMapping) return null;
-  const entry = Object.entries(columnMapping).find(([, field]) => field === "billNumber");
-  return entry?.[0] ?? null;
-}
-
-function invoiceNumberOf(row: Row, billNumberColumn: string | null): string {
-  if (!billNumberColumn) return "";
-  const value = row.rawData[billNumberColumn];
-  return value === undefined || value === null ? "" : String(value).trim();
-}
-
-// § dibahas 2026-08-28 — baris dengan Bill No sama digabung jadi 1
-// faktur (ADR-0011), dipakai buat kasih tahu user di dialog Edit kalau
-// baris ini "senasib" dengan baris lain (vendor WAJIB konsisten,
-// sebelum retry, bukan cuma peringatan setelah gagal lagi).
-function siblingRowNumbersOf(row: Row, allRows: Row[], billNumberColumn: string | null): number[] {
-  const inv = invoiceNumberOf(row, billNumberColumn);
-  if (!inv) return [];
-  return allRows
-    .filter((r) => r.id !== row.id && invoiceNumberOf(r, billNumberColumn).toLowerCase() === inv.toLowerCase())
-    .map((r) => r.rowNumber);
-}
-
-// § permintaan user 2026-08-28 — urut berdasarkan Nomor Faktur (natural
-// sort, angka di dalam string diurutkan numerik: "PI2" < "PI10"), BUKAN
-// nomor baris Excel seperti sebelumnya. Baris tanpa Nomor Faktur ditaruh
-// di akhir, fallback urut nomor baris. Baris dengan Nomor Faktur SAMA
-// (grup multi-item, Fase 06) otomatis nempel berurutan lewat sort ini.
-function sortByInvoiceNumber(rows: Row[], billNumberColumn: string | null): Row[] {
-  return [...rows].sort((a, b) => {
-    const invA = invoiceNumberOf(a, billNumberColumn);
-    const invB = invoiceNumberOf(b, billNumberColumn);
-    if (!invA && !invB) return a.rowNumber - b.rowNumber;
-    if (!invA) return 1;
-    if (!invB) return -1;
-    const cmp = invA.localeCompare(invB, undefined, { numeric: true, sensitivity: "base" });
-    return cmp !== 0 ? cmp : a.rowNumber - b.rowNumber;
-  });
-}
+// § Fase 81 (2026-09-09) — logic penentuan "Nomor Transaksi" (Trans No
+// diutamakan, fallback Bill No — feedback client: Bill No boleh sama
+// walau beda transaksi, Trans No harus unik) diekstrak ke
+// `lib/purchase-invoice-batch-helpers.ts` (dites terpisah di sana, tanpa
+// import modul page.tsx ini — hindari konflik `mock.module("next/navigation")`
+// dari test file lain), mirror Sales Invoice Fase 63.
 
 const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
   success: { label: "Sukses", variant: "success" },
@@ -151,8 +115,9 @@ export default function PurchaseInvoiceImportResultPage() {
 
   const { batch, summary, rows } = detail;
   const isProcessing = batch.status === "processing";
+  const numberColumn = findNumberColumn(batch.columnMapping);
   const billNumberColumn = findBillNumberColumn(batch.columnMapping);
-  const sortedRows = sortByInvoiceNumber(rows, billNumberColumn);
+  const sortedRows = sortByInvoiceNumber(rows, numberColumn, billNumberColumn);
 
   return (
     <div className="flex flex-col gap-6">
@@ -215,7 +180,7 @@ export default function PurchaseInvoiceImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nomor Faktur</TableHead>
+                <TableHead>Nomor Transaksi</TableHead>
                 <TableHead>Baris</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>ID Transaksi Accurate / Error</TableHead>
@@ -226,7 +191,7 @@ export default function PurchaseInvoiceImportResultPage() {
               {sortedRows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium text-foreground">
-                    {invoiceNumberOf(row, billNumberColumn) || "-"}
+                    {invoiceNumberOf(row, numberColumn, billNumberColumn) || "-"}
                   </TableCell>
                   <TableCell>{row.rowNumber}</TableCell>
                   <TableCell>
@@ -242,7 +207,7 @@ export default function PurchaseInvoiceImportResultPage() {
                           batchId={batch.id}
                           row={row}
                           columnMapping={batch.columnMapping}
-                          siblingRowNumbers={siblingRowNumbersOf(row, rows, billNumberColumn)}
+                          siblingRowNumbers={siblingRowNumbersOf(row, rows, numberColumn, billNumberColumn)}
                           onSaved={load}
                         />
                       </div>

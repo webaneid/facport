@@ -20,7 +20,11 @@ export const purchaseInvoiceMapping = {
   // meski kadang wajib (akun multi-cabang) — itu bergantung setup Accurate
   // tiap user, bukan aturan universal, jadi errornya ditangani sebagai
   // error per-baris biasa (bukan validasi blocking di step konfirmasi).
-  requiredFields: ["vendorNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"] as const,
+  // § Fase 81 (2026-09-09) — "number" (Trans No) DITAMBAHKAN jadi wajib,
+  // mirror keputusan Fase 61 Sales Invoice — supaya grouping multi-item
+  // (`groupPurchaseInvoiceRows`) selalu punya kunci yang reliable (Bill
+  // No boleh sama di faktur berbeda, Trans No harus unik per faktur).
+  requiredFields: ["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"] as const,
   // Key kiri = nama field internal dipakai UI mapping & payload builder.
   // Key kanan = path field Accurate sungguhan (dot-path untuk detailItem),
   // SEMUA diverifikasi dari OpenAPI spec resmi Accurate (bukan tebakan).
@@ -524,8 +528,17 @@ export function buildDetailExpenseFromRow(
 // kosong di baris itu) tetap jadi grup sendiri isi 1 baris — behavior
 // SAMA PERSIS dengan sebelum ADR-0011, non-breaking buat user yang belum
 // pakai multi-item.
+// § Fase 81 (2026-09-09) — DIGENERALISASI mirror Sales Invoice (Fase 49):
+// client konfirmasi "Bill No boleh sama walau beda transaksi, Trans No
+// harus unik" — grouping MURNI by Bill No (versi lama) salah gabung
+// baris dari faktur BERBEDA kalau Bill No kebetulan sama. `groupKey`/
+// `groupColumn` (bukan `billNumber` literal) dipakai supaya grouping
+// bisa pakai KOLOM MANA PUN yang relevan — Trans No DIUTAMAKAN, Bill No
+// fallback. "Trans No" (`number`) SEKALIGUS dijadikan WAJIB di
+// `requiredFields` (lihat atas) — pola SAMA PERSIS keputusan Fase 61 SI,
+// supaya grouping selalu punya kunci yang reliable.
 export type ImportRowRecord = { id: string; rawData: Record<string, unknown> };
-export type PurchaseInvoiceGroup = { billNumber: string | null; rows: ImportRowRecord[] };
+export type PurchaseInvoiceGroup = { groupKey: string | null; groupColumn: string | null; rows: ImportRowRecord[] };
 
 // § Fase 08 — diexport supaya worker bisa cari kolom Bill No lintas-batch
 // (`findExistingAccurateInvoiceId`), tanpa duplikasi logic pencarian kolom.
@@ -533,33 +546,47 @@ export function billNumberColumnOf(columnMapping: Record<string, string>): strin
   return Object.entries(columnMapping).find(([, field]) => field === "billNumber")?.[0] ?? null;
 }
 
-function billNumberOf(row: ImportRowRecord, billNumberColumn: string | null): string | null {
-  if (!billNumberColumn) return null;
-  const value = row.rawData[billNumberColumn];
+// § Fase 81 — mirror `numberColumnOf` Sales Invoice.
+export function numberColumnOf(columnMapping: Record<string, string>): string | null {
+  return Object.entries(columnMapping).find(([, field]) => field === "number")?.[0] ?? null;
+}
+
+function valueOfColumn(row: ImportRowRecord, column: string | null): string | null {
+  if (!column) return null;
+  const value = row.rawData[column];
   if (value === undefined || value === null) return null;
   const trimmed = String(value).trim();
   return trimmed === "" ? null : trimmed;
 }
 
+// § Fase 81 — PER BARIS: pakai "Trans No" kalau kolom itu termapping DAN
+// terisi di baris ini, fallback ke "Bill No" (perilaku LAMA, TIDAK
+// berubah untuk siapa pun yang sudah pakai Bill No tanpa Trans No),
+// fallback akhir tetap "1 baris = 1 faktur sendiri" — mirror PERSIS
+// `groupSalesInvoiceRows`.
 export function groupPurchaseInvoiceRows(
   rows: ImportRowRecord[],
   columnMapping: Record<string, string>,
 ): PurchaseInvoiceGroup[] {
+  const numberColumn = numberColumnOf(columnMapping);
   const billNumberColumn = billNumberColumnOf(columnMapping);
   const groups: PurchaseInvoiceGroup[] = [];
-  const byBillNumber = new Map<string, PurchaseInvoiceGroup>();
+  const byKey = new Map<string, PurchaseInvoiceGroup>();
 
   for (const row of rows) {
-    const billNumber = billNumberOf(row, billNumberColumn);
-    if (billNumber === null) {
-      groups.push({ billNumber: null, rows: [row] });
+    const numberValue = valueOfColumn(row, numberColumn);
+    const groupColumn = numberValue !== null ? numberColumn : billNumberColumn;
+    const groupKey = numberValue !== null ? numberValue : valueOfColumn(row, billNumberColumn);
+
+    if (groupKey === null || groupColumn === null) {
+      groups.push({ groupKey: null, groupColumn: null, rows: [row] });
       continue;
     }
-    const key = billNumber.toLowerCase();
-    let group = byBillNumber.get(key);
+    const mapKey = `${groupColumn}::${groupKey.toLowerCase()}`;
+    let group = byKey.get(mapKey);
     if (!group) {
-      group = { billNumber, rows: [] };
-      byBillNumber.set(key, group);
+      group = { groupKey, groupColumn, rows: [] };
+      byKey.set(mapKey, group);
       groups.push(group);
     }
     group.rows.push(row);
@@ -587,8 +614,8 @@ export function validateGroupVendorConsistency(
 
   if (vendorNos.size <= 1) return null;
 
-  const label = group.billNumber ?? "(tanpa Bill No)";
-  return `Bill No "${label}" dipakai untuk vendor berbeda-beda (${[...vendorNos].join(", ")}) — pastikan semua baris 1 faktur pakai Nomor Vendor yang sama.`;
+  const label = group.groupKey ?? "(tanpa Trans No/Bill No)";
+  return `Nomor grup "${label}" dipakai untuk vendor berbeda-beda (${[...vendorNos].join(", ")}) — pastikan semua baris 1 faktur pakai Nomor Vendor yang sama.`;
 }
 
 // Ambil nilai mentah 1 kolom internal dari 1 baris Excel (dipakai

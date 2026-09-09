@@ -38,6 +38,21 @@ export async function parseAccurateEnvelope<T>(res: Response): Promise<T> {
   return body.d;
 }
 
+// § Fase 82 (2026-09-10) — TERKONFIRMASI lewat test call nyata (bukan
+// tebakan): panggil `detail.do` dengan `id` transaksi yang SUDAH DIHAPUS
+// langsung di Accurate (bukan lewat Facport) balas **HTTP 200** (BUKAN
+// 404!) dengan body `{"s":false,"d":["Faktur Penjualan tidak tepat"]}` —
+// jadi HTTP status TIDAK BISA dipakai buat bedain "sudah dihapus" dari
+// error lain, cuma pesan "tidak tepat" yang reliable. Dipakai oleh
+// `appendToExistingPurchaseInvoice`/`appendToExistingSalesInvoice`
+// (workers/index.ts) — kalau fetch state faktur "existing" (dari catatan
+// SUKSES di DB lokal kita) kena error ini, faktur itu TERBUKTI sudah
+// tidak ada di Accurate (bukan cuma diasumsikan dari DB lokal) — treat
+// sebagai "belum pernah ada", fallback ke jalur CREATE biasa.
+export function isAccurateRecordNotFound(err: unknown): boolean {
+  return err instanceof AccurateApiError && err.message.includes("tidak tepat");
+}
+
 // ⚠️ Endpoint SAVE/mutasi (`save.do`, kemungkinan `bulk-save.do` juga —
 // belum diverifikasi) TIDAK taruh record hasil di `d` seperti endpoint
 // list/query — `d` di situ cuma pesan status

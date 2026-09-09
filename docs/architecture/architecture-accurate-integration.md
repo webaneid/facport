@@ -394,6 +394,27 @@ ditemukan di Accurate" lebih berguna daripada "400 Bad Request").
 > `importBatches.status`. Detail lengkap →
 > `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`.
 
+> ⚠️ **Bug ditemukan & diperbaiki 2026-09-10 (Fase 82)** — pola `s:false`
+> HTTP 200 di atas TERBUKTI LAGI di kasus baru: `detail.do` pada id
+> transaksi yang SUDAH DIHAPUS langsung di Accurate (bukan lewat
+> Facport) balas **HTTP 200** dengan `{"s":false,"d":["Faktur Penjualan
+> tidak tepat"]}` — DIKONFIRMASI test call nyata, bukan tebakan. Guard
+> "append ke faktur existing" (ADR-0012, `appendToExistingPurchaseInvoice`/
+> `appendToExistingSalesInvoice` di `workers/index.ts`) sebelumnya
+> menentukan "faktur masih ada" HANYA dari catatan DB lokal (status
+> "sukses" di `import_batch_rows`), TANPA verifikasi ulang ke Accurate —
+> begitu faktur dihapus manual di Accurate, retry upload dengan Trans No
+> yang sama SELALU gagal. Fix: fungsi baru `isAccurateRecordNotFound(err)`
+> (`lib/accurate.ts`, cek pesan mengandung "tidak tepat") — kalau
+> `getPurchaseInvoiceDetail`/`getSalesInvoiceDetail` kena error ini,
+> fallback ke jalur CREATE biasa. **Pelajaran untuk kode baru**: DB lokal
+> Facport adalah CACHE riwayat transaksi, BUKAN sumber kebenaran soal
+> state Accurate SAAT INI — kapan pun kode berasumsi sesuatu "masih
+> berlaku" di Accurate dari catatan lokal, WAJIB verifikasi ulang ke
+> Accurate sungguhan sebelum bertindak. Detail lengkap →
+> `docs/phases/phase-82-fix-guard-idempotent-faktur-dihapus.md`,
+> `docs/lessons-learned.md` 2026-09-10.
+
 ## 6. Metode Otorisasi Alternatif — "API Token" (TIDAK Dipakai Facport)
 Selain OAuth2 Authorization Code Grant (§ 1, yang dipakai Facport), Accurate
 juga punya metode auth lain bernama **"API Token"**: token+secret statis

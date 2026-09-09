@@ -1,6 +1,6 @@
 import "../lib/env"; // WAJIB paling awal
 
-import { eq, and, or, lt, lte, inArray, notInArray, sql } from "drizzle-orm";
+import { eq, and, or, lt, lte, inArray, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
@@ -8,17 +8,16 @@ import { sendEmail } from "../lib/email";
 import { db } from "../lib/db";
 import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings, announcements } from "../db/schema";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
-import { refreshAccessToken } from "../lib/accurate";
+import { refreshAccessToken, isAccurateRecordNotFound } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES } from "../lib/notifications";
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
-import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice } from "../lib/accurate-purchase-invoice";
+import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
 import {
   buildPurchaseInvoicePayload,
   buildDetailItemFromRow,
-  billNumberColumnOf,
   extractVendorCreateFields,
   extractItemCreateFields,
   extractDataClassificationValues as extractDataClassificationValuesPI,
@@ -62,7 +61,7 @@ import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guar
 // baik dari abstraksi prematur"). `ImportRowRecord` TIDAK diimpor ulang
 // dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
 // impor di atas, reuse type yang sama.
-import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice } from "../lib/accurate-sales-invoice";
+import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
@@ -234,19 +233,27 @@ function extractRowDetailItemNo(rawRow: Record<string, unknown>, columnMapping: 
 }
 
 // § Fase 08, ADR-0012 — cari LINTAS-BATCH (bukan cuma batch yang sedang
-// diproses) apakah Bill No ini SUDAH PERNAH sukses jadi faktur di
+// diproses) apakah grup ini SUDAH PERNAH sukses jadi faktur di
 // subscription yang sama. Dipakai supaya retry pada baris `failed` lama
 // (dari SEBELUM Fase 06 ada grouping) bisa nemu faktur yang sudah
 // tercipta dari baris `success` lain — termasuk kalau keduanya ada di
-// batch yang SAMA (kasus nyata: batch `8b622538`). Perbandingan Bill No
+// batch yang SAMA (kasus nyata: batch `8b622538`). Perbandingan
 // case-insensitive + trim, konsisten dengan `groupPurchaseInvoiceRows`
 // (ADR-0011). Parameter di-bind via Drizzle `sql` tag (bukan concat) —
-// § architecture-security.md.
+// § architecture-security.md. § Fase 81 — `groupKey`/`groupColumn`
+// DIGENERALISASI (bisa dari kolom "Trans No" ATAU "Bill No"), mirror
+// `findExistingAccurateSalesInvoiceId`.
 async function findExistingAccurateInvoiceId(
   subscriptionId: string,
-  billNumber: string,
-  billNumberColumn: string,
+  groupKey: string,
+  groupColumn: string,
 ): Promise<{ id: number; batchId: string } | null> {
+  // § Fase 82 — `orderBy(desc(processedAt))` DITAMBAHKAN: kalau ADA lebih
+  // dari 1 baris "success" match (mis. faktur lama di-delete manual di
+  // Accurate lalu Trans No yang sama dipakai lagi dan berhasil dibuat
+  // ULANG — § fallback CREATE di `appendToExistingPurchaseInvoice`),
+  // yang paling BARU diproses yang dipakai, bukan sembarang baris tanpa
+  // urutan pasti (perilaku `LIMIT 1` tanpa `ORDER BY` sebelumnya).
   const [row] = await db
     .select({ accurateTransactionId: importBatchRows.accurateTransactionId, batchId: importBatchRows.batchId })
     .from(importBatchRows)
@@ -256,9 +263,10 @@ async function findExistingAccurateInvoiceId(
         eq(importBatches.subscriptionId, subscriptionId),
         eq(importBatches.module, "purchase_invoice"),
         eq(importBatchRows.status, "success"),
-        sql`lower(trim(${importBatchRows.rawData}->>${billNumberColumn})) = lower(trim(${billNumber}))`,
+        sql`lower(trim(${importBatchRows.rawData}->>${groupColumn})) = lower(trim(${groupKey}))`,
       ),
     )
+    .orderBy(desc(importBatchRows.processedAt))
     .limit(1);
 
   if (!row?.accurateTransactionId) return null;
@@ -266,11 +274,11 @@ async function findExistingAccurateInvoiceId(
   return Number.isFinite(id) ? { id, batchId: row.batchId } : null;
 }
 
-// § Fase 08, ADR-0012 — grup ini punya Bill No yang SUDAH PUNYA faktur di
-// Accurate (ditemukan via `findExistingAccurateInvoiceId`). Append item
-// BARU ke faktur itu lewat `save.do` mode update (`id` faktur +
-// `detailItem[]`), BUKAN create faktur baru (yang akan ditolak Accurate
-// sebagai duplikat nomor).
+// § Fase 08, ADR-0012 — grup ini punya nomor grup yang SUDAH PUNYA
+// faktur di Accurate (ditemukan via `findExistingAccurateInvoiceId`).
+// Append item BARU ke faktur itu lewat `save.do` mode update (`id`
+// faktur + `detailItem[]`), BUKAN create faktur baru (yang akan ditolak
+// Accurate sebagai duplikat nomor).
 export async function appendToExistingPurchaseInvoice(
   ctx: AccurateSessionContext,
   existingId: number,
@@ -282,18 +290,36 @@ export async function appendToExistingPurchaseInvoice(
   const rawRows = group.rows.map((r) => r.rawData);
   const vendorNo = String(buildPurchaseInvoicePayload(rawRows, columnMapping).vendorNo ?? "");
 
-  // § Fase 08 — `detailItem` di-REPLACE (bukan merge) tiap save.do
-  // dipanggil dengan `id`, jadi state faktur WAJIB di-fetch ULANG di sini
-  // (bukan diasumsikan dari DB lokal Facport, yang tidak menyimpan
-  // struktur detailItem Accurate sama sekali).
-  const detail = await getPurchaseInvoiceDetail(ctx, existingId);
+  // § Fase 82 (2026-09-10) — evaluasi client: faktur dihapus LANGSUNG di
+  // Accurate (bukan lewat Facport), lalu upload ulang Trans No yang sama
+  // GAGAL, padahal seharusnya dibuatkan baru. Root cause: DB lokal kita
+  // masih catat baris ini "sukses" merujuk `existingId`, TAPI kita tidak
+  // pernah verifikasi ke ACCURATE SUNGGUHAN apakah faktur itu MASIH ADA
+  // — `detail.do` pada id yang sudah dihapus TERKONFIRMASI test call
+  // nyata balas `{s:false, d:["Faktur Pembelian tidak tepat"]}` (HTTP
+  // 200, BUKAN 404 — § `isAccurateRecordNotFound`). Kalau itu yang
+  // terjadi, JANGAN gagalkan baris — anggap faktur itu TIDAK PERNAH ADA
+  // (record lokal kita basi), fallback ke jalur CREATE biasa. TIDAK
+  // PERNAH percaya DB lokal sebagai satu-satunya sumber kebenaran —
+  // selalu verifikasi ke Accurate dulu.
+  let detail: PurchaseInvoiceDetail;
+  try {
+    // § `detailItem` di-REPLACE (bukan merge) tiap save.do dipanggil
+    // dengan `id`, jadi state faktur WAJIB di-fetch ULANG di sini (bukan
+    // diasumsikan dari DB lokal Facport, yang tidak menyimpan struktur
+    // detailItem Accurate sama sekali).
+    detail = await getPurchaseInvoiceDetail(ctx, existingId);
+  } catch (err) {
+    if (isAccurateRecordNotFound(err)) return processPurchaseInvoiceGroup(ctx, group, columnMapping);
+    throw err;
+  }
 
-  // § Safety check — JANGAN append ke faktur vendor lain walau Bill No
-  // kebetulan sama (mis. 2 vendor berbeda kebetulan pakai nomor referensi
-  // yang sama).
+  // § Safety check — JANGAN append ke faktur vendor lain walau nomor
+  // grup kebetulan sama (mis. 2 vendor berbeda kebetulan pakai nomor
+  // referensi yang sama).
   if (vendorNo && detail.vendor.no !== vendorNo) {
     throw new Error(
-      `Bill No "${group.billNumber}" sudah dipakai Faktur Pembelian #${existingId} milik Vendor "${detail.vendor.no}" di Accurate — tidak sama dengan Vendor baris ini ("${vendorNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
+      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Pembelian #${existingId} milik Vendor "${detail.vendor.no}" di Accurate — tidak sama dengan Vendor baris ini ("${vendorNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
     );
   }
 
@@ -327,7 +353,7 @@ export async function appendToExistingPurchaseInvoice(
     // benar-benar terkirim karena save.do di-skip sepenuhnya di sini).
     if (isCoincidentalDuplicateAcrossBatches({ newRowsCount: newRows.length, existingBatchId, currentBatchId })) {
       throw new Error(
-        `Bill No "${group.billNumber}" dengan barang, harga, dan qty yang PERSIS SAMA sudah ada di Faktur Pembelian #${existingId} (dari batch import SEBELUMNYA) — tidak ada baris baru untuk dikirim, jadi field lain (Pajak/Diskon/Atribut Tambahan/dst) di baris ini TIDAK ikut diperbarui di Accurate. Kalau ini transaksi baru, gunakan Bill No yang berbeda. Kalau bermaksud mengubah data pada faktur ini, update manual di Accurate (fitur update-in-place belum didukung).`,
+        `Nomor grup "${group.groupKey}" dengan barang, harga, dan qty yang PERSIS SAMA sudah ada di Faktur Pembelian #${existingId} (dari batch import SEBELUMNYA) — tidak ada baris baru untuk dikirim, jadi field lain (Pajak/Diskon/Atribut Tambahan/dst) di baris ini TIDAK ikut diperbarui di Accurate. Kalau ini transaksi baru, gunakan Trans No/Bill No yang berbeda. Kalau bermaksud mengubah data pada faktur ini, update manual di Accurate (fitur update-in-place belum didukung).`,
       );
     }
     // § idempotent — retry-safety asli (partial completion dalam batch
@@ -427,6 +453,8 @@ async function findExistingAccurateSalesInvoiceId(
   groupKey: string,
   groupColumn: string,
 ): Promise<{ id: number; batchId: string } | null> {
+  // § Fase 82 — `orderBy(desc(processedAt))`, lihat komentar
+  // `findExistingAccurateInvoiceId` (PI).
   const [row] = await db
     .select({ accurateTransactionId: importBatchRows.accurateTransactionId, batchId: importBatchRows.batchId })
     .from(importBatchRows)
@@ -439,6 +467,7 @@ async function findExistingAccurateSalesInvoiceId(
         sql`lower(trim(${importBatchRows.rawData}->>${groupColumn})) = lower(trim(${groupKey}))`,
       ),
     )
+    .orderBy(desc(importBatchRows.processedAt))
     .limit(1);
 
   if (!row?.accurateTransactionId) return null;
@@ -457,7 +486,17 @@ export async function appendToExistingSalesInvoice(
   const rawRows = group.rows.map((r) => r.rawData);
   const customerNo = String(buildSalesInvoicePayload(rawRows, columnMapping).customerNo ?? "");
 
-  const detail = await getSalesInvoiceDetail(ctx, existingId);
+  // § Fase 82 (2026-09-10) — mirror `appendToExistingPurchaseInvoice`:
+  // verifikasi ke ACCURATE SUNGGUHAN dulu, jangan percaya DB lokal —
+  // kalau faktur "existing" ternyata sudah dihapus langsung di Accurate
+  // (`isAccurateRecordNotFound`), fallback ke jalur CREATE biasa.
+  let detail: SalesInvoiceDetail;
+  try {
+    detail = await getSalesInvoiceDetail(ctx, existingId);
+  } catch (err) {
+    if (isAccurateRecordNotFound(err)) return processSalesInvoiceGroup(ctx, group, columnMapping);
+    throw err;
+  }
 
   if (customerNo && detail.customer.no !== customerNo) {
     throw new Error(
@@ -911,21 +950,21 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      // § Fase 08, ADR-0012 — dihitung SEKALI per batch (columnMapping-nya
-      // sama untuk semua grup), dipakai buat cek existing sebelum CREATE.
-      const billNumberColumn = billNumberColumnOf(columnMapping);
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
-          // § Fase 08, ADR-0012 — Retry Cerdas: kalau Bill No grup ini
-          // SUDAH PERNAH sukses jadi faktur (lintas-batch), append item
-          // baru ke faktur itu (UPDATE), BUKAN coba create faktur baru
-          // yang bakal ditolak Accurate sebagai duplikat nomor. Grup
-          // tanpa Bill No (singleton) selalu lewat jalur CREATE seperti
-          // biasa — tidak ada identitas untuk dicari.
+          // § Fase 08, ADR-0012 — Retry Cerdas: kalau grup ini SUDAH
+          // PERNAH sukses jadi faktur (lintas-batch), append item baru ke
+          // faktur itu (UPDATE), BUKAN coba create faktur baru yang bakal
+          // ditolak Accurate sebagai duplikat nomor. Grup tanpa
+          // groupKey/groupColumn (singleton) selalu lewat jalur CREATE
+          // seperti biasa — tidak ada identitas untuk dicari. § Fase 81 —
+          // kunci grouping DIGENERALISASI (`group.groupKey`/
+          // `group.groupColumn`, bisa dari kolom "Trans No" ATAU "Bill
+          // No" — lihat `groupPurchaseInvoiceRows`), mirror Fase 49 SI.
           const existing =
-            group.billNumber && billNumberColumn
-              ? await findExistingAccurateInvoiceId(batch.subscriptionId, group.billNumber, billNumberColumn)
+            group.groupKey && group.groupColumn
+              ? await findExistingAccurateInvoiceId(batch.subscriptionId, group.groupKey, group.groupColumn)
               : null;
           const result = existing
             ? await appendToExistingPurchaseInvoice(session, existing.id, existing.batchId, batch.id, group, columnMapping)
