@@ -35,6 +35,7 @@ const FIELD_HINTS: Record<string, string> = {
   passValidateInvoiceDate: "Isi \"Y\" atau kosongkan",
   useCredit: "Isi \"Y\" atau kosongkan",
   paidPph: "Isi \"Y\" atau kosongkan",
+  taxId: "Nama pajak PERSIS seperti di Accurate, contoh: Jasa Kebersihan (opsional, divalidasi ke Accurate)",
 };
 
 function toDisplayDate(value: unknown): string {

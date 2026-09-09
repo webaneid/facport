@@ -20,10 +20,13 @@
 // spec resmi Accurate, template kompetitor, 7 screenshot UI Accurate
 // ASLI dari client, dan dokumentasi resmi `/api/tax/*`. Detail lengkap
 // riset & keputusan desain → `docs/architecture/architecture-sales-receipt.md`
-// § "Ekspansi Field Opsional — Fase 85". 4 field DI-SKIP (Existing
-// Credit/Return Overpay/Tax Amount/Tax ID) — tidak ada padanan API
-// valid di sumber manapun, didokumentasikan lengkap untuk ditanyakan ke
-// Accurate CS langsung kalau diperlukan nanti.
+// § "Ekspansi Field Opsional — Fase 85". 3 field TETAP DI-SKIP (Existing
+// Credit/Return Overpay/Tax Amount) — tidak ada padanan API valid di
+// sumber manapun, didokumentasikan lengkap untuk ditanyakan ke Accurate
+// CS langsung kalau diperlukan nanti. § Fase 86 — "Tax ID" (awalnya
+// SEMPAT di-skip juga) DIIMPLEMENTASI sebagai field VALIDASI-ONLY
+// (lihat komentar `taxId` di bawah) — bukan mengikuti asumsi kompetitor,
+// tapi berdasarkan test call nyata ke `/api/tax/*` milik Accurate.
 export const salesReceiptMapping = {
   requiredFields: ["customerNo", "bankNo", "chequeAmount", "transDate", "invoiceNo"] as const,
   fieldToAccuratePath: {

@@ -80,8 +80,15 @@ Payment): `chequeNo`, `chequeDate`, `description`, `number`, `currencyCode`,
 `branchName`/`branchId`, `paymentMethod`, `rate`, `useCredit`,
 `passValidateInvoiceDate`, `typeAutoNumber`. `detailInvoice[]` juga
 punya sub-field opsional (`departmentName`, `paidPph`, `pphNumber`,
-`detailDiscount[]`) — TIDAK relevan untuk MVP, sama seperti Purchase
-Payment.
+`detailDiscount[]`).
+
+> ⚠️ **Catatan (2026-09-10)**: paragraf di atas ditulis Fase 34 (MVP,
+> field-field ini "TIDAK relevan" waktu itu) — SUDAH BASI, semua field
+> di atas ("Field opsional lain" + sub-field `detailInvoice[]`) SUDAH
+> DIIMPLEMENTASI di Fase 85 (§ "Ekspansi Field Opsional — Fase 85" di
+> bawah). Tetap dibiarkan di sini sebagai riwayat verifikasi spec awal,
+> BUKAN status field saat ini — rujuk section Fase 85 untuk status
+> final tiap field.
 
 ## Keputusan Desain (Reuse Purchase Payment, Fase 33)
 
@@ -130,6 +137,17 @@ Import"/retry-cerdas TETAP tidak didukung modul ini (alasan di bawah
 masih berlaku) — tiap grup SELALU lewat jalur CREATE.
 
 ## Field Mapping Excel (As-Implemented, § Fase 49)
+
+> ⚠️ **Catatan (2026-09-10)**: cuplikan kode di bawah adalah SNAPSHOT
+> Fase 49 (6 field) — SUDAH BASI, `fieldToAccuratePath`/`defaultColumnMap`
+> ASLI sekarang punya 25 field (18 tambahan Fase 85 + `taxId` Fase 86)
+> dengan URUTAN yang JUGA sudah diubah (§ "Ekspansi Field Opsional —
+> Fase 85" § Keputusan Desain #5). Dibiarkan di sini sebagai riwayat
+> struktur AWAL grouping (`receiptNumber`), BUKAN referensi field
+> lengkap — untuk daftar LENGKAP & urutan FINAL, baca langsung
+> `apps/api/src/lib/import-mapping/sales-receipt.mapping.ts` atau tabel
+> keputusan di § "Ekspansi Field Opsional — Fase 85" / § "Fase 86 —
+> Validasi Tax ID" di bawah.
 
 ```ts
 // apps/api/src/lib/import-mapping/sales-receipt.mapping.ts
