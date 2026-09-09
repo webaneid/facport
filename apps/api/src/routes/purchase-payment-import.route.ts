@@ -33,9 +33,12 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 }
 
 // § architecture-purchase-payment.md — aplikasi pembayaran ke faktur yang
-// SUDAH ADA di Accurate (BUKAN mirror Purchase Invoice). 1 baris Excel =
-// 1 pembayaran = 1 faktur, diproses per-baris (pola sama
-// vendor-payable-account-import.route.ts), TIDAK ada grouping.
+// SUDAH ADA di Accurate (BUKAN mirror Purchase Invoice). § Fase 50 — 1
+// baris Excel = 1 pembayaran = 1 faktur SECARA DEFAULT, TAPI bisa
+// digabung jadi 1 pembayaran yang bayar BANYAK faktur sekaligus kalau
+// kolom "Purchase Payment No" diisi sama di beberapa baris (grouping,
+// § `groupPurchasePaymentRows` — dipakai worker, BUKAN di route ini,
+// jadi route tetap sesederhana ini per-baris untuk upload/edit/retry).
 export const purchasePaymentImportRoute = new Elysia()
   .use(permissionPlugin)
   .use(subscriptionGatePlugin)

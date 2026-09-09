@@ -117,11 +117,42 @@ export function validateGroupVendorConsistencyForPayment(
   return `Purchase Payment No "${label}" dipakai untuk vendor berbeda-beda (${[...vendorNos].join(", ")}) — pastikan semua baris 1 pembayaran pakai Nomor Vendor yang sama.`;
 }
 
+// § lessons-learned.md 2026-08-19 — Excel date input HARUS dinormalisasi
+// ke DD/MM/YYYY (Accurate WAJIB format ini), field TANGGAL APAPUN di
+// modul manapun WAJIB lewat normalisasi serupa. BUG DITEMUKAN (2026-09-10,
+// audit menyeluruh sebelum ekspansi field): `transDate` di modul ini
+// TIDAK PERNAH dinormalisasi sejak awal (beda dari Sales Receipt/Purchase
+// Invoice yang sudah punya ini) — kalau Excel client pakai kolom tanggal
+// ASLI (bukan diketik manual sebagai teks), nilainya adalah angka serial
+// Excel mentah (mis. `46284`), dikirim APA ADANYA ke Accurate dan pasti
+// ditolak. Diperbaiki dengan fungsi `toAccurateDate` PERSIS sama dengan
+// `sales-receipt.mapping.ts`/`purchase-invoice.mapping.ts`.
+const DATE_FIELDS = new Set<PurchasePaymentField>(["transDate"]);
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function toAccurateDate(value: unknown): unknown {
+  let date: Date | null = null;
+  if (typeof value === "number") {
+    date = new Date(EXCEL_EPOCH_UTC_MS + value * 86400000);
+  } else if (value instanceof Date) {
+    date = value;
+  } else if (typeof value === "string") {
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) return value; // sudah DD/MM/YYYY
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  }
+  if (!date || Number.isNaN(date.getTime())) return value;
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getUTCFullYear()}`;
+}
+
 function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): Partial<Record<PurchasePaymentField, unknown>> {
   const values: Partial<Record<PurchasePaymentField, unknown>> = {};
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
     if (rawRow[excelColumn] !== undefined && rawRow[excelColumn] !== "") {
-      values[field as PurchasePaymentField] = rawRow[excelColumn];
+      const f = field as PurchasePaymentField;
+      values[f] = DATE_FIELDS.has(f) ? toAccurateDate(rawRow[excelColumn]) : rawRow[excelColumn];
     }
   }
   return values;

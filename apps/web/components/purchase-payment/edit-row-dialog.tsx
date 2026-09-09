@@ -9,9 +9,16 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 
 // § mirror `components/purchase-invoice/edit-row-dialog.tsx`, DISEDERHANAKAN
-// — modul ini TIDAK ada grouping (1 baris = 1 payload independen), jadi
-// TIDAK ada prop/peringatan "siblingRowNumbers" seperti versi Purchase
-// Invoice/Sales Invoice.
+// — TIDAK ada prop/peringatan "siblingRowNumbers" seperti versi Purchase
+// Invoice/Sales Invoice, TAPI itu soal BEDA konteks "grouping": PI/SI
+// warning-nya untuk BARIS ITEM dalam 1 FAKTUR yang sama (Bill No/Trans
+// No sama). Modul ini (§ Fase 50) PUNYA grouping juga, tapi levelnya
+// beda — banyak FAKTUR BEDA digabung jadi 1 PEMBAYARAN (`paymentNumber`,
+// § `purchase-payment.mapping.ts`) — dialog ini SENGAJA belum kasih
+// peringatan serupa untuk itu (kalau vendorNo diedit tidak konsisten
+// dengan baris lain 1 grup pembayaran, baru ketahuan lewat error server
+// `validateGroupVendorConsistencyForPayment` saat retry, bukan proaktif
+// di dialog ini) — gap UX kecil, dicatat, bukan bug yang mengubah data.
 type EditableRow = {
   id: string;
   rowNumber: number;

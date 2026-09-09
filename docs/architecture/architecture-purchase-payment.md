@@ -169,6 +169,28 @@ nominal sama adalah 2 transaksi SAH yang beda, bukan duplikat yang
 perlu dideteksi) — tiap grup SELALU lewat jalur CREATE. TIDAK ada fitur
 "Batal Import" untuk modul ini — TIDAK berubah oleh Fase 50.
 
+## Update 2026-09-10 (Fase 88) — Audit Pra-Ekspansi: 2 Bug Ditemukan & Diperbaiki
+Sebelum lanjut ekspansi field (mirror Fase 85/86 Sales Receipt), audit
+kode aktual vs dokumentasi ini menemukan:
+1. **Dropdown mapping kolom manual TIDAK PUNYA opsi `paymentNumber`**
+   ("Purchase Payment No") — backend sudah dukung sejak Fase 50, tapi
+   dropdown `import/page.tsx` tidak pernah di-update (bug SAMA PERSIS
+   Fase 84 Sales Receipt). Field ini cuma bisa ke-mapping OTOMATIS kalau
+   nama kolom Excel PERSIS "Purchase Payment No" — client yang pakai
+   nama kolom lain tidak bisa akses grouping sama sekali. **Diperbaiki**:
+   opsi ditambahkan ke dropdown.
+2. **`transDate` TIDAK PERNAH dinormalisasi** — beda dari Sales
+   Receipt/Purchase Invoice yang sudah punya `toAccurateDate()`. Kalau
+   Excel client pakai kolom tanggal ASLI (bukan diketik manual sebagai
+   teks), nilai yang terbaca adalah angka serial Excel mentah, dikirim
+   apa adanya ke Accurate — **pasti ditolak setiap kali** (persis
+   insiden `lessons-learned.md` 2026-08-19). **Diperbaiki**: `toAccurateDate()`
+   ditambahkan ke `purchase-payment.mapping.ts`, PERSIS pola modul lain.
+
+Juga diperbaiki beberapa komentar basi (route & `accurate-purchase-payment.ts`
+masih bilang "TIDAK ada grouping"/"PER-BARIS" padahal Fase 50 sudah
+menambahkan grouping/PER-GRUP). Detail lengkap → `docs/phases/phase-88-audit-bug-purchase-payment.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

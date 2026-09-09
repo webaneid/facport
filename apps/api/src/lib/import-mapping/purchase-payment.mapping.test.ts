@@ -126,3 +126,40 @@ describe("buildPurchasePaymentPayload", () => {
     expect(payload.chequeAmount).toBe(620500);
   });
 });
+
+// § Fase 50 (BUG DITEMUKAN & DIPERBAIKI 2026-09-10) — `transDate`
+// sebelumnya TIDAK PERNAH dinormalisasi (beda dari Sales
+// Receipt/Purchase Invoice), jadi kalau Excel client pakai kolom
+// tanggal ASLI (bukan diketik manual sebagai teks), nilainya angka
+// serial Excel mentah dan dikirim apa adanya ke Accurate — pasti
+// ditolak. Test ini pastikan bug itu TIDAK regresi.
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+function excelSerialOf(year: number, month: number, day: number): number {
+  return (Date.UTC(year, month - 1, day) - EXCEL_EPOCH_UTC_MS) / 86400000;
+}
+
+describe("buildPurchasePaymentPayload — normalisasi tanggal (Fase 50, bug fix)", () => {
+  test("Date berupa angka serial Excel mentah -> dikonversi ke DD/MM/YYYY", () => {
+    const rawRows = [
+      { Date: excelSerialOf(2026, 9, 5), "No. Supplier": "V.00070", "No. Bank Account": "100-101-004", "Invoice No": "INV-001", Payment: 5000000 },
+    ];
+    const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+    expect(payload.transDate).toBe("05/09/2026");
+  });
+
+  test("Date berupa string ISO (2026-09-05...) -> dikonversi ke DD/MM/YYYY", () => {
+    const rawRows = [
+      { Date: "2026-09-05T00:00:00.000Z", "No. Supplier": "V.00070", "No. Bank Account": "100-101-004", "Invoice No": "INV-001", Payment: 5000000 },
+    ];
+    const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+    expect(payload.transDate).toBe("05/09/2026");
+  });
+
+  test("Date sudah format DD/MM/YYYY -> dibiarkan apa adanya (tidak ada regresi utk input manual)", () => {
+    const rawRows = [
+      { Date: "05/09/2026", "No. Supplier": "V.00070", "No. Bank Account": "100-101-004", "Invoice No": "INV-001", Payment: 5000000 },
+    ];
+    const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+    expect(payload.transDate).toBe("05/09/2026");
+  });
+});

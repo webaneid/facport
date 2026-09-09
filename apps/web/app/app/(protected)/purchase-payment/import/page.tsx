@@ -15,7 +15,10 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-purchase-payment.md — aplikasi pembayaran ke Faktur
 // Pembelian yang SUDAH ADA di Accurate (vendor & faktur WAJIB sudah
-// terdaftar, TIDAK auto-create). 1 baris Excel = 1 pembayaran = 1 faktur.
+// terdaftar, TIDAK auto-create). § Fase 50 — 1 baris Excel = 1
+// pembayaran = 1 faktur SECARA DEFAULT, TAPI bisa digabung jadi 1
+// pembayaran yang bayar BANYAK faktur sekaligus kalau kolom "Purchase
+// Payment No" (`paymentNumber`) diisi sama di beberapa baris.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "vendorNo", label: "Nomor Vendor (wajib)" },
@@ -23,6 +26,13 @@ const ACCURATE_FIELDS = [
   { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
   { value: "chequeAmount", label: "Jumlah Bayar (wajib)" },
   { value: "transDate", label: "Tanggal (wajib)" },
+  // § Fase 50 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — field ini SUDAH
+  // ADA di backend sejak Fase 50, tapi TIDAK PERNAH ditambahkan ke
+  // dropdown ini (bug SAMA PERSIS Fase 84 di Sales Receipt) — cuma bisa
+  // ke-mapping otomatis kalau nama kolom Excel PERSIS "Purchase Payment
+  // No". Ditambahkan supaya bisa dipetakan manual juga kalau client
+  // pakai nama kolom lain.
+  { value: "paymentNumber", label: "Purchase Payment No (opsional — isi sama untuk gabung jadi 1 pembayaran multi-faktur)" },
 ] as const;
 
 const uploadSchema = z.object({

@@ -2,13 +2,13 @@ import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 
-// § architecture-purchase-payment.md — save.do PER-BARIS (bukan
-// bulk-save.do, konsisten dengan pola Purchase Invoice/Sales Invoice, §
-// phase-02 doc "Keputusan Kecil"). TIDAK ada lookup vendor/faktur sebelum
-// panggil ini (beda dari accurate-vendor.ts) — `vendorNo`/`invoiceNo`
-// dikirim APA ADANYA sebagai string, Accurate yang validasi eksistensinya
-// (menolak `s:false` kalau tidak ketemu, § architecture doc "Keputusan
-// yang Perlu Dikonfirmasi" #2/#3).
+// § architecture-purchase-payment.md — save.do PER-GRUP (§ Fase 50 — 1
+// grup bisa berisi banyak faktur via `detailInvoice[]`, bukan cuma 1
+// baris Excel), bukan bulk-save.do. TIDAK ada lookup vendor/faktur
+// sebelum panggil ini (beda dari accurate-vendor.ts) — `vendorNo`/
+// `invoiceNo` dikirim APA ADANYA sebagai string, Accurate yang validasi
+// eksistensinya (menolak `s:false` kalau tidak ketemu, § architecture
+// doc "Keputusan yang Perlu Dikonfirmasi" #2/#3).
 export type PurchasePaymentSaveResult = {
   id: number;
   number: string;

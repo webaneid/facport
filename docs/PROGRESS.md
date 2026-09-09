@@ -96,6 +96,7 @@
 | 85   | Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-85-ekspansi-field-sales-receipt.md` |
 | 86   | Validasi "Tax ID" Sales Receipt | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-86-validasi-tax-id-sales-receipt.md` |
 | 87   | Indikator Progres Import (Reusable) | Done | (tidak ada, komponen frontend generic — lihat phase doc) | `docs/phases/phase-87-import-progress-indicator.md` |
+| 88   | Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-88-audit-bug-purchase-payment.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2377,3 +2378,25 @@ Account). `bun run typecheck` 0 error, `apps/web` 50 pass/0 fail (6
 baru). **Verifikasi visual browser TERTUNDA** — browser automation
 gagal connect sesi ini (mismatch akun OAuth extension), didelegasikan
 ke user untuk cek manual sebelum dianggap tuntas 100%.
+
+## Update 2026-09-10 — Fase 88 Done: Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi)
+Sebelum diskusi ekspansi field Purchase Payment (mirror Fase 85/86
+Sales Receipt), user minta audit kode aktual vs dokumentasi dulu — pola
+sama Fase 84. Ketemu 2 bug nyata: (1) dropdown mapping kolom manual
+tidak punya opsi `paymentNumber` (kunci grouping, bug SAMA PERSIS Fase
+84), field cuma ke-mapping otomatis kalau nama kolom Excel PERSIS
+"Purchase Payment No"; (2) **`transDate` TIDAK PERNAH dinormalisasi**
+sejak modul ini dibangun — beda dari Sales Receipt/Purchase Invoice.
+Kalau Excel client pakai kolom tanggal ASLI (bukan teks manual), nilai
+terbaca sebagai angka serial Excel mentah, dikirim apa adanya ke
+Accurate — **pasti ditolak setiap kali** (persis insiden
+`lessons-learned.md` 2026-08-19 yang seharusnya sudah dicegah, tapi
+terlewat saat modul ini dibangun). Kedua bug diperbaiki: opsi dropdown
+ditambahkan, `toAccurateDate()` (fungsi identik modul lain) diterapkan
+ke `transDate`. Sekalian diperbaiki 3 komentar/dokumentasi basi (route
+& `accurate-purchase-payment.ts` masih bilang "TIDAK ada grouping"/
+"PER-BARIS" padahal Fase 50 sudah menambahkan grouping/PER-GRUP).
+Ekspansi field besar SENGAJA DITUNDA — bug dulu, ekspansi dibahas
+terpisah nanti (instruksi eksplisit user "perbaiki bug dulu"). `bun run
+typecheck` 0 error, `apps/api` 540 pass/0 fail (3 baru), `apps/web` 50
+pass/0 fail.
