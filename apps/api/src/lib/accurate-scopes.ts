@@ -75,6 +75,14 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // disiapkan sekarang (VERIFIED ke OpenAPI spec, § riset Fase 13 §
   // "Feasibility Check — 5 Sub-Modul") supaya siap dipakai begitu
   // giliran modul ini dibangun.
+  // § (Sempat ditambah `tax_view` di sini 2026-09-10 untuk eksplorasi
+  // validasi "Tax ID" via `/api/tax/detail.do", DIKEMBALIKAN lagi —
+  // belum ada endpoint/service yang memakai (riset dijeda, blocked oleh
+  // local dev tidak punya subscription Sales Receipt untuk test nyata),
+  // dan menambah scope tanpa fitur pemakainya cuma memaksa SEMUA
+  // koneksi Sales Receipt existing re-authorize tanpa manfaat. Scope
+  // ini balik lagi kalau/pas fitur Tax ID benar-benar dieksekusi —
+  // pola sama seperti komentar Fase 14 di atas.
   sales_receipt: ["sales_receipt_view", "sales_receipt_save"],
   purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view"],
   journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view"],

@@ -131,3 +131,235 @@ describe("buildSalesReceiptPayload", () => {
     expect(payload.chequeAmount).toBe(19800000);
   });
 });
+
+// § Fase 85 (2026-09-10) — 18 field baru, dikonfirmasi 4 sumber
+// independen (spec resmi + template kompetitor + screenshot UI +
+// dokumentasi resmi /api/tax). § architecture-sales-receipt.md §
+// "Ekspansi Field Opsional — Fase 85".
+describe("buildSalesReceiptPayload — Fase 85 (field root baru)", () => {
+  const fullColumnMapping = {
+    ...columnMapping,
+    Description: "description",
+    Branch: "branchName",
+    "Currency Code": "currencyCode",
+    kurs: "rate",
+    "Cheque No": "chequeNo",
+    "Cheque Date": "chequeDate",
+    "Payment Method": "paymentMethod",
+    "Pass Validate Inv Date": "passValidateInvoiceDate",
+    "Use credit": "useCredit",
+  };
+
+  test("field root opsional baru masuk payload kalau di-mapping & terisi", () => {
+    const rawRows = [
+      {
+        Tanggal: "05/09/2026",
+        "No Pelanggan": "C.00001",
+        "Akun Bank/Kas": "1-10200",
+        "No Faktur": "SI-001",
+        "Jumlah Bayar": 5000000,
+        Description: "Pelunasan September",
+        Branch: "Cabang Jakarta",
+        "Currency Code": "IDR",
+        kurs: 1,
+        "Cheque No": "CQ-001",
+        "Cheque Date": "05/09/2026",
+        "Payment Method": "Cek/Giro",
+        "Pass Validate Inv Date": "Y",
+        "Use credit": "Y",
+      },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+    expect(payload.description).toBe("Pelunasan September");
+    expect(payload.branchName).toBe("Cabang Jakarta");
+    expect(payload.currencyCode).toBe("IDR");
+    expect(payload.rate).toBe(1);
+    expect(payload.chequeNo).toBe("CQ-001");
+    expect(payload.chequeDate).toBe("05/09/2026");
+    expect(payload.paymentMethod).toBe("BANK_CHEQUE");
+    expect(payload.passValidateInvoiceDate).toBe(true);
+    expect(payload.useCredit).toBe(true);
+  });
+
+  test("field opsional baru TIDAK masuk payload kalau tidak di-mapping/kosong (non-breaking)", () => {
+    const rawRows = [
+      { Tanggal: "05/09/2026", "No Pelanggan": "C.00001", "Akun Bank/Kas": "1-10200", "No Faktur": "SI-001", "Jumlah Bayar": 5000000 },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+    expect(payload.description).toBeUndefined();
+    expect(payload.branchName).toBeUndefined();
+    expect(payload.chequeNo).toBeUndefined();
+    expect(payload.paymentMethod).toBeUndefined();
+    expect(payload.useCredit).toBeUndefined();
+  });
+
+  describe("paymentMethod — terjemahan label Indonesia ke enum API", () => {
+    const cases: [string, string][] = [
+      ["Tunai", "CASH_OTHER"],
+      ["Cek/Giro", "BANK_CHEQUE"],
+      ["Transfer Bank", "BANK_TRANSFER"],
+      ["EDC", "EDC"],
+      ["Kartu Debit", "DEBIT_CARD"],
+      ["Kartu Kredit", "CREDIT_CARD"],
+      ["QRIS", "QRIS"],
+      ["Payment Link", "PAYMENT_LINK"],
+      ["Virtual Account", "VIRTUAL_ACCOUNT"],
+      ["Dompet Digital", "E_WALLET"],
+      ["Non Tunai Lainnya", "OTHERS"],
+    ];
+    for (const [label, enumValue] of cases) {
+      test(`"${label}" -> ${enumValue}`, () => {
+        const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, "Payment Method": label }];
+        const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+        expect(payload.paymentMethod).toBe(enumValue);
+      });
+    }
+
+    test("enum API langsung (mis. 'CASH_OTHER') diterima apa adanya", () => {
+      const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, "Payment Method": "CASH_OTHER" }];
+      const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+      expect(payload.paymentMethod).toBe("CASH_OTHER");
+    });
+
+    test("nilai tidak dikenal diteruskan apa adanya (biar Accurate yang reject)", () => {
+      const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, "Payment Method": "Bitcoin" }];
+      const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+      expect(payload.paymentMethod).toBe("Bitcoin");
+    });
+  });
+
+  describe("boolean 'Y'/kosong — passValidateInvoiceDate/useCredit/paidPph", () => {
+    test("'Y'/'y'/'ya' jadi true, kosong jadi undefined (bukan false)", () => {
+      const rawRows = [
+        { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, "Use credit": "Y", "Pass Validate Inv Date": "ya" },
+      ];
+      const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+      expect(payload.useCredit).toBe(true);
+      expect(payload.passValidateInvoiceDate).toBe(true);
+    });
+
+    test("nilai selain Y (mis. 'N'/'Tidak') jadi false, bukan diabaikan", () => {
+      const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, "Use credit": "N" }];
+      const payload = buildSalesReceiptPayload(rawRows, fullColumnMapping);
+      expect(payload.useCredit).toBe(false);
+    });
+  });
+
+  test("presisi desimal 6 digit TIDAK dibulatkan/dipotong (rate, Cheque Amount eksplisit, Discount)", () => {
+    const mapping = { ...fullColumnMapping, "Cheque Amount": "receiptTotalAmount" };
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000, kurs: 12600.000001, "Cheque Amount": 1000000.123456 },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    expect(payload.rate).toBe(12600.000001);
+    expect(payload.chequeAmount).toBe(1000000.123456);
+  });
+});
+
+describe("buildSalesReceiptPayload — Fase 85 (Cheque Amount eksplisit vs auto-SUM)", () => {
+  const mapping = { ...columnMapping, "Cheque Amount": "receiptTotalAmount" };
+
+  test("Cheque Amount diisi -> dipakai APA ADANYA, BUKAN auto-SUM", () => {
+    const rawRows = [
+      { "No. Sales Receipt": "R1", "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 5000000, "Cheque Amount": 4000000 },
+      { "No. Sales Receipt": "R1", "No Faktur": "SI-2", "Jumlah Bayar": 1000000 },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    // SUM sebenarnya 6.000.000, tapi Cheque Amount eksplisit (4.000.000) yang menang
+    expect(payload.chequeAmount).toBe(4000000);
+  });
+
+  test("Cheque Amount TIDAK diisi -> tetap fallback auto-SUM (zero regression Fase 49)", () => {
+    const rawRows = [
+      { "No. Sales Receipt": "R1", "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 5000000 },
+      { "No. Sales Receipt": "R1", "No Faktur": "SI-2", "Jumlah Bayar": 1000000 },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    expect(payload.chequeAmount).toBe(6000000);
+  });
+});
+
+describe("buildSalesReceiptPayload — Fase 85 (detailInvoice[].departmentName/paidPph/pphNumber)", () => {
+  const mapping = {
+    ...columnMapping,
+    Department: "invoiceDepartmentName",
+    "Paid PPH": "paidPph",
+    "PPh No": "pphNumber",
+  };
+
+  test("field per-baris masuk ke detailInvoice[i], BUKAN root", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, Department: "Marketing", "Paid PPH": "Y", "PPh No": "PPH-001" },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    expect(payload.departmentName).toBeUndefined();
+    expect(payload.paidPph).toBeUndefined();
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail.departmentName).toBe("Marketing");
+    expect(detail.paidPph).toBe(true);
+    expect(detail.pphNumber).toBe("PPH-001");
+  });
+
+  test("baris tanpa data ini -> detailInvoice[i] TIDAK punya key tambahan (non-breaking)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail).toEqual({ invoiceNo: "SI-1", paymentAmount: 1000000 });
+  });
+});
+
+describe("buildSalesReceiptPayload — Fase 85 (detailInvoice[].detailDiscount[])", () => {
+  const mapping = {
+    ...columnMapping,
+    Discount: "discountAmount",
+    "Discount Acc": "discountAccountNo",
+    "Discount Note": "discountNotes",
+    "Diskon - Dept": "discountDepartmentName",
+    "Diskon - Project No": "discountProjectNo",
+  };
+
+  test("Discount + Discount Acc terisi -> detailDiscount masuk NESTED di dalam detailInvoice[i], BUKAN sibling", () => {
+    const rawRows = [
+      {
+        "No Pelanggan": "C1",
+        "No Faktur": "SI-1",
+        "Jumlah Bayar": 1000000,
+        Discount: 50000,
+        "Discount Acc": "4-90000",
+        "Discount Note": "Diskon pelunasan cepat",
+        "Diskon - Dept": "Sales",
+        "Diskon - Project No": "PRJ-001",
+      },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    expect(payload.detailDiscount).toBeUndefined();
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail.detailDiscount).toEqual([
+      { amount: 50000, accountNo: "4-90000", discountNotes: "Diskon pelunasan cepat", departmentName: "Sales", projectNo: "PRJ-001" },
+    ]);
+  });
+
+  test("cuma Discount terisi TANPA Discount Acc -> TIDAK dianggap punya data diskon (syarat minimal tidak terpenuhi)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, Discount: 50000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail.detailDiscount).toBeUndefined();
+  });
+
+  test("cuma Discount Acc terisi TANPA Discount -> TIDAK dianggap punya data diskon", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Discount Acc": "4-90000" }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    expect(detail.detailDiscount).toBeUndefined();
+  });
+
+  test("presisi desimal 6 digit di Discount amount TIDAK dibulatkan", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, Discount: 95275.123456, "Discount Acc": "4-90000" },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mapping);
+    const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
+    const discount = (detail.detailDiscount as Record<string, unknown>[])[0]!;
+    expect(discount.amount).toBe(95275.123456);
+  });
+});

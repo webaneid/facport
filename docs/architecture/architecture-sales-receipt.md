@@ -177,6 +177,253 @@ ke faktur yang sama adalah 2 transaksi SAH berbeda, bukan duplikat yang
 perlu dideteksi/dibatalkan otomatis. Keputusan ini TIDAK berubah oleh
 Fase 49 — cuma grouping DALAM 1 batch yang ditambah.
 
+> **Update 2026-09-10 (Fase 84)** — Audit menemukan dropdown mapping
+> kolom manual (`import/page.tsx`) TIDAK PERNAH dapat opsi
+> `receiptNumber` ("No. Sales Receipt") sejak field ini ditambahkan
+> Fase 49 — field itu cuma bisa ke-mapping OTOMATIS kalau nama kolom
+> Excel persis cocok salah satu dari 3 nama di `defaultColumnMap`,
+> TIDAK BISA di-mapping manual kalau client pakai nama kolom lain
+> (fitur grouping jadi unreachable). Backend TIDAK bermasalah (`VALID_FIELDS`
+> di route sudah otomatis include field ini sejak awal) — murni gap UI
+> yang tidak pernah ke-backfill. Fix: opsi ditambahkan ke dropdown.
+> Detail → `docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md`.
+
+## Ekspansi Field Opsional — Fase 85 (✅ DIEKSEKUSI, 2026-09-10)
+
+> **Status: ✅ DONE** — SEMUA 18 field di bawah SUDAH diimplementasikan
+> di `salesReceiptMapping.fieldToAccuratePath` (`sales-receipt.mapping.ts`).
+> Nama field internal final untuk "Cheque Amount" eksplisit:
+> **`receiptTotalAmount`**. Detail eksekusi lengkap →
+> `docs/phases/phase-85-ekspansi-field-sales-receipt.md`.
+
+### Sumber & Metodologi Riset
+Client kirim file Excel referensi mereka sendiri (template hasil
+download dari Facport + 1 sheet tambahan **"NOTE"** berisi wishlist 28
+kolom). Dicek silang dengan **3 sumber independen**:
+1. **Spec resmi Accurate** (`accurate-openapi.json` §
+   `/api/sales-receipt/save.do`) — sumber kebenaran field API yang
+   BENERAN ada.
+2. **Template kompetitor** (`FACPORT_Sales Receipt_v5.xlsx`, dipakai
+   nyata di lapangan) — sheet "Import CR" (557 baris) + sheet
+   "Penjelasan Kolom" (deskripsi Indonesia tiap kolom). Header sheet
+   "Import CR" ini **SAMA PERSIS** (nama & urutan) dengan sheet NOTE
+   client — client jelas mencontoh template kompetitor ini utuh, bukan
+   nulis wishlist dari nol.
+3. **7 screenshot UI Accurate ASLI** dikirim client (form "Penerimaan
+   Penjualan" sungguhan, bukan dokumentasi/tebakan) — dipakai untuk
+   verifikasi FINAL sebelum eksekusi, dan berhasil KETEMU 1 koreksi
+   penting: enum `paymentMethod` yang direncanakan dari sumber #2
+   TERNYATA kurang 3 nilai (`CREDIT_CARD`/`DEBIT_CARD`/`E_WALLET`) —
+   dikoreksi balik ke sumber #1 (spec resmi) yang memang lengkap 11
+   nilai, dikonfirmasi cocok persis dengan dropdown di screenshot.
+   Screenshot ini juga MENGKONFIRMASI PASTI (bukan cuma "tidak
+   ketemu") kenapa 4 field lain di-skip — lihat kolom "Catatan" di
+   tabel bawah.
+
+Metodologi 3-sumber ini (spec resmi + template kompetitor + screenshot
+UI asli) lebih ketat dari fase-fase sebelumnya (Fase 49/61/64/73 cuma
+2 sumber) — TIDAK menebak field dari 1 sumber saja, dan TERBUKTI
+berguna: kalau cuma pakai sumber #2 saja, enum `paymentMethod` yang
+dikirim ke Accurate akan SALAH/tidak lengkap.
+
+### Tabel Keputusan — 28 Kolom NOTE Client
+
+| Kolom NOTE Client | Keputusan | Field API (level) | Catatan |
+|---|---|---|---|
+| Date, No. Sales Receipt, Customer No., No. Bank Account, Invoice No, Payment | ✅ Sudah ada | `transDate`, `number`, `customerNo`, `bankNo`, `detailInvoice[].invoiceNo`, `detailInvoice[].paymentAmount` | Tidak berubah |
+| Description | 🆕 Implementasi | `description` (root) | String bebas |
+| Branch | 🆕 Implementasi | `branchName` (root) | String, nama cabang |
+| Currency Code | 🆕 Implementasi | `currencyCode` (root) | String, kode mata uang |
+| kurs | 🆕 Implementasi | `rate` (root) | Number, nilai tukar |
+| **Cheque Amount** | 🆕 Implementasi (khusus, lihat § desain di bawah) | `chequeAmount` (root) | Field ini SUDAH ADA sebagai internal `chequeAmount`, TAPI SAAT INI dipakai untuk arti BEDA (per-baris, auto-SUM ke root) — DIPERLUKAN penyesuaian desain, bukan sekadar tambah kolom baru |
+| Cheque No | 🆕 Implementasi | `chequeNo` (root) | String, opsional (spec resmi TIDAK tandai wajib — kompetitor tandai "Wajib" tapi data sample mereka sendiri KOSONG untuk transaksi non-cek, kontradiksi internal template mereka, jadi diikuti SPEC RESMI) |
+| Cheque Date | 🆕 Implementasi | `chequeDate` (root) | Date, opsional (sama alasan Cheque No) |
+| Payment Method | 🆕 Implementasi | `paymentMethod` (root) | String ENUM TETAP (lihat § di bawah), opsional |
+| Pass Validate Inv Date | 🆕 Implementasi | `passValidateInvoiceDate` (root) | Boolean, konvensi "Y"/kosong (lihat § di bawah) |
+| Use credit | 🆕 Implementasi | `useCredit` (root) | Boolean, konvensi "Y"/kosong |
+| Department | 🆕 Implementasi | `detailInvoice[].departmentName` | String, per baris/faktur |
+| Paid PPH | 🆕 Implementasi | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong |
+| PPh No | 🆕 Implementasi | `detailInvoice[].pphNumber` | String, nomor bukti potong PPh23 |
+| Discount | 🆕 Implementasi | `detailInvoice[].detailDiscount[].amount` | Number — level BARU, nested di dalam `detailInvoice[]` |
+| Discount Acc | 🆕 Implementasi | `detailInvoice[].detailDiscount[].accountNo` | String |
+| Discount Note | 🆕 Implementasi | `detailInvoice[].detailDiscount[].discountNotes` | String |
+| Diskon - Dept | 🆕 Implementasi | `detailInvoice[].detailDiscount[].departmentName` | String |
+| Diskon - Project No | 🆕 Implementasi | `detailInvoice[].detailDiscount[].projectNo` | String |
+| **Existing Credit** | ❌ SKIP (CONFIRMED, § screenshot UI) | — | Terkonfirmasi lewat screenshot UI Accurate ASLI dari client: ini **"Sisa Kredit"** — nilai TAMPILAN read-only (saldo kredit customer, dihitung Accurate dari data akun customer), BUKAN field input. Memang tidak ada yang perlu di-set, bukan cuma "tidak ketemu". |
+| **Return Overpay** | ❌ SKIP (CONFIRMED nyata tapi tidak ada di API) | — | Screenshot UI client TUNJUKKAN field ini NYATA ADA — checkbox **"Retur Kredit"**, BISA DI-TOGGLE user (BUKAN read-only/tampilan agregat — beda dari "Existing Credit"). TAPI dicek EXHAUSTIF ke SEMUA 17 property root `sales-receipt/save.do`, TIDAK ADA kandidat nama field sama sekali (beda dari kasus charField/projectNo dulu yang punya pola field lain untuk dijadikan hipotesis kuat) — fitur UI-only Accurate yang tidak diekspos ke API publik (dikonfirmasi juga via second opinion 2026-09-10). |
+| **Tax Amount** | ❌ SKIP (CONFIRMED, 4 sumber) | — | Screenshot UI client TUNJUKKAN nilai ini muncul sebagai **hasil KOMPUTASI OTOMATIS** ("Jasa Kebersihan: Rp 40.000", dihitung Accurate dari `paidPph`+kategori jasa di faktur asli) — BUKAN field yang diisi user/API. DIPERKUAT (2026-09-10) oleh dokumentasi resmi `/api/tax/*` (`docs/referencehtml/pph-api.html`, dikirim client): enum `pph23Type` di situ PUNYA nilai `JASA_LAIN_KEBERSIHAN` — cocok PERSIS dengan label di screenshot, membuktikan nilai ini berasal dari klasifikasi Master Data Pajak yang sudah di-set di faktur asli, bukan input Sales Receipt. |
+| **Tax ID** | ❌ SKIP | — | Deskripsi kompetitor mengindikasikan referensi master data — DIKONFIRMASI (2026-09-10) via dokumentasi resmi `/api/tax/*`: ini ID record di endpoint TERPISAH `/api/tax/list.do` (master data Pajak: `taxType`, `pph23Type`, `rate`, dst), BUKAN atribut transaksi `sales-receipt/save.do`. Tidak relevan untuk fase ini, bisa jadi konteks kalau nanti ada fitur validasi/sinkronisasi Master Data Pajak. |
+
+**18 field baru dikonfirmasi** (spec resmi + template kompetitor + screenshot UI Accurate asli dari client — 3 sumber independen),
+**4 field TETAP di-skip** — TAPI sekarang dengan alasan PASTI/terkonfirmasi
+(bukan lagi "tidak ketemu dokumentasinya"), lihat kolom Catatan di atas.
+
+### Keputusan Desain
+
+**1. "Cheque Amount" — root total EKSPLISIT vs auto-SUM (✅ FINAL)**
+Desain SEBELUMNYA (`buildSalesReceiptPayload`, Fase 49): root
+`chequeAmount` dihitung OTOMATIS = SUM semua `detailInvoice[].paymentAmount`
+dalam 1 grup — user TIDAK pernah isi ini langsung. Tapi kompetitor
+treat "Cheque Amount" sebagai kolom **INPUT MANUAL WAJIB** ("Nilai
+Konfirmasi Pembayaran") — SEPARATE dari total per-invoice.
+
+**Keputusan final**: kolom Excel BARU "Cheque Amount" (opsional),
+mapping ke field internal baru **`receiptTotalAmount`** (bukan reuse
+nama `chequeAmount` yang sudah dipakai untuk `paymentAmount` per baris —
+hindari bentrok makna). Kalau kolom ini diisi user, dipakai APA ADANYA
+sebagai root `chequeAmount` (override); kalau kosong, TETAP fallback ke
+auto-SUM (perilaku Fase 49, zero regression) — diimplementasikan PERSIS
+begini di `buildSalesReceiptPayload`.
+
+**2. Konvensi Boolean "Y"/kosong**
+`passValidateInvoiceDate`, `useCredit`, `paidPph` pakai konvensi
+kompetitor "isikan Y jika ..., kosongkan jika tidak" — BEDA dari
+konvensi "TRUE"/"FALSE" yang dipakai Sales Invoice/Purchase Invoice.
+Rencana: reuse pola `TRUE_TEXT_VALUES`/`toAccurateBoolean` yang SUDAH
+ada di modul lain (`sales-invoice.mapping.ts`) — set itu SUDAH terima
+`"y"`/`"ya"`/`"yes"`/`"true"`/`"1"` case-insensitive, jadi "Y" dari
+template kompetitor OTOMATIS kompatibel TANPA logic tambahan.
+
+**3. `paymentMethod` — ENUM tetap, bukan teks bebas**
+⚠️ **KOREKSI (2026-09-10)** — daftar awal dari "Penjelasan Kolom"
+kompetitor (8 nilai) TERNYATA **KURANG LENGKAP**. Dicek ulang LANGSUNG
+ke `enum` di spec resmi (`accurate-openapi.json`), DIKONFIRMASI SILANG
+dengan screenshot dropdown "Metode Bayar" UI Accurate asli dari client
+— nilai valid yang BENAR ada **11**, dengan padanan Indonesia (label UI)
+persis seperti ini:
+
+| Label UI (Indonesia) | Enum API |
+|---|---|
+| Tunai | `CASH_OTHER` |
+| Cek/Giro | `BANK_CHEQUE` |
+| Transfer Bank | `BANK_TRANSFER` |
+| EDC | `EDC` |
+| Kartu Debit | `DEBIT_CARD` |
+| Kartu Kredit | `CREDIT_CARD` |
+| QRIS | `QRIS` |
+| Payment Link | `PAYMENT_LINK` |
+| Virtual Account | `VIRTUAL_ACCOUNT` |
+| Dompet Digital | `E_WALLET` |
+| Non Tunai Lainnya | `OTHERS` |
+
+`CREDIT_CARD`, `DEBIT_CARD`, `E_WALLET` SEMPAT TERLEWAT di riset awal
+(sumber kompetitor tidak lengkap) — untung ketahuan sebelum eksekusi,
+kalau tidak user yang pilih "Kartu Kredit" akan gagal validasi karena
+dicocokkan ke daftar yang salah. Rencana: validasi nilai kolom Excel
+terhadap 11 enum ini SEBELUM kirim ke Accurate (pesan error jelas kalau
+user isi nilai di luar daftar, sebut daftar yang valid), BUKAN kirim
+mentah-mentah apa pun yang diketik user. Kolom Excel boleh terima label
+Indonesia (kiri) ATAU enum API (kanan) — diterjemahkan otomatis,
+konsisten pola "pilihan ramah user" di modul lain (mis. Payment Method
+Purchase Payment, kalau ada).
+
+**4. `detailDiscount[]` — array BARU, nested di DALAM `detailInvoice[]`**
+BEDA dari `detailExpense[]` (Sales Invoice/Purchase Invoice, sibling
+dari `detailItem[]`) — di sini `detailDiscount[]` nested SATU LEVEL LEBIH
+DALAM, di dalam tiap elemen `detailInvoice[]`. 1 baris Excel (1 elemen
+`detailInvoice`) BISA punya PALING BANYAK 1 entri `detailDiscount`
+(bukan array Excel-level terpisah) — dianggap punya data diskon kalau
+minimal "Discount" (amount) DAN "Discount Acc" (accountNo) terisi,
+mirror pola `buildDetailExpenseFromRow` (accountNo+amount sebagai
+syarat minimal).
+
+**5. Penempatan kolom Excel — ⚠️ DIKOREKSI (2026-09-10), BUKAN "paling
+akhir" seperti draf awal**
+Rencana awal: semua 18 kolom baru ditaruh PALING AKHIR template
+(setelah "Jumlah Bayar"), konsisten pola semua fase sebelumnya (Fase
+70-81, "selalu tambah di ujung, jangan selipkan di tengah").
+
+**Keputusan final berbeda** — instruksi eksplisit user setelah eksekusi
+awal: *"susunan excel harus sama dengan yg dibuat client, karena itu
+permintaannya"*. Sales Receipt PENGECUALIAN sengaja dari konvensi
+"tambah di akhir": karena tujuan Fase 85 memang MENYAMAKAN template
+dengan file yang SUDAH familiar bagi client (sheet NOTE mereka, disalin
+dari template kompetitor `FACPORT_Sales Receipt_v5.xlsx`), urutan kolom
+justru HARUS ikut urutan asli mereka, kolom lama ikut disisipkan ulang
+di posisi yang sesuai (bukan tetap di depan lalu field baru ditambah di
+ekor). Urutan final (`defaultColumnMap`, `salesReceiptTemplateGuide`,
+dropdown `ACCURATE_FIELDS` — ketiganya disamakan urutannya):
+
+Tanggal → No. Sales Receipt → Akun Bank/Kas → No Pelanggan →
+Description → Branch → Currency Code → kurs → Cheque Amount → Cheque No
+→ Cheque Date → Payment Method → Pass Validate Inv Date → Use credit →
+No Faktur → Jumlah Bayar → Department → Paid PPH → PPh No → Discount →
+Discount Acc → Discount Note → Diskon - Dept → Diskon - Project No.
+
+(4 field skip — Existing Credit, Return Overpay, Tax Amount, Tax ID —
+posisinya di file asli client dilewati begitu saja, TIDAK bikin celah/
+kolom kosong, konsisten § "4 Field yang Di-Skip" di atas.)
+
+Ini keputusan KHUSUS Sales Receipt, BUKAN perubahan konvensi global —
+modul lain (Fase 70-84 dst) TETAP pakai pola "tambah kolom baru di
+akhir", kecuali ada permintaan client serupa di masa depan.
+
+**6. Nama kolom Excel — ikuti istilah PERSIS kompetitor**
+Konsisten pola Fase 50 (Purchase Payment: "label kolom diikutkan
+istilah kompetitor, client sudah familiar") — `defaultColumnMap` pakai
+nama kolom PERSIS seperti template kompetitor ("Description", "Branch",
+"Currency Code", "kurs", "Cheque No", "Cheque Date", "Payment Method",
+"Pass Validate Inv Date", "Use credit", "Department", "Paid PPH", "PPh
+No", "Discount", "Discount Acc", "Discount Note", "Diskon - Dept",
+"Diskon - Project No") sebagai SATU-SATUNYA nama (belum ada sinonim
+Indonesia lama untuk field yang benar-benar baru, beda dari kasus
+rename field existing).
+
+**7. Presisi Desimal — WAJIB dukung 6 digit di belakang koma (catatan
+eksplisit client)**
+Client eksplisit minta: **"yang berkaitan sama angka, tolong diset bisa
+membaca 6 angka belakang koma"**. Dicek ke spec resmi — ini MEMANG
+batasan/kapasitas resmi Accurate untuk field bertipe Number di endpoint
+ini, BUKAN permintaan di luar API: `chequeAmount` (root & versi
+eksplisit baru), `detailInvoice[].paymentAmount`, dan
+`detailInvoice[].detailDiscount[].amount` SEMUA didokumentasikan spec
+dengan contoh PERSIS `95275.123456` — *"Nilai maksimum: 999 miliar
+dengan 6 digit desimal"*. `rate` (kurs) juga bertipe Number, secara
+alami butuh presisi desimal tinggi (nilai tukar mata uang) walau
+deskripsi spec-nya tidak menyebut angka 6 secara eksplisit — DIPERLAKUKAN
+SAMA (izinkan hingga 6 desimal) demi konsistensi.
+
+**Implikasi implementasi** (untuk semua field Number di atas):
+- **JANGAN** `Math.round()`/pembulatan implisit di mana pun sepanjang
+  jalur baca Excel → payload Accurate — nilai desimal dari Excel harus
+  sampai ke Accurate APA ADANYA (sampai 6 digit).
+- **JANGAN** parsing yang memaksa integer (`parseInt`, atau regex yang
+  menolak titik desimal) — WAJIB pakai parsing yang mempertahankan
+  desimal (`Number()`/`parseFloat()`, konsisten pola `Number(rowValues.chequeAmount ?? 0)`
+  yang sudah dipakai `buildSalesReceiptPayload` sekarang — TIDAK perlu
+  diubah untuk bagian ini, cuma DIKONFIRMASI sudah benar).
+- Kolom di template & `template-guide.ts` yang bertipe Number
+  (`chequeAmount` baru, `rate`, `Discount`) deskripsinya WAJIB sebut
+  eksplisit "boleh sampai 6 angka di belakang koma" — supaya user tidak
+  salah kira harus angka bulat (pola instruksi Excel lain di project
+  ini selalu bilang "Angka polos, TANPA titik/koma pemisah RIBUAN" —
+  itu soal PEMISAH ribuan, BUKAN larangan desimal, dua hal beda yang
+  gampang disalahpahami kalau tidak dijelaskan eksplisit).
+- Test baru (nanti pas eksekusi) WAJIB ada kasus nilai desimal presisi
+  tinggi (mis. `1000000.123456`) untuk SETIAP field Number baru,
+  pastikan tidak ada pembulatan/pemotongan di sepanjang jalur.
+
+### Sudah Diputuskan (Riwayat Singkat)
+- ~~Nama field internal final untuk "Cheque Amount"~~ — **`receiptTotalAmount`**,
+  lihat Keputusan Desain #1.
+- ~~Apakah 4 field yang di-skip perlu ditindaklanjuti~~ — **SUDAH
+  MATANG (2026-09-10)**, dikonfirmasi via 7 screenshot UI Accurate asli
+  + dokumentasi resmi `/api/tax` dari client: Existing Credit & Tax
+  Amount TERBUKTI nilai read-only/komputasi otomatis (memang tidak ada
+  yang perlu di-set), Tax ID = ID record master data pajak terpisah.
+  **Return Overpay** ("Retur Kredit") TERBUKTI NYATA ada di UI tapi
+  TIDAK ADA di API manapun (dicek exhaustif) — DIDOKUMENTASIKAN LENGKAP
+  (lihat Tabel Keputusan) untuk ditanyakan ke Accurate CS langsung
+  kalau diperlukan nanti, TIDAK diimplementasikan dengan tebakan.
+
+### Belum Diputuskan (Di Luar Scope Fase Ini)
+- Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment (modul
+  bayangan cermin PERSIS modul ini) — belum diminta eksplisit untuk
+  Purchase Payment, tapi pola sebelumnya (Fase 75 PI mirror SI)
+  menunjukkan client cenderung minta simetri lintas modul serupa. TIDAK
+  dikerjakan di Fase 85 (scope KHUSUS Sales Receipt) — bisa jadi fase
+  terpisah nanti kalau diminta.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`
@@ -184,3 +431,5 @@ Fase 49 — cuma grouping DALAM 1 batch yang ditambah.
   `docs/architecture/architecture-purchase-payment.md`, Fase 33
 - Faktur yang diterima pembayarannya → `docs/architecture/architecture-sales-invoice.md`
 - Katalog sub-modul → ADR-0019
+- Rencana ekspansi field opsional (Fase 85, belum dieksekusi) →
+  `docs/phases/phase-85-ekspansi-field-sales-receipt.md`
