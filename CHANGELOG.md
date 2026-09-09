@@ -1,3 +1,8 @@
+## 1.21.0 (2026-09-09)
+
+* Merge pull request #45 from webaneid/develop ([02407d5](https://github.com/webaneid/facport/commit/02407d5)), closes [#45](https://github.com/webaneid/facport/issues/45)
+* feat: link alur penjualan/pembelian level ITEM+EXPENSE, rename PO No/Expense, fix scope vendor Purch ([73819eb](https://github.com/webaneid/facport/commit/73819eb))
+
 ## 1.20.0 (2026-09-09)
 
 * Merge pull request #44 from webaneid/develop ([728d85c](https://github.com/webaneid/facport/commit/728d85c)), closes [#44](https://github.com/webaneid/facport/issues/44)
