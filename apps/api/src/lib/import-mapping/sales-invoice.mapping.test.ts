@@ -295,24 +295,29 @@ describe("buildDetailItemFromRow", () => {
   // § Fase 55/61 diperbarui 2026-09-08 setelah file Excel ASLI client
   // diterima — nama kolom "ITEM:CUSTOM CHARACTER 1..10" SEMPAT dipetakan
   // ke attribut1-10 di sini. § Fase 69 SEMPAT ganti jadi "Kategori
-  // Keuangan N" (dikira sinonim). § Fase 71 (2026-09-08) DIKOREKSI:
-  // client tunjukkan file Excel mereka sendiri (highlight kuning) yang
-  // membuktikan "ITEM:CUSTOM CHARACTER N" itu field API BERBEDA dari
-  // Kategori Keuangan (dataClassificationNName) — field-nya sendiri
-  // belum teridentifikasi. Sinonim SALAH itu DIHAPUS — "Kategori
-  // Keuangan N" SEKARANG SATU-SATUNYA nama kolom untuk attribut1-10.
+  // Keuangan N" (dikira sinonim). § Fase 71 DIKOREKSI: sinonim itu
+  // dihapus, sempat dianggap field-nya tidak ada sama sekali. § Fase 73
+  // (2026-09-09) FINAL: "ITEM: CUSTOM CHARACTER N" (dengan spasi, nama
+  // ASLI client) sekarang terpetakan ke field yang BENAR
+  // (`attributItemKarakter1-15`, § charField level ITEM) — BUKAN
+  // attribut1-10/Kategori Keuangan (dataClassificationNName), 2 field
+  // API yang benar-benar berbeda.
   test("defaultColumnMap Atribut Tambahan pakai 'Kategori Keuangan N' (istilah resmi Accurate) untuk attribut1-10", () => {
     for (let i = 1; i <= 10; i++) {
       expect(salesInvoiceMapping.defaultColumnMap[`Kategori Keuangan ${i}`]).toBe(`attribut${i}`);
     }
-    // slot 11 SENGAJA TIDAK ada — tidak ada padanan API Accurate-nya.
+    // slot 11 SENGAJA TIDAK ada — tidak ada padanan API Accurate-nya
+    // untuk Kategori Keuangan (dataClassificationNName MAX 10 slot).
     expect(salesInvoiceMapping.defaultColumnMap["Kategori Keuangan 11"]).toBeUndefined();
     expect(salesInvoiceMapping.defaultColumnMap["Karakter 1"]).toBeUndefined();
-    // § Fase 71 — "ITEM:CUSTOM CHARACTER N" BUKAN LAGI sinonim attribut1-10
-    // (field API BERBEDA, belum teridentifikasi) — pastikan tidak salah
-    // auto-suggest ke Kategori Keuangan.
+    // § Fase 73 — "ITEM: CUSTOM CHARACTER 1" (dengan spasi) sekarang
+    // field YANG BENAR (attributItemKarakter1, charField level ITEM) —
+    // BUKAN attribut1/Kategori Keuangan.
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM CHARACTER 1"]).toBe("attributItemKarakter1");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM CHARACTER 1"]).not.toBe("attribut1");
+    // sinonim TANPA spasi ("ITEM:CUSTOM CHARACTER 1") SENGAJA TIDAK ada
+    // — nama kolom asli client SELALU pakai spasi setelah titik dua.
     expect(salesInvoiceMapping.defaultColumnMap["ITEM:CUSTOM CHARACTER 1"]).toBeUndefined();
-    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM CHARACTER 1"]).toBeUndefined();
   });
 
   // § Fase 70 (2026-09-08) — client minta judul kolom "PO Number" ->
@@ -365,6 +370,71 @@ describe("buildDetailItemFromRow", () => {
     }
     expect(salesInvoiceMapping.defaultColumnMap["CUSTOM DATE 1"]).toBe("attributHeaderTanggal1");
     expect(salesInvoiceMapping.defaultColumnMap["CUSTOM DATE 2"]).toBe("attributHeaderTanggal2");
+  });
+
+  // § Fase 73 (2026-09-09) — Atribut Tambahan LEVEL ITEM
+  // (charField/numericField/dateField NESTED di detailItem), dikonfirmasi
+  // RESMI Accurate Support khusus untuk "detail item di transaksi Sales
+  // Invoice": 15 slot Karakter (BUKAN 10), 10 slot Angka, 2 slot
+  // Tanggal. BEDA dari attributHeader* (Fase 64, level FAKTUR/root) DAN
+  // dari attribut1-10/Kategori Keuangan (Fase 55, field dataClassificationNName
+  // yang berbeda) — 3 mekanisme yang benar-benar berbeda, walau
+  // sama-sama "nempel di baris barang" untuk 2 yang terakhir.
+  test("Fase 73 — Atribut Tambahan level ITEM (charField/numericField/dateField) masuk ke detailItem, BUKAN root, BUKAN dataClassification", () => {
+    const rawRows = [
+      {
+        "Customer No": "C-1",
+        Tanggal: "19/08/2026",
+        "Kode Barang": "BRG-1",
+        "ITEM: CUSTOM CHARACTER 1": "HWGRIO-2",
+        "ITEM: CUSTOM CHARACTER 15": "Slot Terakhir",
+        "ITEM: CUSTOM NUMBER 1": "500",
+        "ITEM: CUSTOM DATE 1": "21/08/2026",
+      },
+    ];
+    const columnMapping = {
+      "Customer No": "customerNo",
+      Tanggal: "transDate",
+      "Kode Barang": "itemNo",
+      "ITEM: CUSTOM CHARACTER 1": "attributItemKarakter1",
+      "ITEM: CUSTOM CHARACTER 15": "attributItemKarakter15",
+      "ITEM: CUSTOM NUMBER 1": "attributItemAngka1",
+      "ITEM: CUSTOM DATE 1": "attributItemTanggal1",
+    };
+
+    const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+    // TIDAK masuk root
+    expect(payload.charField1).toBeUndefined();
+    expect(payload.numericField1).toBeUndefined();
+    expect(payload.dateField1).toBeUndefined();
+
+    const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(detail.charField1).toBe("HWGRIO-2");
+    expect(detail.charField15).toBe("Slot Terakhir");
+    expect(detail.numericField1).toBe("500");
+    expect(detail.dateField1).toBe("21/08/2026");
+    // BUKAN dataClassificationNName (Kategori Keuangan) — field BEDA
+    expect(detail.dataClassification1Name).toBeUndefined();
+  });
+
+  test("Fase 73 — defaultColumnMap 'ITEM: CUSTOM CHARACTER/NUMBER/DATE' terpetakan ke attributItemKarakter/Angka/Tanggal, BEDA dari Kategori Keuangan", () => {
+    for (let i = 1; i <= 15; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`ITEM: CUSTOM CHARACTER ${i}`]).toBe(`attributItemKarakter${i}`);
+    }
+    for (let i = 1; i <= 10; i++) {
+      expect(salesInvoiceMapping.defaultColumnMap[`ITEM: CUSTOM NUMBER ${i}`]).toBe(`attributItemAngka${i}`);
+    }
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM DATE 1"]).toBe("attributItemTanggal1");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM DATE 2"]).toBe("attributItemTanggal2");
+    // beda field dari Kategori Keuangan (dataClassificationNName)
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: CUSTOM CHARACTER 1"]).not.toBe(salesInvoiceMapping.defaultColumnMap["Kategori Keuangan 1"]);
+  });
+
+  test("Fase 73 — attributItemTanggal1/2 dikonversi ke format tanggal Accurate (DD/MM/YYYY)", () => {
+    const rawRow = { "Kode Barang": "BRG-1", "ITEM: CUSTOM DATE 1": "2026-08-21" };
+    const columnMapping = { "Kode Barang": "itemNo", "ITEM: CUSTOM DATE 1": "attributItemTanggal1" };
+    const detail = buildDetailItemFromRow(rawRow, columnMapping);
+    expect(detail.dateField1).toBe("21/08/2026");
   });
 });
 

@@ -107,6 +107,50 @@ export const salesInvoiceMapping = {
     attributHeaderAngka10: "numericField10",
     attributHeaderTanggal1: "dateField1",
     attributHeaderTanggal2: "dateField2",
+    // § Fase 73 (2026-09-09) — Atribut Tambahan LEVEL ITEM
+    // (charField/numericField/dateField NESTED di `detailItem`, BEDA
+    // dari attributHeader* di atas yang level FAKTUR/root). Dikonfirmasi
+    // RESMI oleh Accurate Support (balasan ke pertanyaan spesifik
+    // "detail item di transaksi Sales Invoice"): 15 slot Karakter
+    // (charField1-15, BUKAN 10 seperti level header!), 10 slot Angka
+    // (numericField1-10), 2 slot Tanggal (dateField1-2). Field ini juga
+    // TIDAK ADA di `accurate-openapi.json` (pola sama seperti header
+    // dulu, spec resmi memang tidak lengkap untuk fitur Atribut
+    // Tambahan). Ini PERSIS field yang client maksud sejak awal sebagai
+    // "ITEM: CUSTOM CHARACTER" (Fase 55/61 KELIRU menyimpulkan field ini
+    // "tidak mungkin ada" — Excel asli client PUNYA PERSIS 15 kolom
+    // "ITEM:CUSTOM CHARACTER", cocok PERSIS dengan 15 slot ini) dan
+    // Fase 69/71 KELIRU menyamakannya dengan Kategori Keuangan
+    // (dataClassificationNName) — dikoreksi sekarang, field API BENAR
+    // untuk "ITEM: CUSTOM CHARACTER" adalah charField, BUKAN
+    // dataClassificationNName.
+    attributItemKarakter1: "detailItem.charField1",
+    attributItemKarakter2: "detailItem.charField2",
+    attributItemKarakter3: "detailItem.charField3",
+    attributItemKarakter4: "detailItem.charField4",
+    attributItemKarakter5: "detailItem.charField5",
+    attributItemKarakter6: "detailItem.charField6",
+    attributItemKarakter7: "detailItem.charField7",
+    attributItemKarakter8: "detailItem.charField8",
+    attributItemKarakter9: "detailItem.charField9",
+    attributItemKarakter10: "detailItem.charField10",
+    attributItemKarakter11: "detailItem.charField11",
+    attributItemKarakter12: "detailItem.charField12",
+    attributItemKarakter13: "detailItem.charField13",
+    attributItemKarakter14: "detailItem.charField14",
+    attributItemKarakter15: "detailItem.charField15",
+    attributItemAngka1: "detailItem.numericField1",
+    attributItemAngka2: "detailItem.numericField2",
+    attributItemAngka3: "detailItem.numericField3",
+    attributItemAngka4: "detailItem.numericField4",
+    attributItemAngka5: "detailItem.numericField5",
+    attributItemAngka6: "detailItem.numericField6",
+    attributItemAngka7: "detailItem.numericField7",
+    attributItemAngka8: "detailItem.numericField8",
+    attributItemAngka9: "detailItem.numericField9",
+    attributItemAngka10: "detailItem.numericField10",
+    attributItemTanggal1: "detailItem.dateField1",
+    attributItemTanggal2: "detailItem.dateField2",
   } as const,
   defaultColumnMap: {
     Tanggal: "transDate",
@@ -179,17 +223,51 @@ export const salesInvoiceMapping = {
     "ITEM: CASH DISC %": "itemDiscPercent",
     "ITEM: DEPT": "departmentName",
     "ITEM: PROJECT NO": "projectNo",
+    // § Fase 73 (2026-09-09) — Atribut Tambahan LEVEL ITEM
+    // (charField/numericField/dateField NESTED di `detailItem`),
+    // dikonfirmasi RESMI Accurate Support khusus untuk "detail item di
+    // transaksi Sales Invoice": 15 slot Karakter, 10 slot Angka, 2 slot
+    // Tanggal. INI PERSIS field yang dimaksud client sejak Fase 55/61
+    // sebagai "ITEM: CUSTOM CHARACTER" (BUKAN Kategori Keuangan seperti
+    // salah kesimpulan Fase 69/71 — dikoreksi di sini dengan field API
+    // yang BENAR).
+    "ITEM: CUSTOM CHARACTER 1": "attributItemKarakter1",
+    "ITEM: CUSTOM CHARACTER 2": "attributItemKarakter2",
+    "ITEM: CUSTOM CHARACTER 3": "attributItemKarakter3",
+    "ITEM: CUSTOM CHARACTER 4": "attributItemKarakter4",
+    "ITEM: CUSTOM CHARACTER 5": "attributItemKarakter5",
+    "ITEM: CUSTOM CHARACTER 6": "attributItemKarakter6",
+    "ITEM: CUSTOM CHARACTER 7": "attributItemKarakter7",
+    "ITEM: CUSTOM CHARACTER 8": "attributItemKarakter8",
+    "ITEM: CUSTOM CHARACTER 9": "attributItemKarakter9",
+    "ITEM: CUSTOM CHARACTER 10": "attributItemKarakter10",
+    "ITEM: CUSTOM CHARACTER 11": "attributItemKarakter11",
+    "ITEM: CUSTOM CHARACTER 12": "attributItemKarakter12",
+    "ITEM: CUSTOM CHARACTER 13": "attributItemKarakter13",
+    "ITEM: CUSTOM CHARACTER 14": "attributItemKarakter14",
+    "ITEM: CUSTOM CHARACTER 15": "attributItemKarakter15",
+    "ITEM: CUSTOM NUMBER 1": "attributItemAngka1",
+    "ITEM: CUSTOM NUMBER 2": "attributItemAngka2",
+    "ITEM: CUSTOM NUMBER 3": "attributItemAngka3",
+    "ITEM: CUSTOM NUMBER 4": "attributItemAngka4",
+    "ITEM: CUSTOM NUMBER 5": "attributItemAngka5",
+    "ITEM: CUSTOM NUMBER 6": "attributItemAngka6",
+    "ITEM: CUSTOM NUMBER 7": "attributItemAngka7",
+    "ITEM: CUSTOM NUMBER 8": "attributItemAngka8",
+    "ITEM: CUSTOM NUMBER 9": "attributItemAngka9",
+    "ITEM: CUSTOM NUMBER 10": "attributItemAngka10",
+    "ITEM: CUSTOM DATE 1": "attributItemTanggal1",
+    "ITEM: CUSTOM DATE 2": "attributItemTanggal2",
     // § Fase 55/61 — SEBELUMNYA "ITEM:CUSTOM CHARACTER 1..10" dipetakan
     // ke sini (attribut1-10). § Fase 71 (2026-09-08) DIKOREKSI/DIHAPUS:
     // client tunjukkan file Excel mereka sendiri (highlight kuning) yang
     // membuktikan "ITEM:CUSTOM CHARACTER N" itu field API BERBEDA dari
-    // "Kategori Keuangan" (dataClassificationNName) — bukan sinonim,
-    // field-nya sendiri BELUM teridentifikasi (lihat komentar
-    // `template-guide.ts`). Sinonim SALAH ini DIHAPUS supaya tidak
-    // auto-suggest keliru (data client bisa salah kirim ke Kategori
-    // Keuangan padahal maksudnya field lain). "Kategori Keuangan N" di
-    // bawah adalah SATU-SATUNYA nama kolom resmi untuk attribut1-10
-    // sekarang.
+    // "Kategori Keuangan" (dataClassificationNName) — bukan sinonim.
+    // § Fase 73 — field yang BENAR untuk "ITEM: CUSTOM CHARACTER" sudah
+    // ditemukan (`attributItemKarakter1-15` di atas, § charField).
+    // "Kategori Keuangan N" di bawah TETAP jadi satu-satunya nama kolom
+    // untuk attribut1-10 (dataClassificationNName) — 2 field ini
+    // TIDAK PERNAH sinonim satu sama lain, keduanya field API BERBEDA.
     "Kategori Keuangan 1": "attribut1",
     "Kategori Keuangan 2": "attribut2",
     "Kategori Keuangan 3": "attribut3",
@@ -269,7 +347,16 @@ export const itemAutoCreateMapping = {
 export type ItemAutoCreateField = keyof typeof itemAutoCreateMapping.fieldToAccuratePath;
 
 // § lessons-learned.md 2026-08-19 — Accurate WAJIB format tanggal DD/MM/YYYY.
-const DATE_FIELDS = new Set<SalesInvoiceField>(["transDate", "taxDate", "shipDate", "attributHeaderTanggal1", "attributHeaderTanggal2"]);
+const DATE_FIELDS = new Set<SalesInvoiceField>([
+  "transDate",
+  "taxDate",
+  "shipDate",
+  "attributHeaderTanggal1",
+  "attributHeaderTanggal2",
+  // § Fase 73
+  "attributItemTanggal1",
+  "attributItemTanggal2",
+]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § Fase 66 — bug ditemukan (feedback client: "isi kolom diskon & pajak

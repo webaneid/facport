@@ -113,7 +113,7 @@ Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,
 settle — dokumen ini cukup jadi peta konsep + rujukan ADR, bukan
 duplikat kode).
 
-## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68, rename kolom Fase 69
+## Atribut Tambahan (Data Classification) — Fase 55, dikoreksi Fase 61, auto-create Fase 68, rename kolom Fase 69, dikoreksi lagi Fase 71, field ITEM baru Fase 73
 **Status: SELESAI diimplementasi & DIKOREKSI dengan file Excel ASLI
 client (2026-09-08).** `defaultColumnMap` sudah diperbarui ke nama
 kolom SUNGGUHAN, `requiredFields` sudah disamakan dengan sheet
@@ -149,6 +149,38 @@ awal) dan `docs/phases/phase-61-koreksi-mapping-sales-invoice-format-client.md`
 > Keuangan N" — sinonim lama "ITEM:CUSTOM CHARACTER N" TETAP didukung
 > (backward compat). Detail →
 > `docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md`.
+
+> **Update 2026-09-08/09 (Fase 71-73) — SAGA LENGKAP "berapa banyak
+> mekanisme Atribut Tambahan sebenarnya ada".** Setelah Fase 69, client
+> tunjukkan Excel mereka sendiri (highlight kolom "ITEM: CUSTOM
+> CHARACTER N" TERPISAH dari "Kategori Keuangan") — Fase 69 TERBUKTI
+> SALAH menyamakan 2 field itu. **Fase 71**: sinonim salah dihapus,
+> template dikembalikan bersih (belum tahu field aslinya apa).
+> **Fase 72** (2026-09-09, tidak terkait langsung tapi searah): bug
+> "Sudah ada data lain dengan Nama X" pada `findOrCreateDataClassification`
+> — root cause asumsi shape response `list.do` yang tidak terverifikasi,
+> lookup existing record SELALU gagal, diperbaiki (cocokkan by name
+> saja + catch defensif). **Fase 73**: pertanyaan KEDUA ke Accurate
+> Support (spesifik: "detail item di transaksi Sales Invoice") akhirnya
+> mengungkap field ASLI "ITEM: CUSTOM CHARACTER N" — TERNYATA
+> `charField`/`numericField`/`dateField` **JUGA ada versi ITEM-level**
+> (nested di `detailItem`, BEDA dari versi header/root Fase 64), dengan
+> **15 slot Karakter** (bukan 10!), 10 slot Angka, 2 slot Tanggal — field
+> baru `attributItemKarakter1-15`/`attributItemAngka1-10`/
+> `attributItemTanggal1-2` ditambahkan, kolom "ITEM: CUSTOM
+> CHARACTER/NUMBER/DATE" dikembalikan dengan field API yang BENAR kali
+> ini. **Total ada 3 mekanisme Atribut Tambahan** (bukan 2 seperti
+> disimpulkan sempat di Fase 71, bukan 4 seperti istilah awal client):
+> charField/numericField/dateField level FAKTUR (Fase 64), yang SAMA
+> tapi level ITEM (Fase 73), dan dataClassificationNName/Kategori
+> Keuangan level ITEM-atau-EXPENSE (Fase 55/68). **Lesson Learned**:
+> spec resmi Accurate TIDAK LENGKAP untuk SELURUH keluarga fitur
+> Atribut Tambahan (bukan cuma 1 field terisolasi) — pertanyaan ke
+> Support HARUS sespesifik mungkin (sebut level: header vs item vs
+> expense) untuk dapat jawaban lengkap sekali jalan. Detail →
+> `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md`,
+> `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md`,
+> `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md`.
 
 > **Update 2026-09-08 (Fase 61)** — File Excel asli client diterima
 > (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`, sheet

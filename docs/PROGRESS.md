@@ -79,8 +79,9 @@
 | 68   | Auto-Create Kategori Keuangan (Atribut Tambahan Item-Level) Sales Invoice | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-68-auto-create-kategori-keuangan-sales-invoice.md` |
 | 69   | Rename Kolom Excel "ITEM:CUSTOM CHARACTER N" -> "Kategori Keuangan N" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-69-rename-kolom-kategori-keuangan-item.md` |
 | 70   | Reorder Kolom Kategori Keuangan + Rename "PO Number" -> "Bill No" | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-70-reorder-kolom-dan-rename-bill-no-sales-invoice.md` |
-| 71   | Koreksi Sinonim Salah "ITEM:CUSTOM CHARACTER N" (Terbukti Tidak Ada Field-nya) | Done (belum push) | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md` |
-| 72   | Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada | Done (belum push) | (lihat phase doc) | `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md` |
+| 71   | Koreksi Sinonim Salah "ITEM:CUSTOM CHARACTER N" (Terbukti Tidak Ada Field-nya, DIKOREKSI LAGI Fase 73) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md` |
+| 72   | Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada | Done | (lihat phase doc) | `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md` |
+| 73   | Atribut Tambahan Level ITEM (charField/numericField/dateField) | Done | `docs/architecture/architecture-sales-invoice.md` | `docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2010,11 +2011,13 @@ sendiri untuk salah satu dari 2 field itu — murni beda persepsi, bukan
 gap fitur. Sinonim SALAH Fase 69 (yang memetakan "ITEM:CUSTOM CHARACTER
 N" ke Kategori Keuangan secara keliru) dihapus.
 
-Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. SENGAJA BELUM
-di-push (instruksi user) — akan digabung fase Expense berikutnya. Lihat
-`docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md`.
+Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. Dirilis
+bersama Fase 72 sebagai v1.18.2. Lihat
+`docs/phases/phase-71-koreksi-item-custom-character-bukan-kategori-keuangan.md`
+— DIKOREKSI LAGI di Fase 73 (field "ITEM: CUSTOM CHARACTER" TERNYATA
+ADA, bukan tidak ada sama sekali).
 
-## Update 2026-09-09 — Fase 72 Done (belum push): Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada
+## Update 2026-09-09 — Fase 72 Done: Fix Lookup Kategori Keuangan Gagal Kenali Record yang Sudah Ada
 Client retest isi 6 slot Kategori Keuangan sekaligus ("ATES 1"-"ATES 6")
 — batch gagal total, error Accurate "Sudah ada data lain dengan Nama
 'ATES 1'" (penolakan `save.do` CREATE, bukan validasi biasa). Root
@@ -2026,5 +2029,22 @@ lookup diperlonggar (cocokkan by name saja, tidak syaratkan field index
 response), plus catch defensif untuk error "sudah ada data lain" jadi
 lapis kedua.
 
-Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. SENGAJA BELUM
-di-push. Lihat `docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md`.
+Typecheck 0 error. Full suite `apps/api` 460 pass/0 fail. Dirilis
+bersama Fase 71 sebagai v1.18.2. Lihat
+`docs/phases/phase-72-fix-lookup-kategori-keuangan-gagal-kenali-record-existing.md`.
+
+## Update 2026-09-09 — Fase 73 Done: Atribut Tambahan Level ITEM (charField/numericField/dateField)
+Pertanyaan KEDUA ke Accurate Support (spesifik: "Atribut Tambahan pada
+detail item di transaksi Sales Invoice") akhirnya ungkap field ASLI
+"ITEM: CUSTOM CHARACTER N" — ternyata `charField`/`numericField`/
+`dateField` JUGA punya versi level ITEM (nested `detailItem`, BEDA dari
+versi header Fase 64), dengan 15 slot Karakter (bukan 10). Field baru
+`attributItemKarakter1-15`/`attributItemAngka1-10`/`attributItemTanggal1-2`
+ditambahkan, 27 kolom Excel baru, dropdown UI, date handling. Total
+sekarang ada 3 mekanisme Atribut Tambahan (charField level faktur,
+charField level item, dataClassificationNName/Kategori Keuangan) —
+bukan 2 seperti sempat disimpulkan Fase 71.
+
+Typecheck 0 error. Full suite `apps/api` 463 pass/0 fail (3 baru, 1
+diperbarui). Lihat
+`docs/phases/phase-73-atribut-tambahan-item-level-charfield-numericfield-datefield.md`.
