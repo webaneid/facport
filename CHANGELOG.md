@@ -1,3 +1,8 @@
+## 1.22.0 (2026-09-09)
+
+* Merge pull request #46 from webaneid/develop ([5789068](https://github.com/webaneid/facport/commit/5789068)), closes [#46](https://github.com/webaneid/facport/issues/46)
+* feat: mirror link alur pembelian ke Purchase Invoice, tambah field Proyek level Expense ([7f8eb14](https://github.com/webaneid/facport/commit/7f8eb14))
+
 ## 1.21.0 (2026-09-09)
 
 * Merge pull request #45 from webaneid/develop ([02407d5](https://github.com/webaneid/facport/commit/02407d5)), closes [#45](https://github.com/webaneid/facport/issues/45)
