@@ -25,7 +25,7 @@
 //                      sesuai perilaku `buildSalesReceiptPayload` SAAT INI)
 import { db } from "../lib/db";
 import { accurateConnections } from "../db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { openAccurateSession } from "../lib/accurate-session";
 
 async function main() {
@@ -43,21 +43,23 @@ async function main() {
   const netMode = process.env.NET_MODE === "1";
   const paymentAmount = netMode ? grossAmount - pphAmount : grossAmount;
 
-  // § CONNECTION_USER_ID BARU — sebelumnya cuma ambil koneksi aktif
-  // "paling baru diupdate" (asumsi salah: bisa kepilih koneksi TEST/demo
-  // lain, bukan koneksi produksi customer yang benar-benar dipakai batch
-  // asli). WAJIB isi userId yang sama dengan batch import yang mau
-  // ditiru, supaya scope OAuth-nya benar-benar sama.
-  const connectionUserId = process.env.CONNECTION_USER_ID;
-  const conditions = connectionUserId ? [eq(accurateConnections.status, "active"), eq(accurateConnections.userId, connectionUserId)] : [eq(accurateConnections.status, "active")];
-  const [connection] = await db
-    .select()
-    .from(accurateConnections)
-    .where(and(...conditions))
-    .orderBy(desc(accurateConnections.updatedAt))
-    .limit(1);
+  // § CONNECTION_ID BARU (ganti CONNECTION_USER_ID) — ternyata ada
+  // BANYAK baris `accurate_connections` berstatus "active" untuk user+
+  // company yang sama (kemungkinan bug terpisah: baris lama tidak
+  // ke-revoke saat reconnect), jadi "userId + paling baru diupdate"
+  // TETAP bisa salah pilih. Resolusi SUNGGUHAN yang dipakai worker
+  // (`workers/index.ts` § `resolveConnection`) lewat
+  // `subscription.accurateConnectionId` — ID SPESIFIK, bukan heuristik.
+  // WAJIB isi CONNECTION_ID persis (dari `accurate_connections.id`) yang
+  // sama dengan yang dipakai subscription/batch asli yang mau ditiru.
+  const connectionId = process.env.CONNECTION_ID;
+  if (!connectionId) {
+    console.error("WAJIB isi env CONNECTION_ID (uuid `accurate_connections.id` — cari lewat subscription.accurate_connection_id punya batch asli).");
+    process.exit(1);
+  }
+  const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, connectionId)).limit(1);
   if (!connection) {
-    console.error("Tidak ada koneksi Accurate aktif ditemukan (cek CONNECTION_USER_ID).");
+    console.error(`Koneksi Accurate dengan id ${connectionId} tidak ditemukan.`);
     process.exit(1);
   }
   console.log(`Pakai koneksi Accurate: accurateDbAlias=${connection.accurateDbAlias} userId=${connection.userId}`);
