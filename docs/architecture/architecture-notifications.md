@@ -138,7 +138,8 @@ Satu sumber kebenaran: `apps/api/src/lib/notifications.ts` `NOTIFICATION_TYPES`.
 | `trial_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=true` | Customer | `/subscribe` |
 | `subscription_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-7/H-3/H-1 | Customer | `/subscribe` |
 | `subscription_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=false` | Customer | `/subscribe` |
-| `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` |
+| `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal, ATAU `openAccurateSession()` gagal saat import (⚠️ diperluas Fase 91 — dulu cuma job terjadwal) | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` |
+| `accurate_connection_disconnected_by_admin` | `POST /admin/subscriptions/:id/disconnect-accurate` (Fase 92) | Customer (pemilik koneksi) | `/accurate` |
 | `admin_payment_proof_submitted` | `PATCH /orders/:id/proof` | SEMUA user dengan permission `orders.manage` | `/admin/orders` |
 | `announcement` | Broadcast admin (`POST /admin/announcements`) | Sesuai target | Beda per surface |
 

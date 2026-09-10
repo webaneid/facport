@@ -27,6 +27,7 @@ export function notificationLink(type: string, surface: Surface): string {
     case "subscription_expired":
       return "/subscribe";
     case "accurate_connection_expired":
+    case "accurate_connection_disconnected_by_admin":
       return "/accurate";
     case "admin_payment_proof_submitted":
       // § bug ditemukan 2026-09-08 (feedback user) — SEBELUMNYA "/admin/orders".

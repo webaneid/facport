@@ -99,6 +99,8 @@
 | 88   | Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-88-audit-bug-purchase-payment.md` |
 | 89   | Ekspansi Field Opsional Purchase Payment (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-89-ekspansi-field-purchase-payment.md` |
 | 90   | Koreksi via Test Call Nyata: Branch Wajib & Bug Auto-SUM Multi-Currency | Done | `docs/architecture/architecture-purchase-payment.md`, `architecture-sales-receipt.md` | `docs/phases/phase-90-fix-multicurrency-branch-wajib.md` |
+| 91   | Tombol "Hubungkan Ulang" & Fix Status Koneksi Accurate | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-91-hubungkan-ulang-koneksi-accurate.md` |
+| 92   | Kelola Koneksi Accurate dari Admin ("Putuskan Koneksi") | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-92-kelola-koneksi-accurate-admin.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2446,3 +2448,43 @@ payment tersimpan sungguhan di Accurate (`111.102-01.2026.09.00001`),
 invoice CONTOH1 jadi PAID. 4 fixture test route existing diupdate
 (butuh kolom Branch baru). `bun run typecheck` 0 error, 6 test baru (3
 per modul) + semua test existing pass.
+
+## Update 2026-09-10 — Fase 91 Done: Tombol "Hubungkan Ulang" & Fix Status Koneksi Accurate
+Selagi testing sesi ini, ketahuan halaman `/app/accurate` menampilkan
+"✓ Terhubung" untuk koneksi yang token-nya SUDAH MATI (revoked
+Accurate) — user minta cek fitur "Pakai Koneksi yang Sudah Ada", sempat
+tanya apa dihapus saja. Setelah dicek: akar masalahnya BUKAN spesifik
+fitur reuse — `connected` di API cuma cek "ada baris koneksi", bukan
+cek statusnya, jadi koneksi `expired` tetap lapor "Terhubung" (berlaku
+untuk koneksi OAuth baru MAUPUN reuse). Ditemukan juga gap ini sudah
+DICATAT sejak Fase 01/04 ("tombol Hubungkan Ulang belum dibangun")
+tapi tidak pernah selesai dibangun setelah ADR-0020 (Fase 14) menambah
+guard 409 yang memblokir cara reconnect lama. User pilih perbaiki akar
+masalah (bukan hapus fitur reuse). Diperbaiki: `connected` sekarang cek
+status asli + field baru `connectionStatus`; `POST /accurate/connect`
+terima `reconnect: true` untuk lewati guard 409 (ownership check tetap
+utuh); `markConnectionExpired()` (diekstrak dari job refresh terjadwal)
+sekarang DIPANGGIL JUGA saat import gagal buka sesi, bukan cuma job
+harian; tombol "Hubungkan Ulang" ditambahkan di halaman `/app/accurate`
+(2 tempat: koneksi sehat & koneksi bermasalah). `bun run typecheck` 0
+error, 577 test apps/api (2 baru) + 50 test apps/web, semua pass.
+
+## Update 2026-09-10 — Fase 92 Done: Kelola Koneksi Accurate dari Admin
+Lanjutan Fase 91 — user minta kemampuan SETARA untuk admin: lihat
+status langganan+koneksi Accurate user dari halaman detail admin, dan
+bisa "putuskan" koneksi bermasalah sendiri, tidak perlu lagi minta
+developer edit database manual (dilakukan berkali-kali sepanjang sesi
+ini). Ditambahkan `GET /admin/users/:id/subscriptions` (permission
+`users.view`, mirror pola `import-batches.route.ts`, logic
+connected/connectionStatus SAMA PERSIS versi customer Fase 91) dan
+`POST /admin/subscriptions/:id/disconnect-accurate` (permission
+`subscriptions.manage`) — cuma mengosongkan pointer subscription,
+BUKAN hapus koneksinya (bisa dipakai bareng subscription lain, ADR-0020).
+Tercatat ke audit log, kirim notifikasi tipe BARU
+`accurate_connection_disconnected_by_admin` ke pemilik subscription
+(beda pesan dari `accurate_connection_expired` supaya tidak dikira bug).
+Card baru "Langganan & Koneksi Accurate" di `/admin/users/:id` + dialog
+konfirmasi sederhana (bukan ketik-ulang-nama seperti Batal Import — user
+konfirmasi risiko lebih rendah, gampang dipulihkan tinggal "Hubungkan
+Ulang"). `bun run typecheck` 0 error, 584 test apps/api (7 baru) + 50
+test apps/web, semua pass.

@@ -12,7 +12,7 @@ import { Badge, type BadgeProps } from "@/components/ui/badge";
 // Migrasi pemakai lama (Fase 20-21) — hapus objek lokal, pakai
 // `<StatusBadge domain="..." status="..." />` atau `getStatusMeta()`.
 
-export type StatusDomain = "invoice" | "order" | "subscription" | "import-batch" | "plan";
+export type StatusDomain = "invoice" | "order" | "subscription" | "import-batch" | "plan" | "accurate-connection";
 
 type StatusMeta = { label: string; variant: BadgeProps["variant"] };
 
@@ -59,6 +59,16 @@ const STATUS_REGISTRY: Record<StatusDomain, Record<string, StatusMeta>> = {
   plan: {
     active: { label: "Aktif", variant: "success" },
     inactive: { label: "Nonaktif", variant: "default" },
+  },
+  // apps/api/src/db/schema/accurate.schema.ts (`accurateConnections.status`)
+  // § Fase 91/92 — dipakai halaman `/accurate` (customer) & `/admin/users/:id`
+  // (admin). Status "belum ada koneksi sama sekali" BUKAN string dari DB
+  // (field-nya `null`) — ditangani terpisah oleh pemanggil, BUKAN masuk
+  // registry ini.
+  "accurate-connection": {
+    active: { label: "Terhubung", variant: "success" },
+    expired: { label: "Bermasalah", variant: "destructive" },
+    revoked: { label: "Bermasalah", variant: "destructive" },
   },
 };
 

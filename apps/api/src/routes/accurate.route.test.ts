@@ -38,12 +38,12 @@ async function signIn(email: string) {
   return res.headers.get("set-cookie") ?? "";
 }
 
-async function postConnect(cookie: string, subscriptionId: string) {
+async function postConnect(cookie: string, subscriptionId: string, reconnect?: boolean) {
   return testApp.handle(
     new Request("http://localhost/accurate/connect", {
       method: "POST",
       headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriptionId }),
+      body: JSON.stringify({ subscriptionId, ...(reconnect !== undefined ? { reconnect } : {}) }),
     }),
   );
 }
@@ -125,6 +125,137 @@ describe("POST /accurate/connect", () => {
     expect(res.status).toBe(409);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("ALREADY_CONNECTED");
+  });
+
+  // § Fase 91 (2026-09-10) — tombol "Hubungkan Ulang" BARU kirim
+  // `reconnect: true` supaya LEWATI guard 409 di atas — gap ditemukan
+  // & dicatat sejak Fase 01/04 ("tombol Hubungkan Ulang belum dibangun"),
+  // baru diperbaiki sekarang. Assertion SENGAJA tidak fiks ke 1 status
+  // code — kalau `ACCURATE_CLIENT_ID` env kosong (CI) hasilnya 503
+  // ACCURATE_NOT_CONFIGURED, kalau TERISI (dev lokal sesi ini, dipakai
+  // test call nyata Fase 90) hasilnya 200 authorizeUrl — yang penting
+  // DIBUKTIKAN: bukan lagi 409 (itu inti fix-nya), bukan nilai spesifik
+  // yang tergantung env developer.
+  test("reconnect:true LEWATI guard 409 ALREADY_CONNECTED (tombol \"Hubungkan Ulang\")", async () => {
+    const email = `acc-reconnect-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+
+    const [connection] = await db
+      .insert(accurateConnections)
+      .values({
+        userId,
+        accessTokenEncrypted: "dummy",
+        refreshTokenEncrypted: "dummy",
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        status: "expired", // § koneksi bermasalah — kasus nyata tombol ini dipakai
+      })
+      .returning();
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Reconnect ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [subscription] = await db
+      .insert(subscriptions)
+      .values({
+        userId,
+        planId: plan!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        accurateConnectionId: connection!.id,
+      })
+      .returning();
+
+    const withoutFlag = await postConnect(cookie, subscription!.id);
+    expect(withoutFlag.status).toBe(409); // § perilaku LAMA tetap default kalau flag tidak dikirim
+
+    const withFlag = await postConnect(cookie, subscription!.id, true);
+    expect(withFlag.status).not.toBe(409); // § inti fix: guard 409 LEWAT kalau reconnect:true
+    if (withFlag.status === 503) {
+      const body = (await withFlag.json()) as { code: string };
+      expect(body.code).toBe("ACCURATE_NOT_CONFIGURED"); // § CI: ACCURATE_CLIENT_ID kosong
+    } else {
+      expect(withFlag.status).toBe(200); // § dev lokal dengan ACCURATE_CLIENT_ID terisi: authorizeUrl berhasil dibuat
+      const body = (await withFlag.json()) as { authorizeUrl?: string };
+      expect(body.authorizeUrl).toBeTruthy();
+    }
+  });
+});
+
+// § Fase 91 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — `connected`
+// SEBELUM ini cuma cek "ada baris koneksi tersimpan", BUKAN status
+// koneksinya — koneksi yang sudah `expired` tetap dilaporkan
+// "Terhubung" ke frontend (halaman /accurate salah tampilkan badge
+// hijau). `connectionStatus` field BARU ditambah juga.
+describe("GET /accurate/subscriptions", () => {
+  test("connected:true HANYA kalau connection status \"active\" (BUKAN cuma ada baris)", async () => {
+    const email = `acc-subs-status-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+
+    const [activeConn] = await db
+      .insert(accurateConnections)
+      .values({
+        userId,
+        accessTokenEncrypted: "dummy",
+        refreshTokenEncrypted: "dummy",
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        accurateDbId: "111",
+        accurateDbAlias: "PT Sehat",
+      })
+      .returning();
+    const [expiredConn] = await db
+      .insert(accurateConnections)
+      .values({
+        userId,
+        accessTokenEncrypted: "dummy",
+        refreshTokenEncrypted: "dummy",
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        accurateDbId: "222",
+        accurateDbAlias: "PT Bermasalah",
+        status: "expired",
+      })
+      .returning();
+
+    const [planHealthy] = await db
+      .insert(plans)
+      .values({ name: `Plan Subs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planHealthy!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      accurateConnectionId: activeConn!.id,
+    });
+
+    const [planBroken] = await db
+      .insert(plans)
+      .values({ name: `Plan Subs Broken ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planBroken!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      accurateConnectionId: expiredConn!.id,
+    });
+
+    const res = await testApp.handle(new Request("http://localhost/accurate/subscriptions", { headers: { cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      subscriptions: { planName: string; connected: boolean; connectionStatus: string | null; accurateDbAlias: string | null }[];
+    };
+    const healthy = body.subscriptions.find((s) => s.planName === `Plan Subs Healthy ${runId}`);
+    const broken = body.subscriptions.find((s) => s.planName === `Plan Subs Broken ${runId}`);
+    expect(healthy?.connected).toBe(true);
+    expect(healthy?.connectionStatus).toBe("active");
+    expect(broken?.connected).toBe(false); // § BUG LAMA: ini sebelumnya `true` cuma karena barisnya ada
+    expect(broken?.connectionStatus).toBe("expired");
+    expect(broken?.accurateDbAlias).toBe("PT Bermasalah"); // § alias tetap ditampilkan meski bermasalah, biar user tahu company mana
   });
 });
 

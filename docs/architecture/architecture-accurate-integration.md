@@ -158,7 +158,82 @@ Job terjadwal (§ `architecture-jobs.md`) cukup jalan **harian** (bukan tiap
 30 menit seperti draf awal) — cek `accurate_connections.expiresAt` yang
 kurang dari mis. 2 hari lagi, refresh proaktif. Kalau refresh gagal (refresh
 token juga sudah invalid/di-revoke user dari sisi Accurate) → tandai
-`status = "expired"`, kirim notifikasi email minta re-koneksi manual.
+`status = "expired"`, kirim notifikasi IN-APP (⚠️ koreksi 2026-09-10 —
+paragraf ini sebelumnya salah sebut "notifikasi email", implementasi
+NYATA pakai `createNotification` in-app, bukan email) minta re-koneksi
+manual.
+
+### Deteksi Token Mati Lebih Dini + "Hubungkan Ulang" (Fase 91, 2026-09-10)
+**Gap ditemukan** (dicatat sejak Fase 01/04, baru ditutup sekarang):
+token bisa di-**revoke Accurate SEBELUM `expiresAt` alami** (mis. user
+login manual langsung ke Accurate, atau cabut akses aplikasi dari sisi
+Accurate) — job refresh harian di atas CUMA cek koneksi yang
+`expiresAt`-nya SUDAH DEKAT (<2 hari), jadi revoke dini seperti ini
+BARU ketahuan job itu berhari-hari kemudian, ATAU baru ketahuan kalau
+ada import yang gagal memakainya. Sebelum Fase 91: bahkan setelah
+ketahuan (`status = "expired"`), TIDAK ADA cara memperbaikinya dari UI
+sama sekali — `POST /accurate/connect` SELALU tolak 409
+`ALREADY_CONNECTED` kalau subscription sudah punya `accurateConnectionId`,
+apa pun status koneksinya.
+
+**Diperbaiki 2 sisi:**
+1. **Deteksi lebih cepat** — `markConnectionExpired()` (`workers/index.ts`)
+   sekarang DIPANGGIL JUGA setiap kali `openAccurateSession()` gagal
+   SAAT IMPORT (bukan cuma di job refresh terjadwal) — kegagalan buka
+   sesi HAMPIR SELALU berarti token sudah tidak valid. Guard
+   `status === "expired"` cegah notifikasi dobel kalau import gagal
+   berulang sebelum user sempat reconnect.
+2. **Tombol "Hubungkan Ulang"** — `POST /accurate/connect` terima
+   `reconnect: true` (opsional) yang MELEWATI guard 409 SECARA EKSPLISIT
+   (ownership check via `getActiveSubscriptionsWithPlans(user.id)` TETAP
+   berlaku, tidak dilonggarkan). Callback OAuth (`/accurate/oauth/callback`)
+   TIDAK berubah — sudah dari awal menimpa `accurateConnectionId`
+   subscription tanpa syarat, jadi reconnect otomatis bekerja begitu
+   guard 409 dilewati. Ditambahkan di halaman `/app/accurate`: tombol
+   kecil "Hubungkan Ulang" di kartu yang SEHAT (jaga-jaga), dan tombol
+   besar + badge peringatan di kartu yang BERMASALAH
+   (`connectionStatus !== "active"` tapi `accurateDbId` pernah terisi).
+
+**Bug terkait, ikut diperbaiki**: `GET /accurate/subscriptions` field
+`connected` sebelumnya `!!connection` (cuma cek ADA baris koneksi) —
+koneksi yang SUDAH `status: "expired"` tetap dilaporkan `connected: true`,
+halaman `/accurate` salah tampilkan badge hijau "✓ Terhubung". Sekarang
+`connected: connection?.status === "active"`, field baru
+`connectionStatus` (`"active" | "expired" | "revoked" | null`) ikut
+dikirim supaya frontend bisa bedakan 3 keadaan (belum ada koneksi sama
+sekali / ada tapi bermasalah / sehat), bukan cuma boolean biner.
+
+### Kelola Koneksi dari Admin — "Putuskan Koneksi" (Fase 92, 2026-09-10)
+Selagi testing Fase 86/90/91 di sesi yang sama, koneksi customer yang
+mati (§ atas) sempat cuma bisa diperbaiki dengan admin (dalam hal ini
+Claude Code) edit DATABASE MANUAL — TIDAK ADA cara admin memperbaikinya
+dari UI produk sama sekali. Ditambahkan:
+- **`GET /admin/users/:id/subscriptions`** (permission `users.view`,
+  READ-ONLY, mirror pola `admin/import-batches.route.ts`) — daftar
+  SEMUA subscription user (bukan cuma aktif, untuk konteks support
+  lengkap) beserta `connected`/`connectionStatus`/`accurateDbAlias`,
+  logic SAMA PERSIS `GET /accurate/subscriptions` versi customer (§
+  atas) — admin lihat gambaran seakurat yang dilihat customer sendiri.
+- **`POST /admin/subscriptions/:id/disconnect-accurate`** (permission
+  `subscriptions.manage`, sama gate dengan aksi administratif
+  subscription lain) — mengosongkan `accurateConnectionId` MILIK
+  SUBSCRIPTION ITU SAJA (bukan hapus baris `accurate_connections`-nya —
+  bisa dipakai bareng subscription lain, § ADR-0020 di atas). Tercatat
+  ke `audit_logs` (`action: "disconnect_accurate"`, `changes` simpan
+  `previousConnectionId`+`previousAccurateDbAlias` untuk jejak), kirim
+  notifikasi BARU `accurate_connection_disconnected_by_admin` ke
+  PEMILIK subscription (bukan ke admin) — beda pesan dari
+  `accurate_connection_expired` supaya customer tidak salah kira ini
+  bug/kegagalan sistem, padahal aksi disengaja admin.
+
+Halaman `/admin/users/:id` (Card baru "Langganan & Koneksi Accurate")
+— tabel semua subscription user + tombol "Putuskan Koneksi"
+(`components/admin/disconnect-accurate-dialog.tsx`, konfirmasi
+SEDERHANA — bukan pola "ketik ulang nama" seperti Batal Import, karena
+risikonya rendah/gampang dipulihkan tinggal "Hubungkan Ulang" dari sisi
+customer, § Fase 91). Setelah ini, customer TIDAK PERLU lagi minta
+developer edit database manual kalau koneksinya bermasalah — admin
+support bisa putuskan sendiri dari UI, customer tinggal reconnect.
 
 ### Redirect URI — Route `apps/api` Langsung
 `ACCURATE_REDIRECT_URI` mengarah **langsung ke `apps/api`**

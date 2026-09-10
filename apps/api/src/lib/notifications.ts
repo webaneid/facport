@@ -30,6 +30,11 @@ export const NOTIFICATION_TYPES = {
   SUBSCRIPTION_ENDING_SOON: "subscription_ending_soon",
   SUBSCRIPTION_EXPIRED: "subscription_expired",
   ACCURATE_CONNECTION_EXPIRED: "accurate_connection_expired",
+  // § Fase 92 (2026-09-10) — BEDA dari `ACCURATE_CONNECTION_EXPIRED` di
+  // atas: itu untuk kegagalan ORGANIK (token revoked/expired sendiri),
+  // ini untuk aksi ADMIN yang DISENGAJA (§ `POST /admin/subscriptions/:id/disconnect-accurate`)
+  // — pesan beda supaya user tidak salah kira ini bug/kegagalan sistem.
+  ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN: "accurate_connection_disconnected_by_admin",
   ANNOUNCEMENT: "announcement",
   ADMIN_PAYMENT_PROOF_SUBMITTED: "admin_payment_proof_submitted",
 } as const;
