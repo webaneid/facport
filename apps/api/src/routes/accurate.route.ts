@@ -60,7 +60,16 @@ export const accurateRoute = new Elysia()
             subscriptionId: subscription.id,
             moduleKey: plan.modules[0] ?? null,
             planName: plan.name,
-            connected: !!connection,
+            // § Fase 91 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — SEBELUM
+            // ini `connected` cuma cek "ada baris koneksi", BUKAN cek
+            // statusnya — koneksi yang sudah ditandai `expired` (§
+            // `markConnectionExpired`, workers/index.ts) tetap dilaporkan
+            // "Terhubung" ke frontend, padahal tokennya sudah mati.
+            // `connectionStatus` BARU ditambah supaya frontend bisa
+            // bedakan "sehat" vs "ada tapi bermasalah" vs "belum ada
+            // sama sekali", bukan cuma boolean biner.
+            connected: connection?.status === "active",
+            connectionStatus: connection?.status ?? null,
             accurateConnectionId: subscription.accurateConnectionId,
             accurateDbId: connection?.accurateDbId ?? null,
             accurateDbAlias: connection?.accurateDbAlias ?? null,
@@ -92,7 +101,17 @@ export const accurateRoute = new Elysia()
         set.status = 404;
         return { code: "SUBSCRIPTION_NOT_FOUND" };
       }
-      if (target.subscription.accurateConnectionId) {
+      // § Fase 91 (2026-09-10) — gap ditemukan/dicatat sejak Fase 01/04
+      // ("tombol Hubungkan Ulang BELUM dibangun"): endpoint ini dulu
+      // SELALU tolak 409 kalau subscription sudah punya `accurateConnectionId`,
+      // padahal koneksi itu bisa saja SUDAH MATI (revoked di sisi
+      // Accurate, § `markConnectionExpired`) — user tidak punya cara
+      // self-service memperbaikinya dari UI. `body.reconnect: true`
+      // (dikirim tombol "Hubungkan Ulang" BARU di halaman /accurate)
+      // melewati guard ini secara EKSPLISIT — callback OAuth di bawah
+      // SUDAH aman menimpa `accurateConnectionId` lama dengan koneksi
+      // baru (unconditional overwrite, tidak berubah).
+      if (target.subscription.accurateConnectionId && !body.reconnect) {
         set.status = 409;
         return { code: "ALREADY_CONNECTED" };
       }
@@ -108,7 +127,7 @@ export const accurateRoute = new Elysia()
         return { code: "ACCURATE_NOT_CONFIGURED" };
       }
     },
-    { auth: true, body: t.Object({ subscriptionId: t.String({ format: "uuid" }) }) },
+    { auth: true, body: t.Object({ subscriptionId: t.String({ format: "uuid" }), reconnect: t.Optional(t.Boolean()) }) },
   )
   .get(
     "/accurate/oauth/callback",

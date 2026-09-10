@@ -9,11 +9,19 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { api } from "@/lib/api-client";
 import { moduleLabel } from "@/lib/module-options";
 
+// § Fase 91 (2026-09-10) — `connectionStatus` BARU: `connected` (boolean)
+// sekarang berarti "ada koneksi DAN sehat" (status "active" di
+// Accurate), BUKAN cuma "ada baris koneksi tersimpan" seperti
+// sebelumnya (bug: koneksi yang sudah `expired` dulu tetap dilaporkan
+// "Terhubung"). `connectionStatus` dipakai bedakan 3 keadaan: belum
+// ada koneksi sama sekali (`null`), ada tapi bermasalah ("expired"),
+// atau sehat ("active").
 type AccurateSubscriptionRow = {
   subscriptionId: string;
   moduleKey: string | null;
   planName: string;
   connected: boolean;
+  connectionStatus: string | null;
   accurateConnectionId: string | null;
   accurateDbId: string | null;
   accurateDbAlias: string | null;
@@ -86,10 +94,14 @@ function SubscriptionConnectionCard({
   const [showReusePicker, setShowReusePicker] = useState(false);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string | null>(null);
 
-  async function handleConnectNew() {
+  // § Fase 91 (2026-09-10) — `reconnect` BARU: dikirim `true` oleh
+  // tombol "Hubungkan Ulang" (dua tempat di bawah — koneksi sehat yang
+  // mau diganti company, ATAU koneksi bermasalah yang perlu diperbaiki)
+  // supaya backend TIDAK tolak 409 ALREADY_CONNECTED (§ accurate.route.ts).
+  async function handleConnectNew(reconnect = false) {
     setConnecting(true);
     setError(null);
-    const res = await api.accurate.connect.post({ subscriptionId: row.subscriptionId });
+    const res = await api.accurate.connect.post({ subscriptionId: row.subscriptionId, reconnect });
     setConnecting(false);
 
     // § docs/decisions/adr-0010-response-format-eden.md — error non-2xx:
@@ -130,7 +142,7 @@ function SubscriptionConnectionCard({
           <CardTitle>{row.planName}</CardTitle>
           <CardDescription>Fitur: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-2">
+        <CardContent className="flex flex-col gap-3">
           <Badge variant="success" className="w-fit">
             ✓ Terhubung ke Accurate Online
           </Badge>
@@ -140,6 +152,48 @@ function SubscriptionConnectionCard({
               Data Usaha: <span className="font-medium">{row.accurateDbAlias}</span>
             </div>
           )}
+          {/* § Fase 91 — self-service kalau nanti koneksi ini ternyata
+              bermasalah (mis. company diganti, atau token di-revoke
+              tapi belum ketahuan sistem) — sengaja outline/kecil,
+              BUKAN aksi utama di kartu yang sudah sehat. */}
+          <Button variant="outline" size="sm" className="w-fit" onClick={() => handleConnectNew(true)} disabled={connecting}>
+            {connecting ? "Menghubungkan..." : "Hubungkan Ulang"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  // § Fase 91 (2026-09-10) — GAP DITEMUKAN & DIPERBAIKI: koneksi PERNAH
+  // ada & lengkap (accurateDbId terisi) TAPI sekarang bermasalah
+  // (`connectionStatus !== "active"`, § `markConnectionExpired` worker) —
+  // sebelum ini TIDAK ADA cara memperbaikinya dari UI sama sekali,
+  // dicatat sejak Fase 01/04 sebagai "tombol Hubungkan Ulang belum
+  // dibangun" dan tidak pernah ditindaklanjuti sampai sekarang.
+  if (row.accurateConnectionId && row.accurateDbId && !row.connected) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>{row.planName}</CardTitle>
+          <CardDescription>Fitur: {row.moduleKey ? moduleLabel(row.moduleKey) : "-"}</CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <Badge variant="destructive" className="w-fit">
+            ⚠ Koneksi Terputus
+          </Badge>
+          {row.accurateDbAlias && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Building2 className="h-4 w-4" />
+              Data Usaha sebelumnya: <span className="font-medium">{row.accurateDbAlias}</span>
+            </div>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Koneksi ke Accurate Online untuk fitur ini terputus (kemungkinan token dicabut dari sisi Accurate) — import tidak akan
+            berjalan sampai dihubungkan ulang.
+          </p>
+          <Button onClick={() => handleConnectNew(true)} disabled={connecting} className="w-fit">
+            {connecting ? "Menghubungkan..." : "Hubungkan Ulang"}
+          </Button>
         </CardContent>
       </Card>
     );
@@ -167,7 +221,7 @@ function SubscriptionConnectionCard({
                 Pakai Koneksi yang Sudah Ada
               </Button>
             )}
-            <Button onClick={handleConnectNew} disabled={connecting}>
+            <Button onClick={() => handleConnectNew()} disabled={connecting}>
               {connecting ? "Menghubungkan..." : "Hubungkan Data Usaha Baru"}
             </Button>
           </div>

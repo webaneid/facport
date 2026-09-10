@@ -1,8 +1,9 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { plans, subscriptions, auditLogs } from "../../db/schema";
+import { plans, subscriptions, auditLogs, accurateConnections } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
+import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 
 export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscriptions" })
   .use(permissionPlugin)
@@ -134,5 +135,58 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ endAt: t.String({ format: "date-time" }) }),
+    },
+  )
+  // § Fase 92 (2026-09-10) — self-service admin untuk gap yang ditemukan
+  // sesi ini: sebelum ini, koneksi Accurate yang bermasalah (mis. token
+  // sudah di-revoke tapi subscription masih "menempel" ke koneksi lama)
+  // cuma bisa diperbaiki dengan edit database manual. Cuma mengosongkan
+  // `accurateConnectionId` MILIK SUBSCRIPTION INI — TIDAK menghapus baris
+  // `accurate_connections` itu sendiri (bisa dipakai bareng subscription
+  // lain, § ADR-0020) — customer tinggal klik "Hubungkan Ulang" (Fase 91)
+  // dari sisi mereka setelah ini.
+  .post(
+    "/:id/disconnect-accurate",
+    async ({ params, user, set }) => {
+      const [existing] = await db.select().from(subscriptions).where(eq(subscriptions.id, params.id));
+      if (!existing) {
+        set.status = 404;
+        return { code: "SUBSCRIPTION_NOT_FOUND" };
+      }
+      if (!existing.accurateConnectionId) {
+        set.status = 400;
+        return { code: "NOT_CONNECTED" };
+      }
+
+      const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, existing.accurateConnectionId));
+      const [plan] = await db.select().from(plans).where(eq(plans.id, existing.planId));
+
+      await db.update(subscriptions).set({ accurateConnectionId: null }).where(eq(subscriptions.id, params.id));
+
+      await db.insert(auditLogs).values({
+        entityType: "subscription",
+        entityId: params.id,
+        action: "disconnect_accurate",
+        changes: {
+          previousConnectionId: existing.accurateConnectionId,
+          previousAccurateDbAlias: connection?.accurateDbAlias ?? null,
+        },
+        actorId: user.id,
+      });
+
+      await createNotification({
+        userId: existing.userId,
+        type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN,
+        title: "Koneksi Accurate diputuskan admin",
+        body: `Koneksi Accurate untuk fitur ${plan?.name ?? "langganan kamu"}${connection?.accurateDbAlias ? ` (${connection.accurateDbAlias})` : ""} diputuskan oleh admin — hubungkan ulang untuk lanjut import.`,
+        entityType: "subscription",
+        entityId: params.id,
+      });
+
+      return { subscriptionId: params.id, disconnected: true };
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
     },
   );

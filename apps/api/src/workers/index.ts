@@ -146,6 +146,31 @@ async function getConnectionForBatch(subscriptionId: string) {
   return connection ?? null;
 }
 
+// § Fase 91 (2026-09-10) — diekstrak dari job `REFRESH_ACCURATE_TOKEN`
+// di bawah, DIPAKAI JUGA saat import job gagal buka sesi
+// (`openAccurateSession`, § 2 lokasi di bawah). Gap ditemukan lewat
+// audit: sebelum ini, kegagalan buka sesi SAAT IMPORT (beda dari
+// kegagalan refresh token TERJADWAL) tidak pernah menandai koneksi
+// `expired` — akibatnya `/accurate/subscriptions` tetap lapor
+// "Terhubung" walau token sudah mati (revoked di sisi Accurate,
+// BUKAN cuma expired alami), dan customer tidak tahu harus
+// "Hubungkan Ulang" (tombol itu sendiri BARU ditambahkan Fase 91,
+// sebelumnya cuma dicatat "belum dibangun" sejak Fase 01/04). Guard
+// `status === "expired"` cegah notifikasi dobel kalau import gagal
+// berulang kali sebelum user sempat reconnect.
+async function markConnectionExpired(connection: typeof accurateConnections.$inferSelect): Promise<void> {
+  if (connection.status === "expired") return;
+  await db.update(accurateConnections).set({ status: "expired", updatedAt: new Date() }).where(eq(accurateConnections.id, connection.id));
+  await createNotification({
+    userId: connection.userId,
+    type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_EXPIRED,
+    title: "Koneksi Accurate terputus",
+    body: `Koneksi ke ${connection.accurateDbAlias ?? "Data Usaha Accurate"} kamu terputus — hubungkan ulang supaya import bisa lanjut.`,
+    entityType: "accurate_connection",
+    entityId: connection.id,
+  });
+}
+
 // § architecture-accurate-integration.md — `import_batches.module`
 // menentukan cara proses 1 baris. Switch eksplisit (bukan lookup table
 // generik) SENGAJA dipilih — tiap modul punya bentuk payload beda
@@ -881,27 +906,11 @@ async function main() {
         logger.info({ connectionId: conn.id }, "Accurate token refreshed");
       } catch (err) {
         // Refresh token juga sudah invalid/di-revoke user dari sisi Accurate
-        // — tandai expired, user WAJIB hubungkan ulang manual (§ Halaman app
-        // "Hubungkan Ulang", docs/phases/phase-01-fondasi-produk.md)
-        await db
-          .update(accurateConnections)
-          .set({ status: "expired", updatedAt: new Date() })
-          .where(eq(accurateConnections.id, conn.id));
+        // — tandai expired + notifikasi (§ `markConnectionExpired`, Fase 45
+        // asal notifikasi ini, diekstrak jadi helper bersama Fase 91).
         logger.error({ err, connectionId: conn.id }, "Accurate token refresh gagal, tandai expired");
         Sentry.captureException(err);
-
-        // § Fase 45 — GAP ditemukan lewat audit screening: sebelum ini,
-        // customer PEMILIK koneksi (`conn.userId` — BUKAN admin, § ADR-0020
-        // koneksi milik user) tidak pernah tahu koneksinya putus sampai
-        // mereka coba import dan gagal. Notifikasi langsung ke pemiliknya.
-        await createNotification({
-          userId: conn.userId,
-          type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_EXPIRED,
-          title: "Koneksi Accurate terputus",
-          body: `Koneksi ke ${conn.accurateDbAlias ?? "Data Usaha Accurate"} kamu terputus — hubungkan ulang supaya import bisa lanjut.`,
-          entityType: "accurate_connection",
-          entityId: conn.id,
-        });
+        await markConnectionExpired(conn);
       }
     }
   });
@@ -964,6 +973,11 @@ async function main() {
       await failAllPendingRows(batch.id, `Gagal membuka sesi Data Usaha Accurate: ${detail}`);
       logger.error({ err, batchId }, "Import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
+      // § Fase 91 — gagal buka sesi HAMPIR SELALU berarti token/koneksi
+      // sudah tidak valid (revoked/expired) — tandai supaya halaman
+      // /accurate & tombol "Hubungkan Ulang" langsung akurat, bukan
+      // baru ketahuan lewat job refresh terjadwal besok.
+      await markConnectionExpired(connection);
       return;
     }
 
@@ -1223,6 +1237,7 @@ async function main() {
     } catch (err) {
       logger.error({ err, batchId }, "Cancel import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
+      await markConnectionExpired(connection); // § Fase 91, lihat komentar definisi helper
       return;
     }
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, Inbox } from "lucide-react";
+import { Eye, Inbox, Link2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -15,6 +15,7 @@ import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
 import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate-dialog";
 import { api } from "@/lib/api-client";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
@@ -22,27 +23,51 @@ import { api } from "@/lib/api-client";
 // SEMUA batch import (lintas modul), klik Detail buka log per baris
 // (§ `admin/import-batches/[batchId]/page.tsx`) yang tampilannya PERSIS
 // halaman customer, cuma READ-ONLY (tidak ada retry/edit).
+// § Fase 92 (2026-09-10) — ditambah Card "Langganan & Koneksi Accurate"
+// (data terpisah dari `import-batches`, fetch paralel) — sebelumnya
+// admin SAMA SEKALI tidak bisa lihat status koneksi Accurate customer
+// dari sini, apalagi memperbaikinya kalau bermasalah (harus edit
+// database manual). Sekarang admin bisa lihat + "Putuskan Koneksi"
+// (mirror kemampuan customer sendiri di `/accurate`, § Fase 91) supaya
+// customer tinggal "Hubungkan Ulang" dari sisi mereka.
 type ImportBatch = { id: string; module: string; fileName: string; status: string; totalRows: number; createdAt: string };
 type Detail = {
   user: { id: string; name: string; email: string; disabled: boolean; createdAt: string };
   batches: ImportBatch[];
   total: number;
 };
+type SubscriptionRow = {
+  subscriptionId: string;
+  status: string;
+  endAt: string | null;
+  moduleKey: string | null;
+  planName: string;
+  connected: boolean;
+  connectionStatus: string | null;
+  accurateDbAlias: string | null;
+};
 
 export default function AdminUserDetailPage() {
   const companyTimezone = useCompanyTimezone();
   const params = useParams<{ id: string }>();
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [subscriptions, setSubscriptions] = useState<SubscriptionRow[] | null>(null);
   const [notFound, setNotFound] = useState(false);
+
+  const loadSubscriptions = useCallback(async () => {
+    const res = await api.admin.users({ id: params.id }).subscriptions.get();
+    if (res.data) setSubscriptions((res.data as { subscriptions: SubscriptionRow[] }).subscriptions);
+  }, [params.id]);
 
   useEffect(() => {
     async function load() {
       const res = await api.admin.users({ id: params.id })["import-batches"].get();
       if (res.data) setDetail(res.data as unknown as Detail);
       else if (res.error) setNotFound(true);
+      await loadSubscriptions();
     }
     load();
-  }, [params.id]);
+  }, [params.id, loadSubscriptions]);
 
   if (notFound) {
     return <EmptyState icon={Inbox} title="User tidak ditemukan" />;
@@ -75,6 +100,62 @@ export default function AdminUserDetailPage() {
         </CardHeader>
         <CardContent>
           <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Langganan & Koneksi Accurate</CardTitle>
+          <CardDescription>Status tiap fitur yang dilanggan user, beserta koneksi Accurate Online-nya.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {subscriptions === null ? (
+            <Skeleton className="h-24 w-full" />
+          ) : subscriptions.length === 0 ? (
+            <EmptyState icon={Link2} title="Belum punya langganan" />
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fitur</TableHead>
+                  <TableHead>Paket</TableHead>
+                  <TableHead>Status Langganan</TableHead>
+                  <TableHead>Koneksi Accurate</TableHead>
+                  <TableHead>Data Usaha</TableHead>
+                  <TableHead className="text-right">Aksi</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {subscriptions.map((sub) => (
+                  <TableRow key={sub.subscriptionId}>
+                    <TableCell className="text-muted-foreground">{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TableCell>
+                    <TableCell className="font-medium text-foreground">{sub.planName}</TableCell>
+                    <TableCell>
+                      <StatusBadge domain="subscription" status={sub.status} />
+                    </TableCell>
+                    <TableCell>
+                      {sub.connectionStatus === null ? (
+                        <Badge variant="default">Belum Terhubung</Badge>
+                      ) : (
+                        <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
+                      )}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">{sub.accurateDbAlias ?? "-"}</TableCell>
+                    <TableCell>
+                      {sub.connectionStatus !== null && (
+                        <div className="flex justify-end">
+                          <DisconnectAccurateDialog
+                            subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
+                            onDisconnected={loadSubscriptions}
+                          />
+                        </div>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
 

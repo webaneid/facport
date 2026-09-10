@@ -95,6 +95,42 @@ describe("GET /admin/invoices", () => {
     expect(found).toBeDefined();
     expect(found!.items.length).toBe(1);
   });
+
+  // § Fase 94 (2026-09-10) — `orderStatus`/`hasProof` BARU, dipakai
+  // dialog "Detail Invoice" (admin) untuk tampilkan status pembayaran
+  // granular (bukan cuma invoice.status yang kasar) + tombol lihat
+  // bukti transfer (cuma muncul kalau `hasProof: true`).
+  test("200 — orderStatus & hasProof akurat: null/false kalau belum ada order, terisi kalau ada", async () => {
+    const adminEmail = `admin-inv-orderstatus-${runId}@test.local`;
+    const adminId = await signUp(adminEmail);
+    await assignRole(adminId, "admin");
+    const adminCookie = await signIn(adminEmail);
+
+    const customerId = await signUp(`admin-inv-orderstatus-customer-${runId}@test.local`);
+    const invoiceNoOrder = await insertInvoiceWithItems(customerId, `No Order Invoice ${runId}`);
+    const invoiceWithOrder = await insertInvoiceWithItems(customerId, `With Order Invoice ${runId}`);
+    await db.insert(orders).values({
+      invoiceId: invoiceWithOrder.id,
+      uniqueCode: 123,
+      method: "bank_transfer",
+      bankAccountRef: "bank-1",
+      status: "submitted",
+      submittedAt: new Date(),
+      proofUrl: "orders/fake/fake.webp",
+    });
+
+    const res = await testApp.handle(new Request("http://localhost/admin/invoices", { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invoices: { id: string; orderStatus: string | null; hasProof: boolean }[] };
+
+    const noOrder = body.invoices.find((i) => i.id === invoiceNoOrder.id);
+    expect(noOrder?.orderStatus).toBeNull();
+    expect(noOrder?.hasProof).toBe(false);
+
+    const withOrder = body.invoices.find((i) => i.id === invoiceWithOrder.id);
+    expect(withOrder?.orderStatus).toBe("submitted");
+    expect(withOrder?.hasProof).toBe(true);
+  });
 });
 
 // § Fase 27, ADR-0025 — admin bikin invoice BARU untuk user EXISTING

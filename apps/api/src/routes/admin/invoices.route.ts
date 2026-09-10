@@ -20,10 +20,22 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
       // § Fase 27, ADR-0025 — `orderId` dipakai FE untuk tombol "Salin
       // Link" (link publik `{APP_URL}/pay/{orderId}`), pola JOIN yang
       // sama seperti `GET /me/invoices` (`invoices.route.ts`).
+      // § Fase 94 (2026-09-10) — `orderStatus`/`hasProof` BARU ditambah:
+      // `invoices.status` cuma "unpaid"/"paid"/"void"/"expired" (kasar),
+      // TIDAK bedakan "belum ada order sama sekali" vs "sudah upload
+      // bukti, menunggu verifikasi" vs "ditolak admin" — nuansa itu ada
+      // di `orders.status`. Halaman admin (dialog "Detail Invoice") butuh
+      // status SEGRANULAR yang dilihat customer di alur bayar mereka
+      // sendiri (§ `order-pay-flow.tsx`), bukan cuma status invoice kasar.
       const orderRows = invoiceIds.length ? await db.select().from(orders).where(inArray(orders.invoiceId, invoiceIds)) : [];
-      const orderIdByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o.id]));
+      const orderByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o]));
       const withItems = await attachInvoiceItems(rows);
-      return { invoices: withItems.map((inv) => ({ ...inv, orderId: orderIdByInvoiceId.get(inv.id) ?? null })) };
+      return {
+        invoices: withItems.map((inv) => {
+          const order = orderByInvoiceId.get(inv.id);
+          return { ...inv, orderId: order?.id ?? null, orderStatus: order?.status ?? null, hasProof: !!order?.proofUrl };
+        }),
+      };
     },
     { permission: "invoices.view" },
   )

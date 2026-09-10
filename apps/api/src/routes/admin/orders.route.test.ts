@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { adminOrdersRoute } from "./orders.route";
 import { db } from "../../lib/db";
 import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable } from "../../db/schema";
+import { env } from "../../lib/env";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(adminOrdersRoute);
@@ -306,5 +307,61 @@ describe("POST /admin/orders/:id/reject", () => {
       }),
     );
     expect(res.status).toBe(422);
+  });
+});
+
+// § Fase 93 (2026-09-10, BUG DITEMUKAN via laporan user "bukti transfer
+// tidak bisa dibuka") — SEBELUM ini, endpoint ini TIDAK PUNYA test sama
+// sekali (gap pre-existing). Bug: presigned URL dihasilkan pakai host
+// INTERNAL Docker (`minioClient`/`MINIO_ENDPOINT`), yang TIDAK BISA
+// di-resolve browser admin di production — diperbaiki pakai
+// `minioPublicClient` (`MINIO_PUBLIC_URL`, § `lib/minio.ts`). Test ini
+// pastikan origin URL yang dikembalikan cocok `MINIO_PUBLIC_URL`, BUKAN
+// cuma "ada string URL" (assertion lemah yang tidak akan menangkap bug
+// ini kalau cuma cek `typeof === "string"`).
+describe("GET /admin/orders/:id/proof-url", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(new Request("http://localhost/admin/orders/00000000-0000-0000-0000-000000000000/proof-url"));
+    expect(res.status).toBe(401);
+  });
+
+  test("404 PROOF_NOT_FOUND kalau order tidak punya proofUrl", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-proofurl-none-${runId}@test.local`);
+    const [invoice] = await db
+      .insert(invoices)
+      .values({
+        invoiceNumber: nextInvoiceNumber(),
+        userId: customerId,
+        status: "unpaid",
+        billToName: "Test User",
+        subtotal: 100000,
+        total: 100000,
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+      })
+      .returning();
+    const [order] = await db
+      .insert(orders)
+      .values({ invoiceId: invoice!.id, uniqueCode: 222, method: "bank_transfer", bankAccountRef: "bank-1", status: "pending" })
+      .returning();
+
+    const res = await testApp.handle(new Request(`http://localhost/admin/orders/${order!.id}/proof-url`, { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("PROOF_NOT_FOUND");
+  });
+
+  test("200 — URL yang dikembalikan pakai origin MINIO_PUBLIC_URL (BUKAN host internal Docker)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-proofurl-ok-${runId}@test.local`);
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "purchase_invoice", price: 100000, durationDays: 30 }]);
+
+    const res = await testApp.handle(new Request(`http://localhost/admin/orders/${order.id}/proof-url`, { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { url: string; expiresInSeconds: number };
+    const returnedOrigin = new URL(body.url).origin;
+    const expectedOrigin = new URL(env.MINIO_PUBLIC_URL).origin;
+    expect(returnedOrigin).toBe(expectedOrigin);
+    expect(body.expiresInSeconds).toBe(600);
   });
 });

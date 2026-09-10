@@ -24,6 +24,37 @@ export type InvoicePdfData = {
     email: string | null;
     bankAccount: string | null;
   };
+  // § Fase 94 (2026-09-10) — `invoiceStatus` (§ `invoices.status`, selalu
+  // ada) dipakai fallback kalau belum ada order sama sekali (`orderStatus`
+  // null, mis. invoice baru dibuat admin belum pernah dibayar sekali pun).
+  // `orderStatus` (§ `orders.status`, GRANULAR) dipakai kalau ADA —
+  // sama alasan/nuansa dengan `admin/invoices.route.ts` (pending/submitted/
+  // paid/rejected/cancelled/expired vs unpaid/paid/void/expired kasar).
+  // `proofImage` PNG buffer (BUKAN webp asli — § `getProofImageAsPng()`,
+  // `@react-pdf/image` tidak bisa decode webp), null kalau belum ada
+  // bukti transfer diupload.
+  invoiceStatus: string;
+  orderStatus: string | null;
+  proofImage: Buffer | null;
+};
+
+// § duplikasi SENGAJA dari `apps/web/lib/status-badges.tsx` (domain
+// "order"/"invoice") — apps/api TIDAK BISA import dari apps/web (app
+// terpisah, § struktur monorepo). Kalau label di sana berubah, update
+// juga di sini.
+const ORDER_STATUS_LABEL: Record<string, string> = {
+  pending: "Menunggu Pembayaran",
+  submitted: "Menunggu Verifikasi",
+  paid: "Lunas",
+  rejected: "Ditolak",
+  cancelled: "Dibatalkan",
+  expired: "Kadaluarsa",
+};
+const INVOICE_STATUS_LABEL: Record<string, string> = {
+  unpaid: "Belum Dibayar",
+  paid: "Lunas",
+  void: "Dibatalkan",
+  expired: "Kadaluarsa",
 };
 
 const styles = StyleSheet.create({
@@ -57,7 +88,40 @@ const styles = StyleSheet.create({
   footer: { borderTop: "1px solid #dddddd", paddingTop: 12, gap: 3 },
   footerTitle: { fontSize: 9, fontFamily: "Helvetica-Bold", textTransform: "uppercase", color: "#888888", marginBottom: 2 },
   footerText: { fontSize: 9, color: "#555555" },
+  paymentStatus: { marginBottom: 20, gap: 6 },
+  paymentStatusLabel: { fontSize: 9, color: "#888888", textTransform: "uppercase" },
+  paymentStatusBadge: { alignSelf: "flex-start", borderRadius: 4, paddingVertical: 3, paddingHorizontal: 8, fontSize: 10, fontFamily: "Helvetica-Bold" },
+  proofLabel: { fontSize: 9, color: "#888888", textTransform: "uppercase", marginTop: 4 },
+  proofImage: { width: 220, maxHeight: 260, objectFit: "contain", border: "1px solid #dddddd", marginTop: 4 },
 });
+
+// § Fase 94 — warna badge status mengikuti `variant` yang sama dengan
+// `components/ui/badge.tsx` (web) biar konsisten secara VISUAL walau
+// implementasi komponennya beda total (PDF tidak bisa pakai Tailwind).
+const STATUS_BADGE_COLOR: Record<"success" | "warning" | "destructive" | "default", { bg: string; text: string }> = {
+  success: { bg: "#dcfce7", text: "#166534" },
+  warning: { bg: "#fef3c7", text: "#92400e" },
+  destructive: { bg: "#fee2e2", text: "#991b1b" },
+  default: { bg: "#f0f0f0", text: "#555555" },
+};
+
+function orderStatusVariant(status: string): keyof typeof STATUS_BADGE_COLOR {
+  if (status === "paid") return "success";
+  if (status === "submitted") return "warning";
+  if (status === "rejected" || status === "expired") return "destructive";
+  return "default";
+}
+
+function invoiceStatusVariant(status: string): keyof typeof STATUS_BADGE_COLOR {
+  if (status === "paid") return "success";
+  if (status === "expired") return "destructive";
+  return "default";
+}
+
+function statusBadgeStyle(variant: keyof typeof STATUS_BADGE_COLOR) {
+  const { bg, text } = STATUS_BADGE_COLOR[variant];
+  return { backgroundColor: bg, color: text };
+}
 
 function formatRupiah(amount: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
@@ -94,6 +158,26 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
           <Text style={styles.billToLabel}>Ditagihkan kepada</Text>
           <Text style={styles.billToName}>{data.billToName}</Text>
           {data.billToAddress && <Text style={styles.billToDetail}>{data.billToAddress}</Text>}
+        </View>
+
+        <View style={styles.paymentStatus}>
+          <Text style={styles.paymentStatusLabel}>Status Pembayaran</Text>
+          {data.orderStatus ? (
+            <Text style={[styles.paymentStatusBadge, statusBadgeStyle(orderStatusVariant(data.orderStatus))]}>
+              {ORDER_STATUS_LABEL[data.orderStatus] ?? data.orderStatus}
+            </Text>
+          ) : (
+            <Text style={[styles.paymentStatusBadge, statusBadgeStyle(invoiceStatusVariant(data.invoiceStatus))]}>
+              {INVOICE_STATUS_LABEL[data.invoiceStatus] ?? data.invoiceStatus}
+            </Text>
+          )}
+
+          {data.proofImage && (
+            <>
+              <Text style={styles.proofLabel}>Bukti Transfer</Text>
+              <Image src={data.proofImage} style={styles.proofImage} />
+            </>
+          )}
         </View>
 
         <View style={styles.table}>

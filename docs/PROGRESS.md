@@ -99,6 +99,10 @@
 | 88   | Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-88-audit-bug-purchase-payment.md` |
 | 89   | Ekspansi Field Opsional Purchase Payment (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-89-ekspansi-field-purchase-payment.md` |
 | 90   | Koreksi via Test Call Nyata: Branch Wajib & Bug Auto-SUM Multi-Currency | Done | `docs/architecture/architecture-purchase-payment.md`, `architecture-sales-receipt.md` | `docs/phases/phase-90-fix-multicurrency-branch-wajib.md` |
+| 91   | Tombol "Hubungkan Ulang" & Fix Status Koneksi Accurate | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-91-hubungkan-ulang-koneksi-accurate.md` |
+| 92   | Kelola Koneksi Accurate dari Admin ("Putuskan Koneksi") | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-92-kelola-koneksi-accurate-admin.md` |
+| 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
+| 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2446,3 +2450,84 @@ payment tersimpan sungguhan di Accurate (`111.102-01.2026.09.00001`),
 invoice CONTOH1 jadi PAID. 4 fixture test route existing diupdate
 (butuh kolom Branch baru). `bun run typecheck` 0 error, 6 test baru (3
 per modul) + semua test existing pass.
+
+## Update 2026-09-10 — Fase 91 Done: Tombol "Hubungkan Ulang" & Fix Status Koneksi Accurate
+Selagi testing sesi ini, ketahuan halaman `/app/accurate` menampilkan
+"✓ Terhubung" untuk koneksi yang token-nya SUDAH MATI (revoked
+Accurate) — user minta cek fitur "Pakai Koneksi yang Sudah Ada", sempat
+tanya apa dihapus saja. Setelah dicek: akar masalahnya BUKAN spesifik
+fitur reuse — `connected` di API cuma cek "ada baris koneksi", bukan
+cek statusnya, jadi koneksi `expired` tetap lapor "Terhubung" (berlaku
+untuk koneksi OAuth baru MAUPUN reuse). Ditemukan juga gap ini sudah
+DICATAT sejak Fase 01/04 ("tombol Hubungkan Ulang belum dibangun")
+tapi tidak pernah selesai dibangun setelah ADR-0020 (Fase 14) menambah
+guard 409 yang memblokir cara reconnect lama. User pilih perbaiki akar
+masalah (bukan hapus fitur reuse). Diperbaiki: `connected` sekarang cek
+status asli + field baru `connectionStatus`; `POST /accurate/connect`
+terima `reconnect: true` untuk lewati guard 409 (ownership check tetap
+utuh); `markConnectionExpired()` (diekstrak dari job refresh terjadwal)
+sekarang DIPANGGIL JUGA saat import gagal buka sesi, bukan cuma job
+harian; tombol "Hubungkan Ulang" ditambahkan di halaman `/app/accurate`
+(2 tempat: koneksi sehat & koneksi bermasalah). `bun run typecheck` 0
+error, 577 test apps/api (2 baru) + 50 test apps/web, semua pass.
+
+## Update 2026-09-10 — Fase 92 Done: Kelola Koneksi Accurate dari Admin
+Lanjutan Fase 91 — user minta kemampuan SETARA untuk admin: lihat
+status langganan+koneksi Accurate user dari halaman detail admin, dan
+bisa "putuskan" koneksi bermasalah sendiri, tidak perlu lagi minta
+developer edit database manual (dilakukan berkali-kali sepanjang sesi
+ini). Ditambahkan `GET /admin/users/:id/subscriptions` (permission
+`users.view`, mirror pola `import-batches.route.ts`, logic
+connected/connectionStatus SAMA PERSIS versi customer Fase 91) dan
+`POST /admin/subscriptions/:id/disconnect-accurate` (permission
+`subscriptions.manage`) — cuma mengosongkan pointer subscription,
+BUKAN hapus koneksinya (bisa dipakai bareng subscription lain, ADR-0020).
+Tercatat ke audit log, kirim notifikasi tipe BARU
+`accurate_connection_disconnected_by_admin` ke pemilik subscription
+(beda pesan dari `accurate_connection_expired` supaya tidak dikira bug).
+Card baru "Langganan & Koneksi Accurate" di `/admin/users/:id` + dialog
+konfirmasi sederhana (bukan ketik-ulang-nama seperti Batal Import — user
+konfirmasi risiko lebih rendah, gampang dipulihkan tinggal "Hubungkan
+Ulang"). `bun run typecheck` 0 error, 584 test apps/api (7 baru) + 50
+test apps/web, semua pass.
+
+## Update 2026-09-10 — Fase 93 Done: Fix Bug Bukti Transfer Tidak Bisa Dibuka
+User laporan tidak bisa buka bukti transfer di alur approval pembayaran
+— audit `GET /admin/orders/:id/proof-url` menemukan akar masalah:
+presigned URL dibuat pakai `minioClient` yang dikonfigurasi dari
+`MINIO_ENDPOINT` INTERNAL Docker (`minio`, cuma bisa di-resolve
+container lain di jaringan Docker yang sama) — browser admin TIDAK
+PERNAH bisa buka URL itu di production/staging. Tidak ketahuan dari dev
+lokal karena `.env` dev punya `MINIO_PUBLIC_URL` SAMA PERSIS dengan
+`MINIO_ENDPOINT`. Diperbaiki dengan client baru `minioPublicClient`
+(dikonfigurasi dari `MINIO_PUBLIC_URL`, host publik lewat reverse
+proxy — sudah dipakai bucket public lain, cuma belum pernah untuk
+presigned URL) — aman karena signing presigned URL adalah komputasi
+lokal (kriptografi murni), bukan koneksi jaringan sungguhan, jadi tidak
+masalah pakai host yang server sendiri tidak terhubung ke situ. Grep
+seluruh codebase konfirmasi cuma 1 tempat pakai presigned URL, jadi bug
+ini terisolasi. Endpoint ini sebelumnya NOL test — ditambah 7 test baru
+(4 parsing + 3 endpoint). `bun run typecheck` 0 error, `apps/api` 591
+pass/0 fail (7 baru), `apps/web` 50 pass/0 fail. **Wajib diverifikasi
+manual di production/staging setelah deploy** — tidak bisa dites
+end-to-end dari dev lokal (kondisi internal/public URL sama di sana).
+
+## Update 2026-09-10 — Fase 94 Done: Invoice Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF
+User minta halaman `/admin/invoices` punya icon mata untuk lihat detail
+invoice (item yang dibeli) dan icon bukti transfer diganti ke icon
+kartu/uang (bukan mata lagi, biar tidak tertukar makna) — dan status
+pembayaran harus muncul baik di view detail maupun di PDF, dengan bukti
+transfer ikut terhubung/terlihat di kedua tempat. Halaman ini sebelumnya
+NOL akses ke info ini sama sekali. Diimplementasi: `GET /admin/invoices`
+sekarang JOIN ke `orders` (field baru `orderStatus`/`hasProof`); dialog
+baru "Detail Invoice" (icon mata) menampilkan item+harga, badge status
+granular, dan tombol icon Banknote untuk lihat bukti (reuse endpoint
+admin/orders proof-url yang sudah ada). PDF invoice (`/invoices/:id/pdf`)
+sekarang embed status pembayaran + gambar bukti transfer asli (convert
+webp→png via `sharp`, karena `@react-pdf/image` tidak bisa decode webp),
+gagal fetch bukti TIDAK menggagalkan PDF (graceful fallback, di-log).
+Security review: tidak ada temuan blocking, 1 catatan non-blocking
+(tombol bukti transfer butuh permission `orders.manage`, beda dari
+`invoices.view` yang menggate halaman — didokumentasikan di phase doc,
+bukan bug). `bun run typecheck` 0 error (api+web), `apps/api` 597 pass/0
+fail (3 test baru), `apps/web` 50 pass/0 fail (tidak ada regresi).

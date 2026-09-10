@@ -187,12 +187,44 @@ export async function ensurePaymentProofBucket() {
 ```
 `orders.proofUrl` menyimpan **MinIO object key** (bukan URL utuh). Saat
 admin buka detail order untuk verifikasi, server generate **presigned
-GET URL** (`minioClient.presignedGetObject(bucket, key, expirySeconds)`,
-expiry pendek — 10 menit cukup untuk 1 sesi review) on-demand, BUKAN
-disimpan permanen. Ini menyelesaikan gap "private media belum bisa
+GET URL** (expiry pendek — 10 menit cukup untuk 1 sesi review) on-demand,
+BUKAN disimpan permanen. Ini menyelesaikan gap "private media belum bisa
 disajikan" (§ `architecture-storage.md`, terbuka sejak Fase 00) KHUSUS
 untuk kategori ini — kategori privat lain (`facport-media` umum) TETAP
 terbuka, di luar scope.
+
+> ⚠️ **BUG DITEMUKAN & DIPERBAIKI (Fase 93, 2026-09-10)** — paragraf di
+> atas SEBELUMNYA salah sebut `minioClient.presignedGetObject(...)`.
+> `minioClient` dikonfigurasi pakai `MINIO_ENDPOINT` **INTERNAL** (nama
+> service Docker `minio` di production) — presigned URL yang dihasilkan
+> TIDAK PERNAH bisa dibuka browser admin (host itu tidak ada di luar
+> jaringan Docker), persis laporan user *"tempat saya gk bisa dibuka
+> bukti transfernya"*. Diperbaiki dengan client TERPISAH
+> `minioPublicClient` (`apps/api/src/lib/minio.ts`), dikonfigurasi dari
+> `MINIO_PUBLIC_URL` (host publik lewat reverse proxy nginx, SUDAH ada
+> & dipakai bucket `facport-public`, cuma belum pernah dipakai untuk
+> bucket privat ini). **Kenapa aman**: `presignedGetObject` TIDAK PERNAH
+> benar-benar connect ke endpoint yang dikonfigurasi — signature-nya
+> dihitung SECARA LOKAL (murni kriptografi berdasar access/secret key +
+> path/expiry), jadi generate presigned URL pakai host PUBLIK aman
+> walau server API ini sendiri tidak pernah terhubung balik ke situ.
+> **Kenapa tidak ketahuan dari dev lokal**: `.env` dev punya
+> `MINIO_PUBLIC_URL` SAMA PERSIS dengan `MINIO_ENDPOINT`
+> (`http://localhost:9000` keduanya) — cuma di production/staging (yang
+> benar-benar punya reverse proxy terpisah, `MINIO_ENDPOINT=minio` vs
+> `MINIO_PUBLIC_URL=https://media.<domain>`) bug ini muncul. Detail
+> lengkap → `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md`.
+
+**§ Fase 94 (2026-09-10) — Baca bukti transfer server-to-server (BEDA dari
+presigned URL di atas)**: `GET /invoices/:id/pdf` (PDF invoice, bisa
+diminta admin ATAU customer) butuh EMBED bukti transfer sebagai gambar,
+bukan cuma link — ini baca file LANGSUNG di server (bukan browser), jadi
+pakai `minioClient` **INTERNAL** (bukan `minioPublicClient`), via
+`getProofImageAsPng()` (`apps/api/src/lib/order-payment.ts`). Objek
+tersimpan selalu `.webp` (§ `processProofImage` di bawah) — dikonversi ke
+PNG dulu (`sharp`) sebelum diserahkan ke generator PDF, karena
+`@react-pdf/image` tidak bisa decode webp. Detail lengkap →
+`docs/phases/phase-94-invoice-detail-status-bukti-transfer.md`.
 
 ## Link Pembayaran Publik (Tanpa Login) — ADR-0025
 Selain jalur customer login (`/billing/[orderId]/pay`, di atas), SETIAP
