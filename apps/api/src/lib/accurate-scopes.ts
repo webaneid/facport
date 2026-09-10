@@ -92,6 +92,10 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // user isi kolom itu. Koneksi Accurate yang connect SEBELUM
   // penambahan ini WAJIB "Hubungkan Ulang" untuk dapat scope baru.
   journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  // § Fase 96 (2026-09-10) — `data_classification_view`/`_save` LANGSUNG
+  // disertakan dari awal (§ pelajaran Fase 98: jangan tambah field
+  // Kategori Keuangan tanpa scope pendukungnya).
+  other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

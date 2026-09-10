@@ -10,4 +10,5 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   purchase_payment: "/purchase-payment/import",
   sales_receipt: "/sales-receipt/import",
   journal_voucher: "/journal-voucher/import",
+  other_payment: "/other-payment/import",
 };

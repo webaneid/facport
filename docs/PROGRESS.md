@@ -104,7 +104,7 @@
 | 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
 | 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
 | 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
-| 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
+| 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Done | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
 | 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
 | 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
 | 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
@@ -2646,3 +2646,31 @@ asumsi speculative ini salah — aman, try/catch generik sudah ada).
 **Known limitation**: BELUM dikonfirmasi resmi Accurate Support khusus
 endpoint ini — kalau retest client gagal, kirim pertanyaan terpisah ke
 Accurate Support untuk Purchase Payment.
+
+## Update 2026-09-10 — Fase 96 Done: Modul Baru Other Payment (Pembayaran Bank/Kas)
+Sub-modul TERAKHIR dari roadmap yang belum dieksekusi — sekarang semua
+7 sub-modul (Sales Invoice, Purchase Invoice, Sales Receipt, Purchase
+Payment, Journal Voucher, Akun Hutang Pemasok, Other Payment) sudah
+punya kode. Mirror struktur Journal Voucher (grouping by "Trans No")
+tapi TANPA validasi balance debit=kredit (bukan transaksi double-entry
+manual). Modul baru, SKU sendiri (grup katalog "Kas & Bank"), gating
+sama seperti modul lain — tidak ada perlakuan khusus.
+
+Gap ditemukan & diperbaiki SEBELUM eksekusi (dikonfirmasi user):
+`expenseName` WAJIB di Accurate tapi template client tidak punya kolom
+untuk ini — ditambah kolom BARU "Expense Name", bukan repurpose kolom
+lain. Auto-create Kategori Keuangan (`findOrCreateDataClassification`)
+dibangun DARI AWAL modul ini (pelajaran langsung dari gap Fase 98 di
+Journal Voucher, tidak diulang di sini).
+
+`bun run typecheck` 0 error, `apps/api` 639 pass/0 fail (34 test baru),
+`apps/web` 50 pass/0 fail, `bun run lint` 0 error, security review
+tidak ada temuan. **Diverifikasi manual lewat browser**: login user
+real dengan subscription Other Payment, sidebar & dashboard tampil
+benar, upload file Excel real, auto-mapping 100% cocok ke semua 9
+kolom, confirm berhasil, job masuk antrian worker. **Known limitation**:
+`projectNo`/`charField`/`numericField`/`dateField` belum diverifikasi
+test call nyata KHUSUS endpoint ini (diasumsikan konsisten dari
+endpoint/modul lain, sama filosofi Fase 100) — dan belum pernah dites
+transaksi sungguhan sampai ke Accurate (worker dev environment punya
+backlog job lama, job test belum sempat diproses saat verifikasi).

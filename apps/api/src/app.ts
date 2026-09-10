@@ -41,6 +41,7 @@ import { vendorPayableAccountImportRoute } from "./routes/vendor-payable-account
 import { purchasePaymentImportRoute } from "./routes/purchase-payment-import.route";
 import { salesReceiptImportRoute } from "./routes/sales-receipt-import.route";
 import { journalVoucherImportRoute } from "./routes/journal-voucher-import.route";
+import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
 
 const allowedOrigins = [
   "http://localhost:6209",
@@ -192,6 +193,7 @@ export const app = new Elysia()
   .use(vendorPayableAccountImportRoute)
   .use(purchasePaymentImportRoute)
   .use(salesReceiptImportRoute)
-  .use(journalVoucherImportRoute);
+  .use(journalVoucherImportRoute)
+  .use(otherPaymentImportRoute);
 
 export type App = typeof app;

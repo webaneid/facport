@@ -1,11 +1,22 @@
 # Architecture — Modul Other Payment (Pembayaran Bank/Kas)
 
-> **Status: 📋 RENCANA (Fase 96, belum dieksekusi)** — riset field SUDAH
+> **Status: ✅ DIEKSEKUSI (Fase 96, 2026-09-10)** — riset field
 > diverifikasi dari `docs/referencehtml/accurate-openapi.json` (spec
 > resmi Accurate, versi 1.5806.4763) DAN 4 screenshot UI Accurate ASLI
 > dari client (`docs/referencehtml/CLIENT_other-payment-v1.2.xlsx`,
 > gambar di `docs/referencehtml/op-client-images/`), bukan tebakan.
-> Detail rencana eksekusi → `docs/phases/phase-96-modul-other-payment.md`.
+> Detail eksekusi → `docs/phases/phase-96-modul-other-payment.md`.
+>
+> **Koreksi saat eksekusi**: kolom "Expense Name" (WAJIB di Accurate,
+> `detailAccount[].expenseName`) TERNYATA TIDAK ADA di template client
+> — rencana awal keliru asumsikan kolom "Account Name" cukup (padahal
+> field itu display-only). Keputusan eksplisit user: tambah kolom BARU
+> "Expense Name" ke template Facport (bukan repurpose "Account Name"
+> atau biarkan kosong) — lihat § komentar `otherPaymentMapping` di
+> `other-payment.mapping.ts`. Auto-create Kategori Keuangan
+> (`findOrCreateDataClassification`) diimplementasikan DARI AWAL modul
+> ini dibangun (pelajaran dari gap Fase 98 Jurnal Voucher), bukan
+> ditambah belakangan.
 
 ## Apa Itu "Other Payment" — BEDA dari Purchase Payment
 Purchase Payment = pembayaran untuk FAKTUR PEMBELIAN yang sudah ada
@@ -127,9 +138,17 @@ validasi balance semacam itu di sini**. Validasi yang relevan: setiap
 baris WAJIB `accountNo`+`amount`+`expenseName` terisi (field wajib
 level API, § `requiredFieldsFor`).
 
-## Field Mapping Excel (Rencana — Belum Diimplementasi)
+## Field Mapping Excel (As-Implemented, § Fase 96)
+> Cuplikan di bawah adalah RENCANA AWAL (sebelum eksekusi) — DIPERTAHANKAN
+> untuk konteks, TAPI 2 hal berubah saat eksekusi nyata (lihat catatan
+> "Koreksi saat eksekusi" di atas): (1) kolom "Expense Name" BARU
+> ditambahkan (tidak ada di rencana awal ini), (2) `defaultColumnMap`
+> final PERSIS ikut urutan template client (bukan urutan bebas di
+> bawah). Untuk field mapping SEBENARNYA, baca kode langsung di
+> `apps/api/src/lib/import-mapping/other-payment.mapping.ts` — TIDAK
+> diduplikasi ulang di sini supaya tidak basi lagi kalau kode berubah.
 ```ts
-// apps/api/src/lib/import-mapping/other-payment.mapping.ts (RENCANA)
+// apps/api/src/lib/import-mapping/other-payment.mapping.ts (RENCANA AWAL — lihat kode asli untuk versi final)
 export const otherPaymentMapping = {
   requiredFields: ["transDate", "transNo", "branchName", "bankNo", "payee", "lineAccountNo", "lineAmount", "lineExpenseName"] as const,
   fieldToAccuratePath: {
@@ -175,23 +194,28 @@ export const otherPaymentMapping = {
 "Nama beban yang ingin dicatat. Misalnya: Pembayaran listrik" — bebas
 teks, BUKAN lookup ke master data.
 
-## Worker Processing (Rencana)
+## Worker Processing (As-Implemented, § Fase 96)
 Mirror PERSIS pola Jurnal Voucher Opsi B / Sales Receipt Fase 49:
 grouping by "Trans No" (`groupOtherPaymentRows`), 1 grup = 1 payload
-`other-payment/save.do`. TIDAK ada findExisting/append-lintas-batch
-(sama seperti Jurnal Umum — tidak ada konsep vendor/customer yang perlu
-divalidasi konsistensinya). TIDAK ada "Batal Import" di rilis awal
-(konsisten pola modul serupa).
+`other-payment/save.do` (`processOtherPaymentGroup`, `workers/index.ts`).
+TIDAK ada findExisting/append-lintas-batch (sama seperti Jurnal Umum —
+tidak ada konsep vendor/customer yang perlu divalidasi konsistensinya).
+TIDAK ada "Batal Import" di rilis awal (konsisten pola modul serupa).
+Auto-create Kategori Keuangan (`ensureOtherPaymentDataClassifications`,
+reuse `findOrCreateDataClassification`) dipanggil SEBELUM
+`buildOtherPaymentPayload` — dibangun dari awal, bukan ditambah
+belakangan (§ pelajaran Fase 98).
 
 ## Scope OAuth Baru
 ```ts
-// apps/api/src/lib/accurate-scopes.ts (RENCANA)
-other_payment: ["other_payment_view", "other_payment_save", "glaccount_view"],
+// apps/api/src/lib/accurate-scopes.ts (AS-IMPLEMENTED)
+other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
 ```
 
-## Footprint Perubahan (Modul Baru — 12 File Existing + File Baru)
-File **existing** yang perlu disentuh (dicek via grep pola
-`purchase_payment`/`journal_voucher` di seluruh codebase):
+## Footprint Perubahan (Modul Baru — 12 File Existing + File Baru, § Fase 96 SELESAI)
+File **existing** yang disentuh (juga `apps/api/src/app.ts` untuk
+registrasi route — TIDAK terdaftar di rencana awal, ketahuan saat
+eksekusi):
 1. `apps/api/src/lib/accurate-scopes.ts` — entry `other_payment`
 2. `apps/api/src/lib/import-mapping/template-guide.ts` — `otherPaymentTemplateGuide`
 3. `apps/api/src/workers/index.ts` — dispatch case `"other_payment"`

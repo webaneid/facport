@@ -13,6 +13,9 @@ export const MODULE_OPTIONS = [
   // sekarang SKU sendiri. Grup "Data Master" (bukan "Pembelian") —
   // konsepnya beda dari 5 modul transaksi di atas.
   { key: "vendor_payable_account", label: "Akun Hutang Pemasok", group: "Data Master" },
+  // § Fase 96 (2026-09-10) — modul baru, grup "Kas & Bank" BARU (pengeluaran
+  // kas/bank LANGSUNG tanpa faktur/vendor, beda konsep dari Pembelian/Buku Besar).
+  { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", group: "Kas & Bank" },
 ] as const;
 
 export const MODULE_GROUPS = [...new Set(MODULE_OPTIONS.map((m) => m.group))];

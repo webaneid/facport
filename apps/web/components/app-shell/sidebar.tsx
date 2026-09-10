@@ -11,6 +11,7 @@ import {
   Wallet,
   HandCoins,
   BookOpenCheck,
+  Banknote,
   Archive,
   Users,
   UserCog,
@@ -55,6 +56,7 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/purchase-payment/import", label: "Import Purchase Payment", icon: Wallet, moduleKey: "purchase_payment" },
         { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
         { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
+        { href: "/other-payment/import", label: "Import Other Payment", icon: Banknote, moduleKey: "other_payment" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu — beda dari item import di atas). SENGAJA

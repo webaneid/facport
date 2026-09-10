@@ -10,7 +10,7 @@ import { api } from "@/lib/api-client";
 
 // § diminta user 2026-09-05 — versi ADMIN dari halaman "Hasil Import"
 // customer (`purchase-invoice`/`sales-invoice`/`vendor/payable-account`/
-// `purchase-payment`/`sales-receipt`/`journal-voucher`
+// `purchase-payment`/`sales-receipt`/`journal-voucher`/`other-payment`
 // `import/[batchId]/page.tsx`) — SENGAJA replikasi PERSIS tampilan tiap
 // modul (bukan 1 tampilan generik), TAPI READ-ONLY TOTAL: TIDAK ADA
 // tombol Retry/Edit Baris — itu tetap aksi self-service milik user
@@ -272,6 +272,36 @@ function JournalVoucherView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 96 (2026-09-10) — mirror `JournalVoucherView` PERSIS (modul baru,
+// grouping by "Trans No" tapi TANPA kolom ekstraksi khusus di admin view,
+// sama alasan PurchasePaymentView/VendorPayableAccountView).
+function OtherPaymentView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Other Payment Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -279,6 +309,7 @@ const MODULE_TITLE: Record<string, string> = {
   purchase_payment: "Hasil Import Purchase Payment",
   sales_receipt: "Hasil Import Sales Receipt",
   journal_voucher: "Hasil Import Jurnal Umum",
+  other_payment: "Hasil Import Other Payment",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -345,6 +376,7 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "purchase_payment" && <PurchasePaymentView rows={rows} />}
           {batch.module === "sales_receipt" && <SalesReceiptView batch={batch} rows={rows} />}
           {batch.module === "journal_voucher" && <JournalVoucherView rows={rows} />}
+          {batch.module === "other_payment" && <OtherPaymentView rows={rows} />}
         </CardContent>
       </Card>
     </div>

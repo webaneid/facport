@@ -15,6 +15,7 @@ import { DeleteImportDialog as VendorPayableAccountDeleteImportDialog } from "@/
 import { DeleteImportDialog as PurchasePaymentDeleteImportDialog } from "@/components/purchase-payment/delete-import-dialog";
 import { DeleteImportDialog as SalesReceiptDeleteImportDialog } from "@/components/sales-receipt/delete-import-dialog";
 import { DeleteImportDialog as JournalVoucherDeleteImportDialog } from "@/components/journal-voucher/delete-import-dialog";
+import { DeleteImportDialog as OtherPaymentDeleteImportDialog } from "@/components/other-payment/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -102,6 +103,9 @@ export function ImportBatchTable({ batches, onChanged, timezone }: { batches: Un
                   )}
                   {canDelete && batch.module === "journal_voucher" && (
                     <JournalVoucherDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "other_payment" && (
+                    <OtherPaymentDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>
