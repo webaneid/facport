@@ -14,17 +14,33 @@ import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-journal-voucher.md — transaksi akuntansi murni (debit/
-// kredit ke akun COA), TANPA vendor/customer/faktur. Format LEBAR: 1
-// baris Excel = 1 jurnal lengkap (1 akun debit + 1 akun kredit), Nominal
-// Debit WAJIB SAMA PERSIS dengan Nominal Kredit.
+// kredit ke akun COA), TANPA vendor/customer/faktur. DUA FORMAT hidup
+// berdampingan (§ Fase 50, `formatOf` di `journal-voucher.mapping.ts`):
+// Opsi A (Format Lebar) — 1 baris Excel = 1 jurnal lengkap (1 akun debit
+// + 1 akun kredit), Nominal Debit WAJIB SAMA PERSIS dengan Nominal
+// Kredit; Opsi B (Format Panjang) — banyak baris per jurnal (N akun),
+// dikelompokkan lewat "Nomor Transaksi", SUM semua baris DEBIT WAJIB
+// SAMA PERSIS dengan SUM semua baris CREDIT dalam 1 kelompok.
+//
+// § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — Opsi B SUDAH
+// didukung penuh backend sejak Fase 50 (bahkan mewajibkan field-nya),
+// tapi field-nya TIDAK PERNAH muncul di daftar ini — user TIDAK BISA
+// mapping manual ke Opsi B lewat halaman ini sama sekali (cuma bisa
+// lewat panggilan API langsung). Ditambahkan sekarang, label diberi
+// awalan "Opsi A"/"Opsi B" (Combobox tidak dukung group/section) supaya
+// user tidak bingung field mana yang cocok dipasangkan dengan mana.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
-  { value: "transDate", label: "Tanggal (wajib)" },
-  { value: "debitAccountNo", label: "Kode Akun Debit (wajib)" },
-  { value: "debitAmount", label: "Nominal Debit (wajib)" },
-  { value: "creditAccountNo", label: "Kode Akun Kredit (wajib)" },
-  { value: "creditAmount", label: "Nominal Kredit (wajib)" },
-  { value: "description", label: "Keterangan" },
+  { value: "transDate", label: "Tanggal (wajib, kedua opsi)" },
+  { value: "description", label: "Keterangan (opsional, kedua opsi)" },
+  { value: "debitAccountNo", label: "Opsi A — Kode Akun Debit (wajib)" },
+  { value: "debitAmount", label: "Opsi A — Nominal Debit (wajib)" },
+  { value: "creditAccountNo", label: "Opsi A — Kode Akun Kredit (wajib)" },
+  { value: "creditAmount", label: "Opsi A — Nominal Kredit (wajib)" },
+  { value: "journalNumber", label: "Opsi B — Nomor Transaksi (wajib, kunci pengelompokan baris)" },
+  { value: "lineAccountNo", label: "Opsi B — Kode Akun per Baris (wajib)" },
+  { value: "lineAmount", label: "Opsi B — Nominal per Baris (wajib)" },
+  { value: "lineAmountType", label: "Opsi B — Tipe Baris DEBIT/CREDIT (wajib)" },
 ] as const;
 
 const uploadSchema = z.object({
@@ -101,9 +117,10 @@ export default function JournalVoucherImportPage() {
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Jurnal Umum</h1>
         <p className="text-sm text-muted-foreground">
-          Upload file Excel berisi jurnal debit/kredit antar akun COA. 1 baris = 1 jurnal lengkap (1 akun debit + 1
-          akun kredit) — Nominal Debit dan Nominal Kredit WAJIB sama persis. Kode akun WAJIB SUDAH terdaftar di
-          Accurate.
+          Upload file Excel berisi jurnal debit/kredit antar akun COA. Mendukung 2 format: <strong>Opsi A</strong> (1
+          baris = 1 jurnal lengkap, 1 akun debit + 1 akun kredit) atau <strong>Opsi B</strong> (banyak baris
+          dikelompokkan lewat Nomor Transaksi, untuk jurnal dengan lebih dari 2 akun). Total Debit dan Kredit WAJIB
+          sama persis dalam 1 jurnal. Kode akun WAJIB SUDAH terdaftar di Accurate.
         </p>
       </div>
 

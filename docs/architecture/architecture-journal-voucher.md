@@ -215,6 +215,60 @@ vendor/customer buat divalidasi konsistensinya). TIDAK ada fitur
 "Batal Import" untuk modul ini, KEDUA format (`CANCEL_IMPORT` job tetap
 hardcode 2 cabang lama saja) — TIDAK berubah oleh Fase 50.
 
+## ⚠️ 3 Bug/Gap Ditemukan & Diperbaiki (Audit 2026-09-10)
+Audit menyeluruh (arsitektur vs kode) menemukan 3 masalah, SEMUA sudah
+diperbaiki di sesi yang sama:
+
+1. **BUG (High) — `journalNumber` tidak pernah dikirim sebagai
+   `number`**: `buildJournalVoucherPayloadTall` membangun
+   `detailJournalVoucher`/`transDate`/`description` tapi TIDAK PERNAH
+   menulis `payload.number` dari `journalNumber` — padahal komentar
+   mapping sendiri (§ di atas) SUDAH bilang field ini harus jadi
+   Accurate `number`, dan 2 modul saudara (Purchase Payment
+   `paymentNumber`, Sales Receipt `receiptNumber`) sudah benar
+   melakukan ini sejak Fase 50. Akibatnya nomor transaksi dari Excel
+   dibuang diam-diam, Accurate auto-number sendiri. **Fix**: tambah
+   `if (journalNumber !== undefined && journalNumber !== "") payload.number = String(journalNumber);`
+   di akhir `buildJournalVoucherPayloadTall`, + 2 test baru
+   (`journal-voucher.mapping.test.ts`) yang assert `payload.number`
+   terisi untuk Opsi B dan `undefined` untuk grup singleton tanpa
+   `journalNumber`.
+2. **GAP (High) — Frontend tidak bisa mapping manual ke Opsi B sama
+   sekali**: `ACCURATE_FIELDS` di
+   `apps/web/app/app/(protected)/journal-voucher/import/page.tsx` cuma
+   berisi 6 field Opsi A — 4 field Opsi B (`journalNumber`,
+   `lineAccountNo`, `lineAmount`, `lineAmountType`) tidak ada di
+   dropdown mapping, padahal backend sudah dukung penuh dan
+   mewajibkannya (`requiredFieldsTall`). Kalau auto-suggest server
+   gagal (header Excel beda sedikit dari `defaultColumnMap`), user
+   Opsi B TIDAK PUNYA cara mapping lewat web app — cuma bisa lewat API
+   langsung. **Fix**: tambah 4 field Opsi B ke `ACCURATE_FIELDS`, label
+   diberi awalan "Opsi A —"/"Opsi B —" (Combobox tidak dukung
+   group/section), plus perjelas teks deskripsi halaman soal 2 format.
+3. **GAP (Medium) — Dialog edit per-baris tidak tall-aware**:
+   `EditRowDialog` (tombol pensil, edit 1 baris) hardcode
+   `REQUIRED_INTERNAL_FIELDS` Opsi A saja — beda dari `EditableGrid`
+   (grid bulk-edit di halaman yang sama) yang sejak Fase 51 sudah
+   deteksi format dinamis via `isTallFormat()`. Untuk batch Opsi B,
+   dialog ini tidak menandai field mana yang wajib (tidak ada asterisk/
+   hint) — validasi server tetap benar (jadi tidak rusak fungsional
+   total), tapi UX kosong untuk user yang pakai dialog bukan grid.
+   **Fix**: pindahkan `isTallFormat()`/`REQUIRED_INTERNAL_FIELDS_TALL`
+   (sebelumnya terduplikasi di `[batchId]/page.tsx`) jadi SATU sumber
+   di `edit-row-dialog.tsx`, dialog sekarang deteksi format sendiri
+   sama seperti grid, plus `FIELD_HINTS` untuk 4 field Opsi B.
+
+**Dikonfirmasi TIDAK ADA gap** (audit sama): field mapping backend vs
+dokumentasi (sudah sesuai persis), validasi balance debit=kredit
+(desain sesuai dokumentasi — exact float equality tanpa epsilon
+diflag Low/perlu klarifikasi, bukan bug terverifikasi), jalur pajak/PPh
+(modul ini TIDAK PUNYA field pajak sama sekali di spec resmi
+`journal-voucher/save.do` — bug PPh23 Sales Receipt § `lessons-learned.md`
+2026-09-10 TIDAK relevan di sini), pola auto-SUM×rate ala bug Fase 90
+(JV belum implementasi `primeAmount`/`rate` currency asing sama
+sekali — catatan untuk implementer masa depan kalau field itu
+ditambahkan nanti).
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

@@ -9,11 +9,22 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 
 // § mirror `components/purchase-invoice/edit-row-dialog.tsx`, DISEDERHANAKAN
-// — modul ini TIDAK ada grouping (1 baris = 1 payload independen), jadi
-// TIDAK ada prop/peringatan "siblingRowNumbers" seperti versi Purchase
-// Invoice/Sales Invoice. Validasi balance debit=kredit TIDAK diulang di
-// klien — kalau tidak seimbang, retry akan gagal lagi dengan pesan jelas
-// dari `buildJournalVoucherPayload()` (backend), user edit ulang.
+// — modul ini TIDAK ada grouping GANDA per-jurnal (1 baris Opsi A = 1
+// payload independen), jadi TIDAK ada prop/peringatan "siblingRowNumbers"
+// seperti versi Purchase Invoice/Sales Invoice. Validasi balance
+// debit=kredit TIDAK diulang di klien — kalau tidak seimbang, retry akan
+// gagal lagi dengan pesan jelas dari backend (`buildJournalVoucherPayload`/
+// `buildJournalVoucherPayloadTall`), user edit ulang.
+//
+// § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — dialog ini
+// sebelumnya HARDCODE field Opsi A saja (`REQUIRED_INTERNAL_FIELDS`
+// tunggal, tanpa deteksi format) — beda dari `EditableGrid`
+// (`[batchId]/page.tsx`) yang di Fase 51 SUDAH deteksi format dinamis.
+// Batch format Opsi B (panjang) yang dibuka lewat dialog ini (bukan
+// grid) tidak menandai field mana yang wajib sama sekali. Sekarang
+// deteksi format SENDIRI (pola sama `isTallFormat` yang tadinya
+// terduplikasi di `[batchId]/page.tsx` — dipindah ke sini jadi SATU
+// sumber, diimpor balik dari sana).
 type EditableRow = {
   id: string;
   rowNumber: number;
@@ -26,12 +37,26 @@ type EditableRow = {
 export const DATE_INTERNAL_FIELDS = new Set(["transDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "debitAccountNo", "debitAmount", "creditAccountNo", "creditAmount"]);
+export const REQUIRED_INTERNAL_FIELDS_TALL = new Set(["transDate", "journalNumber", "lineAccountNo", "lineAmount", "lineAmountType"]);
+
+// § pola sama `formatOf()` backend (`journal-voucher.mapping.ts`) —
+// duplikasi SENGAJA (frontend tidak bisa import kode backend), tapi
+// SATU sumber di sisi frontend (sebelumnya terduplikasi lagi di
+// `[batchId]/page.tsx`, dihapus dari sana, diimpor dari sini).
+export function isTallFormat(columnMapping: Record<string, string>): boolean {
+  const mappedFields = new Set(Object.values(columnMapping));
+  return ["journalNumber", "lineAccountNo", "lineAmount", "lineAmountType"].some((f) => mappedFields.has(f));
+}
 
 const FIELD_HINTS: Record<string, string> = {
   debitAccountNo: "Kode Akun (COA) yang di-debit, contoh: 6-20500",
   debitAmount: "Contoh: 500000 (angka saja, tanpa titik/koma) — WAJIB sama persis dengan Nominal Kredit",
   creditAccountNo: "Kode Akun (COA) yang di-kredit, contoh: 1-10200",
   creditAmount: "Contoh: 500000 (angka saja, tanpa titik/koma) — WAJIB sama persis dengan Nominal Debit",
+  journalNumber: "Nomor Transaksi — kunci pengelompokan baris dalam 1 jurnal, contoh: JV-001",
+  lineAccountNo: "Kode Akun (COA) baris ini, contoh: 6-20500",
+  lineAmount: "Contoh: 500000 (angka saja, tanpa titik/koma) — total semua baris DEBIT WAJIB sama persis dengan total semua baris CREDIT",
+  lineAmountType: 'Isi "DEBIT" atau "CREDIT" (boleh singkatan "D"/"K")',
 };
 
 function toDisplayDate(value: unknown): string {
@@ -63,7 +88,8 @@ export function EditRowDialog({
 }) {
   const columns = Object.keys(columnMapping);
   const dateColumns = new Set(columns.filter((col) => DATE_INTERNAL_FIELDS.has(columnMapping[col]!)));
-  const requiredColumns = new Set(columns.filter((col) => REQUIRED_INTERNAL_FIELDS.has(columnMapping[col]!)));
+  const requiredInternalFields = isTallFormat(columnMapping) ? REQUIRED_INTERNAL_FIELDS_TALL : REQUIRED_INTERNAL_FIELDS;
+  const requiredColumns = new Set(columns.filter((col) => requiredInternalFields.has(columnMapping[col]!)));
   const fieldToColumn = Object.fromEntries(columns.map((col) => [columnMapping[col], col]));
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});

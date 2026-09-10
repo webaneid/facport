@@ -6,6 +6,46 @@
 
 ---
 
+## 2026-09-10 — Audit Jurnal Umum: field `journalNumber` dikirim ke grouping tapi dibuang sebelum sampai ke Accurate `number`
+**Masalah:** Audit menyeluruh (arsitektur vs kode, diminta user tanpa
+laporan bug spesifik) menemukan `buildJournalVoucherPayloadTall`
+(`apps/api/src/lib/import-mapping/journal-voucher.mapping.ts`, Opsi B/
+format panjang) tidak pernah menulis `payload.number` dari
+`journalNumber` — field WAJIB yang jadi kunci grouping baris ("Transaction
+Number") dan komentar kode SENDIRI sudah bilang harus jadi Accurate
+`number`.
+
+**Root cause:** Fungsi ini dibangun (Fase 50) dengan meniru pola
+`buildSalesReceiptPayload`/`buildPurchasePaymentPayload` (grouping +
+validasi balance), TAPI baris `if (headerValues.X !== undefined) payload.number = String(headerValues.X);`
+yang ADA di kedua modul saudara itu (`paymentNumber`/`receiptNumber`)
+TERLEWAT saat ditulis di sini — tidak ada error/warning apa pun karena
+`number` di payload memang opsional bagi Accurate (auto-number kalau
+kosong), jadi transaksi tetap "sukses" tanpa ada tanda kegagalan.
+
+**Kenapa lolos tanpa ketahuan sebelumnya:** `journal-voucher.mapping.test.ts`
+tidak pernah assert field `payload.number` sama sekali (test cuma cek
+`transDate`/`detailJournalVoucher`/`description`) — gap test coverage
+persis menyembunyikan gap kode.
+
+**Fix:** tambah penulisan `payload.number` di akhir
+`buildJournalVoucherPayloadTall` + 2 test baru yang assert field ini
+terisi (Opsi B normal) dan `undefined` (grup singleton tanpa
+`journalNumber`). Detail lengkap 2 temuan lain dari audit yang sama
+(field Opsi B tidak bisa di-mapping manual di UI web; dialog edit
+per-baris tidak tall-aware) → `docs/architecture/architecture-journal-voucher.md`
+§ "3 Bug/Gap Ditemukan & Diperbaiki".
+
+**Pencegahan:** kalau modul baru mengadaptasi pola grouping dari modul
+lain (copy logic Sales Receipt/Purchase Payment ke modul baru), WAJIB
+cross-check line-by-line SETIAP field yang ada di modul sumber ikut
+ada di modul baru — jangan asumsikan "logic-nya mirip jadi pasti
+lengkap". Test yang assert SEMUA field top-level payload (bukan cuma
+field yang "kelihatan penting") akan menangkap regresi seperti ini
+lebih awal.
+
+---
+
 ## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — MASIH MENUNGGU JAWABAN ACCURATE SUPPORT
 **Masalah:** Client laporan import Sales Receipt untuk faktur yang kena
 PPh23 (item "Jasa Cleaning Service", sudah di-set Kena PPh23 = "Jasa

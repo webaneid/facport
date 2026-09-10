@@ -7,7 +7,13 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/journal-voucher/edit-row-dialog";
+import {
+  EditRowDialog,
+  DATE_INTERNAL_FIELDS,
+  REQUIRED_INTERNAL_FIELDS,
+  REQUIRED_INTERNAL_FIELDS_TALL,
+  isTallFormat,
+} from "@/components/journal-voucher/edit-row-dialog";
 import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
@@ -15,18 +21,13 @@ import { api } from "@/lib/api-client";
 
 // § Fase 51 — Journal Voucher punya 2 format sejak Fase 50 (lebar/Opsi
 // A vs panjang/Opsi B ala kompetitor, § `journal-voucher.mapping.ts`
-// `formatOf()`). `REQUIRED_INTERNAL_FIELDS` yang diimpor dari
-// `edit-row-dialog.tsx` di atas cuma untuk format LEBAR (dialog itu
-// belum di-update Fase 50, celah yang sudah ada, bukan baru — di luar
-// scope Fase 51). Grid ini SENGAJA deteksi format sendiri biar
-// highlight kolom wajib BENAR untuk kedua format — validasi
-// SEBENARNYA tetap di backend (`requiredFieldsFor`), ini cuma hint UI.
-const REQUIRED_INTERNAL_FIELDS_TALL = new Set(["transDate", "journalNumber", "lineAccountNo", "lineAmount", "lineAmountType"]);
-
-function isTallFormat(columnMapping: Record<string, string>): boolean {
-  const mappedFields = new Set(Object.values(columnMapping));
-  return ["journalNumber", "lineAccountNo", "lineAmount", "lineAmountType"].some((f) => mappedFields.has(f));
-}
+// `formatOf()`). `isTallFormat`/`REQUIRED_INTERNAL_FIELDS_TALL` diimpor
+// dari `edit-row-dialog.tsx` (§ BUG DITEMUKAN & DIPERBAIKI 2026-09-10 —
+// sebelumnya terduplikasi PERSIS di sini DAN dialog itu masih hardcode
+// Opsi A saja; sekarang SATU sumber, dialog juga sudah tall-aware).
+// Grid ini SENGAJA deteksi format sendiri biar highlight kolom wajib
+// BENAR untuk kedua format — validasi SEBENARNYA tetap di backend
+// (`requiredFieldsFor`), ini cuma hint UI.
 
 type Row = {
   id: string;

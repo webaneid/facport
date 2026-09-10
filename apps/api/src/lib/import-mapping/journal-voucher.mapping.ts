@@ -191,6 +191,7 @@ export function buildJournalVoucherPayloadTall(
 ): Record<string, unknown> {
   const transDateColumn = Object.entries(columnMapping).find(([, f]) => f === "transDate")?.[0];
   const descriptionColumn = Object.entries(columnMapping).find(([, f]) => f === "description")?.[0];
+  const journalNumberColumn = journalNumberColumnOf(columnMapping);
   const accountNoColumn = Object.entries(columnMapping).find(([, f]) => f === "lineAccountNo")?.[0];
   const amountColumn = Object.entries(columnMapping).find(([, f]) => f === "lineAmount")?.[0];
   const amountTypeColumn = Object.entries(columnMapping).find(([, f]) => f === "lineAmountType")?.[0];
@@ -216,6 +217,18 @@ export function buildJournalVoucherPayloadTall(
   };
   const description = descriptionColumn ? firstRow[descriptionColumn] : undefined;
   if (description !== undefined && description !== "") payload.description = description;
+
+  // § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — `journalNumber`
+  // ("Transaction Number") sudah jadi kunci grouping SEJAK Fase 50, dan
+  // komentar `fieldToAccuratePath.journalNumber: "number"` di atas file
+  // ini SUDAH bilang field ini harus jadi Accurate `number` — tapi
+  // sebelumnya TIDAK PERNAH ditulis ke payload di sini, beda dari 2
+  // modul saudara (Purchase Payment `paymentNumber`, Sales Receipt
+  // `receiptNumber`) yang sudah benar melakukan ini sejak awal. Akibatnya
+  // nomor transaksi dari Excel dibuang diam-diam, Accurate auto-number
+  // sendiri — tidak sesuai dokumentasi/ekspektasi user.
+  const journalNumber = journalNumberColumn ? firstRow[journalNumberColumn] : undefined;
+  if (journalNumber !== undefined && journalNumber !== "") payload.number = String(journalNumber);
 
   return payload;
 }

@@ -206,4 +206,24 @@ describe("buildJournalVoucherPayloadTall", () => {
     const payload = buildJournalVoucherPayloadTall(rawRows, tallColumnMapping);
     expect(payload.description).toBe("Penyesuaian");
   });
+
+  // § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — `journalNumber`
+  // sebelumnya TIDAK PERNAH ditulis ke `payload.number`, walau sudah
+  // jadi kunci grouping sejak Fase 50 dan komentar mapping bilang harus
+  // jadi Accurate `number`. Test ini persis yang tadinya kosong/tidak
+  // ada, itu sebabnya bug lolos tanpa ketahuan.
+  test("journalNumber (Transaction Number) dikirim sebagai payload.number", () => {
+    const rawRows = [
+      { "Trans Date": "05/09/2026", "Transaction Number": "JV-007", "JV No": "6-20500", "JV Amount": 100000, "JV Amount Type": "DEBIT" },
+      { "Transaction Number": "JV-007", "JV No": "1-10200", "JV Amount": 100000, "JV Amount Type": "CREDIT" },
+    ];
+    const payload = buildJournalVoucherPayloadTall(rawRows, tallColumnMapping);
+    expect(payload.number).toBe("JV-007");
+  });
+
+  test("journalNumber kosong (baris tanpa Transaction Number, grup singleton) -> payload.number tidak dikirim sama sekali", () => {
+    const rawRows = [{ "JV No": "6-20500", "JV Amount": 0, "JV Amount Type": "DEBIT" }];
+    const payload = buildJournalVoucherPayloadTall(rawRows, tallColumnMapping);
+    expect(payload.number).toBeUndefined();
+  });
 });
