@@ -686,18 +686,23 @@ export type PurchasePaymentGroupResult = {
   rowIds: string[];
 };
 
-// § Fase 89 (2026-09-10) — "PPh ID" VALIDASI-ONLY, mirror PERSIS
-// `validateTaxIdsForReceipt` (Sales Receipt Fase 86) — REUSE
+// § Fase 89, DIKOREKSI Fase 100 (2026-09-10) — SPECULATIVE, mirror
+// PERSIS `resolveTaxIdsForReceipt` (Sales Receipt Fase 99) — BELUM
+// dikonfirmasi resmi Accurate Support khusus `purchase-payment/save.do`
+// (lihat komentar `taxId` di `purchase-payment.mapping.ts`). REUSE
 // `accurate-tax.ts`, TIDAK ada auto-create (Master Data Pajak dianggap
 // konfigurasi akuntansi sensitif).
-async function validateTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+async function resolveTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<Map<string, number>> {
   const taxIds = extractTaxIdsFromRowsPP(rawRows, columnMapping);
+  const resolved = new Map<string, number>();
   for (const taxId of taxIds) {
     const found = await findTaxByIdentifier(ctx, taxId);
     if (!found) {
       throw new Error(`PPh ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "PPh ID" kalau tidak diperlukan.`);
     }
+    resolved.set(taxId, found.id);
   }
+  return resolved;
 }
 
 export async function processPurchasePaymentGroup(
@@ -709,8 +714,8 @@ export async function processPurchasePaymentGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
-  await validateTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
-  const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+  const resolvedTaxIds = await resolveTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
+  const payload = buildPurchasePaymentPayload(rawRows, columnMapping, resolvedTaxIds);
 
   const result = await savePurchasePayment(ctx, payload);
   return { paymentId: result.id, rowIds: group.rows.map((r) => r.id) };

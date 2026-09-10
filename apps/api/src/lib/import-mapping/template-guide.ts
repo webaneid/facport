@@ -399,10 +399,13 @@ export const vendorPayableAccountTemplateGuide: TemplateFieldGuide[] = [
 // § Fase 89 (2026-09-10) — URUTAN kolom di bawah SENGAJA mengikuti
 // PERSIS urutan wishlist client (`template-purchase-payment.xlsx` =
 // copy template kompetitor `Sample_Format_Import_PP_v4.0.xlsx`),
-// konsisten koreksi Sales Receipt Fase 85/86. Kolom "PPh Amount" (1
-// dari 23 kolom wishlist) DI-SKIP (nilai read-only/auto-computed,
-// dikonfirmasi screenshot UI Accurate asli) — dilewati sesuai posisi
-// aslinya, tidak bikin lubang kosong.
+// konsisten koreksi Sales Receipt Fase 85/86.
+// § Fase 100 (2026-09-10) — "PPh Amount" DIKEMBALIKAN (awalnya di-skip
+// Fase 89 sebagai "read-only/auto-computed") dan "PPh ID" dikoreksi
+// deskripsinya, SPECULATIVE mirror Sales Receipt Fase 99 — BELUM
+// dikonfirmasi resmi Accurate Support khusus endpoint
+// `purchase-payment/save.do` ini (lihat komentar `taxId`/`taxAmount`
+// di `purchase-payment.mapping.ts` untuk detail).
 export const purchasePaymentTemplateGuide: TemplateFieldGuide[] = [
   { column: "Date", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi pembayaran (header alternatif: \"Tanggal\")." },
   { column: "Purchase Payment No", required: false, example: "PP-2026-0001", description: "Nomor pembayaran (opsional). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 pembayaran yang bayar BANYAK faktur sekaligus — baris dengan kolom ini kosong tetap dianggap 1 pembayaran sendiri." },
@@ -420,7 +423,8 @@ export const purchasePaymentTemplateGuide: TemplateFieldGuide[] = [
   { column: "Payment", required: true, example: "5000000", description: "Nominal pembayaran UNTUK FAKTUR DI BARIS INI (bukan total keseluruhan kalau 1 pembayaran bayar banyak faktur — Facport yang jumlahkan otomatis). Isi PENUH sesuai sisa tagihan untuk pelunasan, atau LEBIH KECIL untuk pembayaran sebagian. Angka polos, TANPA titik/koma pemisah ribuan, TAPI BOLEH sampai 6 angka di belakang koma kalau perlu presisi (header alternatif: \"Jumlah Bayar\")." },
   { column: "Paid PPH", required: false, format: Y_BOOLEAN_FORMAT, example: "", description: "Isi \"Y\" kalau faktur ini kena potong PPh23. Kosongkan kalau tidak. Nominal PPh DIHITUNG OTOMATIS oleh Accurate dari kategori jasa di faktur asli — TIDAK ada kolom nominal terpisah." },
   { column: "PPh No", required: false, example: "", description: "Nomor bukti potong PPh23 — isi kalau tidak pakai penomoran otomatis Accurate." },
-  { column: "PPh ID", required: false, example: "Jasa Kebersihan", description: "Nama pajak PERSIS seperti di Data Master Pajak Accurate (mis. \"Jasa Kebersihan\") untuk validasi — LEBIH DISARANKAN dari kode (mis. \"Pajak Penghasilan Ps.23\") karena 1 kode dipakai banyak jenis jasa PPh23 sekaligus. Facport CEK ke Accurate dulu sebelum import, GAGAL kalau tidak ditemukan (cegah salah ketik). TIDAK mengubah nominal PPh — itu dihitung otomatis oleh Accurate." },
+  { column: "PPh ID", required: false, example: "Jasa Kebersihan", description: "Nama pajak PERSIS seperti di Data Master Pajak Accurate (mis. \"Jasa Kebersihan\") — LEBIH DISARANKAN dari kode (mis. \"Pajak Penghasilan Ps.23\") karena 1 kode dipakai banyak jenis jasa PPh23 sekaligus. WAJIB diisi bersama \"PPh Amount\" supaya baris ini dianggap punya data potongan PPh — Facport cek dulu ke Accurate, GAGAL kalau tidak ditemukan. ⚠️ Belum dikonfirmasi resmi oleh Accurate untuk endpoint pembayaran ini (mirror Sales Receipt yang sudah dikonfirmasi)." },
+  { column: "PPh Amount", required: false, example: "40000", description: "Nominal PPh yang dipotong untuk faktur di baris ini — WAJIB diisi bersama \"PPh ID\". ⚠️ Belum dikonfirmasi resmi oleh Accurate untuk endpoint pembayaran ini (mirror Sales Receipt yang sudah dikonfirmasi)." },
   { column: "Discount", required: false, example: "", description: "Nominal diskon untuk baris faktur ini — WAJIB diisi bersama \"Discount Acc\" supaya baris ini dianggap punya data diskon. Boleh sampai 6 angka di belakang koma." },
   { column: "Discount Acc", required: false, example: "", description: "Kode Akun Diskon (COA) — WAJIB diisi bersama \"Discount\"." },
   { column: "Discount Note", required: false, example: "", description: "Catatan tambahan untuk diskon ini." },

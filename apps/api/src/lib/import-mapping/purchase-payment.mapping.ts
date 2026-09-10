@@ -75,13 +75,27 @@ export const purchasePaymentMapping = {
     discountNotes: "detailInvoice[].detailDiscount[].discountNotes",
     discountDepartmentName: "detailInvoice[].detailDiscount[].departmentName",
     discountProjectNo: "detailInvoice[].detailDiscount[].projectNo",
-    // § Fase 89 — "PPh ID", VALIDASI-ONLY. `purchase-payment/save.do`
-    // TIDAK punya field ini — nilainya TIDAK PERNAH masuk payload, cuma
-    // dicocokkan ke Master Data Pajak Accurate (`/api/tax/list.do`,
-    // scope `tax_view`) SEBELUM baris diproses — REUSE `accurate-tax.ts`
-    // (Sales Receipt Fase 86), cegah client salah ketik kode/nama pajak
-    // yang tidak ada di company mereka.
-    taxId: "(validasi-only — TIDAK dikirim ke purchase-payment/save.do)",
+    // § Fase 100 (2026-09-10) — ⚠️ SPECULATIVE, MIRROR Sales Receipt
+    // Fase 99, BELUM DIKONFIRMASI RESMI khusus untuk endpoint INI.
+    // Jawaban Accurate Support soal PPh23 kemarin SPESIFIK untuk
+    // `sales-receipt/save.do` — `purchase-payment/save.do` TIDAK
+    // ditanyakan terpisah (user pilih terapkan sekarang berdasar
+    // kemiripan struktur, bukan konfirmasi tertulis). Kalau ternyata
+    // endpoint ini BEDA (riwayat project: field yang kelihatan simetris
+    // antar endpoint Accurate TIDAK SELALU simetris, § saga Sales
+    // Invoice Fase 71-73), retest akan gagal dengan error Accurate yang
+    // jelas (bukan diam-diam diabaikan seperti sebelumnya) — BUKAN
+    // silent failure, jadi risikonya terukur. `taxId` DIKOREKSI dari
+    // "validasi-only" (Fase 89) jadi dikirim sebagai `detailTax[].taxId`
+    // (angka, resolve lewat `findTaxByIdentifier` — fungsi SAMA yang
+    // dipakai Sales Receipt).
+    taxId: "detailTax[].taxId",
+    // § Fase 100 — "PPh Amount" JUGA dikoreksi dari Fase 89 ("❌ SKIP,
+    // read-only") — SAMA alasan Sales Receipt Fase 99: UI Accurate
+    // auto-hitung lewat jalur internal berbeda, TAPI via API caller
+    // harus supply sendiri nominalnya. SPECULATIVE, lihat komentar
+    // `taxId` di atas.
+    taxAmount: "detailTax[].taxAmount",
   } as const,
   // § Fase 89 (2026-09-10) — URUTAN entri di bawah SENGAJA mengikuti
   // PERSIS urutan wishlist client (`template-purchase-payment.xlsx`
@@ -108,6 +122,7 @@ export const purchasePaymentMapping = {
     "Paid PPH": "paidPph",
     "PPh No": "pphNumber",
     "PPh ID": "taxId",
+    "PPh Amount": "taxAmount",
     "Discount": "discountAmount",
     "Discount Acc": "discountAccountNo",
     "Discount Note": "discountNotes",
@@ -286,11 +301,13 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
   return values;
 }
 
-// § Fase 89 — kumpulkan nilai "PPh ID" UNIK dari semua baris grup, untuk
-// divalidasi ke Master Data Pajak Accurate SEBELUM payload dibangun
-// (§ `workers/index.ts` § `validateTaxIdsForPurchasePayment`,
-// `accurate-tax.ts`). Dedupe (Set), mirror `extractTaxIdsFromRows`
-// (Sales Receipt Fase 86) — TIDAK PERNAH dipakai untuk mengisi payload.
+// § Fase 89, tujuan DIKOREKSI Fase 100 (speculative, mirror Sales
+// Receipt Fase 99 — lihat komentar `taxId` di atas) — kumpulkan nilai
+// "PPh ID" UNIK dari semua baris grup, untuk di-RESOLVE ke id numerik
+// Accurate (`resolveTaxIdsForPurchasePayment` di `workers/index.ts`)
+// SEBELUM payload dibangun — hasil resolve-nya dipakai
+// `buildPurchasePaymentPayload` mengisi `detailTax[].taxId`. Dedupe
+// (Set), mirror `extractTaxIdsFromRows` (Sales Receipt).
 export function extractTaxIdsFromRows(
   rawRows: Record<string, unknown>[],
   columnMapping: Record<string, string>,
@@ -329,22 +346,40 @@ function buildDetailDiscountFromRowValues(rowValues: Partial<Record<PurchasePaym
 // `chequeAmount` (root) = "Cheque Amount" EKSPLISIT kalau diisi (§ Fase
 // 89), fallback SUM semua `paymentAmount` baris dalam grup kalau kosong
 // (perilaku Fase 50, zero regression).
+// § Fase 100 (2026-09-10) — parameter BARU `resolvedTaxIds`, SPECULATIVE
+// mirror `buildSalesReceiptPayload` Fase 99 (lihat komentar `taxId` di
+// `fieldToAccuratePath` atas) — BELUM dikonfirmasi resmi Accurate
+// Support khusus endpoint ini. Default `new Map()` supaya caller lama
+// (tanpa PPh ID) tetap jalan tanpa ubah signature call site.
 export function buildPurchasePaymentPayload(
   rawRows: Record<string, unknown>[],
   columnMapping: Record<string, string>,
+  resolvedTaxIds: Map<string, number> = new Map(),
 ): Record<string, unknown> {
   const headerValues = extractRowValues(rawRows[0] ?? {}, columnMapping);
+  const detailTax: Record<string, unknown>[] = [];
 
   const detailInvoice = rawRows.map((rawRow) => {
     const rowValues = extractRowValues(rawRow, columnMapping);
+    const invoiceNo = String(rowValues.invoiceNo ?? "");
     const entry: Record<string, unknown> = {
-      invoiceNo: String(rowValues.invoiceNo ?? ""),
+      invoiceNo,
       paymentAmount: Number(rowValues.chequeAmount ?? 0),
     };
     if (rowValues.paidPph !== undefined) entry.paidPph = rowValues.paidPph;
     if (rowValues.pphNumber !== undefined) entry.pphNumber = String(rowValues.pphNumber);
     const discount = buildDetailDiscountFromRowValues(rowValues);
     if (discount) entry.detailDiscount = [discount];
+
+    // § Fase 100 — SPECULATIVE, mirror `buildSalesReceiptPayload` Fase
+    // 99 persis (syarat minimal taxId+taxAmount sama-sama terisi, taxId
+    // harus berhasil di-resolve).
+    if (rowValues.taxId !== undefined && rowValues.taxAmount !== undefined) {
+      const resolvedId = resolvedTaxIds.get(String(rowValues.taxId).trim());
+      if (resolvedId !== undefined) {
+        detailTax.push({ detailInvoiceNo: invoiceNo, taxAmount: Number(rowValues.taxAmount), taxId: resolvedId });
+      }
+    }
     return entry;
   });
 
@@ -377,6 +412,8 @@ export function buildPurchasePaymentPayload(
   if (headerValues.chequeNo !== undefined) payload.chequeNo = String(headerValues.chequeNo);
   if (headerValues.chequeDate !== undefined) payload.chequeDate = String(headerValues.chequeDate);
   if (headerValues.paymentMethod !== undefined) payload.paymentMethod = headerValues.paymentMethod;
+  // § Fase 100 — SPECULATIVE, mirror Sales Receipt Fase 99 (root, sibling `detailInvoice`).
+  if (detailTax.length > 0) payload.detailTax = detailTax;
 
   return payload;
 }

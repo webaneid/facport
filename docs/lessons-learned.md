@@ -130,6 +130,40 @@ lebih awal.
 
 ---
 
+## 2026-09-10 — Fix PPh23 Sales Receipt (Fase 99) di-mirror SPECULATIVE ke Purchase Payment (Fase 100) — belum dikonfirmasi resmi untuk endpoint itu
+**Konteks**: setelah Fase 99 (lihat entri di bawah) menutup gap PPh23
+Sales Receipt berdasarkan jawaban TERTULIS RESMI Accurate Support, user
+minta fix yang sama diterapkan ke Purchase Payment (struktur field PPh
+identik: `detailInvoice[].paidPph`/`pphNumber`). Jawaban Accurate
+Support itu SPESIFIK untuk `sales-receipt/save.do` — TIDAK ada
+pertanyaan/konfirmasi terpisah untuk `purchase-payment/save.do`.
+
+**Keputusan**: user pilih (via AskUserQuestion, 3 opsi: terapkan
+speculative / tanya Support dulu / skip) untuk TETAP menerapkan fix
+yang sama SEKARANG, bukan menunggu konfirmasi tertulis terpisah. Ini
+BEDA dari disiplin yang biasa dipegang project ini untuk investigasi
+PPh23 spesifik ("JANGAN ubah kode berdasarkan tebakan, tunggu jawaban
+resmi") — kali ini user SADAR menerima risiko demi kecepatan, karena
+2 endpoint ini historically SANGAT mirip strukturnya.
+
+**Pelajaran**: kalau user secara eksplisit memilih opsi "speculative/
+belum terverifikasi" padahal project punya riwayat disiplin ketat soal
+hal ini, JANGAN diam-diam downgrade kepastian itu jadi "sudah fix" di
+dokumentasi — tandai SECARA KONSISTEN di semua tempat (komentar kode,
+architecture doc, PROGRESS.md, phase doc) sebagai "speculative/belum
+dikonfirmasi", supaya siapa pun yang baca nanti (termasuk sesi Claude
+lain) tidak salah kira field ini se-tervalidasi field yang sudah
+dikonfirmasi test call/support resmi. Endpoint yang "kelihatan mirror"
+TIDAK SELALU berperilaku sama persis (riwayat project: saga Sales
+Invoice Fase 71-73) — speculative fix HARUS punya jalur fail-safe yang
+jelas (disini: `try/catch` generik di `workers/index.ts` yang sudah
+ada, bikin kegagalan VISIBLE lewat `errorMessage`, bukan silent) supaya
+risiko yang diterima tetap TERUKUR.
+
+**Detail**: `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md`.
+
+---
+
 ## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — ✅ RESOLVED (§ Fase 99)
 **Masalah:** Client laporan import Sales Receipt untuk faktur yang kena
 PPh23 (item "Jasa Cleaning Service", sudah di-set Kena PPh23 = "Jasa

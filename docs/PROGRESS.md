@@ -108,6 +108,7 @@
 | 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
 | 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
 | 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
+| 100  | Mirror Speculative Fix PPh (`detailTax` di Root) ke Purchase Payment | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2630,3 +2631,18 @@ terkait 48 pass/0 fail, `bun run lint` 0 error, security review tidak
 ada temuan. **Known limitation**: belum diverifikasi test call nyata
 (fix berdasar jawaban tertulis resmi Accurate Support) — disarankan
 client retest 1x setelah deploy.
+
+## Update 2026-09-10 — Fase 100 Done: Mirror Speculative Fix PPh ke Purchase Payment
+User minta fix PPh23 Fase 99 (Sales Receipt) di-mirror juga ke Purchase
+Payment — struktur field PPh di 2 modul ini identik. Jawaban Accurate
+Support SPESIFIK untuk Sales Receipt, TIDAK ada konfirmasi terpisah
+untuk Purchase Payment — user eksplisit pilih (AskUserQuestion) tetap
+terapkan sekarang secara SPECULATIVE (ditandai jelas di kode+dokumentasi),
+bukan menunggu pertanyaan terpisah dulu. `taxId`/`taxAmount` dikoreksi
+sama seperti Sales Receipt (→ `detailTax[]` di root). `bun run
+typecheck` 0 error, `apps/api` 605 pass/0 fail, `bun run lint` 0 error,
+security review tidak ada temuan (termasuk analisis fail-safe kalau
+asumsi speculative ini salah — aman, try/catch generik sudah ada).
+**Known limitation**: BELUM dikonfirmasi resmi Accurate Support khusus
+endpoint ini — kalau retest client gagal, kirim pertanyaan terpisah ke
+Accurate Support untuk Purchase Payment.
