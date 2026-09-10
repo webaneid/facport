@@ -53,6 +53,7 @@ import { saveJournalVoucher } from "../lib/accurate-journal-voucher";
 import {
   buildJournalVoucherPayload,
   groupJournalVoucherRows,
+  extractDataClassificationValues as extractJournalVoucherDataClassificationValues,
   type JournalVoucherGroup,
 } from "../lib/import-mapping/journal-voucher.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
@@ -125,6 +126,29 @@ async function ensurePurchaseInvoiceDataClassifications(
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesPI(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPI(rawRow, columnMapping)];
     for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 98 (2026-09-10) — mirror `ensureDataClassifications`/
+// `ensurePurchaseInvoiceDataClassifications` di atas, TAPI untuk
+// Journal Voucher. BEDA PENTING dari keduanya: JV TIDAK PUNYA konsep
+// "baris pertama grup = header" untuk Kategori Keuangan (field ini
+// per-baris, § komentar `extractDataClassificationValues` di
+// `journal-voucher.mapping.ts`) — tiap baris dalam grup dicek, bukan
+// cuma baris pertama.
+async function ensureJournalVoucherDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractJournalVoucherDataClassificationValues(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -615,14 +639,24 @@ export type SalesReceiptGroupResult = {
 // TIDAK ada auto-create (beda dari `findOrCreateVendor`/`findOrCreateItem`)
 // — Master Data Pajak adalah konfigurasi akuntansi sensitif, bukan
 // referensi ringan seperti vendor/item.
-async function validateTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+// § Fase 99 (2026-09-10) — DIKOREKSI dari Fase 86 (`validateTaxIdsForReceipt`,
+// validasi-only): sekarang juga RESOLVE tiap identifier ke id numerik
+// Accurate (`.id`, BUKAN taxCode/description) — dipakai
+// `buildSalesReceiptPayload` mengisi `detailTax[].taxId` (jawaban resmi
+// Accurate Support 2026-09-10 konfirmasi field ini WAJIB numerik).
+// Gagal lebih awal (throw) kalau ADA identifier yang tidak ketemu —
+// TIDAK kirim payload setengah-setengah ke Accurate.
+async function resolveTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<Map<string, number>> {
   const taxIds = extractTaxIdsFromRows(rawRows, columnMapping);
+  const resolved = new Map<string, number>();
   for (const taxId of taxIds) {
     const found = await findTaxByIdentifier(ctx, taxId);
     if (!found) {
       throw new Error(`Tax ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "Tax ID" kalau tidak diperlukan.`);
     }
+    resolved.set(taxId, found.id);
   }
+  return resolved;
 }
 
 export async function processSalesReceiptGroup(
@@ -634,8 +668,8 @@ export async function processSalesReceiptGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
-  await validateTaxIdsForReceipt(ctx, rawRows, columnMapping);
-  const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+  const resolvedTaxIds = await resolveTaxIdsForReceipt(ctx, rawRows, columnMapping);
+  const payload = buildSalesReceiptPayload(rawRows, columnMapping, resolvedTaxIds);
 
   const result = await saveSalesReceipt(ctx, payload);
   return { receiptId: result.id, rowIds: group.rows.map((r) => r.id) };
@@ -652,18 +686,23 @@ export type PurchasePaymentGroupResult = {
   rowIds: string[];
 };
 
-// § Fase 89 (2026-09-10) — "PPh ID" VALIDASI-ONLY, mirror PERSIS
-// `validateTaxIdsForReceipt` (Sales Receipt Fase 86) — REUSE
+// § Fase 89, DIKOREKSI Fase 100 (2026-09-10) — SPECULATIVE, mirror
+// PERSIS `resolveTaxIdsForReceipt` (Sales Receipt Fase 99) — BELUM
+// dikonfirmasi resmi Accurate Support khusus `purchase-payment/save.do`
+// (lihat komentar `taxId` di `purchase-payment.mapping.ts`). REUSE
 // `accurate-tax.ts`, TIDAK ada auto-create (Master Data Pajak dianggap
 // konfigurasi akuntansi sensitif).
-async function validateTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+async function resolveTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<Map<string, number>> {
   const taxIds = extractTaxIdsFromRowsPP(rawRows, columnMapping);
+  const resolved = new Map<string, number>();
   for (const taxId of taxIds) {
     const found = await findTaxByIdentifier(ctx, taxId);
     if (!found) {
       throw new Error(`PPh ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "PPh ID" kalau tidak diperlukan.`);
     }
+    resolved.set(taxId, found.id);
   }
+  return resolved;
 }
 
 export async function processPurchasePaymentGroup(
@@ -675,8 +714,8 @@ export async function processPurchasePaymentGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
-  await validateTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
-  const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+  const resolvedTaxIds = await resolveTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
+  const payload = buildPurchasePaymentPayload(rawRows, columnMapping, resolvedTaxIds);
 
   const result = await savePurchasePayment(ctx, payload);
   return { paymentId: result.id, rowIds: group.rows.map((r) => r.id) };
@@ -700,6 +739,7 @@ export async function processJournalVoucherGroup(
   columnMapping: Record<string, string>,
 ): Promise<JournalVoucherGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
+  await ensureJournalVoucherDataClassifications(ctx, rawRows, columnMapping);
   const payload = buildJournalVoucherPayload(rawRows, columnMapping);
 
   const result = await saveJournalVoucher(ctx, payload);

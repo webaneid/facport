@@ -258,18 +258,20 @@ percaya dokumentasi kompetitor, 3 metode bayar ini akan gagal.
 | Payment | ✅ SUDAH ADA (Fase 33) | `detailInvoice[].paymentAmount` | Field internal namanya `chequeAmount` (historis) |
 | Paid PPH | 🆕 Rencana Implementasi | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong — dikonfirmasi screenshot #5 ("Dipotong PPh" checkbox) |
 | PPh No | 🆕 Rencana Implementasi | `detailInvoice[].pphNumber` | String — dikonfirmasi screenshot #5 ("No. Bukti Potong") |
-| **PPh ID** | 🆕 Rencana Implementasi — VALIDASI-ONLY (mirror Fase 86 Tax ID) | — (TIDAK ada path payload, cuma lookup) | Deskripsi kompetitor: *"ID PPh, Lihat detail pada daftar master pajak"* — TANPA referensi aneh "Fitur Facport" (beda dari Sales Receipt kemarin, ini murni Accurate) — REUSE `accurate-tax.ts` (`findTaxByIdentifier`) yang SUDAH ada dari Fase 86, tinggal tambah scope `tax_view` ke modul `purchase_payment` |
-| **PPh Amount** | ❌ SKIP (CONFIRMED, mirror Fase 85 Tax Amount) | — | Screenshot #5 tunjukkan nilai ini muncul sebagai hasil KOMPUTASI OTOMATIS ("Jasa Kebersihan: Rp 2.000", read-only) — BUKAN field yang diisi user/API, PERSIS pola "Tax Amount" Sales Receipt |
+| **PPh ID** | ⚠️ DIKOREKSI Fase 100 — SPECULATIVE, BELUM dikonfirmasi resmi endpoint ini (mirror Fase 99 Sales Receipt) | `detailTax[].taxId` (ROOT, angka — resolve dulu lewat `findTaxByIdentifier`) | Kesimpulan awal ("validasi-only") sama dengan Sales Receipt Fase 86 — TERBUKTI SALAH untuk `sales-receipt/save.do` (Fase 99). Diterapkan SPECULATIVE ke endpoint ini juga (keputusan user, risiko diterima), BELUM ada konfirmasi tertulis resmi Accurate Support KHUSUS `purchase-payment/save.do`. |
+| **PPh Amount** | ⚠️ DIKOREKSI Fase 100 — SPECULATIVE, BELUM dikonfirmasi resmi (mirror Fase 99) | `detailTax[].taxAmount` (ROOT, sibling `detailInvoice`) | Kesimpulan awal ("SKIP, read-only") sama dengan Sales Receipt Fase 85 — TERBUKTI SALAH untuk endpoint itu (Fase 99: field ini WAJIB diisi manual lewat API). Diterapkan SPECULATIVE ke endpoint ini juga. |
 | Discount | 🆕 Rencana Implementasi | `detailInvoice[].detailDiscount[].amount` | Number — dikonfirmasi screenshot #3 (tab "Informasi Diskon") |
 | Discount Acc | 🆕 Rencana Implementasi | `detailInvoice[].detailDiscount[].accountNo` | String — screenshot #3 ("Akun Diskon") |
 | Discount Note | 🆕 Rencana Implementasi | `detailInvoice[].detailDiscount[].discountNotes` | String — screenshot #3 ("Keterangan Diskon") |
 | Discount - Dept | 🆕 Rencana Implementasi | `detailInvoice[].detailDiscount[].departmentName` | String — screenshot #3 ("Departemen") |
 | Discount - Project No | 🆕 Rencana Implementasi | `detailInvoice[].detailDiscount[].projectNo` | String — screenshot #3 ("Proyek") |
 
-**Hasil**: 6 field SUDAH ADA, **16 field BARU direncanakan**, **1 field
-di-skip** (PPh Amount) — total 23/23 kolom wishlist client TERAKOMODIR
-(sesuai instruksi: tidak ada satu kolom pun yang tertinggal, walau 1
-di antaranya secara sadar di-skip dengan alasan jelas, bukan lupa).
+**Hasil (saat Fase 89)**: 6 field SUDAH ADA, **16 field BARU
+direncanakan**, **1 field di-skip** (PPh Amount) — total 23/23 kolom
+wishlist client TERAKOMODIR. ⚠️ **"PPh Amount" DIKEMBALIKAN Fase 100**
+(skip-nya ternyata salah kesimpulan, sama kasus Sales Receipt Fase 99)
+— lihat baris "PPh ID"/"PPh Amount" di tabel di atas untuk status
+TERBARU.
 
 **Perbandingan dengan Sales Receipt Fase 85**: Purchase Payment TIDAK
 punya padanan "Pass Validate Inv Date"/"Use credit"/"Existing Credit"/
@@ -484,6 +486,38 @@ eksplisit minta test nyata sebelum push, bukan cuma percaya unit test**.
 - `apps/api/src/lib/import-mapping/template-guide.ts` — `required: true`
   untuk kolom Branch di kedua template guide.
 - Detail lengkap → `docs/phases/phase-90-fix-multicurrency-branch-wajib.md`.
+
+## Fase 100 (2026-09-10) — Mirror Speculative Fix PPh (`detailTax` di Root) dari Sales Receipt
+Accurate Support balas pertanyaan PPh23 untuk Sales Receipt (§
+`architecture-sales-receipt.md` § "GAP DITUTUP Fase 99") — struktur
+yang benar: `detailTax[]` di ROOT request (sibling `detailInvoice`,
+BUKAN nested), tiap elemen punya `detailInvoiceNo`+`taxAmount`+`taxId`
+(angka). Jawaban itu SPESIFIK untuk `sales-receipt/save.do`, TIDAK ada
+pertanyaan terpisah untuk `purchase-payment/save.do` — user pilih
+(AskUserQuestion) tetap terapkan fix yang SAMA ke modul ini sekarang
+("speculative", bukan menunggu konfirmasi tertulis terpisah), karena
+struktur 2 endpoint ini historically SANGAT mirror (vendorNo↔customerNo
+doang bedanya, § "BUKAN Mirror Purchase Invoice" di atas — justru DIA
+yang mirror Sales Receipt).
+
+**Fix**: `purchase-payment.mapping.ts` — `taxId` dikoreksi dari
+"validasi-only" (Fase 89) jadi `detailTax[].taxId`; `taxAmount` field
+baru (sebelumnya di-skip Fase 89) → `detailTax[].taxAmount`.
+`buildPurchasePaymentPayload` terima parameter `resolvedTaxIds: Map`.
+`workers/index.ts` — `validateTaxIdsForPurchasePayment` → rename+extend
+`resolveTaxIdsForPurchasePayment` (return Map, bukan void).
+
+**⚠️ Risiko yang SADAR diterima**: kalau `purchase-payment/save.do`
+TERNYATA beda struktur dari `sales-receipt/save.do` (riwayat project
+ini PERNAH ketemu endpoint yang tidak simetris meski mirip — saga Sales
+Invoice Fase 71-73), fix ini akan gagal — TAPI gagal DENGAN JELAS
+(baris `status: "failed"` + `errorMessage` dari Accurate, via
+`try/catch` generik yang sudah ada di `workers/index.ts`), bukan silent
+failure/data rusak. Disarankan client retest 1x dengan PPh23 sungguhan
+setelah deploy; kalau gagal, kirim pertanyaan yang SAMA ke Accurate
+Support khusus endpoint ini.
+
+Detail lengkap → `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md`.
 
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →

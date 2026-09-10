@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-09-10 — Field `dataClassificationNName` ditambahkan ke Journal Voucher (Fase 95) tanpa mirror auto-create-nya (Fase 98)
+**Masalah:** Client retest import Jurnal Umum dapat error Accurate
+"Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
+
+**Root cause:** Fase 95 menambah field `attribut1`-`attribut10`
+(`dataClassification1-10Name`) ke Journal Voucher dengan meniru NAMA
+field yang sudah ada di Sales Invoice — tapi Sales Invoice (Fase 68)
+dan Purchase Invoice (Fase 75) punya mekanisme AUTO-CREATE
+(`findOrCreateDataClassification`) karena field ini BUKAN teks bebas:
+nilainya wajib sudah ada sebagai master data "Kategori Keuangan" di
+Accurate, kalau belum ada Accurate menolak. Saat Fase 95 menyalin NAMA
+field-nya, mekanisme pendukungnya (auto-create call di worker + scope
+OAuth `data_classification_view`/`_save`) TIDAK ikut disalin.
+
+**Pelajaran umum**: ini POLA KEDUA yang sama persis di project ini
+(pertama: Fase 78, `vendor_view`/`vendor_save` hilang dari scope
+`purchase_invoice` meski `findOrCreateVendor` dipanggil unconditional
+di situ). **Kalau menambah field baru yang field API Accurate-nya SAMA
+PERSIS dengan field yang sudah ada di modul LAIN, WAJIB cek apakah
+modul lain itu punya mekanisme pendukung khusus untuk field tersebut
+(auto-create, scope OAuth tambahan, validasi existence) — bukan cuma
+menyalin nama field ke `fieldToAccuratePath` lalu menganggap selesai.**
+Field API yang namanya sama (`dataClassificationNName`,
+`vendor_view`/`_save`, dst) hampir selalu berarti PERILAKU Accurate-nya
+juga sama, termasuk precondition-nya.
+
+**Fix:** § Fase 98, `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md`
+dan `docs/architecture/architecture-journal-voucher.md` § "Fase 98".
+
+**Pencegahan:** sebelum menutup fase yang menambah field baru dengan
+nama `fieldToAccuratePath` yang SUDAH dipakai modul lain, grep dulu
+field API itu di seluruh `apps/api/src/lib/accurate-*.ts` dan
+`workers/index.ts` — kalau ada fungsi `findOrCreate*`/`ensure*` yang
+menyebut field itu di modul lain, modul baru HARUS mirror fungsi yang
+sama, bukan cuma field mapping-nya.
+
+---
+
 ## 2026-09-10 — Upload Jurnal Umum client gagal: tabrakan nama kolom Excel antara 2 format yang hidup berdampingan
 **Masalah:** Client kirim template final Jurnal Umum
 (`CLIENT_template-jurnal-umum-v2.xlsx`, 26 kolom) dengan nama kolom
@@ -92,7 +130,41 @@ lebih awal.
 
 ---
 
-## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — MASIH MENUNGGU JAWABAN ACCURATE SUPPORT
+## 2026-09-10 — Fix PPh23 Sales Receipt (Fase 99) di-mirror SPECULATIVE ke Purchase Payment (Fase 100) — belum dikonfirmasi resmi untuk endpoint itu
+**Konteks**: setelah Fase 99 (lihat entri di bawah) menutup gap PPh23
+Sales Receipt berdasarkan jawaban TERTULIS RESMI Accurate Support, user
+minta fix yang sama diterapkan ke Purchase Payment (struktur field PPh
+identik: `detailInvoice[].paidPph`/`pphNumber`). Jawaban Accurate
+Support itu SPESIFIK untuk `sales-receipt/save.do` — TIDAK ada
+pertanyaan/konfirmasi terpisah untuk `purchase-payment/save.do`.
+
+**Keputusan**: user pilih (via AskUserQuestion, 3 opsi: terapkan
+speculative / tanya Support dulu / skip) untuk TETAP menerapkan fix
+yang sama SEKARANG, bukan menunggu konfirmasi tertulis terpisah. Ini
+BEDA dari disiplin yang biasa dipegang project ini untuk investigasi
+PPh23 spesifik ("JANGAN ubah kode berdasarkan tebakan, tunggu jawaban
+resmi") — kali ini user SADAR menerima risiko demi kecepatan, karena
+2 endpoint ini historically SANGAT mirip strukturnya.
+
+**Pelajaran**: kalau user secara eksplisit memilih opsi "speculative/
+belum terverifikasi" padahal project punya riwayat disiplin ketat soal
+hal ini, JANGAN diam-diam downgrade kepastian itu jadi "sudah fix" di
+dokumentasi — tandai SECARA KONSISTEN di semua tempat (komentar kode,
+architecture doc, PROGRESS.md, phase doc) sebagai "speculative/belum
+dikonfirmasi", supaya siapa pun yang baca nanti (termasuk sesi Claude
+lain) tidak salah kira field ini se-tervalidasi field yang sudah
+dikonfirmasi test call/support resmi. Endpoint yang "kelihatan mirror"
+TIDAK SELALU berperilaku sama persis (riwayat project: saga Sales
+Invoice Fase 71-73) — speculative fix HARUS punya jalur fail-safe yang
+jelas (disini: `try/catch` generik di `workers/index.ts` yang sudah
+ada, bikin kegagalan VISIBLE lewat `errorMessage`, bukan silent) supaya
+risiko yang diterima tetap TERUKUR.
+
+**Detail**: `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md`.
+
+---
+
+## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — ✅ RESOLVED (§ Fase 99)
 **Masalah:** Client laporan import Sales Receipt untuk faktur yang kena
 PPh23 (item "Jasa Cleaning Service", sudah di-set Kena PPh23 = "Jasa
 Kebersihan" di Data Master Barang & Jasa) — status batch import "sukses"
@@ -131,20 +203,32 @@ kuat butuh transaksi KEDUA (terpisah dari `sales-receipt/save.do`) untuk
 benar-benar mencatat potongan PPh-nya, bukan cuma flag boolean di payload
 yang sama.
 
-**Status:** Pertanyaan lengkap (payload persis + tabel hasil di atas)
-SUDAH dikirim ke Accurate support, MENUNGGU JAWABAN. JANGAN implementasi
-apa pun berdasarkan tebakan sampai ada konfirmasi resmi dari Accurate —
-2 field speculative (`pphAmount`, `detailTax`) yang dicoba TIDAK ada di
-`salesReceiptMapping` production code, cuma di script debug sekali-pakai.
+**Status:** ~~Pertanyaan lengkap ... MENUNGGU JAWABAN~~ **RESOLVED
+2026-09-10 (Fase 99).** Jawaban resmi Accurate Support: `detailTax[]`
+ada di ROOT request (SIBLING `detailInvoice`, BUKAN nested di
+dalamnya seperti dicoba speculative di atas), tiap elemen punya
+`detailInvoiceNo` (penghubung ke baris faktur), `taxAmount` (nominal
+PPh — ternyata WAJIB diisi manual, bukan read-only seperti disimpulkan
+Fase 85), `taxId` (angka id internal, resolve lewat
+`findTaxByIdentifier` yang sudah ada sejak Fase 86). `paidPph`/
+`pphNumber` di `detailInvoice[]` TIDAK perlu diubah — keduanya sudah
+benar dari awal, masalahnya HANYA `detailTax` yang salah struktur.
 
-**Pencegahan/lanjutan**: begitu Accurate balas, update
-`apps/api/src/lib/import-mapping/sales-receipt.mapping.ts` §
-`buildSalesReceiptPayload` sesuai jawaban resmi mereka (bukan re-tebak),
-update `docs/architecture/architecture-sales-receipt.md` § Fase 85 (yang
-sudah TERLANJUR tandai field ini "✅ Implementasi" — perlu dikoreksi jadi
-"⚠️ Field diterima tapi TIDAK diproses Accurate, lihat lessons-learned"
-sampai ada fix), lalu hapus script debug sekali-pakai
-`apps/api/src/scripts/debug-sales-receipt-pph.ts`.
+**Pelajaran**: "lisan oleh support Accurate tanpa konteks endpoint
+jelas" (baris tabel `detailTax` di atas) memang TIDAK BOLEH langsung
+dipercaya tanpa konfirmasi tertulis — percobaan speculative di atas
+(nested di `detailInvoice`) SALAH justru karena menebak strukturnya
+sendiri tanpa tahu detail. Begitu jawaban TERTULIS RESMI datang (via
+email/tiket, bukan lisan), strukturnya eksplisit dan langsung bisa
+diimplementasikan tanpa tebak-tebak lagi — beda dari percobaan
+speculative yang HARUS nebak bentuk field sendiri.
+
+**Fix**: `docs/phases/phase-99-fix-pph23-sales-receipt.md`,
+`docs/architecture/architecture-sales-receipt.md` § "GAP DITUTUP (Fase
+99)". Script debug `apps/api/src/scripts/debug-sales-receipt-pph.ts`
+SUDAH dihapus (investigasi closed). **Belum diverifikasi test call
+nyata** — fix berdasar jawaban tertulis resmi, disarankan client
+retest 1x setelah deploy untuk konfirmasi akhir.
 
 ---
 

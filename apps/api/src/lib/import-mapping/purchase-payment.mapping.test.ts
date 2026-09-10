@@ -430,15 +430,41 @@ describe("extractTaxIdsFromRows — Fase 89", () => {
   });
 });
 
-describe("buildPurchasePaymentPayload — Fase 89 (PPh ID TIDAK PERNAH masuk payload)", () => {
-  const mapping = { ...columnMapping, "PPh ID": "taxId" };
+// § Fase 100 (2026-09-10) — DIKOREKSI dari Fase 89, SPECULATIVE mirror
+// Sales Receipt Fase 99 (BELUM dikonfirmasi resmi Accurate Support
+// khusus endpoint ini — lihat komentar `taxId` di
+// `purchase-payment.mapping.ts`). `buildPurchasePaymentPayload` TETAP
+// sync/pure — resolve "PPh ID" jadi id numerik adalah tanggung jawab
+// CALLER (`workers/index.ts` `resolveTaxIdsForPurchasePayment`),
+// dilewatkan lewat parameter `resolvedTaxIds`.
+describe("buildPurchasePaymentPayload — Fase 100 (detailTax di root, PPh ID/PPh Amount, speculative)", () => {
+  const mapping = { ...columnMapping, "PPh ID": "taxId", "PPh Amount": "taxAmount" };
 
-  test("PPh ID terisi -> tidak muncul di root payload maupun detailInvoice[]", () => {
-    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000, "PPh ID": "Jasa Kebersihan" }];
-    const payload = buildPurchasePaymentPayload(rawRows, mapping);
-    expect(payload.taxId).toBeUndefined();
+  test("PPh ID + PPh Amount terisi, resolvedTaxIds punya mapping-nya -> masuk detailTax[] di ROOT (bukan nested detailInvoice)", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000, "PPh ID": "Jasa Kebersihan", "PPh Amount": 40000 }];
+    const resolvedTaxIds = new Map([["Jasa Kebersihan", 350]]);
+    const payload = buildPurchasePaymentPayload(rawRows, mapping, resolvedTaxIds);
+    expect(payload.detailTax).toEqual([{ detailInvoiceNo: "INV-1", taxAmount: 40000, taxId: 350 }]);
     const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
     expect(detail.taxId).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain("Jasa Kebersihan");
+    expect(detail.taxAmount).toBeUndefined();
+  });
+
+  test("resolvedTaxIds TIDAK punya mapping untuk PPh ID baris ini -> baris itu TIDAK masuk detailTax", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000, "PPh ID": "Jasa Kebersihan", "PPh Amount": 40000 }];
+    const payload = buildPurchasePaymentPayload(rawRows, mapping, new Map());
+    expect(payload.detailTax).toBeUndefined();
+  });
+
+  test("PPh ID terisi tapi PPh Amount kosong -> TIDAK masuk detailTax (syarat minimal keduanya terisi)", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000, "PPh ID": "Jasa Kebersihan" }];
+    const payload = buildPurchasePaymentPayload(rawRows, mapping, new Map([["Jasa Kebersihan", 350]]));
+    expect(payload.detailTax).toBeUndefined();
+  });
+
+  test("tidak ada baris yang isi PPh ID/PPh Amount -> payload.detailTax tidak ada sama sekali (zero regression)", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000 }];
+    const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
+    expect(payload.detailTax).toBeUndefined();
   });
 });

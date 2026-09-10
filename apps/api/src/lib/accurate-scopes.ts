@@ -84,7 +84,14 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // masih tahap building, belum ada customer produksi — aman ditambah
   // langsung (§ pelajaran sesi ini soal `tax_view` Sales Receipt).
   purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view", "tax_view"],
-  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view"],
+  // § Fase 98 (2026-09-10) — `data_classification_view`/`_save` ditambah
+  // untuk auto-create Kategori Keuangan (`attribut1`-`attribut10`, §
+  // Fase 95, `findOrCreateDataClassification`) — GAP ditemukan: field
+  // ini ditambahkan Fase 95 TANPA scope-nya, akibatnya Accurate menolak
+  // ("Kategori Keuangan X tidak ditemukan atau sudah dihapus") begitu
+  // user isi kolom itu. Koneksi Accurate yang connect SEBELUM
+  // penambahan ini WAJIB "Hubungkan Ulang" untuk dapat scope baru.
+  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

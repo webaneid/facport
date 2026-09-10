@@ -425,15 +425,57 @@ describe("extractTaxIdsFromRows — Fase 86", () => {
   });
 });
 
-describe("buildSalesReceiptPayload — Fase 86 (Tax ID TIDAK PERNAH masuk payload)", () => {
-  const mapping = { ...columnMapping, "Tax ID": "taxId" };
+// § Fase 99 (2026-09-10) — DIKOREKSI TOTAL dari Fase 86: jawaban resmi
+// Accurate Support konfirmasi `detailTax[]` ADA di root request (sibling
+// `detailInvoice`), dengan `detailInvoiceNo`+`taxAmount`+`taxId`
+// (numerik). `buildSalesReceiptPayload` TIDAK pernah panggil Accurate
+// sendiri (tetap sync/pure) — resolve "Tax ID" jadi id numerik adalah
+// TANGGUNG JAWAB CALLER (§ `workers/index.ts` `resolveTaxIdsForReceipt`),
+// dilewatkan lewat parameter `resolvedTaxIds`.
+describe("buildSalesReceiptPayload — Fase 99 (detailTax di root, Tax ID/Tax Amount)", () => {
+  const mapping = { ...columnMapping, "Tax ID": "taxId", "Tax Amount": "taxAmount" };
 
-  test("Tax ID terisi -> tidak muncul di root payload maupun detailInvoice[]", () => {
-    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan" }];
-    const payload = buildSalesReceiptPayload(rawRows, mapping);
-    expect(payload.taxId).toBeUndefined();
+  test("Tax ID + Tax Amount terisi, resolvedTaxIds punya mapping-nya -> masuk detailTax[] di ROOT (bukan nested detailInvoice)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan", "Tax Amount": 40000 }];
+    const resolvedTaxIds = new Map([["Jasa Kebersihan", 350]]);
+    const payload = buildSalesReceiptPayload(rawRows, mapping, resolvedTaxIds);
+    expect(payload.detailTax).toEqual([{ detailInvoiceNo: "SI-1", taxAmount: 40000, taxId: 350 }]);
     const detail = (payload.detailInvoice as Record<string, unknown>[])[0]!;
     expect(detail.taxId).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain("Jasa Kebersihan");
+    expect(detail.taxAmount).toBeUndefined();
+  });
+
+  test("resolvedTaxIds TIDAK punya mapping untuk Tax ID baris ini -> baris itu TIDAK masuk detailTax (caller belum/gagal resolve)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan", "Tax Amount": 40000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, new Map());
+    expect(payload.detailTax).toBeUndefined();
+  });
+
+  test("Tax ID terisi tapi Tax Amount kosong -> TIDAK masuk detailTax (syarat minimal keduanya terisi)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan" }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, new Map([["Jasa Kebersihan", 350]]));
+    expect(payload.detailTax).toBeUndefined();
+  });
+
+  test("tidak ada baris yang isi Tax ID/Tax Amount -> payload.detailTax tidak ada sama sekali (zero regression)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000 }];
+    const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+    expect(payload.detailTax).toBeUndefined();
+  });
+
+  test("2 baris beda faktur, masing-masing punya Tax ID/Tax Amount sendiri -> 2 elemen detailTax, masing-masing detailInvoiceNo sesuai barisnya", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1000000, "Tax ID": "Jasa Kebersihan", "Tax Amount": 40000 },
+      { "No Pelanggan": "C1", "No Faktur": "SI-2", "Jumlah Bayar": 500000, "Tax ID": "PPN", "Tax Amount": 15000 },
+    ];
+    const resolvedTaxIds = new Map([
+      ["Jasa Kebersihan", 350],
+      ["PPN", 10],
+    ]);
+    const payload = buildSalesReceiptPayload(rawRows, mapping, resolvedTaxIds);
+    expect(payload.detailTax).toEqual([
+      { detailInvoiceNo: "SI-1", taxAmount: 40000, taxId: 350 },
+      { detailInvoiceNo: "SI-2", taxAmount: 15000, taxId: 10 },
+    ]);
   });
 });

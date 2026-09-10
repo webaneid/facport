@@ -157,6 +157,33 @@ function valueOf(rawRow: Record<string, unknown>, column: string | null): unknow
   return value === undefined || value === null || value === "" ? undefined : value;
 }
 
+// § Fase 98 (2026-09-10) — GAP ditemukan: `attribut1`-`attribut10`
+// (`dataClassification1-10Name`) ditambahkan Fase 95 TANPA mirror
+// mekanisme auto-create yang sudah ada untuk field yang SAMA di Sales
+// Invoice (Fase 68)/Purchase Invoice (Fase 75) — akibatnya Accurate
+// menolak ("Kategori Keuangan X tidak ditemukan atau sudah dihapus")
+// kalau nilainya belum ada sebagai master data "Kategori Keuangan".
+// Mirror PERSIS `extractDataClassificationValues` di
+// `sales-invoice.mapping.ts` — dipanggil worker (`ensureJournalVoucherDataClassifications`)
+// SEBELUM `saveJournalVoucher`, untuk SEMUA baris dalam 1 grup (bukan
+// cuma baris pertama — setiap baris JV bisa punya Kategori Keuangan
+// berbeda-beda, tidak seperti `branchName`/`description` yang cuma
+// diambil dari header/baris pertama).
+export function extractDataClassificationValues(
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): { index: number; name: string }[] {
+  const result: { index: number; name: string }[] = [];
+  for (let index = 1; index <= 10; index++) {
+    const column = columnOf(columnMapping, `attribut${index}`);
+    const value = valueOf(rawRow, column);
+    if (value === undefined) continue;
+    const name = String(value).trim();
+    if (name !== "") result.push({ index, name });
+  }
+  return result;
+}
+
 // § Dipakai route (`journal-voucher-import.route.ts`) di endpoint EDIT
 // BARIS (single + bulk) — `journalVoucherMapping.requiredFields` TIDAK
 // BISA dipakai APA ADANYA untuk validasi "field wajib berisi nilai per

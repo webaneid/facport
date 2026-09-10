@@ -106,6 +106,9 @@
 | 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
 | 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
 | 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
+| 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
+| 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
+| 100  | Mirror Speculative Fix PPh (`detailTax` di Root) ke Purchase Payment | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2593,3 +2596,53 @@ typecheck` 0 error, `apps/api` 593 pass/0 fail, `apps/web` 50 pass/0
 fail, `bun run lint` 0 error. Security review tidak ada temuan. Known
 limitation: Opsi A dihapus permanen (bukan deprecated), harus dibangun
 ulang dari nol kalau suatu saat dibutuhkan lagi.
+
+## Update 2026-09-10 — Fase 98 Done: Fix Gap Auto-Create Kategori Keuangan Jurnal Umum
+Client retest import Jurnal Umum setelah Fase 97 deploy, dapat error
+Accurate "Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
+Root cause: field `attribut1`-`attribut10` (Fase 95) BUKAN teks bebas —
+nilainya wajib sudah ada sebagai master data di Accurate, field identik
+di Sales Invoice (Fase 68)/Purchase Invoice (Fase 75) sudah punya
+auto-create untuk ini tapi Journal Voucher ketinggalan saat Fase 95
+(gap class yang sama dengan Fase 78 — field ditambahkan tanpa mirror
+mekanisme pendukungnya). Fix: fungsi baru `extractDataClassificationValues`
++ `ensureJournalVoucherDataClassifications` (mirror persis Sales
+Invoice/Purchase Invoice, `findOrCreateDataClassification` sendiri
+TIDAK diubah), plus scope OAuth baru
+`data_classification_view`/`data_classification_save` untuk modul ini.
+`bun run typecheck` 0 error, `apps/api` 598 pass/0 fail, `bun run lint`
+0 error. Security review tidak ada temuan. **Aksi wajib**: koneksi
+Accurate yang connect SEBELUM fix ini wajib "Hubungkan Ulang" supaya
+scope baru aktif.
+
+## Update 2026-09-10 — Fase 99 Done: Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar)
+Gap yang sudah lama terbuka (import PPh23 Sales Receipt "sukses" tapi
+potongan PPh tidak muncul) akhirnya ditutup — Accurate Support balas
+pertanyaan detail yang dikirim sebelumnya. Root cause 4 test call
+speculative sebelumnya: `detailTax[]` SALAH ditaruh nested di dalam
+`detailInvoice[]`, seharusnya di ROOT request (sibling `detailInvoice`)
+dengan `detailInvoiceNo` sebagai penghubung. Field `taxAmount`
+(sebelumnya di-skip Fase 85, disimpulkan salah sebagai "read-only") dan
+`taxId` (sebelumnya Fase 86 validasi-only) sekarang BENAR-BENAR dikirim
+ke Accurate. `buildSalesReceiptPayload` sekarang terima parameter
+`resolvedTaxIds: Map<string, number>`, `validateTaxIdsForReceipt` →
+rename `resolveTaxIdsForReceipt`. `bun run typecheck` 0 error, test
+terkait 48 pass/0 fail, `bun run lint` 0 error, security review tidak
+ada temuan. **Known limitation**: belum diverifikasi test call nyata
+(fix berdasar jawaban tertulis resmi Accurate Support) — disarankan
+client retest 1x setelah deploy.
+
+## Update 2026-09-10 — Fase 100 Done: Mirror Speculative Fix PPh ke Purchase Payment
+User minta fix PPh23 Fase 99 (Sales Receipt) di-mirror juga ke Purchase
+Payment — struktur field PPh di 2 modul ini identik. Jawaban Accurate
+Support SPESIFIK untuk Sales Receipt, TIDAK ada konfirmasi terpisah
+untuk Purchase Payment — user eksplisit pilih (AskUserQuestion) tetap
+terapkan sekarang secara SPECULATIVE (ditandai jelas di kode+dokumentasi),
+bukan menunggu pertanyaan terpisah dulu. `taxId`/`taxAmount` dikoreksi
+sama seperti Sales Receipt (→ `detailTax[]` di root). `bun run
+typecheck` 0 error, `apps/api` 605 pass/0 fail, `bun run lint` 0 error,
+security review tidak ada temuan (termasuk analisis fail-safe kalau
+asumsi speculative ini salah — aman, try/catch generik sudah ada).
+**Known limitation**: BELUM dikonfirmasi resmi Accurate Support khusus
+endpoint ini — kalau retest client gagal, kirim pertanyaan terpisah ke
+Accurate Support untuk Purchase Payment.
