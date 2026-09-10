@@ -56,6 +56,15 @@ import {
   extractDataClassificationValues as extractJournalVoucherDataClassificationValues,
   type JournalVoucherGroup,
 } from "../lib/import-mapping/journal-voucher.mapping";
+import { saveOtherPayment } from "../lib/accurate-other-payment";
+import {
+  buildOtherPaymentPayload,
+  groupOtherPaymentRows,
+  // § nama collide dengan `extractDataClassificationValues` Purchase
+  // Invoice/Journal Voucher — alias "OP" konsisten pola alias lain di file ini.
+  extractDataClassificationValues as extractOtherPaymentDataClassificationValues,
+  type OtherPaymentGroup,
+} from "../lib/import-mapping/other-payment.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
 import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guard";
@@ -157,6 +166,26 @@ async function ensureJournalVoucherDataClassifications(
   }
 }
 
+// § Fase 96 (2026-09-10) — mirror `ensureJournalVoucherDataClassifications`
+// PERSIS (Kategori Keuangan di modul ini JUGA per-baris, bukan header) —
+// dibangun dari AWAL modul ini dibuat, BUKAN fase perbaikan terpisah
+// seperti Jurnal Umum (§ pelajaran Fase 98).
+async function ensureOtherPaymentDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractOtherPaymentDataClassificationValues(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
 // § Fase 14, ADR-0020 — koneksi Accurate SEKARANG milik user, reusable
 // lintas subscription (bukan 1:1 ke subscription lagi). Resolve 2 langkah:
 // subscription → accurateConnectionId → connection. `null` kalau
@@ -203,10 +232,12 @@ async function markConnectionExpired(connection: typeof accurateConnections.$inf
 // tetap 1 job generik, bukan bikin job type terpisah per modul (§ queue.ts).
 // CATATAN: "purchase_invoice"/"sales_invoice" TIDAK ada di sini lagi sejak
 // Fase 06/13, "sales_receipt" TIDAK ada lagi sejak Fase 49,
-// "purchase_payment" TIDAK ada lagi sejak Fase 50, dan "journal_voucher"
+// "purchase_payment" TIDAK ada lagi sejak Fase 50, "journal_voucher"
 // TIDAK ada lagi sejak Fase 96 (Opsi A/format lebar dipensiunkan total,
 // modul ini SEKARANG SELALU diproses per grup — lihat
-// `processJournalVoucherGroup` di bawah) — modul-modul itu diproses PER
+// `processJournalVoucherGroup` di bawah), dan "other_payment" TIDAK
+// PERNAH ada di sini (modul BARU, langsung grouping-by-default sejak
+// awal, § `processOtherPaymentGroup`) — modul-modul itu diproses PER
 // GRUP (banyak baris bisa jadi 1 transaksi), bukan per-baris lewat
 // fungsi ini.
 async function processImportRow(
@@ -746,6 +777,30 @@ export async function processJournalVoucherGroup(
   return { journalId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
+// ============================================================
+// § Fase 96 (2026-09-10) — Other Payment, mirror PERSIS blok Jurnal
+// Voucher di atas — TANPA validasi balance (bukan double-entry manual,
+// § architecture-other-payment.md § "Validasi"). Grouping by "Trans No"
+// SEJAK AWAL (modul baru, tidak ada versi lama yang perlu dijaga).
+// ============================================================
+export type OtherPaymentGroupResult = {
+  otherPaymentId: number;
+  rowIds: string[];
+};
+
+export async function processOtherPaymentGroup(
+  ctx: AccurateSessionContext,
+  group: OtherPaymentGroup,
+  columnMapping: Record<string, string>,
+): Promise<OtherPaymentGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  await ensureOtherPaymentDataClassifications(ctx, rawRows, columnMapping);
+  const payload = buildOtherPaymentPayload(rawRows, columnMapping);
+
+  const result = await saveOtherPayment(ctx, payload);
+  return { otherPaymentId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
 async function main() {
   await startQueue();
 
@@ -1196,6 +1251,33 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.journalId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Other Payment — SELALU diproses per-grup (§ Fase 96, modul
+      // baru, grouping by "Trans No" sejak awal, mirror Jurnal Voucher).
+    } else if (batch.module === "other_payment") {
+      const groups = groupOtherPaymentRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processOtherPaymentGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.otherPaymentId),
               errorMessage: null,
               processedAt: new Date(),
             })

@@ -130,6 +130,46 @@ lebih awal.
 
 ---
 
+## 2026-09-10 — Claude start `bun run dev` baru tanpa cek proses existing dulu — bentrok port dengan dev server user yang sudah jalan berhari-hari
+**Masalah:** Saat verifikasi manual Fase 96 (modul Other Payment) via
+browser, Claude langsung jalankan `bun run dev` (api+web+worker) di
+background TANPA cek dulu apakah ada proses dev yang sudah jalan. Web
+langsung gagal (`EADDRINUSE :::6209` — ada `next dev` milik user yang
+sudah jalan 4+ hari), TAPI api "berhasil" listen di port 3001 yang
+TERNYATA SUDAH DIPAKAI proses `bun run --watch src/index.ts` milik user
+juga (running 1+ hari) — macOS/Bun mengizinkan 2 proses listen di port
+yang sama tanpa error (SO_REUSEPORT-like behavior), jadi TIDAK ada
+sinyal error yang jelas untuk kasus api, cuma ketahuan lewat `lsof`
+manual.
+
+**Root cause:** Asumsi keliru bahwa "start dev server untuk testing"
+selalu aman di working directory manapun — TIDAK memperhitungkan bahwa
+sesi Claude Code yang sangat panjang (multi-hari) sering punya proses
+dev BACKGROUND yang sudah berjalan lama (dari sesi sebelumnya atau
+terminal lain milik user), dan `bun run dev` tidak selalu gagal jelas
+kalau port bentrok.
+
+**Fix:** Begitu ketahuan (lewat `ps`/`lsof`), Claude LANGSUNG cari
+process tree yang PERSIS baru di-spawn sendiri (bukan asal `pkill`) dan
+kill HANYA node-node itu, verifikasi proses existing milik user tetap
+sehat (`curl` masing-masing port). Untuk verifikasi selanjutnya, pakai
+proses `next dev`/`--watch` yang SUDAH JALAN itu langsung (hot-reload
+otomatis pick up perubahan file baru) — TIDAK perlu start instance baru
+sama sekali.
+
+**Pencegahan**: SEBELUM menjalankan `bun run dev`/`npm run dev`/dsb
+untuk keperluan testing manual, WAJIB cek dulu apakah port yang
+relevan (6209 web, 3001 api) sudah dipakai (`lsof -i :PORT` atau
+`curl -s -o /dev/null -w "%{http_code}" http://localhost:PORT/`) — kalau
+sudah ada proses yang merespons, PAKAI itu langsung (Next.js dev server
+& `bun --watch` sama-sama hot-reload), JANGAN start instance kedua.
+Kalau proses membunuh diperlukan setelah salah start, identifikasi PID
+tree yang PERSIS baru display-timestamp-nya cocok dengan command yang
+baru dijalankan (`ps -eo pid,ppid,etime,command`), JANGAN kill berdasar
+nama proses generik yang bisa cocok ke proses lama milik user.
+
+---
+
 ## 2026-09-10 — Fix PPh23 Sales Receipt (Fase 99) di-mirror SPECULATIVE ke Purchase Payment (Fase 100) — belum dikonfirmasi resmi untuk endpoint itu
 **Konteks**: setelah Fase 99 (lihat entri di bawah) menutup gap PPh23
 Sales Receipt berdasarkan jawaban TERTULIS RESMI Accurate Support, user

@@ -31,6 +31,8 @@ const planBody = t.Object({
       t.Literal("journal_voucher"),
       // § ADR-0026 — dulu bundel gratis ke purchase_invoice, sekarang SKU sendiri.
       t.Literal("vendor_payable_account"),
+      // § Fase 96 (2026-09-10) — modul baru, SKU sendiri sejak awal.
+      t.Literal("other_payment"),
     ]),
     { minItems: 1, maxItems: 1 },
   ),
