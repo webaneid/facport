@@ -157,6 +157,31 @@ function valueOf(rawRow: Record<string, unknown>, column: string | null): unknow
   return value === undefined || value === null || value === "" ? undefined : value;
 }
 
+// § Fase 101 (2026-09-11) — BUG YANG SAMA dengan Other Payment
+// ditemukan lewat AUDIT PROAKTIF (bukan laporan client langsung untuk
+// modul ini) — `transDate` cuma di-`String()` polos, TIDAK konversi
+// cell Excel bertipe Tanggal asli (kebaca sebagai angka serial oleh
+// `parseExcelBuffer`, bukan string "DD/MM/YYYY"). Mirror `toAccurateDate`
+// yang SUDAH ADA di `sales-receipt.mapping.ts`/`purchase-payment.mapping.ts`.
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function toAccurateDate(value: unknown): unknown {
+  let date: Date | null = null;
+  if (typeof value === "number") {
+    date = new Date(EXCEL_EPOCH_UTC_MS + value * 86400000);
+  } else if (value instanceof Date) {
+    date = value;
+  } else if (typeof value === "string") {
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) return value; // sudah DD/MM/YYYY
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  }
+  if (!date || Number.isNaN(date.getTime())) return value;
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getUTCFullYear()}`;
+}
+
 // § Fase 98 (2026-09-10) — GAP ditemukan: `attribut1`-`attribut10`
 // (`dataClassification1-10Name`) ditambahkan Fase 95 TANPA mirror
 // mekanisme auto-create yang sudah ada untuk field yang SAMA di Sales
@@ -287,7 +312,7 @@ export function buildJournalVoucherPayload(
 
   const firstRow = rawRows[0] ?? {};
   const payload: Record<string, unknown> = {
-    transDate: String((transDateColumn && firstRow[transDateColumn]) ?? ""),
+    transDate: String(toAccurateDate(valueOf(firstRow, transDateColumn)) ?? ""),
     detailJournalVoucher: lines,
   };
   const description = descriptionColumn ? firstRow[descriptionColumn] : undefined;

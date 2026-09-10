@@ -462,6 +462,17 @@ token lama).
 
 Detail lengkap → `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md`.
 
+## Fase 101 (2026-09-11) — Fix Bug Tanggal Excel Serial Terkirim Mentah
+Ditemukan lewat AUDIT PROAKTIF (bukan laporan client langsung untuk
+modul ini) saat memperbaiki bug identik di Other Payment: `transDate`
+cuma di-`String()` polos, TIDAK konversi cell Excel bertipe Tanggal
+asli (kebaca sebagai angka serial oleh `parseExcelBuffer`, bukan
+string "DD/MM/YYYY") — kemungkinan besar belum pernah ketahuan karena
+client kebetulan selalu isi tanggal JV sebagai teks. Fix:
+`toAccurateDate()` (mirror fungsi yang sudah ada di
+`sales-receipt.mapping.ts`) ditambahkan untuk `transDate`. Detail →
+`docs/phases/phase-101-fix-tanggal-excel-serial.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`

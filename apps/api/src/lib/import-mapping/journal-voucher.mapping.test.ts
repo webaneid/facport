@@ -103,6 +103,33 @@ describe("extractDataClassificationValues", () => {
   });
 });
 
+// § Fase 101 (2026-09-11) — bug yang SAMA dengan Other Payment, ditemukan
+// lewat audit proaktif (bukan laporan client langsung untuk JV): cell
+// Excel bertipe Tanggal asli kebaca `parseExcelBuffer` sebagai angka
+// serial, bukan string "DD/MM/YYYY" — sebelumnya cuma di-`String()` polos.
+describe("buildJournalVoucherPayload — konversi tanggal Excel serial (bug fix)", () => {
+  const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+  const serialFor = (y: number, m: number, d: number) => (Date.UTC(y, m - 1, d) - EXCEL_EPOCH_UTC_MS) / 86400000;
+
+  test("transDate berupa angka serial Excel -> dikonversi jadi DD/MM/YYYY, bukan dikirim mentah sebagai string angka", () => {
+    const rawRows = [
+      { "Trans Date": serialFor(2026, 9, 5), "Transaction Number": "JV-SERIAL-1", "Branch": "JAKARTA", "Akun": "6-20500", "Nominal Debit": 500000 },
+      { "Transaction Number": "JV-SERIAL-1", "Akun": "1-10200", "Nominal Kredit": 500000 },
+    ];
+    const payload = buildJournalVoucherPayload(rawRows, columnMapping);
+    expect(payload.transDate).toBe("05/09/2026");
+  });
+
+  test("transDate SUDAH string DD/MM/YYYY (bukan serial) -> tidak berubah (zero regression)", () => {
+    const rawRows = [
+      { "Trans Date": "05/09/2026", "Transaction Number": "JV-SERIAL-2", "Branch": "JAKARTA", "Akun": "6-20500", "Nominal Debit": 500000 },
+      { "Transaction Number": "JV-SERIAL-2", "Akun": "1-10200", "Nominal Kredit": 500000 },
+    ];
+    const payload = buildJournalVoucherPayload(rawRows, columnMapping);
+    expect(payload.transDate).toBe("05/09/2026");
+  });
+});
+
 describe("buildJournalVoucherPayload", () => {
   test("jurnal 2 akun seimbang -> detailJournalVoucher 2 elemen, branchName terisi", () => {
     const rawRows = [

@@ -237,6 +237,18 @@ File **BARU**:
 - `apps/web/app/app/(protected)/other-payment/import/riwayat/page.tsx`
 - `apps/web/components/other-payment/edit-row-dialog.tsx`
 
+## Fase 101 (2026-09-11) — Fix Bug Tanggal Excel Serial Terkirim Mentah
+Client retest dapat error Accurate "Invalid field value for field
+dateField1/dateField2" saat isi "Atribut Tanggal 1/2" dengan cell
+Excel bertipe Tanggal ASLI (bukan teks). Root cause: `parseExcelBuffer`
+membaca cell Tanggal sebagai angka serial Excel, dan
+`buildOtherPaymentPayload` sebelumnya kirim angka itu mentah (`String()`
+polos) — Accurate menolak. Fix: `toAccurateDate()` (mirror fungsi yang
+sudah ada di `sales-receipt.mapping.ts`) ditambahkan untuk `transDate`
+DAN `attributTanggal1`/`attributTanggal2` (`dateField1`/`dateField2`).
+Detail → `docs/phases/phase-101-fix-tanggal-excel-serial.md`,
+`docs/lessons-learned.md` entri 2026-09-11.
+
 ## Referensi
 - Template client: `docs/referencehtml/CLIENT_other-payment-v1.2.xlsx`
   (+ 4 screenshot UI Accurate asli, `docs/referencehtml/op-client-images/`)

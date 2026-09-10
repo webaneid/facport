@@ -109,6 +109,7 @@
 | 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
 | 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
 | 100  | Mirror Speculative Fix PPh (`detailTax` di Root) ke Purchase Payment | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md` |
+| 101  | Fix Tanggal Excel Serial Terkirim Mentah (Other Payment & Journal Voucher) | Done | `docs/architecture/architecture-other-payment.md`, `architecture-journal-voucher.md` | `docs/phases/phase-101-fix-tanggal-excel-serial.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2674,3 +2675,20 @@ test call nyata KHUSUS endpoint ini (diasumsikan konsisten dari
 endpoint/modul lain, sama filosofi Fase 100) — dan belum pernah dites
 transaksi sungguhan sampai ke Accurate (worker dev environment punya
 backlog job lama, job test belum sempat diproses saat verifikasi).
+
+## Update 2026-09-11 — Fase 101 Done: Fix Tanggal Excel Serial Terkirim Mentah
+Client retest Other Payment (baru rilis v1.27.0) dapat error Accurate
+"Invalid field value for field dateField1/dateField2" saat isi kolom
+"Atribut Tanggal 1/2". Root cause: cell Excel bertipe Tanggal ASLI
+dibaca `parseExcelBuffer` sebagai angka serial (`cellDates` tidak
+diset), dikirim mentah alih-alih dikonversi ke DD/MM/YYYY. Audit
+proaktif menemukan bug SAMA di Journal Voucher (`transDate`) — belum
+pernah dilaporkan client modul itu. Fix: `toAccurateDate()` (mirror
+fungsi yang sudah lama ada di sales-receipt/purchase-payment) ditambah
+ke `other-payment.mapping.ts` dan `journal-voucher.mapping.ts`. `bun
+run typecheck` 0 error, `apps/api` 644 pass/0 fail (5 test baru), `bun
+run lint` 0 error, security review tidak ada temuan. **Pola berulang
+ketiga**: gap "menular" lewat mirroring modul baru dari modul yang
+kebetulan juga belum punya suatu fix (setelah Fase 78 vendor scope,
+Fase 98 Kategori Keuangan) — dicatat di lessons-learned sebagai
+pencegahan untuk modul mapping baru berikutnya.

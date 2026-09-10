@@ -105,6 +105,63 @@ describe("buildOtherPaymentPayload", () => {
     expect(payload.detailAccount).toEqual([{ accountNo: "6-30100", amount: 500000, expenseName: "Pembayaran listrik" }]);
   });
 
+  // § BUG DITEMUKAN 2026-09-11 (client retest nyata, error Accurate
+  // "Invalid field value for field dateField1/dateField2") — cell Excel
+  // bertipe Tanggal ASLI (bukan teks) kebaca `parseExcelBuffer` sebagai
+  // angka serial (epoch 1899-12-30), BUKAN string "DD/MM/YYYY".
+  describe("konversi tanggal Excel serial -> DD/MM/YYYY (bug fix)", () => {
+    const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+    const serialFor = (y: number, m: number, d: number) => (Date.UTC(y, m - 1, d) - EXCEL_EPOCH_UTC_MS) / 86400000;
+
+    test("transDate berupa angka serial Excel -> dikonversi jadi DD/MM/YYYY, bukan dikirim mentah sebagai string angka", () => {
+      const rawRows = [
+        {
+          "Trans Date": serialFor(2026, 9, 10),
+          "Trans No": "OP-SERIAL-1",
+          "Branch Name": "JAKARTA",
+          "Bank No": "1-10200",
+          "Payee": "PLN",
+          "Acc No": "6-30100",
+          "Amount": 500000,
+          "Expense Name": "Listrik",
+        },
+      ];
+      const payload = buildOtherPaymentPayload(rawRows, columnMapping);
+      expect(payload.transDate).toBe("10/09/2026");
+    });
+
+    test("Atribut Tanggal 1/2 (dateField1/dateField2) berupa angka serial Excel -> dikonversi jadi DD/MM/YYYY", () => {
+      const mapping = { ...columnMapping, "Atribut Tanggal 1": "attributTanggal1", "Atribut Tanggal 2": "attributTanggal2" };
+      const rawRows = [
+        {
+          "Trans Date": "10/09/2026",
+          "Trans No": "OP-SERIAL-2",
+          "Branch Name": "JAKARTA",
+          "Bank No": "1-10200",
+          "Payee": "PLN",
+          "Acc No": "6-30100",
+          "Amount": 500000,
+          "Expense Name": "Listrik",
+          "Atribut Tanggal 1": serialFor(2026, 9, 10),
+          "Atribut Tanggal 2": serialFor(2026, 12, 25),
+        },
+      ];
+      const payload = buildOtherPaymentPayload(rawRows, mapping);
+      expect(payload.dateField1).toBe("10/09/2026");
+      expect(payload.dateField2).toBe("25/12/2026");
+    });
+
+    test("tanggal SUDAH string DD/MM/YYYY (bukan serial) -> tidak berubah (zero regression)", () => {
+      const mapping = { ...columnMapping, "Atribut Tanggal 1": "attributTanggal1" };
+      const rawRows = [
+        { "Trans Date": "10/09/2026", "Trans No": "OP-SERIAL-3", "Branch Name": "JAKARTA", "Bank No": "1-10200", "Payee": "PLN", "Acc No": "6-30100", "Amount": 500000, "Expense Name": "Listrik", "Atribut Tanggal 1": "25/12/2026" },
+      ];
+      const payload = buildOtherPaymentPayload(rawRows, mapping);
+      expect(payload.transDate).toBe("10/09/2026");
+      expect(payload.dateField1).toBe("25/12/2026");
+    });
+  });
+
   test("jurnal N akun (3 baris, 1 Trans No) -> detailAccount 3 elemen", () => {
     const rawRows = [
       { "Trans Date": "10/09/2026", "Trans No": "OP-002", "Branch Name": "JAKARTA", "Bank No": "1-10200", "Payee": "PLN", "Acc No": "6-30100", "Amount": 300000, "Expense Name": "Listrik Kantor" },
