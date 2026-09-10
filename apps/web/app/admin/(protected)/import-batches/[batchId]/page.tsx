@@ -210,29 +210,35 @@ function PurchasePaymentView({ rows }: { rows: Row[] }) {
   );
 }
 
-// § mirror `sales-receipt/import/[batchId]/page.tsx`.
-function SalesReceiptView({ rows }: { rows: Row[] }) {
+// § diminta user 2026-09-10 — tambah kolom "Nomor Bukti" (field
+// `receiptNumber`, § Fase 49 — kunci grouping 1 struk bisa bayar banyak
+// faktur) SEBELUM "Baris", mirror persis pola `SalesInvoiceView`/
+// `PurchaseInvoiceView` di atas (nomor dokumen dulu, biar baris yang
+// sama-sama 1 struk kelihatan mengelompok saat di-sort).
+function SalesReceiptView({ batch, rows }: { batch: BatchDetail["batch"]; rows: Row[] }) {
+  const receiptNumberColumn = findColumn(batch.columnMapping, "receiptNumber");
+  const sortedRows = sortByValue(rows, receiptNumberColumn);
   return (
     <Table>
       <TableHeader>
         <TableRow>
+          <TableHead>Nomor Bukti</TableHead>
           <TableHead>Baris</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>ID Penerimaan Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {[...rows]
-          .sort((a, b) => a.rowNumber - b.rowNumber)
-          .map((row) => (
-            <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
-              <TableCell>
-                <RowStatusBadge status={row.status} />
-              </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
-            </TableRow>
-          ))}
+        {sortedRows.map((row) => (
+          <TableRow key={row.id}>
+            <TableCell className="font-medium text-foreground">{valueOf(row, receiptNumberColumn) || "-"}</TableCell>
+            <TableCell>{row.rowNumber}</TableCell>
+            <TableCell>
+              <RowStatusBadge status={row.status} />
+            </TableCell>
+            <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+          </TableRow>
+        ))}
       </TableBody>
     </Table>
   );
@@ -337,7 +343,7 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "sales_invoice" && <SalesInvoiceView batch={batch} rows={rows} />}
           {batch.module === "vendor_payable_account" && <VendorPayableAccountView rows={rows} />}
           {batch.module === "purchase_payment" && <PurchasePaymentView rows={rows} />}
-          {batch.module === "sales_receipt" && <SalesReceiptView rows={rows} />}
+          {batch.module === "sales_receipt" && <SalesReceiptView batch={batch} rows={rows} />}
           {batch.module === "journal_voucher" && <JournalVoucherView rows={rows} />}
         </CardContent>
       </Card>
