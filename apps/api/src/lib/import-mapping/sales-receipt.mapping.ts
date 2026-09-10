@@ -81,14 +81,27 @@ export const salesReceiptMapping = {
     discountNotes: "detailInvoice[].detailDiscount[].discountNotes",
     discountDepartmentName: "detailInvoice[].detailDiscount[].departmentName",
     discountProjectNo: "detailInvoice[].detailDiscount[].projectNo",
-    // § Fase 86 (2026-09-10) — "Tax ID", VALIDASI-ONLY. `sales-receipt/save.do`
-    // TIDAK punya field ini (dikonfirmasi exhaustif Fase 85) — nilainya
-    // TIDAK PERNAH masuk payload, cuma dicocokkan ke Master Data Pajak
-    // Accurate (`/api/tax/list.do`, scope `tax_view`) SEBELUM baris
-    // diproses — cegah client salah ketik kode/nama pajak yang tidak
-    // ada di company mereka. Lihat `accurate-tax.ts` & `workers/index.ts`
-    // § `validateTaxIdsForReceipt`.
-    taxId: "(validasi-only — TIDAK dikirim ke sales-receipt/save.do)",
+    // § Fase 99 (2026-09-10) — KOREKSI Fase 86: "Tax ID" TERNYATA BUKAN
+    // validasi-only. Jawaban resmi Accurate Support (2026-09-10, balasan
+    // pertanyaan PPh23 Sales Receipt) konfirmasi payload YANG BENAR:
+    // `detailTax[]` ada di ROOT request (SIBLING dari `detailInvoice`,
+    // BUKAN nested di dalamnya seperti asumsi awal) — tiap elemen punya
+    // `detailInvoiceNo` (penghubung ke baris `detailInvoice` terkait),
+    // `taxAmount` (nominal PPh), `taxId` (angka — id INTERNAL Accurate,
+    // BUKAN taxCode/description). `taxId` di sini TETAP diterima
+    // fleksibel dari user (angka/kode/nama, § `accurate-tax.ts`
+    // `findTaxByIdentifier`) — worker RESOLVE ke `.id` numerik SEBELUM
+    // `buildSalesReceiptPayload` dipanggil (§ `workers/index.ts`
+    // `resolveTaxIdsForReceipt`), payload yang dikirim pakai angka hasil
+    // resolve itu, BUKAN string mentah dari Excel.
+    taxId: "detailTax[].taxId",
+    // § Fase 99 — "Tax Amount" JUGA DIKOREKSI dari Fase 85 ("❌ SKIP,
+    // CONFIRMED read-only/auto-computed lewat UI") — jawaban Support
+    // EKSPLISIT bilang `detailTax[].taxAmount` "diisi dengan nominal PPh
+    // yang dipotong": field ini ADA dan WAJIB diisi MANUAL di level API
+    // (UI Accurate auto-hitung nilainya sendiri lewat jalur BEDA/internal,
+    // tapi API TIDAK replikasi itu — caller yang harus supply angkanya).
+    taxAmount: "detailTax[].taxAmount",
   } as const,
   // § Fase 86 (2026-09-10) — URUTAN entri di bawah SENGAJA mengikuti
   // PERSIS urutan sheet "NOTE" client (= template kompetitor
@@ -126,6 +139,7 @@ export const salesReceiptMapping = {
     "Paid PPH": "paidPph",
     "PPh No": "pphNumber",
     "Tax ID": "taxId",
+    "Tax Amount": "taxAmount",
     "Discount": "discountAmount",
     "Discount Acc": "discountAccountNo",
     "Discount Note": "discountNotes",
@@ -299,13 +313,15 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
   return values;
 }
 
-// § Fase 86 — kumpulkan nilai "Tax ID" UNIK dari semua baris grup, untuk
-// divalidasi ke Master Data Pajak Accurate SEBELUM payload dibangun
-// (§ `workers/index.ts` § `validateTaxIdsForReceipt`, `accurate-tax.ts`).
-// Dedupe (Set) — 1 nilai yang sama dipakai berkali-kali cuma perlu 1x
-// lookup, mirror pola `ensureDataClassifications`. TIDAK PERNAH dipakai
-// untuk mengisi payload — lihat `buildSalesReceiptPayload`, field ini
-// sengaja tidak pernah ditulis ke `entry`.
+// § Fase 86, tujuan DIKOREKSI Fase 99 — kumpulkan nilai "Tax ID" UNIK
+// dari semua baris grup, untuk di-RESOLVE ke id numerik Accurate
+// (`resolveTaxIdsForReceipt` di `workers/index.ts`, pakai
+// `findTaxByIdentifier` di `accurate-tax.ts`) SEBELUM payload dibangun
+// — hasil resolve-nya (Map<identifier, numericId>) yang dipakai
+// `buildSalesReceiptPayload` mengisi `detailTax[].taxId` (§ Fase 99,
+// BUKAN lagi validasi murni tanpa efek ke payload). Dedupe (Set) — 1
+// nilai yang sama dipakai berkali-kali cuma perlu 1x lookup, mirror
+// pola `ensureDataClassifications`.
 export function extractTaxIdsFromRows(
   rawRows: Record<string, unknown>[],
   columnMapping: Record<string, string>,
@@ -348,16 +364,28 @@ function buildDetailDiscountFromRowValues(rowValues: Partial<Record<SalesReceipt
 // (root) = "Cheque Amount" EKSPLISIT kalau diisi (§ Fase 85), fallback
 // SUM semua `paymentAmount` baris dalam grup kalau kosong (perilaku
 // Fase 49, zero regression).
+// § Fase 99 (2026-09-10) — parameter BARU `resolvedTaxIds`: Map dari
+// nilai "Tax ID" MENTAH Excel (string, sebelum di-trim) ke id NUMERIK
+// Accurate (§ `workers/index.ts` `resolveTaxIdsForReceipt`). Fungsi ini
+// SENGAJA tetap sync/pure (tidak panggil Accurate sendiri) — caller
+// WAJIB resolve semua Tax ID dulu (dan gagal lebih awal kalau ada yang
+// tidak ketemu) SEBELUM panggil builder ini, sama filosofi
+// `ensureDataClassifications` dipanggil SEBELUM `buildXPayload` di
+// modul lain. Default `new Map()` supaya caller lama (tanpa Tax ID)
+// tetap jalan tanpa ubah signature call site.
 export function buildSalesReceiptPayload(
   rawRows: Record<string, unknown>[],
   columnMapping: Record<string, string>,
+  resolvedTaxIds: Map<string, number> = new Map(),
 ): Record<string, unknown> {
   const headerValues = extractRowValues(rawRows[0] ?? {}, columnMapping);
+  const detailTax: Record<string, unknown>[] = [];
 
   const detailInvoice = rawRows.map((rawRow) => {
     const rowValues = extractRowValues(rawRow, columnMapping);
+    const invoiceNo = String(rowValues.invoiceNo ?? "");
     const entry: Record<string, unknown> = {
-      invoiceNo: String(rowValues.invoiceNo ?? ""),
+      invoiceNo,
       paymentAmount: Number(rowValues.chequeAmount ?? 0),
     };
     if (rowValues.invoiceDepartmentName !== undefined) entry.departmentName = String(rowValues.invoiceDepartmentName);
@@ -365,6 +393,21 @@ export function buildSalesReceiptPayload(
     if (rowValues.pphNumber !== undefined) entry.pphNumber = String(rowValues.pphNumber);
     const discount = buildDetailDiscountFromRowValues(rowValues);
     if (discount) entry.detailDiscount = [discount];
+
+    // § Fase 99 — `detailTax[]` dikonfirmasi Accurate Support BERADA DI
+    // ROOT (sibling `detailInvoice`), BUKAN nested di `entry` ini —
+    // dikumpulkan di sini (per-baris, karena sumber datanya per-baris)
+    // tapi DITULIS ke array root `detailTax` di bawah, bukan ke `entry`.
+    // Syarat MINIMAL: `taxId` DAN `taxAmount` dua-duanya terisi (mirror
+    // pola `buildDetailDiscountFromRowValues`) — `taxId` harus berhasil
+    // di-resolve ke angka (kalau tidak ada di map, berarti caller belum
+    // resolve/skip baris ini, JANGAN kirim setengah-setengah).
+    if (rowValues.taxId !== undefined && rowValues.taxAmount !== undefined) {
+      const resolvedId = resolvedTaxIds.get(String(rowValues.taxId).trim());
+      if (resolvedId !== undefined) {
+        detailTax.push({ detailInvoiceNo: invoiceNo, taxAmount: Number(rowValues.taxAmount), taxId: resolvedId });
+      }
+    }
     return entry;
   });
 
@@ -398,6 +441,9 @@ export function buildSalesReceiptPayload(
   if (headerValues.paymentMethod !== undefined) payload.paymentMethod = headerValues.paymentMethod;
   if (headerValues.passValidateInvoiceDate !== undefined) payload.passValidateInvoiceDate = headerValues.passValidateInvoiceDate;
   if (headerValues.useCredit !== undefined) payload.useCredit = headerValues.useCredit;
+  // § Fase 99 — `detailTax[]` di ROOT, sibling `detailInvoice` (dikonfirmasi
+  // Accurate Support 2026-09-10), BUKAN nested di dalam `detailInvoice[]`.
+  if (detailTax.length > 0) payload.detailTax = detailTax;
 
   return payload;
 }

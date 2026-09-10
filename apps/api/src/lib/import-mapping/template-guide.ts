@@ -437,11 +437,18 @@ export const purchasePaymentTemplateGuide: TemplateFieldGuide[] = [
 // `FACPORT_Sales Receipt_v5.xlsx`), BUKAN pola "field baru selalu di
 // ujung" yang dipakai modul lain (Fase 70-84) — permintaan eksplisit
 // user: "susunan excel harus sama dengan yg dibuat client, karena itu
-// permintaannya". 4 kolom yang di-skip (Existing Credit/Return
-// Overpay/Tax Amount/Tax ID) dilewati sesuai posisi aslinya (tidak
-// bikin lubang kosong). Field API tetap SAMA seperti sebelumnya, cuma
-// URUTAN BARIS array ini yang berubah — TIDAK ADA breaking change
-// (matching kolom saat upload tetap by NAME, bukan posisi).
+// permintaannya". 2 kolom yang TETAP di-skip (Existing Credit/Return
+// Overpay, § komentar `salesReceiptMapping` di `sales-receipt.mapping.ts`)
+// dilewati sesuai posisi aslinya (tidak bikin lubang kosong). Field API
+// tetap SAMA seperti sebelumnya, cuma URUTAN BARIS array ini yang
+// berubah — TIDAK ADA breaking change (matching kolom saat upload tetap
+// by NAME, bukan posisi).
+// § Fase 99 (2026-09-10) — "Tax Amount" DIKEMBALIKAN (awalnya di-skip
+// Fase 85) dan "Tax ID" dikoreksi deskripsinya — jawaban resmi Accurate
+// Support konfirmasi KEDUANYA field API nyata (`detailTax[]` di root),
+// bukan validasi-only/read-only seperti disimpulkan sebelumnya. Lihat
+// `sales-receipt.mapping.ts` § komentar `taxId`/`taxAmount` untuk detail
+// lengkap.
 export const salesReceiptTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi penerimaan." },
   { column: "No. Sales Receipt", required: false, example: "11010101.2026.01.00001", description: "Nomor struk penerimaan (opsional). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 penerimaan yang bayar BANYAK faktur sekaligus — baris dengan kolom ini kosong tetap dianggap 1 penerimaan sendiri (header alternatif: \"Nomor Penerimaan\", \"No Penerimaan\")." },
@@ -462,7 +469,8 @@ export const salesReceiptTemplateGuide: TemplateFieldGuide[] = [
   { column: "Department", required: false, example: "", description: "Nama departemen untuk baris faktur ini (kalau akun Accurate pakai tracking departemen)." },
   { column: "Paid PPH", required: false, format: Y_BOOLEAN_FORMAT, example: "", description: "Isi \"Y\" kalau faktur ini kena potong PPh23. Kosongkan kalau tidak. Nominal PPh DIHITUNG OTOMATIS oleh Accurate dari kategori jasa di faktur asli — TIDAK ada kolom nominal terpisah." },
   { column: "PPh No", required: false, example: "", description: "Nomor bukti potong PPh23 — isi kalau tidak pakai penomoran otomatis Accurate." },
-  { column: "Tax ID", required: false, example: "Jasa Kebersihan", description: "Nama pajak PERSIS seperti di Data Master Pajak Accurate (mis. \"Jasa Kebersihan\") untuk validasi — LEBIH DISARANKAN dari kode (mis. \"Pajak Penghasilan Ps.23\") karena 1 kode dipakai banyak jenis jasa PPh23 sekaligus (kode saja bisa cocok ke jenis yang SALAH). Facport CEK ke Accurate dulu sebelum import, GAGAL kalau tidak ditemukan (cegah salah ketik). TIDAK mengubah nominal PPh — itu dihitung otomatis oleh Accurate." },
+  { column: "Tax ID", required: false, example: "Jasa Kebersihan", description: "Nama pajak PERSIS seperti di Data Master Pajak Accurate (mis. \"Jasa Kebersihan\") — LEBIH DISARANKAN dari kode (mis. \"Pajak Penghasilan Ps.23\") karena 1 kode dipakai banyak jenis jasa PPh23 sekaligus (kode saja bisa cocok ke jenis yang SALAH). WAJIB diisi bersama \"Tax Amount\" supaya baris ini dianggap punya data potongan PPh — Facport cek dulu ke Accurate, GAGAL kalau tidak ditemukan." },
+  { column: "Tax Amount", required: false, example: "40000", description: "Nominal PPh yang dipotong untuk faktur di baris ini — WAJIB diisi bersama \"Tax ID\". BEDA dari UI Accurate yang menghitung otomatis: lewat import, nominal ini HARUS dihitung & diisi sendiri (dikonfirmasi resmi oleh Accurate Support 2026-09-10)." },
   { column: "Discount", required: false, example: "", description: "Nominal diskon untuk baris faktur ini — WAJIB diisi bersama \"Discount Acc\" supaya baris ini dianggap punya data diskon. Boleh sampai 6 angka di belakang koma." },
   { column: "Discount Acc", required: false, example: "", description: "Kode Akun Diskon (COA) — WAJIB diisi bersama \"Discount\"." },
   { column: "Discount Note", required: false, example: "", description: "Catatan tambahan untuk diskon ini." },

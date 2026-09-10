@@ -639,14 +639,24 @@ export type SalesReceiptGroupResult = {
 // TIDAK ada auto-create (beda dari `findOrCreateVendor`/`findOrCreateItem`)
 // — Master Data Pajak adalah konfigurasi akuntansi sensitif, bukan
 // referensi ringan seperti vendor/item.
-async function validateTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+// § Fase 99 (2026-09-10) — DIKOREKSI dari Fase 86 (`validateTaxIdsForReceipt`,
+// validasi-only): sekarang juga RESOLVE tiap identifier ke id numerik
+// Accurate (`.id`, BUKAN taxCode/description) — dipakai
+// `buildSalesReceiptPayload` mengisi `detailTax[].taxId` (jawaban resmi
+// Accurate Support 2026-09-10 konfirmasi field ini WAJIB numerik).
+// Gagal lebih awal (throw) kalau ADA identifier yang tidak ketemu —
+// TIDAK kirim payload setengah-setengah ke Accurate.
+async function resolveTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<Map<string, number>> {
   const taxIds = extractTaxIdsFromRows(rawRows, columnMapping);
+  const resolved = new Map<string, number>();
   for (const taxId of taxIds) {
     const found = await findTaxByIdentifier(ctx, taxId);
     if (!found) {
       throw new Error(`Tax ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "Tax ID" kalau tidak diperlukan.`);
     }
+    resolved.set(taxId, found.id);
   }
+  return resolved;
 }
 
 export async function processSalesReceiptGroup(
@@ -658,8 +668,8 @@ export async function processSalesReceiptGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
-  await validateTaxIdsForReceipt(ctx, rawRows, columnMapping);
-  const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+  const resolvedTaxIds = await resolveTaxIdsForReceipt(ctx, rawRows, columnMapping);
+  const payload = buildSalesReceiptPayload(rawRows, columnMapping, resolvedTaxIds);
 
   const result = await saveSalesReceipt(ctx, payload);
   return { receiptId: result.id, rowIds: group.rows.map((r) => r.id) };

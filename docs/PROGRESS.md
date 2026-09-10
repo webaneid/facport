@@ -107,6 +107,7 @@
 | 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
 | 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
 | 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
+| 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2612,3 +2613,20 @@ TIDAK diubah), plus scope OAuth baru
 0 error. Security review tidak ada temuan. **Aksi wajib**: koneksi
 Accurate yang connect SEBELUM fix ini wajib "Hubungkan Ulang" supaya
 scope baru aktif.
+
+## Update 2026-09-10 — Fase 99 Done: Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar)
+Gap yang sudah lama terbuka (import PPh23 Sales Receipt "sukses" tapi
+potongan PPh tidak muncul) akhirnya ditutup — Accurate Support balas
+pertanyaan detail yang dikirim sebelumnya. Root cause 4 test call
+speculative sebelumnya: `detailTax[]` SALAH ditaruh nested di dalam
+`detailInvoice[]`, seharusnya di ROOT request (sibling `detailInvoice`)
+dengan `detailInvoiceNo` sebagai penghubung. Field `taxAmount`
+(sebelumnya di-skip Fase 85, disimpulkan salah sebagai "read-only") dan
+`taxId` (sebelumnya Fase 86 validasi-only) sekarang BENAR-BENAR dikirim
+ke Accurate. `buildSalesReceiptPayload` sekarang terima parameter
+`resolvedTaxIds: Map<string, number>`, `validateTaxIdsForReceipt` →
+rename `resolveTaxIdsForReceipt`. `bun run typecheck` 0 error, test
+terkait 48 pass/0 fail, `bun run lint` 0 error, security review tidak
+ada temuan. **Known limitation**: belum diverifikasi test call nyata
+(fix berdasar jawaban tertulis resmi Accurate Support) — disarankan
+client retest 1x setelah deploy.

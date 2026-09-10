@@ -130,7 +130,7 @@ lebih awal.
 
 ---
 
-## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — MASIH MENUNGGU JAWABAN ACCURATE SUPPORT
+## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — ✅ RESOLVED (§ Fase 99)
 **Masalah:** Client laporan import Sales Receipt untuk faktur yang kena
 PPh23 (item "Jasa Cleaning Service", sudah di-set Kena PPh23 = "Jasa
 Kebersihan" di Data Master Barang & Jasa) — status batch import "sukses"
@@ -169,20 +169,32 @@ kuat butuh transaksi KEDUA (terpisah dari `sales-receipt/save.do`) untuk
 benar-benar mencatat potongan PPh-nya, bukan cuma flag boolean di payload
 yang sama.
 
-**Status:** Pertanyaan lengkap (payload persis + tabel hasil di atas)
-SUDAH dikirim ke Accurate support, MENUNGGU JAWABAN. JANGAN implementasi
-apa pun berdasarkan tebakan sampai ada konfirmasi resmi dari Accurate —
-2 field speculative (`pphAmount`, `detailTax`) yang dicoba TIDAK ada di
-`salesReceiptMapping` production code, cuma di script debug sekali-pakai.
+**Status:** ~~Pertanyaan lengkap ... MENUNGGU JAWABAN~~ **RESOLVED
+2026-09-10 (Fase 99).** Jawaban resmi Accurate Support: `detailTax[]`
+ada di ROOT request (SIBLING `detailInvoice`, BUKAN nested di
+dalamnya seperti dicoba speculative di atas), tiap elemen punya
+`detailInvoiceNo` (penghubung ke baris faktur), `taxAmount` (nominal
+PPh — ternyata WAJIB diisi manual, bukan read-only seperti disimpulkan
+Fase 85), `taxId` (angka id internal, resolve lewat
+`findTaxByIdentifier` yang sudah ada sejak Fase 86). `paidPph`/
+`pphNumber` di `detailInvoice[]` TIDAK perlu diubah — keduanya sudah
+benar dari awal, masalahnya HANYA `detailTax` yang salah struktur.
 
-**Pencegahan/lanjutan**: begitu Accurate balas, update
-`apps/api/src/lib/import-mapping/sales-receipt.mapping.ts` §
-`buildSalesReceiptPayload` sesuai jawaban resmi mereka (bukan re-tebak),
-update `docs/architecture/architecture-sales-receipt.md` § Fase 85 (yang
-sudah TERLANJUR tandai field ini "✅ Implementasi" — perlu dikoreksi jadi
-"⚠️ Field diterima tapi TIDAK diproses Accurate, lihat lessons-learned"
-sampai ada fix), lalu hapus script debug sekali-pakai
-`apps/api/src/scripts/debug-sales-receipt-pph.ts`.
+**Pelajaran**: "lisan oleh support Accurate tanpa konteks endpoint
+jelas" (baris tabel `detailTax` di atas) memang TIDAK BOLEH langsung
+dipercaya tanpa konfirmasi tertulis — percobaan speculative di atas
+(nested di `detailInvoice`) SALAH justru karena menebak strukturnya
+sendiri tanpa tahu detail. Begitu jawaban TERTULIS RESMI datang (via
+email/tiket, bukan lisan), strukturnya eksplisit dan langsung bisa
+diimplementasikan tanpa tebak-tebak lagi — beda dari percobaan
+speculative yang HARUS nebak bentuk field sendiri.
+
+**Fix**: `docs/phases/phase-99-fix-pph23-sales-receipt.md`,
+`docs/architecture/architecture-sales-receipt.md` § "GAP DITUTUP (Fase
+99)". Script debug `apps/api/src/scripts/debug-sales-receipt-pph.ts`
+SUDAH dihapus (investigasi closed). **Belum diverifikasi test call
+nyata** — fix berdasar jawaban tertulis resmi, disarankan client
+retest 1x setelah deploy untuk konfirmasi akhir.
 
 ---
 

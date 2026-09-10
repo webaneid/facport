@@ -260,8 +260,8 @@ dikirim ke Accurate akan SALAH/tidak lengkap.
 | Pass Validate Inv Date | 🆕 Implementasi | `passValidateInvoiceDate` (root) | Boolean, konvensi "Y"/kosong (lihat § di bawah) |
 | Use credit | 🆕 Implementasi | `useCredit` (root) | Boolean, konvensi "Y"/kosong |
 | Department | 🆕 Implementasi | `detailInvoice[].departmentName` | String, per baris/faktur |
-| Paid PPH | ⚠️ Field TERKIRIM tapi TIDAK DIPROSES Accurate (§ update 2026-09-10 di bawah) | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong — dikirim, tapi Accurate SELALU balikin `false` terlepas nilai yang dikirim (dikonfirmasi test call nyata). JANGAN anggap fitur ini bekerja. |
-| PPh No | ✅ Implementasi (TERVERIFIKASI tersimpan, TAPI TIDAK MEMICU PEMOTONGAN APA PUN — cuma teks) | `detailInvoice[].pphNumber` | String, nomor bukti potong PPh23 — SATU-SATUNYA dari 3 field PPh yang benar-benar tersimpan di Accurate (echo balik persis), tapi sendirian tidak menghasilkan potongan PPh. |
+| Paid PPH | ✅ Implementasi (fix struktur `detailTax`, § Fase 99 — BELUM diverifikasi test call, lihat catatan di bawah) | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong — field ini sendiri TIDAK berubah; root cause Accurate balikin `false` sebelumnya adalah `detailTax` yang menyertainya SALAH struktur (nested, bukan root) — dikonfirmasi jawaban resmi Accurate Support, disarankan retest nyata 1x setelah deploy. |
+| PPh No | ✅ Implementasi | `detailInvoice[].pphNumber` | String, nomor bukti potong PPh23. |
 | Discount | 🆕 Implementasi | `detailInvoice[].detailDiscount[].amount` | Number — level BARU, nested di dalam `detailInvoice[]` |
 | Discount Acc | 🆕 Implementasi | `detailInvoice[].detailDiscount[].accountNo` | String |
 | Discount Note | 🆕 Implementasi | `detailInvoice[].detailDiscount[].discountNotes` | String |
@@ -269,12 +269,14 @@ dikirim ke Accurate akan SALAH/tidak lengkap.
 | Diskon - Project No | 🆕 Implementasi | `detailInvoice[].detailDiscount[].projectNo` | String |
 | **Existing Credit** | ❌ SKIP (CONFIRMED, § screenshot UI) | — | Terkonfirmasi lewat screenshot UI Accurate ASLI dari client: ini **"Sisa Kredit"** — nilai TAMPILAN read-only (saldo kredit customer, dihitung Accurate dari data akun customer), BUKAN field input. Memang tidak ada yang perlu di-set, bukan cuma "tidak ketemu". |
 | **Return Overpay** | ❌ SKIP (CONFIRMED nyata tapi tidak ada di API) | — | Screenshot UI client TUNJUKKAN field ini NYATA ADA — checkbox **"Retur Kredit"**, BISA DI-TOGGLE user (BUKAN read-only/tampilan agregat — beda dari "Existing Credit"). TAPI dicek EXHAUSTIF ke SEMUA 17 property root `sales-receipt/save.do`, TIDAK ADA kandidat nama field sama sekali (beda dari kasus charField/projectNo dulu yang punya pola field lain untuk dijadikan hipotesis kuat) — fitur UI-only Accurate yang tidak diekspos ke API publik (dikonfirmasi juga via second opinion 2026-09-10). |
-| **Tax Amount** | ❌ SKIP (CONFIRMED, 4 sumber) | — | Screenshot UI client TUNJUKKAN nilai ini muncul sebagai **hasil KOMPUTASI OTOMATIS** ("Jasa Kebersihan: Rp 40.000", dihitung Accurate dari `paidPph`+kategori jasa di faktur asli) — BUKAN field yang diisi user/API. DIPERKUAT (2026-09-10) oleh dokumentasi resmi `/api/tax/*` (`docs/referencehtml/pph-api.html`, dikirim client): enum `pph23Type` di situ PUNYA nilai `JASA_LAIN_KEBERSIHAN` — cocok PERSIS dengan label di screenshot, membuktikan nilai ini berasal dari klasifikasi Master Data Pajak yang sudah di-set di faktur asli, bukan input Sales Receipt. |
-| **Tax ID** | ✅ DIIMPLEMENTASI — VALIDASI-ONLY (Fase 86, § di bawah) | — (TIDAK ada path payload, cuma lookup) | ID record di endpoint TERPISAH `/api/tax/list.do` (master data Pajak), BUKAN atribut transaksi `sales-receipt/save.do` — TAPI keputusan awal "skip" DIREVISI: dicocokkan (bukan dikirim) ke Master Data Pajak Accurate SEBELUM import, gagal kalau tidak ditemukan. Lihat § "Fase 86 — Validasi Tax ID". |
+| **Tax Amount** | ✅ DIKOREKSI & DIIMPLEMENTASI (Fase 99 — sebelumnya SALAH disimpulkan "SKIP, read-only") | `detailTax[].taxAmount` (ROOT, sibling `detailInvoice`) | Kesimpulan Fase 85 (UI-computed, tidak ada di API) TERBUKTI SALAH — jawaban resmi Accurate Support (2026-09-10) konfirmasi field ini ADA dan WAJIB diisi manual lewat API (UI Accurate auto-hitung lewat jalur internal berbeda, TIDAK direplikasi di API). |
+| **Tax ID** | ✅ DIKOREKSI & DIIMPLEMENTASI (Fase 99 — sebelumnya validasi-only, Fase 86) | `detailTax[].taxId` (ROOT, angka — resolve dulu lewat `findTaxByIdentifier`) | Kesimpulan Fase 86 ("TIDAK ada path payload, cuma lookup") TERBUKTI SALAH — field ini SEKARANG DIKIRIM (sebagai id numerik hasil resolve, bukan string mentah Excel) sebagai bagian `detailTax[]` root. Lihat § "Fase 99" di bawah. |
 
 **18 field baru dikonfirmasi** (spec resmi + template kompetitor + screenshot UI Accurate asli dari client — 3 sumber independen),
-**4 field TETAP di-skip** — TAPI sekarang dengan alasan PASTI/terkonfirmasi
-(bukan lagi "tidak ketemu dokumentasinya"), lihat kolom Catatan di atas.
+**2 field TETAP di-skip** (Existing Credit, Return Overpay — UI-only,
+tidak ada padanan API) — **Tax Amount & Tax ID** awalnya ikut di-skip
+juga tapi DIKOREKSI Fase 99 setelah jawaban resmi Accurate Support,
+lihat kolom Catatan di atas.
 
 ### Keputusan Desain
 
@@ -493,15 +495,25 @@ record. `taxCode` UNIK cuma untuk pajak non-PPh23 (mis. "PPN").
 faktur — posisi PERSIS antara "PPh No" dan "Discount", sama seperti
 urutan asli client).
 
-**VALIDASI-ONLY, TIDAK PERNAH masuk payload** — `sales-receipt/save.do`
+> **⚠️ SUPERSEDED Fase 99 (2026-09-10)** — paragraf "VALIDASI-ONLY,
+> TIDAK PERNAH masuk payload" di bawah ini TERBUKTI SALAH, dipertahankan
+> apa adanya untuk konteks historis. Jawaban resmi Accurate Support
+> konfirmasi `taxId` (diresolve ke angka) DAN `taxAmount` (nominal PPh)
+> SAMA-SAMA DIKIRIM, sebagai bagian `detailTax[]` di ROOT request —
+> baca § "Fase 99" di bawah untuk desain AKTIF sekarang. Validasi
+> eksistensi (cocokkan ke Master Data Pajak SEBELUM payload dibangun,
+> gagal kalau tidak ditemukan) TETAP SAMA — yang berubah cuma HASIL
+> resolve-nya sekarang juga dipakai isi payload, bukan dibuang.
+
+~~**VALIDASI-ONLY, TIDAK PERNAH masuk payload** — `sales-receipt/save.do`
 TIDAK punya field untuk ini (dikonfirmasi exhaustif Fase 85), jadi
 BEDA dari `findOrCreateVendor`/`findOrCreateItem`/`findOrCreateDataClassification`
 (yang auto-create DAN hasilnya dikirim ke payload utama): Tax ID cuma
 DICOCOKKAN ke Master Data Pajak Accurate SEBELUM payload dibangun —
 kalau tidak ditemukan, SELURUH grup GAGAL dengan pesan jelas (bukan
-warning diam-diam atau auto-create). Alasan TIDAK auto-create: Master
-Data Pajak adalah konfigurasi akuntansi sensitif (tarif pajak resmi),
-beda dari vendor/item/kategori yang aman dibuat otomatis.
+warning diam-diam atau auto-create).~~ Alasan TIDAK auto-create TETAP
+BERLAKU: Master Data Pajak adalah konfigurasi akuntansi sensitif (tarif
+pajak resmi), beda dari vendor/item/kategori yang aman dibuat otomatis.
 
 **Pencarian fleksibel** (`accurate-tax.ts` § `findTaxByIdentifier`):
 angka → cocok ke `id`; teks → cocok ke `taxCode` ATAU `description`
@@ -515,11 +527,10 @@ Known Limitation yang didokumentasikan, bukan bug tersembunyi.
 fetch `/api/tax/list.do` (pageSize 200, company biasanya jauh di bawah
 itu).
 
-**File diubah**:
+**File diubah** (§ lihat "Fase 99" untuk perubahan TERBARU ke file yang sama):
 - `sales-receipt.mapping.ts` — `taxId` ditambah ke `fieldToAccuratePath`
-  (path placeholder "(validasi-only)", BUKAN path Accurate asli — SATU-SATUNYA
-  field begini di modul ini) & `defaultColumnMap`. Fungsi baru
-  `extractTaxIdsFromRows` (dedupe, dipakai worker).
+  & `defaultColumnMap`. Fungsi baru `extractTaxIdsFromRows` (dedupe,
+  dipakai worker).
 - `workers/index.ts` — fungsi baru `validateTaxIdsForReceipt` dipanggil
   di `processSalesReceiptGroup` SEBELUM `buildSalesReceiptPayload`,
   throw `Error` jelas kalau ada Tax ID tidak ditemukan.
@@ -555,19 +566,37 @@ Detail lengkap (termasuk pesan error asli Accurate & test call yang
 membuktikan) → `docs/architecture/architecture-purchase-payment.md`
 § "Fase 90" dan `docs/phases/phase-90-fix-multicurrency-branch-wajib.md`.
 
-## ⚠️ GAP DITEMUKAN (2026-09-10) — PPh23 Tidak Benar-Benar Terpotong Meski `paidPph`/`pphNumber` Dikirim
-Client laporan status import "sukses" tapi potongan PPh23 tidak muncul
-di transaksi Accurate. 4 test call langsung ke `sales-receipt/save.do`
-(company demo, faktur valid yang sudah kena PPh23 di level item)
-mengonfirmasi: `paidPph`/`pphAmount` (dicoba speculative)/`detailTax`
-(dicoba speculative, TIDAK ada di spec resmi) semuanya diam-diam
-diabaikan Accurate (response tetap `s: true`, TIDAK ada error) —
-cuma `pphNumber` yang tersimpan sebagai teks, TIDAK memicu potongan
-apa pun. Pertanyaan detail (payload + tabel hasil) sudah dikirim ke
-Accurate support, **MENUNGGU JAWABAN** — JANGAN ubah
-`buildSalesReceiptPayload` berdasarkan tebakan sebelum ada konfirmasi
-resmi. Detail lengkap → `docs/lessons-learned.md` entri 2026-09-10
-"PPh23 di Sales Receipt".
+## ✅ GAP DITUTUP (2026-09-10, Fase 99) — PPh23 Tidak Benar-Benar Terpotong Meski `paidPph`/`pphNumber` Dikirim
+~~Client laporan status import "sukses" tapi potongan PPh23 tidak
+muncul...~~ **DIKONFIRMASI & DIPERBAIKI.** Jawaban resmi Accurate
+Support (2026-09-10, balasan pertanyaan yang dikirim di bawah) kasih
+struktur payload yang BENAR — root cause 4 test call speculative
+sebelumnya SALAH pada 2 hal sekaligus:
+1. `detailTax[]` BUKAN nested di dalam `detailInvoice[]` (yang dicoba
+   speculative) — `detailTax[]` ada di **ROOT request, SIBLING dari
+   `detailInvoice`**.
+2. `detailTax[]` butuh `detailInvoiceNo` (penghubung ke baris
+   `detailInvoice` terkait) DAN `taxAmount` (nominal PPh — field yang
+   SEBELUMNYA disimpulkan "read-only/auto-computed, TIDAK ADA di API"
+   pada riset Fase 85, TERNYATA SALAH juga) DAN `taxId` (angka, id
+   internal — BUKAN taxCode/description, resolve lewat
+   `findTaxByIdentifier` yang sudah ada sejak Fase 86).
+
+`paidPph: true` + `pphNumber` di `detailInvoice[]` TETAP BENAR seperti
+sebelumnya (tidak berubah) — yang salah HANYA struktur `detailTax`-nya.
+Fix: `buildSalesReceiptPayload` (sales-receipt.mapping.ts) sekarang
+terima parameter `resolvedTaxIds: Map<string, number>` dan membangun
+`detailTax[]` di root; `resolveTaxIdsForReceipt` (workers/index.ts,
+rename dari `validateTaxIdsForReceipt`) resolve SEMUA Tax ID ke id
+numerik SEBELUM payload dibangun. Kolom Excel "Tax Amount" (sebelumnya
+di-skip Fase 85) DIKEMBALIKAN sebagai field aktif.
+
+Detail lengkap → `docs/lessons-learned.md` entri 2026-09-10 "PPh23 di
+Sales Receipt" (update resolusi) dan
+`docs/phases/phase-99-fix-pph23-sales-receipt.md`. **Belum diverifikasi
+test call nyata ke production** (fix ini berdasar jawaban tertulis
+resmi Accurate Support, bukan test call kami sendiri) — disarankan
+client retest 1x setelah deploy untuk konfirmasi akhir end-to-end.
 
 ## Belum Diputuskan (Di Luar Scope Fase Ini)
 - ~~Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment~~ —
