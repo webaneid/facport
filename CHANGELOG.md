@@ -1,3 +1,10 @@
+## <small>1.26.2 (2026-09-10)</small>
+
+* Merge pull request #53 from webaneid/develop ([87a25a0](https://github.com/webaneid/facport/commit/87a25a0)), closes [#53](https://github.com/webaneid/facport/issues/53)
+* fix: auto-create Kategori Keuangan untuk Journal Voucher (gap Fase 95) ([df2779a](https://github.com/webaneid/facport/commit/df2779a))
+* fix: mirror speculative fix struktur PPh (detailTax) ke Purchase Payment ([5507ea4](https://github.com/webaneid/facport/commit/5507ea4))
+* fix: struktur payload PPh23 Sales Receipt (detailTax di root, bukan nested) ([e17485c](https://github.com/webaneid/facport/commit/e17485c))
+
 ## <small>1.26.1 (2026-09-10)</small>
 
 * Merge pull request #52 from webaneid/develop ([d59bd2c](https://github.com/webaneid/facport/commit/d59bd2c)), closes [#52](https://github.com/webaneid/facport/issues/52)
