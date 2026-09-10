@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-09-10 — Field `dataClassificationNName` ditambahkan ke Journal Voucher (Fase 95) tanpa mirror auto-create-nya (Fase 98)
+**Masalah:** Client retest import Jurnal Umum dapat error Accurate
+"Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
+
+**Root cause:** Fase 95 menambah field `attribut1`-`attribut10`
+(`dataClassification1-10Name`) ke Journal Voucher dengan meniru NAMA
+field yang sudah ada di Sales Invoice — tapi Sales Invoice (Fase 68)
+dan Purchase Invoice (Fase 75) punya mekanisme AUTO-CREATE
+(`findOrCreateDataClassification`) karena field ini BUKAN teks bebas:
+nilainya wajib sudah ada sebagai master data "Kategori Keuangan" di
+Accurate, kalau belum ada Accurate menolak. Saat Fase 95 menyalin NAMA
+field-nya, mekanisme pendukungnya (auto-create call di worker + scope
+OAuth `data_classification_view`/`_save`) TIDAK ikut disalin.
+
+**Pelajaran umum**: ini POLA KEDUA yang sama persis di project ini
+(pertama: Fase 78, `vendor_view`/`vendor_save` hilang dari scope
+`purchase_invoice` meski `findOrCreateVendor` dipanggil unconditional
+di situ). **Kalau menambah field baru yang field API Accurate-nya SAMA
+PERSIS dengan field yang sudah ada di modul LAIN, WAJIB cek apakah
+modul lain itu punya mekanisme pendukung khusus untuk field tersebut
+(auto-create, scope OAuth tambahan, validasi existence) — bukan cuma
+menyalin nama field ke `fieldToAccuratePath` lalu menganggap selesai.**
+Field API yang namanya sama (`dataClassificationNName`,
+`vendor_view`/`_save`, dst) hampir selalu berarti PERILAKU Accurate-nya
+juga sama, termasuk precondition-nya.
+
+**Fix:** § Fase 98, `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md`
+dan `docs/architecture/architecture-journal-voucher.md` § "Fase 98".
+
+**Pencegahan:** sebelum menutup fase yang menambah field baru dengan
+nama `fieldToAccuratePath` yang SUDAH dipakai modul lain, grep dulu
+field API itu di seluruh `apps/api/src/lib/accurate-*.ts` dan
+`workers/index.ts` — kalau ada fungsi `findOrCreate*`/`ensure*` yang
+menyebut field itu di modul lain, modul baru HARUS mirror fungsi yang
+sama, bukan cuma field mapping-nya.
+
+---
+
 ## 2026-09-10 — Upload Jurnal Umum client gagal: tabrakan nama kolom Excel antara 2 format yang hidup berdampingan
 **Masalah:** Client kirim template final Jurnal Umum
 (`CLIENT_template-jurnal-umum-v2.xlsx`, 26 kolom) dengan nama kolom

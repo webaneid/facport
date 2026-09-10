@@ -4,6 +4,7 @@ import {
   groupJournalVoucherRows,
   journalNumberColumnOf,
   debitCreditRowError,
+  extractDataClassificationValues,
   type ImportRowRecord,
 } from "./journal-voucher.mapping";
 
@@ -75,6 +76,30 @@ describe("debitCreditRowError", () => {
 
   test("dua-duanya kosong -> error", () => {
     expect(debitCreditRowError({}, columnMapping)).toEqual(["lineDebitAmount", "lineCreditAmount"]);
+  });
+});
+
+// § Fase 98 (2026-09-10) — dipakai worker (`ensureJournalVoucherDataClassifications`)
+// buat auto-create Kategori Keuangan SEBELUM kirim ke Accurate, mirror
+// `extractDataClassificationValues` Sales Invoice (Fase 68).
+describe("extractDataClassificationValues", () => {
+  const fullColumnMapping = { ...columnMapping, "Kategori Keuangan 1": "attribut1", "Kategori Keuangan 2": "attribut2" };
+
+  test("kolom Kategori Keuangan terisi -> return {index, name}", () => {
+    const result = extractDataClassificationValues({ "Kategori Keuangan 1": "CLS01", "Kategori Keuangan 2": "CLS02" }, fullColumnMapping);
+    expect(result).toEqual([
+      { index: 1, name: "CLS01" },
+      { index: 2, name: "CLS02" },
+    ]);
+  });
+
+  test("kolom kosong -> tidak ikut masuk hasil", () => {
+    const result = extractDataClassificationValues({ "Kategori Keuangan 1": "", "Kategori Keuangan 2": "CLS02" }, fullColumnMapping);
+    expect(result).toEqual([{ index: 2, name: "CLS02" }]);
+  });
+
+  test("tidak ada kolom attribut yang di-mapping -> array kosong", () => {
+    expect(extractDataClassificationValues({ "Akun": "6-20500" }, columnMapping)).toEqual([]);
   });
 });
 

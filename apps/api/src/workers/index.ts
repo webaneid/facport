@@ -53,6 +53,7 @@ import { saveJournalVoucher } from "../lib/accurate-journal-voucher";
 import {
   buildJournalVoucherPayload,
   groupJournalVoucherRows,
+  extractDataClassificationValues as extractJournalVoucherDataClassificationValues,
   type JournalVoucherGroup,
 } from "../lib/import-mapping/journal-voucher.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
@@ -125,6 +126,29 @@ async function ensurePurchaseInvoiceDataClassifications(
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesPI(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPI(rawRow, columnMapping)];
     for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 98 (2026-09-10) — mirror `ensureDataClassifications`/
+// `ensurePurchaseInvoiceDataClassifications` di atas, TAPI untuk
+// Journal Voucher. BEDA PENTING dari keduanya: JV TIDAK PUNYA konsep
+// "baris pertama grup = header" untuk Kategori Keuangan (field ini
+// per-baris, § komentar `extractDataClassificationValues` di
+// `journal-voucher.mapping.ts`) — tiap baris dalam grup dicek, bukan
+// cuma baris pertama.
+async function ensureJournalVoucherDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractJournalVoucherDataClassificationValues(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -700,6 +724,7 @@ export async function processJournalVoucherGroup(
   columnMapping: Record<string, string>,
 ): Promise<JournalVoucherGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
+  await ensureJournalVoucherDataClassifications(ctx, rawRows, columnMapping);
   const payload = buildJournalVoucherPayload(rawRows, columnMapping);
 
   const result = await saveJournalVoucher(ctx, payload);

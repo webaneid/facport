@@ -28,3 +28,23 @@ describe("MODULE_ACCURATE_SCOPES — Fase 78 fix", () => {
     expect(scopes).toContain("vendor_save");
   });
 });
+
+// § Fase 98 (2026-09-10) — BUG ditemukan (client retest Journal Voucher,
+// error Accurate "Kategori Keuangan 1 tidak ditemukan atau sudah
+// dihapus"): field `attribut1`-`attribut10` ditambahkan Fase 95 TANPA
+// scope `data_classification_view`/`_save` yang dibutuhkan
+// `findOrCreateDataClassification` — mirror bug class yang sama dengan
+// Fase 78 (field/fungsi ditambahkan, scope-nya lupa diikutkan). Test ini
+// mengunci regresi supaya scope ini tidak lupa lagi di masa depan.
+describe("MODULE_ACCURATE_SCOPES — Fase 98 fix", () => {
+  test("journal_voucher PUNYA data_classification_view & data_classification_save (dibutuhkan findOrCreateDataClassification)", () => {
+    expect(MODULE_ACCURATE_SCOPES.journal_voucher).toContain("data_classification_view");
+    expect(MODULE_ACCURATE_SCOPES.journal_voucher).toContain("data_classification_save");
+  });
+
+  test("subscriber Journal Voucher dapat scope data_classification lewat scopesForModules", () => {
+    const scopes = scopesForModules(["journal_voucher"]);
+    expect(scopes).toContain("data_classification_view");
+    expect(scopes).toContain("data_classification_save");
+  });
+});

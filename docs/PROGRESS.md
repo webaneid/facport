@@ -106,6 +106,7 @@
 | 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
 | 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
 | 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
+| 98   | Fix Gap: Auto-Create Kategori Keuangan Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2593,3 +2594,21 @@ typecheck` 0 error, `apps/api` 593 pass/0 fail, `apps/web` 50 pass/0
 fail, `bun run lint` 0 error. Security review tidak ada temuan. Known
 limitation: Opsi A dihapus permanen (bukan deprecated), harus dibangun
 ulang dari nol kalau suatu saat dibutuhkan lagi.
+
+## Update 2026-09-10 — Fase 98 Done: Fix Gap Auto-Create Kategori Keuangan Jurnal Umum
+Client retest import Jurnal Umum setelah Fase 97 deploy, dapat error
+Accurate "Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
+Root cause: field `attribut1`-`attribut10` (Fase 95) BUKAN teks bebas —
+nilainya wajib sudah ada sebagai master data di Accurate, field identik
+di Sales Invoice (Fase 68)/Purchase Invoice (Fase 75) sudah punya
+auto-create untuk ini tapi Journal Voucher ketinggalan saat Fase 95
+(gap class yang sama dengan Fase 78 — field ditambahkan tanpa mirror
+mekanisme pendukungnya). Fix: fungsi baru `extractDataClassificationValues`
++ `ensureJournalVoucherDataClassifications` (mirror persis Sales
+Invoice/Purchase Invoice, `findOrCreateDataClassification` sendiri
+TIDAK diubah), plus scope OAuth baru
+`data_classification_view`/`data_classification_save` untuk modul ini.
+`bun run typecheck` 0 error, `apps/api` 598 pass/0 fail, `bun run lint`
+0 error. Security review tidak ada temuan. **Aksi wajib**: koneksi
+Accurate yang connect SEBELUM fix ini wajib "Hubungkan Ulang" supaya
+scope baru aktif.

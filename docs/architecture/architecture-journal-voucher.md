@@ -426,6 +426,42 @@ dibangun ulang dari nol.
 
 Detail lengkap → `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md`.
 
+## Fase 98 (2026-09-10) — Fix Gap: Auto-Create Kategori Keuangan (Data Classification)
+**Masalah dilaporkan client**: upload Jurnal Umum gagal dengan error
+Accurate "Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
+
+**Root cause**: field `attribut1`-`attribut10` (`dataClassification1-10Name`,
+ditambahkan Fase 95) **BUKAN teks bebas** — sama seperti field identik
+di Sales Invoice/Purchase Invoice (§ `architecture-sales-invoice.md`
+Fase 68/75), nilainya WAJIB sudah ada sebagai master data "Kategori
+Keuangan" di pembukuan Accurate, kalau belum ada DITOLAK. Journal
+Voucher ditambahkan Fase 95 dengan MENIRU NAMA field dari Sales Invoice
+tapi **TANPA mirror mekanisme auto-create**-nya — gap class yang SAMA
+dengan Fase 78 (field/fungsi ditambahkan, pendukungnya lupa diikutkan),
+cuma beda modul.
+
+**Fix** (mirror PERSIS Fase 68/75, `findOrCreateDataClassification` di
+`accurate-data-classification.ts` TIDAK diubah sama sekali — fungsi itu
+generik, sudah battle-tested):
+1. `journal-voucher.mapping.ts` — fungsi baru `extractDataClassificationValues`
+   (extract `{index, name}` dari SETIAP baris dalam grup, BUKAN cuma
+   baris pertama — beda dari `branchName`/`description` yang levelnya
+   per-jurnal, Kategori Keuangan levelnya per-baris/akun).
+2. `workers/index.ts` — fungsi baru `ensureJournalVoucherDataClassifications`
+   (mirror `ensureDataClassifications`/`ensurePurchaseInvoiceDataClassifications`,
+   dedupe per `index::name`), dipanggil di `processJournalVoucherGroup`
+   SEBELUM `buildJournalVoucherPayload`/`saveJournalVoucher`.
+3. `accurate-scopes.ts` — scope `journal_voucher` ditambah
+   `data_classification_view`/`data_classification_save`.
+
+**Known limitation/aksi wajib**: koneksi Accurate yang CONNECT SEBELUM
+fix ini WAJIB "Hubungkan Ulang" (disconnect+reconnect) supaya scope
+baru aktif — sama seperti Fase 68/75, tanpa reconnect panggilan
+`findOrCreateDataClassification` akan gagal 403 (scope belum ada di
+token lama).
+
+Detail lengkap → `docs/phases/phase-98-fix-autocreate-kategori-keuangan-jurnal-umum.md`.
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`
