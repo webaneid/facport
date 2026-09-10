@@ -131,6 +131,23 @@ admin bisa bikin/harga-kan plan yang mencakupnya, gating akses lewat
   saat mengisi data (download template Facport terbaru, jangan pakai
   template lama).
 
+## Update 2026-09-10 — Klarifikasi Client: "Expense Name" Disangka Nama Akun
+Client tanya ke user: *"expense name itu mksdnya nama akun ya pak?"*
+— wajar, karena posisinya (setelah "Amount") jauh dari "Acc No" dan
+tidak ada padanan visual yang jelas. **Bukan gap/bug** (field-nya sudah
+benar secara API), TAPI perlu perbaikan UX supaya tidak membingungkan
+lagi ke depan:
+- `defaultColumnMap`/`otherPaymentTemplateGuide` — urutan kolom
+  DIUBAH: "Expense Name" dipindah dari SETELAH "Amount" jadi TEPAT
+  SETELAH "Acc No" (SEBELUM "Amount") — alur baca jadi "akun mana →
+  untuk apa → berapa", bukan "akun mana → berapa → untuk apa".
+- Deskripsi di template guide, dropdown mapping (`import/page.tsx`),
+  dan hint dialog edit (`edit-row-dialog.tsx`) ditambah penegasan
+  eksplisit **"BUKAN nama master akun"** di semua 3 tempat.
+- Matching kolom saat upload TETAP by NAME (bukan posisi) — perubahan
+  urutan ini TIDAK BREAKING untuk file yang sudah ada, murni perbaikan
+  urutan kolom di template BARU yang di-download.
+
 ## Ringkasan Hasil
 Modul Other Payment (Pembayaran Bank/Kas) selesai diimplementasikan
 end-to-end: mapping+builder, client Accurate, route CRUD lengkap

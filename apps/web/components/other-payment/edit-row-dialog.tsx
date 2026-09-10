@@ -44,7 +44,7 @@ const FIELD_HINTS: Record<string, string> = {
   rate: "Nilai tukar mata uang — isi kalau transaksi pakai mata uang asing",
   lineAccountNo: "Kode Akun (COA) beban baris ini, contoh: 6-30100",
   lineAmount: "Nominal beban baris ini — angka saja, tanpa titik/koma",
-  lineExpenseName: "Nama/keterangan beban baris ini (\"Paid to\"), contoh: Pembayaran listrik",
+  lineExpenseName: "Nama/keterangan beban baris ini (\"Paid to\") — BUKAN nama master akun, contoh: Pembayaran listrik",
   lineMemo: "Catatan bebas untuk baris ini",
   lineDepartmentName: "Nama departemen, harus PERSIS terdaftar di Accurate",
   lineProjectNo: "Kode proyek, harus PERSIS terdaftar di Accurate",

@@ -129,8 +129,14 @@ export const otherPaymentMapping = {
     "Description": "description",
     "Rate": "rate",
     "Acc No": "lineAccountNo",
-    "Amount": "lineAmount",
+    // § 2026-09-10 — "Expense Name" DIPINDAH tepat setelah "Acc No"
+    // (sebelumnya setelah "Amount") — client sempat salah kira ini
+    // sama dengan nama master akun ("expense name itu maksudnya nama
+    // akun ya pak?"). Urutan Akun → Nama Beban → Nominal lebih natural
+    // dibaca sebagai "akun mana → untuk apa → berapa", mengurangi
+    // kebingungan dibanding Akun → Nominal → Nama Beban.
     "Expense Name": "lineExpenseName",
+    "Amount": "lineAmount",
     "Memo": "lineMemo",
     "Department": "lineDepartmentName",
     "Project No": "lineProjectNo",
