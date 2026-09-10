@@ -1,3 +1,11 @@
+## 1.25.0 (2026-09-10)
+
+* Merge pull request #50 from webaneid/develop ([8de2509](https://github.com/webaneid/facport/commit/8de2509)), closes [#50](https://github.com/webaneid/facport/issues/50)
+* fix: bukti transfer tidak bisa dibuka admin (presigned URL salah host) ([d73b2f9](https://github.com/webaneid/facport/commit/d73b2f9))
+* fix: lint error react-hooks/set-state-in-effect di detail user admin ([3fa047e](https://github.com/webaneid/facport/commit/3fa047e))
+* feat: icon detail/bukti transfer invoice + status pembayaran di PDF ([a4fa47b](https://github.com/webaneid/facport/commit/a4fa47b))
+* feat: tombol Hubungkan Ulang & kelola koneksi Accurate dari admin ([f9259bf](https://github.com/webaneid/facport/commit/f9259bf))
+
 ## 1.24.0 (2026-09-10)
 
 * Merge pull request #49 from webaneid/develop ([8a5d239](https://github.com/webaneid/facport/commit/8a5d239)), closes [#49](https://github.com/webaneid/facport/issues/49)
