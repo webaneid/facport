@@ -1,3 +1,10 @@
+## <small>1.26.1 (2026-09-10)</small>
+
+* Merge pull request #52 from webaneid/develop ([d59bd2c](https://github.com/webaneid/facport/commit/d59bd2c)), closes [#52](https://github.com/webaneid/facport/issues/52)
+* fix: pensiunkan Opsi A (format lebar) Jurnal Umum — fix bug tabrakan nama kolom ([103d31c](https://github.com/webaneid/facport/commit/103d31c))
+* docs: koreksi Deferral bukan gap — tidak ada kolom Excel untuk itu ([47d3705](https://github.com/webaneid/facport/commit/47d3705))
+* docs: rencana Fase 96 — modul baru Other Payment (Pembayaran Bank/Kas) ([f7d70ee](https://github.com/webaneid/facport/commit/f7d70ee))
+
 ## 1.26.0 (2026-09-10)
 
 * Merge pull request #51 from webaneid/develop ([4ea37a9](https://github.com/webaneid/facport/commit/4ea37a9)), closes [#51](https://github.com/webaneid/facport/issues/51)
