@@ -1,3 +1,10 @@
+## 1.24.0 (2026-09-10)
+
+* Merge pull request #49 from webaneid/develop ([8a5d239](https://github.com/webaneid/facport/commit/8a5d239)), closes [#49](https://github.com/webaneid/facport/issues/49)
+* feat: ekspansi field Purchase Payment, fix Branch wajib & bug kurs multi-currency ([964bd33](https://github.com/webaneid/facport/commit/964bd33))
+* feat: tambah indikator progres (progress bar + teks berputar) untuk semua fitur import ([ace4117](https://github.com/webaneid/facport/commit/ace4117))
+* fix: normalisasi tanggal & dropdown paymentNumber hilang di Purchase Payment ([94fae0a](https://github.com/webaneid/facport/commit/94fae0a))
+
 ## 1.23.0 (2026-09-09)
 
 * Merge pull request #48 from webaneid/develop ([601d10e](https://github.com/webaneid/facport/commit/601d10e)), closes [#48](https://github.com/webaneid/facport/issues/48)
