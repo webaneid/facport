@@ -470,69 +470,53 @@ export const salesReceiptTemplateGuide: TemplateFieldGuide[] = [
   { column: "Diskon - Project No", required: false, example: "", description: "Nomor proyek untuk diskon ini (kalau akun Accurate pakai tracking proyek)." },
 ];
 
-// § architecture-journal-voucher.md — DUA FORMAT didukung (§ Fase 50),
-// PILIH SALAH SATU, jangan campur kolom dari dua-duanya di 1 file:
+// § Fase 96 (2026-09-10) — Opsi A (format lebar, 2 akun sederhana)
+// DIPENSIUNKAN TOTAL — client (3 template berturut-turut: v3, v4.1,
+// template final) SELALU pakai grouping N-akun, tidak pernah pakai
+// format lebar, dan modul ini belum punya customer produksi nyata.
+// SEKARANG SATU FORMAT SAJA, PERSIS 26 kolom
+// `CLIENT_template-jurnal-umum-v2.xlsx` (client eksplisit minta "isinya
+// ini saja" — SEMUA alias ganda yang sebelumnya ada DIHAPUS, satu nama
+// kolom per konsep). Baris dengan "Transaction Number" SAMA digabung
+// jadi 1 jurnal (bisa N akun, tidak terbatas 2).
 //
-// FORMAT LEBAR (Opsi A, cocok jurnal SEDERHANA 2 akun) — kolom
-// "Tanggal"/"Akun Debit"/"Nominal Debit"/"Akun Kredit"/"Nominal
-// Kredit"/"Keterangan" di bawah. 1 baris Excel = 1 jurnal LENGKAP.
+// "Nominal Debit"/"Nominal Kredit" — isi HANYA SATU per baris, tipe
+// ditentukan otomatis dari kolom mana yang terisi (mirror radio button
+// Debit/Kredit UI Accurate asli, BUKAN diketik manual). "Branch" WAJIB
+// (dikonfirmasi screenshot UI client tanda merah *). `currencyCode`
+// TIDAK diimplementasi — dikonfirmasi test call nyata: bukan field
+// input, murni properti akun COA (§ `journal-voucher.mapping.ts`).
 //
-// FORMAT PANJANG (Opsi B, ala kompetitor — cocok jurnal N-akun,
-// client sudah familiar dengan istilah ini) — kolom "Transaction
-// Number"/"Branch"/"JV No"/"Debit"/"Credit"/dst di bawah. 1 baris
-// Excel = 1 akun; baris dengan "Transaction Number" SAMA digabung
-// jadi 1 jurnal (bisa N akun).
-//
-// § Fase 95 (2026-09-10) — riset 2 sumber (template kompetitor
-// `FACPORT_JV_v3/v4.1.xlsx` + template client dengan 3 screenshot UI
-// Accurate asli). Kolom "JV Amount"+"JV Amount Type" (nilai+tipe
-// manual) GANTI TOTAL jadi "Debit"/"Credit" TERPISAH — isi HANYA SATU
-// per baris, tipe ditentukan otomatis dari kolom mana yang terisi
-// (mirror radio button Debit/Kredit UI Accurate asli). "Branch" BARU
-// WAJIB (dikonfirmasi screenshot UI client tanda merah *). Field
-// opsional baru: Kurs, JV Prime Amount, No Department, No Project,
-// Memo, JV Subsidiary Type+Cust/Employee/Vendor No, Kategori Keuangan
-// 1-10 (10 dibuka, kompetitor cuma expose 3 — konsisten Sales Invoice
-// Fase 61). `currencyCode` TIDAK diimplementasi — dikonfirmasi test
-// call nyata: bukan field input, murni properti akun COA (§
-// `journal-voucher.mapping.ts` § komentar `branchName`/riset Fase 95).
-//
-// Akun COA WAJIB SUDAH ADA di Accurate (TIDAK auto-create), untuk
-// KEDUA format. Total DEBIT WAJIB SAMA PERSIS dengan total CREDIT
-// dalam 1 jurnal (aturan double-entry), divalidasi Facport SEBELUM
-// kirim ke Accurate — untuk format panjang, ini SUM semua baris
-// bertipe DEBIT vs SUM semua baris bertipe CREDIT dalam 1 grup.
+// Akun COA WAJIB SUDAH ADA di Accurate (TIDAK auto-create). Total
+// DEBIT WAJIB SAMA PERSIS dengan total CREDIT dalam 1 jurnal (aturan
+// double-entry, SUM semua baris bertipe DEBIT vs SUM semua baris
+// bertipe CREDIT dalam 1 grup), divalidasi Facport SEBELUM kirim ke
+// Accurate.
 export const journalVoucherTemplateGuide: TemplateFieldGuide[] = [
-  { column: "Tanggal", required: false, format: DATE_FORMAT, example: "05/09/2026", description: "[FORMAT LEBAR] Tanggal transaksi jurnal (header alternatif format panjang: \"Trans Date\")." },
-  { column: "Akun Debit", required: false, example: "6-20500", description: "[FORMAT LEBAR] Kode Akun (COA) yang di-debit, PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA." },
-  { column: "Nominal Debit", required: false, example: "500000", description: "[FORMAT LEBAR] Nominal debit. WAJIB SAMA PERSIS dengan Nominal Kredit — Facport menolak baris kalau tidak seimbang. Angka polos, TANPA titik/koma pemisah ribuan." },
-  { column: "Akun Kredit", required: false, example: "1-10200", description: "[FORMAT LEBAR] Kode Akun (COA) yang di-kredit, PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA." },
-  { column: "Nominal Kredit", required: false, example: "500000", description: "[FORMAT LEBAR] Nominal kredit. WAJIB SAMA PERSIS dengan Nominal Debit. Angka polos, TANPA titik/koma pemisah ribuan." },
-  { column: "Keterangan", required: false, example: "Penyesuaian beban dibayar dimuka", description: "[FORMAT LEBAR] Catatan/keterangan bebas untuk transaksi jurnal ini (header alternatif format panjang: \"Trans Description\")." },
-  { column: "Transaction Number", required: false, example: "JV.2026.01.00001", description: "[FORMAT PANJANG] Nomor transaksi jurnal — isi SAMA di beberapa baris untuk menggabungkannya jadi 1 jurnal dengan BANYAK akun (N akun, tidak terbatas 2)." },
-  { column: "Branch", required: false, example: "JAKARTA", description: "[FORMAT PANJANG] Nama cabang — WAJIB diisi (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
-  { column: "JV No", required: false, example: "6-20500", description: "[FORMAT PANJANG] Kode Akun (COA) untuk BARIS INI — nama kolom \"JV No\" ikut istilah kompetitor, isinya KODE AKUN (bukan nomor jurnal — itu di kolom Transaction Number). Alias: \"Akun Perkiraan\"." },
-  { column: "Debit", required: false, example: "500000", description: "[FORMAT PANJANG] Isi HANYA kalau baris ini debit (kosongkan kolom Credit). Total semua baris Debit dalam 1 Transaction Number WAJIB SAMA PERSIS dengan total semua baris Credit. Angka polos, TANPA titik/koma pemisah ribuan." },
-  { column: "Credit", required: false, example: "", description: "[FORMAT PANJANG] Isi HANYA kalau baris ini kredit (kosongkan kolom Debit) — 1 baris TIDAK BOLEH isi Debit dan Credit sekaligus, dan TIDAK BOLEH kosong dua-duanya." },
-  { column: "Kurs", required: false, example: "", description: "[FORMAT PANJANG] Nilai tukar — isi kalau akun baris ini pakai mata uang asing (Accurate otomatis tahu dari akunnya, bukan dari kolom terpisah). Kosongkan untuk akun mata uang dasar (IDR). Alias: \"JV Rate\"." },
-  { column: "JV Prime Amount", required: false, example: "", description: "[FORMAT PANJANG] Nominal dalam mata uang asing — opsional, kalau kosong Accurate hitung otomatis dari nominal Debit/Credit dibagi Kurs." },
-  { column: "No Department", required: false, example: "", description: "[FORMAT PANJANG] Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate. Alias: \"JV Dept Name\"." },
-  { column: "No Project", required: false, example: "", description: "[FORMAT PANJANG] Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate. Alias: \"JV Project No\"." },
-  { column: "Memo", required: false, example: "", description: "[FORMAT PANJANG] Catatan bebas khusus baris ini (beda dari \"Trans Description\" yang levelnya per-jurnal). Alias: \"JV Memo\"." },
-  { column: "JV Subsidiary Type", required: false, example: "", description: "[FORMAT PANJANG] Isi \"CUSTOMER\", \"EMPLOYEE\", atau \"VENDOR\" — cuma diisi kalau akun baris ini tipe Piutang/Hutang Usaha." },
-  { column: "JV Cust No", required: false, example: "", description: "[FORMAT PANJANG] Kode Customer — isi kalau JV Subsidiary Type = CUSTOMER." },
-  { column: "JV Employee No", required: false, example: "", description: "[FORMAT PANJANG] Kode Karyawan — isi kalau JV Subsidiary Type = EMPLOYEE." },
-  { column: "JV Vendor No", required: false, example: "", description: "[FORMAT PANJANG] Kode Vendor — isi kalau JV Subsidiary Type = VENDOR." },
-  { column: "Trans Date", required: false, format: DATE_FORMAT, example: "10/09/2026", description: "[FORMAT PANJANG] Alternatif kolom \"Tanggal\" — pakai istilah kompetitor." },
-  { column: "Trans Description", required: false, example: "", description: "[FORMAT PANJANG] Alternatif kolom \"Keterangan\" — pakai istilah kompetitor." },
-  { column: "Kategori Keuangan 1", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 1 (Kategori Keuangan), harus PERSIS terdaftar di Accurate. Alias: \"Classification 1\"." },
-  { column: "Kategori Keuangan 2", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 2. Alias: \"Classification 2\"." },
-  { column: "Kategori Keuangan 3", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 3. Alias: \"Classification 3\"." },
-  { column: "Kategori Keuangan 4", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 4." },
-  { column: "Kategori Keuangan 5", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 5." },
-  { column: "Kategori Keuangan 6", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 6." },
-  { column: "Kategori Keuangan 7", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 7." },
-  { column: "Kategori Keuangan 8", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 8." },
-  { column: "Kategori Keuangan 9", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 9." },
-  { column: "Kategori Keuangan 10", required: false, example: "", description: "[FORMAT PANJANG] Data Classification 10." },
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "05/09/2026", description: "Tanggal transaksi jurnal." },
+  { column: "Akun", required: true, example: "6-20500", description: "Kode Akun (COA) untuk BARIS INI, PERSIS seperti terdaftar di Accurate Online — WAJIB SUDAH ADA." },
+  { column: "Nominal Debit", required: false, example: "500000", description: "Isi HANYA kalau baris ini debit (kosongkan kolom Nominal Kredit). Total semua baris Debit dalam 1 Transaction Number WAJIB SAMA PERSIS dengan total semua baris Kredit. Angka polos, TANPA titik/koma pemisah ribuan." },
+  { column: "Nominal Kredit", required: false, example: "", description: "Isi HANYA kalau baris ini kredit (kosongkan kolom Nominal Debit) — 1 baris TIDAK BOLEH isi Debit dan Kredit sekaligus, dan TIDAK BOLEH kosong dua-duanya." },
+  { column: "Trans Description", required: false, example: "Penyesuaian beban dibayar dimuka", description: "Catatan/keterangan bebas untuk transaksi jurnal ini." },
+  { column: "Transaction Number", required: true, example: "JV.2026.01.00001", description: "Nomor transaksi jurnal — isi SAMA di beberapa baris untuk menggabungkannya jadi 1 jurnal dengan BANYAK akun (N akun, tidak terbatas 2)." },
+  { column: "Branch", required: true, example: "JAKARTA", description: "Nama cabang — WAJIB diisi (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Kurs", required: false, example: "", description: "Nilai tukar — isi kalau akun baris ini pakai mata uang asing (Accurate otomatis tahu dari akunnya, bukan dari kolom terpisah). Kosongkan untuk akun mata uang dasar (IDR)." },
+  { column: "JV Prime Amount", required: false, example: "", description: "Nominal dalam mata uang asing — opsional, kalau kosong Accurate hitung otomatis dari nominal Debit/Kredit dibagi Kurs." },
+  { column: "No Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "No Project", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Memo", required: false, example: "", description: "Catatan bebas khusus baris ini (beda dari \"Trans Description\" yang levelnya per-jurnal)." },
+  { column: "JV Subsidiary Type", required: false, example: "", description: "Isi \"CUSTOMER\", \"EMPLOYEE\", atau \"VENDOR\" — cuma diisi kalau akun baris ini tipe Piutang/Hutang Usaha." },
+  { column: "JV Cust No", required: false, example: "", description: "Kode Customer — isi kalau JV Subsidiary Type = CUSTOMER." },
+  { column: "JV Employee No", required: false, example: "", description: "Kode Karyawan — isi kalau JV Subsidiary Type = EMPLOYEE." },
+  { column: "JV Vendor No", required: false, example: "", description: "Kode Vendor — isi kalau JV Subsidiary Type = VENDOR." },
+  { column: "Kategori Keuangan 1", required: false, example: "", description: "Data Classification 1 (Kategori Keuangan), harus PERSIS terdaftar di Accurate." },
+  { column: "Kategori Keuangan 2", required: false, example: "", description: "Data Classification 2." },
+  { column: "Kategori Keuangan 3", required: false, example: "", description: "Data Classification 3." },
+  { column: "Kategori Keuangan 4", required: false, example: "", description: "Data Classification 4." },
+  { column: "Kategori Keuangan 5", required: false, example: "", description: "Data Classification 5." },
+  { column: "Kategori Keuangan 6", required: false, example: "", description: "Data Classification 6." },
+  { column: "Kategori Keuangan 7", required: false, example: "", description: "Data Classification 7." },
+  { column: "Kategori Keuangan 8", required: false, example: "", description: "Data Classification 8." },
+  { column: "Kategori Keuangan 9", required: false, example: "", description: "Data Classification 9." },
+  { column: "Kategori Keuangan 10", required: false, example: "", description: "Data Classification 10." },
 ];

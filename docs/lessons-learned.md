@@ -6,6 +6,52 @@
 
 ---
 
+## 2026-09-10 — Upload Jurnal Umum client gagal: tabrakan nama kolom Excel antara 2 format yang hidup berdampingan
+**Masalah:** Client kirim template final Jurnal Umum
+(`CLIENT_template-jurnal-umum-v2.xlsx`, 26 kolom) dengan nama kolom
+"Nominal Debit"/"Nominal Kredit". Upload file ini GAGAL dengan error
+"lineDebitAmount dan lineCreditAmount wajib", padahal secara sekilas
+kolomnya "jelas" sudah ada.
+
+**Root cause:** Modul Journal Voucher waktu itu punya 2 format yang
+hidup berdampingan dalam 1 `defaultColumnMap` flat — Opsi A (format
+lebar, Fase 35) dan Opsi B (format panjang/grouping N-akun, Fase 50).
+Opsi A SUDAH memakai label "Nominal Debit"/"Nominal Kredit" untuk field
+`debitAmount`/`creditAmount`-nya sendiri. Saat client upload file
+dengan kolom berlabel sama tapi MAKSUD beda (field Opsi B
+`lineDebitAmount`/`lineCreditAmount`), auto-suggestion salah mapping ke
+field Opsi A — field Opsi B yang sebenarnya dibutuhkan
+(`lineAccountNo`/`lineDebitAmount`/`lineCreditAmount`) tidak termapping
+sama sekali, padahal `journalNumber` ("Transaction Number") tetap
+termapping dengan benar sehingga `formatOf()` tetap mendeteksi format
+"tall" (Opsi B) — kombinasi inilah yang menghasilkan persis pesan error
+yang dilaporkan user.
+
+**Pelajaran umum (bukan cuma soal Jurnal Umum)**: sebuah `Record<string,
+string>` flat TIDAK BISA merepresentasikan "nama kolom Excel X berarti
+field berbeda di format A vs format B" — ini bukan bug implementasi,
+tapi keterbatasan STRUKTURAL desain yang mengizinkan 2 format hidup
+berdampingan dengan nama label yang sama-sama ingin dipakai. Kalau ada
+modul LAIN di masa depan yang perlu mendukung multi-format serupa,
+JANGAN pakai label Excel yang sama untuk field berbeda di 2 format
+tersebut — pilih salah satu: (a) label Excel yang beda per format, atau
+(b) kalau satu format memang cuma dipakai di masa early/belum ada
+customer produksi nyata, pertimbangkan pensiunkan format itu daripada
+menjaga 2 format demi "fleksibilitas" yang ternyata tidak pernah
+dipakai client.
+
+**Fix:** Opsi A dipensiunkan total (konfirmasi eksplisit user) — § Fase
+97, `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` dan
+`docs/architecture/architecture-journal-voucher.md` § "Fase 97" untuk
+detail penuh.
+
+**Pencegahan:** kalau suatu saat modul ini (atau modul lain) butuh
+nambah format alternatif lagi, JANGAN reuse nama kolom Excel yang sudah
+dipakai format existing untuk field yang maknanya berbeda — cek dulu
+`defaultColumnMap` existing sebelum menetapkan label kolom baru.
+
+---
+
 ## 2026-09-10 — Audit Jurnal Umum: field `journalNumber` dikirim ke grouping tapi dibuang sebelum sampai ke Accurate `number`
 **Masalah:** Audit menyeluruh (arsitektur vs kode, diminta user tanpa
 laporan bug spesifik) menemukan `buildJournalVoucherPayloadTall`

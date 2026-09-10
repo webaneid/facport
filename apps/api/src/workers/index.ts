@@ -52,8 +52,6 @@ import { findTaxByIdentifier } from "../lib/accurate-tax";
 import { saveJournalVoucher } from "../lib/accurate-journal-voucher";
 import {
   buildJournalVoucherPayload,
-  buildJournalVoucherPayloadTall,
-  formatOf as journalVoucherFormatOf,
   groupJournalVoucherRows,
   type JournalVoucherGroup,
 } from "../lib/import-mapping/journal-voucher.mapping";
@@ -180,12 +178,13 @@ async function markConnectionExpired(connection: typeof accurateConnections.$inf
 // Tambah `case` baru di sini kalau ada modul import lain — JOBS.IMPORT_TO_ACCURATE
 // tetap 1 job generik, bukan bikin job type terpisah per modul (§ queue.ts).
 // CATATAN: "purchase_invoice"/"sales_invoice" TIDAK ada di sini lagi sejak
-// Fase 06/13, "sales_receipt" TIDAK ada lagi sejak Fase 49, dan
-// "purchase_payment" TIDAK ada lagi sejak Fase 50 — modul-modul itu
-// diproses PER GRUP (banyak baris bisa jadi 1 transaksi), lihat
-// `processPurchaseInvoiceGroup`/`processSalesInvoiceGroup`/
-// `processSalesReceiptGroup`/`processPurchasePaymentGroup` di bawah,
-// bukan per-baris lewat fungsi ini.
+// Fase 06/13, "sales_receipt" TIDAK ada lagi sejak Fase 49,
+// "purchase_payment" TIDAK ada lagi sejak Fase 50, dan "journal_voucher"
+// TIDAK ada lagi sejak Fase 96 (Opsi A/format lebar dipensiunkan total,
+// modul ini SEKARANG SELALU diproses per grup — lihat
+// `processJournalVoucherGroup` di bawah) — modul-modul itu diproses PER
+// GRUP (banyak baris bisa jadi 1 transaksi), bukan per-baris lewat
+// fungsi ini.
 async function processImportRow(
   module: string,
   ctx: AccurateSessionContext,
@@ -195,8 +194,6 @@ async function processImportRow(
   switch (module) {
     case "vendor_payable_account":
       return saveVendorPayableAccount(ctx, buildVendorPayableAccountPayload(rawRow, columnMapping));
-    case "journal_voucher":
-      return saveJournalVoucher(ctx, buildJournalVoucherPayload(rawRow, columnMapping));
     default:
       throw new Error(`Modul import "${module}" tidak dikenali`);
   }
@@ -686,10 +683,11 @@ export async function processPurchasePaymentGroup(
 }
 
 // ============================================================
-// § Fase 50 — Journal Voucher Opsi B (format panjang), grouping DALAM
-// 1 batch, create-only. TIDAK ada validasi konsistensi vendor/customer
-// (JV memang tidak punya konsep itu) — validasi balance debit=kredit
-// SUDAH di dalam `buildJournalVoucherPayloadTall` sendiri.
+// § Journal Voucher, grouping DALAM 1 batch, create-only. TIDAK ada
+// validasi konsistensi vendor/customer (JV memang tidak punya konsep
+// itu) — validasi balance debit=kredit SUDAH di dalam
+// `buildJournalVoucherPayload` sendiri. § Fase 96 — SEKARANG SATU-
+// SATUNYA cara proses modul ini (Opsi A/format lebar dipensiunkan).
 // ============================================================
 export type JournalVoucherGroupResult = {
   journalId: number;
@@ -702,7 +700,7 @@ export async function processJournalVoucherGroup(
   columnMapping: Record<string, string>,
 ): Promise<JournalVoucherGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
-  const payload = buildJournalVoucherPayloadTall(rawRows, columnMapping);
+  const payload = buildJournalVoucherPayload(rawRows, columnMapping);
 
   const result = await saveJournalVoucher(ctx, payload);
   return { journalId: result.id, rowIds: group.rows.map((r) => r.id) };
@@ -1141,11 +1139,10 @@ async function main() {
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
-      // § Fase 50 — Journal Voucher Opsi B (format panjang) SAJA
-      // diproses per-grup di sini — Opsi A (format lebar) TETAP lewat
-      // `processImportRow` generic di bawah (`else` terakhir),
-      // TIDAK BERUBAH dari sebelum Fase 50 (backward compat).
-    } else if (batch.module === "journal_voucher" && journalVoucherFormatOf(columnMapping) === "tall") {
+      // § Journal Voucher — SELALU diproses per-grup (§ Fase 96, Opsi A/
+      // format lebar dipensiunkan total, tidak ada lagi jalur alternatif
+      // lewat `processImportRow` generic).
+    } else if (batch.module === "journal_voucher") {
       const groups = groupJournalVoucherRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,

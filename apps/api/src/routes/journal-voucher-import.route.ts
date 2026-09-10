@@ -5,7 +5,7 @@ import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
-import { journalVoucherMapping, formatOf, requiredFieldsFor, debitCreditRowError } from "../lib/import-mapping/journal-voucher.mapping";
+import { journalVoucherMapping, debitCreditRowError } from "../lib/import-mapping/journal-voucher.mapping";
 import { journalVoucherTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -33,10 +33,10 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 }
 
 // § architecture-journal-voucher.md — transaksi akuntansi murni (debit/
-// kredit ke akun COA), TANPA vendor/customer/faktur. Format LEBAR
-// (Opsi A dikonfirmasi user): 1 baris Excel = 1 jurnal lengkap (1 akun
-// debit + 1 akun kredit), diproses per-baris (pola sama
-// purchase-payment-import.route.ts), TIDAK ada grouping.
+// kredit ke akun COA), TANPA vendor/customer/faktur. § Fase 96 — SATU
+// format saja (Opsi A/format lebar dipensiunkan): baris dengan
+// "Transaction Number" sama digabung jadi 1 jurnal (N akun), diproses
+// PER GRUP (pola sama Sales Receipt/Purchase Payment), bukan per-baris.
 export const journalVoucherImportRoute = new Elysia()
   .use(permissionPlugin)
   .use(subscriptionGatePlugin)
@@ -151,17 +151,8 @@ export const journalVoucherImportRoute = new Elysia()
         return { code: "INVALID_MAPPING_FIELD", fields: invalidFields };
       }
 
-      // § Fase 50 — 2 format hidup berdampingan (Opsi A lebar/Opsi B
-      // panjang ala kompetitor), requiredFields WAJIB dicek SESUAI
-      // format yang terdeteksi dari columnMapping, bukan gabungan
-      // keduanya (yang akan minta field lebih dari seharusnya).
-      const format = formatOf(body.columnMapping);
-      if (!format) {
-        set.status = 400;
-        return { code: "JOURNAL_FORMAT_NOT_DETECTED" };
-      }
       const mappedFields = new Set(Object.values(body.columnMapping));
-      const missing = requiredFieldsFor(format).filter((f) => !mappedFields.has(f));
+      const missing = journalVoucherMapping.requiredFields.filter((f) => !mappedFields.has(f));
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_FIELDS", fields: missing };
@@ -278,21 +269,17 @@ export const journalVoucherImportRoute = new Elysia()
       }
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      // § Fase 50 — sama alasan di endpoint confirm: requiredFields
-      // SESUAI format batch ini (format sudah terkunci sejak confirm,
-      // `batch.columnMapping` tidak berubah lagi setelah itu).
-      // § Fase 95 — `lineDebitAmount`/`lineCreditAmount` DIKECUALIKAN
-      // dari loop generik ini (XOR, bukan wajib keduanya per baris —
-      // § `debitCreditRowError`), divalidasi terpisah di bawah.
-      const format = formatOf(columnMapping) ?? "wide";
-      const missing = requiredFieldsFor(format)
-        .filter((field) => field !== "lineDebitAmount" && field !== "lineCreditAmount")
+      // § `lineDebitAmount`/`lineCreditAmount` DIKECUALIKAN dari loop
+      // generik ini (XOR, bukan wajib keduanya per baris — §
+      // `debitCreditRowError`), divalidasi terpisah di bawah.
+      const missing: string[] = journalVoucherMapping.requiredFields
+        .filter((field): field is Exclude<typeof field, "lineDebitAmount" | "lineCreditAmount"> => field !== "lineDebitAmount" && field !== "lineCreditAmount")
         .filter((field) => {
           const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
           const value = excelColumn ? body.rawData[excelColumn] : undefined;
           return value === undefined || value === null || String(value).trim() === "";
         });
-      if (format === "tall") missing.push(...debitCreditRowError(body.rawData, columnMapping));
+      missing.push(...debitCreditRowError(body.rawData, columnMapping));
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -328,7 +315,6 @@ export const journalVoucherImportRoute = new Elysia()
       }
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      const format = formatOf(columnMapping) ?? "wide";
       const existingRows = await db
         .select()
         .from(importBatchRows)
@@ -349,17 +335,17 @@ export const journalVoucherImportRoute = new Elysia()
           continue;
         }
 
-        // § Fase 95 — sama alasan endpoint per-baris di atas:
-        // `lineDebitAmount`/`lineCreditAmount` XOR, dikecualikan dari
-        // loop generik, divalidasi terpisah via `debitCreditRowError`.
-        const missing = requiredFieldsFor(format)
-          .filter((field) => field !== "lineDebitAmount" && field !== "lineCreditAmount")
+        // § Sama alasan endpoint per-baris di atas: `lineDebitAmount`/
+        // `lineCreditAmount` XOR, dikecualikan dari loop generik,
+        // divalidasi terpisah via `debitCreditRowError`.
+        const missing: string[] = journalVoucherMapping.requiredFields
+          .filter((field): field is Exclude<typeof field, "lineDebitAmount" | "lineCreditAmount"> => field !== "lineDebitAmount" && field !== "lineCreditAmount")
           .filter((field) => {
             const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
             const value = excelColumn ? item.rawData[excelColumn] : undefined;
             return value === undefined || value === null || String(value).trim() === "";
           });
-        if (format === "tall") missing.push(...debitCreditRowError(item.rawData, columnMapping));
+        missing.push(...debitCreditRowError(item.rawData, columnMapping));
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;

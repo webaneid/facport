@@ -9,22 +9,16 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 
 // § mirror `components/purchase-invoice/edit-row-dialog.tsx`, DISEDERHANAKAN
-// — modul ini TIDAK ada grouping GANDA per-jurnal (1 baris Opsi A = 1
-// payload independen), jadi TIDAK ada prop/peringatan "siblingRowNumbers"
-// seperti versi Purchase Invoice/Sales Invoice. Validasi balance
-// debit=kredit TIDAK diulang di klien — kalau tidak seimbang, retry akan
-// gagal lagi dengan pesan jelas dari backend (`buildJournalVoucherPayload`/
-// `buildJournalVoucherPayloadTall`), user edit ulang.
+// — modul ini TIDAK ada grouping GANDA per-jurnal (siblingRowNumbers TIDAK
+// relevan di sini, beda dari Purchase Invoice/Sales Invoice). Validasi
+// balance debit=kredit TIDAK diulang di klien — kalau tidak seimbang,
+// retry akan gagal lagi dengan pesan jelas dari backend
+// (`buildJournalVoucherPayload`), user edit ulang.
 //
-// § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — dialog ini
-// sebelumnya HARDCODE field Opsi A saja (`REQUIRED_INTERNAL_FIELDS`
-// tunggal, tanpa deteksi format) — beda dari `EditableGrid`
-// (`[batchId]/page.tsx`) yang di Fase 51 SUDAH deteksi format dinamis.
-// Batch format Opsi B (panjang) yang dibuka lewat dialog ini (bukan
-// grid) tidak menandai field mana yang wajib sama sekali. Sekarang
-// deteksi format SENDIRI (pola sama `isTallFormat` yang tadinya
-// terduplikasi di `[batchId]/page.tsx` — dipindah ke sini jadi SATU
-// sumber, diimpor balik dari sana).
+// § Fase 96 (2026-09-10) — Opsi A (format lebar) DIPENSIUNKAN TOTAL,
+// modul ini SEKARANG SATU FORMAT SAJA (grouping N-akun via "Transaction
+// Number") — `isTallFormat()`/`REQUIRED_INTERNAL_FIELDS` (Opsi A) yang
+// tadinya ada di sini DIHAPUS, tidak perlu deteksi format lagi.
 type EditableRow = {
   id: string;
   rowNumber: number;
@@ -36,31 +30,14 @@ type EditableRow = {
 // `apps/api/src/lib/import-mapping/journal-voucher.mapping.ts`.
 export const DATE_INTERNAL_FIELDS = new Set(["transDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "debitAccountNo", "debitAmount", "creditAccountNo", "creditAmount"]);
-// § Fase 95 (2026-09-10) — `branchName` BARU WAJIB, `lineAmount`/
-// `lineAmountType` DIHAPUS ganti `lineDebitAmount`/`lineCreditAmount`
-// (§ komentar lengkap di `journal-voucher.mapping.ts` § `debitCreditOf`).
-export const REQUIRED_INTERNAL_FIELDS_TALL = new Set(["transDate", "journalNumber", "branchName", "lineAccountNo", "lineDebitAmount", "lineCreditAmount"]);
-
-// § pola sama `formatOf()` backend (`journal-voucher.mapping.ts`) —
-// duplikasi SENGAJA (frontend tidak bisa import kode backend), tapi
-// SATU sumber di sisi frontend (sebelumnya terduplikasi lagi di
-// `[batchId]/page.tsx`, dihapus dari sana, diimpor dari sini).
-export function isTallFormat(columnMapping: Record<string, string>): boolean {
-  const mappedFields = new Set(Object.values(columnMapping));
-  return ["journalNumber", "lineAccountNo", "lineDebitAmount", "lineCreditAmount"].some((f) => mappedFields.has(f));
-}
+export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "journalNumber", "branchName", "lineAccountNo", "lineDebitAmount", "lineCreditAmount"]);
 
 const FIELD_HINTS: Record<string, string> = {
-  debitAccountNo: "Kode Akun (COA) yang di-debit, contoh: 6-20500",
-  debitAmount: "Contoh: 500000 (angka saja, tanpa titik/koma) — WAJIB sama persis dengan Nominal Kredit",
-  creditAccountNo: "Kode Akun (COA) yang di-kredit, contoh: 1-10200",
-  creditAmount: "Contoh: 500000 (angka saja, tanpa titik/koma) — WAJIB sama persis dengan Nominal Debit",
   journalNumber: "Nomor Transaksi — kunci pengelompokan baris dalam 1 jurnal, contoh: JV-001",
   branchName: "Nama cabang, contoh: JAKARTA",
   lineAccountNo: "Kode Akun (COA) baris ini, contoh: 6-20500",
-  lineDebitAmount: "Isi HANYA kalau baris ini debit (kosongkan kolom Credit) — angka saja, tanpa titik/koma",
-  lineCreditAmount: "Isi HANYA kalau baris ini kredit (kosongkan kolom Debit) — angka saja, tanpa titik/koma",
+  lineDebitAmount: "Isi HANYA kalau baris ini debit (kosongkan kolom Nominal Kredit) — angka saja, tanpa titik/koma",
+  lineCreditAmount: "Isi HANYA kalau baris ini kredit (kosongkan kolom Nominal Debit) — angka saja, tanpa titik/koma",
   lineRate: "Kurs nilai tukar — isi kalau akun ini mata uang asing, contoh: 15800",
   linePrimeAmount: "Nominal dalam mata uang asing — opsional, kalau kosong Accurate hitung otomatis dari nominal/kurs",
   lineDepartmentName: "Nama departemen, harus PERSIS terdaftar di Accurate",
@@ -111,8 +88,14 @@ export function EditRowDialog({
 }) {
   const columns = Object.keys(columnMapping);
   const dateColumns = new Set(columns.filter((col) => DATE_INTERNAL_FIELDS.has(columnMapping[col]!)));
-  const requiredInternalFields = isTallFormat(columnMapping) ? REQUIRED_INTERNAL_FIELDS_TALL : REQUIRED_INTERNAL_FIELDS;
-  const requiredColumns = new Set(columns.filter((col) => requiredInternalFields.has(columnMapping[col]!)));
+  // § `lineDebitAmount`/`lineCreditAmount` DIKECUALIKAN dari
+  // `requiredColumns` biasa (XOR — isi SATU, bukan wajib dua-duanya,
+  // sama alasan backend `debitCreditRowError`) — ditandai wajib di UI
+  // TETAP (supaya user tahu salah satu WAJIB diisi), tapi validasi
+  // client-side-nya terpisah (§ `validateRequired` di bawah).
+  const requiredColumns = new Set(columns.filter((col) => REQUIRED_INTERNAL_FIELDS.has(columnMapping[col]!)));
+  const debitColumn = columns.find((col) => columnMapping[col] === "lineDebitAmount");
+  const creditColumn = columns.find((col) => columnMapping[col] === "lineCreditAmount");
   const fieldToColumn = Object.fromEntries(columns.map((col) => [columnMapping[col], col]));
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
@@ -126,7 +109,20 @@ export function EditRowDialog({
   }, [error]);
 
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    const missing = new Set(
+      [...requiredColumns]
+        .filter((col) => col !== debitColumn && col !== creditColumn)
+        .filter((col) => (vals[col] ?? "").trim() === ""),
+    );
+    const hasDebit = debitColumn ? (vals[debitColumn] ?? "").trim() !== "" : false;
+    const hasCredit = creditColumn ? (vals[creditColumn] ?? "").trim() !== "" : false;
+    if (hasDebit === hasCredit) {
+      // § dua-duanya kosong ATAU dua-duanya terisi — tandai KEDUANYA
+      // (user harus perbaiki jadi TEPAT SATU terisi).
+      if (debitColumn) missing.add(debitColumn);
+      if (creditColumn) missing.add(creditColumn);
+    }
+    return missing;
   }
 
   function openDialog() {

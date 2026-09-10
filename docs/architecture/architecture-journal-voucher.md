@@ -111,7 +111,13 @@ SEBAIKNYA validasi balance SENDIRI sebelum kirim ke Accurate — alasan:
 
 ## Keputusan yang Perlu Dikonfirmasi Sebelum Eksekusi
 
-### 1. Granularitas Excel — ✅ DIPUTUSKAN: Opsi A DAN Opsi B (§ Fase 50)
+### 1. Granularitas Excel — ⚠️ SUPERSEDED § Fase 97 (2026-09-10): Opsi A DIPENSIUNKAN
+
+> **Seluruh section ini (sampai "Worker Processing") mendeskripsikan
+> desain DUA FORMAT yang SUDAH TIDAK BERLAKU sejak Fase 97.** Dipertahankan
+> apa adanya untuk konteks historis (kenapa nama kolom "Nominal
+> Debit"/"Nominal Kredit" terasa "dipakai ulang"), BUKAN referensi
+> desain aktif — baca § "Fase 97" di bawah untuk desain SEKARANG.
 
 Karena minimal butuh 2 baris (debit+kredit) per jurnal, ada 2 opsi yang
 dipertimbangkan:
@@ -361,6 +367,64 @@ bukan field yang benar-benar dikirim.
 
 Detail lengkap (payload test call, response mentah, tabel keputusan
 per kolom) → `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md`.
+
+## Fase 97 (2026-09-10) — Opsi A Dipensiunkan Total, Desain Aktif Sekarang
+**Semua section di atas soal "Opsi A DAN Opsi B" sudah SUPERSEDED.**
+Modul ini SEKARANG SATU FORMAT SAJA.
+
+**Trigger**: client kirim template final `CLIENT_template-jurnal-umum-v2.xlsx`
+(26 kolom persis, lihat `docs/referencehtml/`) dan minta "isinya ini
+saja" (hapus kolom double). Upload pakai template ini GAGAL dengan
+error "lineDebitAmount dan lineCreditAmount wajib" — root cause: kolom
+"Nominal Debit"/"Nominal Kredit" di template TABRAKAN NAMA dengan field
+Opsi A (`debitAmount`/`creditAmount`) yang masih ada di
+`defaultColumnMap` saat itu. Auto-suggestion salah mapping ke field
+Opsi A, field Opsi B yang sebenarnya dibutuhkan
+(`lineAccountNo`/`lineDebitAmount`/`lineCreditAmount`) tidak termapping
+sama sekali → `MISSING_REQUIRED_FIELDS`.
+
+**Keputusan**: user konfirmasi eksplisit (AskUserQuestion: "Ya,
+pensiunkan Opsi A") untuk menghapus Opsi A TOTAL (bukan invent nama
+kolom baru untuk Opsi B supaya tidak tabrakan) — alasan: client 3
+template berturut-turut (v3, v4.1, final) SELALU pakai Opsi B (grouping
+N-akun), TIDAK PERNAH pakai format lebar 2-akun sederhana, dan modul
+ini belum punya customer produksi nyata sama sekali (§
+[[feedback_dev_stage_no_real_customers]]).
+
+**Desain SEKARANG (satu-satunya)**:
+- `journalVoucherMapping.requiredFields`: `["transDate", "journalNumber",
+  "branchName", "lineAccountNo", "lineDebitAmount", "lineCreditAmount"]`
+  — TIDAK ADA LAGI varian "wide"/"tall", TIDAK ADA LAGI `formatOf()`/
+  `requiredFieldsFor()`.
+- `defaultColumnMap` PERSIS 26 kolom template client, SATU nama kolom
+  per konsep (semua alias ganda lama — "Tanggal"+"Trans Date", "JV
+  No"+"Akun Perkiraan", dst — DIHAPUS).
+- "Nominal Debit"/"Nominal Kredit" (dulu milik Opsi A) SEKARANG jadi
+  nama kolom KANONIK untuk `lineDebitAmount`/`lineCreditAmount` — bebas
+  dipakai ulang karena Opsi A sudah tidak ada lagi, TANPA tabrakan.
+- `buildJournalVoucherPayloadTall` di-rename jadi `buildJournalVoucherPayload`
+  (satu-satunya builder, terima array baris, grouping via "Transaction
+  Number" — lihat `journal-voucher.mapping.ts` untuk implementasi
+  lengkap, TIDAK diulang di sini supaya tidak basi lagi kalau kode
+  berubah).
+- Worker (`workers/index.ts`) dispatch `journal_voucher` SEKARANG
+  UNCONDITIONAL ke `processJournalVoucherGroup` — tidak ada lagi cabang
+  `processImportRow()` generik untuk modul ini.
+- Validasi XOR debit/kredit per baris (`debitCreditOf()`/
+  `debitCreditRowError()`) TIDAK BERUBAH dari Fase 95 — cuma dipanggil
+  dari SATU jalur sekarang (tidak ada lagi cabang Opsi A yang harus
+  dihindari endpoint edit-baris).
+- Bug laten: client-side `validateRequired()` di `edit-row-dialog.tsx`
+  (frontend) sebelumnya TIDAK XOR-aware untuk
+  `lineDebitAmount`/`lineCreditAmount` — diperbaiki BERSAMAAN refactor
+  ini (ditemukan saat rewrite, belum pernah jadi symptom user karena
+  campur-aduk Opsi A/B menutupinya).
+
+**Known limitation**: Opsi A dihapus PERMANEN (bukan deprecated/hidden)
+— kalau suatu saat dibutuhkan lagi format lebar 2-akun sederhana, harus
+dibangun ulang dari nol.
+
+Detail lengkap → `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md`.
 
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
