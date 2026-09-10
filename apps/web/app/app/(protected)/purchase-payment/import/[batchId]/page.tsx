@@ -9,6 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/purchase-payment/edit-row-dialog";
 import { EditableGrid } from "@/components/import/editable-grid";
+import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 
@@ -115,6 +116,7 @@ export default function PurchasePaymentImportResultPage() {
             </div>
             <StatusBadge status={batch.status} />
           </div>
+          <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
         {summary.failed > 0 && !isProcessing && (
           <CardContent className="flex flex-wrap items-center gap-3">

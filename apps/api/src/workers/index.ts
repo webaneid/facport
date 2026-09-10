@@ -34,6 +34,10 @@ import {
   buildPurchasePaymentPayload,
   groupPurchasePaymentRows,
   validateGroupVendorConsistencyForPayment,
+  // § Fase 89 — nama collide dengan `extractTaxIdsFromRows` Sales
+  // Receipt (Fase 86), alias "PP" konsisten pola `buildDetailItemFromRow as
+  // buildDetailItemFromRowSI` di bawah.
+  extractTaxIdsFromRows as extractTaxIdsFromRowsPP,
   type PurchasePaymentGroup,
 } from "../lib/import-mapping/purchase-payment.mapping";
 import { saveSalesReceipt } from "../lib/accurate-sales-receipt";
@@ -626,6 +630,20 @@ export type PurchasePaymentGroupResult = {
   rowIds: string[];
 };
 
+// § Fase 89 (2026-09-10) — "PPh ID" VALIDASI-ONLY, mirror PERSIS
+// `validateTaxIdsForReceipt` (Sales Receipt Fase 86) — REUSE
+// `accurate-tax.ts`, TIDAK ada auto-create (Master Data Pajak dianggap
+// konfigurasi akuntansi sensitif).
+async function validateTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Promise<void> {
+  const taxIds = extractTaxIdsFromRowsPP(rawRows, columnMapping);
+  for (const taxId of taxIds) {
+    const found = await findTaxByIdentifier(ctx, taxId);
+    if (!found) {
+      throw new Error(`PPh ID "${taxId}" tidak ditemukan di Data Master Pajak Accurate — cek ejaan/kode pajak, atau kosongkan kolom "PPh ID" kalau tidak diperlukan.`);
+    }
+  }
+}
+
 export async function processPurchasePaymentGroup(
   ctx: AccurateSessionContext,
   group: PurchasePaymentGroup,
@@ -635,6 +653,7 @@ export async function processPurchasePaymentGroup(
   if (mismatchError) throw new Error(mismatchError);
 
   const rawRows = group.rows.map((r) => r.rawData);
+  await validateTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
   const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
 
   const result = await savePurchasePayment(ctx, payload);

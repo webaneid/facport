@@ -15,14 +15,52 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-purchase-payment.md — aplikasi pembayaran ke Faktur
 // Pembelian yang SUDAH ADA di Accurate (vendor & faktur WAJIB sudah
-// terdaftar, TIDAK auto-create). 1 baris Excel = 1 pembayaran = 1 faktur.
+// terdaftar, TIDAK auto-create). § Fase 50 — 1 baris Excel = 1
+// pembayaran = 1 faktur SECARA DEFAULT, TAPI bisa digabung jadi 1
+// pembayaran yang bayar BANYAK faktur sekaligus kalau kolom "Purchase
+// Payment No" (`paymentNumber`) diisi sama di beberapa baris.
+// § Fase 89 (2026-09-10) — URUTAN opsi di bawah SENGAJA mengikuti
+// PERSIS urutan wishlist client (`template-purchase-payment.xlsx` =
+// copy template kompetitor `Sample_Format_Import_PP_v4.0.xlsx`),
+// konsisten koreksi Sales Receipt Fase 85/86. Detail lengkap 16 field
+// baru (dikonfirmasi 5 sumber: spec resmi, template kompetitor, 595
+// baris data transaksi asli, 5 screenshot UI Accurate asli) →
+// architecture-purchase-payment.md § "Ekspansi Field Opsional — Fase 89".
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
-  { value: "vendorNo", label: "Nomor Vendor (wajib)" },
-  { value: "invoiceNo", label: "Nomor Faktur (wajib)" },
-  { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
-  { value: "chequeAmount", label: "Jumlah Bayar (wajib)" },
   { value: "transDate", label: "Tanggal (wajib)" },
+  // § Fase 50 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI Fase 88) — field
+  // ini SUDAH ADA di backend sejak Fase 50, tapi TIDAK PERNAH
+  // ditambahkan ke dropdown ini (bug SAMA PERSIS Fase 84 di Sales
+  // Receipt) — cuma bisa ke-mapping otomatis kalau nama kolom Excel
+  // PERSIS "Purchase Payment No". Ditambahkan supaya bisa dipetakan
+  // manual juga kalau client pakai nama kolom lain.
+  { value: "paymentNumber", label: "Purchase Payment No (opsional — isi sama untuk gabung jadi 1 pembayaran multi-faktur)" },
+  { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
+  { value: "vendorNo", label: "Nomor Vendor (wajib)" },
+  { value: "description", label: "Description" },
+  { value: "branchName", label: "Branch (wajib)" },
+  { value: "currencyCode", label: "Currency Code" },
+  { value: "rate", label: "Rate (kurs)" },
+  { value: "paymentTotalAmount", label: "Cheque Amount (opsional — total eksplisit, kosongkan untuk auto-jumlah)" },
+  { value: "chequeNo", label: "Cheque No" },
+  { value: "chequeDate", label: "Cheque Date" },
+  { value: "paymentMethod", label: "Payment Method (Tunai/Cek-Giro/Transfer Bank/EDC/Kartu Debit/Kartu Kredit/QRIS/Payment Link/Virtual Account/Dompet Digital/Non Tunai Lainnya)" },
+  { value: "invoiceNo", label: "Nomor Faktur (wajib)" },
+  { value: "chequeAmount", label: "Jumlah Bayar (wajib)" },
+  { value: "paidPph", label: "Paid PPH (isi \"Y\" atau kosongkan)" },
+  { value: "pphNumber", label: "PPh No" },
+  // § Fase 89 — validasi-only, TIDAK dikirim ke Accurate sebagai field
+  // transaksi (tidak ada field ini di purchase-payment/save.do) —
+  // dicocokkan ke Data Master Pajak Accurate sebelum import, gagal
+  // kalau tidak ditemukan. Reuse infrastruktur Tax ID Sales Receipt
+  // Fase 86.
+  { value: "taxId", label: "PPh ID (opsional — divalidasi ke Data Master Pajak Accurate, TIDAK diubah/dikirim sebagai field transaksi)" },
+  { value: "discountAmount", label: "Discount (wajib bersama Discount Acc)" },
+  { value: "discountAccountNo", label: "Discount Acc (wajib bersama Discount)" },
+  { value: "discountNotes", label: "Discount Note" },
+  { value: "discountDepartmentName", label: "Discount - Dept" },
+  { value: "discountProjectNo", label: "Discount - Project No" },
 ] as const;
 
 const uploadSchema = z.object({

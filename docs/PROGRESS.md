@@ -95,6 +95,10 @@
 | 84   | Fix Dropdown "No. Sales Receipt" Hilang & Komentar Basi (Sales Receipt) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-84-fix-dropdown-receipt-number-sales-receipt.md` |
 | 85   | Ekspansi Field Opsional Sales Receipt (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-85-ekspansi-field-sales-receipt.md` |
 | 86   | Validasi "Tax ID" Sales Receipt | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-86-validasi-tax-id-sales-receipt.md` |
+| 87   | Indikator Progres Import (Reusable) | Done | (tidak ada, komponen frontend generic — lihat phase doc) | `docs/phases/phase-87-import-progress-indicator.md` |
+| 88   | Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-88-audit-bug-purchase-payment.md` |
+| 89   | Ekspansi Field Opsional Purchase Payment (Sesuai Wishlist Client) | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-89-ekspansi-field-purchase-payment.md` |
+| 90   | Koreksi via Test Call Nyata: Branch Wajib & Bug Auto-SUM Multi-Currency | Done | `docs/architecture/architecture-purchase-payment.md`, `architecture-sales-receipt.md` | `docs/phases/phase-90-fix-multicurrency-branch-wajib.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2354,3 +2358,91 @@ Master Data Pajak dianggap konfigurasi akuntansi sensitif). File baru
 fail (5 baru), `apps/web` 44 pass/0 fail. Dev DB test-run dibersihkan
 (subscription/plan Sales Receipt dev sengaja dipertahankan untuk
 testing lanjutan, bukan data disposable).
+
+## Update 2026-09-09 — Fase 87 Done: Indikator Progres Import (Reusable)
+User minta progress bar + teks berputar bergaya "thinking" Claude untuk
+import besar (1000-20000 baris) — dipakai lintas SEMUA fitur import.
+Riset awal ketemu kabar baik: database SUDAH simpan progress granular
+(`importBatchRows.status` di-update per baris/grup saat proses jalan)
+dan frontend SUDAH polling 3 detik di 6 halaman detail batch — jadi
+fitur ini murni FRONTEND, 0 perubahan backend/database. Komponen baru
+`ImportProgress` (`components/import/import-progress.tsx`, generic
+mirror `editable-grid.tsx` Fase 51): progress bar % ASLI dari data
+polling, teks berputar di bawahnya CUMA aktif saat `processing` —
+DIKLARIFIKASI eksplisit ke user bahwa teks itu cosmetic (siklus
+berbasis waktu, bukan sinkron ke baris literal, karena project tidak
+punya event stream real-time backend) — user pilih opsi ini vs
+alternatif "presisi per-baris" yang butuh backend besar. Koreksi kecil
+user: "Mengirim transaksi" → "Mengirim data" (istilah universal lintas
+sub-modul). Dipasang di 6 halaman (Sales Receipt, Purchase Invoice,
+Sales Invoice, Purchase Payment, Journal Voucher, Vendor Payable
+Account). `bun run typecheck` 0 error, `apps/web` 50 pass/0 fail (6
+baru). **Verifikasi visual browser TERTUNDA** — browser automation
+gagal connect sesi ini (mismatch akun OAuth extension), didelegasikan
+ke user untuk cek manual sebelum dianggap tuntas 100%.
+
+## Update 2026-09-10 — Fase 88 Done: Audit & Perbaikan Bug Purchase Payment (Pra-Ekspansi)
+Sebelum diskusi ekspansi field Purchase Payment (mirror Fase 85/86
+Sales Receipt), user minta audit kode aktual vs dokumentasi dulu — pola
+sama Fase 84. Ketemu 2 bug nyata: (1) dropdown mapping kolom manual
+tidak punya opsi `paymentNumber` (kunci grouping, bug SAMA PERSIS Fase
+84), field cuma ke-mapping otomatis kalau nama kolom Excel PERSIS
+"Purchase Payment No"; (2) **`transDate` TIDAK PERNAH dinormalisasi**
+sejak modul ini dibangun — beda dari Sales Receipt/Purchase Invoice.
+Kalau Excel client pakai kolom tanggal ASLI (bukan teks manual), nilai
+terbaca sebagai angka serial Excel mentah, dikirim apa adanya ke
+Accurate — **pasti ditolak setiap kali** (persis insiden
+`lessons-learned.md` 2026-08-19 yang seharusnya sudah dicegah, tapi
+terlewat saat modul ini dibangun). Kedua bug diperbaiki: opsi dropdown
+ditambahkan, `toAccurateDate()` (fungsi identik modul lain) diterapkan
+ke `transDate`. Sekalian diperbaiki 3 komentar/dokumentasi basi (route
+& `accurate-purchase-payment.ts` masih bilang "TIDAK ada grouping"/
+"PER-BARIS" padahal Fase 50 sudah menambahkan grouping/PER-GRUP).
+Ekspansi field besar SENGAJA DITUNDA — bug dulu, ekspansi dibahas
+terpisah nanti (instruksi eksplisit user "perbaiki bug dulu"). `bun run
+typecheck` 0 error, `apps/api` 540 pass/0 fail (3 baru), `apps/web` 50
+pass/0 fail.
+
+## Update 2026-09-10 — Fase 89 Done: Ekspansi Field Opsional Purchase Payment
+Setelah Fase 88, client kirim wishlist Excel Purchase Payment (23
+kolom) — mirror pola Fase 85 Sales Receipt. Riset 5 sumber independen
+(lebih ketat dari Fase 85): wishlist client, template kompetitor, 595
+baris data TRANSAKSI ASLI (bukan cuma template kosong — 7 field selalu
+dipakai, 13 field 0% pernah dipakai, grouping multi-faktur NYATA
+dipakai 16% dari 506 pembayaran), spec resmi Accurate (dicek langsung,
+BUKAN diasumsikan sama Sales Receipt — ketemu Purchase Payment memang
+TIDAK PUNYA useCredit/passValidateInvoiceDate/departmentName sama
+sekali, konsisten wishlist), 5 screenshot UI Accurate asli ("Pembayaran
+Pembelian"). Rencana LENGKAP ditulis ke architecture doc SEBELUM
+eksekusi (instruksi eksplisit user "jangan eksekusi sebelum benar2
+perencanaannya matang"), 3 pertanyaan dikonfirmasi user (PPh ID
+validasi-only OK, Branch ikut spec resmi/opsional, nama field internal
+bebas asal jelas) baru eksekusi. 16 field baru diimplementasikan mirror
+PERSIS Sales Receipt Fase 85/86 — termasuk "PPh ID" yang REUSE 100%
+infrastruktur `accurate-tax.ts` Fase 86 (tidak ditulis ulang). 1 field
+di-skip (PPh Amount, read-only/auto-computed, dikonfirmasi screenshot).
+`bun run typecheck` 0 error, `apps/api` 569 pass/0 fail (29 baru),
+`apps/web` 50 pass/0 fail.
+
+## Update 2026-09-10 — Fase 90 Done: Koreksi via Test Call Nyata (Branch Wajib & Bug Auto-SUM Multi-Currency)
+User minta test NYATA ke Accurate sebelum push Fase 89 ("mau coba dulu
+di local untuk tau respons ketika data dikirim ke accurate beneran
+sebelum kt push?") — koneksi Accurate lama (Fase 86) ternyata sudah
+mati total (access+refresh token di-revoke), setup ulang subscription
+baru, connect ke company "Retail Demo" yang sama. Test call bertahap
+dengan data NYATA (vendor "ASMUS" mata uang SGD, faktur "CONTOH1")
+menemukan 2 bug yang TIDAK MUNGKIN ketahuan dari unit test/spec saja:
+(1) Accurate menolak transaksi tanpa `branchName` untuk company
+multi-cabang meski spec schema bilang opsional — validasi ini RUNTIME,
+bukan level tipe data; (2) auto-SUM `chequeAmount` (fallback kalau
+"Cheque Amount" eksplisit kosong) SALAH untuk mata uang asing karena
+root `chequeAmount` harus dalam mata uang BANK sedangkan
+`paymentAmount` tetap mata uang FAKTUR — dibuktikan Accurate menolak
+dengan error "Total Debit dan Kredit tidak cocok". Kedua bug diperbaiki
+di Purchase Payment DAN Sales Receipt sekaligus (desain identik):
+`branchName` jadi wajib di kedua modul, auto-SUM dikalikan `rate`
+(default 1, zero regression). Test call KETIGA akhirnya BERHASIL —
+payment tersimpan sungguhan di Accurate (`111.102-01.2026.09.00001`),
+invoice CONTOH1 jadi PAID. 4 fixture test route existing diupdate
+(butuh kolom Branch baru). `bun run typecheck` 0 error, 6 test baru (3
+per modul) + semua test existing pass.

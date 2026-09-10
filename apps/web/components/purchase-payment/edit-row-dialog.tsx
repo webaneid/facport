@@ -9,9 +9,16 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
 
 // § mirror `components/purchase-invoice/edit-row-dialog.tsx`, DISEDERHANAKAN
-// — modul ini TIDAK ada grouping (1 baris = 1 payload independen), jadi
-// TIDAK ada prop/peringatan "siblingRowNumbers" seperti versi Purchase
-// Invoice/Sales Invoice.
+// — TIDAK ada prop/peringatan "siblingRowNumbers" seperti versi Purchase
+// Invoice/Sales Invoice, TAPI itu soal BEDA konteks "grouping": PI/SI
+// warning-nya untuk BARIS ITEM dalam 1 FAKTUR yang sama (Bill No/Trans
+// No sama). Modul ini (§ Fase 50) PUNYA grouping juga, tapi levelnya
+// beda — banyak FAKTUR BEDA digabung jadi 1 PEMBAYARAN (`paymentNumber`,
+// § `purchase-payment.mapping.ts`) — dialog ini SENGAJA belum kasih
+// peringatan serupa untuk itu (kalau vendorNo diedit tidak konsisten
+// dengan baris lain 1 grup pembayaran, baru ketahuan lewat error server
+// `validateGroupVendorConsistencyForPayment` saat retry, bukan proaktif
+// di dialog ini) — gap UX kecil, dicatat, bukan bug yang mengubah data.
 type EditableRow = {
   id: string;
   rowNumber: number;
@@ -21,15 +28,22 @@ type EditableRow = {
 
 // § HARUS SINKRON dengan `purchasePaymentMapping` di
 // `apps/api/src/lib/import-mapping/purchase-payment.mapping.ts`.
-export const DATE_INTERNAL_FIELDS = new Set(["transDate"]);
+// § Fase 89 (2026-09-10) — "chequeDate" ditambahkan ke DATE_INTERNAL_FIELDS.
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "chequeDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-export const REQUIRED_INTERNAL_FIELDS = new Set(["vendorNo", "bankNo", "chequeAmount", "transDate", "invoiceNo"]);
+// § Fase 90 (2026-09-10) — "branchName" DIJADIKAN WAJIB, dikonfirmasi
+// test call nyata ke Accurate (company multi-cabang menolak transaksi
+// tanpa branch eksplisit).
+export const REQUIRED_INTERNAL_FIELDS = new Set(["vendorNo", "bankNo", "chequeAmount", "transDate", "invoiceNo", "branchName"]);
 
 const FIELD_HINTS: Record<string, string> = {
   vendorNo: "Kode Pemasok di Accurate, contoh: V.00001",
   bankNo: "Kode Akun Bank/Kas (COA) di Accurate, contoh: 1-10200",
   chequeAmount: "Contoh: 5000000 (angka saja, tanpa titik/koma)",
   invoiceNo: "Nomor Faktur Pembelian yang SUDAH ADA di Accurate",
+  paymentMethod: "Tunai/Cek-Giro/Transfer Bank/EDC/Kartu Debit/Kartu Kredit/QRIS/Payment Link/Virtual Account/Dompet Digital/Non Tunai Lainnya",
+  paidPph: "Isi \"Y\" atau kosongkan",
+  taxId: "Nama pajak PERSIS seperti di Accurate, contoh: Jasa Kebersihan (opsional, divalidasi ke Accurate)",
 };
 
 function toDisplayDate(value: unknown): string {
