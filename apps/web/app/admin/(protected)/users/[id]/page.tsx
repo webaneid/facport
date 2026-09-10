@@ -64,9 +64,9 @@ export default function AdminUserDetailPage() {
       const res = await api.admin.users({ id: params.id })["import-batches"].get();
       if (res.data) setDetail(res.data as unknown as Detail);
       else if (res.error) setNotFound(true);
+      await loadSubscriptions();
     }
     load();
-    loadSubscriptions();
   }, [params.id, loadSubscriptions]);
 
   if (notFound) {
