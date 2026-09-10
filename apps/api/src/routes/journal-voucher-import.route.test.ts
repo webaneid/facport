@@ -82,8 +82,8 @@ describe("GET /journal-voucher/import/template", () => {
 describe("POST /journal-voucher/import/upload", () => {
   test("401 kalau tidak login (dengan file .xlsx asli, supaya bukan gagal validasi t.File duluan)", async () => {
     const buffer = generateTemplateBuffer([
-      { column: "Akun Debit", required: true, example: "6-20500", description: "test" },
-      { column: "Akun Kredit", required: true, example: "1-10200", description: "test" },
+      { column: "Akun", required: true, example: "6-20500", description: "test" },
+      { column: "Nominal Debit", required: false, example: "500000", description: "test" },
     ]);
     const form = new FormData();
     form.append(
@@ -159,16 +159,17 @@ describe("POST /journal-voucher/import/:batchId/confirm — validasi mapping", (
       new Request(`http://localhost/journal-voucher/import/${batch!.id}/confirm`, {
         method: "POST",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ columnMapping: { "Akun Debit": "debitAccountNo" } }), // field wajib lain sengaja tidak di-mapping
+        body: JSON.stringify({ columnMapping: { "Akun": "lineAccountNo" } }), // field wajib lain sengaja tidak di-mapping
       }),
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; fields: string[] };
     expect(body.code).toBe("MISSING_REQUIRED_FIELDS");
     expect(body.fields).toContain("transDate");
-    expect(body.fields).toContain("debitAmount");
-    expect(body.fields).toContain("creditAccountNo");
-    expect(body.fields).toContain("creditAmount");
+    expect(body.fields).toContain("journalNumber");
+    expect(body.fields).toContain("branchName");
+    expect(body.fields).toContain("lineDebitAmount");
+    expect(body.fields).toContain("lineCreditAmount");
   });
 });
 
@@ -259,7 +260,7 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
         fileName: "test.xlsx",
         totalRows: 1,
         status: "completed_with_errors",
-        columnMapping: { "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount", "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount" },
+        columnMapping: { "Trans Date": "transDate", "Transaction Number": "journalNumber", "Branch": "branchName", "Akun": "lineAccountNo", "Nominal Debit": "lineDebitAmount", "Nominal Kredit": "lineCreditAmount" },
       })
       .returning();
     const [row] = await db
@@ -271,7 +272,7 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
       new Request(`http://localhost/journal-voucher/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: attacker.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "Akun Debit": "6-20500" } }),
+        body: JSON.stringify({ rawData: { "Akun": "6-20500" } }),
       }),
     );
     expect(res.status).toBe(404);
@@ -289,7 +290,7 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
         fileName: "test.xlsx",
         totalRows: 1,
         status: "completed",
-        columnMapping: { "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount", "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount" },
+        columnMapping: { "Trans Date": "transDate", "Transaction Number": "journalNumber", "Branch": "branchName", "Akun": "lineAccountNo", "Nominal Debit": "lineDebitAmount", "Nominal Kredit": "lineCreditAmount" },
       })
       .returning();
     const [row] = await db
@@ -301,7 +302,7 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
       new Request(`http://localhost/journal-voucher/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "Akun Debit": "6-20500" } }),
+        body: JSON.stringify({ rawData: { "Akun": "6-20500" } }),
       }),
     );
     expect(res.status).toBe(409);
@@ -310,7 +311,7 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
 
   test("400 MISSING_REQUIRED_VALUES kalau field wajib dikosongkan, sukses (status pending) kalau lengkap", async () => {
     const owner = await createProvisionedUser(`jv-editrow-save-${runId}@test.local`);
-    const columnMapping = { "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount", "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount" };
+    const columnMapping = { "Trans Date": "transDate", "Transaction Number": "journalNumber", "Branch": "branchName", "Akun": "lineAccountNo", "Nominal Debit": "lineDebitAmount", "Nominal Kredit": "lineCreditAmount" };
     const [batch] = await db
       .insert(importBatches)
       .values({
@@ -328,23 +329,28 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
       .values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed", errorMessage: "Jurnal tidak seimbang" })
       .returning();
 
+    // § kolom "Branch" sengaja dikosongkan (field wajib biasa), DAN
+    // "Nominal Debit"/"Nominal Kredit" sengaja dua-duanya kosong (XOR
+    // gagal — § `debitCreditRowError`).
     const missingRes = await testApp.handle(
       new Request(`http://localhost/journal-voucher/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "Tanggal": "05/09/2026", "Akun Debit": "6-20500", "Nominal Debit": "500000", "Akun Kredit": "1-10200", "Nominal Kredit": "" } }),
+        body: JSON.stringify({ rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "Branch": "", "Akun": "6-20500", "Nominal Debit": "", "Nominal Kredit": "" } }),
       }),
     );
     expect(missingRes.status).toBe(400);
     const missingBody = (await missingRes.json()) as { code: string; fields: string[] };
     expect(missingBody.code).toBe("MISSING_REQUIRED_VALUES");
-    expect(missingBody.fields).toContain("creditAmount");
+    expect(missingBody.fields).toContain("branchName");
+    expect(missingBody.fields).toContain("lineDebitAmount");
+    expect(missingBody.fields).toContain("lineCreditAmount");
 
     const okRes = await testApp.handle(
       new Request(`http://localhost/journal-voucher/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "Tanggal": "05/09/2026", "Akun Debit": "6-20500", "Nominal Debit": "500000", "Akun Kredit": "1-10200", "Nominal Kredit": "500000" } }),
+        body: JSON.stringify({ rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "Branch": "JAKARTA", "Akun": "6-20500", "Nominal Debit": "500000", "Nominal Kredit": "" } }),
       }),
     );
     expect(okRes.status).toBe(200);
@@ -356,9 +362,10 @@ describe("PUT /journal-voucher/import/:batchId/rows/:rowId — Edit Baris", () =
   });
 });
 
-// § Fase 51 — versi BULK, dipakai grid edit ala Excel. Format lebar
-// (Opsi A) DAN panjang (Opsi B, § Fase 50) dites terpisah — requiredFields
-// harus SESUAI format yang terdeteksi dari columnMapping batch.
+// § Fase 51 — versi BULK, dipakai grid edit ala Excel. § Fase 96
+// (2026-09-10) — Opsi A (format lebar) DIPENSIUNKAN TOTAL, modul ini
+// SEKARANG SATU FORMAT SAJA (grouping N-akun, "Nominal Debit"/"Nominal
+// Kredit" sebagai nama kolom kanonik).
 describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () => {
   test("401 kalau tidak login", async () => {
     const res = await testApp.handle(
@@ -383,7 +390,7 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
         fileName: "test.xlsx",
         totalRows: 1,
         status: "completed_with_errors",
-        columnMapping: { "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount", "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount" },
+        columnMapping: { "Trans Date": "transDate", "Transaction Number": "journalNumber", "Branch": "branchName", "Akun": "lineAccountNo", "Nominal Debit": "lineDebitAmount", "Nominal Kredit": "lineCreditAmount" },
       })
       .returning();
 
@@ -398,57 +405,15 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
     expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_FOUND");
   });
 
-  test("format LEBAR: campuran baris valid & field wajib kosong, bukan gagalkan seluruh request", async () => {
-    const owner = await createProvisionedUser(`jv-bulkedit-wide-${runId}@test.local`);
-    const columnMapping = { "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount", "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount" };
-    const [batch] = await db
-      .insert(importBatches)
-      .values({
-        userId: owner.userId,
-        subscriptionId: owner.subscriptionId,
-        module: "journal_voucher",
-        fileName: "test.xlsx",
-        totalRows: 2,
-        status: "completed_with_errors",
-        columnMapping,
-      })
-      .returning();
-    const [validRow, missingRow] = await db
-      .insert(importBatchRows)
-      .values([
-        { batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed", errorMessage: "Jurnal tidak seimbang" },
-        { batchId: batch!.id, rowNumber: 2, rawData: {}, status: "failed", errorMessage: "Jurnal tidak seimbang" },
-      ])
-      .returning();
-
-    const res = await testApp.handle(
-      new Request(`http://localhost/journal-voucher/import/${batch!.id}/rows`, {
-        method: "PUT",
-        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          rows: [
-            { id: validRow!.id, rawData: { "Tanggal": "05/09/2026", "Akun Debit": "6-20500", "Nominal Debit": "500000", "Akun Kredit": "1-10200", "Nominal Kredit": "500000" } },
-            { id: missingRow!.id, rawData: { "Tanggal": "05/09/2026", "Akun Debit": "6-20500", "Nominal Debit": "500000", "Akun Kredit": "1-10200", "Nominal Kredit": "" } },
-          ],
-        }),
-      }),
-    );
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { updated: string[]; errors: { rowId: string; rowNumber: number; fields: string[] }[] };
-    expect(body.updated).toEqual([validRow!.id]);
-    expect(body.errors).toHaveLength(1);
-    expect(body.errors[0]!.fields).toContain("creditAmount");
-  });
-
-  test("format PANJANG (Opsi B): requiredFields SESUAI format tall, bukan format lebar", async () => {
-    const owner = await createProvisionedUser(`jv-bulkedit-tall-${runId}@test.local`);
+  test("campuran baris valid & field wajib kosong, bukan gagalkan seluruh request", async () => {
+    const owner = await createProvisionedUser(`jv-bulkedit-${runId}@test.local`);
     const columnMapping = {
       "Trans Date": "transDate",
       "Transaction Number": "journalNumber",
       "Branch": "branchName",
-      "JV No": "lineAccountNo",
-      "Debit": "lineDebitAmount",
-      "Credit": "lineCreditAmount",
+      "Akun": "lineAccountNo",
+      "Nominal Debit": "lineDebitAmount",
+      "Nominal Kredit": "lineCreditAmount",
     };
     const [batch] = await db
       .insert(importBatches)
@@ -476,8 +441,8 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
         body: JSON.stringify({
           rows: [
-            { id: validRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "Branch": "JAKARTA", "JV No": "6-20500", "Debit": "500000" } },
-            { id: missingRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-002", "Branch": "", "JV No": "6-20500", "Debit": "500000" } },
+            { id: validRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "Branch": "JAKARTA", "Akun": "6-20500", "Nominal Debit": "500000" } },
+            { id: missingRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-002", "Branch": "", "Akun": "6-20500", "Nominal Debit": "500000" } },
           ],
         }),
       }),

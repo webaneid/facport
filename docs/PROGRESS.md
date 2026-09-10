@@ -104,6 +104,8 @@
 | 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
 | 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
 | 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
+| 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
+| 97   | Pensiunkan Opsi A (Format Lebar) Jurnal Umum | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-97-pensiun-opsi-a-jurnal-umum.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2569,3 +2571,25 @@ tidak ada temuan. Known limitation: field baru (selain
 rate/primeAmount/currencyCode yang sudah dites nyata) belum pernah
 dites test call sungguhan ke Accurate — user disarankan test manual
 minimal 1x per field setelah deploy.
+
+## Update 2026-09-10 — Fase 97 Done: Pensiunkan Opsi A (Format Lebar) Jurnal Umum
+Client kirim template final (`CLIENT_template-jurnal-umum-v2.xlsx`, 26
+kolom) dan upload gagal dengan error "lineDebitAmount dan
+lineCreditAmount wajib". Root cause: kolom "Nominal Debit"/"Nominal
+Kredit" di template client TABRAKAN NAMA dengan field Opsi A
+(`debitAmount`/`creditAmount`, format lebar 2-akun dari Fase 35) yang
+masih hidup berdampingan dengan Opsi B (format panjang N-akun, Fase
+50) — auto-suggestion salah mapping ke field Opsi A, field Opsi B yang
+sebenarnya dibutuhkan (`lineAccountNo`/`lineDebitAmount`/
+`lineCreditAmount`) tidak ke-mapping sama sekali. User konfirmasi
+eksplisit (AskUserQuestion: "Ya, pensiunkan Opsi A") untuk menghapus
+Opsi A TOTAL — client 3 template berturut-turut selalu pakai Opsi B,
+tidak pernah pakai format lebar, dan modul ini belum punya customer
+produksi nyata. Modul ini sekarang SATU format saja; "Nominal
+Debit"/"Nominal Kredit" jadi nama kanonik Opsi B, PERSIS 26 kolom
+template client tanpa alias ganda. Sekaligus fix bug laten client-side
+validation yang belum XOR-aware untuk debit/kredit. `bun run
+typecheck` 0 error, `apps/api` 593 pass/0 fail, `apps/web` 50 pass/0
+fail, `bun run lint` 0 error. Security review tidak ada temuan. Known
+limitation: Opsi A dihapus permanen (bukan deprecated), harus dibangun
+ulang dari nol kalau suatu saat dibutuhkan lagi.

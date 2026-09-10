@@ -7,27 +7,17 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  EditRowDialog,
-  DATE_INTERNAL_FIELDS,
-  REQUIRED_INTERNAL_FIELDS,
-  REQUIRED_INTERNAL_FIELDS_TALL,
-  isTallFormat,
-} from "@/components/journal-voucher/edit-row-dialog";
+import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/journal-voucher/edit-row-dialog";
 import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 
-// § Fase 51 — Journal Voucher punya 2 format sejak Fase 50 (lebar/Opsi
-// A vs panjang/Opsi B ala kompetitor, § `journal-voucher.mapping.ts`
-// `formatOf()`). `isTallFormat`/`REQUIRED_INTERNAL_FIELDS_TALL` diimpor
-// dari `edit-row-dialog.tsx` (§ BUG DITEMUKAN & DIPERBAIKI 2026-09-10 —
-// sebelumnya terduplikasi PERSIS di sini DAN dialog itu masih hardcode
-// Opsi A saja; sekarang SATU sumber, dialog juga sudah tall-aware).
-// Grid ini SENGAJA deteksi format sendiri biar highlight kolom wajib
-// BENAR untuk kedua format — validasi SEBENARNYA tetap di backend
-// (`requiredFieldsFor`), ini cuma hint UI.
+// § Fase 96 (2026-09-10) — Opsi A (format lebar) DIPENSIUNKAN TOTAL,
+// modul ini SEKARANG SATU FORMAT SAJA — tidak perlu deteksi format lagi
+// (`isTallFormat`/`REQUIRED_INTERNAL_FIELDS_TALL` yang tadinya di sini
+// DIHAPUS). `REQUIRED_INTERNAL_FIELDS` cuma hint UI (highlight kolom
+// wajib) — validasi SEBENARNYA tetap di backend.
 
 type Row = {
   id: string;
@@ -158,7 +148,7 @@ export default function JournalVoucherImportResultPage() {
             <EditableGrid
               rows={rows.filter((r) => r.status === "failed")}
               columnMapping={batch.columnMapping}
-              requiredInternalFields={isTallFormat(batch.columnMapping) ? REQUIRED_INTERNAL_FIELDS_TALL : REQUIRED_INTERNAL_FIELDS}
+              requiredInternalFields={REQUIRED_INTERNAL_FIELDS}
               dateInternalFields={DATE_INTERNAL_FIELDS}
               onSave={handleGridSave}
               onSaved={load}
