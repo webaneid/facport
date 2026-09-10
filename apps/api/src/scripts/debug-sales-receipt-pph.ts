@@ -112,11 +112,18 @@ async function main() {
     console.log(`Resolved TAX_IDENTIFIER "${taxIdentifier}" -> taxId=${tax.id} (${tax.description}, ${tax.taxCode})`);
   }
 
+  // § Test call sebelumnya (2026-09-10) BALIKIN `paidPph: false` +
+  // `pphAmount: 0` dari Accurate meski kita kirim `paidPph: true` +
+  // `pphNumber` terisi — TAPI `pphNumber` SENDIRI berhasil tersimpan.
+  // Hipotesis: `pphAmount` (nominal Rupiah PPh, field TERPISAH, BELUM
+  // PERNAH dikirim sebelumnya — tidak ada di 18 field Fase 85 asli)
+  // WAJIB diisi juga supaya `paidPph` benar jadi `true` di sisi Accurate.
   const detailInvoiceEntry: Record<string, unknown> = {
     invoiceNo,
     paymentAmount, // § inilah yang diuji: GROSS (netMode=0) vs NET setelah PPh (netMode=1)
     paidPph: true,
     pphNumber,
+    pphAmount,
   };
   if (resolvedTaxId !== undefined) {
     detailInvoiceEntry.detailTax = [{ taxId: resolvedTaxId }];
