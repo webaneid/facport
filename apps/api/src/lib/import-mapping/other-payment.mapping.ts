@@ -229,6 +229,47 @@ function valueOf(rawRow: Record<string, unknown>, column: string | null): unknow
   return value === undefined || value === null || value === "" ? undefined : value;
 }
 
+// § BUG DITEMUKAN 2026-09-11 (client retest nyata) — "Invalid field
+// value for field dateField1/dateField2": `parseExcelBuffer` (lib/excel.ts)
+// TIDAK set `cellDates`, jadi cell Excel yang BENERAN bertipe Tanggal
+// (bukan teks) kebaca sebagai angka serial (mis. 46274), BUKAN string
+// "10/09/2026" — field ini SEBELUMNYA cuma di-`String()` polos (lihat
+// riwayat git), jadi Accurate terima teks angka literal itu dan
+// menolaknya. Mirror PERSIS `toAccurateDate` yang SUDAH ADA di
+// `sales-receipt.mapping.ts`/`purchase-payment.mapping.ts` (sudah
+// battle-tested) — SENGAJA fungsi terpisah (bukan di-share), konsisten
+// pola project ini. Berlaku untuk SEMUA field tanggal di modul ini:
+// `transDate` (root) DAN `attributTanggal1`/`attributTanggal2` (root,
+// § Gap #2) — bukan cuma yang baru ketahuan gagal, field tanggal
+// LAINNYA rawan bug yang SAMA kalau kolomnya kebetulan cell Tanggal asli.
+const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+
+function toAccurateDate(value: unknown): unknown {
+  let date: Date | null = null;
+  if (typeof value === "number") {
+    date = new Date(EXCEL_EPOCH_UTC_MS + value * 86400000);
+  } else if (value instanceof Date) {
+    date = value;
+  } else if (typeof value === "string") {
+    if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(value)) return value; // sudah DD/MM/YYYY
+    const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) date = new Date(Date.UTC(Number(isoMatch[1]), Number(isoMatch[2]) - 1, Number(isoMatch[3])));
+  }
+  if (!date || Number.isNaN(date.getTime())) return value;
+  const dd = String(date.getUTCDate()).padStart(2, "0");
+  const mm = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${dd}/${mm}/${date.getUTCFullYear()}`;
+}
+
+// § dipakai SETIAP kali baca nilai kolom yang di-mapping ke salah satu
+// `DATE_FIELDS` — WAJIB dipanggil, bukan `valueOf`/akses langsung
+// `rawRow[column]`, supaya konversi Excel-serial-ke-DD/MM/YYYY konsisten
+// di SEMUA titik baca (root header DAN, kalau ada, per-baris).
+function dateValueOf(rawRow: Record<string, unknown>, column: string | null): unknown {
+  const raw = valueOf(rawRow, column);
+  return raw === undefined ? undefined : toAccurateDate(raw);
+}
+
 // § mirror PERSIS `extractDataClassificationValues` (`journal-voucher.mapping.ts`
 // § Fase 98) — dipanggil worker (`ensureOtherPaymentDataClassifications`)
 // buat auto-create Kategori Keuangan SEBELUM kirim ke Accurate, DARI
@@ -293,8 +334,8 @@ const ROOT_GAP_FIELDS = [
   ["attributNumber8", "numericField8", Number] as const,
   ["attributNumber9", "numericField9", Number] as const,
   ["attributNumber10", "numericField10", Number] as const,
-  ["attributTanggal1", "dateField1", String] as const,
-  ["attributTanggal2", "dateField2", String] as const,
+  ["attributTanggal1", "dateField1", toAccurateDate] as const,
+  ["attributTanggal2", "dateField2", toAccurateDate] as const,
 ];
 
 // § Terima ARRAY baris (1 grup = 1 transaksi, N akun beban). TIDAK ADA
@@ -332,7 +373,7 @@ export function buildOtherPaymentPayload(
 
   const firstRow = rawRows[0] ?? {};
   const payload: Record<string, unknown> = {
-    transDate: String((transDateColumn && firstRow[transDateColumn]) ?? ""),
+    transDate: String(dateValueOf(firstRow, transDateColumn) ?? ""),
     branchName: String((branchNameColumn && firstRow[branchNameColumn]) ?? ""),
     bankNo: String((bankNoColumn && firstRow[bankNoColumn]) ?? ""),
     payee: String((payeeColumn && firstRow[payeeColumn]) ?? ""),

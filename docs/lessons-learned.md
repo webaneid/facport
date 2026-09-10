@@ -6,6 +6,56 @@
 
 ---
 
+## 2026-09-11 — Cell Excel bertipe Tanggal asli terkirim sebagai angka serial mentah ke Accurate ("Invalid field value for field dateFieldN") — Other Payment & Journal Voucher
+**Masalah:** Client retest import Other Payment, input tanggal di kolom
+"Atribut Tanggal 1"/"Atribut Tanggal 2", dapat error Accurate: *"Invalid
+field value for field dateField2."; "Invalid field value for field
+dateField1."*. Screenshot client tunjukkan kolom itu berisi tanggal
+yang tampak normal ("10/09/2026"), rata KANAN di Excel (ciri khas cell
+bertipe Tanggal/Angka asli, beda dari teks yang rata kiri).
+
+**Root cause:** `parseExcelBuffer` (`apps/api/src/lib/excel.ts`) baca
+workbook via `XLSX.read()`/`sheet_to_json()` TANPA opsi `cellDates` —
+perilaku default SheetJS: cell yang BENERAN bertipe Tanggal (bukan
+teks) dibaca sebagai **angka serial Excel** (epoch 1899-12-30, mis.
+46274), BUKAN string "DD/MM/YYYY". `other-payment.mapping.ts` (modul
+baru Fase 96) cuma `String()` polos nilai kolom tanggal sebelum kirim
+ke Accurate — angka serial itu jadi literal `"46274"` yang DITOLAK
+Accurate. **Ditemukan JUGA bug yang SAMA di `journal-voucher.mapping.ts`
+(`transDate`) lewat audit proaktif** — belum pernah dilaporkan client
+untuk modul itu, kemungkinan besar karena client kebetulan selalu
+mengisi tanggal JV sebagai teks (bukan cell Tanggal asli), BUKAN karena
+kodenya benar.
+
+**Pelajaran penting**: 4 mapping file LAIN (`purchase-invoice`,
+`sales-invoice`, `purchase-payment`, `sales-receipt`) SUDAH punya
+fungsi `toAccurateDate()`/`DATE_FIELDS` (konversi serial→DD/MM/YYYY)
+sejak lama — TAPI 2 modul yang dibangun BELAKANGAN (`journal-voucher`
+Fase 35/50, `other-payment` Fase 96) TIDAK mewarisi mekanisme ini sama
+sekali, karena strukturnya di-mirror dari SATU SAMA LAIN (JV↔OP), bukan
+dari modul yang PUNYA fix ini. **Ini POLA KETIGA "gap menular lewat
+mirroring"** di project ini (setelah Fase 78 vendor scope, Fase 98
+Kategori Keuangan) — kalau modul BARU di-mirror dari modul yang
+KEBETULAN juga belum punya suatu fix, gap itu ikut ter-copy. Mitigasi
+untuk modul mapping baru ke depan: SELALU cek juga field tanggal di
+mapping file LAIN yang SUDAH established (bukan cuma modul yang
+paling mirip strukturnya) sebelum menganggap `String()` polos aman
+untuk field tanggal apa pun.
+
+**Fix**: `toAccurateDate()` (copy PERSIS dari `sales-receipt.mapping.ts`)
+ditambahkan ke `other-payment.mapping.ts` (untuk `transDate`,
+`attributTanggal1`/`2` → `dateField1`/`2`) DAN `journal-voucher.mapping.ts`
+(untuk `transDate`). Detail → `docs/phases/phase-101-fix-tanggal-excel-serial.md`.
+
+**Pencegahan**: kalau menambah modul mapping BARU dengan field
+bertipe tanggal, WAJIB pakai `toAccurateDate()` (extract ke util
+shared kalau ada modul kelima yang butuh — belum dilakukan sekarang,
+4 salinan identik sudah ada, § keputusan "3 baris mirip lebih baik
+dari abstraksi prematur" TAPI ini sudah lewat ambang wajar, pertimbangkan
+ekstraksi kalau ada modul ke-6/7 yang butuh lagi).
+
+---
+
 ## 2026-09-10 — Field `dataClassificationNName` ditambahkan ke Journal Voucher (Fase 95) tanpa mirror auto-create-nya (Fase 98)
 **Masalah:** Client retest import Jurnal Umum dapat error Accurate
 "Kategori Keuangan 1 tidak ditemukan atau sudah dihapus".
