@@ -88,16 +88,17 @@ endpoint ini SPESIFIK:
    konsisten lintas jenis transaksi Accurate (pola sama argumen
    `dataClassificationNName` yang konsisten di 30+ endpoint) — belum
    diverifikasi end-to-end KHUSUS untuk `other-payment/save.do`.
-3. **Tab "Deferral"** — ❌ **DITUNDA, TIDAK diimplementasi fase ini**.
-   Sinyal PALING LEMAH dari ketiganya: **0 kemunculan kata "defer" di
-   SELURUH file spec (2.3MB, semua endpoint)**, beda kelas dari 2 field
-   di atas yang setidaknya ada bukti tidak langsung (endpoint lain/email
-   Support). Kemungkinan fitur ini murni UI Accurate (mis. hitung
-   otomatis pengakuan beban bertahap) tanpa API publik sama sekali, ATAU
-   field API-nya punya nama yang sama sekali tidak mengandung kata
-   "defer" (perlu riset terpisah/tiket Support kalau client benar-benar
-   butuh nanti). **Keputusan user**: dokumentasikan yang sudah confirmed
-   dulu, sisakan Deferral sebagai gap terbuka.
+3. **Tab "Deferral"** — ❌ **TIDAK PERLU diimplementasi sama sekali,
+   BUKAN cuma "ditunda"**. Diverifikasi langsung ke file Excel template
+   client (`CLIENT_other-payment-v1.2.xlsx`, 19 kolom A-S): **tidak ada
+   satu pun kolom bernama "Deferral" atau mengandung kata "defer"** di
+   header maupun isi sheet. "Deferral" yang terlihat di screenshot
+   (`image2.png`/`image3.png`) adalah TAB ke-3 di dialog "Payment Detail"
+   Accurate (di samping tab "Payment Detail" dan "Additional Info") —
+   murni elemen UI Accurate yang TIDAK diminta diisi lewat kolom Excel
+   apa pun oleh client. Karena tidak ada kolom sumber data untuk field
+   ini, tidak ada yang perlu dipetakan — bukan gap yang perlu riset
+   lanjutan, kecuali client eksplisit minta kolom baru untuk ini nanti.
 
 ## Keputusan Desain
 

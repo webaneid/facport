@@ -37,8 +37,10 @@ EKSEKUSI implementasi.
       `dateField1-2` level root — DIIMPLEMENTASI dengan catatan "belum
       diverifikasi end-to-end untuk endpoint ini" (§ architecture doc
       § "2 Gap Ditemukan")
-- [ ] TIDAK implementasi tab "Deferral" — gap terbuka, dicatat di Known
-      Limitations, TIDAK diriset lebih lanjut fase ini (keputusan user)
+- [x] TIDAK implementasi tab "Deferral" — DIVERIFIKASI bukan gap: tidak
+      ada kolom Excel untuk ini di template client sama sekali (dicek
+      ke file asli, 19 kolom A-S, nol kemunculan kata "defer"). Itu tab
+      UI Accurate, bukan sesuatu yang diminta diisi lewat import.
 - [ ] Typecheck + test + security review
 - [ ] Update `docs/PROGRESS.md`
 
@@ -69,9 +71,10 @@ EKSEKUSI implementasi.
 - [ ] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- Tab "Deferral" TIDAK diimplementasi — 0 sinyal field API di seluruh
-  spec Accurate (2.3MB, semua endpoint), butuh riset terpisah/tiket
-  Support kalau client benar-benar butuh nanti.
+- Tab "Deferral" TIDAK diimplementasi — BUKAN gap, tidak ada kolom
+  Excel untuk ini di template client (dicek langsung ke file asli).
+  Kalau client nanti minta fitur ini, perlu kolom Excel BARU dulu +
+  riset field API terpisah (0 sinyal di spec resmi saat ini).
 - `projectNo`/`charField1-10`/`numericField1-10`/`dateField1-2` BELUM
   diverifikasi test call nyata KHUSUS untuk `other-payment/save.do` —
   bukti yang ada berasal dari endpoint LAIN (projectNo) dan modul LAIN
