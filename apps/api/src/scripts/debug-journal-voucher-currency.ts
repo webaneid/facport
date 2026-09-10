@@ -60,12 +60,21 @@ async function main() {
 
   const ctx = await openAccurateSession(workingConnection);
 
+  // § round 2 (2026-09-10) — round 1 (tanpa rate/primeAmount) balikin
+  // error "Kurs tidak valid. Cek nilai kurs!" — TERKONFIRMASI Accurate
+  // otomatis tahu CREDIT_ACCOUNT_NO itu akun mata uang asing (padahal
+  // kita TIDAK PERNAH kirim currency apa pun), langsung minta kurs.
+  // Sekarang isi RATE/PRIME_AMOUNT di baris kredit (akun asing) untuk
+  // buktikan ini benar-benar solusinya.
+  const rate = process.env.RATE ? Number(process.env.RATE) : undefined;
+  const primeAmount = process.env.PRIME_AMOUNT ? Number(process.env.PRIME_AMOUNT) : undefined;
+  const creditLine: Record<string, unknown> = { accountNo: creditAccountNo, amount, amountType: "CREDIT" };
+  if (rate !== undefined) creditLine.rate = rate;
+  if (primeAmount !== undefined) creditLine.primeAmount = primeAmount;
+
   const payload: Record<string, unknown> = {
     transDate: new Date().toLocaleDateString("en-GB").split("/").join("/"),
-    detailJournalVoucher: [
-      { accountNo: debitAccountNo, amount, amountType: "DEBIT" },
-      { accountNo: creditAccountNo, amount, amountType: "CREDIT" },
-    ],
+    detailJournalVoucher: [{ accountNo: debitAccountNo, amount, amountType: "DEBIT" }, creditLine],
   };
   if (branchName) payload.branchName = branchName;
 
