@@ -102,6 +102,7 @@
 | 91   | Tombol "Hubungkan Ulang" & Fix Status Koneksi Accurate | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-91-hubungkan-ulang-koneksi-accurate.md` |
 | 92   | Kelola Koneksi Accurate dari Admin ("Putuskan Koneksi") | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-92-kelola-koneksi-accurate-admin.md` |
 | 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
+| 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2510,3 +2511,23 @@ ini terisolasi. Endpoint ini sebelumnya NOL test — ditambah 7 test baru
 pass/0 fail (7 baru), `apps/web` 50 pass/0 fail. **Wajib diverifikasi
 manual di production/staging setelah deploy** — tidak bisa dites
 end-to-end dari dev lokal (kondisi internal/public URL sama di sana).
+
+## Update 2026-09-10 — Fase 94 Done: Invoice Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF
+User minta halaman `/admin/invoices` punya icon mata untuk lihat detail
+invoice (item yang dibeli) dan icon bukti transfer diganti ke icon
+kartu/uang (bukan mata lagi, biar tidak tertukar makna) — dan status
+pembayaran harus muncul baik di view detail maupun di PDF, dengan bukti
+transfer ikut terhubung/terlihat di kedua tempat. Halaman ini sebelumnya
+NOL akses ke info ini sama sekali. Diimplementasi: `GET /admin/invoices`
+sekarang JOIN ke `orders` (field baru `orderStatus`/`hasProof`); dialog
+baru "Detail Invoice" (icon mata) menampilkan item+harga, badge status
+granular, dan tombol icon Banknote untuk lihat bukti (reuse endpoint
+admin/orders proof-url yang sudah ada). PDF invoice (`/invoices/:id/pdf`)
+sekarang embed status pembayaran + gambar bukti transfer asli (convert
+webp→png via `sharp`, karena `@react-pdf/image` tidak bisa decode webp),
+gagal fetch bukti TIDAK menggagalkan PDF (graceful fallback, di-log).
+Security review: tidak ada temuan blocking, 1 catatan non-blocking
+(tombol bukti transfer butuh permission `orders.manage`, beda dari
+`invoices.view` yang menggate halaman — didokumentasikan di phase doc,
+bukan bug). `bun run typecheck` 0 error (api+web), `apps/api` 597 pass/0
+fail (3 test baru), `apps/web` 50 pass/0 fail (tidak ada regresi).

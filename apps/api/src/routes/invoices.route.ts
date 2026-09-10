@@ -5,6 +5,7 @@ import { invoices, invoiceItems, settings, orders } from "../db/schema";
 import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
 import { attachInvoiceItems } from "../lib/invoice-helpers";
+import { getProofImageAsPng } from "../lib/order-payment";
 import { logger } from "../lib/logger";
 
 const COMPANY_SETTINGS_KEYS = [
@@ -82,6 +83,22 @@ export const invoicesRoute = new Elysia()
 
       const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
       const company = await getCompanySettingsForPdf();
+      // § Fase 94 (2026-09-10) — PDF butuh status pembayaran GRANULAR +
+      // bukti transfer (request user: "pastikan bukti transfer terhubung
+      // sehingga bisa kelihatan" di PDF). `orders.invoiceId` 1:1, sama
+      // pola JOIN dengan `GET /me/invoices` & `admin/invoices.route.ts`.
+      const [order] = await db.select().from(orders).where(eq(orders.invoiceId, invoice.id));
+      let proofImage: Buffer | null = null;
+      if (order?.proofUrl) {
+        try {
+          proofImage = await getProofImageAsPng(order.proofUrl);
+        } catch (err) {
+          // § bukti transfer gagal diambil (mis. objek hilang dari MinIO)
+          // TIDAK BOLEH gagalkan generate PDF secara keseluruhan — invoice
+          // tetap harus bisa diunduh, cuma tanpa gambar bukti.
+          logger.error({ err, invoiceId: invoice.id, proofUrl: order.proofUrl }, "Gagal ambil bukti transfer untuk PDF invoice");
+        }
+      }
 
       try {
         const pdfBuffer = await generateInvoicePdf({
@@ -94,6 +111,9 @@ export const invoicesRoute = new Elysia()
           subtotal: invoice.subtotal,
           total: invoice.total,
           company,
+          invoiceStatus: invoice.status,
+          orderStatus: order?.status ?? null,
+          proofImage,
         });
 
         return new Response(new Uint8Array(pdfBuffer), {

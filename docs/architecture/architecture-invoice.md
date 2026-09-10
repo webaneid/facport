@@ -86,11 +86,30 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
   selalu identik secara konten).
 - `apps/api/tsconfig.json` dapat `"jsx": "react-jsx"` — SATU-SATUNYA
   pemakai JSX di backend ini, dibatasi ke file `.tsx` saja.
+- **§ Fase 94 (2026-09-10) — Status pembayaran + bukti transfer DI DALAM
+  PDF**: `InvoicePdfData` punya `invoiceStatus` (selalu ada, § coarse
+  `invoices.status`), `orderStatus` (nullable, § granular `orders.status`
+  — dipakai kalau order SUDAH ada, prioritas di atas `invoiceStatus`), dan
+  `proofImage` (`Buffer | null`, PNG). Objek bukti transfer tersimpan
+  SELALU `.webp` (§ `processProofImage`, `architecture-payment.md`) tapi
+  `@react-pdf/image` **TIDAK BISA decode webp** (cuma PNG/JPEG) — handler
+  `GET /invoices/:id/pdf` WAJIB convert webp→PNG dulu (`sharp`, fungsi
+  `getProofImageAsPng` di `lib/order-payment.ts`) sebelum diserahkan ke
+  `generateInvoicePdf()`. Kegagalan fetch/convert (mis. objek MinIO
+  hilang) di-`try/catch`, TIDAK menggagalkan generate PDF keseluruhan —
+  cuma di-log, PDF tetap jadi tanpa gambar bukti.
+- Label/warna badge status di PDF **duplikat manual** dari
+  `apps/web/lib/status-badges.tsx` (domain `"order"`/`"invoice"`) — apps/api
+  tidak bisa import dari apps/web (app terpisah). Kalau label sumbernya
+  berubah, update juga mapping di `invoice-pdf.tsx`.
 
 ## API
 ```
 GET  /me/invoices                → riwayat invoice caller SAJA (auth: true, filter userId dari session)
-GET  /admin/invoices             → SEMUA invoice, permission "invoices.view"
+GET  /admin/invoices             → SEMUA invoice, permission "invoices.view". § Fase 94: tiap
+                                    baris ikut punya `orderStatus` (granular, null kalau belum
+                                    ada order) dan `hasProof` (boolean) dari JOIN ke `orders` —
+                                    dipakai dialog "Detail Invoice" (§ halaman admin di bawah).
 POST /admin/invoices             → { userId, planIds: uuid[] } — buat invoice BARU untuk user
                                     EXISTING (§ "Admin Membuat Invoice" di bawah), permission
                                     "invoices.manage" (BARU, ADR-0025 — terpisah dari
@@ -100,7 +119,26 @@ GET  /invoices/:id/pdf           → binary PDF (Content-Type: application/pdf).
                                     punya permission "invoices.view" (admin) — SELAIN itu 404
                                     (bukan 403 — hindari konfirmasi "invoice ID ini valid milik
                                     orang lain", pola sama endpoint ownership lain di project ini).
+                                    § Fase 94: ownership check ini terjadi SEBELUM fetch bukti
+                                    transfer untuk PDF — bukti transfer TIDAK PERNAH ter-embed
+                                    untuk caller yang gagal ownership check.
 ```
+
+## Halaman Admin `/admin/invoices` — Dialog "Detail Invoice" (§ Fase 94)
+Sebelumnya halaman ini TIDAK punya cara lihat isi invoice (item yang
+dibeli) maupun bukti transfer sama sekali. Sekarang kolom Aksi punya icon
+mata ("Lihat Detail") yang buka dialog berisi: nama penagih, daftar item
++ harga, badge status pembayaran (`orderStatus` kalau ada — fallback
+`status` invoice kalau belum ada order sama sekali), dan — kalau
+`hasProof` true — tombol icon **Banknote** ("Lihat Bukti Transfer", BUKAN
+icon mata lagi, sengaja dibedakan dari icon mata detail supaya 2 aksi
+beda tidak tertukar makna) yang fetch `GET /admin/orders/:id/proof-url`
+(endpoint existing, di-reuse, § `architecture-payment.md`). Endpoint itu
+digate permission **`orders.manage`** (beda dari `invoices.view` yang
+menggate halaman ini) — kalau ada role custom yang punya `invoices.view`
+tanpa `orders.manage`, tombolnya tetap kelihatan tapi klik akan gagal
+(ditangani graceful via toast, bukan kebocoran data) — § Known Limitations
+`docs/phases/phase-94-invoice-detail-status-bukti-transfer.md`.
 
 ## Admin Membuat Invoice untuk User Existing — ADR-0025
 Sebelumnya invoice CUMA tercipta otomatis sebagai efek samping: checkout

@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { FileText, Copy, Download } from "lucide-react";
+import { FileText, Copy, Download, Eye, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
 import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
@@ -32,6 +33,13 @@ type InvoiceRow = {
   createdAt: string;
   items: InvoiceItem[];
   orderId: string | null;
+  // § Fase 94 (2026-09-10) — `orderStatus` = status pembayaran GRANULAR
+  // (pending/submitted/paid/rejected/cancelled/expired, § `orders.status`),
+  // BEDA dari `status` di atas (invoice.status, cuma unpaid/paid/void/
+  // expired) — dialog "Detail Invoice" pakai ini biar sama detailnya
+  // dengan yang dilihat customer sendiri di alur bayar mereka.
+  orderStatus: string | null;
+  hasProof: boolean;
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
 type UserOption = { id: string; name: string; email: string };
@@ -217,6 +225,102 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
   );
 }
 
+// § Fase 94 (2026-09-10) — dialog "Detail Invoice", diminta user: admin
+// sebelumnya TIDAK PUNYA cara lihat "user ini beli apa" + status
+// pembayaran GRANULAR + bukti transfer dari halaman ini — cuma ada
+// kolom "Paket" ringkas (nama paket digabung koma) tanpa harga per
+// item, dan status invoice KASAR (unpaid/paid) tanpa nuansa "menunggu
+// verifikasi"/"ditolak". Icon MATA (BARU) buka dialog ini — SENGAJA
+// BEDA dari icon "Lihat Bukti" (Banknote/uang) di DALAM dialog, supaya
+// "lihat detail invoice" dan "lihat bukti transfer" tidak tertukar
+// maknanya (2 aksi beda, 2 icon beda).
+function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
+  const [open, setOpen] = useState(false);
+  const [proofUrl, setProofUrl] = useState<string | null>(null);
+  const [loadingProof, setLoadingProof] = useState(false);
+
+  async function handleViewProof() {
+    if (!invoice.orderId) return;
+    setLoadingProof(true);
+    const res = await api.admin.orders({ id: invoice.orderId })["proof-url"].get();
+    setLoadingProof(false);
+    if (res.error || !res.data) {
+      toast.error("Gagal ambil foto bukti transfer.");
+      return;
+    }
+    setProofUrl((res.data as { url: string }).url);
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        if (!next) setProofUrl(null);
+      }}
+    >
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        title="Lihat Detail"
+        aria-label={`Lihat detail invoice ${invoice.invoiceNumber}`}
+        className="rounded-md p-2 text-muted-foreground hover:bg-muted"
+      >
+        <Eye className="h-4 w-4" />
+      </button>
+      <DialogContent className="max-w-lg">
+        <DialogTitle>Detail Invoice {invoice.invoiceNumber}</DialogTitle>
+        <div className="mt-3 flex flex-col gap-4 text-sm">
+          <div>
+            <p className="text-xs font-medium uppercase text-muted-foreground">Ditagihkan Ke</p>
+            <p className="text-foreground">{invoice.billToName}</p>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercase text-muted-foreground">Yang Dibeli</p>
+            <div className="flex flex-col gap-1 rounded-md border border-border p-3">
+              {invoice.items.map((item) => (
+                <div key={item.id} className="flex items-center justify-between">
+                  <span className="text-foreground">{item.label}</span>
+                  <span className="text-muted-foreground">{currencyFormatter.format(item.price)}</span>
+                </div>
+              ))}
+              <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5 font-medium text-foreground">
+                <span>Total</span>
+                <span>{currencyFormatter.format(invoice.total)}</span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium uppercase text-muted-foreground">Status Pembayaran</p>
+            {invoice.orderStatus ? (
+              <StatusBadge domain="order" status={invoice.orderStatus} />
+            ) : (
+              <Badge variant="default">Belum ada order dibuat</Badge>
+            )}
+          </div>
+
+          {invoice.hasProof && invoice.orderId && (
+            <div>
+              <p className="mb-1.5 text-xs font-medium uppercase text-muted-foreground">Bukti Transfer</p>
+              {!proofUrl ? (
+                <Button variant="outline" onClick={handleViewProof} disabled={loadingProof} className="gap-1.5">
+                  <Banknote className="h-4 w-4" />
+                  {loadingProof ? "Memuat..." : "Lihat Bukti Transfer"}
+                </Button>
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={proofUrl} alt="Bukti transfer" className="max-h-[50vh] w-full rounded-md border border-border object-contain" />
+              )}
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const columnHelper = createDataTableColumns<InvoiceRow>();
 
 export default function AdminInvoicesPage() {
@@ -256,6 +360,7 @@ export default function AdminInvoicesPage() {
         const invoice = row.original;
         return (
           <div className="flex items-center justify-end gap-1">
+            <InvoiceDetailDialog invoice={invoice} />
             {invoice.orderId && (
               <button
                 type="button"

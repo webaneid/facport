@@ -126,6 +126,21 @@ export async function processProofImage(file: File): Promise<Buffer> {
   return sharp(inputBuffer).rotate().resize(1600, 1600, { fit: "inside", withoutEnlargement: true }).webp({ quality: 85 }).toBuffer();
 }
 
+// § Fase 94 (2026-09-10) — dipakai `invoices.route.ts` `/invoices/:id/pdf`
+// untuk embed bukti transfer KE DALAM PDF. Objek tersimpan SELALU `.webp`
+// (lihat `saveProofAndMarkSubmitted` di bawah) — tapi `@react-pdf/image`
+// cuma bisa decode PNG/JPEG (TIDAK support webp sama sekali), jadi WAJIB
+// dikonversi di sini sebelum diserahkan ke `generateInvoicePdf()`.
+// `minioClient` (INTERNAL) dipakai sengaja — ini baca server-to-server,
+// BUKAN URL yang dibuka browser (beda kasus dari `minioPublicClient`,
+// § Fase 93).
+export async function getProofImageAsPng(objectKey: string): Promise<Buffer> {
+  const stream = await minioClient.getObject(PAYMENT_PROOF_BUCKET, objectKey);
+  const chunks: Buffer[] = [];
+  for await (const chunk of stream) chunks.push(chunk as Buffer);
+  return sharp(Buffer.concat(chunks)).png().toBuffer();
+}
+
 // § Fase 45 — dipakai dipanggil dari 2 rute (login DAN publik tanpa
 // login, § komentar atas file ini), notifikasi disisipkan DI SINI
 // (bukan di masing-masing rute) supaya kedua jalur otomatis konsisten,

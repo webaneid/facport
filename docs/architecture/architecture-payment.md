@@ -215,6 +215,17 @@ terbuka, di luar scope.
 > `MINIO_PUBLIC_URL=https://media.<domain>`) bug ini muncul. Detail
 > lengkap → `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md`.
 
+**§ Fase 94 (2026-09-10) — Baca bukti transfer server-to-server (BEDA dari
+presigned URL di atas)**: `GET /invoices/:id/pdf` (PDF invoice, bisa
+diminta admin ATAU customer) butuh EMBED bukti transfer sebagai gambar,
+bukan cuma link — ini baca file LANGSUNG di server (bukan browser), jadi
+pakai `minioClient` **INTERNAL** (bukan `minioPublicClient`), via
+`getProofImageAsPng()` (`apps/api/src/lib/order-payment.ts`). Objek
+tersimpan selalu `.webp` (§ `processProofImage` di bawah) — dikonversi ke
+PNG dulu (`sharp`) sebelum diserahkan ke generator PDF, karena
+`@react-pdf/image` tidak bisa decode webp. Detail lengkap →
+`docs/phases/phase-94-invoice-detail-status-bukti-transfer.md`.
+
 ## Link Pembayaran Publik (Tanpa Login) — ADR-0025
 Selain jalur customer login (`/billing/[orderId]/pay`, di atas), SETIAP
 order punya link publik: `{APP_URL}/pay/{orderId}` — bisa diakses TANPA
