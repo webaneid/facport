@@ -103,6 +103,7 @@
 | 92   | Kelola Koneksi Accurate dari Admin ("Putuskan Koneksi") | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-92-kelola-koneksi-accurate-admin.md` |
 | 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
 | 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
+| 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2545,3 +2546,26 @@ support, **MENUNGGU JAWABAN** sebelum ada fix — JANGAN ubah kode
 berdasarkan tebakan. Detail lengkap → `docs/lessons-learned.md` entri
 2026-09-10 "PPh23 di Sales Receipt", `docs/architecture/architecture-sales-receipt.md`
 § "GAP DITEMUKAN".
+
+## Update 2026-09-10 — Fase 95 Done: Ekspansi Field Jurnal Umum Opsi B + Redesain Debit/Kredit
+Client minta isian import Jurnal Umum mendekati format kompetitor.
+Riset 2 sumber (template kompetitor `FACPORT_JV_v3/v4.1.xlsx` + template
+client dengan 3 screenshot UI Accurate asli) menghasilkan 14 field baru
+di Opsi B (format panjang): `branchName` (root, WAJIB — dikonfirmasi
+screenshot tanda merah *), `rate`, `primeAmount`, `departmentName`,
+`projectNo`, `memo`, `subsidiaryType`+`customerNo`/`employeeNo`/
+`vendorNo`, dan 10 `dataClassification` (Kategori Keuangan). Kolom "JV
+Amount"+"JV Amount Type" DIGANTI TOTAL jadi "Debit"/"Credit" terpisah
+(instruksi eksplisit user) — tipe baris otomatis dari kolom mana yang
+terisi, dengan validasi XOR baru yang benar di 3 tempat (termasuk fix
+untuk endpoint edit-baris yang awalnya salah anggap kedua field wajib
+berisi keduanya). `currencyCode` dikonfirmasi TIDAK diimplementasi —
+riset mendalam + test call nyata ke Accurate: mata uang adalah
+properti akun COA, bukan input transaksi Jurnal Umum (sales-receipt
+PUNYA `currencyCode`, journal-voucher TIDAK — asimetri nyata antar
+endpoint Accurate, bukan gap spec). `bun run typecheck` 0 error,
+`apps/api` 600 pass/0 fail, `apps/web` 50 pass/0 fail. Security review
+tidak ada temuan. Known limitation: field baru (selain
+rate/primeAmount/currencyCode yang sudah dites nyata) belum pernah
+dites test call sungguhan ke Accurate — user disarankan test manual
+minimal 1x per field setelah deploy.

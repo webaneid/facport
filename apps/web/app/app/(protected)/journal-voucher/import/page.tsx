@@ -22,13 +22,15 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 // dikelompokkan lewat "Nomor Transaksi", SUM semua baris DEBIT WAJIB
 // SAMA PERSIS dengan SUM semua baris CREDIT dalam 1 kelompok.
 //
-// § BUG DITEMUKAN & DIPERBAIKI (2026-09-10, audit) — Opsi B SUDAH
-// didukung penuh backend sejak Fase 50 (bahkan mewajibkan field-nya),
-// tapi field-nya TIDAK PERNAH muncul di daftar ini — user TIDAK BISA
-// mapping manual ke Opsi B lewat halaman ini sama sekali (cuma bisa
-// lewat panggilan API langsung). Ditambahkan sekarang, label diberi
-// awalan "Opsi A"/"Opsi B" (Combobox tidak dukung group/section) supaya
-// user tidak bingung field mana yang cocok dipasangkan dengan mana.
+// § Fase 95 (2026-09-10) — riset 2 sumber (template kompetitor
+// `FACPORT_JV_v3/v4.1.xlsx` + template client dengan 3 screenshot UI
+// Accurate asli, § architecture-journal-voucher.md § "Fase 95"). Opsi B
+// GANTI TOTAL kolom tipe manual ("Nominal per Baris"+"Tipe Baris") jadi
+// **"Debit"/"Credit" TERPISAH** (isi salah satu per baris, tipe
+// ditentukan otomatis dari kolom mana yang terisi — mirror radio button
+// Debit/Kredit di UI Accurate asli, bukan lagi teks bebas). Field baru:
+// Branch (WAJIB), Kurs, Nominal Asing, Department, Project, Memo,
+// Subsidiary Type+Cust/Employee/Vendor No, Kategori Keuangan 1-10.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "transDate", label: "Tanggal (wajib, kedua opsi)" },
@@ -38,9 +40,29 @@ const ACCURATE_FIELDS = [
   { value: "creditAccountNo", label: "Opsi A — Kode Akun Kredit (wajib)" },
   { value: "creditAmount", label: "Opsi A — Nominal Kredit (wajib)" },
   { value: "journalNumber", label: "Opsi B — Nomor Transaksi (wajib, kunci pengelompokan baris)" },
+  { value: "branchName", label: "Opsi B — Cabang (wajib)" },
   { value: "lineAccountNo", label: "Opsi B — Kode Akun per Baris (wajib)" },
-  { value: "lineAmount", label: "Opsi B — Nominal per Baris (wajib)" },
-  { value: "lineAmountType", label: "Opsi B — Tipe Baris DEBIT/CREDIT (wajib)" },
+  { value: "lineDebitAmount", label: "Opsi B — Debit (isi HANYA kalau baris ini debit)" },
+  { value: "lineCreditAmount", label: "Opsi B — Credit (isi HANYA kalau baris ini kredit)" },
+  { value: "lineRate", label: "Opsi B — Kurs (opsional, untuk akun mata uang asing)" },
+  { value: "linePrimeAmount", label: "Opsi B — Nominal Mata Uang Asing (opsional)" },
+  { value: "lineDepartmentName", label: "Opsi B — Departemen (opsional)" },
+  { value: "lineProjectNo", label: "Opsi B — Proyek (opsional)" },
+  { value: "lineMemo", label: "Opsi B — Memo (opsional)" },
+  { value: "lineSubsidiaryType", label: "Opsi B — Tipe Subsidiary: CUSTOMER/EMPLOYEE/VENDOR (opsional)" },
+  { value: "lineCustomerNo", label: "Opsi B — Kode Customer (opsional, isi kalau Tipe Subsidiary = CUSTOMER)" },
+  { value: "lineEmployeeNo", label: "Opsi B — Kode Karyawan (opsional, isi kalau Tipe Subsidiary = EMPLOYEE)" },
+  { value: "lineVendorNo", label: "Opsi B — Kode Vendor (opsional, isi kalau Tipe Subsidiary = VENDOR)" },
+  { value: "attribut1", label: "Opsi B — Kategori Keuangan 1 (opsional)" },
+  { value: "attribut2", label: "Opsi B — Kategori Keuangan 2 (opsional)" },
+  { value: "attribut3", label: "Opsi B — Kategori Keuangan 3 (opsional)" },
+  { value: "attribut4", label: "Opsi B — Kategori Keuangan 4 (opsional)" },
+  { value: "attribut5", label: "Opsi B — Kategori Keuangan 5 (opsional)" },
+  { value: "attribut6", label: "Opsi B — Kategori Keuangan 6 (opsional)" },
+  { value: "attribut7", label: "Opsi B — Kategori Keuangan 7 (opsional)" },
+  { value: "attribut8", label: "Opsi B — Kategori Keuangan 8 (opsional)" },
+  { value: "attribut9", label: "Opsi B — Kategori Keuangan 9 (opsional)" },
+  { value: "attribut10", label: "Opsi B — Kategori Keuangan 10 (opsional)" },
 ] as const;
 
 const uploadSchema = z.object({
@@ -119,8 +141,9 @@ export default function JournalVoucherImportPage() {
         <p className="text-sm text-muted-foreground">
           Upload file Excel berisi jurnal debit/kredit antar akun COA. Mendukung 2 format: <strong>Opsi A</strong> (1
           baris = 1 jurnal lengkap, 1 akun debit + 1 akun kredit) atau <strong>Opsi B</strong> (banyak baris
-          dikelompokkan lewat Nomor Transaksi, untuk jurnal dengan lebih dari 2 akun). Total Debit dan Kredit WAJIB
-          sama persis dalam 1 jurnal. Kode akun WAJIB SUDAH terdaftar di Accurate.
+          dikelompokkan lewat Nomor Transaksi, untuk jurnal dengan lebih dari 2 akun — isi kolom Debit ATAU Credit
+          per baris, jangan dua-duanya). Total Debit dan Kredit WAJIB sama persis dalam 1 jurnal. Kode akun WAJIB
+          SUDAH terdaftar di Accurate.
         </p>
       </div>
 
