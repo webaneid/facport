@@ -445,9 +445,10 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
     const columnMapping = {
       "Trans Date": "transDate",
       "Transaction Number": "journalNumber",
+      "Branch": "branchName",
       "JV No": "lineAccountNo",
-      "JV Amount": "lineAmount",
-      "JV Amount Type": "lineAmountType",
+      "Debit": "lineDebitAmount",
+      "Credit": "lineCreditAmount",
     };
     const [batch] = await db
       .insert(importBatches)
@@ -475,8 +476,8 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
         body: JSON.stringify({
           rows: [
-            { id: validRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "JV No": "6-20500", "JV Amount": "500000", "JV Amount Type": "DEBIT" } },
-            { id: missingRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-002", "JV No": "6-20500", "JV Amount": "500000", "JV Amount Type": "" } },
+            { id: validRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-001", "Branch": "JAKARTA", "JV No": "6-20500", "Debit": "500000" } },
+            { id: missingRow!.id, rawData: { "Trans Date": "05/09/2026", "Transaction Number": "JV-002", "Branch": "", "JV No": "6-20500", "Debit": "500000" } },
           ],
         }),
       }),
@@ -485,7 +486,7 @@ describe("PUT /journal-voucher/import/:batchId/rows — Edit Bulk (Grid)", () =>
     const body = (await res.json()) as { updated: string[]; errors: { rowId: string; rowNumber: number; fields: string[] }[] };
     expect(body.updated).toEqual([validRow!.id]);
     expect(body.errors).toHaveLength(1);
-    expect(body.errors[0]!.fields).toContain("lineAmountType");
+    expect(body.errors[0]!.fields).toContain("branchName");
 
     const [updatedValid] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, validRow!.id));
     expect(updatedValid!.status).toBe("pending");

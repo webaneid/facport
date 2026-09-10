@@ -260,8 +260,8 @@ dikirim ke Accurate akan SALAH/tidak lengkap.
 | Pass Validate Inv Date | 🆕 Implementasi | `passValidateInvoiceDate` (root) | Boolean, konvensi "Y"/kosong (lihat § di bawah) |
 | Use credit | 🆕 Implementasi | `useCredit` (root) | Boolean, konvensi "Y"/kosong |
 | Department | 🆕 Implementasi | `detailInvoice[].departmentName` | String, per baris/faktur |
-| Paid PPH | 🆕 Implementasi | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong |
-| PPh No | 🆕 Implementasi | `detailInvoice[].pphNumber` | String, nomor bukti potong PPh23 |
+| Paid PPH | ⚠️ Field TERKIRIM tapi TIDAK DIPROSES Accurate (§ update 2026-09-10 di bawah) | `detailInvoice[].paidPph` | Boolean, konvensi "Y"/kosong — dikirim, tapi Accurate SELALU balikin `false` terlepas nilai yang dikirim (dikonfirmasi test call nyata). JANGAN anggap fitur ini bekerja. |
+| PPh No | ✅ Implementasi (TERVERIFIKASI tersimpan, TAPI TIDAK MEMICU PEMOTONGAN APA PUN — cuma teks) | `detailInvoice[].pphNumber` | String, nomor bukti potong PPh23 — SATU-SATUNYA dari 3 field PPh yang benar-benar tersimpan di Accurate (echo balik persis), tapi sendirian tidak menghasilkan potongan PPh. |
 | Discount | 🆕 Implementasi | `detailInvoice[].detailDiscount[].amount` | Number — level BARU, nested di dalam `detailInvoice[]` |
 | Discount Acc | 🆕 Implementasi | `detailInvoice[].detailDiscount[].accountNo` | String |
 | Discount Note | 🆕 Implementasi | `detailInvoice[].detailDiscount[].discountNotes` | String |
@@ -554,6 +554,20 @@ temuan ini berlaku SAMA di Sales Receipt, diperbaiki bersamaan:
 Detail lengkap (termasuk pesan error asli Accurate & test call yang
 membuktikan) → `docs/architecture/architecture-purchase-payment.md`
 § "Fase 90" dan `docs/phases/phase-90-fix-multicurrency-branch-wajib.md`.
+
+## ⚠️ GAP DITEMUKAN (2026-09-10) — PPh23 Tidak Benar-Benar Terpotong Meski `paidPph`/`pphNumber` Dikirim
+Client laporan status import "sukses" tapi potongan PPh23 tidak muncul
+di transaksi Accurate. 4 test call langsung ke `sales-receipt/save.do`
+(company demo, faktur valid yang sudah kena PPh23 di level item)
+mengonfirmasi: `paidPph`/`pphAmount` (dicoba speculative)/`detailTax`
+(dicoba speculative, TIDAK ada di spec resmi) semuanya diam-diam
+diabaikan Accurate (response tetap `s: true`, TIDAK ada error) —
+cuma `pphNumber` yang tersimpan sebagai teks, TIDAK memicu potongan
+apa pun. Pertanyaan detail (payload + tabel hasil) sudah dikirim ke
+Accurate support, **MENUNGGU JAWABAN** — JANGAN ubah
+`buildSalesReceiptPayload` berdasarkan tebakan sebelum ada konfirmasi
+resmi. Detail lengkap → `docs/lessons-learned.md` entri 2026-09-10
+"PPh23 di Sales Receipt".
 
 ## Belum Diputuskan (Di Luar Scope Fase Ini)
 - ~~Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment~~ —

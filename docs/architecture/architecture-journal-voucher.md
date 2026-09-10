@@ -152,39 +152,68 @@ di Purchase Invoice) — error message jelas: "Akun {accountNo} tidak
 ditemukan di Accurate — pastikan kode akun ini sudah ada di COA."
 
 ### 3. Field yang SENGAJA Dikecualikan dari MVP
-`customerNo`/`vendorNo`/`employeeNo`+`subsidiaryType` (sub-ledger
+~~`customerNo`/`vendorNo`/`employeeNo`+`subsidiaryType` (sub-ledger
 tracking per baris), `dataClassification1Name`..`10Name` (kategori
 keuangan custom), `departmentName`, `projectNo`, `primeAmount`/`rate`
-(mata uang asing) — SEMUA opsional di spec, tidak krusial untuk jurnal
-sederhana (kasus paling umum: pindah buku antar-akun, koreksi,
-penyesuaian). Bisa ditambah nanti kalau ada bukti kebutuhan nyata,
-konsisten filosofi "jangan over-design di muka" yang sudah dipakai
-modul lain.
+(mata uang asing)~~ — **DIIMPLEMENTASIKAN Fase 95** (§ di bawah), bukti
+kebutuhan nyata ditemukan (client minta isian mendekati kompetitor).
 
-## Field Mapping Excel (As-Implemented — Opsi A + Opsi B, § Fase 50)
+`currencyCode` — **TETAP DIKECUALIKAN, PERMANEN** (bukan "belum
+sempat", tapi TIDAK ADA TEMPATNYA sama sekali) — dikonfirmasi Fase 95
+via test call nyata ke `journal-voucher/save.do`: field ini TIDAK ADA
+di endpoint ini SAMA SEKALI (root maupun per-baris, dicek 2 versi
+OpenAPI + semua 5 endpoint journal-voucher). Mata uang adalah properti
+TETAP akun COA (`glaccount/save.do` § `currencyCode` wajib saat bikin
+akun) — Accurate otomatis tahu mata uang dari `accountNo` yang dipilih,
+dibuktikan test call nyata: kirim akun SGD tanpa currency apa pun →
+balik error "Kurs tidak valid" (minta `rate`), isi `rate` → sukses,
+response `glAccount.currency.code` echo balik "SGD" sesuai akunnya.
+"JV Currency Code" di template kompetitor kemungkinan cuma informasi
+visual (simbol Rp/$ di UI), bukan field yang benar-benar dikirim.
+
+## Field Mapping Excel (As-Implemented — Opsi A + Opsi B, § Fase 95)
 
 ```ts
-// apps/api/src/lib/import-mapping/journal-voucher.mapping.ts
+// apps/api/src/lib/import-mapping/journal-voucher.mapping.ts (ringkas — lihat file asli untuk daftar lengkap)
 export const journalVoucherMapping = {
-  requiredFields: ["transDate", "debitAccountNo", "debitAmount", "creditAccountNo", "creditAmount"] as const, // Opsi A
-  requiredFieldsTall: ["transDate", "journalNumber", "lineAccountNo", "lineAmount", "lineAmountType"] as const, // Opsi B
+  requiredFields: ["transDate", "debitAccountNo", "debitAmount", "creditAccountNo", "creditAmount"] as const, // Opsi A, TIDAK BERUBAH
+  // § Fase 95 — branchName BARU WAJIB, lineDebitAmount+lineCreditAmount
+  // GANTI TOTAL dari lineAmount+lineAmountType.
+  requiredFieldsTall: ["transDate", "journalNumber", "branchName", "lineAccountNo", "lineDebitAmount", "lineCreditAmount"] as const,
   fieldToAccuratePath: {
     transDate: "transDate",
-    debitAccountNo: "detailJournalVoucher[0].accountNo", // Opsi A
+    debitAccountNo: "detailJournalVoucher[0].accountNo", // Opsi A, TIDAK BERUBAH
     debitAmount: "detailJournalVoucher[0].amount",
     creditAccountNo: "detailJournalVoucher[1].accountNo",
     creditAmount: "detailJournalVoucher[1].amount",
     description: "description",
     journalNumber: "number", // Opsi B — kunci grouping
     lineAccountNo: "detailJournalVoucher[].accountNo",
-    lineAmount: "detailJournalVoucher[].amount",
-    lineAmountType: "detailJournalVoucher[].amountType",
+    // § Fase 95 — GANTI TOTAL "JV Amount"+"JV Amount Type" (nilai+tipe
+    // manual) jadi 2 kolom terpisah, tipe DITENTUKAN dari sisi mana
+    // yang terisi (§ `debitCreditOf()`), bukan diketik eksplisit lagi.
+    lineDebitAmount: "detailJournalVoucher[].amount",
+    lineCreditAmount: "detailJournalVoucher[].amount",
+    branchName: "branchName", // root/header, WAJIB (screenshot UI client tanda merah *)
+    lineRate: "detailJournalVoucher[].rate",
+    linePrimeAmount: "detailJournalVoucher[].primeAmount", // opsional, auto-hitung Accurate kalau kosong
+    lineDepartmentName: "detailJournalVoucher[].departmentName",
+    lineProjectNo: "detailJournalVoucher[].projectNo",
+    lineMemo: "detailJournalVoucher[].memo",
+    lineSubsidiaryType: "detailJournalVoucher[].subsidiaryType", // CUSTOMER | EMPLOYEE | VENDOR
+    lineCustomerNo: "detailJournalVoucher[].customerNo",
+    lineEmployeeNo: "detailJournalVoucher[].employeeNo",
+    lineVendorNo: "detailJournalVoucher[].vendorNo",
+    attribut1: "detailJournalVoucher[].dataClassification1Name", // ...sampai attribut10
   },
   defaultColumnMap: {
     "Tanggal": "transDate", "Akun Debit": "debitAccountNo", "Nominal Debit": "debitAmount",
     "Akun Kredit": "creditAccountNo", "Nominal Kredit": "creditAmount", "Keterangan": "description", // Opsi A
-    "Transaction Number": "journalNumber", "JV No": "lineAccountNo",
-    "JV Amount": "lineAmount", "JV Amount Type": "lineAmountType",
+    "Transaction Number": "journalNumber", "Branch": "branchName",
+    "JV No": "lineAccountNo", "Akun Perkiraan": "lineAccountNo", // alias, § Fase 95
+    "Debit": "lineDebitAmount", "Credit": "lineCreditAmount", // § Fase 95, GANTI "JV Amount"/"JV Amount Type"
+    "Kurs": "lineRate", "No Department": "lineDepartmentName", "No Project": "lineProjectNo", "Memo": "lineMemo",
+    "Kategori Keuangan 1": "attribut1", "Classification 1": "attribut1", // ...sampai 10, alias kompetitor
     "Trans Date": "transDate", "Trans Description": "description", // Opsi B, label kompetitor
   },
 };
@@ -195,7 +224,14 @@ double-entry: Opsi A tetap `debitAmount === creditAmount` (2 angka,
 TIDAK BERUBAH); Opsi B digeneralisasi jadi SUM semua baris DEBIT ===
 SUM semua baris CREDIT dalam 1 grup (`buildJournalVoucherPayloadTall()`).
 Kedua validasi MELEMPAR error (bukan return payload) SEBELUM panggil
-Accurate.
+Accurate. § Fase 95 — validasi BARU per baris: `debitCreditOf()` cek
+TEPAT SATU dari `lineDebitAmount`/`lineCreditAmount` terisi (dua-duanya
+kosong ATAU dua-duanya terisi = error) — endpoint edit-baris
+(single+bulk) TIDAK BISA pakai `requiredFieldsFor("tall")` apa adanya
+untuk kedua field ini (beda dari field required lain yang "wajib
+berisi", ini "wajib salah satu"), difilter keluar dari loop generik,
+dicek terpisah via `debitCreditRowError()` (diekspor dari file mapping
+yang sama, dipanggil route).
 
 ## Worker Processing (As-Implemented, § Fase 50)
 
@@ -214,6 +250,117 @@ findExisting/append-lintas-batch (JV memang tidak punya konsep
 vendor/customer buat divalidasi konsistensinya). TIDAK ada fitur
 "Batal Import" untuk modul ini, KEDUA format (`CANCEL_IMPORT` job tetap
 hardcode 2 cabang lama saja) — TIDAK berubah oleh Fase 50.
+
+## ⚠️ 3 Bug/Gap Ditemukan & Diperbaiki (Audit 2026-09-10)
+Audit menyeluruh (arsitektur vs kode) menemukan 3 masalah, SEMUA sudah
+diperbaiki di sesi yang sama:
+
+1. **BUG (High) — `journalNumber` tidak pernah dikirim sebagai
+   `number`**: `buildJournalVoucherPayloadTall` membangun
+   `detailJournalVoucher`/`transDate`/`description` tapi TIDAK PERNAH
+   menulis `payload.number` dari `journalNumber` — padahal komentar
+   mapping sendiri (§ di atas) SUDAH bilang field ini harus jadi
+   Accurate `number`, dan 2 modul saudara (Purchase Payment
+   `paymentNumber`, Sales Receipt `receiptNumber`) sudah benar
+   melakukan ini sejak Fase 50. Akibatnya nomor transaksi dari Excel
+   dibuang diam-diam, Accurate auto-number sendiri. **Fix**: tambah
+   `if (journalNumber !== undefined && journalNumber !== "") payload.number = String(journalNumber);`
+   di akhir `buildJournalVoucherPayloadTall`, + 2 test baru
+   (`journal-voucher.mapping.test.ts`) yang assert `payload.number`
+   terisi untuk Opsi B dan `undefined` untuk grup singleton tanpa
+   `journalNumber`.
+2. **GAP (High) — Frontend tidak bisa mapping manual ke Opsi B sama
+   sekali**: `ACCURATE_FIELDS` di
+   `apps/web/app/app/(protected)/journal-voucher/import/page.tsx` cuma
+   berisi 6 field Opsi A — 4 field Opsi B (`journalNumber`,
+   `lineAccountNo`, `lineAmount`, `lineAmountType`) tidak ada di
+   dropdown mapping, padahal backend sudah dukung penuh dan
+   mewajibkannya (`requiredFieldsTall`). Kalau auto-suggest server
+   gagal (header Excel beda sedikit dari `defaultColumnMap`), user
+   Opsi B TIDAK PUNYA cara mapping lewat web app — cuma bisa lewat API
+   langsung. **Fix**: tambah 4 field Opsi B ke `ACCURATE_FIELDS`, label
+   diberi awalan "Opsi A —"/"Opsi B —" (Combobox tidak dukung
+   group/section), plus perjelas teks deskripsi halaman soal 2 format.
+3. **GAP (Medium) — Dialog edit per-baris tidak tall-aware**:
+   `EditRowDialog` (tombol pensil, edit 1 baris) hardcode
+   `REQUIRED_INTERNAL_FIELDS` Opsi A saja — beda dari `EditableGrid`
+   (grid bulk-edit di halaman yang sama) yang sejak Fase 51 sudah
+   deteksi format dinamis via `isTallFormat()`. Untuk batch Opsi B,
+   dialog ini tidak menandai field mana yang wajib (tidak ada asterisk/
+   hint) — validasi server tetap benar (jadi tidak rusak fungsional
+   total), tapi UX kosong untuk user yang pakai dialog bukan grid.
+   **Fix**: pindahkan `isTallFormat()`/`REQUIRED_INTERNAL_FIELDS_TALL`
+   (sebelumnya terduplikasi di `[batchId]/page.tsx`) jadi SATU sumber
+   di `edit-row-dialog.tsx`, dialog sekarang deteksi format sendiri
+   sama seperti grid, plus `FIELD_HINTS` untuk 4 field Opsi B.
+
+**Dikonfirmasi TIDAK ADA gap** (audit sama): field mapping backend vs
+dokumentasi (sudah sesuai persis), validasi balance debit=kredit
+(desain sesuai dokumentasi — exact float equality tanpa epsilon
+diflag Low/perlu klarifikasi, bukan bug terverifikasi), jalur pajak/PPh
+(modul ini TIDAK PUNYA field pajak sama sekali di spec resmi
+`journal-voucher/save.do` — bug PPh23 Sales Receipt § `lessons-learned.md`
+2026-09-10 TIDAK relevan di sini), pola auto-SUM×rate ala bug Fase 90
+(JV belum implementasi `primeAmount`/`rate` currency asing sama
+sekali — catatan untuk implementer masa depan kalau field itu
+ditambahkan nanti).
+
+## Fase 95 (2026-09-10) — Ekspansi Field Opsi B + Redesain Debit/Kredit
+Client minta isian import Jurnal Umum Facport mendekati format yang
+biasa dipakai kompetitor. Riset 2 sumber independen:
+1. Template kompetitor `docs/referencehtml/FACPORT_JV_v3.xlsx` (20
+   kolom resmi + sheet "Penjelasan Kolom") dan `FACPORT_JV_v4.1.xlsx`
+   (data ekspor riil klien pegadaian, 31 kolom — 11 di antaranya
+   spesifik bisnis pegadaian klien itu TANPA padanan API generik apa
+   pun, § "Di-skip" di bawah).
+2. Template dari client sendiri (`docs/referencehtml/CLIENT_template-jurnal-umum.xlsx`)
+   berisi baris "Yang diinginkan" + **3 screenshot UI Accurate ASLI**
+   (bukan cuma teks) yang membuktikan konkret: field "Kurs" (dengan
+   input Rp DAN $ sekaligus untuk akun asing), "Departemen"/"Proyek"/
+   "Memo" (tab "Info Lainnya"), dan "Branch" bertanda **wajib** (merah
+   *) di form utama.
+
+Kedua sumber dicocokkan ke spec resmi `journal-voucher/save.do`
+(`docs/referencehtml/accurate-openapi.json`, di-update ke versi
+1.5806.4763 saat riset — dicek TIDAK ADA perubahan field JV antara
+versi lama 1.5756.4692 dan baru, jadi bukan gap versi spec basi).
+
+**Field diimplementasikan** ("yang maksimal" dari kedua sumber, sesuai
+instruksi user): `branchName` (root, WAJIB), `lineRate`, `linePrimeAmount`,
+`lineDepartmentName`, `lineProjectNo`, `lineMemo`, `lineSubsidiaryType`+
+`lineCustomerNo`/`lineEmployeeNo`/`lineVendorNo`, `attribut1`-`attribut10`
+(`dataClassification1-10Name`, semua 10 dibuka — kompetitor cuma expose
+3, konsisten precedent Sales Invoice Fase 61).
+
+**Breaking change Opsi B (disengaja, instruksi eksplisit user
+"Ganti total")**: kolom "JV Amount"+"JV Amount Type" (1 kolom nilai +
+1 kolom tipe DEBIT/CREDIT diketik manual) **DIHAPUS TOTAL**, diganti
+2 kolom terpisah **"Debit"/"Credit"** — user isi HANYA SATU per baris,
+tipe ditentukan otomatis dari kolom mana yang terisi (mirror radio
+button Debit/Kredit di screenshot UI Accurate asli, bukan lagi teks
+bebas). Diterima sebagai breaking change karena project ini belum
+punya customer produksi nyata yang pakai Opsi B (§ modul ini baru live
+sejak Fase 35/50, cek data produksi nyata sebelum breaking change
+serupa di modul LAIN yang sudah lama dipakai).
+
+**`currencyCode` TETAP TIDAK diimplementasi** — riset mendalam
+(diminta user, bukan asumsi sepihak): dicek exhaustif ke SEMUA 5
+endpoint journal-voucher (save/bulk-save/delete/detail/list) di 2
+versi spec, NOL hasil. Dikonfirmasi via test call NYATA (script debug
+sekali-pakai `apps/api/src/scripts/debug-journal-voucher-currency.ts`,
+company demo "Retail Demo"): kirim jurnal debit akun IDR + kredit akun
+SGD TANPA currency apa pun → Accurate balas "Kurs tidak valid. Cek
+nilai kurs!" (otomatis tahu akun itu SGD dari settingnya sendiri,
+BUKAN dari input kita) → isi `rate` → sukses, response
+`detailJournalVoucher[].glAccount.currency.code` echo balik "IDR"/"SGD"
+sesuai akun masing-masing. Kesimpulan: mata uang di Jurnal Umum adalah
+properti TETAP akun COA (`glaccount/save.do` § `currencyCode` wajib
+saat bikin akun), BUKAN input transaksi — "JV Currency Code" di
+template kompetitor kemungkinan cuma simbol tampilan (Rp/$ di UI),
+bukan field yang benar-benar dikirim.
+
+Detail lengkap (payload test call, response mentah, tabel keputusan
+per kolom) → `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md`.
 
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →

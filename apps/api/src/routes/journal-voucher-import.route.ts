@@ -5,7 +5,7 @@ import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
-import { journalVoucherMapping, formatOf, requiredFieldsFor } from "../lib/import-mapping/journal-voucher.mapping";
+import { journalVoucherMapping, formatOf, requiredFieldsFor, debitCreditRowError } from "../lib/import-mapping/journal-voucher.mapping";
 import { journalVoucherTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -281,12 +281,18 @@ export const journalVoucherImportRoute = new Elysia()
       // § Fase 50 — sama alasan di endpoint confirm: requiredFields
       // SESUAI format batch ini (format sudah terkunci sejak confirm,
       // `batch.columnMapping` tidak berubah lagi setelah itu).
+      // § Fase 95 — `lineDebitAmount`/`lineCreditAmount` DIKECUALIKAN
+      // dari loop generik ini (XOR, bukan wajib keduanya per baris —
+      // § `debitCreditRowError`), divalidasi terpisah di bawah.
       const format = formatOf(columnMapping) ?? "wide";
-      const missing = requiredFieldsFor(format).filter((field) => {
-        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-        const value = excelColumn ? body.rawData[excelColumn] : undefined;
-        return value === undefined || value === null || String(value).trim() === "";
-      });
+      const missing = requiredFieldsFor(format)
+        .filter((field) => field !== "lineDebitAmount" && field !== "lineCreditAmount")
+        .filter((field) => {
+          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+          const value = excelColumn ? body.rawData[excelColumn] : undefined;
+          return value === undefined || value === null || String(value).trim() === "";
+        });
+      if (format === "tall") missing.push(...debitCreditRowError(body.rawData, columnMapping));
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -343,11 +349,17 @@ export const journalVoucherImportRoute = new Elysia()
           continue;
         }
 
-        const missing = requiredFieldsFor(format).filter((field) => {
-          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-          const value = excelColumn ? item.rawData[excelColumn] : undefined;
-          return value === undefined || value === null || String(value).trim() === "";
-        });
+        // § Fase 95 — sama alasan endpoint per-baris di atas:
+        // `lineDebitAmount`/`lineCreditAmount` XOR, dikecualikan dari
+        // loop generik, divalidasi terpisah via `debitCreditRowError`.
+        const missing = requiredFieldsFor(format)
+          .filter((field) => field !== "lineDebitAmount" && field !== "lineCreditAmount")
+          .filter((field) => {
+            const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+            const value = excelColumn ? item.rawData[excelColumn] : undefined;
+            return value === undefined || value === null || String(value).trim() === "";
+          });
+        if (format === "tall") missing.push(...debitCreditRowError(item.rawData, columnMapping));
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;
