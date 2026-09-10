@@ -1,3 +1,20 @@
+## 1.26.0 (2026-09-10)
+
+* Merge pull request #51 from webaneid/develop ([4ea37a9](https://github.com/webaneid/facport/commit/4ea37a9)), closes [#51](https://github.com/webaneid/facport/issues/51)
+* feat: ekspansi field Jurnal Umum Opsi B + ganti kolom Debit/Kredit terpisah ([7b47445](https://github.com/webaneid/facport/commit/7b47445))
+* feat: tambah kolom Nomor Bukti di detail batch admin Sales Receipt ([933fb05](https://github.com/webaneid/facport/commit/933fb05))
+* chore: script debug currency JV — tambah rate/primeAmount round 2 ([8a2c513](https://github.com/webaneid/facport/commit/8a2c513))
+* chore: script debug PPh bisa pilih koneksi Accurate spesifik via CONNECTION_USER_ID ([c66da7c](https://github.com/webaneid/facport/commit/c66da7c))
+* chore: script debug PPh coba kirim pphAmount juga ([48a630b](https://github.com/webaneid/facport/commit/48a630b))
+* chore: script debug PPh coba speculative detailTax[].taxId ([53d2668](https://github.com/webaneid/facport/commit/53d2668))
+* chore: script debug PPh pakai CONNECTION_ID eksak, bukan heuristik ([60a98c0](https://github.com/webaneid/facport/commit/60a98c0))
+* chore: script debug PPh refresh access token proaktif sebelum test ([55779b2](https://github.com/webaneid/facport/commit/55779b2))
+* chore: script debug PPh sekarang cetak raw response body (HTTP 403 non-JSON) ([a8bd815](https://github.com/webaneid/facport/commit/a8bd815))
+* chore: script debug sekali-pakai riset currency di journal-voucher/save.do ([7f00cb5](https://github.com/webaneid/facport/commit/7f00cb5))
+* chore: tambah script debug sekali-pakai isolasi paidPph/pphNumber Sales Receipt ([58437e0](https://github.com/webaneid/facport/commit/58437e0))
+* fix: Jurnal Umum — journalNumber dibuang saat kirim ke Accurate, Opsi B tidak bisa di-mapping manual ([3ec50a3](https://github.com/webaneid/facport/commit/3ec50a3))
+* docs: catat gap PPh23 Sales Receipt tidak diproses Accurate (menunggu jawaban support) ([f9a6f1c](https://github.com/webaneid/facport/commit/f9a6f1c))
+
 ## 1.25.0 (2026-09-10)
 
 * Merge pull request #50 from webaneid/develop ([8de2509](https://github.com/webaneid/facport/commit/8de2509)), closes [#50](https://github.com/webaneid/facport/issues/50)
