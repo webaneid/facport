@@ -2531,3 +2531,17 @@ Security review: tidak ada temuan blocking, 1 catatan non-blocking
 `invoices.view` yang menggate halaman — didokumentasikan di phase doc,
 bukan bug). `bun run typecheck` 0 error (api+web), `apps/api` 597 pass/0
 fail (3 test baru), `apps/web` 50 pass/0 fail (tidak ada regresi).
+
+## Update 2026-09-10 — GAP Ditemukan (Belum Fase Baru): PPh23 Sales Receipt Tidak Terpotong
+Client laporan status import Sales Receipt "sukses" tapi PPh23 tidak
+benar-benar terpotong di Accurate. 4 test call langsung ke
+`sales-receipt/save.do` (bukan lewat pipeline import — script debug
+sekali-pakai `apps/api/src/scripts/debug-sales-receipt-pph.ts`)
+mengonfirmasi: `paidPph`/`pphAmount`/`detailTax` diam-diam diabaikan
+Accurate meski dikirim benar (faktur uji sudah valid kena PPh23 di
+level item) — cuma `pphNumber` yang tersimpan sebagai teks, tidak
+memicu potongan apa pun. Pertanyaan detail sudah dikirim ke Accurate
+support, **MENUNGGU JAWABAN** sebelum ada fix — JANGAN ubah kode
+berdasarkan tebakan. Detail lengkap → `docs/lessons-learned.md` entri
+2026-09-10 "PPh23 di Sales Receipt", `docs/architecture/architecture-sales-receipt.md`
+§ "GAP DITEMUKAN".

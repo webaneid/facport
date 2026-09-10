@@ -6,6 +6,62 @@
 
 ---
 
+## 2026-09-10 — PPh23 di Sales Receipt: `paidPph`/`pphAmount`/`detailTax` dikirim tapi diam-diam diabaikan Accurate — MASIH MENUNGGU JAWABAN ACCURATE SUPPORT
+**Masalah:** Client laporan import Sales Receipt untuk faktur yang kena
+PPh23 (item "Jasa Cleaning Service", sudah di-set Kena PPh23 = "Jasa
+Kebersihan" di Data Master Barang & Jasa) — status batch import "sukses"
+(receipt beneran ke-create di Accurate), TAPI potongan PPh-nya TIDAK
+PERNAH benar-benar tersimpan di transaksi Accurate-nya. Field terkait
+(`detailInvoice[].paidPph`, `pphNumber`) sudah diimplementasi sejak Fase
+85 (2026-09-10, sebelumnya di sesi yang sama) — TAPI phase doc Fase 85
+SUDAH mencatat eksplisit "belum diverifikasi test call nyata", dan baru
+sekarang benar-benar dites ke Accurate sungguhan.
+
+**Investigasi (4 test call langsung ke `sales-receipt/save.do`, company
+demo "Retail Demo", via script sekali-pakai
+`apps/api/src/scripts/debug-sales-receipt-pph.ts` — HAPUS setelah gap
+ini resolved)**, hasil KONSISTEN di semua percobaan:
+
+| Field dikirim | Nilai dikirim | Nilai balik dari Accurate |
+|---|---|---|
+| `paidPph` | `true` | selalu `false` |
+| `pphAmount` (BARU, dicoba speculative — field ini TIDAK ADA di 18 field asli Fase 85) | `4000` | selalu `0.000000` |
+| `detailTax: [{taxId}]` (BARU, speculative — TIDAK ADA di spec OpenAPI resmi, cuma disebut lisan oleh support Accurate tanpa konteks endpoint) | `[{taxId: 1800}]` | root `detailTax` tetap `[]` |
+| `pphNumber` | `"TEST-005"` | **berhasil tersimpan** persis (satu-satunya field yang "nyambung") |
+
+Response `s: true` (HTTP 200) — Accurate TIDAK menolak/error apa pun,
+field-nya diam-diam diabaikan. Dikonfirmasi juga: faktur uji
+(`SI.2026.09.00007`) memang benar sudah kena PPh23 di level item
+(`tax3Amount: 4000.000000` ikut muncul di response `detailInvoice[0].invoice`),
+jadi bukan salah setting item — murni field pembayaran (`sales-receipt/save.do`)
+yang tidak diproses.
+
+**Root cause:** BELUM DIKETAHUI PASTI — kemungkinan field `paidPph`/`pphAmount`
+di endpoint ini bersifat read-only/hasil komputasi (bukan input yang bisa
+di-set via API), atau ada endpoint/urutan call terpisah yang dibutuhkan.
+Petunjuk dari UI manual Accurate: catatan *"PPh yang dipotong dibayarkan
+melalui menu Kas & Bank - Pembayaran - Ambil - PPh Pembelian"* — indikasi
+kuat butuh transaksi KEDUA (terpisah dari `sales-receipt/save.do`) untuk
+benar-benar mencatat potongan PPh-nya, bukan cuma flag boolean di payload
+yang sama.
+
+**Status:** Pertanyaan lengkap (payload persis + tabel hasil di atas)
+SUDAH dikirim ke Accurate support, MENUNGGU JAWABAN. JANGAN implementasi
+apa pun berdasarkan tebakan sampai ada konfirmasi resmi dari Accurate —
+2 field speculative (`pphAmount`, `detailTax`) yang dicoba TIDAK ada di
+`salesReceiptMapping` production code, cuma di script debug sekali-pakai.
+
+**Pencegahan/lanjutan**: begitu Accurate balas, update
+`apps/api/src/lib/import-mapping/sales-receipt.mapping.ts` §
+`buildSalesReceiptPayload` sesuai jawaban resmi mereka (bukan re-tebak),
+update `docs/architecture/architecture-sales-receipt.md` § Fase 85 (yang
+sudah TERLANJUR tandai field ini "✅ Implementasi" — perlu dikoreksi jadi
+"⚠️ Field diterima tapi TIDAK diproses Accurate, lihat lessons-learned"
+sampai ada fix), lalu hapus script debug sekali-pakai
+`apps/api/src/scripts/debug-sales-receipt-pph.ts`.
+
+---
+
 ## 2026-09-10 — Guard "faktur existing" cuma percaya DB lokal, tidak pernah verifikasi ke Accurate sungguhan — upload gagal terus kalau faktur dihapus manual di Accurate
 **Masalah:** Client hapus faktur langsung di Accurate (bukan lewat
 Facport) karena salah input, lalu upload ulang dengan Trans No yang
