@@ -1,3 +1,9 @@
+## 1.27.0 (2026-09-10)
+
+* Merge pull request #54 from webaneid/develop ([d6c87aa](https://github.com/webaneid/facport/commit/d6c87aa)), closes [#54](https://github.com/webaneid/facport/issues/54)
+* fix: pindah kolom Expense Name dekat Acc No, perjelas bukan nama akun ([e6e31f9](https://github.com/webaneid/facport/commit/e6e31f9))
+* feat: modul baru Other Payment (Pembayaran Bank/Kas) — Fase 96 ([1e46bbc](https://github.com/webaneid/facport/commit/1e46bbc))
+
 ## <small>1.26.2 (2026-09-10)</small>
 
 * Merge pull request #53 from webaneid/develop ([87a25a0](https://github.com/webaneid/facport/commit/87a25a0)), closes [#53](https://github.com/webaneid/facport/issues/53)
