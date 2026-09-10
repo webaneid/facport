@@ -3,7 +3,7 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
-import { minioClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
+import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 
@@ -49,6 +49,11 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
   // § presigned URL, expiry PENDEK — bukti pembayaran adalah dokumen
   // finansial customer, TIDAK disimpan sebagai URL permanen di mana pun
   // (§ architecture-payment.md § "Bucket Bukti Pembayaran").
+  // § Fase 93 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — WAJIB pakai
+  // `minioPublicClient` (host publik/reverse-proxy), BUKAN `minioClient`
+  // (host internal Docker) — lihat komentar lengkap di `lib/minio.ts`.
+  // Browser admin TIDAK PERNAH bisa resolve host internal, jadi bukti
+  // transfer selalu gagal dibuka sebelum fix ini.
   .get(
     "/:id/proof-url",
     async ({ params, set }) => {
@@ -58,7 +63,7 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
         return { code: "PROOF_NOT_FOUND" };
       }
       try {
-        const url = await minioClient.presignedGetObject(PAYMENT_PROOF_BUCKET, order.proofUrl, PROOF_URL_EXPIRY_SECONDS);
+        const url = await minioPublicClient.presignedGetObject(PAYMENT_PROOF_BUCKET, order.proofUrl, PROOF_URL_EXPIRY_SECONDS);
         return { url, expiresInSeconds: PROOF_URL_EXPIRY_SECONDS };
       } catch (err) {
         logger.error({ err, orderId: params.id }, "Gagal generate presigned URL bukti pembayaran");

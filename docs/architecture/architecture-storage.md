@@ -105,6 +105,19 @@ URL lengkap yang disimpan ke `settings.company.logo`/`company.favicon` =
 construct, frontend tinggal pakai URL jadi, tidak perlu tahu detail
 bucket/key (§ `architecture-settings.md`).
 
+> ⚠️ **Prinsip umum, ditegaskan lewat bug Fase 93 (2026-09-10,
+> `docs/architecture/architecture-payment.md` § "Bucket Bukti
+> Pembayaran")**: aturan "URL yang dibuka BROWSER wajib pakai
+> `MINIO_PUBLIC_URL`, JANGAN PERNAH `MINIO_ENDPOINT` langsung" berlaku
+> untuk SEMUA cara bikin URL — bukan cuma string concat manual seperti
+> di atas, TERMASUK `minioClient.presignedGetObject()`/`presignedPutObject()`.
+> Bucket privat `facport-payment-proofs` (bukti transfer) sempat kena
+> bug ini persis karena lupa aturan ini — presigned URL dibuat pakai
+> `minioClient` (host internal) alih-alih `minioPublicClient` (host
+> publik, baru ditambah Fase 93 khusus untuk presigned URL). Kalau nanti
+> ada kebutuhan presigned URL BARU (bucket privat lain), WAJIB pakai
+> `minioPublicClient`, bukan `minioClient`.
+
 ## Catatan
 - Validasi tipe file (magic-bytes via `sharp.metadata()`, bukan cuma
   percaya `Content-Type` dari client) & ukuran maksimal (`t.File({type,
