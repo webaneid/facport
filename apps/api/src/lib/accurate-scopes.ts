@@ -78,7 +78,12 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // connect modul ini — jadi biaya "re-authorize" TIDAK relevan sekarang,
   // aman disiapkan lebih dulu sebelum fitur Tax ID benar-benar dieksekusi.
   sales_receipt: ["sales_receipt_view", "sales_receipt_save", "tax_view"],
-  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view"],
+  // § Fase 89 (2026-09-10) — `tax_view` ditambah untuk validasi "PPh ID"
+  // (reuse `accurate-tax.ts` dari Sales Receipt Fase 86, lookup ke
+  // `/api/tax/list.do` SEBELUM kirim payload Purchase Payment). Project
+  // masih tahap building, belum ada customer produksi — aman ditambah
+  // langsung (§ pelajaran sesi ini soal `tax_view` Sales Receipt).
+  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view", "tax_view"],
   journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view"],
 };
 

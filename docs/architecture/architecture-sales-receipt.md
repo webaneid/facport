@@ -250,7 +250,7 @@ dikirim ke Accurate akan SALAH/tidak lengkap.
 |---|---|---|---|
 | Date, No. Sales Receipt, Customer No., No. Bank Account, Invoice No, Payment | ✅ Sudah ada | `transDate`, `number`, `customerNo`, `bankNo`, `detailInvoice[].invoiceNo`, `detailInvoice[].paymentAmount` | Tidak berubah |
 | Description | 🆕 Implementasi | `description` (root) | String bebas |
-| Branch | 🆕 Implementasi | `branchName` (root) | String, nama cabang |
+| Branch | ✅ Implementasi — **WAJIB** (⚠️ dikoreksi Fase 90) | `branchName` (root) | String, nama cabang. Awalnya opsional — DIKOREKSI jadi WAJIB setelah test call nyata (via Purchase Payment, pola desain identik) membuktikan Accurate menolak transaksi tanpa branch untuk company multi-cabang. Detail → `docs/phases/phase-90-fix-multicurrency-branch-wajib.md`. |
 | Currency Code | 🆕 Implementasi | `currencyCode` (root) | String, kode mata uang |
 | kurs | 🆕 Implementasi | `rate` (root) | Number, nilai tukar |
 | **Cheque Amount** | 🆕 Implementasi (khusus, lihat § desain di bawah) | `chequeAmount` (root) | Field ini SUDAH ADA sebagai internal `chequeAmount`, TAPI SAAT INI dipakai untuk arti BEDA (per-baris, auto-SUM ke root) — DIPERLUKAN penyesuaian desain, bukan sekadar tambah kolom baru |
@@ -536,13 +536,31 @@ itu).
   nama pastinya) — di luar scope fase ini, bisa jadi fitur "referensi
   master data" terpisah kalau dibutuhkan.
 
+## Fase 90 (✅ DIEKSEKUSI, 2026-09-10) — Koreksi via Test Call Nyata: Branch Wajib & Bug Auto-SUM Multi-Currency
+
+Ditemukan lewat test call NYATA ke Accurate saat memvalidasi Purchase
+Payment Fase 89 (modul bayangan cermin, pola desain identik) — dua
+temuan ini berlaku SAMA di Sales Receipt, diperbaiki bersamaan:
+
+1. **`branchName` DIJADIKAN WAJIB** (sebelumnya opsional) — Accurate
+   menolak transaksi tanpa branch eksplisit untuk company multi-cabang
+   ("Profil pengguna anda memiliki akses ke lebih dari satu cabang...").
+2. **Auto-SUM `chequeAmount` DIKALIKAN `rate`** (default 1 kalau `rate`
+   kosong, zero regression) — sebelumnya auto-SUM `detailInvoice[].paymentAmount`
+   polos SALAH untuk transaksi mata uang asing, karena root `chequeAmount`
+   harus dalam mata uang BANK sedangkan `paymentAmount` tetap mata uang
+   FAKTUR.
+
+Detail lengkap (termasuk pesan error asli Accurate & test call yang
+membuktikan) → `docs/architecture/architecture-purchase-payment.md`
+§ "Fase 90" dan `docs/phases/phase-90-fix-multicurrency-branch-wajib.md`.
+
 ## Belum Diputuskan (Di Luar Scope Fase Ini)
-- Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment (modul
-  bayangan cermin PERSIS modul ini) — belum diminta eksplisit untuk
-  Purchase Payment, tapi pola sebelumnya (Fase 75 PI mirror SI)
-  menunjukkan client cenderung minta simetri lintas modul serupa. TIDAK
-  dikerjakan di Fase 85/86 (scope KHUSUS Sales Receipt) — bisa jadi fase
-  terpisah nanti kalau diminta.
+- ~~Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment~~ —
+  **SUDAH DIKERJAKAN** (Fase 89, 2026-09-10) — client kirim wishlist
+  terpisah untuk Purchase Payment, 16 field yang sama diimplementasikan
+  di sana juga, dan 2 koreksi Fase 90 (Branch wajib, auto-SUM × rate)
+  ditemukan lewat test Purchase Payment lalu di-mirror balik ke sini.
 
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →

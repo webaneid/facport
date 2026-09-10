@@ -28,7 +28,14 @@
 // (lihat komentar `taxId` di bawah) — bukan mengikuti asumsi kompetitor,
 // tapi berdasarkan test call nyata ke `/api/tax/*` milik Accurate.
 export const salesReceiptMapping = {
-  requiredFields: ["customerNo", "bankNo", "chequeAmount", "transDate", "invoiceNo"] as const,
+  // § Fase 90 (2026-09-10) — "branchName" DIJADIKAN WAJIB. Dikonfirmasi
+  // via test call NYATA ke Accurate (Purchase Payment, company sama
+  // "Retail Demo", § purchase-payment.mapping.ts): company dengan
+  // multi-cabang MENOLAK transaksi tanpa branch eksplisit — spec resmi
+  // menandainya opsional di level SCHEMA, tapi validasi RUNTIME Accurate
+  // mewajibkannya untuk company multi-cabang. Sama seperti Purchase
+  // Payment, diputuskan (user): wajibkan di SEMUA kasus.
+  requiredFields: ["customerNo", "bankNo", "chequeAmount", "transDate", "invoiceNo", "branchName"] as const,
   fieldToAccuratePath: {
     customerNo: "customerNo",
     bankNo: "bankNo",
@@ -361,7 +368,18 @@ export function buildSalesReceiptPayload(
     return entry;
   });
 
-  const autoSummedChequeAmount = detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0);
+  // § Fase 90 (2026-09-10, BUG DITEMUKAN via test call NYATA ke Accurate)
+  // — root `chequeAmount` HARUS dalam mata uang BANK (basis perusahaan),
+  // SEDANGKAN `detailInvoice[].paymentAmount` (dari kolom "Jumlah Bayar")
+  // tetap dalam mata uang FAKTUR ASLI. Untuk transaksi mata uang asing
+  // (`rate` != 1), auto-SUM polos (tanpa kali `rate`) menghasilkan root
+  // `chequeAmount` yang SALAH — dikonfirmasi NYATA: Accurate menolak
+  // dengan "Total Debit dan Kredit tidak cocok" saat auto-SUM 1 (SGD)
+  // dikirim sebagai chequeAmount root, padahal seharusnya 1 × kurs
+  // (12600.000001 IDR). Kalau `rate` tidak diisi (transaksi mata uang
+  // dasar, kasus PALING UMUM), kali 1 — ZERO REGRESSION.
+  const rateMultiplier = headerValues.rate !== undefined ? Number(headerValues.rate) : 1;
+  const autoSummedChequeAmount = detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) * rateMultiplier;
 
   const payload: Record<string, unknown> = {
     customerNo: String(headerValues.customerNo ?? ""),

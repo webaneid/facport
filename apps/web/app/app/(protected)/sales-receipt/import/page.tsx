@@ -41,7 +41,7 @@ const ACCURATE_FIELDS = [
   { value: "bankNo", label: "Kode Akun Bank/Kas (wajib)" },
   { value: "customerNo", label: "Nomor Customer (wajib)" },
   { value: "description", label: "Description" },
-  { value: "branchName", label: "Branch" },
+  { value: "branchName", label: "Branch (wajib)" },
   { value: "currencyCode", label: "Currency Code" },
   { value: "rate", label: "kurs" },
   { value: "receiptTotalAmount", label: "Cheque Amount (opsional — total eksplisit, kosongkan untuk auto-jumlah)" },

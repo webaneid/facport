@@ -278,6 +278,35 @@ describe("buildSalesReceiptPayload — Fase 85 (Cheque Amount eksplisit vs auto-
     const payload = buildSalesReceiptPayload(rawRows, mapping);
     expect(payload.chequeAmount).toBe(6000000);
   });
+
+  // § Fase 90 (2026-09-10, BUG DITEMUKAN via test call NYATA ke Accurate,
+  // vendor/customer mata uang asing SGD) — auto-SUM HARUS dikalikan
+  // `rate` supaya root `chequeAmount` benar dalam mata uang BANK,
+  // BUKAN mata uang faktur. Dikonfirmasi Accurate menolak
+  // "Total Debit dan Kredit tidak cocok" tanpa perkalian ini.
+  const mappingWithRate = { ...columnMapping, kurs: "rate" };
+
+  test("auto-SUM DIKALIKAN rate kalau mata uang asing (kurs != 1) — BUG FIX Fase 90", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1, kurs: 12600.000001 },
+    ];
+    const payload = buildSalesReceiptPayload(rawRows, mappingWithRate);
+    // 1 (SGD, mata uang faktur) x 12600.000001 (kurs) = 12600.000001 (IDR, mata uang bank)
+    expect(payload.chequeAmount).toBe(12600.000001);
+  });
+
+  test("rate TIDAK diisi -> auto-SUM kali 1 (zero regression transaksi mata uang dasar)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 5000000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mappingWithRate);
+    expect(payload.chequeAmount).toBe(5000000);
+  });
+
+  test("Cheque Amount eksplisit tetap menang, TIDAK ikut dikalikan rate (user kontrol penuh)", () => {
+    const mapping2 = { ...mappingWithRate, "Cheque Amount": "receiptTotalAmount" };
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 1, kurs: 12600, "Cheque Amount": 999 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping2);
+    expect(payload.chequeAmount).toBe(999);
+  });
 });
 
 describe("buildSalesReceiptPayload — Fase 85 (detailInvoice[].departmentName/paidPph/pphNumber)", () => {

@@ -310,7 +310,7 @@ describe("PUT /sales-receipt/import/:batchId/rows/:rowId — Edit Baris", () => 
 
   test("400 MISSING_REQUIRED_VALUES kalau field wajib dikosongkan, sukses (status pending) kalau lengkap", async () => {
     const owner = await createProvisionedUser(`sr-editrow-save-${runId}@test.local`);
-    const columnMapping = { "No Pelanggan": "customerNo", "Akun Bank/Kas": "bankNo", "Jumlah Bayar": "chequeAmount", "Tanggal": "transDate", "No Faktur": "invoiceNo" };
+    const columnMapping = { "No Pelanggan": "customerNo", "Akun Bank/Kas": "bankNo", "Jumlah Bayar": "chequeAmount", "Tanggal": "transDate", "No Faktur": "invoiceNo", "Branch": "branchName" };
     const [batch] = await db
       .insert(importBatches)
       .values({
@@ -332,7 +332,7 @@ describe("PUT /sales-receipt/import/:batchId/rows/:rowId — Edit Baris", () => 
       new Request(`http://localhost/sales-receipt/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", "Tanggal": "05/09/2026", "No Faktur": "" } }),
+        body: JSON.stringify({ rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", "Tanggal": "05/09/2026", "No Faktur": "", "Branch": "Jakarta" } }),
       }),
     );
     expect(missingRes.status).toBe(400);
@@ -344,7 +344,7 @@ describe("PUT /sales-receipt/import/:batchId/rows/:rowId — Edit Baris", () => 
       new Request(`http://localhost/sales-receipt/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", "Tanggal": "05/09/2026", "No Faktur": "SI-001" } }),
+        body: JSON.stringify({ rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", "Tanggal": "05/09/2026", "No Faktur": "SI-001", "Branch": "Jakarta" } }),
       }),
     );
     expect(okRes.status).toBe(200);
@@ -398,7 +398,7 @@ describe("PUT /sales-receipt/import/:batchId/rows — Edit Bulk (Grid)", () => {
 
   test("campuran: baris valid tersimpan (pending), baris field wajib kosong & baris status bukan failed dicatat di errors, bukan gagalkan seluruh request", async () => {
     const owner = await createProvisionedUser(`sr-bulkedit-mixed-${runId}@test.local`);
-    const columnMapping = { "No Pelanggan": "customerNo", "Akun Bank/Kas": "bankNo", "Jumlah Bayar": "chequeAmount", "Tanggal": "transDate", "No Faktur": "invoiceNo" };
+    const columnMapping = { "No Pelanggan": "customerNo", "Akun Bank/Kas": "bankNo", "Jumlah Bayar": "chequeAmount", "Tanggal": "transDate", "No Faktur": "invoiceNo", "Branch": "branchName" };
     const [batch] = await db
       .insert(importBatches)
       .values({
@@ -426,8 +426,8 @@ describe("PUT /sales-receipt/import/:batchId/rows — Edit Bulk (Grid)", () => {
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
         body: JSON.stringify({
           rows: [
-            { id: validRow!.id, rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", Tanggal: "05/09/2026", "No Faktur": "SI-001" } },
-            { id: missingRow!.id, rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", Tanggal: "05/09/2026", "No Faktur": "" } },
+            { id: validRow!.id, rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", Tanggal: "05/09/2026", "No Faktur": "SI-001", Branch: "Jakarta" } },
+            { id: missingRow!.id, rawData: { "No Pelanggan": "C-0001", "Akun Bank/Kas": "1-10200", "Jumlah Bayar": "1000000", Tanggal: "05/09/2026", "No Faktur": "", Branch: "Jakarta" } },
             { id: notFailedRow!.id, rawData: { "No Pelanggan": "C-0002" } },
           ],
         }),
