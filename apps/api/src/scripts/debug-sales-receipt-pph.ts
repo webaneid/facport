@@ -29,6 +29,7 @@ import { eq } from "drizzle-orm";
 import { openAccurateSession } from "../lib/accurate-session";
 import { refreshAccessToken } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
+import { findTaxByIdentifier } from "../lib/accurate-tax";
 
 async function main() {
   const customerNo = process.env.CUSTOMER_NO;
@@ -92,20 +93,42 @@ async function main() {
 
   const ctx = await openAccurateSession(workingConnection);
 
+  // § EKSPERIMEN (2026-09-10, BELUM ADA DI SPEC RESMI) — Accurate support
+  // sebut field `detailTax[n].taxId` (id numerik dari `/api/tax/list.do`,
+  // § `findTaxByIdentifier` Fase 86 yang SUDAH ada, dipakai ulang di sini)
+  // tanpa konteks endpoint jelas dari user. Dicoba speculative: isi
+  // TAX_IDENTIFIER (kode/nama/id pajak, mis. "Jasa Kebersihan") untuk
+  // resolve taxId lalu sisipkan `detailTax: [{ taxId }]` ke
+  // `detailInvoice[0]` — TIDAK terdokumentasi resmi, cuma test isolasi.
+  const taxIdentifier = process.env.TAX_IDENTIFIER;
+  let resolvedTaxId: number | undefined;
+  if (taxIdentifier) {
+    const tax = await findTaxByIdentifier(ctx, taxIdentifier);
+    if (!tax) {
+      console.error(`Tax "${taxIdentifier}" tidak ditemukan di /api/tax/list.do.`);
+      process.exit(1);
+    }
+    resolvedTaxId = tax.id;
+    console.log(`Resolved TAX_IDENTIFIER "${taxIdentifier}" -> taxId=${tax.id} (${tax.description}, ${tax.taxCode})`);
+  }
+
+  const detailInvoiceEntry: Record<string, unknown> = {
+    invoiceNo,
+    paymentAmount, // § inilah yang diuji: GROSS (netMode=0) vs NET setelah PPh (netMode=1)
+    paidPph: true,
+    pphNumber,
+  };
+  if (resolvedTaxId !== undefined) {
+    detailInvoiceEntry.detailTax = [{ taxId: resolvedTaxId }];
+  }
+
   const payload = {
     customerNo,
     bankNo,
     transDate: new Date().toLocaleDateString("en-GB").split("/").join("/"), // DD/MM/YYYY
     branchName,
     chequeAmount: paymentAmount, // root, disamakan dengan total detailInvoice (1 baris saja di test ini)
-    detailInvoice: [
-      {
-        invoiceNo,
-        paymentAmount, // § inilah yang diuji: GROSS (netMode=0) vs NET setelah PPh (netMode=1)
-        paidPph: true,
-        pphNumber,
-      },
-    ],
+    detailInvoice: [detailInvoiceEntry],
   };
 
   console.log("Payload yang dikirim ke sales-receipt/save.do:");
