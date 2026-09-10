@@ -1,3 +1,8 @@
+## <small>1.27.1 (2026-09-10)</small>
+
+* Merge pull request #55 from webaneid/develop ([b8fa0fd](https://github.com/webaneid/facport/commit/b8fa0fd)), closes [#55](https://github.com/webaneid/facport/issues/55)
+* fix: konversi tanggal Excel serial ke DD/MM/YYYY (Other Payment & Journal Voucher) ([24d2e22](https://github.com/webaneid/facport/commit/24d2e22))
+
 ## 1.27.0 (2026-09-10)
 
 * Merge pull request #54 from webaneid/develop ([d6c87aa](https://github.com/webaneid/facport/commit/d6c87aa)), closes [#54](https://github.com/webaneid/facport/issues/54)
