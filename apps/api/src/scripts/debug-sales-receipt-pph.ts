@@ -27,7 +27,6 @@ import { db } from "../lib/db";
 import { accurateConnections } from "../db/schema";
 import { eq, desc } from "drizzle-orm";
 import { openAccurateSession } from "../lib/accurate-session";
-import { saveSalesReceipt } from "../lib/accurate-sales-receipt";
 
 async function main() {
   const customerNo = process.env.CUSTOMER_NO;
@@ -77,17 +76,24 @@ async function main() {
   console.log("Payload yang dikirim ke sales-receipt/save.do:");
   console.log(JSON.stringify(payload, null, 2));
 
-  try {
-    const result = await saveSalesReceipt(ctx, payload);
-    console.log("SUKSES — respons Accurate:");
-    console.log(JSON.stringify(result, null, 2));
-    console.log(
-      `\nCek transaksi id ${result.id} (nomor ${result.number}) langsung di Accurate — apakah field "Dipotong PPh"/"No. Bukti Potong" sekarang terisi?`,
-    );
-  } catch (err) {
-    console.error("GAGAL — error dari Accurate:");
-    console.error(err);
-  }
+  // § raw fetch (BUKAN saveSalesReceipt/parseAccurateSaveEnvelope) — supaya
+  // body mentah tetap kelihatan walau HTTP status bukan 200 atau body-nya
+  // non-JSON (mis. halaman block WAF/rate-limit), parseAccurateSaveEnvelope
+  // cuma throw pesan generik tanpa isi body-nya.
+  const res = await fetch(`${ctx.host}/accurate/api/sales-receipt/save.do`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${ctx.accessToken}`,
+      "X-Session-ID": ctx.session,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  const rawText = await res.text();
+  console.log(`\nHTTP status: ${res.status}`);
+  console.log("Response headers:", JSON.stringify(Object.fromEntries(res.headers.entries()), null, 2));
+  console.log("Response body mentah:");
+  console.log(rawText);
 }
 
 main().then(() => process.exit(0));
