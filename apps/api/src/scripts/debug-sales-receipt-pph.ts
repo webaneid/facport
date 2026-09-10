@@ -27,6 +27,8 @@ import { db } from "../lib/db";
 import { accurateConnections } from "../db/schema";
 import { eq } from "drizzle-orm";
 import { openAccurateSession } from "../lib/accurate-session";
+import { refreshAccessToken } from "../lib/accurate";
+import { encrypt, decrypt } from "../lib/encryption";
 
 async function main() {
   const customerNo = process.env.CUSTOMER_NO;
@@ -64,7 +66,31 @@ async function main() {
   }
   console.log(`Pakai koneksi Accurate: accurateDbAlias=${connection.accurateDbAlias} userId=${connection.userId}`);
 
-  const ctx = await openAccurateSession(connection);
+  // § Batch aslinya berhasil beberapa waktu lalu, tapi access token BISA
+  // sudah expired sekarang (job refresh token periodik jalan async,
+  // TIDAK dipanggil on-demand di sini) — refresh proaktif dulu (pola
+  // sama `workers/index.ts` § job refresh token), supaya 401 "token
+  // expired" tidak disalahartikan sebagai gagal test PPh.
+  let workingConnection = connection;
+  try {
+    const refreshed = await refreshAccessToken(decrypt(connection.refreshTokenEncrypted));
+    await db
+      .update(accurateConnections)
+      .set({
+        accessTokenEncrypted: encrypt(refreshed.access_token),
+        refreshTokenEncrypted: encrypt(refreshed.refresh_token),
+        expiresAt: new Date(Date.now() + refreshed.expires_in * 1000),
+        updatedAt: new Date(),
+      })
+      .where(eq(accurateConnections.id, connection.id));
+    const [refetched] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, connection.id));
+    if (refetched) workingConnection = refetched;
+    console.log("Access token berhasil di-refresh sebelum test.");
+  } catch (err) {
+    console.log("Refresh token gagal (lanjut pakai token lama apa adanya):", err instanceof Error ? err.message : String(err));
+  }
+
+  const ctx = await openAccurateSession(workingConnection);
 
   const payload = {
     customerNo,
