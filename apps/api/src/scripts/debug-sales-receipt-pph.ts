@@ -25,7 +25,7 @@
 //                      sesuai perilaku `buildSalesReceiptPayload` SAAT INI)
 import { db } from "../lib/db";
 import { accurateConnections } from "../db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { openAccurateSession } from "../lib/accurate-session";
 
 async function main() {
@@ -43,14 +43,21 @@ async function main() {
   const netMode = process.env.NET_MODE === "1";
   const paymentAmount = netMode ? grossAmount - pphAmount : grossAmount;
 
+  // § CONNECTION_USER_ID BARU — sebelumnya cuma ambil koneksi aktif
+  // "paling baru diupdate" (asumsi salah: bisa kepilih koneksi TEST/demo
+  // lain, bukan koneksi produksi customer yang benar-benar dipakai batch
+  // asli). WAJIB isi userId yang sama dengan batch import yang mau
+  // ditiru, supaya scope OAuth-nya benar-benar sama.
+  const connectionUserId = process.env.CONNECTION_USER_ID;
+  const conditions = connectionUserId ? [eq(accurateConnections.status, "active"), eq(accurateConnections.userId, connectionUserId)] : [eq(accurateConnections.status, "active")];
   const [connection] = await db
     .select()
     .from(accurateConnections)
-    .where(eq(accurateConnections.status, "active"))
+    .where(and(...conditions))
     .orderBy(desc(accurateConnections.updatedAt))
     .limit(1);
   if (!connection) {
-    console.error("Tidak ada koneksi Accurate aktif ditemukan di database.");
+    console.error("Tidak ada koneksi Accurate aktif ditemukan (cek CONNECTION_USER_ID).");
     process.exit(1);
   }
   console.log(`Pakai koneksi Accurate: accurateDbAlias=${connection.accurateDbAlias} userId=${connection.userId}`);
