@@ -104,6 +104,7 @@
 | 93   | Fix Bug: Bukti Transfer Tidak Bisa Dibuka (Presigned URL Salah Host) | Done | `docs/architecture/architecture-payment.md`, `architecture-storage.md` | `docs/phases/phase-93-fix-bukti-transfer-tidak-bisa-dibuka.md` |
 | 94   | Invoice: Icon Detail/Bukti Transfer + Status Pembayaran di View Detail & PDF | Done | `docs/architecture/architecture-invoice.md`, `architecture-payment.md` | `docs/phases/phase-94-invoice-detail-status-bukti-transfer.md` |
 | 95   | Ekspansi Field Jurnal Umum Opsi B + Redesain Kolom Debit/Kredit | Done | `docs/architecture/architecture-journal-voucher.md` | `docs/phases/phase-95-ekspansi-field-jurnal-umum-opsi-b.md` |
+| 96   | Modul Baru: Other Payment (Pembayaran Bank/Kas) | Planned | `docs/architecture/architecture-other-payment.md` | `docs/phases/phase-96-modul-other-payment.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
