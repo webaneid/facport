@@ -101,12 +101,21 @@ export const app = new Elysia()
     return { status: "ok" };
   })
   // § Fase 29, ADR-0027 — cegat SEBELUM `.mount(auth.handler)` di bawah:
-  // tolak login untuk akun `disabled` (dinonaktifkan Super Admin).
-  // TIDAK pakai hook internal Better Auth (`hooks`/`databaseHooks`) —
-  // DICEK LANGSUNG ke `.d.mts` versi terpasang (1.7.1), TIDAK ADA di
-  // top-level options type versi ini (beda dari versi lama yang lebih
-  // dikenal — pola sama "This is NOT the X you know" yang sudah ketemu
-  // di tanstack-table v9). `request.clone()` WAJIB — body `Request`
+  // tolak login untuk akun `disabled` (dinonaktifkan Super Admin), balas
+  // 403 rapi + kode `ACCOUNT_DISABLED` (diuji `app.test.ts`).
+  // § Fase 106 (koreksi) — komentar lama di sini SALAH mengklaim
+  // `databaseHooks` "tidak ada di versi ini" — TERBUKTI SALAH (lihat
+  // `lib/auth.ts` `databaseHooks.user.create.after` yang sudah lama
+  // jalan, DAN `databaseHooks.session.create.before` baru Fase 106).
+  // Guard di SINI tetap DIPERTAHANKAN apa adanya (bukan dipindah ke hook)
+  // karena hook Better Auth kalau `before` return `false` cuma bisa
+  // hasilkan 401 generik (`FAILED_TO_CREATE_SESSION`), BUKAN 403 +
+  // kode kustom seperti di sini — mengganti ke hook akan mengubah
+  // kontrak API yang sudah diuji. `lib/auth.ts` sekarang PUNYA hook
+  // SERUPA juga (session.create.before) tapi itu untuk menutup celah
+  // JALUR LAIN (Google OAuth) yang TIDAK tersentuh intercept manual di
+  // sini — keduanya berdampingan, bukan saling menggantikan.
+  // `request.clone()` WAJIB — body `Request`
   // cuma bisa dibaca SEKALI, `auth.handler(request)` di bawah butuh
   // body ORIGINAL masih utuh buat Better Auth proses sign-in beneran.
   .post("/api/auth/sign-in/email", async ({ request, set }) => {

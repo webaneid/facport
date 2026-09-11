@@ -114,6 +114,7 @@
 | 103  | Logo Perusahaan di Header + Footer Copyright | Done — **belum di-release** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
 | 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **belum di-release** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
 | 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **belum di-release** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
+| 106  | Batas Device/Sesi Login per User | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

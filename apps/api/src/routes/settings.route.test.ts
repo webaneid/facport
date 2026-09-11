@@ -25,6 +25,8 @@ const SETTINGS_KEYS_MUTATED_BY_THIS_FILE = [
   // alasan QRIS/bank accounts.
   "company.logoLinkUrl",
   "company.copyrightStartYear",
+  // § Fase 106 (2026-09-11) — sama alasan di atas.
+  "security.maxDevicesPerUser",
 ] as const;
 let originalSettingsSnapshot: Map<string, unknown>;
 
@@ -256,6 +258,28 @@ describe("PUT /settings — validasi company.copyrightStartYear", () => {
   test("200 kalau tahun valid", async () => {
     const cookie = await makeAdminCookie();
     const res = await putSettings(cookie, [{ key: "company.copyrightStartYear", value: 2025, group: "general" }]);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("PUT /settings — validasi security.maxDevicesPerUser (Fase 106)", () => {
+  test("400 INVALID_MAX_DEVICES kalau bukan integer 1-10", async () => {
+    const cookie = await makeAdminCookie();
+
+    const zero = await putSettings(cookie, [{ key: "security.maxDevicesPerUser", value: 0, group: "security" }]);
+    expect(zero.status).toBe(400);
+    expect(((await zero.json()) as { code: string }).code).toBe("INVALID_MAX_DEVICES");
+
+    const tooMany = await putSettings(cookie, [{ key: "security.maxDevicesPerUser", value: 11, group: "security" }]);
+    expect(tooMany.status).toBe(400);
+
+    const notInteger = await putSettings(cookie, [{ key: "security.maxDevicesPerUser", value: 2.5, group: "security" }]);
+    expect(notInteger.status).toBe(400);
+  });
+
+  test("200 kalau nilai valid (1-10)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "security.maxDevicesPerUser", value: 3, group: "security" }]);
     expect(res.status).toBe(200);
   });
 });

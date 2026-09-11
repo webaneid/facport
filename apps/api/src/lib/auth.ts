@@ -4,6 +4,8 @@ import { db } from "./db";
 import { env, webOriginsProd } from "./env";
 import { boss, JOBS, startQueue } from "./queue";
 import { assignCustomerRole } from "./assign-customer-role";
+import { isDisabled } from "./user-status";
+import { evictOldestSessionsIfOverLimit } from "./session-limit";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -109,6 +111,36 @@ export const auth = betterAuth({
         after: async (user, context) => {
           if (context?.path !== "/callback/:id") return;
           await assignCustomerRole(user.id);
+        },
+      },
+    },
+    // § Fase 106, architecture-user-tambahan.md § Fase A — DIKONFIRMASI
+    // hook ini ADA di versi Better Auth terpasang (dicek langsung ke
+    // `.d.mts` instalasi, `@better-auth/core@1.7.1`), meski komentar lama
+    // di `app.ts` (sebelum fase ini) mengklaim sebaliknya untuk
+    // `databaseHooks` top-level — klaim itu SALAH, terbukti dari
+    // `user.create.after` di atas yang sudah lama jalan pakai mekanisme
+    // yang SAMA. Fires untuk SEMUA jalur pembuatan sesi (password ATAUPUN
+    // Google OAuth).
+    //
+    // § TIDAK menggantikan guard manual `POST /api/auth/sign-in/email` di
+    // `app.ts` (dicoba awalnya, DIBATALKAN) — `createWithHooks` (Better
+    // Auth core, `db/with-hooks.mjs`) balikin `null` kalau `before`
+    // return `false`, lalu `sign-in.mjs` melempar
+    // `APIError.from("UNAUTHORIZED", FAILED_TO_CREATE_SESSION)` — HTTP
+    // **401**, BEDA dari guard `app.ts` yang balikin 403 rapi + kode
+    // `ACCOUNT_DISABLED` (sudah diuji `app.test.ts`, JANGAN diubah
+    // perilakunya). Jadi keduanya jalan BERDAMPINGAN: `app.ts` tetap jadi
+    // penjaga utama jalur password (403, tidak berubah), hook di sini
+    // JADI TAMBAHAN yang menutup celah nyata jalur Google OAuth (yang
+    // SEBELUMNYA nol proteksi sama sekali — 401 di jalur itu adalah
+    // perbaikan, bukan regresi, karena sebelumnya TIDAK ada penolakan
+    // apa pun).
+    session: {
+      create: {
+        before: async (session) => {
+          if (await isDisabled(session.userId)) return false;
+          await evictOldestSessionsIfOverLimit(session.userId);
         },
       },
     },

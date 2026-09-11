@@ -18,6 +18,7 @@ import {
   MAX_TRIAL_DURATION_DAYS,
 } from "../lib/trial";
 import { isValidQrisPayload } from "../lib/qris-emv";
+import { MAX_DEVICES_SETTING_KEY, MIN_MAX_DEVICES_PER_USER, MAX_MAX_DEVICES_PER_USER } from "../lib/session-limit";
 
 // § Fase 16, security review 2026-09-04 (Medium) — `company.bankAccounts`/
 // `company.qrisAccounts` dikonsumsi `orders.route.ts` dengan cast `as
@@ -210,6 +211,21 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
         if (!Number.isInteger(days) || days < MIN_TRIAL_DURATION_DAYS || days > MAX_TRIAL_DURATION_DAYS) {
           set.status = 400;
           return { code: "INVALID_TRIAL_DURATION_DAYS", minDays: MIN_TRIAL_DURATION_DAYS, maxDays: MAX_TRIAL_DURATION_DAYS };
+        }
+      }
+
+      // § Fase 106, architecture-user-tambahan.md § Fase A — batas sesi
+      // login bersamaan per user, dipakai LANGSUNG oleh
+      // `databaseHooks.session.create.before` (lib/auth.ts) tiap kali
+      // ada login baru, jadi WAJIB divalidasi server-side (nilai cacat
+      // bisa bikin semua user ke-logout terus-terusan kalau kebetulan 0,
+      // atau proteksi hilang total kalau angka aneh/negatif).
+      const maxDevicesItem = body.find((b) => b.key === MAX_DEVICES_SETTING_KEY);
+      if (maxDevicesItem) {
+        const maxDevices = Number(maxDevicesItem.value);
+        if (!Number.isInteger(maxDevices) || maxDevices < MIN_MAX_DEVICES_PER_USER || maxDevices > MAX_MAX_DEVICES_PER_USER) {
+          set.status = 400;
+          return { code: "INVALID_MAX_DEVICES", minDevices: MIN_MAX_DEVICES_PER_USER, maxDevices: MAX_MAX_DEVICES_PER_USER };
         }
       }
 
