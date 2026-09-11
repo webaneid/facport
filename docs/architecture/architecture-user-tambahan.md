@@ -103,6 +103,22 @@ yang harus dibangun dari nol (lihat § Ringkasan Riset), dan invariant
   begitu terhubung, **PERMANEN 1:1** untuk Data Usaha itu — tidak pernah
   ditanya ulang "connect ke Data Usaha mana" untuk fitur ke-2 dst di
   Data Usaha yang sama.
+- **[BELUM TERJAWAB, ditemukan saat audit final 2026-09-11] Scope OAuth
+  Accurate saat connect**: hari ini, scope OAuth yang diminta ke
+  Accurate di-derive dari `plan.modules` SUBSCRIPTION SPESIFIK yang
+  sedang di-connect (`accurate.route.ts`, `target.plan.modules`). Kalau
+  Data Usaha di-connect SEBELUM tahu fitur apa yang akan dibeli (jalur
+  "connect langsung saat buat Data Usaha", § Keputusan #6), sistem tidak
+  tahu scope apa yang harus diminta — opsinya: (a) minta SEMUA scope
+  dari 7 fitur sekaligus di depan (koneksi 1x, tapi minta izin lebih
+  luas dari yang mungkin akhirnya dipakai), atau (b) tetap connect
+  lazy/scope sempit di fitur pertama, lalu "top-up" izin scope setiap
+  kali fitur BARU disubscribe di Data Usaha yang sama (kalau Accurate
+  OAuth mendukung penambahan scope inkremental ke koneksi yang sama —
+  BELUM DIVERIFIKASI). **WAJIB dicek ke dokumentasi/dukungan developer
+  Accurate SEBELUM Fase B1 mulai dikerjakan** — ini keputusan teknis
+  yang menentukan bentuk pasti alur connect, bukan detail kecil yang
+  bisa diputuskan sambil jalan.
 - **Istilah "Data Usaha" sudah jadi bahasa produk resmi** — dipakai
   konsisten di `/app/accurate` ("Pilih Data Usaha", "Hubungkan Data
   Usaha Baru", selalu digloss "(perusahaan)"). Tidak perlu istilah baru,
@@ -306,6 +322,28 @@ tabel baru untuk transfer itu sendiri, cukup:
   ternyata bukan benar-benar permintaan pemilik asli). UI natural di
   `admin/users/[id]` (halaman detail user yang sudah ada) — tambah
   section "Data Usaha yang Dimiliki" dengan aksi "Pindahkan Kepemilikan".
+- **[GAP ditemukan saat audit final, 2026-09-11] Transfer SELURUH akun,
+  bukan cuma 1 Data Usaha**: ilustrasi client (Budi→Alex) menyiratkan
+  ambil-alih SEMUA Data Usaha milik Budi sekaligus ("Alex punya akses
+  yang sama dengan Budi"), TAPI desain endpoint di atas cuma operasi 1
+  Data Usaha (`:id`). Kalau pemilik punya banyak Data Usaha, transfer
+  satu-satu jadi kontradiksi dengan tujuan "self-service, kurangi
+  ribet." **Perlu ditambah 1 aksi lagi**: `POST /me/data-usaha/transfer-all-ownership`
+  (dan versi admin-nya) — pindahkan SEMUA Data Usaha milik pemilik saat
+  ini ke pemilik baru dalam 1 transaksi/konfirmasi, TETAP sediakan opsi
+  per-1-Data-Usaha untuk kasus "cuma mau lepas 1 bisnis tertentu, bukan
+  seluruh akun."
+- **[GAP ditemukan saat audit final] Visibilitas riwayat tagihan ikut
+  kepemilikan SAAT INI, bukan `invoices.userId` historis**: setelah Alex
+  ambil-alih Data Usaha A dari Budi, Alex WAJAR bisa lihat riwayat
+  invoice LAMA Data Usaha itu (dia yang sekarang pegang bisnisnya) —
+  meski secara data invoice-invoice lama itu tetap tercatat
+  `userId = Budi` (tidak ditulis ulang, § Keputusan #10). Ini berarti
+  `GET /me/invoices` (halaman Tagihan) perlu logic TAMBAHAN: bukan cuma
+  `WHERE invoices.userId = session.user.id`, tapi UNION dengan invoice
+  yang subscription-nya ada di bawah Data Usaha yang SAAT INI dimiliki
+  `session.user.id` (pola query sama dengan pivot gating di Fase B1) —
+  belum tertulis di rencana manapun sebelum ini, WAJIB masuk scope Fase C.
 
 ## Rencana Fase (kalau/ketika dilanjutkan — urutan wajib)
 
