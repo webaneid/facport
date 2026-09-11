@@ -6,6 +6,49 @@
 
 ---
 
+## 2026-09-11 — `@react-pdf/image` tidak bisa decode webp: gambar company.logo di PDF invoice tampil KOSONG total (kejadian KEDUA, pola sama bukti transfer Fase 94)
+**Masalah:** Fase 104 minta header PDF invoice tampilkan logo perusahaan
+menggantikan tulisan nama. Setelah kode ditulis (kondisional `logoUrl ?
+<Image> : <Text>{name}</Text>`) dan PDF asli digenerate untuk verifikasi
+visual, header tampil **kosong total** — bukan logo, bukan nama.
+
+**Root cause:** `settings.company.logo` SELALU disimpan `.webp`
+(`admin/branding.route.ts` re-encode paksa via `sharp(...).webp()`,
+sejak Fase 12) — tapi `@react-pdf/image` (dipakai `@react-pdf/renderer`)
+**tidak bisa decode format webp sama sekali** (cuma PNG/JPEG). `<Image
+src={webpUrl}>` gagal DIAM-DIAM (tidak throw, tidak ada gambar rusak
+seperti browser — cuma tidak render apa-apa). Karena kode baru
+menyembunyikan `<Text>` nama SETIAP KALI `logoUrl` truthy (bukan lagi
+tampil berdampingan seperti sebelumnya), kegagalan silent ini jadi
+kelihatan sebagai header kosong, bukan sekadar "logo tidak muncul,
+nama tetap ada" seperti sebelum perubahan.
+
+**Ini kejadian KEDUA** — masalah identik SUDAH pernah ditemukan &
+diperbaiki untuk gambar bukti transfer di Fase 94 (`getProofImageAsPng`,
+`lib/order-payment.ts`, convert `.webp` → PNG via `sharp` sebelum
+di-embed ke PDF). Tim (dan Claude) tidak langsung ingat pola ini berlaku
+ke SEMUA gambar yang masuk PDF, bukan cuma bukti transfer — sampai
+verifikasi visual manual (generate PDF asli, baca isinya) menunjukkan
+gejalanya.
+
+**Fix:** Fungsi baru `getCompanyLogoAsPng()` (`invoices.route.ts`), pola
+SAMA PERSIS `getProofImageAsPng` — `fetch()` URL publik logo, convert ke
+PNG via `sharp(buffer).png().toBuffer()`, hasil `Buffer` diteruskan ke
+`generateInvoicePdf()` sebagai `logoImage` (bukan lagi string URL).
+
+**Pencegahan:** **Setiap kali ada gambar BARU yang akan di-embed ke PDF
+invoice (`invoice-pdf.tsx`) — cek dulu apakah sumbernya bisa berupa
+webp** (semua upload branding/proof di project ini SELALU di-re-encode
+webp oleh `sharp` di endpoint upload masing-masing, § pola konsisten
+project). Kalau ya, WAJIB convert ke PNG/JPEG server-side dulu (pola
+`getCompanyLogoAsPng`/`getProofImageAsPng`) SEBELUM diteruskan ke
+`@react-pdf/renderer` — jangan asumsikan "sudah jadi URL publik" berarti
+aman dipakai langsung di `<Image src={url}>`. Verifikasi PDF SELALU
+lewat generate PDF asli + baca isinya (bukan cuma cek `bun test` yang
+cuma verifikasi magic bytes `%PDF-`, tidak menjamin konten visual benar).
+
+---
+
 ## 2026-09-11 — Header Excel dengan spasi nyempil bikin NILAI KOLOM HILANG diam-diam di SEMUA modul import (dikira awalnya bug Tax Purchase Payment)
 **Masalah:** Client retest Purchase Payment (setelah fix PPh Fase 100)
 dapat error Accurate: *"Nilai Pembayaran tidak mencukupi untuk

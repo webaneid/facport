@@ -78,9 +78,26 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
 - **Server-side murni, tanpa browser/Chromium** (§ ADR-0021) — komponen
   React di-compile langsung jadi PDF, bukan render HTML lalu screenshot.
 - **Logo company** (`company.logo`, § `architecture-settings.md`) sudah
-  berupa URL publik (bucket `facport-public`, § ADR-0017) — `<Image
-  src={logoUrl} />` react-pdf FETCH URL itu langsung, TIDAK perlu proxy/
-  buffer manual dulu di kode Facport.
+  berupa URL publik (bucket `facport-public`, § ADR-0017), TAPI SELALU
+  `.webp` (re-encode paksa di `admin/branding.route.ts`) dan
+  **`@react-pdf/image` TIDAK BISA decode webp** (§ Fase 104,
+  2026-09-11 — sama persis masalah bukti transfer di bawah). Handler
+  `GET /invoices/:id/pdf` WAJIB `fetch()` URL logo lalu convert ke PNG
+  (`getCompanyLogoAsPng()`, `sharp(buffer).png().toBuffer()`) SEBELUM
+  diserahkan ke `generateInvoicePdf()` sebagai `logoImage: Buffer | null`
+  (top-level, sejajar `proofImage` — BUKAN lagi field `company.logoUrl`
+  string). Kegagalan fetch/decode di-`try/catch`, TIDAK menggagalkan PDF
+  — fallback ke `<Text>{company.name}</Text>` (logo GANTIKAN nama teks
+  di header, bukan tampil berdampingan — beda dari header dashboard §
+  `architecture-app-dashboard.md` yang tetap render logo tanpa fallback
+  nama karena selalu ada `alt` text browser).
+- **Urutan section PDF (§ Fase 104)**: Header (logo/nama+info invoice) →
+  Ditagihkan Kepada → Status Pembayaran → Detail Invoice (tabel item +
+  total) → Bukti Transfer → Footer (instruksi pembayaran, kondisional).
+  Bukti Transfer SEBELUMNYA menyatu dengan Status Pembayaran di ATAS
+  tabel (sejak Fase 94) — dipindah ke bawah tabel+total atas permintaan
+  user, supaya alur baca invoice logis dulu (status → rincian tagihan)
+  baru bukti pembayarannya.
 - **TIDAK disimpan ke MinIO/disk** — di-generate ulang tiap request `GET
   /invoices/:id/pdf` (§ ADR-0021 — data snapshot/immutable, regenerasi
   selalu identik secara konten).

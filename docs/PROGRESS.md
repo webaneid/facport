@@ -112,6 +112,7 @@
 | 101  | Fix Tanggal Excel Serial Terkirim Mentah (Other Payment & Journal Voucher) | Done | `docs/architecture/architecture-other-payment.md`, `architecture-journal-voucher.md` | `docs/phases/phase-101-fix-tanggal-excel-serial.md` |
 | 102  | Fix Trim Header Excel di `parseExcelBuffer` (Bug Generik Lintas Modul) | Done (kode, di `develop`) — **belum di-release** | `docs/architecture/architecture-accurate-integration.md` § 3 | `docs/phases/phase-102-fix-trim-header-excel.md` |
 | 103  | Logo Perusahaan di Header + Footer Copyright | Done — **belum di-release** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
+| 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **belum di-release** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

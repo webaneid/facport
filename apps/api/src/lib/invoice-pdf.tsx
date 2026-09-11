@@ -18,12 +18,17 @@ export type InvoicePdfData = {
   company: {
     name: string;
     address: string | null;
-    logoUrl: string | null;
     taxId: string | null;
     phone: string | null;
     email: string | null;
     bankAccount: string | null;
   };
+  // § Fase 104 (2026-09-11) — PNG buffer (BUKAN URL `company.logo` mentah
+  // — field itu SELALU `.webp`, § `admin/branding.route.ts`, dan
+  // `@react-pdf/image` tidak bisa decode webp, sama masalah `proofImage`
+  // di bawah). Null kalau logo belum diupload ATAU gagal di-fetch/decode
+  // (§ `invoices.route.ts` `getCompanyLogoAsPng`) — fallback ke nama teks.
+  logoImage: Buffer | null;
   // § Fase 94 (2026-09-10) — `invoiceStatus` (§ `invoices.status`, selalu
   // ada) dipakai fallback kalau belum ada order sama sekali (`orderStatus`
   // null, mis. invoice baru dibuat admin belum pernah dibayar sekali pun).
@@ -142,8 +147,15 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
       <Page size="A4" style={styles.page}>
         <View style={styles.header}>
           <View style={styles.headerLeft}>
-            {data.company.logoUrl && <Image src={data.company.logoUrl} style={styles.logo} />}
-            <Text style={styles.companyName}>{data.company.name}</Text>
+            {/* § diminta user 2026-09-11 — logo GANTIKAN tulisan nama
+                perusahaan (bukan tampil berdampingan), fallback ke nama
+                teks kalau logo belum diupload ATAU gagal di-fetch/decode
+                (§ `logoImage` null, lihat catatan tipe di atas). */}
+            {data.logoImage ? (
+              <Image src={data.logoImage} style={styles.logo} />
+            ) : (
+              <Text style={styles.companyName}>{data.company.name}</Text>
+            )}
             {data.company.address && <Text style={styles.companyDetail}>{data.company.address}</Text>}
           </View>
           <View style={styles.headerRight}>
@@ -171,13 +183,6 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
               {INVOICE_STATUS_LABEL[data.invoiceStatus] ?? data.invoiceStatus}
             </Text>
           )}
-
-          {data.proofImage && (
-            <>
-              <Text style={styles.proofLabel}>Bukti Transfer</Text>
-              <Image src={data.proofImage} style={styles.proofImage} />
-            </>
-          )}
         </View>
 
         <View style={styles.table}>
@@ -204,6 +209,17 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             <Text style={styles.totalsValueFinal}>{formatRupiah(data.total)}</Text>
           </View>
         </View>
+
+        {/* § diminta user 2026-09-11 — bukti transfer dipindah ke BAWAH
+            tabel detail invoice (sebelumnya menyatu dengan status
+            pembayaran, di ATAS tabel). Susunan final: status pembayaran →
+            detail invoice (tabel+total) → bukti transfer → footer. */}
+        {data.proofImage && (
+          <View style={styles.paymentStatus}>
+            <Text style={styles.proofLabel}>Bukti Transfer</Text>
+            <Image src={data.proofImage} style={styles.proofImage} />
+          </View>
+        )}
 
         {hasFooter && (
           <View style={styles.footer}>
