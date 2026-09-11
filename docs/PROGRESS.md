@@ -110,6 +110,7 @@
 | 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
 | 100  | Mirror Speculative Fix PPh (`detailTax` di Root) ke Purchase Payment | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md` |
 | 101  | Fix Tanggal Excel Serial Terkirim Mentah (Other Payment & Journal Voucher) | Done | `docs/architecture/architecture-other-payment.md`, `architecture-journal-voucher.md` | `docs/phases/phase-101-fix-tanggal-excel-serial.md` |
+| 102  | Fix Trim Header Excel di `parseExcelBuffer` (Bug Generik Lintas Modul) | Done (kode, di `develop`) — **belum di-release** | `docs/architecture/architecture-accurate-integration.md` § 3 | `docs/phases/phase-102-fix-trim-header-excel.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2692,3 +2693,23 @@ ketiga**: gap "menular" lewat mirroring modul baru dari modul yang
 kebetulan juga belum punya suatu fix (setelah Fase 78 vendor scope,
 Fase 98 Kategori Keuangan) — dicatat di lessons-learned sebagai
 pencegahan untuk modul mapping baru berikutnya.
+
+## Update 2026-09-11 — Fase 102 Done (kode): Fix Trim Header Excel — BELUM di-release
+Client retest Purchase Payment dapat error Accurate "Nilai Pembayaran
+tidak mencukupi" — awalnya dikira bug Tax/PPh (Fase 100), TERNYATA
+SAMA SEKALI TIDAK TERKAIT. Query langsung ke data production (read-only,
+dijalankan user) menemukan root cause SEBENARNYA: header Excel client
+punya spasi nyempil (`" Payment "`), sedangkan `columnMapping` pakai
+nama trimmed (`"Payment"`) — `parseExcelBuffer` cuma trim `headers`
+untuk UI, TIDAK trim key `rows` (data aktual), jadi lookup nilai kolom
+gagal diam-diam dan nominal pembayaran terkirim sebagai 0 ke Accurate.
+Bug GENERIK di fungsi shared, memengaruhi SEMUA 7 modul import, bukan
+spesifik Purchase Payment/Tax. Fitur Tax sendiri belum sempat teruji
+sama sekali di batch yang gagal ini. Fix: `parseExcelBuffer` sekarang
+trim key `rows` juga. `bun run typecheck` 0 error, `apps/api` 647
+pass/0 fail (4 test baru), `bun run lint` 0 error, security review
+tidak ada temuan. User review diagnosis + diff kode dulu (soal
+sanitizing header Excel, dikonfirmasi berlaku ke SEMUA modul termasuk
+Sales Receipt — 1 fungsi shared), baru eksplisit minta commit+push ke
+`develop`. **Belum di-release ke `main`/deploy** — sesuai instruksi
+user setelah insiden timing release v1.27.1, menunggu instruksi lanjut.

@@ -16,7 +16,28 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   const headerRow = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })[0] ?? [];
   const headers = headerRow.map((h) => String(h ?? "").trim()).filter(Boolean);
 
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  // § BUG DITEMUKAN 2026-09-11 (client retest Purchase Payment, error
+  // Accurate "Nilai Pembayaran tidak mencukupi") — `sheet_to_json` pakai
+  // nama kolom MENTAH (belum di-trim) sebagai key tiap object baris,
+  // PADAHAL `headers` di atas (yang dipakai UI "Cocokkan Kolom" &
+  // disimpan sebagai `columnMapping`) SUDAH di-trim. Kalau header Excel
+  // punya spasi nyempil (mis. " Payment " — kejadian nyata client), semua
+  // builder payload (`rawRow[trimmedName]`) GAGAL DIAM-DIAM (balik
+  // `undefined`, biasanya default ke 0/kosong) — TANPA error yang jelas,
+  // sampai validasi downstream (mis. saldo pembayaran Accurate) baru
+  // ketahuan. Trim di sini SEKALI supaya key row SELALU konsisten dengan
+  // `headers`/`columnMapping` — bug ini generik lintas SEMUA modul import
+  // (bukan spesifik Purchase Payment/Tax), karena `parseExcelBuffer`
+  // dipakai bersama oleh semua route `*-import.route.ts`.
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  const rows = rawRows.map((row) => {
+    const trimmed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      trimmed[key.trim()] = value;
+    }
+    return trimmed;
+  });
+
   return { headers, rows };
 }
 
