@@ -6,6 +6,61 @@
 
 ---
 
+## 2026-09-11 — Header Excel dengan spasi nyempil bikin NILAI KOLOM HILANG diam-diam di SEMUA modul import (dikira awalnya bug Tax Purchase Payment)
+**Masalah:** Client retest Purchase Payment (setelah fix PPh Fase 100)
+dapat error Accurate: *"Nilai Pembayaran tidak mencukupi untuk
+melunasi pembayaran!"* — dilaporkan sebagai kemungkinan bug fitur Tax
+yang baru ditambahkan.
+
+**Investigasi:** Query langsung ke `import_batches`/`import_batch_rows`
+production (read-only SELECT, dijalankan USER via `docker exec`, bukan
+Claude SSH langsung) menunjukkan `raw_data` baris yang gagal punya key
+`" Payment "` (spasi di depan DAN belakang), padahal `column_mapping`
+batch itu memetakan `"Payment": "chequeAmount"` (tanpa spasi).
+
+**Root cause:** `apps/api/src/lib/excel.ts` § `parseExcelBuffer` —
+`headers` (dipakai UI "Cocokkan Kolom" & disimpan sebagai
+`columnMapping`) SUDAH di-trim sejak lama (`.trim()`), TAPI key object
+`rows` (data aktual tiap baris, dari `XLSX.utils.sheet_to_json`) TIDAK
+pernah di-trim — pakai literal header cell Excel apa adanya. Kalau
+header Excel client punya spasi nyempil (kejadian nyata di sini),
+lookup `rawRow["Payment"]` (trimmed, dari `columnMapping`) di SEMUA
+builder payload (7 modul: purchase-invoice, sales-invoice,
+vendor-payable-account, purchase-payment, sales-receipt,
+journal-voucher, other-payment) GAGAL DIAM-DIAM — balik `undefined`,
+biasanya default ke `0`/kosong via pola `Number(x ?? 0)`. Nominal
+pembayaran Rp 100.000 di Excel terkirim sebagai Rp 0 ke Accurate —
+Accurate BENAR menolak "Nilai Pembayaran tidak mencukupi", karena
+memang yang dikirim betulan 0.
+
+**Field Tax/PPh (Fase 99/100) BELUM SEMPAT teruji sama sekali** di
+batch ini — error terjadi di validasi saldo pembayaran, SEBELUM
+Accurate sempat evaluasi bagian PPh apa pun. Kesimpulan awal (dikira
+bug Tax) TERBUKTI SALAH TOTAL.
+
+**Pelajaran penting**: gejala yang dilaporkan client ("error di fitur
+X yang baru saya coba") TIDAK SELALU berarti bug ada di fitur X itu —
+WAJIB verifikasi ke DATA MENTAH (raw_data/error_message baris yang
+gagal) sebelum menyimpulkan root cause dari deskripsi error semata,
+apalagi kalau fitur yang dicurigai baru saja di-deploy (bias "yang
+baru diubah pasti yang salah" bisa menyesatkan). Query production
+langsung (read-only, dijalankan user) terbukti membongkar kesalahan
+asumsi ini dalam sekali investigasi.
+
+**Fix**: `docs/phases/phase-102-fix-trim-header-excel.md` —
+`parseExcelBuffer` sekarang trim key `rows` juga, konsisten dengan
+`headers`. Fix di SATU tempat (fungsi shared), bukan per-modul.
+
+**Pencegahan**: kalau ada fungsi shared yang punya 2 representasi data
+dari sumber yang sama (di sini: `headers` vs `rows`, dua-duanya dari
+Excel yang sama), WAJIB pakai transformasi (trim, normalize, dst) yang
+KONSISTEN di kedua representasi — jangan cuma satu sisi yang
+"dibersihkan". Test unit untuk fungsi parsing shared seperti ini
+(`excel.test.ts`, baru dibuat Fase 102) SEHARUSNYA sudah ada dari awal
+modul ini dibuat, bukan baru ditambah setelah bug nyata ditemukan.
+
+---
+
 ## 2026-09-11 — Cell Excel bertipe Tanggal asli terkirim sebagai angka serial mentah ke Accurate ("Invalid field value for field dateFieldN") — Other Payment & Journal Voucher
 **Masalah:** Client retest import Other Payment, input tanggal di kolom
 "Atribut Tanggal 1"/"Atribut Tanggal 2", dapat error Accurate: *"Invalid

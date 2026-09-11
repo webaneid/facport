@@ -419,6 +419,20 @@ Accurate lebih susah di-rollback daripada dibatalkan sebelum submit).
 teknis per-fase) → file arsitektur modul masing-masing, § catatan di
 awal dokumen ini.
 
+> **⚠️ Fase 102 (2026-09-11)** — BUG DITEMUKAN & DIPERBAIKI di
+> `parseExcelBuffer` (`apps/api/src/lib/excel.ts`, dipakai SEMUA modul
+> import): key object baris hasil parsing Excel TIDAK di-trim, padahal
+> `headers` (yang ditampilkan di UI "Cocokkan Kolom" & disimpan sebagai
+> `columnMapping`) SUDAH di-trim sejak lama. Kalau header Excel client
+> punya spasi nyempil (mis. `" Payment "` — kejadian nyata, ditemukan
+> lewat laporan client Purchase Payment: nominal pembayaran jadi `0`,
+> Accurate menolak "Nilai Pembayaran tidak mencukupi"), lookup
+> `rawRow[trimmedName]` di SEMUA builder payload gagal diam-diam (balik
+> `undefined`, default ke 0/kosong) — TANPA error yang jelas sampai
+> validasi downstream (di Accurate) baru ketahuan. Fix: key baris
+> di-trim juga, konsisten dengan `headers`. Detail →
+> `docs/phases/phase-102-fix-trim-header-excel.md`.
+
 ## 4. Rate Limiting Sisi Client
 ✅ **Angka pasti TERVERIFIKASI 2026-08-19**: **maksimal 8 request/detik DAN
 maksimal 8 request bersamaan (concurrent)** — dikonfirmasi dari
