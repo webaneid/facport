@@ -88,7 +88,31 @@ function normalizeQrisAccounts(value: unknown): unknown {
 // publik (`landing/pay/[orderId]`, dipakai customer TANPA sesi) bisa
 // format tanggal konsisten dengan halaman yang sudah login — lihat
 // `apps/web/components/company-timezone-provider.tsx`.
-const PUBLIC_SETTINGS_KEYS = ["company.name", "company.logo", "company.favicon", "company.timezone"] as const;
+// § Fase 103 (2026-09-11) — `company.logoLinkUrl`/`company.copyrightStartYear`
+// ditambah: logo header (`company.logo`, reuse field lama Fase 12 yang
+// sejak 2026-09-07 tidak dipakai di sidebar) + footer copyright di
+// KEDUA layout `(protected)` (admin & app) — dua-duanya fetch lewat
+// `getPublicSettings()` (endpoint ini), bukan `GET /settings` yang
+// butuh auth.
+const PUBLIC_SETTINGS_KEYS = [
+  "company.name",
+  "company.logo",
+  "company.logoLinkUrl",
+  "company.favicon",
+  "company.timezone",
+  "company.copyrightStartYear",
+] as const;
+
+// § Fase 103 — validasi ringan `company.logoLinkUrl`: WAJIB kosong atau
+// diawali http(s):// (dipakai langsung sebagai `<a href>` target="_blank"
+// di semua surface, cegah skema aneh seperti `javascript:`).
+function isValidLogoLinkUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed === "" || /^https?:\/\//i.test(trimmed);
+}
+
+const MIN_COPYRIGHT_START_YEAR = 2000;
 
 // § Fase 12, Medium finding security review — `company.logo`/`company.favicon`
 // HARUS selalu berupa URL bucket public hasil `branding.route.ts` (file
@@ -192,6 +216,28 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
       if (body.some((b) => (BRANDING_ONLY_KEYS as readonly string[]).includes(b.key))) {
         set.status = 400;
         return { code: "USE_BRANDING_UPLOAD_ENDPOINT" };
+      }
+
+      // § Fase 103 — `company.logoLinkUrl` dipakai APA ADANYA sebagai
+      // `<a href>` (target="_blank") di header semua surface, TANPA
+      // sanitasi lagi di frontend — validasi skema WAJIB di sini.
+      const logoLinkUrlItem = body.find((b) => b.key === "company.logoLinkUrl");
+      if (logoLinkUrlItem && !isValidLogoLinkUrl(logoLinkUrlItem.value)) {
+        set.status = 400;
+        return { code: "INVALID_LOGO_LINK_URL" };
+      }
+
+      // § Fase 103 — dipakai LANGSUNG untuk hitung rentang tahun footer
+      // copyright (§ `apps/web/components/app-shell/footer.tsx`), jadi
+      // WAJIB integer wajar (bukan cuma trust form frontend).
+      const copyrightStartYearItem = body.find((b) => b.key === "company.copyrightStartYear");
+      if (copyrightStartYearItem) {
+        const year = Number(copyrightStartYearItem.value);
+        const maxYear = new Date().getUTCFullYear() + 1;
+        if (!Number.isInteger(year) || year < MIN_COPYRIGHT_START_YEAR || year > maxYear) {
+          set.status = 400;
+          return { code: "INVALID_COPYRIGHT_START_YEAR", minYear: MIN_COPYRIGHT_START_YEAR, maxYear };
+        }
       }
 
       const bankAccountsItem = body.find((b) => b.key === "company.bankAccounts");

@@ -13,6 +13,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { SearchForm } from "@/components/ui/search-form";
 import { api } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
@@ -192,16 +193,18 @@ const columnHelper = createDataTableColumns<Announcement>();
 export default function AdminAnnouncementsPage() {
   const companyTimezone = useCompanyTimezone();
   const [announcements, setAnnouncements] = useState<Announcement[] | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
-    const res = await api.admin.announcements.get();
+    const res = await api.admin.announcements.get({ query: { search: search || undefined } });
     if (res.data) setAnnouncements((res.data as unknown as { announcements: Announcement[] }).announcements);
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat search berubah, pola sama admin/users/page.tsx
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   const columns = [
     columnHelper.accessor("title", { header: "Judul", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span> }),
@@ -228,6 +231,7 @@ export default function AdminAnnouncementsPage() {
         <CardHeader>
           <CardTitle>Riwayat Pengumuman</CardTitle>
           <CardDescription>Jumlah penerima terisi begitu proses pengiriman selesai (beberapa saat setelah dikirim).</CardDescription>
+          <SearchForm placeholder="Cari judul pengumuman..." onSearch={setSearch} className="mt-2 w-full" />
         </CardHeader>
         <CardContent>
           {!announcements ? (

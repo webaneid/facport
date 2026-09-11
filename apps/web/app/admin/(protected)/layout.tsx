@@ -30,7 +30,20 @@ export default async function AdminProtectedLayout({ children }: { children: Rea
   // jadi kelihatan aneh (letterboxed) di situ. Ditemukan feedback user
   // 2026-09-07.
   return (
-    <AppShell surface="admin" logoUrl={settings["company.favicon"]?.["180"]} user={{ name: me.name, email: me.email }}>
+    <AppShell
+      surface="admin"
+      logoUrl={settings["company.favicon"]?.["180"]}
+      // § Fase 103 (2026-09-11) — `company.logo` (field lama Fase 12,
+      // sejak 2026-09-07 tidak dipakai di sidebar) SEKARANG dirender di
+      // Topbar (header, lebar/rectangular — cocok untuk strip horizontal,
+      // beda dari kotak kecil sidebar di atas).
+      headerLogoUrl={settings["company.logo"]}
+      headerLogoLinkUrl={settings["company.logoLinkUrl"]}
+      companyName={settings["company.name"]}
+      copyrightStartYear={settings["company.copyrightStartYear"]}
+      appVersion={process.env.APP_VERSION}
+      user={{ name: me.name, email: me.email }}
+    >
       {children}
     </AppShell>
   );

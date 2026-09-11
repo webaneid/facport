@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sidebar, type Surface } from "./sidebar";
 import { Topbar } from "./topbar";
+import { Footer } from "./footer";
 import { PermissionsProvider } from "@/lib/use-permissions";
 
 // § ADR-0024, Admin UI Kit v2 — shell dibungkus 2 panel rounded terpisah
@@ -13,6 +14,11 @@ import { PermissionsProvider } from "@/lib/use-permissions";
 export function AppShell({
   surface,
   logoUrl,
+  headerLogoUrl,
+  headerLogoLinkUrl,
+  companyName,
+  copyrightStartYear,
+  appVersion,
   subscriptionModules,
   modulePlanNames,
   user,
@@ -20,6 +26,13 @@ export function AppShell({
 }: {
   surface: Surface;
   logoUrl?: string;
+  // § Fase 103 — logo header (Topbar, tengah) TERPISAH dari `logoUrl`
+  // di atas (identity card Sidebar, pakai favicon — § sidebar.tsx).
+  headerLogoUrl?: string;
+  headerLogoLinkUrl?: string;
+  companyName?: string;
+  copyrightStartYear?: number;
+  appVersion?: string;
   subscriptionModules?: string[];
   modulePlanNames?: Record<string, string>;
   user: { name: string; email: string };
@@ -49,8 +62,15 @@ export function AppShell({
               oleh `overflow-x-auto` milik Table sendiri (gotcha flexbox klasik
               — flex item defaultnya `min-width: auto`, bukan 0). */}
           <div className="flex min-h-[calc(100vh-1.5rem)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-admin-line bg-admin-panel-solid shadow-[0_10px_26px_rgba(16,24,40,.05)]">
-            <Topbar surface={surface} user={user} onMenuClick={() => setMobileNavOpen(true)} />
+            <Topbar
+              surface={surface}
+              user={user}
+              headerLogoUrl={headerLogoUrl}
+              headerLogoLinkUrl={headerLogoLinkUrl}
+              onMenuClick={() => setMobileNavOpen(true)}
+            />
             <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+            <Footer companyName={companyName} copyrightStartYear={copyrightStartYear} appVersion={appVersion} />
           </div>
         </div>
       </div>

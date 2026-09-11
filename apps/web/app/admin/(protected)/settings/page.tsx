@@ -51,6 +51,14 @@ type FormState = {
   companyName: string;
   companyAddress: string;
   companyTimezone: string;
+  // § Fase 103 (2026-09-11) — tahun mulai footer copyright (§
+  // app-shell/footer.tsx), string (input number di form) divalidasi
+  // server-side jadi integer wajar.
+  companyCopyrightStartYear: string;
+  // § Fase 103 — URL tujuan saat logo header (Topbar) diklik, buka tab
+  // baru. Gambar logonya sendiri REUSE `company.logo` (upload di card
+  // Branding di bawah, field lama Fase 12).
+  companyLogoLinkUrl: string;
   retentionDays: string;
   manualInputSeconds: string;
   trialMaxRows: string;
@@ -106,6 +114,8 @@ export default function AdminSettingsPage() {
         companyName: String(general["company.name"] ?? ""),
         companyAddress: String(general["company.address"] ?? ""),
         companyTimezone: String(general["company.timezone"] ?? "Asia/Jakarta"),
+        companyCopyrightStartYear: general["company.copyrightStartYear"] != null ? String(general["company.copyrightStartYear"]) : "",
+        companyLogoLinkUrl: String(general["company.logoLinkUrl"] ?? ""),
         retentionDays: String(data["data.importRetentionDays"] ?? 2),
         manualInputSeconds: String(data["data.manualInputSecondsPerRow"] ?? 30),
         trialMaxRows: String(data["trial.maxRows"] ?? 100),
@@ -247,6 +257,23 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    // § Fase 103 — kedua field opsional (boleh kosong), validasi cuma
+    // jalan kalau diisi. Validasi SEBENARNYA tetap di server (§
+    // settings.route.ts), ini cuma UX supaya user tidak perlu tunggu
+    // round-trip untuk kesalahan yang jelas.
+    if (form.companyCopyrightStartYear.trim() !== "") {
+      const copyrightStartYear = Number(form.companyCopyrightStartYear);
+      const maxYear = new Date().getFullYear() + 1;
+      if (!Number.isInteger(copyrightStartYear) || copyrightStartYear < 2000 || copyrightStartYear > maxYear) {
+        setError(`Tahun mulai copyright harus angka bulat 2000–${maxYear}.`);
+        return;
+      }
+    }
+    if (form.companyLogoLinkUrl.trim() !== "" && !/^https?:\/\//i.test(form.companyLogoLinkUrl.trim())) {
+      setError('URL tujuan logo harus diawali "http://" atau "https://".');
+      return;
+    }
+
     const incompleteBank = form.bankAccounts.some((a) => !a.bankName.trim() || !a.accountNumber.trim() || !a.accountName.trim());
     if (incompleteBank) {
       setError("Semua field rekening bank wajib diisi (atau hapus baris yang tidak dipakai).");
@@ -274,6 +301,10 @@ export default function AdminSettingsPage() {
       { key: "company.name", value: form.companyName, group: "general" },
       { key: "company.address", value: form.companyAddress, group: "general" },
       { key: "company.timezone", value: form.companyTimezone, group: "general" },
+      { key: "company.logoLinkUrl", value: form.companyLogoLinkUrl.trim(), group: "general" },
+      ...(form.companyCopyrightStartYear.trim() !== ""
+        ? [{ key: "company.copyrightStartYear", value: Number(form.companyCopyrightStartYear), group: "general" }]
+        : []),
       { key: "data.importRetentionDays", value: retentionDays, group: "data" },
       { key: "data.manualInputSecondsPerRow", value: manualInputSeconds, group: "data" },
       { key: "trial.maxRows", value: trialMaxRows, group: "data" },
@@ -296,6 +327,8 @@ export default function AdminSettingsPage() {
         qrisId?: string;
         minRows?: number;
         maxRows?: number;
+        minYear?: number;
+        maxYear?: number;
       } | undefined;
       setError(
         value?.code === "INVALID_RETENTION_DAYS"
@@ -310,7 +343,11 @@ export default function AdminSettingsPage() {
                   ? `Payload EMV salah satu QRIS tidak valid (${normalizedQrisAccounts.find((a) => a.id === value.qrisId)?.name ?? "cek kembali entri QRIS"}) — pastikan disalin utuh dari hasil scan QRIS statis.`
                   : value?.code === "INVALID_BANK_ACCOUNTS"
                     ? "Data rekening bank tidak lengkap — pastikan semua field terisi."
-                    : "Gagal menyimpan pengaturan.",
+                    : value?.code === "INVALID_LOGO_LINK_URL"
+                      ? 'URL tujuan logo harus diawali "http://" atau "https://".'
+                      : value?.code === "INVALID_COPYRIGHT_START_YEAR"
+                        ? `Tahun mulai copyright harus angka bulat ${value.minYear}–${value.maxYear}.`
+                        : "Gagal menyimpan pengaturan.",
       );
       return;
     }
@@ -353,6 +390,19 @@ export default function AdminSettingsPage() {
               placeholder="Asia/Jakarta"
             />
           </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Tahun Mulai Copyright</span>
+            <Input
+              type="number"
+              value={form.companyCopyrightStartYear}
+              onChange={(e) => setForm({ ...form, companyCopyrightStartYear: e.target.value })}
+              placeholder={String(new Date().getFullYear())}
+            />
+            <span className="text-xs text-muted-foreground">
+              Tampil di footer dashboard, mis. &quot;© Copyright 2025 - {new Date().getFullYear()} {form.companyName || "Nama Perusahaan"}&quot;.
+              Kosongkan untuk tampilkan tahun sekarang saja.
+            </span>
+          </label>
         </CardContent>
       </Card>
 
@@ -361,34 +411,46 @@ export default function AdminSettingsPage() {
           <CardTitle>Branding</CardTitle>
           <CardDescription>Logo & favicon yang tampil di dashboard dan tab browser.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-6 sm:flex-row">
-          <label className="flex flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">Logo</span>
-            {branding?.logoUrl && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.logoUrl} alt="Logo saat ini" className="h-12 w-auto rounded border border-border p-1" />
-            )}
+        <CardContent className="flex flex-col gap-6">
+          <div className="flex flex-col gap-6 sm:flex-row">
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">Logo</span>
+              <span className="text-xs text-muted-foreground">Logo ini tampil di tengah header dashboard (admin & pelanggan).</span>
+              {branding?.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={branding.logoUrl} alt="Logo saat ini" className="h-12 w-auto rounded border border-border p-1" />
+              )}
+              <Input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploadingLogo}
+                onChange={(e) => handleLogoChange(e.target.files?.[0])}
+              />
+              {uploadingLogo && <span className="text-xs text-muted-foreground">Mengupload...</span>}
+            </label>
+            <label className="flex flex-1 flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">Favicon</span>
+              {branding?.faviconUrls?.["32"] && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={branding.faviconUrls["32"]} alt="Favicon saat ini" className="h-8 w-8 rounded border border-border p-1" />
+              )}
+              <Input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                disabled={uploadingFavicon}
+                onChange={(e) => handleFaviconChange(e.target.files?.[0])}
+              />
+              {uploadingFavicon && <span className="text-xs text-muted-foreground">Mengupload...</span>}
+            </label>
+          </div>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">URL Tujuan Logo (dibuka tab baru saat diklik)</span>
             <Input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={uploadingLogo}
-              onChange={(e) => handleLogoChange(e.target.files?.[0])}
+              value={form.companyLogoLinkUrl}
+              onChange={(e) => setForm({ ...form, companyLogoLinkUrl: e.target.value })}
+              placeholder="https://facinstitute.id"
             />
-            {uploadingLogo && <span className="text-xs text-muted-foreground">Mengupload...</span>}
-          </label>
-          <label className="flex flex-1 flex-col gap-1.5">
-            <span className="text-sm font-medium text-foreground">Favicon</span>
-            {branding?.faviconUrls?.["32"] && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={branding.faviconUrls["32"]} alt="Favicon saat ini" className="h-8 w-8 rounded border border-border p-1" />
-            )}
-            <Input
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              disabled={uploadingFavicon}
-              onChange={(e) => handleFaviconChange(e.target.files?.[0])}
-            />
-            {uploadingFavicon && <span className="text-xs text-muted-foreground">Mengupload...</span>}
+            <span className="text-xs text-muted-foreground">Kosongkan kalau logo tidak perlu bisa diklik.</span>
           </label>
         </CardContent>
       </Card>

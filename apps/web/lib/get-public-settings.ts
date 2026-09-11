@@ -6,11 +6,18 @@
 export type PublicSettings = {
   "company.name"?: string;
   "company.logo"?: string;
+  // § Fase 103 (2026-09-11) — `company.logo` SEKARANG JUGA dirender di
+  // Topbar (header, § app-shell.tsx), reuse field lama Fase 12 yang
+  // sejak 2026-09-07 tidak dipakai di sidebar (diganti company.favicon).
+  // `logoLinkUrl` = URL tujuan saat logo header diklik (opsional).
+  "company.logoLinkUrl"?: string;
   "company.favicon"?: Record<string, string>;
   // § Fase 43 (audit timezone 2026-09-06) — dipakai `CompanyTimezoneProvider`
   // di root layout, supaya format tanggal konsisten dengan setting admin
   // di SEMUA surface (termasuk halaman publik tanpa login).
   "company.timezone"?: string;
+  // § Fase 103 — tahun mulai footer copyright (§ app-shell/footer.tsx).
+  "company.copyrightStartYear"?: number;
 };
 
 export async function getPublicSettings(): Promise<PublicSettings> {

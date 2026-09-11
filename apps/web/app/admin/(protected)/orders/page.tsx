@@ -4,13 +4,14 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Eye, CreditCard, Ban } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
@@ -47,22 +48,23 @@ const columnHelper = createDataTableColumns<OrderRow>();
 export default function AdminOrdersPage() {
   const companyTimezone = useCompanyTimezone();
   const [queue, setQueue] = useState<QueueStatus>("submitted");
+  const [search, setSearch] = useState("");
   const [orders, setOrders] = useState<OrderRow[] | null>(null);
   const [proofDialogUrl, setProofDialogUrl] = useState<string | null>(null);
   const [rejectingId, setRejectingId] = useState<string | null>(null);
   const [rejectReason, setRejectReason] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  async function load(status: QueueStatus) {
+  async function load(status: QueueStatus, searchQuery: string) {
     setOrders(null);
-    const res = await api.admin.orders.get({ query: { status } });
+    const res = await api.admin.orders.get({ query: { status, search: searchQuery || undefined } });
     if (res.data) setOrders((res.data as unknown as { orders: OrderRow[] }).orders);
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal/tiap ganti tab, pola standar
-    load(queue);
-  }, [queue]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal/tiap ganti tab atau search, pola standar
+    load(queue, search);
+  }, [queue, search]);
 
   async function handleViewProof(orderId: string) {
     const res = await api.admin.orders({ id: orderId })["proof-url"].get();
@@ -84,7 +86,7 @@ export default function AdminOrdersPage() {
     }
     const data = res.data as { subscriptionsCreated: number };
     toast.success(`Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan.`);
-    load(queue);
+    load(queue, search);
   }
 
   async function handleReject() {
@@ -99,7 +101,7 @@ export default function AdminOrdersPage() {
     toast.success("Pembayaran ditolak, customer bisa upload ulang bukti.");
     setRejectingId(null);
     setRejectReason("");
-    load(queue);
+    load(queue, search);
   }
 
   // Tidak dibungkus `useMemo` — handler (`handleConfirm` dkk) dibuat
@@ -196,7 +198,12 @@ export default function AdminOrdersPage() {
       </Tabs>
 
       <Card>
-        <CardContent className="pt-6">
+        <CardHeader>
+          <CardTitle>Daftar Order</CardTitle>
+          <CardDescription>{orders?.length ?? 0} order untuk status ini.</CardDescription>
+          <SearchForm placeholder="Cari nomor invoice atau nama..." onSearch={setSearch} className="mt-2 w-full" />
+        </CardHeader>
+        <CardContent>
           {!orders ? (
             <Skeleton className="h-40 w-full" />
           ) : (

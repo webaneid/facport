@@ -12,6 +12,7 @@ import { Can } from "@/components/auth/can";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { SearchForm } from "@/components/ui/search-form";
 import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { api } from "@/lib/api-client";
@@ -125,16 +126,18 @@ const columnHelper = createDataTableColumns<StaffRow>();
 export default function AdminStaffPage() {
   const companyTimezone = useCompanyTimezone();
   const [staff, setStaff] = useState<StaffRow[] | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
-    const res = await api.admin.staff.get();
+    const res = await api.admin.staff.get({ query: { search: search || undefined } });
     if (res.data) setStaff((res.data as unknown as { users: StaffRow[] }).users);
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat search berubah, pola sama admin/users/page.tsx
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   // § pola sama admin/users/page.tsx — nonaktifkan (reversibel), BUKAN
   // hapus permanen (§ ADR-0027 § Decision 3). Guard tambahan (tolak diri
@@ -209,6 +212,7 @@ export default function AdminStaffPage() {
         <CardHeader>
           <CardTitle>Semua Akun Tim Internal</CardTitle>
           <CardDescription>{staff?.length ?? 0} akun.</CardDescription>
+          <SearchForm placeholder="Cari nama atau email..." onSearch={setSearch} className="mt-2 w-full" />
         </CardHeader>
         <CardContent>
           {!staff ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={staff} emptyIcon={UserCog} emptyTitle="Belum ada akun tim internal" />}

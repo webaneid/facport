@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import sharp from "sharp";
 import { eq, desc, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { invoices, invoiceItems, settings, orders } from "../db/schema";
@@ -7,6 +8,19 @@ import { generateInvoicePdf } from "../lib/invoice-pdf";
 import { attachInvoiceItems } from "../lib/invoice-helpers";
 import { getProofImageAsPng } from "../lib/order-payment";
 import { logger } from "../lib/logger";
+
+// § Fase 104 (2026-09-11) — `settings.company.logo` SELALU disimpan
+// `.webp` (§ `admin/branding.route.ts`, re-encode paksa sharp), tapi
+// `@react-pdf/image` TIDAK BISA decode webp (sama persis masalah
+// `getProofImageAsPng` di `lib/order-payment.ts`) — fetch URL publiknya
+// (bukan baca MinIO langsung, beda dari proof yang private/pakai object
+// key) lalu convert ke PNG di sini SEBELUM diserahkan ke `generateInvoicePdf()`.
+async function getCompanyLogoAsPng(logoUrl: string): Promise<Buffer> {
+  const res = await fetch(logoUrl);
+  if (!res.ok) throw new Error(`Gagal fetch logo perusahaan: HTTP ${res.status}`);
+  const buffer = Buffer.from(await res.arrayBuffer());
+  return sharp(buffer).png().toBuffer();
+}
 
 const COMPANY_SETTINGS_KEYS = [
   "company.name",
@@ -83,6 +97,17 @@ export const invoicesRoute = new Elysia()
 
       const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
       const company = await getCompanySettingsForPdf();
+      let logoImage: Buffer | null = null;
+      if (company.logoUrl) {
+        try {
+          logoImage = await getCompanyLogoAsPng(company.logoUrl);
+        } catch (err) {
+          // § logo gagal diambil/decode TIDAK BOLEH gagalkan generate PDF
+          // keseluruhan — invoice tetap harus bisa diunduh, fallback ke
+          // nama teks (§ `invoice-pdf.tsx`, `logoImage` null -> Text nama).
+          logger.error({ err, invoiceId: invoice.id, logoUrl: company.logoUrl }, "Gagal ambil logo perusahaan untuk PDF invoice");
+        }
+      }
       // § Fase 94 (2026-09-10) — PDF butuh status pembayaran GRANULAR +
       // bukti transfer (request user: "pastikan bukti transfer terhubung
       // sehingga bisa kelihatan" di PDF). `orders.invoiceId` 1:1, sama
@@ -111,6 +136,7 @@ export const invoicesRoute = new Elysia()
           subtotal: invoice.subtotal,
           total: invoice.total,
           company,
+          logoImage,
           invoiceStatus: invoice.status,
           orderStatus: order?.status ?? null,
           proofImage,

@@ -67,6 +67,33 @@ pathname, jadi halaman turunan seperti `/purchase-invoice/import/[batchId]`
 tetap dapat judul dari induknya). JANGAN duplikasi daftar nav/judul ke
 tempat lain — 1 array, 2 pemakai.
 
+## Logo Header + Footer Copyright (§ Fase 103, 2026-09-11)
+`Topbar` dan `Footer` (`components/app-shell/topbar.tsx`,
+`components/app-shell/footer.tsx`) dipakai BERSAMA oleh surface admin
+DAN app — 1 komponen, wiring beda per layout `(protected)`:
+- **Logo header**: `company.logo` (setting, reuse field lama Fase 12)
+  dirender absolute-centered di tengah `Topbar` (`hidden md:flex`,
+  disembunyikan di layar sempit). Kalau `company.logoLinkUrl` terisi,
+  dibungkus `<a target="_blank" rel="noopener noreferrer">` — buka tab
+  baru, TIDAK me-redirect dashboard. Kedua value datang dari
+  `getPublicSettings()` (fetch publik, § `architecture-settings.md`),
+  di-fetch di layout Server Component, diteruskan sebagai props biasa.
+- **Footer**: dirender `AppShell` tepat setelah `</main>`, masih di
+  dalam panel putih yang sama. Props: `companyName`,
+  `copyrightStartYear`, `appVersion` — semua opsional dengan fallback
+  (lihat `footer.tsx` untuk format lengkap & aturan rentang tahun).
+- **`appVersion`**: `process.env.APP_VERSION` (plain env var, BUKAN
+  `NEXT_PUBLIC_*` — sengaja tidak di-inline ke client bundle), diinject
+  CI sebagai Docker build-arg dari git tag semantic-release (§
+  `.github/workflows/deploy.yml`/`deploy-staging.yml`,
+  `apps/web/Dockerfile`). Dev lokal tanpa Docker → kosong → `Footer`
+  fallback tampilkan `"dev"`.
+- **Cache**: field-field ini ikut `getPublicSettings()` yang di-cache
+  Next.js 5 menit (`next: { revalidate: 300 }`, § Fase 12) — perubahan
+  dari Admin Settings baru kelihatan di dashboard beberapa menit
+  kemudian, bukan seketika. Ini SUDAH ada sejak Fase 12 (juga berlaku ke
+  logo/nama perusahaan/favicon), bukan perilaku baru fase ini.
+
 ## Komponen UI (`components/ui/`)
 Semua komponen custom (BUKAN pakai library component library eksternal
 utuh), pola konsisten: `cn()` (`lib/utils.ts`) buat gabung className,

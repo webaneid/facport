@@ -111,12 +111,17 @@ jobs:
           push: true
           tags: ghcr.io/${{ github.repository }}/api:staging
 
+      # § Fase 103 (2026-09-11) — staging tidak punya semver dari
+      # semantic-release (cuma tag "staging" ditimpa tiap push), jadi
+      # APP_VERSION cukup literal "staging" untuk footer copyright.
       - name: Build & push apps/web (staging)
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./apps/web/Dockerfile
           push: true
+          build-args: |
+            APP_VERSION=staging
           tags: ghcr.io/${{ github.repository }}/web:staging
 
   deploy-to-server:
