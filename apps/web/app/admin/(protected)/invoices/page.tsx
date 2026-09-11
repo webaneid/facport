@@ -20,6 +20,7 @@ import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { moduleLabel } from "@/lib/module-options";
+import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
 
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:6209";
 
@@ -347,7 +348,7 @@ export default function AdminInvoicesPage() {
     columnHelper.display({
       id: "items",
       header: "Paket",
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.items.map((i) => i.label).join(", ") || "-"}</span>,
+      cell: ({ row }) => <span className="text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</span>,
     }),
     columnHelper.accessor("total", { header: "Total", cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
     columnHelper.accessor("dueDate", { header: "Jatuh Tempo", cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span> }),

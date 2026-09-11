@@ -1,11 +1,11 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
 import { auth } from "./auth";
-import { subscriptionGatePlugin } from "./subscription-gate";
+import { subscriptionGatePlugin, getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "./subscription-gate";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { plans, subscriptions, user as userTable } from "../db/schema";
-import { createTestDataUsaha } from "./test-fixtures";
+import { plans, subscriptions, memberSeats, dataUsaha, user as userTable } from "../db/schema";
+import { createTestDataUsaha, createTestSeat } from "./test-fixtures";
 
 // § architecture-subscription.md — belum dipakai route manapun di Fase 01
 // (Fase 02 yang pakai), tapi WAJIB ada test sendiri sesuai rencana eksekusi.
@@ -153,5 +153,148 @@ describe("requireModuleAccess (subscriptionGatePlugin)", () => {
 
     const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie } }));
     expect(res.status).toBe(200); // gate-test minta "purchase_invoice" — ada di subscription LAMA, bukan yang terbaru
+  });
+
+  // § Fase 110, architecture-user-tambahan.md — moduleAccess macro pakai
+  // getAccessibleSubscriptionsWithPlans (union), jadi MEMBER (akses lewat
+  // seat) WAJIB tembus gate modul yang aktif di Data Usaha tempat dia
+  // numpang, walau bukan pemilik Data Usaha itu.
+  test("200 kalau user MEMBER (seat aktif) di Data Usaha yang punya subscription modul terkait", async () => {
+    const primaryEmail = `gate-member-primary-${runId}@test.local`;
+    const primaryId = await signUp(primaryEmail);
+    const dataUsahaId = await createTestDataUsaha(primaryId);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Member ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId: primaryId,
+      planId: plan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
+    });
+
+    const memberEmail = `gate-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(primaryId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie: memberCookie } }));
+    expect(res.status).toBe(200);
+  });
+
+  test("403 kalau seat member statusnya BUKAN active (mis. sudah di-revoke)", async () => {
+    const primaryEmail = `gate-revoked-primary-${runId}@test.local`;
+    const primaryId = await signUp(primaryEmail);
+    const dataUsahaId = await createTestDataUsaha(primaryId);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Revoked ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId: primaryId,
+      planId: plan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
+    });
+
+    const memberEmail = `gate-revoked-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(primaryId, dataUsahaId);
+    // § seat DIBUAT tapi TIDAK di-set active (default "available", belum
+    // pernah accept) — member ini TIDAK BOLEH dapat akses apa pun.
+    await db.update(memberSeats).set({ memberUserId: memberId }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie: memberCookie } }));
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("getOwnedSubscriptionsWithPlans vs getAccessibleSubscriptionsWithPlans", () => {
+  // § Fase 110 "Temuan Kritis" #2 — regression test: Owned WAJIB TIDAK
+  // ikut akses lewat seat (dipakai `accurate.route.ts` connect/reuse,
+  // member tidak boleh pernah ubah konfigurasi integrasi).
+  test("Owned TIDAK mencakup subscription yang cuma diakses lewat seat", async () => {
+    const primaryEmail = `owned-vs-accessible-primary-${runId}@test.local`;
+    const primaryId = await signUp(primaryEmail);
+    const dataUsahaId = await createTestDataUsaha(primaryId);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan OwnedVsAccessible ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({
+        userId: primaryId,
+        planId: plan!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
+      })
+      .returning();
+
+    const memberEmail = `owned-vs-accessible-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const seatId = await createTestSeat(primaryId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const memberOwned = await getOwnedSubscriptionsWithPlans(memberId);
+    expect(memberOwned.some((s) => s.subscription.id === sub!.id)).toBe(false);
+
+    const memberAccessible = await getAccessibleSubscriptionsWithPlans(memberId);
+    expect(memberAccessible.some((s) => s.subscription.id === sub!.id)).toBe(true);
+
+    const primaryOwned = await getOwnedSubscriptionsWithPlans(primaryId);
+    expect(primaryOwned.some((s) => s.subscription.id === sub!.id)).toBe(true);
+  });
+
+  // § Temuan Kritis #1 — akses HARUS ikut kepemilikan Data Usaha SAAT INI
+  // (data_usaha.userId), BUKAN subscriptions.userId yang dibekukan saat
+  // beli. Simulasikan transfer manual (update data_usaha.userId langsung,
+  // tanpa lewat endpoint Fase 111 yang belum ada) — Owned utk pembeli asli
+  // WAJIB hilang, Owned utk pemilik baru WAJIB muncul.
+  test("Owned ikut kepemilikan data_usaha.userId SAAT INI, bukan subscriptions.userId historis", async () => {
+    const originalOwnerEmail = `owned-transfer-original-${runId}@test.local`;
+    const originalOwnerId = await signUp(originalOwnerEmail);
+    const dataUsahaId = await createTestDataUsaha(originalOwnerId);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Transfer ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({
+        userId: originalOwnerId,
+        planId: plan!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
+      })
+      .returning();
+
+    const newOwnerEmail = `owned-transfer-new-${runId}@test.local`;
+    const newOwnerId = await signUp(newOwnerEmail);
+
+    // § simulasi transfer kepemilikan (Fase 111 belum dibangun) — cuma
+    // data_usaha.userId yang berubah, subscriptions.userId TETAP pembeli asli.
+    await db.update(dataUsaha).set({ userId: newOwnerId }).where(eq(dataUsaha.id, dataUsahaId));
+
+    const originalOwnerAccess = await getOwnedSubscriptionsWithPlans(originalOwnerId);
+    expect(originalOwnerAccess.some((s) => s.subscription.id === sub!.id)).toBe(false);
+
+    const newOwnerAccess = await getOwnedSubscriptionsWithPlans(newOwnerId);
+    expect(newOwnerAccess.some((s) => s.subscription.id === sub!.id)).toBe(true);
+
+    const [refreshedSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub!.id));
+    expect(refreshedSub!.userId).toBe(originalOwnerId); // riwayat pembelian TIDAK ditulis ulang
   });
 });

@@ -3,7 +3,7 @@ import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
-import { getActiveSubscriptionsWithPlans } from "../lib/subscription-gate";
+import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { createInvoiceAndOrder } from "../lib/invoice-order";
 import { createTrialSubscription } from "../lib/trial";
 import { createNotification, formatNotificationDate, NOTIFICATION_TYPES } from "../lib/notifications";
@@ -22,12 +22,11 @@ export const subscriptionsRoute = new Elysia()
   .get(
     "/me/subscriptions",
     async ({ user }) => {
-      const rows = await db
-        .select({ subscription: subscriptions, plan: plans })
-        .from(subscriptions)
-        .innerJoin(plans, eq(plans.id, subscriptions.planId))
-        .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.status, "active")))
-        .orderBy(desc(subscriptions.createdAt));
+      // § Fase 110 — Accessible (bukan raw `eq(subscriptions.userId, ...)`):
+      // dashboard/sidebar HARUS reflect akses lewat seat juga (union
+      // kepemilikan Data Usaha SAAT INI + seat aktif), bukan cuma histori
+      // "siapa yang beli". Lihat komentar lengkap di `lib/subscription-gate.ts`.
+      const rows = await getAccessibleSubscriptionsWithPlans(user.id);
 
       // § Fase 43 — union modul yang PERNAH ditrial user ini, APA PUN
       // status subscription-nya sekarang (aktif/expired/habis kuota) —
@@ -78,15 +77,24 @@ export const subscriptionsRoute = new Elysia()
       }
 
       const uniquePlanIds = [...new Set(body.planIds)];
-      const planRows = await db.select().from(plans).where(inArray(plans.id, uniquePlanIds));
-      if (planRows.length !== uniquePlanIds.length) {
+      const uniquePlanRows = await db.select().from(plans).where(inArray(plans.id, uniquePlanIds));
+      if (uniquePlanRows.length !== uniquePlanIds.length) {
         set.status = 404;
         return { code: "PLAN_NOT_FOUND" };
       }
-      if (planRows.some((p) => !p.isActive)) {
+      if (uniquePlanRows.some((p) => !p.isActive)) {
         set.status = 400;
         return { code: "PLAN_NOT_ACTIVE" };
       }
+      // § Fase 110, architecture-user-tambahan.md — `planRows` SEKARANG
+      // preserve DUPLIKAT dari `body.planIds` apa adanya (bukan dedup lagi)
+      // — beli N `seat_addon` sekaligus (§ Keputusan Desain "quantity via N
+      // row") WAJIB kirim planId yang SAMA N kali, tiap elemen = 1 baris
+      // invoiceItem/subscription terpisah. `uniquePlanRows` di atas cuma
+      // dipakai validasi eksistensi/isActive (efisien, 1 query per plan
+      // unik) — TIDAK dipakai lagi untuk bikin invoice.
+      const planById = new Map(uniquePlanRows.map((p) => [p.id, p]));
+      const planRows = body.planIds.map((id) => planById.get(id)!);
 
       // § Fase 53 — 1 modul sekarang boleh punya >1 baris plan (tier
       // durasi/harga beda, mis. Bulanan/Tahunan). UI resmi (tier-picker)
@@ -122,7 +130,11 @@ export const subscriptionsRoute = new Elysia()
           // Desain arsitektur "Data Usaha → Modul → Fitur"). Perubahan
           // lebih kecil & lebih aman dari draf awal (dulu diusulkan
           // "hapus guard total") — cukup tambah filter `dataUsahaId`.
-          const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+          // § Fase 110 — Owned (bukan Accessible): checkout SUDAH lolos
+          // `ownsDataUsaha(user.id, body.dataUsahaId)` di atas, jadi ini
+          // murni "modul apa yang sudah aktif di Data Usaha yang aku
+          // MILIKI" — akses lewat seat tidak relevan di sini sama sekali.
+          const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
           // § Fase 43 — trial TIDAK memblokir pembelian paket ASLI modul
           // yang sama, supaya user bisa upgrade kapan saja tanpa nunggu
           // trial habis/expired. Guard "modul sudah aktif" cuma berlaku
@@ -224,6 +236,14 @@ export const subscriptionsRoute = new Elysia()
         set.status = 400;
         return { code: "TRIAL_NOT_AVAILABLE_FOR_PLAN" };
       }
+      // § Fase 110 — seat_addon (slot User Tambahan) TIDAK PERNAH lewat
+      // trial, cuma paket modul biasa. Defense-in-depth (admin JUGA
+      // seharusnya tidak pernah menandai `trialEligible` pada plan
+      // `seat_addon`) — tetap dicek eksplisit di sini, bukan diasumsikan.
+      if (plan.kind !== "module") {
+        set.status = 400;
+        return { code: "TRIAL_NOT_AVAILABLE_FOR_PLAN" };
+      }
 
       try {
         const result = await db.transaction(async (tx) => {
@@ -250,7 +270,9 @@ export const subscriptionsRoute = new Elysia()
           // somehow masih aktif) juga tidak boleh ditrial lagi — reuse
           // guard yang sama seperti checkout, TANPA filter isTrial di sini
           // (beda dari checkout: trial harus benar2 belum ada apa pun).
-          const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+          // § Fase 110 — Owned, sama alasan checkout di atas (sudah lolos
+          // ownsDataUsaha).
+          const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
           const activeModules = new Set(
             activeSubs.filter((s) => s.subscription.dataUsahaId === body.dataUsahaId).flatMap((s) => s.plan.modules),
           );

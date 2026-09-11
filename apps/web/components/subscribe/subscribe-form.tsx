@@ -16,7 +16,16 @@ import { formatDuration } from "@/lib/duration";
 import { useGroupedPlans } from "@/lib/use-grouped-plans";
 import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
 
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; trialEligible: boolean };
+type Plan = {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  modules: string[];
+  isActive: boolean;
+  trialEligible: boolean;
+  kind: "module" | "seat_addon";
+};
 
 // § Fase 17 — cart halaman dashboard (sudah login). Reuse endpoint yang
 // SUDAH ADA sejak Fase 16 (`POST /subscriptions/checkout`) — halaman ini
@@ -54,9 +63,29 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
   // § Fase 53 — 1 modul boleh punya >1 tier (Bulanan/Tahunan dst), 1
   // kartu = 1 grup modul (bukan 1 kartu = 1 baris plan lagi). Grouping
   // shared sama landing (`module-features.tsx`) via `useGroupedPlans`.
+  // § Fase 110 — `useGroupedPlans` SENGAJA skip plan `seat_addon`
+  // (`modules: []`, § lib/use-grouped-plans.ts `if (!moduleKey) continue`)
+  // — seat DITANGANI TERPISAH di bawah (`seatPlans`/`seatQuantity`), bukan
+  // dipaksa masuk konsep "grup modul" yang memang tidak cocok untuknya.
   const { groups, isModuleSelected, isTierActive, activePlanFor, toggleModule, selectTier, setSelectedModules, selectedPlans } = useGroupedPlans(
     plans ?? [],
   );
+
+  const seatPlans = useMemo(
+    () => (plans ?? []).filter((p) => p.kind === "seat_addon" && p.isActive).sort((a, b) => b.durationDays - a.durationDays),
+    [plans],
+  );
+  const [selectedSeatPlanId, setSelectedSeatPlanId] = useState<string | null>(null);
+  // § 0 = tidak disertakan ke pesanan (opt-in, beda dari tier modul yang
+  // opt-in lewat toggle "Berlangganan" — di sini cukup quantity > 0).
+  const [seatQuantity, setSeatQuantity] = useState(0);
+  useEffect(() => {
+    if (seatPlans.length > 0 && !seatPlans.some((p) => p.id === selectedSeatPlanId)) {
+      setSelectedSeatPlanId(seatPlans[0]!.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [seatPlans]);
+  const selectedSeatPlan = seatPlans.find((p) => p.id === selectedSeatPlanId) ?? null;
 
   async function load() {
     const [plansRes, subsRes] = await Promise.all([api.plans.get(), api.me.subscriptions.get()]);
@@ -134,12 +163,19 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
     load();
   }
 
-  const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0), [selectedPlans]);
+  const seatTotal = selectedSeatPlan ? selectedSeatPlan.price * seatQuantity : 0;
+  const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0) + seatTotal, [selectedPlans, seatTotal]);
 
   async function handleCheckout() {
-    if (selectedPlans.length === 0) return;
+    // § Fase 110 — N slot User Tambahan = N kali `selectedSeatPlan.id`
+    // diulang di `planIds` (§ Keputusan Desain arsitektur "quantity via N
+    // row") — checkout endpoint TIDAK berubah sama sekali, cukup array
+    // lebih panjang.
+    const seatPlanIds = selectedSeatPlan ? Array(seatQuantity).fill(selectedSeatPlan.id) : [];
+    const planIds = [...selectedPlans.map((p) => p.id), ...seatPlanIds];
+    if (planIds.length === 0) return;
     setCheckingOut(true);
-    const res = await api.subscriptions.checkout.post({ planIds: selectedPlans.map((p) => p.id), dataUsahaId });
+    const res = await api.subscriptions.checkout.post({ planIds, dataUsahaId });
     setCheckingOut(false);
     if (res.error) {
       const code = (res.error.value as { code?: string; moduleKey?: string } | undefined)?.code;
@@ -295,13 +331,58 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
             })}
           </div>
 
+          {seatPlans.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Slot User Tambahan</CardTitle>
+                <CardDescription>Undang orang lain akses SEMUA fitur aktif Data Usaha ini — dikelola di halaman &quot;Kelola Tim&quot;.</CardDescription>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                {seatPlans.length > 1 && (
+                  <div className="flex gap-1.5">
+                    {seatPlans.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => setSelectedSeatPlanId(p.id)}
+                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                          selectedSeatPlanId === p.id
+                            ? "border-primary-600 bg-primary-600 text-white"
+                            : "border-border text-muted-foreground hover:border-primary-300"
+                        }`}
+                      >
+                        {formatDuration(p.durationDays)} — {currencyFormatter.format(p.price)}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-3">
+                  <label htmlFor="seat-quantity" className="text-sm text-foreground">
+                    Jumlah slot
+                  </label>
+                  <input
+                    id="seat-quantity"
+                    type="number"
+                    min={0}
+                    value={seatQuantity}
+                    onChange={(e) => setSeatQuantity(Math.max(0, Number(e.target.value) || 0))}
+                    className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
+                  />
+                  {selectedSeatPlan && seatQuantity > 0 && (
+                    <span className="text-sm text-muted-foreground">= {currencyFormatter.format(selectedSeatPlan.price * seatQuantity)}</span>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardHeader>
               <CardTitle>Ringkasan Pesanan</CardTitle>
               <CardDescription>Invoice dibuat setelah checkout — kamu pilih metode bayar (transfer bank/QRIS) di langkah berikutnya.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              {selectedPlans.length === 0 ? (
+              {selectedPlans.length === 0 && seatQuantity === 0 ? (
                 <p className="text-sm text-muted-foreground">Pilih fitur di atas untuk melanjutkan.</p>
               ) : (
                 <div className="flex flex-col gap-2">
@@ -313,13 +394,21 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
                       <span className="text-muted-foreground">{currencyFormatter.format(p.price)}</span>
                     </div>
                   ))}
+                  {selectedSeatPlan && seatQuantity > 0 && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-foreground">
+                        {seatQuantity}x Slot User Tambahan <span className="text-muted-foreground">({formatDuration(selectedSeatPlan.durationDays)})</span>
+                      </span>
+                      <span className="text-muted-foreground">{currencyFormatter.format(seatTotal)}</span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between border-t border-border pt-2 text-sm font-semibold text-foreground">
                     <span>Total</span>
                     <span>{currencyFormatter.format(total)}</span>
                   </div>
                 </div>
               )}
-              <Button onClick={handleCheckout} disabled={selectedPlans.length === 0 || checkingOut} className="w-full">
+              <Button onClick={handleCheckout} disabled={(selectedPlans.length === 0 && seatQuantity === 0) || checkingOut} className="w-full">
                 {checkingOut ? "Memproses..." : "Checkout"}
               </Button>
             </CardContent>

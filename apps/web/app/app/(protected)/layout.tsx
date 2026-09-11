@@ -31,7 +31,7 @@ export default async function AppProtectedLayout({ children }: { children: React
   // render dashboard kosong/ambigu.
   const dataUsahaRes = await fetch(`${apiUrl}/me/data-usaha`, { headers: { cookie }, cache: "no-store" });
   const dataUsahaList = dataUsahaRes.ok
-    ? ((await dataUsahaRes.json()) as { dataUsaha: { id: string; name: string }[] }).dataUsaha
+    ? ((await dataUsahaRes.json()) as { dataUsaha: { id: string; name: string; isOwner: boolean }[] }).dataUsaha
     : [];
   const activeDataUsahaId = await getActiveDataUsahaIdCookie();
   const activeDataUsaha = dataUsahaList.find((d) => d.id === activeDataUsahaId);
@@ -81,6 +81,7 @@ export default async function AppProtectedLayout({ children }: { children: React
       subscriptionModules={subscriptionModules}
       modulePlanNames={modulePlanNames}
       activeDataUsahaName={activeDataUsaha.name}
+      isDataUsahaOwner={activeDataUsaha.isOwner}
       user={{ name: me.name, email: me.email }}
     >
       {children}

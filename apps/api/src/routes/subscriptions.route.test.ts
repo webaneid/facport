@@ -216,6 +216,37 @@ describe("POST /subscriptions/checkout", () => {
     expect(notif!.type).toBe("order_created");
     expect(notif!.entityType).toBe("order");
   });
+
+  // § Fase 110, architecture-user-tambahan.md — REGRESSION: sebelum fix,
+  // `uniquePlanIds = [...new Set(body.planIds)]` dipakai LANGSUNG bikin
+  // `planRows` (bukan cuma validasi) — planId yang SAMA dikirim N kali
+  // (beli N slot User Tambahan sekaligus, § UI subscribe-form.tsx
+  // "Jumlah slot") diam-diam DEDUP jadi 1 baris invoiceItem/subscription
+  // — quantity hilang tanpa error apa pun. Ditemukan via browser test
+  // manual (checkout 2 seat, invoice cuma punya 1 baris seat), BUKAN dari
+  // membaca kode/test lama (semua test sebelumnya cuma checkout plan
+  // BERBEDA, tidak pernah checkout plan id yang SAMA berulang).
+  test("checkout planId SAMA dikirim N kali (N slot seat_addon) — N invoiceItems terpisah, BUKAN di-dedup jadi 1", async () => {
+    const email = `checkout-seat-quantity-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
+
+    const [seatPlan] = await db
+      .insert(plans)
+      .values({ name: `Seat Quantity Plan ${runId}`, price: 20000, durationDays: 30, modules: [], kind: "seat_addon" })
+      .returning();
+
+    const res = await postCheckout(cookie, [seatPlan!.id, seatPlan!.id, seatPlan!.id], dataUsahaId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invoiceId: string; amountDue: number };
+
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, body.invoiceId));
+    expect(items.length).toBe(3); // § INTI regresi — dulu jadi 1
+
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId));
+    expect(invoice!.subtotal).toBe(60000); // 3 x 20.000
+  });
 });
 
 // § Fase 43 — self-service "Coba Gratis": TANPA invoice/order/pembayaran

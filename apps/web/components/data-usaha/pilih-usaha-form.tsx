@@ -14,7 +14,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
 import { ACTIVE_DATA_USAHA_COOKIE } from "@/lib/active-data-usaha-cookie";
 
-type DataUsahaRow = { id: string; name: string; accurateConnectionId: string | null };
+// § Fase 110, architecture-user-tambahan.md — `isOwner: false` = Data
+// Usaha ini BUKAN milik user (dia numpang lewat seat User Tambahan aktif,
+// § GET /me/data-usaha union kepemilikan+seat) — ditandai badge "Anggota"
+// biar user tidak bingung kenapa ada Data Usaha "orang lain" di daftarnya.
+type DataUsahaRow = { id: string; name: string; accurateConnectionId: string | null; isOwner: boolean };
 
 const createSchema = z.object({ name: z.string().min(1, "Nama wajib diisi").max(200) });
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -84,7 +88,12 @@ export function PilihUsahaForm() {
                 <Building2 className="h-4 w-4" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-sm font-medium text-foreground">{row.name}</span>
+                <span className="flex items-center gap-1.5">
+                  <span className="block truncate text-sm font-medium text-foreground">{row.name}</span>
+                  {!row.isOwner && (
+                    <span className="shrink-0 rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">Anggota</span>
+                  )}
+                </span>
                 <span className="block text-xs text-muted-foreground">
                   {row.accurateConnectionId ? "Terhubung Accurate" : "Belum terhubung Accurate"}
                 </span>

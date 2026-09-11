@@ -20,6 +20,13 @@ export const plans = pgTable("plans", {
   // Tipe TETAP array (hindari migration breaking untuk data lama).
   modules: jsonb("modules").$type<string[]>().notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // § Fase 110, architecture-user-tambahan.md — bedakan plan "module"
+  // (SKU sub-modul biasa, default — semua baris lama otomatis ini) dari
+  // "seat_addon" (slot User Tambahan, dijual per Data Usaha, TIDAK
+  // pernah lewat jalur trial — § subscriptions.route.ts). Dipakai di
+  // titik aktivasi (confirm order/manual-subscription) untuk tahu kapan
+  // harus sekalian bikin baris `member_seats`.
+  kind: varchar("kind", { length: 20 }).notNull().default("module"),
   // § Fase 43 (koreksi) — admin HARUS eksplisit mengaktifkan trial per
   // paket, BUKAN semua paket otomatis bisa trial (kalau otomatis, admin
   // tidak punya otoritas atas paketnya sendiri). Default false — trial

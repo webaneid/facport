@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
+import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs, memberSeats } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
@@ -157,9 +157,19 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
           const createdSubscriptionIds: string[] = [];
           for (const { item, plan } of items) {
             const moduleKey = plan.modules[0];
-            const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
-            for (const s of superseded) {
-              await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+            // § Fase 110 — supersede-trial CUMA berlaku untuk plan `module`
+            // (moduleKey ada). `seat_addon` punya `modules: []` (moduleKey
+            // undefined) — TANPA guard ini, filter `s.modules[0] ===
+            // moduleKey` akan cocok SEMUA subscription seat_addon LAIN yang
+            // sudah aktif (sama-sama `modules[0] === undefined`) dan diam-
+            // diam MEMBATALKAN seat yang sudah dibeli sebelumnya — bug
+            // serius, seat tidak punya konsep "upgrade dari trial" sama
+            // sekali.
+            if (moduleKey) {
+              const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
+              for (const s of superseded) {
+                await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+              }
             }
 
             const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
@@ -177,6 +187,18 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
               })
               .returning();
             createdSubscriptionIds.push(sub!.id);
+
+            // § Fase 110 — aktivasi seat: 1 subscription `seat_addon` aktif
+            // = 1 slot `member_seats` baru (`available`, siap di-invite).
+            // Expiry slot ini OTOMATIS ikut expiry subscription (job
+            // EXPIRE_SUBSCRIPTIONS yang sudah ada), tidak perlu job baru.
+            if (plan.kind === "seat_addon") {
+              await tx.insert(memberSeats).values({
+                primaryUserId: lockedInvoice.userId,
+                dataUsahaId,
+                seatSubscriptionId: sub!.id,
+              });
+            }
           }
 
           await tx.insert(auditLogs).values({

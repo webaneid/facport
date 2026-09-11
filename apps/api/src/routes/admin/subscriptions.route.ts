@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { plans, subscriptions, auditLogs, accurateConnections } from "../../db/schema";
+import { plans, subscriptions, auditLogs, accurateConnections, memberSeats } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
@@ -77,13 +77,20 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       // USAHA (bukan lagi per akun) — modul yang sama BOLEH aktif di
       // Data Usaha LAIN, konsisten guard checkout/trial customer.
       const moduleKey = plan.modules[0];
-      const existingActive = await db
-        .select({ id: subscriptions.id, modules: plans.modules })
-        .from(subscriptions)
-        .innerJoin(plans, eq(plans.id, subscriptions.planId))
-        .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active"), eq(subscriptions.dataUsahaId, dataUsahaId)));
-      for (const s of existingActive.filter((s) => s.modules[0] === moduleKey)) {
-        await db.update(subscriptions).set({ status: "cancelled", endAt: startAt }).where(eq(subscriptions.id, s.id));
+      // § Fase 110 — supersede CUMA relevan untuk plan `module` (moduleKey
+      // ada). `seat_addon` (`modules: []`) TIDAK pernah masuk sini — tanpa
+      // guard ini, filter `s.modules[0] === moduleKey` (keduanya undefined)
+      // akan cocok SEMUA subscription seat_addon LAIN yang sudah aktif dan
+      // diam-diam membatalkan seat yang sudah dibeli sebelumnya.
+      if (moduleKey) {
+        const existingActive = await db
+          .select({ id: subscriptions.id, modules: plans.modules })
+          .from(subscriptions)
+          .innerJoin(plans, eq(plans.id, subscriptions.planId))
+          .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active"), eq(subscriptions.dataUsahaId, dataUsahaId)));
+        for (const s of existingActive.filter((s) => s.modules[0] === moduleKey)) {
+          await db.update(subscriptions).set({ status: "cancelled", endAt: startAt }).where(eq(subscriptions.id, s.id));
+        }
       }
 
       // orderId = null — dianggap sudah dibayar di luar sistem (invoice
@@ -100,6 +107,11 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         changes: { userId: body.userId, planId: plan.id, endAt: endAt.toISOString(), provisionedBy: "admin" },
         actorId: user.id,
       });
+
+      // § Fase 110 — sama seperti admin/orders.route.ts confirm & § lib/manual-subscription.ts.
+      if (plan.kind === "seat_addon") {
+        await db.insert(memberSeats).values({ primaryUserId: body.userId, dataUsahaId, seatSubscriptionId: subscription!.id });
+      }
 
       return subscription;
     },

@@ -54,7 +54,14 @@ export async function createInvoiceAndOrder(
     planRows.map((p) => ({
       invoiceId: invoice!.id,
       planId: p.id,
-      moduleKey: p.modules[0]!,
+      // § Fase 110 — `seat_addon` (`modules: []`) TIDAK punya moduleKey
+      // ASLI — `invoiceItems.moduleKey` NOT NULL, jadi sentinel string
+      // "seat_addon" dipakai sebagai label denormalisasi (BUKAN moduleKey
+      // import beneran, tidak pernah dicocokkan ke `moduleAccess` macro
+      // manapun). Tanpa ini, checkout seat_addon CRASH di sini (constraint
+      // NOT NULL) — ditemukan saat tulis test regresi, bukan lewat baca
+      // kode saja.
+      moduleKey: p.modules[0] ?? "seat_addon",
       label: p.name,
       price: p.price,
     })),

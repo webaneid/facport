@@ -3,7 +3,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { accurateConnections, subscriptions } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
-import { getActiveSubscriptionsWithPlans } from "../lib/subscription-gate";
+import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase } from "../lib/accurate";
 import { scopesForModules } from "../lib/accurate-scopes";
 import { createState, consumeState } from "../lib/oauth-state";
@@ -44,7 +44,9 @@ export const accurateRoute = new Elysia()
   .get(
     "/accurate/subscriptions",
     async ({ user }) => {
-      const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+      // § Fase 110 — Accessible (bukan Owned): read-only, member BOLEH lihat
+      // status koneksi modul yang dia numpang pakai (bukan cuma pemilik).
+      const activeSubs = await getAccessibleSubscriptionsWithPlans(user.id);
       const connectionIds = activeSubs
         .map((s) => s.subscription.accurateConnectionId)
         .filter((id): id is string => id !== null);
@@ -95,7 +97,10 @@ export const accurateRoute = new Elysia()
   .post(
     "/accurate/connect",
     async ({ user, body, set }) => {
-      const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+      // § Fase 110 — WAJIB Owned (bukan Accessible): ini MENGUBAH konfigurasi
+      // integrasi (bikin/timpa koneksi Accurate) — member (akses lewat seat)
+      // TIDAK BOLEH pernah lolos di sini, cuma pemilik Data Usaha yang boleh.
+      const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
       const target = activeSubs.find((s) => s.subscription.id === body.subscriptionId);
       if (!target) {
         set.status = 404;
@@ -176,7 +181,8 @@ export const accurateRoute = new Elysia()
   .post(
     "/accurate/reuse",
     async ({ user, body, set }) => {
-      const activeSubs = await getActiveSubscriptionsWithPlans(user.id);
+      // § Fase 110 — WAJIB Owned, sama alasan `/connect` di atas.
+      const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
       const target = activeSubs.find((s) => s.subscription.id === body.subscriptionId);
       if (!target) {
         set.status = 404;

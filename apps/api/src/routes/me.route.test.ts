@@ -3,10 +3,10 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, plans, subscriptions, importBatches, importBatchRows, settings } from "../db/schema";
+import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings } from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
-import { createTestDataUsaha } from "../lib/test-fixtures";
+import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
 // customer dihitung DI SINI (server), jadi angkanya harus benar: total
@@ -105,6 +105,45 @@ describe("GET & POST /me/data-usaha", () => {
       }),
     );
     expect(res.status).toBe(422);
+  });
+
+  // § Fase 110, architecture-user-tambahan.md — regression PENTING: member
+  // PURE (tidak punya Data Usaha sendiri) WAJIB tetap lihat Data Usaha
+  // tempat dia numpang (seat aktif) di gerbang "Pilih Data Usaha" —
+  // TANPA ini, member terjebak (list kosong, tidak bisa masuk dashboard
+  // yang seharusnya bisa dia akses).
+  test("list mencakup Data Usaha tempat user cuma py seat AKTIF (bukan pemilik), ditandai isOwner:false", async () => {
+    const ownerId = await signUp(`me-data-usaha-seatowner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Seat ${runId}`);
+    const seatId = await createTestSeat(ownerId, dataUsahaId);
+
+    const memberEmail = `me-data-usaha-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: memberCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dataUsaha: { id: string; isOwner: boolean }[] };
+    const found = body.dataUsaha.find((d) => d.id === dataUsahaId);
+    expect(found).toBeTruthy();
+    expect(found!.isOwner).toBe(false);
+  });
+
+  test("list TIDAK mencakup Data Usaha tempat seat-nya BELUM/TIDAK aktif (available/invited)", async () => {
+    const ownerId = await signUp(`me-data-usaha-inactive-owner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Inactive Seat ${runId}`);
+    // § seat DIBUAT ("available", belum pernah di-invite ke siapa pun) —
+    // user LAIN (belum diundang) TIDAK BOLEH kebocoran akses.
+    await createTestSeat(ownerId, dataUsahaId);
+
+    const memberEmail = `me-data-usaha-inactive-member-${runId}@test.local`;
+    await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+
+    const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: memberCookie } }));
+    const body = (await res.json()) as { dataUsaha: { id: string }[] };
+    expect(body.dataUsaha.some((d) => d.id === dataUsahaId)).toBe(false);
   });
 });
 

@@ -22,6 +22,7 @@ export function AppShell({
   subscriptionModules,
   modulePlanNames,
   activeDataUsahaName,
+  isDataUsahaOwner,
   user,
   children,
 }: {
@@ -40,6 +41,11 @@ export function AppShell({
   // bawah Sidebar + link "Ganti" ke `/pilih-usaha`. Cuma relevan surface
   // "app" (admin tidak punya konsep Data Usaha).
   activeDataUsahaName?: string;
+  // § Fase 110 — false kalau user cuma MEMBER (seat) di Data Usaha aktif
+  // ini, bukan pemiliknya — sidebar sembunyikan grup "Langganan"
+  // (Koneksi Accurate/Tagihan/Berlangganan/Kelola Tim, semua urusan
+  // billing/kepemilikan, BUKAN wilayah member).
+  isDataUsahaOwner?: boolean;
   user: { name: string; email: string };
   children: React.ReactNode;
 }) {
@@ -59,6 +65,7 @@ export function AppShell({
             subscriptionModules={subscriptionModules}
             modulePlanNames={modulePlanNames}
             activeDataUsahaName={activeDataUsahaName}
+            isDataUsahaOwner={isDataUsahaOwner}
             mobileOpen={mobileNavOpen}
             onMobileClose={() => setMobileNavOpen(false)}
           />

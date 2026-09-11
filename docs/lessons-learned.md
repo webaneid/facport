@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-09-11 — Fase 110 (Seat/User Tambahan): 1 fungsi 2 keperluan hampir jadi privilege escalation, dan celah expiry invite di jalur Google
+**Masalah 1 (dicegah saat planning, bukan post-mortem):** `accurate.route.ts`
+`POST /connect`/`POST /reuse` memakai `getActiveSubscriptionsWithPlans(user.id)`
+untuk OTORISASI MUTASI (siapa boleh bikin/timpa koneksi Accurate). Rencana
+awal Fase 110 mau menambah akses-via-seat dengan meng-UNION fungsi yang SAMA
+ini — kalau jadi dieksekusi begitu, member (yang cuma boleh PAKAI modul)
+bisa kirim `subscriptionId` Data Usaha tempat dia numpang seat dan
+mengambil-alih/mengubah koneksi Accurate Data Usaha itu.
+**Root cause:** 1 fungsi query dipakai untuk 2 keperluan otorisasi yang
+BEDA level (mutasi vs akses-tampilan) — kebetulan sama hasilnya SELAMA
+belum ada akses-via-seat, jadi tidak kelihatan sebagai desain rapuh sampai
+fitur seat mau ditambahkan.
+**Fix:** dipecah jadi `getOwnedSubscriptionsWithPlans` (mutasi — checkout,
+trial, connect/reuse Accurate) dan `getAccessibleSubscriptionsWithPlans`
+(akses/tampilan — union kepemilikan + seat aktif). Detail → ADR-0032.
+**Pencegahan:** kalau 1 fungsi query dipakai di lebih dari 1 tempat untuk
+alasan otorisasi yang KELIHATANNYA sama tapi levelnya beda (mutasi vs
+baca), curigai dulu SEBELUM menambah fitur yang memperluas cakupan
+fungsi itu — jangan asumsikan union aman cuma karena hasil lama identik.
+
+**Masalah 2 (ditemukan security-review, diperbaiki sebelum fase ditutup):**
+Invite "User Tambahan" berlaku 7 hari (dicek eksplisit via
+`inviteTokenExpiresAt` di jalur password, `invites.route.ts`
+`findValidInviteByToken`), TAPI jalur Google OAuth auto-link
+(`linkGoogleSignupToPendingInvite`, `lib/member-seats.ts`) awalnya cuma
+cek `status = 'invited'` + email cocok — TIDAK cek expiry sama sekali.
+Invite yang sudah lewat 7 hari tetap bisa diklaim via Google sign-up
+selama primary user belum revoke manual, melanggar janji "berlaku 7 hari"
+di teks email undangan.
+**Fix:** tambah `gt(inviteTokenExpiresAt, now())` ke query yang sama.
+**Pencegahan:** kalau ada 2 jalur berbeda (password vs OAuth) untuk
+"menyelesaikan" 1 alur sensitif yang sama (invite/verifikasi/reset), audit
+KEDUANYA punya guard yang SAMA PERSIS (expiry, status, dst) — jangan cuma
+tulis guard lengkap di jalur yang ditulis duluan lalu asumsikan jalur
+kedua otomatis konsisten.
+
+---
+
 ## 2026-09-11 — `@react-pdf/image` tidak bisa decode webp: gambar company.logo di PDF invoice tampil KOSONG total (kejadian KEDUA, pola sama bukti transfer Fase 94)
 **Masalah:** Fase 104 minta header PDF invoice tampilkan logo perusahaan
 menggantikan tulisan nama. Setelah kode ditulis (kondisional `logoUrl ?

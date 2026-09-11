@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
-import { eq, and, count, desc } from "drizzle-orm";
+import { eq, and, or, inArray, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha } from "../db/schema";
+import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
 
@@ -38,15 +38,32 @@ export const meRoute = new Elysia()
   // Data Usaha" (`/pilih-usaha`). GANTIKAN `GET /me/data-usaha/default`
   // (jembatan sementara Fase 107, sudah dihapus) — user sekarang benar2
   // pilih/buat Data Usaha sendiri, bukan auto-default diam-diam.
+  // § Fase 110 — WAJIB union kepemilikan + Data Usaha tempat user py seat
+  // AKTIF (member User Tambahan) — tanpa ini, member PURE (tidak punya
+  // Data Usaha sendiri) tidak akan PERNAH lihat Data Usaha yang dia
+  // numpang di gerbang ini, walau `subscription-gate.ts` sudah kasih dia
+  // akses (gap ditemukan saat desain halaman `/invite/[token]`, sebelum
+  // sempat jadi bug production).
   .get(
     "/me/data-usaha",
     async ({ user }) => {
       const rows = await db
-        .select({ id: dataUsaha.id, name: dataUsaha.name, accurateConnectionId: dataUsaha.accurateConnectionId })
+        .select({ id: dataUsaha.id, name: dataUsaha.name, accurateConnectionId: dataUsaha.accurateConnectionId, ownerId: dataUsaha.userId })
         .from(dataUsaha)
-        .where(eq(dataUsaha.userId, user.id))
+        .where(
+          or(
+            eq(dataUsaha.userId, user.id),
+            inArray(
+              dataUsaha.id,
+              db
+                .select({ dataUsahaId: memberSeats.dataUsahaId })
+                .from(memberSeats)
+                .where(and(eq(memberSeats.memberUserId, user.id), eq(memberSeats.status, "active"))),
+            ),
+          ),
+        )
         .orderBy(desc(dataUsaha.createdAt));
-      return { dataUsaha: rows };
+      return { dataUsaha: rows.map((r) => ({ ...r, isOwner: r.ownerId === user.id })) };
     },
     { auth: true },
   )

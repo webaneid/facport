@@ -1,8 +1,8 @@
 import { db } from "./db";
-import { subscriptions, auditLogs } from "../db/schema";
+import { subscriptions, auditLogs, memberSeats } from "../db/schema";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type PlanRow = { id: string; durationDays: number };
+type PlanRow = { id: string; durationDays: number; kind: string };
 
 // § Fase 18 — versi BATCH dari pola "admin-provisioned" yang sudah ada
 // sejak Fase 01/11 (`admin/subscriptions.route.ts` `POST /admin/subscriptions`
@@ -37,6 +37,12 @@ export async function createManualSubscriptions(
       changes: { userId, planId: plan.id, endAt: endAt.toISOString(), provisionedBy: "admin", markedPaidAtOnboarding: true },
       actorId,
     });
+
+    // § Fase 110 — sama seperti admin/orders.route.ts confirm: subscription
+    // seat_addon aktif = 1 slot member_seats baru.
+    if (plan.kind === "seat_addon") {
+      await tx.insert(memberSeats).values({ primaryUserId: userId, dataUsahaId, seatSubscriptionId: subscription!.id });
+    }
   }
 
   return subscriptionIds;

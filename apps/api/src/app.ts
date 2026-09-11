@@ -42,6 +42,8 @@ import { purchasePaymentImportRoute } from "./routes/purchase-payment-import.rou
 import { salesReceiptImportRoute } from "./routes/sales-receipt-import.route";
 import { journalVoucherImportRoute } from "./routes/journal-voucher-import.route";
 import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
+import { teamRoute } from "./routes/team.route";
+import { invitesRoute } from "./routes/invites.route";
 
 const allowedOrigins = [
   "http://localhost:6209",
@@ -61,6 +63,10 @@ export const app = new Elysia()
   // percobaan enumerasi order ID) — rate limit WAJIB, sama prinsip
   // dengan /api/auth di atas.
   .use(rateLimitPlugin({ pathPrefix: "/public", windowMs: 60_000, max: 20 }))
+  // § Fase 110, architecture-user-tambahan.md — endpoint publik terima
+  // undangan "User Tambahan" (`GET/POST /invites/:token`), sama alasan
+  // rate limit `/public` di atas.
+  .use(rateLimitPlugin({ pathPrefix: "/invites", windowMs: 60_000, max: 20 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";
@@ -203,6 +209,8 @@ export const app = new Elysia()
   .use(purchasePaymentImportRoute)
   .use(salesReceiptImportRoute)
   .use(journalVoucherImportRoute)
-  .use(otherPaymentImportRoute);
+  .use(otherPaymentImportRoute)
+  .use(teamRoute)
+  .use(invitesRoute);
 
 export type App = typeof app;

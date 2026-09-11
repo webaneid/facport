@@ -4,8 +4,8 @@ import { auth } from "../lib/auth";
 import { accurateRoute } from "./accurate.route";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
-import { plans, subscriptions, accurateConnections, user as userTable } from "../db/schema";
-import { createTestDataUsaha } from "../lib/test-fixtures";
+import { plans, subscriptions, accurateConnections, memberSeats, user as userTable } from "../db/schema";
+import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Fase 14, ADR-0020 — mirror struktur test sebelumnya, disesuaikan ke
 // API baru: `POST /accurate/connect` sekarang terima `{ subscriptionId }`
@@ -503,5 +503,79 @@ describe("POST /accurate/databases/select", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("NOT_CONNECTED");
+  });
+});
+
+// § Fase 110, architecture-user-tambahan.md "Temuan Kritis" #2 — regression
+// test PALING PENTING dari rewrite subscription-gate.ts: member (akses
+// lewat seat) TIDAK BOLEH bisa connect/reuse koneksi Accurate subscription
+// milik Data Usaha yang cuma dia numpang, walau subscription itu MUNCUL di
+// `getAccessibleSubscriptionsWithPlans` (dipakai endpoint lain, § GET
+// /accurate/subscriptions). Endpoint ini WAJIB pakai Owned, bukan Accessible.
+describe("Member TIDAK BISA connect/reuse Accurate (regression Fase 110)", () => {
+  test("404 SUBSCRIPTION_NOT_FOUND — member coba /accurate/connect ke subscription Data Usaha yang cuma dia numpang", async () => {
+    const primaryEmail = `acc-member-connect-primary-${runId}@test.local`;
+    const primaryId = await signUp(primaryEmail);
+    const dataUsahaId = await createTestDataUsaha(primaryId);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Member Connect ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [subscription] = await db
+      .insert(subscriptions)
+      .values({ userId: primaryId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
+      .returning();
+
+    const memberEmail = `acc-member-connect-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(primaryId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    // § pastikan member BENAR dapat akses lewat jalur read-only lain
+    // (Accessible) — kontrolnya beneran soal MUTASI, bukan gagal fetch biasa.
+    const listRes = await testApp.handle(new Request("http://localhost/accurate/subscriptions", { headers: { cookie: memberCookie } }));
+    const listBody = (await listRes.json()) as { subscriptions: { subscriptionId: string }[] };
+    expect(listBody.subscriptions.some((s) => s.subscriptionId === subscription!.id)).toBe(true);
+
+    const res = await postConnect(memberCookie, subscription!.id);
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("SUBSCRIPTION_NOT_FOUND");
+  });
+
+  test("404 SUBSCRIPTION_NOT_FOUND — member coba /accurate/reuse ke subscription Data Usaha yang cuma dia numpang", async () => {
+    const primaryEmail = `acc-member-reuse-primary-${runId}@test.local`;
+    const primaryId = await signUp(primaryEmail);
+    const dataUsahaId = await createTestDataUsaha(primaryId);
+    const [connection] = await db
+      .insert(accurateConnections)
+      .values({ userId: primaryId, accessTokenEncrypted: "dummy", refreshTokenEncrypted: "dummy", expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) })
+      .returning();
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Member Reuse ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
+      .returning();
+    const [subscription] = await db
+      .insert(subscriptions)
+      .values({ userId: primaryId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
+      .returning();
+
+    const memberEmail = `acc-member-reuse-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(primaryId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request("http://localhost/accurate/reuse", {
+        method: "POST",
+        headers: { cookie: memberCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId: subscription!.id, connectionId: connection!.id }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("SUBSCRIPTION_NOT_FOUND");
   });
 });

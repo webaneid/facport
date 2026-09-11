@@ -6,6 +6,7 @@ import { boss, JOBS, startQueue } from "./queue";
 import { assignCustomerRole } from "./assign-customer-role";
 import { isDisabled } from "./user-status";
 import { evictOldestSessionsIfOverLimit } from "./session-limit";
+import { linkGoogleSignupToPendingInvite } from "./member-seats";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -111,6 +112,12 @@ export const auth = betterAuth({
         after: async (user, context) => {
           if (context?.path !== "/callback/:id") return;
           await assignCustomerRole(user.id);
+          // § Fase 110, architecture-user-tambahan.md — auto-link invite
+          // "User Tambahan" yang PENDING (status "invited") dengan email
+          // sama, KHUSUS jalur Google (password path di-link langsung di
+          // `routes/invites.route.ts` setelah `signUpEmail()`, tidak lewat
+          // hook ini — lihat komentar `lib/member-seats.ts`).
+          await linkGoogleSignupToPendingInvite(user.id, user.email);
         },
       },
     },
