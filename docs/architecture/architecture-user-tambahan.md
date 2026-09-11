@@ -282,6 +282,58 @@ Bergantung penuh pada B0+B1+B2. Detail sama seperti draf sebelumnya
 `subscription-gate.ts` union primary+grant), dengan penyesuaian: UI
 pemberian akses sekarang dikelompokkan per Data Usaha (Keputusan #4).
 
+**Penyempurnaan alur invite (hasil validasi ilustrasi user, 2026-09-11)
+— penerimaan undangan lewat 2 jalur, bukan cuma 1**:
+- **Jalur A (utama)**: klik link di email undangan (`/invite/:token`) →
+  kalau email BELUM terdaftar → form daftar (password atau tombol
+  Google) → otomatis diterima setelah akun dibuat. Kalau email SUDAH
+  terdaftar → link ini WAJIB deteksi ini dan arahkan ke halaman login
+  (BUKAN coba bikin akun baru/dobel) → setelah login, lanjut ke
+  penerimaan otomatis.
+- **Jalur B (cadangan/robustness, BARU)**: kalau orang yang diundang
+  login normal (tanpa lewat link email — mis. email hilang/link
+  kedaluwarsa, atau dia login dari rute lain), sistem tetap HARUS
+  mendeteksi ada `member_seats` pending dengan `invitedEmail` cocok ke
+  email akun yang login, lalu tampilkan **notifikasi besar** (banner
+  mencolok, BUKAN cuma item kecil di dropdown lonceng) — "Anda diundang
+  ke Data Usaha X, klik untuk terima." Klik = aksi terima eksplisit
+  (sama seperti klik link, keduanya berujung ke endpoint accept yang
+  sama). Ini bikin penerimaan undangan TIDAK 100% bergantung ke link
+  email yang bisa hilang/kedaluwarsa — Data Usaha yang di-invite-kan
+  "otomatis muncul" begitu orangnya login, sesuai yang diminta user.
+- Entry point beli seat: bisa dipicu dari dalam halaman 1 Data Usaha
+  ("Tambah User" di context Data Usaha yang sedang aktif) — TAPI lihat
+  § Keputusan Tertunda di bawah soal cakupan akses seat, ini menentukan
+  apakah "dari dalam Data Usaha X" itu sekadar default awal atau
+  cakupan permanen.
+- Setelah pembayaran seat disetujui admin, tawarkan LANGSUNG isi
+  nama+email undangan (form muncul begitu approve, bukan cuma
+  dokumentasikan slot kosong lalu tunggu user buka halaman Kelola Tim
+  lain waktu) — opsi "isi nanti saja" tetap ada untuk yang belum tahu
+  siapa yang mau diundang.
+
+## Keputusan Tertunda (butuh konsultasi client, BUKAN keputusan teknis)
+
+### Cakupan seat: per-akun (bisa pindah) vs per-Data-Usaha (permanen)
+Ditemukan lewat ilustrasi user (2026-09-11) — user secara eksplisit
+minta ini DITUNDA untuk dikonsultasikan ke client, karena berdampak ke
+model bisnis/harga, bukan cuma teknis. Kerangka masalahnya:
+
+- **Kalau seat = kapasitas per-akun yang bebas dipindah** (beli 2 seat,
+  bisa dialokasikan ke Data Usaha mana pun kapan saja) — fleksibel buat
+  customer, TAPI membuka celah: beli seat murah, pindahkan bebas ke
+  Data Usaha mana pun tanpa biaya tambahan — mirip diskon tersembunyi
+  kalau harga seat tidak dibedakan per Data Usaha.
+- **Kalau seat = melekat permanen ke 1 Data Usaha tempat dibeli** — lebih
+  aman secara penagihan (jelas seat X dibayar untuk Data Usaha Y, tidak
+  bisa dialihkan diam-diam), TAPI kaku: customer yang salah pilih Data
+  Usaha saat beli, atau butuh pindahkan tim ke Data Usaha lain, harus
+  beli seat baru lagi.
+- **Belum ditentukan**: dampaknya ke skema `member_seats` (apakah perlu
+  kolom `dataUsahaId` yang mengunci slot itu ke 1 Data Usaha, atau tetap
+  account-wide seperti draf skema saat ini) — TIDAK ditulis ke skema
+  final sampai keputusan bisnis ini turun dari client.
+
 ### Fase D — Polish
 Sama seperti draf sebelumnya + ADR resmi menutup dokumen ini, update
 `architecture-subscription.md`/`architecture-auth.md`/
