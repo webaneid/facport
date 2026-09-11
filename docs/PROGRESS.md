@@ -116,6 +116,7 @@
 | 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **released v1.28.0** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
 | 106  | Batas Device/Sesi Login per User | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
 | 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
+| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

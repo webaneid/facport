@@ -1,10 +1,9 @@
 import { Elysia, t } from "elysia";
 import { eq, and, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { roles, userRoles, importBatches, importBatchRows, settings } from "../db/schema";
+import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
-import { getOrCreateDefaultDataUsaha } from "../lib/data-usaha";
 
 // § Medium finding security review Fase 01 — proxy.ts (apps/web) cuma cek
 // keberadaan session cookie (existence-only, sesuai rekomendasi Better Auth
@@ -35,24 +34,29 @@ export const meRoute = new Elysia()
     },
     { auth: true },
   )
-  // § Fase 108, architecture-user-tambahan.md § Fase B1 — JEMBATAN
-  // SEMENTARA sebelum UI "Pilih Data Usaha" (Fase 109) dibangun.
-  // `subscriptions/checkout` & `/trial` SEKARANG WAJIB `dataUsahaId` di
-  // body (kolom DB sudah NOT NULL sejak migrasi 0020) — frontend
-  // `/subscribe` butuh SATU id untuk dikirim SEBELUM picker UI ada.
-  // Reuse/buat "Data Usaha Utama" default milik user (pola sama
-  // `admin/users.route.ts`/`admin/invoices.route.ts`) — user existing
-  // (backfill) maupun baru SELALU cuma punya 1 Data Usaha implisit di
-  // tahap ini, jadi aman dipakai langsung tanpa pilihan. Endpoint ini
-  // TIDAK akan dibutuhkan lagi begitu Fase 109 (picker UI) kelar —
-  // frontend akan kirim `dataUsahaId` hasil pilihan user, bukan default.
+  // § Fase 109, architecture-user-tambahan.md § Fase B2 — gerbang "Pilih
+  // Data Usaha" (`/pilih-usaha`). GANTIKAN `GET /me/data-usaha/default`
+  // (jembatan sementara Fase 107, sudah dihapus) — user sekarang benar2
+  // pilih/buat Data Usaha sendiri, bukan auto-default diam-diam.
   .get(
-    "/me/data-usaha/default",
+    "/me/data-usaha",
     async ({ user }) => {
-      const dataUsahaId = await getOrCreateDefaultDataUsaha(user.id);
-      return { dataUsahaId };
+      const rows = await db
+        .select({ id: dataUsaha.id, name: dataUsaha.name, accurateConnectionId: dataUsaha.accurateConnectionId })
+        .from(dataUsaha)
+        .where(eq(dataUsaha.userId, user.id))
+        .orderBy(desc(dataUsaha.createdAt));
+      return { dataUsaha: rows };
     },
     { auth: true },
+  )
+  .post(
+    "/me/data-usaha",
+    async ({ user, body }) => {
+      const [created] = await db.insert(dataUsaha).values({ userId: user.id, name: body.name.trim() }).returning();
+      return created;
+    },
+    { auth: true, body: t.Object({ name: t.String({ minLength: 1, maxLength: 200 }) }) },
   )
   // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
   // customer: total baris SUKSES milik user ini sendiri (GABUNGAN semua

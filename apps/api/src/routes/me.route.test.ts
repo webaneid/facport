@@ -38,6 +38,76 @@ async function signIn(email: string) {
   return res.headers.get("set-cookie") ?? "";
 }
 
+// § Fase 109, architecture-user-tambahan.md § Fase B2 — gerbang "Pilih
+// Data Usaha": list Data Usaha MILIK user yang login, + bikin baru.
+describe("GET & POST /me/data-usaha", () => {
+  test("401 kalau tidak login (GET)", async () => {
+    const res = await testApp.handle(new Request("http://localhost/me/data-usaha"));
+    expect(res.status).toBe(401);
+  });
+
+  test("401 kalau tidak login (POST)", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/me/data-usaha", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "PT Test" }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("GET hanya balikin Data Usaha MILIK user ini, bukan milik user lain", async () => {
+    const ownerId = await signUp(`me-data-usaha-owner-${runId}@test.local`);
+    const ownerCookie = await signIn(`me-data-usaha-owner-${runId}@test.local`);
+    const otherId = await signUp(`me-data-usaha-other-${runId}@test.local`);
+
+    await createTestDataUsaha(ownerId, `Punya Owner ${runId}`);
+    await createTestDataUsaha(otherId, `Punya Other ${runId}`);
+
+    const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: ownerCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dataUsaha: { name: string }[] };
+    const names = body.dataUsaha.map((d) => d.name);
+    expect(names).toContain(`Punya Owner ${runId}`);
+    expect(names).not.toContain(`Punya Other ${runId}`);
+  });
+
+  test("POST bikin Data Usaha baru milik user yang login, trim nama", async () => {
+    const userId = await signUp(`me-data-usaha-create-${runId}@test.local`);
+    const cookie = await signIn(`me-data-usaha-create-${runId}@test.local`);
+
+    const res = await testApp.handle(
+      new Request("http://localhost/me/data-usaha", {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `  PT Baru ${runId}  ` }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const created = (await res.json()) as { id: string; name: string; userId: string };
+    expect(created.name).toBe(`PT Baru ${runId}`);
+    expect(created.userId).toBe(userId);
+
+    const listRes = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie } }));
+    const listBody = (await listRes.json()) as { dataUsaha: { id: string }[] };
+    expect(listBody.dataUsaha.some((d) => d.id === created.id)).toBe(true);
+  });
+
+  test("422 kalau name kosong", async () => {
+    await signUp(`me-data-usaha-empty-${runId}@test.local`);
+    const cookie = await signIn(`me-data-usaha-empty-${runId}@test.local`);
+    const res = await testApp.handle(
+      new Request("http://localhost/me/data-usaha", {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "" }),
+      }),
+    );
+    expect(res.status).toBe(422);
+  });
+});
+
 describe("GET /me/stats", () => {
   test("401 kalau tidak login", async () => {
     const res = await testApp.handle(new Request("http://localhost/me/stats"));

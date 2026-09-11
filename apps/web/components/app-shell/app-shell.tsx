@@ -21,6 +21,7 @@ export function AppShell({
   appVersion,
   subscriptionModules,
   modulePlanNames,
+  activeDataUsahaName,
   user,
   children,
 }: {
@@ -35,6 +36,10 @@ export function AppShell({
   appVersion?: string;
   subscriptionModules?: string[];
   modulePlanNames?: Record<string, string>;
+  // § Fase 109 — nama Data Usaha yang sedang aktif, ditampilkan di rail
+  // bawah Sidebar + link "Ganti" ke `/pilih-usaha`. Cuma relevan surface
+  // "app" (admin tidak punya konsep Data Usaha).
+  activeDataUsahaName?: string;
   user: { name: string; email: string };
   children: React.ReactNode;
 }) {
@@ -53,6 +58,7 @@ export function AppShell({
             logoUrl={logoUrl}
             subscriptionModules={subscriptionModules}
             modulePlanNames={modulePlanNames}
+            activeDataUsahaName={activeDataUsahaName}
             mobileOpen={mobileNavOpen}
             onMobileClose={() => setMobileNavOpen(false)}
           />

@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  Building2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -226,6 +227,32 @@ function NavRow({
   );
 }
 
+// § Fase 109, architecture-user-tambahan.md § Fase B2 — "kembali ke
+// laman awal" (gerbang pilih Data Usaha), SENGAJA di rail PALING BAWAH
+// sebelum tombol Ciutkan (diminta eksplisit user, bukan di Topbar/dropdown
+// user — Data Usaha itu konteks seluruh dashboard, bukan preferensi akun).
+// Link polos ke `/pilih-usaha` (BUKAN tombol Server Action) — halaman
+// tujuan sendiri yang fetch ulang daftar Data Usaha, konsisten pola
+// navigasi biasa di project ini.
+function DataUsahaSwitcher({ name, collapsed, onNavigate }: { name: string; collapsed: boolean; onNavigate?: () => void }) {
+  return (
+    <Link
+      href="/pilih-usaha"
+      onClick={onNavigate}
+      title={collapsed ? `Data Usaha: ${name} — klik untuk ganti` : undefined}
+      className="mb-3 flex min-h-11 items-center gap-2.5 rounded-xl border border-white/16 bg-white/8 px-3 text-left transition hover:bg-white/14"
+    >
+      <Building2 className="size-4 shrink-0 text-white/80" />
+      {!collapsed && (
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-white">{name}</span>
+          <span className="block text-[10px] text-white/60">Ganti Data Usaha</span>
+        </span>
+      )}
+    </Link>
+  );
+}
+
 const COLLAPSE_STORAGE_KEY = "facport-admin-sidebar-collapsed";
 
 // § ADR-0024 — gradient rail gelap + radial spot (accent+warm), diambil
@@ -240,6 +267,7 @@ export function Sidebar({
   logoUrl,
   subscriptionModules,
   modulePlanNames,
+  activeDataUsahaName,
   mobileOpen,
   onMobileClose,
 }: {
@@ -252,6 +280,9 @@ export function Sidebar({
   // filter `subscriptionModules` di atas (yang menentukan tampil/tidak),
   // ini CUMA override teks tampilan (§ NavGroupBlock/NavRow).
   modulePlanNames?: Record<string, string>;
+  // § Fase 109 — switcher "Ganti Data Usaha" di rail bawah, surface
+  // "app" saja (admin layout.tsx tidak pernah mengisi prop ini).
+  activeDataUsahaName?: string;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -318,6 +349,8 @@ export function Sidebar({
           ))}
         </nav>
 
+        {activeDataUsahaName && <DataUsahaSwitcher name={activeDataUsahaName} collapsed={collapsed} />}
+
         <button
           type="button"
           onClick={toggleCollapsed}
@@ -359,6 +392,7 @@ export function Sidebar({
                 />
               ))}
             </nav>
+            {activeDataUsahaName && <DataUsahaSwitcher name={activeDataUsahaName} collapsed={false} onNavigate={onMobileClose} />}
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
