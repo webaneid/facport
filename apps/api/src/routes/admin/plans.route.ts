@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, desc } from "drizzle-orm";
+import { eq, ilike, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -48,11 +48,16 @@ export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
   .use(permissionPlugin)
   .get(
     "/",
-    async () => {
-      const all = await db.select().from(plans).orderBy(desc(plans.createdAt));
+    async ({ query }) => {
+      const search = query.search?.trim();
+      const all = await db
+        .select()
+        .from(plans)
+        .where(search ? ilike(plans.name, `%${search}%`) : undefined)
+        .orderBy(desc(plans.createdAt));
       return { plans: all };
     },
-    { permission: "plans.manage" },
+    { permission: "plans.manage", query: t.Object({ search: t.Optional(t.String()) }) },
   )
   .post(
     "/",

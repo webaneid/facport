@@ -566,7 +566,7 @@ export default function AdminUsersPage() {
               setSearch(q);
               setPage(0);
             }}
-            className="mt-2 max-w-xs"
+            className="mt-2 w-full"
           />
         </CardHeader>
         <CardContent>

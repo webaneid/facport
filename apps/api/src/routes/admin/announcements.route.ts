@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { desc } from "drizzle-orm";
+import { desc, ilike } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { announcements } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -15,11 +15,20 @@ export const adminAnnouncementsRoute = new Elysia({ prefix: "/admin/announcement
   .use(permissionPlugin)
   .get(
     "/",
-    async () => {
-      const rows = await db.select().from(announcements).orderBy(desc(announcements.createdAt));
+    async ({ query }) => {
+      const search = query.search?.trim();
+      // § Fase 105 (2026-09-11) — search judul saja (bukan `body`, isi
+      // pengumuman bisa panjang & bukan yang biasa dicari admin untuk
+      // menemukan pengumuman tertentu, beda dari nomor invoice/nama
+      // yang jadi identifier alami di halaman lain).
+      const rows = await db
+        .select()
+        .from(announcements)
+        .where(search ? ilike(announcements.title, `%${search}%`) : undefined)
+        .orderBy(desc(announcements.createdAt));
       return { announcements: rows };
     },
-    { permission: "notifications.broadcast" },
+    { permission: "notifications.broadcast", query: t.Object({ search: t.Optional(t.String()) }) },
   )
   .post(
     "/",

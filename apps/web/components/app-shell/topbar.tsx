@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, LogOut, UserRound, Search } from "lucide-react";
+import { Menu, LogOut, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -24,9 +24,12 @@ function getInitials(name: string, email: string) {
 }
 
 // § ADR-0024 — Admin UI Kit v2. Breadcrumbs GANTI label statis tunggal
-// (Fase 03). Search SENGAJA masih UI-only (belum ada pencarian
-// lintas-entity di project ini). Notifikasi bell diaktifkan Fase 45
-// (§ NotificationBell) — sebelumnya `disabled` sejak ADR-0024.
+// (Fase 03). Notifikasi bell diaktifkan Fase 45 (§ NotificationBell) —
+// sebelumnya `disabled` sejak ADR-0024. § Fase 105 (2026-09-11) — kotak
+// "Cari cepat" (search lintas-entity, SENGAJA UI-only/disabled sejak
+// ADR-0024) DIHAPUS — tidak pernah berfungsi, pencarian per-halaman
+// sekarang ditangani search form masing-masing (§ `SearchForm`, dipakai
+// di halaman list admin, bukan lintas-entity global).
 // § Fase 103 (2026-09-11) — `headerLogoUrl`/`headerLogoLinkUrl` BARU:
 // logo perusahaan PERMANEN di tengah header (dua surface, komponen
 // shared ini). Posisi TENGAH PERSIS pakai `absolute` (BUKAN flexbox
@@ -85,17 +88,6 @@ export function Topbar({
         )}
 
         <div className="flex shrink-0 items-center gap-2">
-          <div className="hidden items-center gap-2 rounded-xl border border-admin-line bg-white/70 px-3 py-2 md:flex">
-            <Search className="size-4 text-admin-muted" />
-            <input
-              type="search"
-              placeholder="Cari cepat..."
-              disabled
-              title="Pencarian belum tersedia"
-              className="w-40 bg-transparent text-sm outline-none placeholder:text-admin-muted disabled:cursor-not-allowed"
-            />
-          </div>
-
           <NotificationBell surface={surface} />
 
           <DropdownMenu>

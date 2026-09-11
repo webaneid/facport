@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
 import { currencyFormatter } from "@/lib/utils";
@@ -160,9 +161,10 @@ const columnHelper = createDataTableColumns<Plan>();
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState<Plan[] | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
-    const res = await api.admin.plans.get();
+    const res = await api.admin.plans.get({ query: { search: search || undefined } });
     if (!res.data) return;
     // § Fase 53 — sort by modul lalu durasi, supaya beberapa tier paket
     // untuk modul yang sama (Bulanan/Tahunan dst) tampil berdekatan di
@@ -174,9 +176,10 @@ export default function AdminPlansPage() {
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar (bukan derived state)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat search berubah, pola sama admin/users/page.tsx
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   async function handleDeactivate(plan: Plan) {
     const res = await api.admin.plans({ id: plan.id }).delete();
@@ -250,6 +253,7 @@ export default function AdminPlansPage() {
         <CardHeader>
           <CardTitle>Semua Paket</CardTitle>
           <CardDescription>Katalog per fitur — cart multi-fitur dirakit saat checkout, bukan di sini.</CardDescription>
+          <SearchForm placeholder="Cari nama paket..." onSearch={setSearch} className="mt-2 w-full" />
         </CardHeader>
         <CardContent>
           {!plans ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={plans} emptyIcon={Ban} emptyTitle="Belum ada paket" />}

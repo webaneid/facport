@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { FileText, Copy, Download, Eye, Banknote } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
@@ -13,6 +13,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { Can } from "@/components/auth/can";
 import { api, apiBaseUrl } from "@/lib/api-client";
@@ -326,16 +327,18 @@ const columnHelper = createDataTableColumns<InvoiceRow>();
 export default function AdminInvoicesPage() {
   const companyTimezone = useCompanyTimezone();
   const [invoices, setInvoices] = useState<InvoiceRow[] | null>(null);
+  const [search, setSearch] = useState("");
 
   async function load() {
-    const res = await api.admin.invoices.get();
+    const res = await api.admin.invoices.get({ query: { search: search || undefined } });
     if (res.data) setInvoices((res.data as unknown as { invoices: InvoiceRow[] }).invoices);
   }
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat search berubah, pola sama admin/users/page.tsx
     load();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
   const columns = [
@@ -405,7 +408,12 @@ export default function AdminInvoicesPage() {
       />
 
       <Card>
-        <CardContent className="pt-6">
+        <CardHeader>
+          <CardTitle>Semua Invoice</CardTitle>
+          <CardDescription>{invoices?.length ?? 0} invoice.</CardDescription>
+          <SearchForm placeholder="Cari nomor invoice atau nama..." onSearch={setSearch} className="mt-2 w-full" />
+        </CardHeader>
+        <CardContent>
           {!invoices ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={invoices} emptyIcon={FileText} emptyTitle="Belum ada invoice" />}
         </CardContent>
       </Card>

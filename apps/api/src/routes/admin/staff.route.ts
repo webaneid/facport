@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { auth } from "../../lib/auth";
 import { roles, userRoles, auditLogs, user as userTable } from "../../db/schema";
@@ -29,7 +29,8 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
   .use(permissionPlugin)
   .get(
     "/",
-    async () => {
+    async ({ query }) => {
+      const search = query.search?.trim();
       const [adminRole] = await db.select().from(roles).where(eq(roles.name, "admin"));
       const [staffRole] = await db.select().from(roles).where(eq(roles.name, "staff"));
       const roleIds = [adminRole?.id, staffRole?.id].filter((id): id is string => Boolean(id));
@@ -44,7 +45,12 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
       if (userIds.length === 0) return { users: [] };
 
       const roleByUser = new Map(memberships.map((m) => [m.userId, m.roleName]));
-      const rows = await db.select().from(userTable).where(inArray(userTable.id, userIds)).orderBy(desc(userTable.createdAt));
+      // § Fase 105 (2026-09-11) — search nama/email, pola SAMA PERSIS
+      // `admin/users.route.ts` (`ilike` name/email, digabung `and()`
+      // dengan filter `inArray` role di atas).
+      const searchCondition = search ? or(ilike(userTable.name, `%${search}%`), ilike(userTable.email, `%${search}%`)) : undefined;
+      const where = searchCondition ? and(inArray(userTable.id, userIds), searchCondition) : inArray(userTable.id, userIds);
+      const rows = await db.select().from(userTable).where(where).orderBy(desc(userTable.createdAt));
 
       return {
         users: rows.map((u) => ({
@@ -60,7 +66,7 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
     // § lihat daftar tim internal boleh KEDUA role (Admin terbatas juga
     // perlu tahu siapa saja rekan timnya) — tambah/nonaktifkan tetap
     // `users.manage` (endpoint POST di bawah & PATCH di users.route.ts).
-    { permission: "users.view" },
+    { permission: "users.view", query: t.Object({ search: t.Optional(t.String()) }) },
   )
   .post(
     "/",

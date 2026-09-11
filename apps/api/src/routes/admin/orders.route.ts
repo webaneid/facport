@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -21,11 +21,19 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
     "/",
     async ({ query }) => {
       const statusFilter = query.status ?? "submitted";
+      const search = query.search?.trim();
+      // § Fase 105 (2026-09-11) — search nomor invoice ATAU nama
+      // penagihan, digabung `and()` dengan filter status Tabs yang
+      // sudah ada (§ Fase 20, ADR-0023) — keduanya independen, boleh
+      // dipakai bersamaan.
+      const searchCondition = search ? or(ilike(invoices.invoiceNumber, `%${search}%`), ilike(invoices.billToName, `%${search}%`)) : undefined;
+      const statusCondition = statusFilter === "all" ? undefined : eq(orders.status, statusFilter);
+      const where = statusCondition && searchCondition ? and(statusCondition, searchCondition) : (statusCondition ?? searchCondition);
       const rows = await db
         .select({ order: orders, invoice: invoices })
         .from(orders)
         .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
-        .where(statusFilter === "all" ? undefined : eq(orders.status, statusFilter))
+        .where(where)
         .orderBy(desc(orders.submittedAt), desc(orders.createdAt));
       return { orders: rows.map((r) => ({ ...r.order, invoice: r.invoice, amountDue: r.invoice.total + r.order.uniqueCode })) };
     },
@@ -43,6 +51,7 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             t.Literal("all"),
           ]),
         ),
+        search: t.Optional(t.String()),
       }),
     },
   )

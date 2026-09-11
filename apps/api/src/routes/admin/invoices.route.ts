@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, or, ilike, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { invoices, orders, plans, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -14,8 +14,15 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
   .use(permissionPlugin)
   .get(
     "/",
-    async () => {
-      const rows = await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+    async ({ query }) => {
+      const search = query.search?.trim();
+      // § Fase 105 (2026-09-11) — search nomor invoice ATAU nama
+      // penagihan (`billToName`, snapshot — § architecture-invoice.md
+      // "Kenapa Semua Field Snapshot"), bukan nama user LIVE (invoice
+      // lama tetap match nama saat invoice dibuat, bukan nama user
+      // sekarang kalau sudah ganti nama).
+      const searchCondition = search ? or(ilike(invoices.invoiceNumber, `%${search}%`), ilike(invoices.billToName, `%${search}%`)) : undefined;
+      const rows = await db.select().from(invoices).where(searchCondition).orderBy(desc(invoices.createdAt));
       const invoiceIds = rows.map((r) => r.id);
       // § Fase 27, ADR-0025 — `orderId` dipakai FE untuk tombol "Salin
       // Link" (link publik `{APP_URL}/pay/{orderId}`), pola JOIN yang
@@ -37,7 +44,7 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
         }),
       };
     },
-    { permission: "invoices.view" },
+    { permission: "invoices.view", query: t.Object({ search: t.Optional(t.String()) }) },
   )
   // § Fase 27, ADR-0025 — admin bikin invoice BARU untuk user EXISTING
   // (beda dari Fase 18 "Kirim Invoice" yang cuma terjadi BERSAMAAN
