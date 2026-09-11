@@ -177,7 +177,7 @@ intuitif berkat Data Usaha — lihat § Keputusan Desain #4 revisi)*
 | 4 | Cakupan akses user tambahan | **DIKONFIRMASI CLIENT (2026-09-11), lebih sederhana dari draf sebelumnya**: 1 seat = akses PERMANEN ke 1 Data Usaha SAJA (bukan per-Fitur di dalamnya) — begitu di-grant, otomatis dapat SEMUA fitur yang aktif di Data Usaha itu, ikut naik/turun kalau fitur di Data Usaha itu berubah. Kata client sendiri: *"facport menjual jumlah slot akses ke suatu DATABASE"* — unit jualannya Data Usaha, bukan Fitur. Ini menghapus kebutuhan tabel `member_module_grants` yang tadinya direncanakan — cukup 1 kolom `dataUsahaId` yang DIKUNCI di `member_seats` sejak dibeli (lihat § Skema Database). TIDAK BISA dipindah ke Data Usaha lain — kalau mau kasih akses ke Data Usaha lain juga, itu PEMBELIAN SEAT BARU, terpisah, biaya terpisah. |
 | 5 | Alur "perpanjang vs beli baru" untuk modul yang sama | **Dipersempit cakupannya** berkat Data Usaha: kasus "2 instance modul sama dalam 1 Data Usaha" jadi jarang/tidak perlu (kalau butuh 2 Purchase Invoice, biasanya karena 2 Data Usaha, sudah otomatis terpisah). Yang masih perlu: aksi "Perpanjang/Ganti Paket" EKSPLISIT (update row yang sama di tempat, `id` tetap) untuk kasus renewal/upgrade tier DALAM Data Usaha yang sama, terpisah dari katalog "+ Tambah Langganan" — prinsip "tidak pernah menebak" tetap dipegang. |
 | 9 | **[BARU, DIKONFIRMASI CLIENT]** Reassign slot seat (ganti orang yang menempati) | User tambahan yang resign/diganti BISA di-swap oleh user utama (revoke Iwan → slot balik `available` → invite Ahmad ke slot yang SAMA). **Durasi slot melekat ke SLOT, bukan ke orangnya** — Ahmad melanjutkan sisa waktu berlangganan yang tersisa, BUKAN dapat masa aktif baru dari nol. Ini sudah sesuai desain `member_seats` yang sudah ada (status `available`→`invited`→`active`, `seatSubscriptionId` tetap sama), tidak perlu tabel/kolom baru. |
-| 10 | **[BARU, DIKONFIRMASI CLIENT]** Transfer kepemilikan Data Usaha ("Super User") | User utama (pemilik) bisa transfer HAK KELOLA seluruh akun Facport-nya (semua Data Usaha miliknya) ke orang lain, SELF-SERVICE tanpa lewat admin Facport — skenario: pemilik lama resign, digantikan orang baru. Didesain sebagai **pointer kepemilikan yang bisa dipindah** (`dataUsaha.userId`), TERPISAH dari riwayat pembayaran (`subscriptions.userId`/`invoices.userId` TETAP tercatat atas nama pembeli asli — catatan akuntansi tidak boleh ditulis ulang). Ke depan, hak kelola (tambah fitur, tambah/kelola user tambahan, dst) ikut `dataUsaha.userId` yang BARU. WAJIB pakai konfirmasi 2 langkah (pemilik lama ajukan → calon pemilik baru harus terima secara eksplisit) — TIDAK BOLEH 1 klik unilateral, supaya tidak bisa diambil-alih tanpa persetujuan pihak yang dituju. |
+| 10 | **[BARU, DIKONFIRMASI CLIENT + diperluas]** Transfer kepemilikan Data Usaha ("Super User") | User utama (pemilik) bisa transfer HAK KELOLA seluruh akun Facport-nya (semua Data Usaha miliknya) ke orang lain — skenario: pemilik lama resign, digantikan orang baru. Didesain sebagai **pointer kepemilikan yang bisa dipindah** (`dataUsaha.userId`), TERPISAH dari riwayat pembayaran (`subscriptions.userId`/`invoices.userId` TETAP tercatat atas nama pembeli asli). **2 jalur**: (a) **self-service** oleh customer — WAJIB konfirmasi 2 langkah (pemilik lama ajukan → calon pemilik baru terima eksplisit), TIDAK BOLEH 1 klik unilateral; (b) **[BARU, diminta user 2026-09-11]** **dibantu admin Facport** lewat menu admin (mis. di halaman detail user, `admin/users/[id]`) — admin bisa langsung eksekusi transfer TANPA proses 2-langkah via email (admin sudah terverifikasi lewat channel support sendiri, mis. tiket/WA), untuk kasus customer kesulitan pakai alur self-service. Jalur admin WAJIB: permission terpisah (bukan `users.manage` biasa — pola sama `subscriptions.manage` yang sudah dipisah dari `users.manage` untuk cegah eskalasi privilege tidak sengaja), tercatat di `auditLogs` dengan jelas (siapa admin yang eksekusi, dari→ke siapa), dan kirim notifikasi email ke KEDUA pihak (pemilik lama & baru) supaya transparan meski admin yang mengeksekusi — mencegah kejutan/dispute di kemudian hari kalau ternyata bukan permintaan pemilik asli. |
 
 ## Skema Database (diusulkan)
 
@@ -293,6 +293,19 @@ tabel baru untuk transfer itu sendiri, cukup:
 - Efek: hak kelola SEMUA aspek Data Usaha itu (tambah fitur, kelola user
   tambahan, dst) ikut pemilik baru sejak saat itu. Riwayat invoice/
   subscription LAMA tetap atas nama pemilik lama (tidak ditulis ulang).
+- **Jalur admin (§ Keputusan #10, diminta user 2026-09-11)**: endpoint
+  terpisah `POST /admin/data-usaha/:id/transfer-ownership` (body: email
+  atau userId calon pemilik baru) — permission BARU (mis.
+  `data-usaha.transfer-ownership`, TERPISAH dari `users.manage`, pola
+  sama pemisahan `subscriptions.manage`). Langsung eksekusi (`dataUsaha.userId`
+  di-update seketika, TANPA token/accept-flow — admin dianggap sudah
+  verifikasi identitas & persetujuan lewat channel support-nya sendiri
+  di luar sistem). WAJIB: insert `auditLogs` (actorId = admin, detail
+  from→to userId), kirim email notifikasi ke pemilik LAMA dan BARU
+  (transparansi, supaya tidak ada yang kaget/dispute belakangan kalau
+  ternyata bukan benar-benar permintaan pemilik asli). UI natural di
+  `admin/users/[id]` (halaman detail user yang sudah ada) — tambah
+  section "Data Usaha yang Dimiliki" dengan aksi "Pindahkan Kepemilikan".
 
 ## Rencana Fase (kalau/ketika dilanjutkan — urutan wajib)
 
