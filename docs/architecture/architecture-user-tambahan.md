@@ -103,22 +103,29 @@ yang harus dibangun dari nol (lihat § Ringkasan Riset), dan invariant
   begitu terhubung, **PERMANEN 1:1** untuk Data Usaha itu — tidak pernah
   ditanya ulang "connect ke Data Usaha mana" untuk fitur ke-2 dst di
   Data Usaha yang sama.
-- **[BELUM TERJAWAB, ditemukan saat audit final 2026-09-11] Scope OAuth
-  Accurate saat connect**: hari ini, scope OAuth yang diminta ke
-  Accurate di-derive dari `plan.modules` SUBSCRIPTION SPESIFIK yang
-  sedang di-connect (`accurate.route.ts`, `target.plan.modules`). Kalau
-  Data Usaha di-connect SEBELUM tahu fitur apa yang akan dibeli (jalur
-  "connect langsung saat buat Data Usaha", § Keputusan #6), sistem tidak
-  tahu scope apa yang harus diminta — opsinya: (a) minta SEMUA scope
-  dari 7 fitur sekaligus di depan (koneksi 1x, tapi minta izin lebih
-  luas dari yang mungkin akhirnya dipakai), atau (b) tetap connect
-  lazy/scope sempit di fitur pertama, lalu "top-up" izin scope setiap
-  kali fitur BARU disubscribe di Data Usaha yang sama (kalau Accurate
-  OAuth mendukung penambahan scope inkremental ke koneksi yang sama —
-  BELUM DIVERIFIKASI). **WAJIB dicek ke dokumentasi/dukungan developer
-  Accurate SEBELUM Fase B1 mulai dikerjakan** — ini keputusan teknis
-  yang menentukan bentuk pasti alur connect, bukan detail kecil yang
-  bisa diputuskan sambil jalan.
+- **[TERJAWAB dari preseden kode sendiri, 2026-09-11 — sebelumnya sempat
+  ditandai "belum terjawab", TERNYATA sudah ada jawabannya]** Scope OAuth
+  Accurate saat connect: hari ini, scope di-derive dari `plan.modules`
+  SUBSCRIPTION SPESIFIK yang sedang di-connect (`accurate.route.ts`,
+  `target.plan.modules`, via `scopesForModules()` di `lib/accurate-scopes.ts`
+  yang SUDAH menerima ARRAY modul — bukan cuma 1). Pertanyaan "apakah
+  Accurate mendukung nambah scope ke koneksi yang sudah ada" **SUDAH
+  TERJAWAB EMPIRIS dari riwayat proyek sendiri**: `accurate-scopes.ts`
+  mencatat 4 kali kejadian nyata (Fase 04, 13, 78, 98) di mana modul
+  butuh scope baru setelah koneksi lama sudah ada — solusinya SELALU
+  sama: user diminta **"Hubungkan Ulang"** (`reconnect: true`, fitur
+  yang SUDAH ADA & SUDAH TERBUKTI di `accurate.route.ts`) — re-authorize
+  penuh (bukan top-up diam-diam, Accurate TIDAK mendukung itu), tapi
+  ini SUDAH mekanisme yang ada, bukan yang perlu dibangun baru.
+  **Resolusi untuk Data Usaha**: connect (kapan pun terjadi) minta scope
+  sesuai fitur yang SUDAH aktif saat itu (bisa 0 fitur = scope minimal/
+  cuma untuk pilih Data Usaha-nya Accurate); begitu fitur BARU
+  disubscribe di Data Usaha yang sama dan butuh scope belum dimiliki →
+  tawarkan "Hubungkan Ulang" (pola SAMA PERSIS 4 kejadian di atas,
+  `scopesForModules()` tinggal dipanggil dengan UNION semua fitur aktif
+  Data Usaha itu, bukan cuma 1 subscription). **TIDAK PERLU tanya/
+  verifikasi eksternal ke Accurate** — jawabannya sudah ada di kode &
+  riwayat proyek sendiri, tidak menghalangi mulai Fase B1.
 - **Istilah "Data Usaha" sudah jadi bahasa produk resmi** — dipakai
   konsisten di `/app/accurate` ("Pilih Data Usaha", "Hubungkan Data
   Usaha Baru", selalu digloss "(perusahaan)"). Tidak perlu istilah baru,
