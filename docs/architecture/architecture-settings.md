@@ -28,9 +28,11 @@ jarang berubah, cocok banget di-cache).
 |---|---|---|
 | `company.name` | string | Default: "FAC Institute" |
 | `company.address` | string (free text) | Project ini TIDAK pakai komponen Alamat terstruktur (checklist = Tidak) — cukup textarea bebas |
-| `company.logo` | string (URL publik) | § Fase 12, ADR-0017 — URL SUDAH di-resolve (`${MINIO_PUBLIC_URL}/facport-public/...`), BUKAN media ID mentah lagi (koreksi dari draf awal). Diisi via `POST /admin/branding/logo`, bukan form teks manual. |
+| `company.logo` | string (URL publik) | § Fase 12, ADR-0017 — URL SUDAH di-resolve (`${MINIO_PUBLIC_URL}/facport-public/...`), BUKAN media ID mentah lagi (koreksi dari draf awal). Diisi via `POST /admin/branding/logo`, bukan form teks manual. § Fase 103 (2026-09-11) — field ini SEKARANG dirender di tengah header (Topbar) SEMUA surface (admin & app), reuse murni (sejak 2026-09-07 sempat tidak dipakai di mana pun — sidebar pindah ke `company.favicon`). |
+| `company.logoLinkUrl` | string (URL, opsional) | § Fase 103 — URL tujuan saat logo header diklik, dibuka tab baru (`target="_blank" rel="noopener noreferrer"`). Validasi server: kosong ATAU diawali `http://`/`https://` (cegah skema `javascript:` dkk). BUKAN masuk `BRANDING_ONLY_KEYS` — diset via `PUT /settings` generik, bukan endpoint upload. |
 | `company.favicon` | object `{ "16": url, "32": url, "180": url, "512": url }` | § Fase 12, ADR-0017 — 4 ukuran PNG, lihat catatan multi-ukuran di `components/architecture-component-image-processing.md`. Diisi via `POST /admin/branding/favicon`. |
 | `company.timezone` | string (IANA tz, mis. `"Asia/Jakarta"`) | **Lihat aturan timezone di bawah — WAJIB dibaca**. Default: `"Asia/Jakarta"` |
+| `company.copyrightStartYear` | integer (opsional) | § Fase 103 — tahun mulai footer copyright (`© Copyright {start} - {tahun sekarang} ...`). Kosong = footer tampilkan tahun sekarang saja (tanpa rentang). Validasi server: integer 2000–(tahun sekarang+1). |
 
 ## ⚠️ Aturan Timezone — Sumber Bug Paling Sering
 **Semua timestamp di database WAJIB `timestamptz` (UTC), TIDAK PERNAH simpan
@@ -137,11 +139,14 @@ Form pakai `react-hook-form` + `zod` (§ ADR-0004). Field alamat cukup
 GET  /settings?group=general    → { "company.name": "...", ... } — WAJIB login (auth: true)
 GET  /settings?group=data       → { "data.importRetentionDays": 2 }
 PUT  /settings                  → body: { key, value, group }[] — update banyak sekaligus
-GET  /settings/public            → { "company.name", "company.logo", "company.favicon" } SAJA,
-                                     TANPA auth sama sekali (§ Fase 12, ADR-0017) — allowlist
-                                     eksplisit di kode, JANGAN pernah expose row lain di endpoint
-                                     ini (ingat Critical finding Fase 00: GET /settings pernah
-                                     bocor semua row tanpa guard).
+GET  /settings/public            → { "company.name", "company.logo", "company.logoLinkUrl",
+                                     "company.favicon", "company.timezone",
+                                     "company.copyrightStartYear" } SAJA (§ Fase 103, sebelumnya
+                                     3 key pertama saja sejak Fase 12), TANPA auth sama sekali —
+                                     allowlist eksplisit di kode (`PUBLIC_SETTINGS_KEYS`), JANGAN
+                                     pernah expose row lain di endpoint ini (ingat Critical
+                                     finding Fase 00: GET /settings pernah bocor semua row tanpa
+                                     guard).
 POST /admin/branding/logo        → multipart, 1 file image, permission settings.update,
                                      upload ke bucket public, update settings.company.logo (§ Fase 12)
 POST /admin/branding/favicon     → multipart, 1 file image, permission settings.update,

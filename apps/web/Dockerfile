@@ -54,6 +54,15 @@ COPY --from=builder /repo/apps/web/public ./apps/web/public
 COPY --from=builder /repo/apps/web/package.json ./apps/web/package.json
 COPY --from=builder /repo/apps/web/next.config.ts ./apps/web/next.config.ts
 
+# § Fase 103 (2026-09-11) — versi aplikasi (tag rilis, mis. "v1.27.2")
+# untuk footer copyright. Diisi CI lewat --build-arg (§ deploy.yml/
+# deploy-staging.yml), dibaca process.env.APP_VERSION di Server
+# Component layout — SENGAJA bukan NEXT_PUBLIC_*, cukup runtime env
+# biasa, tidak perlu baked ke client bundle. Default "dev" untuk build
+# lokal tanpa --build-arg (mis. docker build manual tanpa CI).
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 ENV NODE_ENV=production
 EXPOSE 3000
 WORKDIR /repo/apps/web

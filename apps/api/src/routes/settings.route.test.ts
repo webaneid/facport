@@ -16,7 +16,16 @@ import { roles, userRoles, user as userTable, settings as settingsTable } from "
 // Fix: snapshot nilai ASLI sebelum test manapun jalan, kembalikan lagi
 // di `afterAll` — jalan APAPUN hasil testnya (pass/fail), § bun:test
 // `afterAll` tetap dieksekusi walau ada test yang gagal di file ini.
-const SETTINGS_KEYS_MUTATED_BY_THIS_FILE = ["company.bankAccounts", "company.qrisAccounts", "data.manualInputSecondsPerRow"] as const;
+const SETTINGS_KEYS_MUTATED_BY_THIS_FILE = [
+  "company.bankAccounts",
+  "company.qrisAccounts",
+  "data.manualInputSecondsPerRow",
+  // § Fase 103 (2026-09-11) — key GLOBAL baru yang di-PUT test di bawah,
+  // WAJIB masuk snapshot/restore yang sama (§ komentar atas), sama
+  // alasan QRIS/bank accounts.
+  "company.logoLinkUrl",
+  "company.copyrightStartYear",
+] as const;
 let originalSettingsSnapshot: Map<string, unknown>;
 
 beforeAll(async () => {
@@ -197,5 +206,72 @@ describe("PUT /settings — validasi data.manualInputSecondsPerRow", () => {
     const cookie = await makeAdminCookie();
     const res = await putSettings(cookie, [{ key: "data.manualInputSecondsPerRow", value: 30, group: "data" }]);
     expect(res.status).toBe(200);
+  });
+});
+
+// § Fase 103 (2026-09-11) — logo header (Topbar) + footer copyright.
+describe("PUT /settings — validasi company.logoLinkUrl", () => {
+  test("400 INVALID_LOGO_LINK_URL kalau bukan http(s)://", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "company.logoLinkUrl", value: "facinstitute.id", group: "general" }]);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("INVALID_LOGO_LINK_URL");
+  });
+
+  test("400 INVALID_LOGO_LINK_URL kalau skema javascript: (cegah XSS klik)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "company.logoLinkUrl", value: "javascript:alert(1)", group: "general" }]);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("INVALID_LOGO_LINK_URL");
+  });
+
+  test("200 kalau string kosong (boleh dikosongkan)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "company.logoLinkUrl", value: "", group: "general" }]);
+    expect(res.status).toBe(200);
+  });
+
+  test("200 kalau https:// valid", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "company.logoLinkUrl", value: "https://facinstitute.id", group: "general" }]);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("PUT /settings — validasi company.copyrightStartYear", () => {
+  test("400 INVALID_COPYRIGHT_START_YEAR kalau bukan integer dalam rentang wajar", async () => {
+    const cookie = await makeAdminCookie();
+
+    const tooOld = await putSettings(cookie, [{ key: "company.copyrightStartYear", value: 1999, group: "general" }]);
+    expect(tooOld.status).toBe(400);
+    expect(((await tooOld.json()) as { code: string }).code).toBe("INVALID_COPYRIGHT_START_YEAR");
+
+    const farFuture = await putSettings(cookie, [{ key: "company.copyrightStartYear", value: new Date().getFullYear() + 10, group: "general" }]);
+    expect(farFuture.status).toBe(400);
+
+    const notInteger = await putSettings(cookie, [{ key: "company.copyrightStartYear", value: 2025.5, group: "general" }]);
+    expect(notInteger.status).toBe(400);
+  });
+
+  test("200 kalau tahun valid", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await putSettings(cookie, [{ key: "company.copyrightStartYear", value: 2025, group: "general" }]);
+    expect(res.status).toBe(200);
+  });
+});
+
+describe("GET /settings/public — expose company.logoLinkUrl/copyrightStartYear (Fase 103)", () => {
+  test("key baru ikut ter-expose tanpa auth setelah di-set admin", async () => {
+    const cookie = await makeAdminCookie();
+    await putSettings(cookie, [
+      { key: "company.logoLinkUrl", value: "https://facinstitute.id", group: "general" },
+      { key: "company.copyrightStartYear", value: 2025, group: "general" },
+    ]);
+
+    const res = await testApp.handle(new Request("http://localhost/settings/public"));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body["company.logoLinkUrl"]).toBe("https://facinstitute.id");
+    expect(body["company.copyrightStartYear"]).toBe(2025);
   });
 });

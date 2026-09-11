@@ -46,6 +46,13 @@ export default async function AppProtectedLayout({ children }: { children: React
       // § favicon (kotak, kecil), BUKAN company.logo — lihat catatan sama
       // di admin/(protected)/layout.tsx.
       logoUrl={settings["company.favicon"]?.["180"]}
+      // § Fase 103 (2026-09-11) — logo header (Topbar) + footer copyright,
+      // lihat catatan lengkap di admin/(protected)/layout.tsx.
+      headerLogoUrl={settings["company.logo"]}
+      headerLogoLinkUrl={settings["company.logoLinkUrl"]}
+      companyName={settings["company.name"]}
+      copyrightStartYear={settings["company.copyrightStartYear"]}
+      appVersion={process.env.APP_VERSION}
       subscriptionModules={subscriptionModules}
       modulePlanNames={modulePlanNames}
       user={{ name: me.name, email: me.email }}

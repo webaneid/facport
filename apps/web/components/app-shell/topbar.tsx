@@ -27,13 +27,23 @@ function getInitials(name: string, email: string) {
 // (Fase 03). Search SENGAJA masih UI-only (belum ada pencarian
 // lintas-entity di project ini). Notifikasi bell diaktifkan Fase 45
 // (§ NotificationBell) — sebelumnya `disabled` sejak ADR-0024.
+// § Fase 103 (2026-09-11) — `headerLogoUrl`/`headerLogoLinkUrl` BARU:
+// logo perusahaan PERMANEN di tengah header (dua surface, komponen
+// shared ini). Posisi TENGAH PERSIS pakai `absolute` (BUKAN flexbox
+// 3-kolom) — kiri (breadcrumbs) dan kanan (search+bell+avatar) TIDAK
+// simetris lebarnya, jadi flexbox "di antara" tidak akan pas di tengah
+// literal seperti diminta ("pas di tengah2").
 export function Topbar({
   surface,
   user,
+  headerLogoUrl,
+  headerLogoLinkUrl,
   onMenuClick,
 }: {
   surface: Surface;
   user: { name: string; email: string };
+  headerLogoUrl?: string;
+  headerLogoLinkUrl?: string;
   onMenuClick: () => void;
 }) {
   const router = useRouter();
@@ -46,13 +56,33 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-30 border-b border-admin-line bg-admin-panel backdrop-blur-xl">
-      <div className="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      <div className="relative flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" className="px-2 lg:hidden" onClick={onMenuClick} aria-label="Buka menu">
             <Menu className="h-5 w-5" />
           </Button>
           <Breadcrumbs surface={surface} />
         </div>
+
+        {headerLogoUrl && (
+          <div className="pointer-events-none absolute inset-0 hidden items-center justify-center md:flex">
+            {headerLogoLinkUrl ? (
+              <a
+                href={headerLogoLinkUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="pointer-events-auto"
+                title="Kunjungi situs perusahaan"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={headerLogoUrl} alt="Logo Perusahaan" className="h-8 w-auto object-contain" />
+              </a>
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={headerLogoUrl} alt="Logo Perusahaan" className="pointer-events-auto h-8 w-auto object-contain" />
+            )}
+          </div>
+        )}
 
         <div className="flex shrink-0 items-center gap-2">
           <div className="hidden items-center gap-2 rounded-xl border border-admin-line bg-white/70 px-3 py-2 md:flex">

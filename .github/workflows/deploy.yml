@@ -96,12 +96,19 @@ jobs:
             ghcr.io/${{ github.repository }}/api:${{ needs.resolve-tag.outputs.tag }}
             ghcr.io/${{ github.repository }}/api:latest
 
+      # § Fase 103 (2026-09-11) — inject tag versi (mis. "v1.27.2") sebagai
+      # env var runtime `APP_VERSION`, dibaca Server Component layout untuk
+      # footer copyright (§ apps/web/components/app-shell/footer.tsx).
+      # SENGAJA bukan NEXT_PUBLIC_* — tidak perlu baked ke client bundle,
+      # cukup dibaca process.env di request-time SSR seperti settings lain.
       - name: Build & push apps/web
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./apps/web/Dockerfile
           push: true
+          build-args: |
+            APP_VERSION=${{ needs.resolve-tag.outputs.tag }}
           tags: |
             ghcr.io/${{ github.repository }}/web:${{ needs.resolve-tag.outputs.tag }}
             ghcr.io/${{ github.repository }}/web:latest
