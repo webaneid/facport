@@ -16,9 +16,9 @@ type PlanRow = { id: string; durationDays: number };
 // korporat, dst), beda kebutuhan dari sini.
 export async function createManualSubscriptions(
   tx: Tx,
-  params: { userId: string; planRows: PlanRow[]; actorId: string },
+  params: { userId: string; planRows: PlanRow[]; actorId: string; dataUsahaId: string },
 ) {
-  const { userId, planRows, actorId } = params;
+  const { userId, planRows, actorId, dataUsahaId } = params;
   const now = new Date();
   const subscriptionIds: string[] = [];
 
@@ -26,7 +26,7 @@ export async function createManualSubscriptions(
     const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
     const [subscription] = await tx
       .insert(subscriptions)
-      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt })
+      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, dataUsahaId })
       .returning();
     subscriptionIds.push(subscription!.id);
 

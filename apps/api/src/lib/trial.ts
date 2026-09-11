@@ -42,15 +42,15 @@ async function getTrialMaxRows(tx: Tx | typeof db): Promise<number> {
 // WAJIB sudah dicek oleh pemanggil (§ `POST /subscriptions/trial`) SEBELUM
 // fungsi ini dipanggil — fungsi ini sendiri TIDAK mengecek ulang (dipanggil
 // di dalam transaction yang sudah row-lock user, sama pola checkout).
-export async function createTrialSubscription(tx: Tx, params: { userId: string; plan: PlanRow; actorId: string }) {
-  const { userId, plan, actorId } = params;
+export async function createTrialSubscription(tx: Tx, params: { userId: string; plan: PlanRow; actorId: string; dataUsahaId: string }) {
+  const { userId, plan, actorId, dataUsahaId } = params;
   const durationDays = await getTrialDurationDays(tx);
   const now = new Date();
   const endAt = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000);
 
   const [subscription] = await tx
     .insert(subscriptions)
-    .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, isTrial: true })
+    .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, isTrial: true, dataUsahaId })
     .returning();
 
   await tx.insert(auditLogs).values({

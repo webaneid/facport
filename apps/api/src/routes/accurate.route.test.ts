@@ -5,6 +5,7 @@ import { accurateRoute } from "./accurate.route";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { plans, subscriptions, accurateConnections, user as userTable } from "../db/schema";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § Fase 14, ADR-0020 — mirror struktur test sebelumnya, disesuaikan ke
 // API baru: `POST /accurate/connect` sekarang terima `{ subscriptionId }`
@@ -74,6 +75,7 @@ describe("POST /accurate/connect", () => {
       .insert(plans)
       .values({ name: `Plan Accurate ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [subscription] = await db
       .insert(subscriptions)
       .values({
@@ -82,6 +84,7 @@ describe("POST /accurate/connect", () => {
         status: "active",
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
       })
       .returning();
 
@@ -109,6 +112,7 @@ describe("POST /accurate/connect", () => {
       .insert(plans)
       .values({ name: `Plan Already ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [subscription] = await db
       .insert(subscriptions)
       .values({
@@ -118,6 +122,7 @@ describe("POST /accurate/connect", () => {
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         accurateConnectionId: connection!.id,
+        dataUsahaId,
       })
       .returning();
 
@@ -155,6 +160,7 @@ describe("POST /accurate/connect", () => {
       .insert(plans)
       .values({ name: `Plan Reconnect ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [subscription] = await db
       .insert(subscriptions)
       .values({
@@ -164,6 +170,7 @@ describe("POST /accurate/connect", () => {
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         accurateConnectionId: connection!.id,
+        dataUsahaId,
       })
       .returning();
 
@@ -218,6 +225,7 @@ describe("GET /accurate/subscriptions", () => {
       })
       .returning();
 
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [planHealthy] = await db
       .insert(plans)
       .values({ name: `Plan Subs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
@@ -229,6 +237,7 @@ describe("GET /accurate/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: activeConn!.id,
+      dataUsahaId,
     });
 
     const [planBroken] = await db
@@ -242,6 +251,7 @@ describe("GET /accurate/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: expiredConn!.id,
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request("http://localhost/accurate/subscriptions", { headers: { cookie } }));
@@ -306,6 +316,7 @@ describe("POST /accurate/reuse", () => {
       })
       .returning();
 
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [planA] = await db
       .insert(plans)
       .values({ name: `Plan Reuse A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
@@ -317,6 +328,7 @@ describe("POST /accurate/reuse", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: connection!.id,
+      dataUsahaId,
     });
 
     const [planB] = await db
@@ -331,6 +343,7 @@ describe("POST /accurate/reuse", () => {
         status: "active",
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
       })
       .returning();
 
@@ -367,6 +380,7 @@ describe("POST /accurate/reuse", () => {
       .insert(plans)
       .values({ name: `Plan Reuse Attacker ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
+    const attackerDataUsahaId = await createTestDataUsaha(attackerId);
     const [sub] = await db
       .insert(subscriptions)
       .values({
@@ -375,6 +389,7 @@ describe("POST /accurate/reuse", () => {
         status: "active",
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId: attackerDataUsahaId,
       })
       .returning();
 
@@ -412,6 +427,7 @@ describe("POST /accurate/reuse", () => {
       .insert(plans)
       .values({ name: `Plan Reuse Expired ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
       .values({
@@ -420,6 +436,7 @@ describe("POST /accurate/reuse", () => {
         status: "active",
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
       })
       .returning();
 

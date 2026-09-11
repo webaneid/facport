@@ -6,6 +6,7 @@ import { db } from "../lib/db";
 import { user as userTable, plans, subscriptions, importBatches, importBatchRows, settings } from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
 // customer dihitung DI SINI (server), jadi angkanya harus benar: total
@@ -57,9 +58,10 @@ describe("GET /me/stats", () => {
       .insert(plans)
       .values({ name: `Me Stats Test Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice", "sales_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
 
     // § 2 batch modul BEDA (purchase_invoice + sales_invoice) untuk
@@ -86,9 +88,10 @@ describe("GET /me/stats", () => {
       .insert(plans)
       .values({ name: `Me Stats Other Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const otherDataUsahaId = await createTestDataUsaha(otherUserId);
     const [otherSub] = await db
       .insert(subscriptions)
-      .values({ userId: otherUserId, planId: otherPlan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId: otherUserId, planId: otherPlan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: otherDataUsahaId })
       .returning();
     const [otherBatch] = await db
       .insert(importBatches)
@@ -119,9 +122,10 @@ describe("GET /me/import-batches", () => {
       .insert(plans)
       .values({ name: `Me Batches Test Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice", "journal_voucher"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
 
     // § 3 batch, modul BEDA (purchase_invoice + journal_voucher), untuk
@@ -138,9 +142,10 @@ describe("GET /me/import-batches", () => {
       .insert(plans)
       .values({ name: `Me Batches Other Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const otherDataUsahaId = await createTestDataUsaha(otherUserId);
     const [otherSub] = await db
       .insert(subscriptions)
-      .values({ userId: otherUserId, planId: otherPlan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId: otherUserId, planId: otherPlan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: otherDataUsahaId })
       .returning();
     await db.insert(importBatches).values({ userId: otherUserId, subscriptionId: otherSub!.id, module: "purchase_invoice", fileName: "punya-orang-lain.xlsx", totalRows: 1, status: "completed" });
 

@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" ALTER COLUMN "data_usaha_id" SET NOT NULL;

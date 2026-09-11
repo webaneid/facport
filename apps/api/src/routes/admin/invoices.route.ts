@@ -5,6 +5,7 @@ import { invoices, orders, plans, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { attachInvoiceItems } from "../../lib/invoice-helpers";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
 // § architecture-invoice.md § API — SEMUA invoice lintas user, admin-only
 // (permission "invoices.view"). Dipisah dari `invoices.route.ts` (customer,
@@ -73,8 +74,13 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
         return { code: "PLAN_NOT_ACTIVE" };
       }
 
+      // § Fase 108, architecture-user-tambahan.md § Fase B1 — admin
+      // belum pilih Data Usaha spesifik di alur ini (UI itu menyusul
+      // Fase 109/110) — reuse/buat "Data Usaha Utama" default milik
+      // user target, konsisten pola `admin/users.route.ts`.
+      const dataUsahaId = await getOrCreateDefaultDataUsaha(targetUser.id);
       const result = await db.transaction((tx) =>
-        createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows }),
+        createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId }),
       );
 
       return result;

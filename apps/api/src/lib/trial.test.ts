@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { user as userTable, plans, subscriptions, importBatches, importBatchRows, settings } from "../db/schema";
 import { checkTrialRowBudget, TRIAL_MAX_ROWS_SETTING_KEY } from "./trial";
+import { createTestDataUsaha } from "./test-fixtures";
 
 // § Fase 43 — batas baris trial: `checkTrialRowBudget` dites LANGSUNG
 // (bukan lewat HTTP, mirror `subscription-gate.test.ts` — logic murni,
@@ -26,6 +27,7 @@ async function createSubscription(userId: string, isTrial: boolean, moduleKey: s
     .insert(plans)
     .values({ name: `Trial Budget Plan ${runId}-${moduleKey}`, price: 1000, durationDays: 30, modules: [moduleKey] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [sub] = await db
     .insert(subscriptions)
     .values({
@@ -35,6 +37,7 @@ async function createSubscription(userId: string, isTrial: boolean, moduleKey: s
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       isTrial,
+      dataUsahaId,
     })
     .returning();
   return sub!.id;

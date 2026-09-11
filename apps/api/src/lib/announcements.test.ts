@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { user as userTable, roles, userRoles, plans, subscriptions } from "../db/schema";
 import { resolveAnnouncementRecipients, createAnnouncement } from "./announcements";
+import { createTestDataUsaha } from "./test-fixtures";
 
 const runId = Date.now();
 
@@ -26,6 +27,7 @@ async function createActiveSubscription(userId: string, moduleKey: string, isTri
     .insert(plans)
     .values({ name: `Announcement Test Plan ${runId}-${moduleKey}-${Math.random()}`, price: 1000, durationDays: 30, modules: [moduleKey] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   await db.insert(subscriptions).values({
     userId,
     planId: plan!.id,
@@ -33,6 +35,7 @@ async function createActiveSubscription(userId: string, moduleKey: string, isTri
     startAt: new Date(),
     endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
     isTrial,
+    dataUsahaId,
   });
 }
 

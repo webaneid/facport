@@ -5,6 +5,7 @@ export * from "./payment.schema";
 export * from "./subscription.schema";
 export * from "./invoice.schema";
 export * from "./accurate.schema";
+export * from "./data-usaha.schema";
 export * from "./import.schema";
 export * from "./notification.schema";
 export * from "./customer-care.schema";

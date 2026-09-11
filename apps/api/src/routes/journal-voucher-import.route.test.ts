@@ -6,6 +6,7 @@ import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows } from "../db/schema";
 import { journalVoucherImportRoute } from "./journal-voucher-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § pola sama purchase-payment-import.route.test.ts — route ini juga
 // gabung permission + moduleAccess (Dua Lapis Gate).
@@ -47,6 +48,7 @@ async function createProvisionedUser(email: string) {
     .insert(plans)
     .values({ name: `Journal Voucher Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["journal_voucher"] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
     .values({
@@ -55,6 +57,7 @@ async function createProvisionedUser(email: string) {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     })
     .returning();
 

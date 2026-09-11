@@ -1,6 +1,7 @@
 import { pgTable, uuid, varchar, integer, text, timestamp } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { invoices } from "./invoice.schema";
+import { dataUsaha } from "./data-usaha.schema";
 
 // § Fase 16, ADR-0022 — DIROMBAK TOTAL dari bentuk lama (era rencana
 // payment gateway otomatis: externalId/rawWebhookPayload). Sekarang
@@ -12,6 +13,16 @@ import { invoices } from "./invoice.schema";
 export const orders = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").notNull().references(() => invoices.id),
+  // § Fase 108, architecture-user-tambahan.md § Fase B1 — Data Usaha
+  // yang lagi di-checkout (1 checkout = 1 Data Usaha, TIDAK bisa
+  // campur). NULLABLE (BEDA dari `subscriptions.dataUsahaId` yang NOT
+  // NULL) — order LAMA (sebelum fitur ini ada) sengaja TIDAK di-backfill
+  // (order = catatan transaksi historis, "Data Usaha mana" untuknya
+  // ambigu/tidak penting lagi setelah lunas) — confirm logic
+  // (`admin/orders.route.ts`) fallback ke Data Usaha default milik
+  // pembeli kalau kolom ini kosong (order lama), TIDAK memaksa migrasi
+  // berisiko di tabel ini.
+  dataUsahaId: uuid("data_usaha_id").references(() => dataUsaha.id),
   method: varchar("method", { length: 20 }), // "bank_transfer" | "qris" — nullable, dipilih customer belakangan
   // § kode unik ditambahkan ke invoice.total agar admin bisa cocokkan
   // mutasi bank ke invoice yang tepat TANPA API cek-mutasi otomatis.

@@ -134,6 +134,27 @@
       "when": 1788650477195,
       "tag": "0018_chemical_punisher",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1789110271629,
+      "tag": "0019_fluffy_squadron_supreme",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1789110466569,
+      "tag": "0020_flat_rawhide_kid",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1789110711683,
+      "tag": "0021_rapid_leo",
+      "breakpoints": true
     }
   ]
 }

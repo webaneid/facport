@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { adminUsersRoute } from "./users.route";
 import { db } from "../../lib/db";
 import { plans, invoices, orders, subscriptions, roles, userRoles, permissions, rolePermissions, user as userTable, session } from "../../db/schema";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 18 — "Unifikasi Onboarding Admin": POST /admin/users diperluas
 // terima planIds opsional + markAsPaid, 2 jalur hasil akhir ("Kirim
@@ -281,9 +282,10 @@ describe("GET /admin/users — permission split users.view vs users.manage", () 
       .returning();
     const now = new Date();
     const endAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const dataUsahaId = await createTestDataUsaha(userId);
     await db.insert(subscriptions).values([
-      { userId, planId: planA!.id, status: "active", startAt: now, endAt },
-      { userId, planId: planB!.id, status: "active", startAt: now, endAt },
+      { userId, planId: planA!.id, status: "active", startAt: now, endAt, dataUsahaId },
+      { userId, planId: planB!.id, status: "active", startAt: now, endAt, dataUsahaId },
     ]);
 
     const res = await testApp.handle(new Request("http://localhost/admin/users?limit=100", { headers: { cookie: adminCookie } }));

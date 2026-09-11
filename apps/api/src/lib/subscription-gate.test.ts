@@ -5,6 +5,7 @@ import { subscriptionGatePlugin } from "./subscription-gate";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plans, subscriptions, user as userTable } from "../db/schema";
+import { createTestDataUsaha } from "./test-fixtures";
 
 // § architecture-subscription.md — belum dipakai route manapun di Fase 01
 // (Fase 02 yang pakai), tapi WAJIB ada test sendiri sesuai rencana eksekusi.
@@ -71,12 +72,14 @@ describe("requireModuleAccess (subscriptionGatePlugin)", () => {
       .insert(plans)
       .values({ name: `Plan A ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     await db.insert(subscriptions).values({
       userId,
       planId: plan!.id,
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie } }));
@@ -94,12 +97,14 @@ describe("requireModuleAccess (subscriptionGatePlugin)", () => {
       .insert(plans)
       .values({ name: `Plan B ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     await db.insert(subscriptions).values({
       userId,
       planId: plan!.id,
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie } }));
@@ -120,12 +125,14 @@ describe("requireModuleAccess (subscriptionGatePlugin)", () => {
       .insert(plans)
       .values({ name: `Plan Multi Older ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     await db.insert(subscriptions).values({
       userId,
       planId: planOlder!.id,
       status: "active",
       startAt: new Date(Date.now() - 60_000),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     // § subscription KEDUA (lebih baru createdAt) untuk modul LAIN —
@@ -141,6 +148,7 @@ describe("requireModuleAccess (subscriptionGatePlugin)", () => {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie } }));

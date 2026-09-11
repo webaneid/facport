@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, accurateConnections } from "../../db/schema";
 import { adminUserSubscriptionsRoute } from "./user-subscriptions.route";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 92 (2026-09-10) — mirror pola `admin/import-batches.route.test.ts`.
 const runId = Date.now();
@@ -89,6 +90,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
       })
       .returning();
 
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [planHealthy] = await db
       .insert(plans)
       .values({ name: `UserSubs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
@@ -100,6 +102,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: healthyConn!.id,
+      dataUsahaId,
     });
 
     const [planBroken] = await db
@@ -113,6 +116,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: brokenConn!.id,
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request(`http://localhost/admin/users/${userId}/subscriptions`, { headers: { cookie: adminCookie } }));

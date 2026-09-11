@@ -4,6 +4,7 @@ import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs, accurateConnections } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
 export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscriptions" })
   .use(permissionPlugin)
@@ -52,17 +53,35 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         return { code: "END_AT_MUST_BE_FUTURE" };
       }
 
+      // § Fase 108, architecture-user-tambahan.md § Fase B1 — admin
+      // belum pilih Data Usaha spesifik lewat body di sebagian besar
+      // pemanggilan endpoint ini (UI itu menyusul Fase 109/110) — kalau
+      // tidak dikirim, reuse/buat "Data Usaha Utama" default.
+      // § security review Fase 107/108 — kalau admin KIRIM dataUsahaId
+      // eksplisit, WAJIB divalidasi itu benar milik body.userId (target
+      // user), bukan cuma divalidasi format UUID — tanpa ini admin bisa
+      // (sengaja/keliru) bikin subscription userId A menempel ke
+      // data_usaha milik user B, merusak invariant 1 data_usaha = 1
+      // pemilik yang jadi dasar guard checkout/trial (`ownsDataUsaha`).
+      if (body.dataUsahaId && !(await ownsDataUsaha(body.userId, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(body.userId));
+
       // § ditemukan 2026-09-07 — sama fix-nya seperti admin/orders.route.ts
       // POST /:id/confirm: tutup subscription aktif LAIN utk modul yang
       // sama SEBELUM insert baru (mis. user punya trial aktif, admin
       // assign manual paket asli) — cegah 2 subscription "active"
-      // bersamaan utk 1 modul yang sama.
+      // bersamaan utk 1 modul yang sama. § Fase 108 — di-SCOPE PER DATA
+      // USAHA (bukan lagi per akun) — modul yang sama BOLEH aktif di
+      // Data Usaha LAIN, konsisten guard checkout/trial customer.
       const moduleKey = plan.modules[0];
       const existingActive = await db
         .select({ id: subscriptions.id, modules: plans.modules })
         .from(subscriptions)
         .innerJoin(plans, eq(plans.id, subscriptions.planId))
-        .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active")));
+        .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active"), eq(subscriptions.dataUsahaId, dataUsahaId)));
       for (const s of existingActive.filter((s) => s.modules[0] === moduleKey)) {
         await db.update(subscriptions).set({ status: "cancelled", endAt: startAt }).where(eq(subscriptions.id, s.id));
       }
@@ -71,7 +90,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       // manual/kontrak korporat), § architecture-subscription.md
       const [subscription] = await db
         .insert(subscriptions)
-        .values({ userId: body.userId, planId: plan.id, status: "active", startAt, endAt })
+        .values({ userId: body.userId, planId: plan.id, status: "active", startAt, endAt, dataUsahaId })
         .returning();
 
       await db.insert(auditLogs).values({
@@ -90,6 +109,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         userId: t.String(),
         planId: t.String({ format: "uuid" }),
         endAt: t.String({ format: "date-time" }),
+        dataUsahaId: t.Optional(t.String({ format: "uuid" })),
       }),
     },
   )

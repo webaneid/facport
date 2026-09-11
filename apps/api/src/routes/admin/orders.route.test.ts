@@ -6,6 +6,7 @@ import { adminOrdersRoute } from "./orders.route";
 import { db } from "../../lib/db";
 import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable } from "../../db/schema";
 import { env } from "../../lib/env";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(adminOrdersRoute);
@@ -241,6 +242,10 @@ describe("POST /admin/orders/:id/confirm", () => {
       .insert(plans)
       .values({ name: `Trial Plan Supersede ${runId}`, price: 0, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
       .returning();
+    // § dataUsahaId WAJIB sama dengan yang akan di-resolve confirm endpoint
+    // (order.dataUsahaId null → getOrCreateDefaultDataUsaha(customerId)),
+    // supaya query supersede-trial ketemu baris ini.
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(customerId);
     const [oldTrialSub] = await db
       .insert(subscriptions)
       .values({
@@ -250,6 +255,7 @@ describe("POST /admin/orders/:id/confirm", () => {
         isTrial: true,
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
       })
       .returning();
 

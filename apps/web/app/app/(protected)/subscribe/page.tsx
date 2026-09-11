@@ -43,6 +43,12 @@ function SubscribePageInner() {
   const [everTrialedModules, setEverTrialedModules] = useState<Set<string>>(new Set());
   const [checkingOut, setCheckingOut] = useState(false);
   const [tryingPlanId, setTryingPlanId] = useState<string | null>(null);
+  // § Fase 108 — JEMBATAN SEMENTARA sebelum picker "Pilih Data Usaha"
+  // (Fase 109) ada. Checkout/trial WAJIB `dataUsahaId` (kolom DB NOT
+  // NULL) — sementara semua user cuma punya 1 Data Usaha implisit,
+  // cukup pakai default ini. GANTI ke hasil pilihan user begitu Fase 109
+  // (picker UI) selesai.
+  const [dataUsahaId, setDataUsahaId] = useState<string | null>(null);
 
   // § Fase 53 — 1 modul boleh punya >1 tier (Bulanan/Tahunan dst), 1
   // kartu = 1 grup modul (bukan 1 kartu = 1 baris plan lagi). Grouping
@@ -52,7 +58,12 @@ function SubscribePageInner() {
   );
 
   async function load() {
-    const [plansRes, subsRes] = await Promise.all([api.plans.get(), api.me.subscriptions.get()]);
+    const [plansRes, subsRes, dataUsahaRes] = await Promise.all([
+      api.plans.get(),
+      api.me.subscriptions.get(),
+      api.me["data-usaha"].default.get(),
+    ]);
+    setDataUsahaId((dataUsahaRes.data as { dataUsahaId: string } | undefined)?.dataUsahaId ?? null);
     const allPlans = (plansRes.data as unknown as Plan[] | undefined) ?? [];
     setPlans(allPlans);
 
@@ -98,8 +109,9 @@ function SubscribePageInner() {
 
   async function handleStartTrial(e: React.MouseEvent, plan: Plan) {
     e.stopPropagation();
+    if (!dataUsahaId) return;
     setTryingPlanId(plan.id);
-    const res = await api.subscriptions.trial.post({ planId: plan.id });
+    const res = await api.subscriptions.trial.post({ planId: plan.id, dataUsahaId });
     setTryingPlanId(null);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
@@ -119,9 +131,9 @@ function SubscribePageInner() {
   const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0), [selectedPlans]);
 
   async function handleCheckout() {
-    if (selectedPlans.length === 0) return;
+    if (selectedPlans.length === 0 || !dataUsahaId) return;
     setCheckingOut(true);
-    const res = await api.subscriptions.checkout.post({ planIds: selectedPlans.map((p) => p.id) });
+    const res = await api.subscriptions.checkout.post({ planIds: selectedPlans.map((p) => p.id), dataUsahaId });
     setCheckingOut(false);
     if (res.error) {
       const code = (res.error.value as { code?: string; moduleKey?: string } | undefined)?.code;
@@ -259,7 +271,7 @@ function SubscribePageInner() {
                         {showTrialButton && (
                           <button
                             type="button"
-                            disabled={tryingPlanId === activePlan.id}
+                            disabled={tryingPlanId === activePlan.id || !dataUsahaId}
                             onClick={(e) => handleStartTrial(e, activePlan)}
                             className="rounded-[3px] border border-primary-600 px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
                           >
@@ -301,7 +313,7 @@ function SubscribePageInner() {
                   </div>
                 </div>
               )}
-              <Button onClick={handleCheckout} disabled={selectedPlans.length === 0 || checkingOut} className="w-full">
+              <Button onClick={handleCheckout} disabled={selectedPlans.length === 0 || checkingOut || !dataUsahaId} className="w-full">
                 {checkingOut ? "Memproses..." : "Checkout"}
               </Button>
             </CardContent>

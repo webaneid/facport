@@ -6,6 +6,7 @@ import { permissionPlugin } from "../../lib/permission";
 import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
 const PROOF_URL_EXPIRY_SECONDS = 10 * 60; // 10 menit
 
@@ -115,6 +116,12 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             .innerJoin(plans, eq(plans.id, invoiceItems.planId))
             .where(eq(invoiceItems.invoiceId, lockedInvoice.id));
 
+          // § Fase 108, architecture-user-tambahan.md § Fase B1 —
+          // `orders.dataUsahaId` NULLABLE (order LAMA sebelum fitur ini
+          // ada tidak di-backfill, § schema payment.schema.ts) — fallback
+          // ke "Data Usaha Utama" default milik pembeli kalau kosong.
+          const dataUsahaId = lockedOrder.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(lockedInvoice.userId));
+
           // § ditemukan 2026-09-07 (feedback user soal logika trial) —
           // trial SENGAJA tidak memblokir beli paket asli modul yang sama
           // (§ komentar checkout, subscriptions.route.ts) supaya user bisa
@@ -129,11 +136,23 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
           // = 1 subscription lagi beneran terjaga (invariant yang sebelumnya
           // cuma dijaga best-effort via `orderBy(desc(createdAt))` di
           // beberapa query, § subscription-gate.ts).
+          // § Fase 108 — di-SCOPE PER DATA USAHA (bukan lagi per akun) —
+          // modul yang sama BOLEH aktif bersamaan di Data Usaha LAIN
+          // milik user yang sama (tujuan utama restrukturisasi Data
+          // Usaha). Trial-supersede (komentar di atas) TETAP jalan
+          // persis seperti sebelumnya SELAMA trial & pembelian asli ini
+          // sama-sama untuk Data Usaha yang sama (kasus normal).
           const activeSubs = await tx
             .select({ id: subscriptions.id, modules: plans.modules })
             .from(subscriptions)
             .innerJoin(plans, eq(plans.id, subscriptions.planId))
-            .where(and(eq(subscriptions.userId, lockedInvoice.userId), eq(subscriptions.status, "active")));
+            .where(
+              and(
+                eq(subscriptions.userId, lockedInvoice.userId),
+                eq(subscriptions.status, "active"),
+                eq(subscriptions.dataUsahaId, dataUsahaId),
+              ),
+            );
 
           const createdSubscriptionIds: string[] = [];
           for (const { item, plan } of items) {
@@ -154,6 +173,7 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
                 status: "active",
                 startAt: now,
                 endAt,
+                dataUsahaId,
               })
               .returning();
             createdSubscriptionIds.push(sub!.id);
