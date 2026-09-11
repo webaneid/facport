@@ -174,8 +174,10 @@ intuitif berkat Data Usaha — lihat § Keputusan Desain #4 revisi)*
 | 1 | Fondasi hubungan user utama ↔ user tambahan | Tabel custom minimal baru, bukan plugin Organization Better Auth. |
 | 2 | Definisi "device" | Sesi login, bukan fingerprint perangkat fisik. |
 | 3 | Cara beli user tambahan | Input jumlah sekaligus (quantity) di UI — backend tetap N baris terpisah (pola "1 row = 1 unit"), keterbacaan invoice diselesaikan di render time. |
-| 4 | Cakupan akses user tambahan | **Direvisi**: grant tetap presisi per subscription/Fitur (skema `member_module_grants` TIDAK berubah), TAPI sekarang UI pemberian akses dikelompokkan per Data Usaha dulu ("PT Maju Jaya" → centang Fitur mana saja), jauh lebih intuitif daripada mencentang daftar subscription id mentah seperti draf awal. |
+| 4 | Cakupan akses user tambahan | **DIKONFIRMASI CLIENT (2026-09-11), lebih sederhana dari draf sebelumnya**: 1 seat = akses PERMANEN ke 1 Data Usaha SAJA (bukan per-Fitur di dalamnya) — begitu di-grant, otomatis dapat SEMUA fitur yang aktif di Data Usaha itu, ikut naik/turun kalau fitur di Data Usaha itu berubah. Kata client sendiri: *"facport menjual jumlah slot akses ke suatu DATABASE"* — unit jualannya Data Usaha, bukan Fitur. Ini menghapus kebutuhan tabel `member_module_grants` yang tadinya direncanakan — cukup 1 kolom `dataUsahaId` yang DIKUNCI di `member_seats` sejak dibeli (lihat § Skema Database). TIDAK BISA dipindah ke Data Usaha lain — kalau mau kasih akses ke Data Usaha lain juga, itu PEMBELIAN SEAT BARU, terpisah, biaya terpisah. |
 | 5 | Alur "perpanjang vs beli baru" untuk modul yang sama | **Dipersempit cakupannya** berkat Data Usaha: kasus "2 instance modul sama dalam 1 Data Usaha" jadi jarang/tidak perlu (kalau butuh 2 Purchase Invoice, biasanya karena 2 Data Usaha, sudah otomatis terpisah). Yang masih perlu: aksi "Perpanjang/Ganti Paket" EKSPLISIT (update row yang sama di tempat, `id` tetap) untuk kasus renewal/upgrade tier DALAM Data Usaha yang sama, terpisah dari katalog "+ Tambah Langganan" — prinsip "tidak pernah menebak" tetap dipegang. |
+| 9 | **[BARU, DIKONFIRMASI CLIENT]** Reassign slot seat (ganti orang yang menempati) | User tambahan yang resign/diganti BISA di-swap oleh user utama (revoke Iwan → slot balik `available` → invite Ahmad ke slot yang SAMA). **Durasi slot melekat ke SLOT, bukan ke orangnya** — Ahmad melanjutkan sisa waktu berlangganan yang tersisa, BUKAN dapat masa aktif baru dari nol. Ini sudah sesuai desain `member_seats` yang sudah ada (status `available`→`invited`→`active`, `seatSubscriptionId` tetap sama), tidak perlu tabel/kolom baru. |
+| 10 | **[BARU, DIKONFIRMASI CLIENT]** Transfer kepemilikan Data Usaha ("Super User") | User utama (pemilik) bisa transfer HAK KELOLA seluruh akun Facport-nya (semua Data Usaha miliknya) ke orang lain, SELF-SERVICE tanpa lewat admin Facport — skenario: pemilik lama resign, digantikan orang baru. Didesain sebagai **pointer kepemilikan yang bisa dipindah** (`dataUsaha.userId`), TERPISAH dari riwayat pembayaran (`subscriptions.userId`/`invoices.userId` TETAP tercatat atas nama pembeli asli — catatan akuntansi tidak boleh ditulis ulang). Ke depan, hak kelola (tambah fitur, tambah/kelola user tambahan, dst) ikut `dataUsaha.userId` yang BARU. WAJIB pakai konfirmasi 2 langkah (pemilik lama ajukan → calon pemilik baru harus terima secara eksplisit) — TIDAK BOLEH 1 klik unilateral, supaya tidak bisa diambil-alih tanpa persetujuan pihak yang dituju. |
 
 ## Skema Database (diusulkan)
 
@@ -187,8 +189,14 @@ intuitif berkat Data Usaha — lihat § Keputusan Desain #4 revisi)*
 export const dataUsaha = pgTable("data_usaha", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id").notNull().references(() => user.id),
-  // pemilik/user utama — user tambahan TIDAK punya baris ini sendiri,
-  // mereka akses lewat grant (lihat member_module_grants, tidak berubah)
+  // § Keputusan #10 — INI POINTER KEPEMILIKAN YANG BISA DIPINDAH (transfer
+  // "super user"), BUKAN sekadar "siapa yang bikin dulu". Hak kelola
+  // (tambah fitur, kelola user tambahan) SELALU ikut nilai kolom ini SAAT
+  // DICEK, bukan siapa yang mengisi saat Data Usaha ini pertama dibuat.
+  // Riwayat pembayaran (subscriptions.userId/invoices.userId) SENGAJA
+  // TIDAK ikut berubah saat transfer — itu catatan akuntansi historis.
+  // User tambahan TIDAK punya baris ini sendiri, mereka akses lewat
+  // `member_seats.dataUsahaId` (lihat di bawah).
   name: varchar("name", { length: 200 }).notNull(),
   // nama bebas user, mis. "PT Maju Jaya" — TIDAK harus sama dengan
   // accurateDbAlias (yang baru terisi begitu benar-benar connect)
@@ -225,10 +233,66 @@ sebelum di-apply, bukan disatukan diam-diam dengan fase lain.
 1 setting baru: `security.maxDevicesPerUser` (pola sama
 `IMPORT_RETENTION_SETTING_KEY`).
 
-### User tambahan (seat) — 2 tabel baru + 1 kolom baru di `plans`
-*(tidak berubah dari draf sebelumnya — lihat detail lengkap di riwayat
-dokumen/plan file, ringkasan: `plans.kind`, `member_seats`,
-`member_module_grants`)*
+### User tambahan (seat) — 1 tabel baru + 1 kolom baru di `plans`
+*(disederhanakan setelah konfirmasi client 2026-09-11 — tabel
+`member_module_grants` yang tadinya direncanakan TIDAK JADI dibuat,
+karena cakupan akses ternyata per-Data-Usaha, bukan per-Fitur)*
+```ts
+// plans — tambah 1 kolom (SAMA seperti draf sebelumnya)
+kind: varchar("kind", { length: 20 }).notNull().default("module"),
+// "module" | "seat_addon"
+
+// member_seats — 1 row = 1 slot user tambahan yang sudah dibeli,
+// TERKUNCI ke 1 Data Usaha sejak dibeli (§ Keputusan #4/#9)
+export const memberSeats = pgTable("member_seats", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  primaryUserId: text("primary_user_id").notNull().references(() => user.id),
+  // user utama yang beli/mengelola slot ini
+  dataUsahaId: uuid("data_usaha_id").notNull().references(() => dataUsaha.id),
+  // § DIKUNCI SAAT DIBUAT (checkout), TIDAK PERNAH diubah setelahnya —
+  // ini yang menegakkan "tidak bisa dipindah ke Data Usaha lain" (Keputusan
+  // #4). Akses = SEMUA fitur yang aktif di Data Usaha ini, otomatis ikut
+  // berubah kalau fitur di Data Usaha ini berubah — TIDAK perlu tabel
+  // grant terpisah per-Fitur.
+  seatSubscriptionId: uuid("seat_subscription_id").notNull().unique()
+    .references(() => subscriptions.id),
+  // 1:1 dgn 1 subscription "seat_addon" — durasi/expiry slot ikut baris
+  // ini, BUKAN ikut siapa yang menempati (§ Keputusan #9 — reassign
+  // Iwan→Ahmad melanjutkan sisa waktu, bukan mulai dari nol).
+  memberUserId: text("member_user_id").references(() => user.id),
+  // diisi setelah invite di-accept. SENGAJA TIDAK unique — 1 orang boleh
+  // menempati BANYAK slot (di Data Usaha berbeda, bahkan di bawah user
+  // utama berbeda — skenario nyata: akuntan yang pegang beberapa klien).
+  invitedEmail: varchar("invited_email", { length: 255 }),
+  inviteTokenHash: text("invite_token_hash"),
+  inviteTokenExpiresAt: timestamp("invite_token_expires_at", { withTimezone: true }),
+  status: varchar("status", { length: 20 }).notNull().default("available"),
+  // available (slot kosong, siap diisi/di-reassign) | invited | active | revoked
+  invitedAt: timestamp("invited_at", { withTimezone: true }),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  revokedBy: text("revoked_by").references(() => user.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+```
+
+**Transfer kepemilikan Data Usaha (§ Keputusan #10)** — tidak perlu
+tabel baru untuk transfer itu sendiri, cukup:
+- Endpoint `POST /me/data-usaha/:id/transfer-ownership` — pemilik saat
+  ini (`dataUsaha.userId`) ajukan transfer ke email calon pemilik baru
+  (harus sudah/akan punya akun Facport, alur mirip invite seat: kalau
+  belum terdaftar, daftar dulu).
+  Simpan sebagai token pending (pola sama `inviteTokenHash`/`Expires`,
+  bisa reuse kolom yang sama di tabel `dataUsaha` atau tabel kecil
+  terpisah `data_usaha_ownership_transfers` kalau mau riwayat lengkap —
+  detail final ditentukan saat eksekusi Fase C).
+- Endpoint `POST /transfer-ownership/:token/accept` (calon pemilik baru,
+  WAJIB login dulu) — baru setelah diterima, `dataUsaha.userId` di-update.
+  TIDAK ADA jalur 1-klik langsung ubah tanpa persetujuan pihak baru.
+- Efek: hak kelola SEMUA aspek Data Usaha itu (tambah fitur, kelola user
+  tambahan, dst) ikut pemilik baru sejak saat itu. Riwayat invoice/
+  subscription LAMA tetap atas nama pemilik lama (tidak ditulis ulang).
 
 ## Rencana Fase (kalau/ketika dilanjutkan — urutan wajib)
 
@@ -260,6 +324,14 @@ Tidak berubah dari draf sebelumnya — setting + `databaseHooks.session.create.b
 - `subscription-gate.ts`: tambah `dataUsahaId` sebagai bagian resolusi
   akses (subscription harus match `dataUsahaId` yang sedang aktif di
   sesi/context request, BUKAN cuma `moduleKey`).
+- **Penyesuaian penting (imbas Keputusan #10, transfer kepemilikan)**:
+  cek akses "user ini pemilik Data Usaha ini?" HARUS lewat
+  `dataUsaha.userId` SAAT INI (bisa sudah pindah tangan), BUKAN lewat
+  `subscriptions.userId` (nilai historis, siapa yang dulu beli). Titik
+  cek berubah dari "apakah `subscriptions.userId` = aku" jadi "apakah
+  `dataUsaha.userId` (punya subscription ini) = aku." Perubahan kecil di
+  query tapi konsekuensinya besar — kalau salah pasang, transfer
+  kepemilikan tidak akan benar-benar memindahkan hak kelola.
 
 ### Fase B2 — Frontend: Gerbang & Sidebar Bertingkat
 - Halaman baru "Pilih Data Usaha" (`/app/pilih-usaha` atau serupa) —
@@ -276,11 +348,20 @@ Tidak berubah dari draf sebelumnya — setting + `databaseHooks.session.create.b
 - 7 halaman import: tidak perlu tahu `dataUsahaId` eksplisit lagi (sudah
   implisit dari context Data Usaha yang aktif di sesi).
 
-### Fase C — User Tambahan (Seat) + Invite + Akses Granular
-Bergantung penuh pada B0+B1+B2. Detail sama seperti draf sebelumnya
-(schema `plans.kind`/`member_seats`/`member_module_grants`, alur invite,
-`subscription-gate.ts` union primary+grant), dengan penyesuaian: UI
-pemberian akses sekarang dikelompokkan per Data Usaha (Keputusan #4).
+### Fase C — User Tambahan (Seat) per Data Usaha + Invite + Transfer Kepemilikan
+Bergantung penuh pada B0+B1+B2. Scope final (sudah disederhanakan +
+ditambah 1 kebutuhan baru setelah konfirmasi client 2026-09-11):
+- Schema `plans.kind` + `member_seats` (dengan `dataUsahaId` terkunci,
+  TANPA `member_module_grants` — lihat § Skema Database, Keputusan #4).
+- Alur invite (2 jalur penerimaan, lihat di bawah).
+- Reassign slot (Keputusan #9) — revoke + invite ulang ke slot yang sama.
+- **Transfer kepemilikan Data Usaha** (Keputusan #10) — fitur BARU,
+  tidak ada di draf awal mana pun, WAJIB masuk scope Fase C karena
+  sama-sama soal "siapa yang berhak kelola" — lihat detail endpoint di
+  § Skema Database.
+- `subscription-gate.ts`: union primary-owned (via `dataUsaha.userId`
+  SAAT INI, bukan `subscriptions.userId` historis — lihat penyesuaian
+  Fase B1) + grant-derived (member_seats aktif).
 
 **Penyempurnaan alur invite (hasil validasi ilustrasi user, 2026-09-11)
 — penerimaan undangan lewat 2 jalur, bukan cuma 1**:
@@ -301,38 +382,43 @@ pemberian akses sekarang dikelompokkan per Data Usaha (Keputusan #4).
   sama). Ini bikin penerimaan undangan TIDAK 100% bergantung ke link
   email yang bisa hilang/kedaluwarsa — Data Usaha yang di-invite-kan
   "otomatis muncul" begitu orangnya login, sesuai yang diminta user.
-- Entry point beli seat: bisa dipicu dari dalam halaman 1 Data Usaha
-  ("Tambah User" di context Data Usaha yang sedang aktif) — TAPI lihat
-  § Keputusan Tertunda di bawah soal cakupan akses seat, ini menentukan
-  apakah "dari dalam Data Usaha X" itu sekadar default awal atau
-  cakupan permanen.
+- Entry point beli seat: dipicu dari dalam halaman 1 Data Usaha ("Tambah
+  User" di context Data Usaha yang sedang aktif) — sejak Keputusan #4
+  dikonfirmasi PERMANEN (bukan cuma default awal), entry point ini SAMA
+  DENGAN cakupan aslinya, tidak ada ambiguitas lagi.
 - Setelah pembayaran seat disetujui admin, tawarkan LANGSUNG isi
   nama+email undangan (form muncul begitu approve, bukan cuma
   dokumentasikan slot kosong lalu tunggu user buka halaman Kelola Tim
   lain waktu) — opsi "isi nanti saja" tetap ada untuk yang belum tahu
   siapa yang mau diundang.
+- Halaman "Kelola Tim" per Data Usaha juga jadi tempat: reassign slot
+  (revoke lalu invite ulang ke slot yang sama, § Keputusan #9), dan
+  (kalau login sebagai pemilik) tombol "Transfer Kepemilikan Data Usaha
+  Ini" (§ Keputusan #10).
 
-## Keputusan Tertunda (butuh konsultasi client, BUKAN keputusan teknis)
+## Keputusan Final dari Client (2026-09-11) — dasar Keputusan #4/#9/#10
 
-### Cakupan seat: per-akun (bisa pindah) vs per-Data-Usaha (permanen)
-Ditemukan lewat ilustrasi user (2026-09-11) — user secara eksplisit
-minta ini DITUNDA untuk dikonsultasikan ke client, karena berdampak ke
-model bisnis/harga, bukan cuma teknis. Kerangka masalahnya:
+Client memberi ilustrasi konkret yang menjawab tuntas pertanyaan yang
+sebelumnya tertunda, sekaligus menambah 1 kebutuhan baru (transfer
+kepemilikan) yang belum ada di draf mana pun sebelumnya:
 
-- **Kalau seat = kapasitas per-akun yang bebas dipindah** (beli 2 seat,
-  bisa dialokasikan ke Data Usaha mana pun kapan saja) — fleksibel buat
-  customer, TAPI membuka celah: beli seat murah, pindahkan bebas ke
-  Data Usaha mana pun tanpa biaya tambahan — mirip diskon tersembunyi
-  kalau harga seat tidak dibedakan per Data Usaha.
-- **Kalau seat = melekat permanen ke 1 Data Usaha tempat dibeli** — lebih
-  aman secara penagihan (jelas seat X dibayar untuk Data Usaha Y, tidak
-  bisa dialihkan diam-diam), TAPI kaku: customer yang salah pilih Data
-  Usaha saat beli, atau butuh pindahkan tim ke Data Usaha lain, harus
-  beli seat baru lagi.
-- **Belum ditentukan**: dampaknya ke skema `member_seats` (apakah perlu
-  kolom `dataUsahaId` yang mengunci slot itu ke 1 Data Usaha, atau tetap
-  account-wide seperti draf skema saat ini) — TIDAK ditulis ke skema
-  final sampai keputusan bisnis ini turun dari client.
+1. Budi berlangganan Facport, bikin Data Usaha A, aktifkan Purchase
+   Invoice + Sales Invoice.
+2. Budi (akun sama) juga bikin Data Usaha B, aktifkan Other Payment +
+   Purchase Invoice.
+3. Budi tambah user tambahan (Iwan) untuk Data Usaha B.
+4. **Hasil**: Iwan HANYA bisa akses Data Usaha B, dengan SEMUA fitur
+   yang aktif di sana (Other Payment + Purchase Invoice) — tidak bisa
+   pilih sebagian.
+5. Iwan TIDAK BISA dipindah ke Data Usaha A oleh Budi.
+6. Kalau Budi mau kasih Iwan akses ke Data Usaha A juga → beli seat
+   BARU (biaya tambahan), khusus untuk Data Usaha A.
+7. Kalau Iwan resign, Budi bisa keluarkan Iwan dan isi slot yang sama
+   dengan Ahmad — sisa masa aktif ikut slot, bukan reset (§ Keputusan #9).
+8. Kalau Budi (pemilik) sendiri yang resign, harus ada cara SELF-SERVICE
+   (tanpa lewat admin Facport) memindahkan hak kelola SELURUH akun ke
+   Alex — Alex lalu punya hak yang sama persis dengan Budi, termasuk
+   menambah user baru (§ Keputusan #10, kebutuhan baru).
 
 ### Fase D — Polish
 Sama seperti draf sebelumnya + ADR resmi menutup dokumen ini, update
@@ -363,6 +449,15 @@ C stabil.
   dashboard? Ini detail UX yang belum diputuskan, kandidat kuat: auto-skip
   kalau cuma 1, supaya user existing yang belum butuh multi-Data-Usaha
   tidak merasakan friksi tambahan sama sekali).
+- **Keamanan transfer kepemilikan (Keputusan #10, BARU)** — ini aksi
+  paling sensitif di seluruh rencana (memindahkan hak kelola SELURUH
+  akun berbayar ke orang lain). WAJIB 2 langkah (ajukan + terima
+  eksplisit, tidak boleh 1 klik), dan sebaiknya ada notifikasi ke email
+  pemilik LAMA begitu transfer selesai (jaga-jaga kalau proses ini
+  disalahgunakan tanpa sepengetahuan pemilik asli). Detail keamanan
+  penuh (rate limit, audit log, apakah perlu re-auth password sebelum
+  ajukan transfer) belum dirancang — WAJIB masuk security review khusus
+  saat Fase C dieksekusi, bukan ditambahkan belakangan.
 - Timeline & prioritas relatif ke fase-fase lain yang sedang berjalan
   belum ditentukan.
 
