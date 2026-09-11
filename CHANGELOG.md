@@ -1,3 +1,8 @@
+## <small>1.27.2 (2026-09-11)</small>
+
+* Merge pull request #56 from webaneid/develop ([7bc198d](https://github.com/webaneid/facport/commit/7bc198d)), closes [#56](https://github.com/webaneid/facport/issues/56)
+* fix: trim key baris hasil parse Excel, konsisten dengan header (bug generik) ([35ea28d](https://github.com/webaneid/facport/commit/35ea28d))
+
 ## <small>1.27.1 (2026-09-10)</small>
 
 * Merge pull request #55 from webaneid/develop ([b8fa0fd](https://github.com/webaneid/facport/commit/b8fa0fd)), closes [#55](https://github.com/webaneid/facport/issues/55)
