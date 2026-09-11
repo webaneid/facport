@@ -104,7 +104,7 @@ jobs:
       # cuma preview terkini dari branch develop, bukan artifact yang perlu
       # ditelusuri per-versi seperti production.
       - name: Build & push apps/api (staging)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/api/Dockerfile
@@ -115,7 +115,7 @@ jobs:
       # semantic-release (cuma tag "staging" ditimpa tiap push), jadi
       # APP_VERSION cukup literal "staging" untuk footer copyright.
       - name: Build & push apps/web (staging)
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/web/Dockerfile
