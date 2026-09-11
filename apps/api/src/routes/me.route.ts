@@ -1,9 +1,20 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, inArray, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats } from "../db/schema";
+import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
+import { ownsDataUsaha } from "../lib/data-usaha";
+import { generateTransferToken } from "../lib/ownership-transfer";
+import { boss, JOBS, startQueue } from "../lib/queue";
+import { escapeHtml } from "../lib/email";
+import { env } from "../lib/env";
+
+// § pola sama `admin/users.route.ts`/`team.route.ts` `getAppOrigin()` —
+// duplikasi sengaja (konvensi project ini).
+function getAppOrigin(): string {
+  return env.APP_ORIGIN_PROD || "http://app.localhost:6209";
+}
 
 // § Medium finding security review Fase 01 — proxy.ts (apps/web) cuma cek
 // keberadaan session cookie (existence-only, sesuai rekomendasi Better Auth
@@ -75,6 +86,78 @@ export const meRoute = new Elysia()
     },
     { auth: true, body: t.Object({ name: t.String({ minLength: 1, maxLength: 200 }) }) },
   )
+  // § Fase 111, architecture-user-tambahan.md — inisiasi transfer
+  // kepemilikan Data Usaha (self-service, 2 tahap initiate→accept, pola
+  // sama invite Fase 110). HANYA `data_usaha.userId` yang berubah begitu
+  // di-accept (`lib/ownership-transfer.ts` `executeOwnershipTransfer`) —
+  // `subscriptions.userId`/`invoices.userId` TIDAK PERNAH ditulis ulang
+  // (riwayat pembelian historis, § ADR-0032).
+  .post(
+    "/me/data-usaha/:id/transfer-ownership",
+    async ({ user, params, body, set }) => {
+      if (!(await ownsDataUsaha(user.id, params.id))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      if (body.toEmail.toLowerCase() === user.email.toLowerCase()) {
+        set.status = 400;
+        return { code: "CANNOT_TRANSFER_TO_SELF" };
+      }
+      const [existingPending] = await db
+        .select({ id: ownershipTransfers.id })
+        .from(ownershipTransfers)
+        .where(and(eq(ownershipTransfers.dataUsahaId, params.id), eq(ownershipTransfers.status, "pending")));
+      if (existingPending) {
+        set.status = 409;
+        return { code: "TRANSFER_ALREADY_PENDING" };
+      }
+
+      const { token, tokenHash, expiresAt } = generateTransferToken();
+      await db.insert(ownershipTransfers).values({
+        dataUsahaId: params.id,
+        fromUserId: user.id,
+        toEmail: body.toEmail,
+        tokenHash,
+        tokenExpiresAt: expiresAt,
+      });
+
+      const [du] = await db.select({ name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.id, params.id));
+      await sendTransferEmail({ to: body.toEmail, fromName: user.name, dataUsahaName: du?.name ?? "", token });
+
+      return { ok: true };
+    },
+    {
+      auth: true,
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ toEmail: t.String({ format: "email" }) }),
+    },
+  )
+  // § Batal transfer yang masih pending — pola sama semangat `revoke` seat
+  // (Fase 110), supaya salah ketik email tidak terkunci 7 hari nunggu
+  // expired sendiri sebelum bisa transfer ulang ke alamat yang benar.
+  .post(
+    "/me/data-usaha/:id/transfer-ownership/cancel",
+    async ({ user, params, set }) => {
+      if (!(await ownsDataUsaha(user.id, params.id))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const [pending] = await db
+        .select({ id: ownershipTransfers.id })
+        .from(ownershipTransfers)
+        .where(and(eq(ownershipTransfers.dataUsahaId, params.id), eq(ownershipTransfers.fromUserId, user.id), eq(ownershipTransfers.status, "pending")));
+      if (!pending) {
+        set.status = 404;
+        return { code: "TRANSFER_NOT_FOUND" };
+      }
+      await db
+        .update(ownershipTransfers)
+        .set({ status: "cancelled", cancelledAt: new Date(), updatedAt: new Date() })
+        .where(eq(ownershipTransfers.id, pending.id));
+      return { ok: true };
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
   // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
   // customer: total baris SUKSES milik user ini sendiri (GABUNGAN semua
   // modul yang pernah dia import, `import_batches.userId`, TIDAK dibatasi
@@ -132,3 +215,16 @@ export const meRoute = new Elysia()
       }),
     },
   );
+
+async function sendTransferEmail(params: { to: string; fromName: string; dataUsahaName: string; token: string }) {
+  const appOrigin = getAppOrigin();
+  const transferUrl = `${appOrigin}/transfer/${params.token}`;
+  const safeFromName = escapeHtml(params.fromName);
+  const safeDataUsaha = escapeHtml(params.dataUsahaName);
+  await startQueue();
+  await boss.send(JOBS.SEND_EMAIL, {
+    to: params.to,
+    subject: `${params.fromName || "Seseorang"} ingin transfer kepemilikan Data Usaha ke kamu di Facport`,
+    html: `<p>${safeFromName} ingin memindahkan kepemilikan Data Usaha <strong>${safeDataUsaha}</strong> ke kamu di Facport.</p><p>Klik link berikut untuk menerima (berlaku 7 hari): <a href="${transferUrl}">${transferUrl}</a></p>`,
+  });
+}

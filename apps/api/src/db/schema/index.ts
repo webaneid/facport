@@ -7,6 +7,7 @@ export * from "./invoice.schema";
 export * from "./accurate.schema";
 export * from "./data-usaha.schema";
 export * from "./member-seat.schema";
+export * from "./ownership-transfer.schema";
 export * from "./import.schema";
 export * from "./notification.schema";
 export * from "./customer-care.schema";

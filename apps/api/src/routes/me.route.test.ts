@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings } from "../db/schema";
+import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings, ownershipTransfers } from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
@@ -144,6 +144,128 @@ describe("GET & POST /me/data-usaha", () => {
     const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: memberCookie } }));
     const body = (await res.json()) as { dataUsaha: { id: string }[] };
     expect(body.dataUsaha.some((d) => d.id === dataUsahaId)).toBe(false);
+  });
+});
+
+// § Fase 111, architecture-user-tambahan.md — inisiasi & batal transfer
+// kepemilikan Data Usaha (self-service).
+describe("POST /me/data-usaha/:id/transfer-ownership", () => {
+  test("404 kalau Data Usaha bukan milik user", async () => {
+    const ownerId = await signUp(`transfer-init-owner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Transfer Init ${runId}`);
+    const attackerEmail = `transfer-init-attacker-${runId}@test.local`;
+    await signUp(attackerEmail);
+    const attackerCookie = await signIn(attackerEmail);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: attackerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: "target@test.local" }),
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("400 CANNOT_TRANSFER_TO_SELF kalau toEmail = email sendiri", async () => {
+    const ownerEmail = `transfer-init-self-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Transfer Self ${runId}`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: ownerEmail.toUpperCase() }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("CANNOT_TRANSFER_TO_SELF");
+  });
+
+  test("200 — bikin baris ownership_transfers pending, lalu 409 kalau initiate lagi selagi masih pending", async () => {
+    const ownerEmail = `transfer-init-ok-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Transfer OK ${runId}`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: `transfer-init-target-${runId}@test.local` }),
+      }),
+    );
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(ownershipTransfers).where(eq(ownershipTransfers.dataUsahaId, dataUsahaId));
+    expect(row!.status).toBe("pending");
+    expect(row!.toEmail).toBe(`transfer-init-target-${runId}@test.local`);
+    expect(row!.tokenHash).toBeTruthy();
+
+    const secondRes = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: `transfer-init-other-${runId}@test.local` }),
+      }),
+    );
+    expect(secondRes.status).toBe(409);
+  });
+});
+
+describe("POST /me/data-usaha/:id/transfer-ownership/cancel", () => {
+  test("200 — batal transfer pending, initiate baru sesudahnya berhasil lagi", async () => {
+    const ownerEmail = `transfer-cancel-ok-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Transfer Cancel ${runId}`);
+
+    await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: `transfer-cancel-target1-${runId}@test.local` }),
+      }),
+    );
+
+    const cancelRes = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership/cancel`, {
+        method: "POST",
+        headers: { cookie: ownerCookie },
+      }),
+    );
+    expect(cancelRes.status).toBe(200);
+
+    const retryRes = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toEmail: `transfer-cancel-target2-${runId}@test.local` }),
+      }),
+    );
+    expect(retryRes.status).toBe(200);
+
+    const rows = await db.select().from(ownershipTransfers).where(eq(ownershipTransfers.dataUsahaId, dataUsahaId));
+    expect(rows.find((r) => r.toEmail === `transfer-cancel-target1-${runId}@test.local`)?.status).toBe("cancelled");
+    expect(rows.find((r) => r.toEmail === `transfer-cancel-target2-${runId}@test.local`)?.status).toBe("pending");
+  });
+
+  test("404 TRANSFER_NOT_FOUND kalau tidak ada transfer pending", async () => {
+    const ownerEmail = `transfer-cancel-none-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Transfer Cancel None ${runId}`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}/transfer-ownership/cancel`, {
+        method: "POST",
+        headers: { cookie: ownerCookie },
+      }),
+    );
+    expect(res.status).toBe(404);
   });
 });
 

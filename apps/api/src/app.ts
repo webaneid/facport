@@ -44,6 +44,8 @@ import { journalVoucherImportRoute } from "./routes/journal-voucher-import.route
 import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
 import { teamRoute } from "./routes/team.route";
 import { invitesRoute } from "./routes/invites.route";
+import { transfersRoute } from "./routes/transfers.route";
+import { adminDataUsahaRoute } from "./routes/admin/data-usaha.route";
 
 const allowedOrigins = [
   "http://localhost:6209",
@@ -67,6 +69,10 @@ export const app = new Elysia()
   // undangan "User Tambahan" (`GET/POST /invites/:token`), sama alasan
   // rate limit `/public` di atas.
   .use(rateLimitPlugin({ pathPrefix: "/invites", windowMs: 60_000, max: 20 }))
+  // § Fase 111, architecture-user-tambahan.md — endpoint publik terima
+  // transfer kepemilikan Data Usaha (`GET/POST /transfers/:token`), sama
+  // alasan rate limit `/invites` di atas.
+  .use(rateLimitPlugin({ pathPrefix: "/transfers", windowMs: 60_000, max: 20 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";
@@ -211,6 +217,8 @@ export const app = new Elysia()
   .use(journalVoucherImportRoute)
   .use(otherPaymentImportRoute)
   .use(teamRoute)
-  .use(invitesRoute);
+  .use(invitesRoute)
+  .use(transfersRoute)
+  .use(adminDataUsahaRoute);
 
 export type App = typeof app;

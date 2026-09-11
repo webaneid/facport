@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { UserPlus, Mail, RotateCw, UserX } from "lucide-react";
+import { UserPlus, Mail, RotateCw, UserX, ArrowRightLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
@@ -27,6 +27,9 @@ type Seat = {
 const inviteSchema = z.object({ email: z.string().email("Format email tidak valid") });
 type InviteFormValues = z.infer<typeof inviteSchema>;
 
+const transferSchema = z.object({ toEmail: z.string().email("Format email tidak valid") });
+type TransferFormValues = z.infer<typeof transferSchema>;
+
 const STATUS_BADGE: Record<Seat["status"], { label: string; variant: "default" | "warning" | "success" }> = {
   available: { label: "Kosong", variant: "default" },
   invited: { label: "Menunggu Diterima", variant: "warning" },
@@ -41,6 +44,11 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
   const [inviteTarget, setInviteTarget] = useState<string | null>(null);
   const [busySeatId, setBusySeatId] = useState<string | null>(null);
   const form = useForm<InviteFormValues>({ resolver: zodResolver(inviteSchema) });
+
+  const [transferOpen, setTransferOpen] = useState(false);
+  const [pendingTransferEmail, setPendingTransferEmail] = useState<string | null>(null);
+  const [cancellingTransfer, setCancellingTransfer] = useState(false);
+  const transferForm = useForm<TransferFormValues>({ resolver: zodResolver(transferSchema) });
 
   async function load() {
     const res = await api.me.team.get({ query: { dataUsahaId } });
@@ -87,6 +95,38 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
     }
     toast.success("Akses dicabut — slot siap diundang ke orang baru.");
     load();
+  }
+
+  async function onTransfer(values: TransferFormValues) {
+    const res = await api.me["data-usaha"]({ id: dataUsahaId })["transfer-ownership"].post({ toEmail: values.toEmail });
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      if (code === "TRANSFER_ALREADY_PENDING") {
+        toast.error("Sudah ada transfer yang menunggu diterima — batalkan dulu kalau mau transfer ke alamat lain.");
+        setPendingTransferEmail(values.toEmail);
+      } else if (code === "CANNOT_TRANSFER_TO_SELF") {
+        toast.error("Tidak bisa transfer ke email sendiri.");
+      } else {
+        toast.error("Gagal mengirim link transfer. Coba lagi.");
+      }
+      return;
+    }
+    toast.success(`Link transfer terkirim ke ${values.toEmail}.`);
+    setPendingTransferEmail(values.toEmail);
+    setTransferOpen(false);
+    transferForm.reset();
+  }
+
+  async function onCancelTransfer() {
+    setCancellingTransfer(true);
+    const res = await api.me["data-usaha"]({ id: dataUsahaId })["transfer-ownership"].cancel.post();
+    setCancellingTransfer(false);
+    if (res.error) {
+      toast.error("Tidak ada transfer yang bisa dibatalkan.");
+      return;
+    }
+    toast.success("Transfer dibatalkan.");
+    setPendingTransferEmail(null);
   }
 
   if (!seats) {
@@ -162,6 +202,30 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
         </div>
       )}
 
+      <Card>
+        <CardContent className="flex items-center justify-between gap-4 py-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-foreground">Transfer Kepemilikan Data Usaha</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {pendingTransferEmail
+                ? `Menunggu ${pendingTransferEmail} menerima transfer.`
+                : "Pindahkan kepemilikan Data Usaha ini ke orang lain — riwayat langganan tetap tercatat atas namamu."}
+            </p>
+          </div>
+          <div className="flex shrink-0 gap-2">
+            {pendingTransferEmail && (
+              <Button size="sm" variant="outline" loading={cancellingTransfer} onClick={onCancelTransfer}>
+                Batalkan
+              </Button>
+            )}
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setTransferOpen(true)}>
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Transfer
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       <Dialog open={!!inviteTarget} onOpenChange={(open) => !open && setInviteTarget(null)}>
         <DialogContent>
           <DialogHeader>
@@ -175,6 +239,28 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
             <DialogFooter>
               <Button type="submit" loading={form.formState.isSubmitting} className="w-full">
                 Kirim Undangan
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={transferOpen} onOpenChange={setTransferOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Transfer Kepemilikan Data Usaha</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={transferForm.handleSubmit(onTransfer)} className="flex flex-col gap-4">
+            <CardDescription>
+              Penerima akan dapat kepemilikan PENUH atas Data Usaha ini (kelola tim, langganan, koneksi Accurate). Kamu tidak akan bisa
+              mengelolanya lagi setelah transfer diterima.
+            </CardDescription>
+            <FormField label="Email penerima" error={transferForm.formState.errors.toEmail?.message}>
+              <Input type="email" autoFocus placeholder="nama@email.com" {...transferForm.register("toEmail")} />
+            </FormField>
+            <DialogFooter>
+              <Button type="submit" loading={transferForm.formState.isSubmitting} className="w-full">
+                Kirim Link Transfer
               </Button>
             </DialogFooter>
           </form>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CreditCard, Pencil, UserX, UserCheck, Eye } from "lucide-react";
+import { CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -420,6 +420,116 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   );
 }
 
+type DataUsahaOption = { id: string; name: string };
+type UserOption = { id: string; name: string; email: string };
+
+// § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
+// Usaha DIBANTU ADMIN, langsung eksekusi tanpa accept-flow (backend
+// `admin/data-usaha.route.ts`, permission `users.manage` sama seperti
+// nonaktifkan akun — pola disetujui di plan Fase 111 dibanding menambah
+// 1 permission baru cuma untuk endpoint ini).
+function TransferDataUsahaDialog({ user, onTransferred }: { user: UserRow; onTransferred: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
+  const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
+  const [userQuery, setUserQuery] = useState("");
+  const [userOptions, setUserOptions] = useState<UserOption[]>([]);
+  const [selectedUserId, setSelectedUserId] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  function openDialog() {
+    setOpen(true);
+    setSelectedDataUsahaId("");
+    setSelectedUserId("");
+    setUserQuery("");
+    setUserOptions([]);
+    setError(null);
+    api.admin["data-usaha"].get({ query: { userId: user.id } }).then((res) => {
+      if (res.data) setDataUsahaOptions((res.data as unknown as { dataUsaha: DataUsahaOption[] }).dataUsaha);
+    });
+  }
+
+  async function searchUsers(query: string) {
+    setUserQuery(query);
+    const res = await api.admin.users.get({ query: { search: query || undefined, limit: 10 } });
+    if (res.data) setUserOptions((res.data as unknown as { users: UserOption[] }).users.filter((u) => u.id !== user.id));
+  }
+
+  async function handleTransfer() {
+    if (!selectedDataUsahaId || !selectedUserId) {
+      setError("Pilih Data Usaha dan user tujuan dulu.");
+      return;
+    }
+    setSubmitting(true);
+    setError(null);
+    const res = await api.admin["data-usaha"]({ id: selectedDataUsahaId })["transfer-ownership"].post({ toUserId: selectedUserId });
+    setSubmitting(false);
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "TARGET_USER_NOT_FOUND"
+          ? "User tujuan tidak ditemukan."
+          : code === "CANNOT_TRANSFER_TO_SELF"
+            ? "Tidak bisa transfer ke pemilik yang sama."
+            : "Gagal transfer kepemilikan.",
+      );
+      return;
+    }
+    toast.success("Kepemilikan Data Usaha berhasil dipindahkan.");
+    setOpen(false);
+    onTransferred();
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <button
+        type="button"
+        onClick={openDialog}
+        title="Transfer Data Usaha"
+        aria-label={`Transfer Data Usaha milik ${user.name}`}
+        className={buttonVariants("ghost", "h-8 w-8 p-0")}
+      >
+        <ArrowRightLeft className="h-4 w-4" />
+      </button>
+      <DialogContent className="max-w-lg">
+        <DialogTitle>Transfer Data Usaha: {user.name || user.email}</DialogTitle>
+        <div className="mt-3 flex flex-col gap-4 text-sm">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-foreground">Data Usaha</span>
+            {!dataUsahaOptions ? (
+              <Skeleton className="h-9 w-full" />
+            ) : dataUsahaOptions.length === 0 ? (
+              <p className="text-muted-foreground">User ini belum punya Data Usaha.</p>
+            ) : (
+              <Combobox
+                options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
+                value={selectedDataUsahaId}
+                onChange={setSelectedDataUsahaId}
+                placeholder="(pilih Data Usaha)"
+              />
+            )}
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-foreground">Transfer ke User</span>
+            <Combobox
+              options={userOptions.map((u) => ({ value: u.id, label: `${u.name || u.email} (${u.email})` }))}
+              value={selectedUserId}
+              onChange={setSelectedUserId}
+              onSearch={searchUsers}
+              placeholder={userQuery || "Cari nama atau email..."}
+            />
+          </label>
+          {error && <p className="text-destructive">{error}</p>}
+          <Button onClick={handleTransfer} disabled={submitting || !dataUsahaOptions?.length} className="self-end">
+            {submitting ? "Memproses..." : "Transfer Kepemilikan"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const columnHelper = createDataTableColumns<UserRow>();
 
 export default function AdminUsersPage() {
@@ -520,6 +630,12 @@ export default function AdminUsersPage() {
               checkbox "Tandai Sudah Dibayar" di bawah. */}
           <Can permission="subscriptions.manage">
             <ManageSubscriptionDialog user={row.original} onAssigned={load} />
+          </Can>
+          {/* § Fase 111, architecture-user-tambahan.md — transfer
+              kepemilikan Data Usaha, permission SAMA dgn nonaktifkan akun
+              (`users.manage`) — backend `admin/data-usaha.route.ts`. */}
+          <Can permission="users.manage">
+            <TransferDataUsahaDialog user={row.original} onTransferred={load} />
           </Can>
           {/* § Fase 29, ADR-0027 — nonaktifkan/aktifkan HANYA `users.manage`
               (Super Admin), beda dari halaman ini sendiri yang cuma butuh

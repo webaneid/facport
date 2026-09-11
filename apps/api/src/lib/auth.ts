@@ -7,6 +7,7 @@ import { assignCustomerRole } from "./assign-customer-role";
 import { isDisabled } from "./user-status";
 import { evictOldestSessionsIfOverLimit } from "./session-limit";
 import { linkGoogleSignupToPendingInvite } from "./member-seats";
+import { linkGoogleSignupToPendingTransfer } from "./ownership-transfer";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -118,6 +119,9 @@ export const auth = betterAuth({
           // `routes/invites.route.ts` setelah `signUpEmail()`, tidak lewat
           // hook ini — lihat komentar `lib/member-seats.ts`).
           await linkGoogleSignupToPendingInvite(user.id, user.email);
+          // § Fase 111, architecture-user-tambahan.md — sama alasan di
+          // atas, tapi untuk transfer kepemilikan Data Usaha (bukan seat).
+          await linkGoogleSignupToPendingTransfer(user.id, user.email);
         },
       },
     },

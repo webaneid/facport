@@ -118,6 +118,7 @@
 | 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
 | 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
 | 110  | User Tambahan (Seat) + Invite | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
+| 111  | Transfer Kepemilikan Data Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

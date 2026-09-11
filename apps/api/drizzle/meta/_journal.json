@@ -162,6 +162,13 @@
       "when": 1789126802526,
       "tag": "0022_tiresome_titanium_man",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1789132342130,
+      "tag": "0023_stale_hercules",
+      "breakpoints": true
     }
   ]
 }

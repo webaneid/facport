@@ -18,8 +18,20 @@ function getAppOrigin(): string {
 
 // § Fase 110, architecture-user-tambahan.md — customer-facing "Kelola
 // Tim": list/invite/resend/revoke seat User Tambahan. SEMUA endpoint
-// WAJIB verifikasi seat itu MILIK user yang login (`primaryUserId`) —
-// bukan cuma auth:true — cegah user A kelola seat milik user B.
+// WAJIB verifikasi user yang login MEMILIKI Data Usaha seat ini SEKARANG
+// (`ownsDataUsaha`, bukan cuma auth:true) — cegah user A kelola seat milik
+// Data Usaha user B.
+// § Fase 111 (fix, ditemukan saat audit sebelum menambah transfer
+// kepemilikan) — invite/resend/revoke SEBELUMNYA cek `seat.primaryUserId
+// === user.id` (siapa yang BELI slot ini, snapshot beku). Ini SALAH begitu
+// transfer kepemilikan (Fase 111) ada: pemilik LAMA yang sudah transfer
+// pergi tetap bisa kelola tim Data Usaha yang bukan miliknya lagi (masih
+// `primaryUserId`), sementara pemilik BARU tidak bisa sama sekali (bukan
+// `primaryUserId`). Diganti `ownsDataUsaha(user.id, seat.dataUsahaId)` —
+// kontrol kelola tim SEKARANG ikut kepemilikan Data Usaha SAAT INI, sama
+// prinsipnya dengan `getOwnedSubscriptionsWithPlans` (ADR-0032).
+// `primaryUserId` sendiri TETAP TIDAK BERUBAH (riwayat "siapa yang beli
+// slot ini", snapshot historis, sama seperti `subscriptions.userId`).
 export const teamRoute = new Elysia()
   .use(permissionPlugin)
   .get(
@@ -51,7 +63,7 @@ export const teamRoute = new Elysia()
     "/me/team/:seatId/invite",
     async ({ user, params, body, set }) => {
       const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, params.seatId));
-      if (!seat || seat.primaryUserId !== user.id) {
+      if (!seat || !(await ownsDataUsaha(user.id, seat.dataUsahaId))) {
         set.status = 404;
         return { code: "SEAT_NOT_FOUND" };
       }
@@ -86,7 +98,7 @@ export const teamRoute = new Elysia()
     "/me/team/:seatId/resend",
     async ({ user, params, set }) => {
       const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, params.seatId));
-      if (!seat || seat.primaryUserId !== user.id) {
+      if (!seat || !(await ownsDataUsaha(user.id, seat.dataUsahaId))) {
         set.status = 404;
         return { code: "SEAT_NOT_FOUND" };
       }
@@ -113,7 +125,7 @@ export const teamRoute = new Elysia()
     "/me/team/:seatId/revoke",
     async ({ user, params, set }) => {
       const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, params.seatId));
-      if (!seat || seat.primaryUserId !== user.id) {
+      if (!seat || !(await ownsDataUsaha(user.id, seat.dataUsahaId))) {
         set.status = 404;
         return { code: "SEAT_NOT_FOUND" };
       }
