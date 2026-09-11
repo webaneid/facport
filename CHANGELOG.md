@@ -1,3 +1,11 @@
+## 1.28.0 (2026-09-11)
+
+* Merge pull request #57 from webaneid/develop ([1d2ea81](https://github.com/webaneid/facport/commit/1d2ea81)), closes [#57](https://github.com/webaneid/facport/issues/57)
+* docs: rencana arsitektur user tambahan (seat), multi-instance modul, batas device ([dd9c274](https://github.com/webaneid/facport/commit/dd9c274))
+* feat(admin): search form berfungsi di semua halaman list + hapus Cari Cepat (Fase 105) ([72a9c37](https://github.com/webaneid/facport/commit/72a9c37))
+* feat(dashboard): logo perusahaan di header + footer copyright (Fase 103) ([230ef9f](https://github.com/webaneid/facport/commit/230ef9f))
+* feat(invoice): logo perusahaan di PDF + pindah bukti transfer ke bawah tabel (Fase 104) ([9d6fb79](https://github.com/webaneid/facport/commit/9d6fb79))
+
 ## <small>1.27.2 (2026-09-11)</small>
 
 * Merge pull request #56 from webaneid/develop ([7bc198d](https://github.com/webaneid/facport/commit/7bc198d)), closes [#56](https://github.com/webaneid/facport/issues/56)
