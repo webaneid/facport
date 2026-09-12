@@ -18,13 +18,13 @@
     "db:backfill-data-usaha": "bun run src/scripts/backfill-data-usaha.ts"
   },
   "dependencies": {
-    "@better-auth/drizzle-adapter": "1.7.1",
+    "@better-auth/drizzle-adapter": "1.7.3",
     "@elysia/cors": "^1.4.2",
     "@react-pdf/renderer": "^4.9.0",
     "@sentry/bun": "^9.15.0",
-    "pdfkit": "0.20.1",
+    "pdfkit": "0.20.2",
     "@sinclair/typebox": "^0.34.0",
-    "better-auth": "1.7.1",
+    "better-auth": "1.7.3",
     "drizzle-orm": "0.45.2",
     "elysia": "^1.4.29",
     "jsqr": "^1.4.0",
@@ -35,7 +35,7 @@
     "qrcode": "^1.5.4",
     "react": "^19.2.8",
     "resend": "^4.0.1",
-    "sharp": "^0.34.2",
+    "sharp": "^0.35.4",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
