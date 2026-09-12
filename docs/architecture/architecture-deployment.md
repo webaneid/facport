@@ -211,9 +211,29 @@ echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
 
 docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull
 docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy up -d api web worker minio postgres
+
+# § ditemukan re-audit 2026-09-12 — runbook ini sudah lama ditandai "WAJIB
+# kalau ada migration DB" TAPI TIDAK PERNAH benar-benar menyertakan
+# perintah migrate-nya (cuma pull+up). Kalau rilis ini bawa migration baru
+# (skema apps/api/drizzle/), container "api" yang baru naik TETAP jalan
+# dengan skema LAMA sampai baris di bawah dijalankan. `docker compose exec`
+# (bukan `docker exec <nama-container>`) supaya tidak perlu tahu nama
+# container hasil auto-generate Compose.
+docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy exec api bun run db:migrate
+
 docker image prune -f
 docker ps --format "table {{.Names}}\t{{.Status}}"
 ```
+> **Catatan**: ada jeda singkat antara container `api` versi baru naik
+> (`up -d`) dan migration selesai dijalankan (`exec ... db:migrate`) — pada
+> jeda itu, kode BARU jalan di atas skema LAMA. Untuk migration yang
+> menambah kolom/tabel baru (kasus paling umum di project ini) ini AMAN
+> (kode lama tetap kompatibel, endpoint yang butuh skema baru simply belum
+> dipakai user sampai deploy selesai) — TAPI kalau migration ke depan
+> mengubah/menghapus kolom yang MASIH dipakai kode lama, jeda ini bisa
+> bikin request gagal singkat. Belum ada kebutuhan zero-downtime migration
+> di project ini sejauh sekarang — dicatat sebagai known limitation,
+> revisit kalau skala production sudah butuh itu.
 
 **Aturan wajib (§ `docs/lessons-learned.md` 2026-08-28 & 2026-08-31), berlaku kedua varian:**
 - **SELALU** sebut KEDUA `-f` (`docker-compose.prod.yml` DAN

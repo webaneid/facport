@@ -130,6 +130,20 @@ jobs:
           host: ${{ secrets.SERVER_HOST }}
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SERVER_SSH_KEY }}
+          # § ditemukan re-audit 2026-09-12 — script ini TIDAK PERNAH
+          # dijalankan sungguhan (secrets kosong, job ini selalu gagal di
+          # step login/exec, § catatan "TEMPLATE" di atas), tapi kalau
+          # secrets ini nanti diisi, script akan langsung aktif APA
+          # ADANYA tanpa direview ulang. Sebelum fix ini, script direproduksi
+          # PERSIS 2 bug yang sudah didokumentasikan gagal di production
+          # (lihat docs/lessons-learned.md 2026-08-28/2026-08-31 &
+          # 2026-09-12): (1) `up -d` TANPA `-f docker-compose.override.yml`
+          # DAN tanpa daftar service eksplisit → container naik tanpa port
+          # mapping ke nginx (502 diam-diam), (2) tidak ada langkah
+          # `db:migrate` sama sekali. Disamakan sekarang dengan runbook
+          # manual "Full" di architecture-deployment.md yang SUDAH
+          # diverifikasi jalan benar — kalau runbook manual itu berubah,
+          # samakan lagi di sini.
           script: |
             cd /opt/app   # sesuaikan path deploy di VPS Hostinger kamu
             export GITHUB_REPO="${{ github.repository }}"
@@ -137,5 +151,6 @@ jobs:
             echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
             echo "IMAGE_TAG=$IMAGE_TAG" >> .env.deploy
             docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull
-            docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy up -d
+            docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy up -d api web worker minio postgres
+            docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy exec api bun run db:migrate
             docker image prune -f   # bersihin image versi lama biar disk VPS nggak penuh
