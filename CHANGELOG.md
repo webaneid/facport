@@ -1,3 +1,40 @@
+## 2.0.0 (2026-09-12)
+
+* feat!: tutup restrukturisasi Data Usaha (Fase 106-111) sebagai rilis v2.0.0 ([421c2aa](https://github.com/webaneid/facport/commit/421c2aa))
+* Merge branch 'feature/data-usaha-restructure' into develop ([e5e3f7a](https://github.com/webaneid/facport/commit/e5e3f7a))
+* Merge pull request #58 from webaneid/develop ([4e6fc5f](https://github.com/webaneid/facport/commit/4e6fc5f)), closes [#58](https://github.com/webaneid/facport/issues/58)
+* fix(admin): admin bisa lihat & targetkan Data Usaha spesifik untuk invoice/langganan customer ([d43ebea](https://github.com/webaneid/facport/commit/d43ebea))
+* fix(ci): pindah image MinIO dari docker.io ke quay.io, hindari rate-limit anonymous pull ([399f324](https://github.com/webaneid/facport/commit/399f324))
+* fix(deploy): tambah langkah migrate yang hilang di runbook & workflow deploy ([24f7748](https://github.com/webaneid/facport/commit/24f7748))
+* fix(web): perbaiki 4 error lint react-hooks/set-state-in-effect, tambah lint ke gate SOP ([98d821e](https://github.com/webaneid/facport/commit/98d821e))
+* feat: model seat User Tambahan + invite (password & Google), rewrite gating akses Owned/Accessible ([4f0f9ce](https://github.com/webaneid/facport/commit/4f0f9ce))
+* feat: transfer kepemilikan Data Usaha (self-service + admin-assisted) ([2ca4e2e](https://github.com/webaneid/facport/commit/2ca4e2e))
+* feat(auth): batas device/sesi login per user + tutup celah Google OAuth disabled-account (Fase 106) ([1499da1](https://github.com/webaneid/facport/commit/1499da1))
+* feat(dashboard): gerbang "Pilih Data Usaha" + scoping frontend per Data Usaha (Fase 109) ([e904835](https://github.com/webaneid/facport/commit/e904835))
+* feat(dashboard): redesain halaman Pilih Data Usaha + rename Data Usaha + branding dari database ([05078e0](https://github.com/webaneid/facport/commit/05078e0))
+* feat(import): accordion tertutup untuk Cocokkan Kolom Purchase Invoice ([aaf1037](https://github.com/webaneid/facport/commit/aaf1037))
+* feat(subscriptions): migrasi skema Data Usaha + scoping backend checkout/trial/admin (Fase 107) ([5b4687a](https://github.com/webaneid/facport/commit/5b4687a))
+* docs: audit final - 3 gap ditemukan sebelum eksekusi (transfer bulk, billing, OAuth scope) ([f571d02](https://github.com/webaneid/facport/commit/f571d02))
+* docs: gap scope OAuth Accurate ternyata sudah terjawab dari preseden kode sendiri ([b635616](https://github.com/webaneid/facport/commit/b635616))
+* docs: keputusan final client soal cakupan seat + fitur baru transfer kepemilikan ([5a4a3dc](https://github.com/webaneid/facport/commit/5a4a3dc))
+* docs: klarifikasi status Modul saat ini (belum struktur DB, aman diformalkan nanti) ([a72cc8b](https://github.com/webaneid/facport/commit/a72cc8b))
+* docs: revisi arsitektur user tambahan - restrukturisasi dashboard per Data Usaha ([d501039](https://github.com/webaneid/facport/commit/d501039))
+* docs: sempurnakan alur invite (2 jalur penerimaan) + catat keputusan tertunda cakupan seat ([b021954](https://github.com/webaneid/facport/commit/b021954))
+* docs: tambah jalur admin untuk bantu transfer kepemilikan Data Usaha ([7e40418](https://github.com/webaneid/facport/commit/7e40418))
+
+### BREAKING CHANGE
+
+* model kepemilikan subscription/invoice/koneksi Accurate
+sekarang di-scope per Data Usaha (data_usaha.userId, MUTABLE), bukan lagi
+langsung per akun user. Endpoint yang membaca/menulis subscription tanpa
+memperhitungkan dataUsahaId (checkout, admin invoice/subscription
+provisioning, gating akses modul) semuanya sudah dimigrasikan di Fase
+106-111 - integrasi baru yang menyentuh area ini WAJIB reuse
+createInvoiceAndOrder()/createManualSubscriptions()/ownsDataUsaha(), lihat
+docs/architecture/architecture-transaction-flow.md.
+
+Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+
 ## 1.28.0 (2026-09-11)
 
 * Merge pull request #57 from webaneid/develop ([1d2ea81](https://github.com/webaneid/facport/commit/1d2ea81)), closes [#57](https://github.com/webaneid/facport/issues/57)
