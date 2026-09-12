@@ -6,6 +6,36 @@
 
 ---
 
+## 2026-09-12 — CI/CD `Start MinIO` gagal `pull access denied` — docker.io rate-limit anonymous pull, pindah ke quay.io
+**Konteks:** Tepat saat mau release v2.0.0 (develop → main), `Deploy Staging`
+lalu `ci.yml` di PR #58 gagal berulang (3x, ~20 menit) di step "Start
+MinIO" paling awal (sebelum typecheck/test sempat jalan) dengan error
+`docker: Error response from daemon: pull access denied for minio/minio,
+repository does not exist or may require 'docker login': denied`.
+
+**Root cause:** Bukan masalah kode/workflow kita — `minio/minio` di
+`docker.io` kena *anonymous pull rate-limit* di pool IP shared runner
+GitHub Actions (Docker Hub sendiri lapor status "fully operational", ini
+rate-limit per-IP bukan outage). Step ini sempat sukses di run ~21 jam
+sebelumnya dengan image reference yang SAMA — jadi benar-benar soal
+limit, bukan image hilang/rename.
+
+**Fix:** Ganti referensi image di 3 workflow (`ci.yml`,
+`deploy-staging.yml`, `release.yml`) dari `minio/minio` (docker.io) ke
+`quay.io/minio/minio` — ini registry resmi MinIO saat ini (docs MinIO
+sendiri sudah mengarahkan ke quay.io, docker.io jadi distribusi lama),
+dan request-nya tidak masuk pool anonymous-pull Docker Hub sama sekali.
+
+**Pencegahan:** Kalau ada step CI yang `docker run` image publik pihak
+ketiga dan gagal dengan "pull access denied"/"repository does not exist"
+padahal image-nya jelas ada & reference tidak berubah — curigai rate-limit
+anonymous docker.io dulu (cek status resmi registry, cek apakah step yang
+sama baru sukses beberapa jam sebelumnya dengan reference sama), bukan
+langsung asumsi image dihapus. Preferensi: pakai registry resmi
+non-docker.io (quay.io/ghcr.io) untuk image yang ditarik SERING dari CI
+(tiap push/PR), simpan docker.io cuma untuk pull jarang (mis. production
+VPS yang deploy tidak sesering CI).
+
 ## 2026-09-12 — Lompatan versi ke `2.0.0`: utang override breaking-change sejak `v1.0.0` (2026-08-22) akhirnya ditutup
 **Konteks:** User minta rekomendasi kapan push+release setelah audit
 menyeluruh (bersih, 0 Critical/High). Sekalian tanya kenapa versi

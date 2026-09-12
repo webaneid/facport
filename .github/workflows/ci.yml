@@ -59,16 +59,19 @@ jobs:
       # CI (cuma env var MINIO_* tanpa server beneran), jadi selalu gagal
       # connect (500). Dijalankan via `docker run` manual (bukan `services:`)
       # karena GitHub Actions services tidak bisa override command
-      # container, sedangkan image resmi minio/minio WAJIB command
+      # container, sedangkan image resmi minio WAJIB command
       # "server /data" supaya bisa start. Bucket dibuat otomatis oleh app
       # sendiri (ensureBucket dst, lib/minio.ts) saat request pertama.
+      # Pakai quay.io (bukan docker.io) — 2026-09-12 docker.io/minio/minio
+      # kena rate-limit anonymous pull di shared runner GitHub Actions
+      # ("pull access denied"), quay.io adalah registry resmi MinIO saat ini.
       - name: Start MinIO
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            minio/minio server /data
+            quay.io/minio/minio server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && exit 0
             sleep 1
