@@ -27,11 +27,20 @@ RETENTION_DAYS="${RETENTION_DAYS:-30}"
 DATE=$(date +%F_%H%M)
 
 mkdir -p "$BACKUP_DIR"
-DB_USER="${DB_USER:-$(grep -E '^DB_USER=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')}"
-DB_NAME="${DB_NAME:-$(grep -E '^DB_NAME=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')}"
-MINIO_PORT="${MINIO_PORT:-$(grep -E '^MINIO_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')}"
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-$(grep -E '^MINIO_ACCESS_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')}"
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-$(grep -E '^MINIO_SECRET_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"')}"
+# § 2026-09-13 — .env.production TIDAK PUNYA baris DB_USER=/DB_NAME=
+# terpisah (cuma DATABASE_URL gabungan) — grep di bawah selalu gagal
+# (exit 1), dan karena `set -eo pipefail`, itu bikin SELURUH SCRIPT
+# berhenti diam-diam SEBELUM baris echo pertama pun tercetak (exit code
+# 1, tanpa output apa pun). DB_USER/DB_NAME di-hardcode langsung (stabil,
+# tidak pernah berubah). MINIO_* TETAP pakai grep tapi WAJIB `|| true` —
+# var itu opsional (dipakai HANYA kalau `mc` ada), grep gagal untuk var
+# opsional TIDAK BOLEH menjatuhkan seluruh backup Postgres yang sudah
+# jalan duluan.
+DB_USER="${DB_USER:-facport}"
+DB_NAME="${DB_NAME:-facport}"
+MINIO_PORT="${MINIO_PORT:-$(grep -E '^MINIO_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-$(grep -E '^MINIO_ACCESS_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-$(grep -E '^MINIO_SECRET_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
 
 echo "▶ [$DATE] Mulai backup..."
 

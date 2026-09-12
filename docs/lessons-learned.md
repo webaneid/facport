@@ -215,10 +215,35 @@ supaya tidak cuma nginap di server yang sama.
   project lain. `scripts/backup-db.sh` di REPO (bukan server) juga
   diperbaiki terpisah (path default + `source $ENV_FILE` yang rusak
   karena baris "EOF" sisa di `.env.production` — lihat fix di file itu
-  sendiri) — **versi repo ini SEDIKIT BEDA dari yang sudah live di
-  server** (repo: coba MinIO kalau `mc` ada; server: Postgres-only saja)
-  — sinkronkan (`scp scripts/backup-db.sh` ke server) di sesi berikutnya,
-  tidak urgent karena MinIO tetap ke-skip dengan aman di kedua versi.
+  sendiri).
+
+  **Update 2026-09-13 — sinkronisasi ke server nemu bug KEDUA**: versi
+  repo di-transfer ke server (replace yang Postgres-only). Test run
+  pertama GAGAL TOTAL — exit code 1, **NOL output** (bahkan baris
+  "Mulai backup..." pun tidak tercetak). Sebabnya: `DB_USER`/`DB_NAME`
+  di versi repo di-`grep` dari `.env.production`, tapi file itu CUMA
+  punya `DATABASE_URL=` gabungan, TIDAK ADA baris `DB_USER=`/`DB_NAME=`
+  terpisah — `grep` gagal (exit 1), dan karena `set -eo pipefail`, itu
+  menjatuhkan SELURUH SCRIPT sebelum baris echo pertama pun jalan (diam
+  total, tanpa pesan error sama sekali — pola silent-failure yang sama
+  seperti bug `drizzle-kit` sehari sebelumnya). Fix: `DB_USER`/`DB_NAME`
+  di-hardcode (`"${DB_USER:-facport}"`, stabil, tidak perlu baca file),
+  `MINIO_PORT`/`MINIO_ACCESS_KEY`/`MINIO_SECRET_KEY` (yang GENUINELY
+  opsional, cuma dipakai kalau `mc` ada) ditambah `2>/dev/null || true`
+  supaya grep gagal untuk var opsional TIDAK ikut menjatuhkan backup
+  Postgres yang sudah berhasil. Diterapkan di server (langsung, via
+  `bun` baca-file+replace-baris+tulis-ulang, hindari `sed` pattern
+  matching yang rawan escaping) DAN di repo (sinkron). Test ulang:
+  exit code 0, semua langkah sukses termasuk skip MinIO yang graceful.
+  **Sekarang sinkron penuh** antara repo dan server — tidak ada lagi
+  tugas pending soal ini.
+
+  **Pencegahan berulang**: `set -e`/`set -eo pipefail` di shell script
+  yang baca var OPSIONAL dari file eksternal — grep yang "no match"
+  (exit 1, BUKAN error sungguhan) ikut menjatuhkan seluruh script kalau
+  tidak dikasih `|| true`. Kalau var itu genuinely wajib (DB_USER/DB_NAME
+  di sini), jangan coba "pintar" baca dari file — hardcode saja kalau
+  nilainya memang stabil/tidak pernah berubah antar-deploy.
 - ~~Update SEMUA path `/opt/app` → `/opt/facport`~~ — ✅ **RESOLVED** di
   `architecture-deployment.md`, `deployment-server-setup.md`,
   `deployment-new-domain-onboarding.md`, `architecture-backup.md`.
