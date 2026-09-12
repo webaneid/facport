@@ -144,3 +144,83 @@ restrukturisasi Record yang dibutuhkan sama sekali.
 - 1 bug ditemukan & diperbaiki SEBELUM commit (via browser test, bukan
   typecheck) — lihat § Keputusan Kecil soal pemisahan
   `active-data-usaha-cookie.ts`.
+
+---
+
+## Addendum (2026-09-12) — Redesain Visual Gerbang + Rename Data Usaha
+
+Diminta user langsung (bukan bagian rencana Fase 106-111 awal), dikerjakan
+"pelan2" (iteratif, bukan lewat `phase-workflow` formal) karena murni
+pekerjaan UI di atas fitur yang sudah Done — dicatat di sini karena
+mengubah halaman `/pilih-usaha` secara signifikan.
+
+**Redesain visual** (referensi: layout Data Usaha Accurate Online, diminta
+eksplisit meniru strukturnya dengan karakter menu Facport sendiri):
+- `apps/web/components/data-usaha/pilih-usaha-header.tsx` (BARU) — header
+  custom pengganti `AuthLayout`: kiri mark kecil (favicon+"FACPORT", ganti
+  baris "Bahasa|IP" ala Accurate yang tidak relevan), tengah logo brand
+  utama (posisi absolute, benar-benar center), kanan avatar+dropdown akun
+  (pola sama `Topbar`).
+- `apps/web/components/data-usaha/banner-slider.tsx` (BARU) — panel promo
+  kiri, collapsible (localStorage, pola sama collapse sidebar app-shell),
+  slider rasio 4:5 ("kayak ukuran Instagram post", eksplisit diminta user),
+  autoplay 6 detik + panah + dots. Konten 3 slide MASIH hardcode (promosi
+  Facport sendiri) — belum ada sistem admin kelola banner, di luar scope
+  langkah pertama ini.
+- `apps/web/components/data-usaha/pilih-usaha-form.tsx` — REWRITE total:
+  grid kartu Data Usaha (3 kolom saat banner tampil, 5-6 kolom saat
+  diciutkan — dua breakpoint ini SALING TERKAIT via 1 state `bannerCollapsed`
+  yang di-lift ke komponen ini, bukan state lokal `BannerSlider`), kotak
+  pencarian client-side, tombol "+" buka dialog buat baru (ganti form
+  inline lama). **Mobile (< breakpoint `lg`, 1024px) TETAP pakai tampilan
+  list-row lama APA ADANYA** (diminta eksplisit user) — dua blok JSX
+  terpisah (`hidden lg:flex` vs `lg:hidden`), bukan 1 layout yang
+  di-reflow CSS grid, supaya perilaku mobile 100% tidak berubah.
+
+**Branding dari database** (diminta user 2026-09-12, bukan hardcode):
+`pilih-usaha-header.tsx` sekarang terima `logoUrl`/`faviconUrl` dari
+`getPublicSettings()` (`settings.company.logo`/`company.favicon["32"]`,
+sumber SAMA yang dipakai `Topbar`/sidebar app-shell) — fallback ke
+ikon+teks lama HANYA kalau branding belum pernah di-upload admin. **Teks
+"Facport" TETAP literal**, bukan diganti `company.name` — `company.name`
+itu identitas badan usaha yang menjalankan platform (dipakai footer
+copyright/invoice, bisa beda dari nama produk, mis. dev DB isinya "Test
+Co"), keliru kalau dipakai gantikan nama produk di header.
+
+**Rename Data Usaha** (kebutuhan baru, bukan cuma UI): `PATCH
+/me/data-usaha/:id` (body `{name}`, `apps/api/src/routes/me.route.ts`) —
+HANYA pemilik SAAT INI (`ownsDataUsaha`) yang boleh, member seat aktif
+DITOLAK (rename itu aksi kelola, bukan cuma akses-pakai — konsisten
+prinsip `ADR-0032`/fix `team.route.ts` Fase 111). Ikon pensil muncul di
+tiap kartu/list-row HANYA untuk `row.isOwner === true`, `stopPropagation()`
+supaya tidak ikut trigger pilih Data Usaha. 5 test baru
+(`me.route.test.ts` § "PATCH /me/data-usaha/:id").
+
+**Verifikasi**: `bun run typecheck` (0 error), `bun run test` (734
+pass/0 fail, +5 baru), `bun run lint` (0 error baru — 1 pre-existing
+`react-hooks/set-state-in-effect` di file ini dibiarkan, pola yang SAMA
+dipakai 35 file lain di codebase, bukan regresi sesi ini). Security review
+skill: 0 temuan untuk `PATCH /me/data-usaha/:id`. Browser walkthrough
+penuh: header (favicon+logo asli dari DB, dikonfirmasi beda dari
+hardcode), banner (collapse+persist reload+autoplay+arrows+dots),
+grid (3↔5 kolom, search filter, create dialog), rename (dialog
+pre-filled, `stopPropagation` tidak trigger select, optimistic update di
+UI tanpa reload), mobile fallback (dipaksa render via override CSS
+sementara karena `resize_window` tool tidak berfungsi di environment ini
+— lihat batasan di bawah).
+
+### Known Limitations (addendum)
+- **Belum ada sistem admin untuk kelola isi banner** — 3 slide promo
+  hardcode di `banner-slider.tsx`. Struktur sudah generik (`Slide[]`)
+  supaya gampang disambung ke data dinamis nanti.
+- **Mobile TIDAK diverifikasi di viewport asli** — `resize_window` (Claude
+  in Chrome) tidak berhasil mengubah ukuran window nyata di lingkungan
+  ini (window tetap ukuran native display walau tool melaporkan sukses).
+  Diverifikasi via override CSS langsung (paksa toggle class
+  `hidden`/`lg:hidden` lewat `<style>` injeksi) untuk konfirmasi JSX
+  fallback mobile render benar dengan data asli — TIDAK membuktikan
+  breakpoint `lg` (1024px) sendiri presisi di device fisik, tapi mekanisme
+  breakpoint-nya reuse pola `AuthLayout` yang sudah lama dipakai project
+  ini (`hidden lg:flex`/`lg:hidden`).
+- **Belum di-commit** — menunggu review/feedback user (diminta eksplisit
+  "pelan2 saja kita perbaiki ya" — user memvalidasi hasil dulu sebelum commit).

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
-import { AuthLayout } from "@/components/auth/auth-layout";
 import { PilihUsahaForm } from "@/components/data-usaha/pilih-usaha-form";
+import { getPublicSettings } from "@/lib/get-public-settings";
 
 // § Fase 109, architecture-user-tambahan.md § Fase B2 — gerbang "Pilih
 // Data Usaha", SENGAJA di LUAR grup `(protected)` (pola sama
@@ -16,14 +16,16 @@ export default async function PilihUsahaPage() {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
   const cookie = (await headers()).get("cookie") ?? "";
 
-  const res = await fetch(`${apiUrl}/me`, { headers: { cookie }, cache: "no-store" });
+  const [res, settings] = await Promise.all([fetch(`${apiUrl}/me`, { headers: { cookie }, cache: "no-store" }), getPublicSettings()]);
   if (!res.ok) redirect("/login");
-  const me = (await res.json()) as { roles: string[] };
+  const me = (await res.json()) as { name: string; email: string; roles: string[] };
   if (!me.roles.includes("customer")) redirect("/login");
 
   return (
-    <AuthLayout title="Pilih Data Usaha" subtitle="Dashboard kamu dikelompokkan per Data Usaha — pilih salah satu atau buat yang baru.">
-      <PilihUsahaForm />
-    </AuthLayout>
+    <PilihUsahaForm
+      user={{ name: me.name, email: me.email }}
+      logoUrl={settings["company.logo"]}
+      faviconUrl={settings["company.favicon"]?.["32"]}
+    />
   );
 }

@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings, ownershipTransfers } from "../db/schema";
+import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings, ownershipTransfers, dataUsaha } from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
@@ -144,6 +144,96 @@ describe("GET & POST /me/data-usaha", () => {
     const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: memberCookie } }));
     const body = (await res.json()) as { dataUsaha: { id: string }[] };
     expect(body.dataUsaha.some((d) => d.id === dataUsahaId)).toBe(false);
+  });
+});
+
+// § diminta user 2026-09-12 — rename Data Usaha dari halaman "Pilih Data Usaha".
+describe("PATCH /me/data-usaha/:id", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/me/data-usaha/00000000-0000-0000-0000-000000000000", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Nama Baru" }),
+      }),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("404 kalau Data Usaha bukan milik user", async () => {
+    const ownerId = await signUp(`rename-owner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Rename Owner ${runId}`);
+    const attackerEmail = `rename-attacker-${runId}@test.local`;
+    await signUp(attackerEmail);
+    const attackerCookie = await signIn(attackerEmail);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}`, {
+        method: "PATCH",
+        headers: { cookie: attackerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Dicuri" }),
+      }),
+    );
+    expect(res.status).toBe(404);
+
+    const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(du!.name).toBe(`DU Rename Owner ${runId}`);
+  });
+
+  test("404 kalau user cuma py seat aktif (member), bukan pemilik", async () => {
+    const ownerId = await signUp(`rename-seatowner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Rename SeatOwner ${runId}`);
+    const seatId = await createTestSeat(ownerId, dataUsahaId);
+    const memberEmail = `rename-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}`, {
+        method: "PATCH",
+        headers: { cookie: memberCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Dicuri Member" }),
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  test("200 — owner rename berhasil, nama di-trim", async () => {
+    const ownerEmail = `rename-ok-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Rename OK ${runId}`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}`, {
+        method: "PATCH",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `  Nama Baru ${runId}  ` }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { name: string };
+    expect(body.name).toBe(`Nama Baru ${runId}`);
+
+    const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(du!.name).toBe(`Nama Baru ${runId}`);
+  });
+
+  test("422 kalau name kosong", async () => {
+    const ownerEmail = `rename-empty-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const ownerCookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Rename Empty ${runId}`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/data-usaha/${dataUsahaId}`, {
+        method: "PATCH",
+        headers: { cookie: ownerCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "" }),
+      }),
+    );
+    expect(res.status).toBe(422);
   });
 });
 

@@ -86,6 +86,30 @@ export const meRoute = new Elysia()
     },
     { auth: true, body: t.Object({ name: t.String({ minLength: 1, maxLength: 200 }) }) },
   )
+  // § diminta user 2026-09-12 — rename Data Usaha dari halaman "Pilih
+  // Data Usaha". HANYA pemilik SAAT INI (`ownsDataUsaha`) yang boleh,
+  // BUKAN member seat aktif — rename itu aksi kelola, sama levelnya
+  // dengan transfer kepemilikan/kelola tim, bukan cuma "punya akses pakai".
+  .patch(
+    "/me/data-usaha/:id",
+    async ({ user, params, body, set }) => {
+      if (!(await ownsDataUsaha(user.id, params.id))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const [updated] = await db
+        .update(dataUsaha)
+        .set({ name: body.name.trim(), updatedAt: new Date() })
+        .where(eq(dataUsaha.id, params.id))
+        .returning();
+      return updated;
+    },
+    {
+      auth: true,
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ name: t.String({ minLength: 1, maxLength: 200 }) }),
+    },
+  )
   // § Fase 111, architecture-user-tambahan.md — inisiasi transfer
   // kepemilikan Data Usaha (self-service, 2 tahap initiate→accept, pola
   // sama invite Fase 110). HANYA `data_usaha.userId` yang berubah begitu
