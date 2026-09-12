@@ -114,11 +114,12 @@
 | 103  | Logo Perusahaan di Header + Footer Copyright | Done — **released v1.28.0** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
 | 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **released v1.28.0** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
 | 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **released v1.28.0** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
-| 106  | Batas Device/Sesi Login per User | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
-| 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
-| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
-| 110  | User Tambahan (Seat) + Invite | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
-| 111  | Transfer Kepemilikan Data Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
+| 106  | Batas Device/Sesi Login per User | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
+| 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
+| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
+| 110  | User Tambahan (Seat) + Invite | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
+| 111  | Transfer Kepemilikan Data Usaha | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
+| 112  | Deploy v2.0.0 ke Production & Perbaikan Pasca-Deploy | Done | `docs/architecture/architecture-deployment.md`, `docs/architecture/architecture-backup.md` | `docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2721,3 +2722,24 @@ sanitizing header Excel, dikonfirmasi berlaku ke SEMUA modul termasuk
 Sales Receipt — 1 fungsi shared), baru eksplisit minta commit+push ke
 `develop`. **Belum di-release ke `main`/deploy** — sesuai instruksi
 user setelah insiden timing release v1.27.1, menunggu instruksi lanjut.
+
+## Update 2026-09-12/13 — Fase 112 Done: v2.0.0 resmi live di production
+User minta rilis Fase 106-111 (restrukturisasi Data Usaha) yang selama
+ini cuma ada di branch lokal. Proses: push → merge `develop` → PR →
+`v2.0.0` (breaking change resmi, override `.releaserc.json` sejak
+v1.0.0 akhirnya dihapus) → migration+backfill manual ke production →
+container baru live. 7 bug/gap ditemukan & diperbaiki SAAT proses ini
+(semuanya jenis yang cuma kelihatan di deploy manual nyata, tidak
+pernah muncul di dev): rate-limit Docker Hub (CI & VPS), 4 lint error
+numpuk, `drizzle-kit migrate` gagal generic di production (akhirnya
+migrate manual via `psql`), **bug nyata data production**: backfill
+bikin 1 Data Usaha per baris koneksi Accurate bukan per company
+sungguhan (1 user reconnect 16-19x ke company sama dapat 16 Data Usaha
+duplikat — sudah digabung manual + source code-nya diperbaiki), backup
+otomatis facport yang ternyata TIDAK PERNAH disetup (sekarang aktif +
+terverifikasi), dan domain lama `*.ane.web.id` (+ container `app-*`-nya)
+ternyata masih live tanpa disadari — dikonfirmasi user sebagai domain
+lama sebelum pindah ke `facinstitute.id`, sudah di-decommission aman
+(backup dulu, baru dihapus). Detail lengkap tiap temuan →
+`docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md`
+dan `docs/lessons-learned.md` (5 entri baru).

@@ -1,8 +1,7 @@
 # Architecture — Restrukturisasi Dashboard per Data Usaha, User Tambahan (Seat), & Batas Device
 
-> **STATUS: SELESAI DIIMPLEMENTASIKAN** (2026-09-11, Fase 106→107→109→110→111,
-> lihat `docs/PROGRESS.md`) — branch lokal `feature/data-usaha-restructure`,
-> **BELUM di-push/deploy ke production**. Dokumen ini semula riset arsitektur
+> **STATUS: LIVE DI PRODUCTION** (`v2.0.0`, dirilis 2026-09-12 — Fase
+> 106→107→109→110→111→112, lihat `docs/PROGRESS.md`). Dokumen ini semula riset arsitektur
 > yang sengaja ditunda eksekusinya menunggu evaluasi user; setelah dikonfirmasi,
 > seluruh rencana di bawah dieksekusi penuh dalam sesi yang sama. Riset &
 > keputusan desain di bawah tetap jadi referensi historis kenapa desain akhir
