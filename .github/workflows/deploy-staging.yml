@@ -56,7 +56,7 @@ jobs:
       ACCURATE_REDIRECT_URI: http://localhost:3001/accurate/oauth/callback
       ACCURATE_TOKEN_ENCRYPTION_KEY: ci-dummy-encryption-key-not-for-production-32chars
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@v2
         with:
