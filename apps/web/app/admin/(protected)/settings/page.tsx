@@ -46,6 +46,11 @@ const MIN_TRIAL_MAX_ROWS = 1;
 const MAX_TRIAL_MAX_ROWS = 100000;
 const MIN_TRIAL_DURATION_DAYS = 1;
 const MAX_TRIAL_DURATION_DAYS = 365;
+// § Fase 106, architecture-user-tambahan.md § Fase A — batas GLOBAL
+// (§ apps/api/src/lib/session-limit.ts, SATU sumber kebenaran angka
+// ini — jangan duplikasi batasnya di tempat lain).
+const MIN_MAX_DEVICES = 1;
+const MAX_MAX_DEVICES = 10;
 
 type FormState = {
   companyName: string;
@@ -63,6 +68,8 @@ type FormState = {
   manualInputSeconds: string;
   trialMaxRows: string;
   trialDurationDays: string;
+  // § Fase 106 — batas sesi login bersamaan per user (group "security").
+  maxDevicesPerUser: string;
   // § Fase 15, ADR-0021 — dipakai footer PDF invoice ("Instruksi
   // Pembayaran"), group "billing" (§ architecture-settings.md).
   companyTaxId: string;
@@ -103,13 +110,15 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     async function load() {
-      const [general, dataRes, billingRes] = await Promise.all([
+      const [general, dataRes, billingRes, securityRes] = await Promise.all([
         loadGeneral(),
         api.settings.get({ query: { group: "data" } }),
         api.settings.get({ query: { group: "billing" } }),
+        api.settings.get({ query: { group: "security" } }),
       ]);
       const data = (dataRes.data as Record<string, unknown> | undefined) ?? {};
       const billing = (billingRes.data as Record<string, unknown> | undefined) ?? {};
+      const security = (securityRes.data as Record<string, unknown> | undefined) ?? {};
       setForm({
         companyName: String(general["company.name"] ?? ""),
         companyAddress: String(general["company.address"] ?? ""),
@@ -120,6 +129,7 @@ export default function AdminSettingsPage() {
         manualInputSeconds: String(data["data.manualInputSecondsPerRow"] ?? 30),
         trialMaxRows: String(data["trial.maxRows"] ?? 100),
         trialDurationDays: String(data["trial.durationDays"] ?? 30),
+        maxDevicesPerUser: String(security["security.maxDevicesPerUser"] ?? 1),
         companyTaxId: String(billing["company.taxId"] ?? ""),
         companyPhone: String(billing["company.phone"] ?? ""),
         companyEmail: String(billing["company.email"] ?? ""),
@@ -257,6 +267,12 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    const maxDevicesPerUser = Number(form.maxDevicesPerUser);
+    if (!Number.isInteger(maxDevicesPerUser) || maxDevicesPerUser < MIN_MAX_DEVICES || maxDevicesPerUser > MAX_MAX_DEVICES) {
+      setError(`Maks. device per user harus angka bulat ${MIN_MAX_DEVICES}–${MAX_MAX_DEVICES}.`);
+      return;
+    }
+
     // § Fase 103 — kedua field opsional (boleh kosong), validasi cuma
     // jalan kalau diisi. Validasi SEBENARNYA tetap di server (§
     // settings.route.ts), ini cuma UX supaya user tidak perlu tunggu
@@ -309,6 +325,7 @@ export default function AdminSettingsPage() {
       { key: "data.manualInputSecondsPerRow", value: manualInputSeconds, group: "data" },
       { key: "trial.maxRows", value: trialMaxRows, group: "data" },
       { key: "trial.durationDays", value: trialDurationDays, group: "data" },
+      { key: "security.maxDevicesPerUser", value: maxDevicesPerUser, group: "security" },
       { key: "company.taxId", value: form.companyTaxId, group: "billing" },
       { key: "company.phone", value: form.companyPhone, group: "billing" },
       { key: "company.email", value: form.companyEmail, group: "billing" },
@@ -329,6 +346,8 @@ export default function AdminSettingsPage() {
         maxRows?: number;
         minYear?: number;
         maxYear?: number;
+        minDevices?: number;
+        maxDevices?: number;
       } | undefined;
       setError(
         value?.code === "INVALID_RETENTION_DAYS"
@@ -347,7 +366,9 @@ export default function AdminSettingsPage() {
                       ? 'URL tujuan logo harus diawali "http://" atau "https://".'
                       : value?.code === "INVALID_COPYRIGHT_START_YEAR"
                         ? `Tahun mulai copyright harus angka bulat ${value.minYear}–${value.maxYear}.`
-                        : "Gagal menyimpan pengaturan.",
+                        : value?.code === "INVALID_MAX_DEVICES"
+                          ? `Maks. device per user harus angka bulat ${value.minDevices}–${value.maxDevices}.`
+                          : "Gagal menyimpan pengaturan.",
       );
       return;
     }
@@ -656,6 +677,28 @@ export default function AdminSettingsPage() {
               max={MAX_TRIAL_DURATION_DAYS}
               value={form.trialDurationDays}
               onChange={(e) => setForm({ ...form, trialDurationDays: e.target.value })}
+            />
+          </label>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Keamanan</CardTitle>
+          <CardDescription>
+            Batasi jumlah sesi login bersamaan per user (device/browser berbeda dihitung sesi terpisah). Login di
+            device baru yang melebihi batas akan otomatis logout sesi paling lama.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-4">
+          <label className="flex max-w-xs flex-1 flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Maks. Device per User</span>
+            <Input
+              type="number"
+              min={MIN_MAX_DEVICES}
+              max={MAX_MAX_DEVICES}
+              value={form.maxDevicesPerUser}
+              onChange={(e) => setForm({ ...form, maxDevicesPerUser: e.target.value })}
             />
           </label>
         </CardContent>

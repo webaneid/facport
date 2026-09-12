@@ -6,6 +6,7 @@ import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows } from "../db/schema";
 import { otherPaymentImportRoute } from "./other-payment-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § pola sama journal-voucher-import.route.test.ts — route ini juga
 // gabung permission + moduleAccess (Dua Lapis Gate). TANPA validasi XOR
@@ -48,6 +49,7 @@ async function createProvisionedUser(email: string) {
     .insert(plans)
     .values({ name: `Other Payment Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["other_payment"] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
     .values({
@@ -56,6 +58,7 @@ async function createProvisionedUser(email: string) {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     })
     .returning();
 

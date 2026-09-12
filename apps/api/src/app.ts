@@ -42,6 +42,10 @@ import { purchasePaymentImportRoute } from "./routes/purchase-payment-import.rou
 import { salesReceiptImportRoute } from "./routes/sales-receipt-import.route";
 import { journalVoucherImportRoute } from "./routes/journal-voucher-import.route";
 import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
+import { teamRoute } from "./routes/team.route";
+import { invitesRoute } from "./routes/invites.route";
+import { transfersRoute } from "./routes/transfers.route";
+import { adminDataUsahaRoute } from "./routes/admin/data-usaha.route";
 
 const allowedOrigins = [
   "http://localhost:6209",
@@ -61,6 +65,14 @@ export const app = new Elysia()
   // percobaan enumerasi order ID) — rate limit WAJIB, sama prinsip
   // dengan /api/auth di atas.
   .use(rateLimitPlugin({ pathPrefix: "/public", windowMs: 60_000, max: 20 }))
+  // § Fase 110, architecture-user-tambahan.md — endpoint publik terima
+  // undangan "User Tambahan" (`GET/POST /invites/:token`), sama alasan
+  // rate limit `/public` di atas.
+  .use(rateLimitPlugin({ pathPrefix: "/invites", windowMs: 60_000, max: 20 }))
+  // § Fase 111, architecture-user-tambahan.md — endpoint publik terima
+  // transfer kepemilikan Data Usaha (`GET/POST /transfers/:token`), sama
+  // alasan rate limit `/invites` di atas.
+  .use(rateLimitPlugin({ pathPrefix: "/transfers", windowMs: 60_000, max: 20 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";
@@ -101,12 +113,21 @@ export const app = new Elysia()
     return { status: "ok" };
   })
   // § Fase 29, ADR-0027 — cegat SEBELUM `.mount(auth.handler)` di bawah:
-  // tolak login untuk akun `disabled` (dinonaktifkan Super Admin).
-  // TIDAK pakai hook internal Better Auth (`hooks`/`databaseHooks`) —
-  // DICEK LANGSUNG ke `.d.mts` versi terpasang (1.7.1), TIDAK ADA di
-  // top-level options type versi ini (beda dari versi lama yang lebih
-  // dikenal — pola sama "This is NOT the X you know" yang sudah ketemu
-  // di tanstack-table v9). `request.clone()` WAJIB — body `Request`
+  // tolak login untuk akun `disabled` (dinonaktifkan Super Admin), balas
+  // 403 rapi + kode `ACCOUNT_DISABLED` (diuji `app.test.ts`).
+  // § Fase 106 (koreksi) — komentar lama di sini SALAH mengklaim
+  // `databaseHooks` "tidak ada di versi ini" — TERBUKTI SALAH (lihat
+  // `lib/auth.ts` `databaseHooks.user.create.after` yang sudah lama
+  // jalan, DAN `databaseHooks.session.create.before` baru Fase 106).
+  // Guard di SINI tetap DIPERTAHANKAN apa adanya (bukan dipindah ke hook)
+  // karena hook Better Auth kalau `before` return `false` cuma bisa
+  // hasilkan 401 generik (`FAILED_TO_CREATE_SESSION`), BUKAN 403 +
+  // kode kustom seperti di sini — mengganti ke hook akan mengubah
+  // kontrak API yang sudah diuji. `lib/auth.ts` sekarang PUNYA hook
+  // SERUPA juga (session.create.before) tapi itu untuk menutup celah
+  // JALUR LAIN (Google OAuth) yang TIDAK tersentuh intercept manual di
+  // sini — keduanya berdampingan, bukan saling menggantikan.
+  // `request.clone()` WAJIB — body `Request`
   // cuma bisa dibaca SEKALI, `auth.handler(request)` di bawah butuh
   // body ORIGINAL masih utuh buat Better Auth proses sign-in beneran.
   .post("/api/auth/sign-in/email", async ({ request, set }) => {
@@ -194,6 +215,10 @@ export const app = new Elysia()
   .use(purchasePaymentImportRoute)
   .use(salesReceiptImportRoute)
   .use(journalVoucherImportRoute)
-  .use(otherPaymentImportRoute);
+  .use(otherPaymentImportRoute)
+  .use(teamRoute)
+  .use(invitesRoute)
+  .use(transfersRoute)
+  .use(adminDataUsahaRoute);
 
 export type App = typeof app;

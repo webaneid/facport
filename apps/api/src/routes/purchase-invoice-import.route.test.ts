@@ -7,6 +7,7 @@ import { user as userTable, roles, userRoles, plans, subscriptions, importBatche
 import { purchaseInvoiceImportRoute } from "./purchase-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { TRIAL_MAX_ROWS_SETTING_KEY } from "../lib/trial";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § Dua Lapis Gate (architecture-auth.md) — route ini PERTAMA yang gabung
 // dua macro (`permission` dari permissionPlugin + `moduleAccess` dari
@@ -53,6 +54,7 @@ async function createProvisionedUser(email: string) {
     .insert(plans)
     .values({ name: `PI Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
     .values({
@@ -61,6 +63,7 @@ async function createProvisionedUser(email: string) {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     })
     .returning();
 
@@ -82,6 +85,7 @@ async function createTrialProvisionedUser(email: string) {
     .insert(plans)
     .values({ name: `PI Trial Test Plan ${email}`, price: 0, durationDays: 30, modules: ["purchase_invoice"] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
     .values({
@@ -91,6 +95,7 @@ async function createTrialProvisionedUser(email: string) {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       isTrial: true,
+      dataUsahaId,
     })
     .returning();
 

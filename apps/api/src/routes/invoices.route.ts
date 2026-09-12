@@ -5,7 +5,7 @@ import { db } from "../lib/db";
 import { invoices, invoiceItems, settings, orders } from "../db/schema";
 import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
-import { attachInvoiceItems } from "../lib/invoice-helpers";
+import { attachInvoiceItems, groupIdenticalInvoiceItems } from "../lib/invoice-helpers";
 import { getProofImageAsPng } from "../lib/order-payment";
 import { logger } from "../lib/logger";
 
@@ -132,7 +132,7 @@ export const invoicesRoute = new Elysia()
           dueDate: invoice.dueDate,
           billToName: invoice.billToName,
           billToAddress: invoice.billToAddress,
-          items: items.map((i) => ({ label: i.label, price: i.price })),
+          items: groupIdenticalInvoiceItems(items),
           subtotal: invoice.subtotal,
           total: invoice.total,
           company,

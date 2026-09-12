@@ -25,6 +25,7 @@ import {
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
+  Building2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -40,7 +41,11 @@ import { usePermissions } from "@/lib/use-permissions";
 // STRING murni (`surface`), `Sidebar` yang lookup nav-nya sendiri.
 export type Surface = "app" | "admin";
 export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; permission?: string };
-export type NavGroup = { label: string; items: NavItem[] };
+// § Fase 110 — `ownerOnly: true` = grup ini disembunyikan TOTAL kalau
+// `isDataUsahaOwner === false` (user cuma member/seat, bukan pemilik Data
+// Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Tagihan/
+// Berlangganan/Kelola Tim) BUKAN wilayah member.
+export type NavGroup = { label: string; items: NavItem[]; ownerOnly?: boolean };
 
 const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
   app: [
@@ -66,11 +71,16 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
     },
     {
       label: "Langganan",
+      ownerOnly: true,
       // § Fase 15/17 — TANPA moduleKey (selalu tampil untuk customer login).
       items: [
         { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
         { href: "/billing", label: "Tagihan", icon: Receipt },
         { href: "/subscribe", label: "Berlangganan", icon: Package },
+        // § Fase 110, architecture-user-tambahan.md — "Kelola Tim" (User
+        // Tambahan). Grup INI SELURUHNYA disembunyikan untuk member
+        // (non-owner) lewat filter `isDataUsahaOwner` di `navGroupsFor`.
+        { href: "/team", label: "Kelola Tim", icon: Users },
       ],
     },
   ],
@@ -106,8 +116,14 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
 // langganan aktif — item ber-moduleKey DISEMBUNYIKAN by default (aman).
 // Grup yang jadi KOSONG setelah filter (semua item-nya moduleKey tidak
 // aktif) ikut disembunyikan total, bukan ditampilkan sebagai judul tanpa isi.
-export function navGroupsFor(surface: Surface, subscriptionModules?: string[]): NavGroup[] {
+// § Fase 110 — `isDataUsahaOwner` UNDEFINED (mis. dipanggil `breadcrumbs.tsx`
+// tanpa tahu status kepemilikan) SENGAJA TIDAK memfilter grup `ownerOnly`
+// (biar breadcrumbs tetap bisa cocokkan path `/team` dst) — filter grup
+// `ownerOnly` HANYA aktif kalau nilainya EKSPLISIT `false` (dioper `Sidebar`
+// sungguhan, § di bawah, yang SELALU tahu status ini dari `layout.tsx`).
+export function navGroupsFor(surface: Surface, subscriptionModules?: string[], isDataUsahaOwner?: boolean): NavGroup[] {
   return NAV_GROUPS_BY_SURFACE[surface]
+    .filter((group) => !(group.ownerOnly && isDataUsahaOwner === false))
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => !item.moduleKey || (subscriptionModules?.includes(item.moduleKey) ?? false)),
@@ -226,6 +242,32 @@ function NavRow({
   );
 }
 
+// § Fase 109, architecture-user-tambahan.md § Fase B2 — "kembali ke
+// laman awal" (gerbang pilih Data Usaha), SENGAJA di rail PALING BAWAH
+// sebelum tombol Ciutkan (diminta eksplisit user, bukan di Topbar/dropdown
+// user — Data Usaha itu konteks seluruh dashboard, bukan preferensi akun).
+// Link polos ke `/pilih-usaha` (BUKAN tombol Server Action) — halaman
+// tujuan sendiri yang fetch ulang daftar Data Usaha, konsisten pola
+// navigasi biasa di project ini.
+function DataUsahaSwitcher({ name, collapsed, onNavigate }: { name: string; collapsed: boolean; onNavigate?: () => void }) {
+  return (
+    <Link
+      href="/pilih-usaha"
+      onClick={onNavigate}
+      title={collapsed ? `Data Usaha: ${name} — klik untuk ganti` : undefined}
+      className="mb-3 flex min-h-11 items-center gap-2.5 rounded-xl border border-white/16 bg-white/8 px-3 text-left transition hover:bg-white/14"
+    >
+      <Building2 className="size-4 shrink-0 text-white/80" />
+      {!collapsed && (
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-xs font-semibold text-white">{name}</span>
+          <span className="block text-[10px] text-white/60">Ganti Data Usaha</span>
+        </span>
+      )}
+    </Link>
+  );
+}
+
 const COLLAPSE_STORAGE_KEY = "facport-admin-sidebar-collapsed";
 
 // § ADR-0024 — gradient rail gelap + radial spot (accent+warm), diambil
@@ -240,6 +282,8 @@ export function Sidebar({
   logoUrl,
   subscriptionModules,
   modulePlanNames,
+  activeDataUsahaName,
+  isDataUsahaOwner,
   mobileOpen,
   onMobileClose,
 }: {
@@ -252,6 +296,11 @@ export function Sidebar({
   // filter `subscriptionModules` di atas (yang menentukan tampil/tidak),
   // ini CUMA override teks tampilan (§ NavGroupBlock/NavRow).
   modulePlanNames?: Record<string, string>;
+  // § Fase 109 — switcher "Ganti Data Usaha" di rail bawah, surface
+  // "app" saja (admin layout.tsx tidak pernah mengisi prop ini).
+  activeDataUsahaName?: string;
+  // § Fase 110 — sembunyikan grup `ownerOnly` (Langganan) kalau false.
+  isDataUsahaOwner?: boolean;
   mobileOpen: boolean;
   onMobileClose: () => void;
 }) {
@@ -262,7 +311,7 @@ export function Sidebar({
   // Item tanpa `permission` selalu tampil; grup yang jadi kosong ikut
   // disembunyikan, sama seperti filter `moduleKey` di atas. Ini HANYA UI
   // hint (§ `components/auth/can.tsx`) — endpoint tetap dijaga backend.
-  const groups = navGroupsFor(surface, subscriptionModules)
+  const groups = navGroupsFor(surface, subscriptionModules, isDataUsahaOwner)
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => !item.permission || permissions.includes(item.permission)),
@@ -318,6 +367,8 @@ export function Sidebar({
           ))}
         </nav>
 
+        {activeDataUsahaName && <DataUsahaSwitcher name={activeDataUsahaName} collapsed={collapsed} />}
+
         <button
           type="button"
           onClick={toggleCollapsed}
@@ -359,6 +410,7 @@ export function Sidebar({
                 />
               ))}
             </nav>
+            {activeDataUsahaName && <DataUsahaSwitcher name={activeDataUsahaName} collapsed={false} onNavigate={onMobileClose} />}
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>

@@ -6,6 +6,201 @@
 
 ---
 
+## 2026-09-12 — 4 error lint `react-hooks/set-state-in-effect` numpuk sampai mau rilis v2.0.0 — `lint` tidak pernah di-gate lokal
+**Konteks:** Saat CI (`ci.yml`) jalan di PR #58 (release develop→main),
+step "Lint" gagal dengan 4 error `react-hooks/set-state-in-effect` di 4
+file BERBEDA dari 3 fase berbeda (Fase 109 `pilih-usaha-form.tsx`, Fase
+110 `subscribe-form.tsx` & `team-form.tsx`, dan fix admin invoice dari
+re-audit sesi ini `admin/invoices/page.tsx`) — semuanya lolos `bun run
+typecheck` (yang memang TIDAK cek aturan ini) dan tidak pernah ketahuan
+karena **`bun run lint` tidak pernah dijalankan lokal**, cuma jalan di
+CI (`ci.yml`) yang sebelumnya juga gagal lebih dulu di step "Start MinIO"
+(§ entri di atas) — jadi step Lint yang sebenarnya gagal tidak pernah
+sampai dieksekusi sampai bug MinIO itu ketutup duluan.
+
+**Root cause SOP:** `docs/SOP.md` Langkah 3 cuma menyebut `bun run
+typecheck`, TIDAK PERNAH menyebut `bun run lint` — jadi skill
+`phase-workflow` pun tidak pernah menjalankannya sebagai gate penutup
+fase. Lint HANYA jadi gate di CI (`ci.yml`), bukan gate lokal sebelum
+fase ditutup.
+
+**Fix kode (3 pola beda, disesuaikan kasusnya):**
+1. `pilih-usaha-form.tsx` — baca `localStorage` sekali saat mount: pola
+   SUDAH ADA di codebase (`app-shell/sidebar.tsx`,
+   `import/arsip/page.tsx`) — pakai `// eslint-disable-next-line
+   react-hooks/set-state-in-effect` dengan alasan ("baca external system
+   sekali saat mount"), BUKAN lazy `useState` initializer (sempat dicoba,
+   dibatalkan — beresiko hydration mismatch karena komponen ini SSR
+   sebagai bagian Server Component `page.tsx`, `typeof window` di
+   initializer bikin render server vs client pertama beda).
+2. `subscribe-form.tsx` — `selectedSeatPlanId` di-derive ULANG dari
+   `seatPlans` via effect, padahal `seatPlans` sendiri sudah derived
+   (via `useMemo`) dari state yang sama, tanpa sistem eksternal apa pun
+   — diubah total jadi "derived value dihitung saat render": state cuma
+   simpan override eksplisit user (`selectedSeatPlanIdOverride`),
+   `selectedSeatPlan` dihitung tiap render sebagai
+   `seatPlans.find(...) ?? seatPlans[0] ?? null` — effect dihapus total.
+3. `team-form.tsx` — fetch data awal via fungsi `load()` level-komponen
+   dipanggil di effect: pola SAMA PERSIS yang sudah ada di ~15 file lain
+   (semua halaman `import/.../page.tsx`, `notifications/page.tsx`, dst)
+   — cukup tambah `eslint-disable-next-line` yang sama.
+4. `admin/invoices/page.tsx` — effect reset `selectedDataUsahaId`/
+   `dataUsahaOptions` SINKRON begitu `selectedUserId` berubah (murni
+   derived dari prop yang sama, bukan sinkronisasi sistem eksternal) —
+   diubah ke pola resmi React "adjust state during render" (bandingkan
+   `selectedUserId` vs state `prevSelectedUserId` yang disimpan, reset
+   LANGSUNG di body komponen saat beda, tanpa `useEffect`) — effect-nya
+   sendiri disederhanakan jadi CUMA fetch (bagian yang genuinely butuh
+   effect, sinkron ke API eksternal).
+
+**Fix proses:** `docs/SOP.md` Langkah 3 diupdate — `bun run lint` sekarang
+WAJIB nol error bersamaan dengan `typecheck`, bukan cuma gate CI.
+
+**Pencegahan:** jangan anggap fase "bersih" cuma dari `typecheck` hijau —
+`lint` cek kelas bug berbeda (pola hook yang salah, bukan type error) dan
+HARUS dijalankan lokal di setiap penutupan fase mulai sekarang, sesuai
+SOP yang sudah diupdate.
+
+## 2026-09-12 — CI/CD `Start MinIO` gagal `pull access denied` — docker.io rate-limit anonymous pull, pindah ke quay.io
+**Konteks:** Tepat saat mau release v2.0.0 (develop → main), `Deploy Staging`
+lalu `ci.yml` di PR #58 gagal berulang (3x, ~20 menit) di step "Start
+MinIO" paling awal (sebelum typecheck/test sempat jalan) dengan error
+`docker: Error response from daemon: pull access denied for minio/minio,
+repository does not exist or may require 'docker login': denied`.
+
+**Root cause:** Bukan masalah kode/workflow kita — `minio/minio` di
+`docker.io` kena *anonymous pull rate-limit* di pool IP shared runner
+GitHub Actions (Docker Hub sendiri lapor status "fully operational", ini
+rate-limit per-IP bukan outage). Step ini sempat sukses di run ~21 jam
+sebelumnya dengan image reference yang SAMA — jadi benar-benar soal
+limit, bukan image hilang/rename.
+
+**Fix:** Ganti referensi image di 3 workflow (`ci.yml`,
+`deploy-staging.yml`, `release.yml`) dari `minio/minio` (docker.io) ke
+`quay.io/minio/minio` — ini registry resmi MinIO saat ini (docs MinIO
+sendiri sudah mengarahkan ke quay.io, docker.io jadi distribusi lama),
+dan request-nya tidak masuk pool anonymous-pull Docker Hub sama sekali.
+
+**Pencegahan:** Kalau ada step CI yang `docker run` image publik pihak
+ketiga dan gagal dengan "pull access denied"/"repository does not exist"
+padahal image-nya jelas ada & reference tidak berubah — curigai rate-limit
+anonymous docker.io dulu (cek status resmi registry, cek apakah step yang
+sama baru sukses beberapa jam sebelumnya dengan reference sama), bukan
+langsung asumsi image dihapus. Preferensi: pakai registry resmi
+non-docker.io (quay.io/ghcr.io) untuk image yang ditarik SERING dari CI
+(tiap push/PR), simpan docker.io cuma untuk pull jarang (mis. production
+VPS yang deploy tidak sesering CI).
+
+## 2026-09-12 — Lompatan versi ke `2.0.0`: utang override breaking-change sejak `v1.0.0` (2026-08-22) akhirnya ditutup
+**Konteks:** User minta rekomendasi kapan push+release setelah audit
+menyeluruh (bersih, 0 Critical/High). Sekalian tanya kenapa versi
+"mentok" di `v1.28.0` dan mengusulkan skema penomoran custom (salah paham
+— dikoreksi: semver TIDAK PERNAH "rollover" di angka 9 manapun, tiap
+segmen MAJOR/MINOR/PATCH cuma naik terus, reset ke 0 HANYA kalau segmen
+di atasnya naik).
+
+**Root cause "mentok" di v1.x**: entri 2026-08-22 (di atas, sekarang
+ditandai RESOLVED) sudah mencatat override `releaseRules:
+[{breaking:true, release:"minor"}]` di `.releaserc.json` **belum sempat
+dihapus** pas `v1.0.0` — tapi catatan itu sendiri TIDAK PERNAH ditindak-
+lanjuti selama 28 rilis berikutnya (`v1.0.1` → `v1.28.0`). Restrukturisasi
+Data Usaha/Seat/Transfer Kepemilikan (Fase 106-111, sesi ini) jadi momen
+yang dianggap user cukup fundamental untuk lompat MAJOR — dipakai sebagai
+kesempatan sekalian menutup utang lama itu.
+
+**Fix**: override dihapus dari `.releaserc.json` (lihat entri di atas +
+`docs/decisions/adr-0002-versioning-strategy.md` § "Update 2026-09-12"),
+commit yang menyertai pakai `feat!:` supaya semantic-release deteksi
+`1.28.0 → 2.0.0`.
+
+**Pencegahan**: langkah manual yang "cuma perlu dilakukan sekali di masa
+depan" (seperti hapus override ini) gampang terlewat kalau tidak ada
+pengingat AKTIF (bukan cuma catatan pasif di lessons-learned) — kalau ada
+langkah serupa lagi ke depan (mis. kebijakan versioning berubah lagi),
+pertimbangkan pengingat yang lebih aktif (mis. komentar di file config
+yang bersangkutan, bukan cuma di dokumen terpisah yang harus diingat
+untuk dibaca).
+
+---
+
+## 2026-09-12 — Runbook deploy "Full" ditandai "WAJIB kalau ada migration DB" tapi TIDAK PERNAH menyertakan perintah migrate-nya
+**Masalah:** Ditemukan saat user minta re-audit menyeluruh sebelum deploy
+(bukan lewat insiden nyata) — `docs/architecture/architecture-deployment.md`
+§ "Deploy Manual ke Server" varian **Full** diberi label eksplisit "WAJIB
+kalau ada migration DB, perubahan worker/job, atau rilis besar", TAPI blok
+perintahnya cuma `pull` → `up -d api web worker minio postgres` → `prune`.
+Tidak ada satu baris pun yang menjalankan `bun run db:migrate` di dalam
+container. Kalau runbook ini diikuti APA ADANYA untuk rilis yang bawa
+migration Drizzle baru, container `api` versi baru naik dan jalan dengan
+kode BARU di atas skema LAMA — endpoint yang menyentuh kolom/tabel baru
+akan error 500 sampai seseorang SADAR dan migrate manual terpisah (tidak
+ada langkah eksplisit yang mengingatkan).
+
+**Root cause:** Dockerfile `apps/api` SUDAH diperbaiki (2026-09-06, catatan
+komentar di file itu sendiri) untuk menyertakan `drizzle.config.ts`,
+`drizzle/`, dan `src/` supaya `bun run db:migrate` BISA dijalankan dari
+dalam container production — tapi perbaikan itu cuma menjawab kasus "deploy
+pertama kali ke instance BARU, DB kosong" (didokumentasikan di
+`docs/deployment-new-domain-onboarding.md`, yang MEMANG punya baris
+`docker exec ... bun run db:migrate`). Runbook REDEPLOY RUTIN (dipakai
+tiap rilis baru) tidak pernah disatukan dengan pelajaran yang sama — 2
+dokumen deploy berkembang terpisah, satu dapat perbaikan, satunya tidak.
+
+**Fix:** Tambah baris `docker compose ... exec api bun run db:migrate` ke
+runbook **Full** di `architecture-deployment.md`, persis setelah `up -d`
+— pakai `docker compose exec` (bukan `docker exec <nama-container>`
+seperti di onboarding doc) supaya tidak bergantung pada nama container
+hasil auto-generate Compose yang bisa beda-beda. Ditambah catatan soal
+jeda singkat kode-baru-atas-skema-lama antara `up -d` dan migrate selesai
+(diterima sebagai risiko kecil untuk migration ADD-only, dicatat sebagai
+known limitation untuk migration yang mengubah/hapus kolom).
+
+**Pencegahan:** Kalau ada 2 dokumen runbook yang membahas topik SAMA
+(migrasi database saat deploy) di 2 skenario berbeda (fresh install vs
+redeploy rutin), audit KEDUANYA sekaligus saat salah satu diperbaiki —
+jangan asumsikan pelajaran dari 1 skenario otomatis ke-carry ke skenario
+lain yang isi commandnya ditulis terpisah.
+
+---
+
+## 2026-09-11 — Fase 110 (Seat/User Tambahan): 1 fungsi 2 keperluan hampir jadi privilege escalation, dan celah expiry invite di jalur Google
+**Masalah 1 (dicegah saat planning, bukan post-mortem):** `accurate.route.ts`
+`POST /connect`/`POST /reuse` memakai `getActiveSubscriptionsWithPlans(user.id)`
+untuk OTORISASI MUTASI (siapa boleh bikin/timpa koneksi Accurate). Rencana
+awal Fase 110 mau menambah akses-via-seat dengan meng-UNION fungsi yang SAMA
+ini — kalau jadi dieksekusi begitu, member (yang cuma boleh PAKAI modul)
+bisa kirim `subscriptionId` Data Usaha tempat dia numpang seat dan
+mengambil-alih/mengubah koneksi Accurate Data Usaha itu.
+**Root cause:** 1 fungsi query dipakai untuk 2 keperluan otorisasi yang
+BEDA level (mutasi vs akses-tampilan) — kebetulan sama hasilnya SELAMA
+belum ada akses-via-seat, jadi tidak kelihatan sebagai desain rapuh sampai
+fitur seat mau ditambahkan.
+**Fix:** dipecah jadi `getOwnedSubscriptionsWithPlans` (mutasi — checkout,
+trial, connect/reuse Accurate) dan `getAccessibleSubscriptionsWithPlans`
+(akses/tampilan — union kepemilikan + seat aktif). Detail → ADR-0032.
+**Pencegahan:** kalau 1 fungsi query dipakai di lebih dari 1 tempat untuk
+alasan otorisasi yang KELIHATANNYA sama tapi levelnya beda (mutasi vs
+baca), curigai dulu SEBELUM menambah fitur yang memperluas cakupan
+fungsi itu — jangan asumsikan union aman cuma karena hasil lama identik.
+
+**Masalah 2 (ditemukan security-review, diperbaiki sebelum fase ditutup):**
+Invite "User Tambahan" berlaku 7 hari (dicek eksplisit via
+`inviteTokenExpiresAt` di jalur password, `invites.route.ts`
+`findValidInviteByToken`), TAPI jalur Google OAuth auto-link
+(`linkGoogleSignupToPendingInvite`, `lib/member-seats.ts`) awalnya cuma
+cek `status = 'invited'` + email cocok — TIDAK cek expiry sama sekali.
+Invite yang sudah lewat 7 hari tetap bisa diklaim via Google sign-up
+selama primary user belum revoke manual, melanggar janji "berlaku 7 hari"
+di teks email undangan.
+**Fix:** tambah `gt(inviteTokenExpiresAt, now())` ke query yang sama.
+**Pencegahan:** kalau ada 2 jalur berbeda (password vs OAuth) untuk
+"menyelesaikan" 1 alur sensitif yang sama (invite/verifikasi/reset), audit
+KEDUANYA punya guard yang SAMA PERSIS (expiry, status, dst) — jangan cuma
+tulis guard lengkap di jalur yang ditulis duluan lalu asumsikan jalur
+kedua otomatis konsisten.
+
+---
+
 ## 2026-09-11 — `@react-pdf/image` tidak bisa decode webp: gambar company.logo di PDF invoice tampil KOSONG total (kejadian KEDUA, pola sama bukti transfer Fase 94)
 **Masalah:** Fase 104 minta header PDF invoice tampilkan logo perusahaan
 menggantikan tulisan nama. Setelah kode ditulis (kondisional `logoUrl ?
@@ -3262,6 +3457,11 @@ MAJOR — melanggar ekspektasi semver untuk konsumen API.
 **Pencegahan:** Sebelum commit breaking change berikutnya, hapus override
 `releaseRules` itu dari `.releaserc.json` (lihat langkah 2 di
 `docs/decisions/adr-0002-versioning-strategy.md`).
+
+**✅ RESOLVED 2026-09-12** — override akhirnya dihapus (bukan pas `v1.0.0`
+dulu, telat ~28 rilis) bersamaan lompatan manual ke `v2.0.0`. Lihat entri
+2026-09-12 di atas & `docs/decisions/adr-0002-versioning-strategy.md` §
+"Update 2026-09-12".
 
 ---
 

@@ -15,6 +15,7 @@ import {
   settings,
 } from "../../db/schema";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../../lib/manual-input-estimate";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(publicStatsRoute);
@@ -75,9 +76,10 @@ describe("GET /public/stats", () => {
       .insert(plans)
       .values({ name: `Public Stats Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
     const [batch] = await db
       .insert(importBatches)

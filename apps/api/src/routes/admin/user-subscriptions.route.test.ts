@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, accurateConnections } from "../../db/schema";
 import { adminUserSubscriptionsRoute } from "./user-subscriptions.route";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 92 (2026-09-10) — mirror pola `admin/import-batches.route.test.ts`.
 const runId = Date.now();
@@ -89,6 +90,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
       })
       .returning();
 
+    const dataUsahaId = await createTestDataUsaha(userId, `UserSubs DU ${runId}`);
     const [planHealthy] = await db
       .insert(plans)
       .values({ name: `UserSubs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
@@ -100,6 +102,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: healthyConn!.id,
+      dataUsahaId,
     });
 
     const [planBroken] = await db
@@ -113,12 +116,20 @@ describe("GET /admin/users/:id/subscriptions", () => {
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
       accurateConnectionId: brokenConn!.id,
+      dataUsahaId,
     });
 
     const res = await testApp.handle(new Request(`http://localhost/admin/users/${userId}/subscriptions`, { headers: { cookie: adminCookie } }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      subscriptions: { planName: string; connected: boolean; connectionStatus: string | null; accurateDbAlias: string | null }[];
+      subscriptions: {
+        planName: string;
+        connected: boolean;
+        connectionStatus: string | null;
+        accurateDbAlias: string | null;
+        dataUsahaId: string;
+        dataUsahaName: string;
+      }[];
     };
     const healthy = body.subscriptions.find((s) => s.planName === `UserSubs Healthy ${runId}`);
     const broken = body.subscriptions.find((s) => s.planName === `UserSubs Broken ${runId}`);
@@ -127,5 +138,11 @@ describe("GET /admin/users/:id/subscriptions", () => {
     expect(broken?.connected).toBe(false);
     expect(broken?.connectionStatus).toBe("expired");
     expect(broken?.accurateDbAlias).toBe("PT Bermasalah");
+
+    // § diminta user 2026-09-12 — admin sekarang WAJIB bisa tahu Data
+    // Usaha mana yang punya subscription ini (dulu tidak ikut di-join).
+    expect(healthy?.dataUsahaId).toBe(dataUsahaId);
+    expect(healthy?.dataUsahaName).toBe(`UserSubs DU ${runId}`);
+    expect(broken?.dataUsahaId).toBe(dataUsahaId);
   });
 });

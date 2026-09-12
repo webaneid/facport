@@ -5,6 +5,7 @@ import { invoices, orders, plans, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { attachInvoiceItems } from "../../lib/invoice-helpers";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
+import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
 // § architecture-invoice.md § API — SEMUA invoice lintas user, admin-only
 // (permission "invoices.view"). Dipisah dari `invoices.route.ts` (customer,
@@ -73,8 +74,26 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
         return { code: "PLAN_NOT_ACTIVE" };
       }
 
+      // § diminta user 2026-09-12 — gap ditemukan saat re-audit alur
+      // admin: endpoint ini SEBELUMNYA selalu `getOrCreateDefaultDataUsaha`
+      // tanpa peduli `body.dataUsahaId` sama sekali (komentar lama bilang
+      // "menyusul Fase 109/110" tapi tidak pernah benar-benar dikerjakan
+      // sampai fase itu selesai) — customer dengan BANYAK Data Usaha
+      // (kasus normal sejak Fase 107) selalu kena invoice nyasar ke "Data
+      // Usaha Utama" walau admin sebenarnya mau bikin invoice utk Data
+      // Usaha lain. Sekarang terima `dataUsahaId` OPSIONAL, WAJIB
+      // divalidasi benar milik `targetUser` (pola SAMA
+      // `admin/subscriptions.route.ts` — kalau tidak, admin bisa
+      // (sengaja/keliru) tempel invoice user A ke data_usaha milik user
+      // B), fallback ke default kalau tidak dikirim (backward compatible
+      // utk caller lama).
+      if (body.dataUsahaId && !(await ownsDataUsaha(targetUser.id, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(targetUser.id));
       const result = await db.transaction((tx) =>
-        createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows }),
+        createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId }),
       );
 
       return result;
@@ -84,6 +103,7 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
       body: t.Object({
         userId: t.String({ minLength: 1 }),
         planIds: t.Array(t.String({ format: "uuid" }), { minItems: 1 }),
+        dataUsahaId: t.Optional(t.String({ format: "uuid" })),
       }),
     },
   );

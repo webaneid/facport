@@ -2,7 +2,8 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
-import { permissions, rolePermissions, userRoles, user as userTable } from "../db/schema";
+import { permissions, rolePermissions, userRoles } from "../db/schema";
+import { isDisabled } from "./user-status";
 
 // § Fase 29, ADR-0027 — security review (High): mekanisme "nonaktifkan
 // user" SEBELUMNYA cuma dijaga di 2 tempat DI LUAR layer otorisasi ini
@@ -12,13 +13,8 @@ import { permissions, rolePermissions, userRoles, user as userTable } from "../d
 // apa pun di sini yang menangkap. Dicek LANGSUNG per-request supaya
 // layer ini aman independen, sesuai prinsip architecture-security.md
 // ("tiap layer harus aman seolah layer lain bisa gagal/dilewati").
-// `disabled` BUKAN field bawaan Better Auth (tidak didaftarkan lewat
-// `additionalFields`), jadi `session.user.disabled` tidak bisa
-// diandalkan — query manual ke tabel `user` di sini.
-async function isDisabled(userId: string): Promise<boolean> {
-  const [row] = await db.select({ disabled: userTable.disabled }).from(userTable).where(eq(userTable.id, userId));
-  return row?.disabled ?? false;
-}
+// § Fase 106 — `isDisabled()` dipindah ke `lib/user-status.ts` (dipakai
+// juga oleh `auth.ts` sekarang, § databaseHooks.session.create.before).
 
 // § Fase 15 — exported: dipakai di luar macro juga (`invoices.route.ts`
 // `GET /invoices/:id/pdf`, campur akses "milik sendiri" ATAU "admin", TIDAK

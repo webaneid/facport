@@ -6,6 +6,7 @@ import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches } from "../db/schema";
 import { salesInvoiceImportRoute } from "./sales-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice-import.route.test.ts` (modul
 // "penjualan"/"sales_invoice").
@@ -47,6 +48,7 @@ async function createProvisionedUser(email: string) {
     .insert(plans)
     .values({ name: `SI Import Test Plan ${email}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
     .returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
     .values({
@@ -55,6 +57,7 @@ async function createProvisionedUser(email: string) {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     })
     .returning();
 

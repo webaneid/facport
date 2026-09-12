@@ -1,177 +1,297 @@
-# Architecture — User Tambahan (Seat), Multi-Instance Modul, & Batas Device
+# Architecture — Restrukturisasi Dashboard per Data Usaha, User Tambahan (Seat), & Batas Device
 
-> **STATUS: DIUSULKAN — BELUM DIIMPLEMENTASIKAN.** Dokumen ini adalah hasil
-> riset arsitektur mendalam (2026-09-11) untuk 3 kemampuan baru yang diminta
-> client, TAPI user (pemilik project) secara eksplisit memilih untuk
-> **mengevaluasi dulu sebelum eksekusi** — "ini akan bertabrakan banyak hal."
-> JANGAN mulai implementasi fase mana pun di dokumen ini tanpa konfirmasi
-> ulang eksplisit dari user. Riset & keputusan desain di bawah tetap valid
-> sebagai referensi kalau/ketika fitur ini dilanjutkan.
+> **STATUS: SELESAI DIIMPLEMENTASIKAN** (2026-09-11, Fase 106→107→109→110→111,
+> lihat `docs/PROGRESS.md`) — branch lokal `feature/data-usaha-restructure`,
+> **BELUM di-push/deploy ke production**. Dokumen ini semula riset arsitektur
+> yang sengaja ditunda eksekusinya menunggu evaluasi user; setelah dikonfirmasi,
+> seluruh rencana di bawah dieksekusi penuh dalam sesi yang sama. Riset &
+> keputusan desain di bawah tetap jadi referensi historis kenapa desain akhir
+> begini — detail eksekusi & penyimpangan kecil dari rencana awal ada di
+> masing-masing `docs/phases/phase-{106,107,109,110,111}-*.md` dan
+> `docs/decisions/adr-0032-model-seat-user-tambahan.md`.
 >
 > Memenuhi catatan yang sudah lama menunggu di
 > `docs/decisions/adr-0008-model-langganan.md`: *"Per-seat pricing... belum
 > dibutuhkan di scope awal... TIDAK diimplementasikan sekarang (kalau nanti
 > dibutuhkan, ADR baru)."* — dokumen ini adalah cikal-bakal ADR itu.
+>
+> **Revisi dari draf pertama**: draf awal mengusulkan "multi-instance modul"
+> sebagai fitur berdiri sendiri (subscription bisa >1 untuk modul yang sama,
+> dibedakan label buatan "#1"/"#2"). User lalu minta pendekatan yang lebih
+> radikal: jadikan **Data Usaha** (istilah yang sudah dipakai product ini
+> untuk perusahaan/database Accurate) sebagai ANCHOR navigasi paling atas,
+> mirip alur Accurate Online sendiri (pilih/buat database dulu sebelum masuk
+> workspace). Ini TERNYATA menyelesaikan masalah "label buatan #1/#2" secara
+> alami — instance dibedakan oleh Data Usaha yang berbeda, bukan angka
+> buatan — sekaligus membuat model akses user tambahan jauh lebih intuitif
+> ("akses ke Data Usaha PT Maju" alih-alih "akses ke subscription id abc-123").
 
 ## Latar Belakang & Kebutuhan Bisnis
 
-Facport saat ini: 1 user = login bebas dari device mana pun, tanpa batas
-sesi bersamaan, 1 user = maksimal 1 langganan aktif per modul. Client
-(lewat pemilik project) minta 3 kemampuan sekaligus, yang ternyata SALING
-BERKAITAN erat (bukan 3 fitur independen):
+Facport saat ini: 1 user = login bebas dari device mana pun tanpa batas
+sesi, sidebar dashboard FLAT (langsung ke daftar modul, tanpa konsep
+"perusahaan mana"), 1 user = maksimal 1 langganan aktif per modul secara
+global (bukan per perusahaan). Client minta beberapa kemampuan yang
+ternyata saling terkait erat:
 
-1. **Batasi jumlah device/sesi login bersamaan per user** — default 1,
+1. **Restrukturisasi total alur dashboard ala Accurate**: Login → layar
+   **"Pilih Data Usaha"** (kalau belum ada, harus buat dulu) → BARU masuk
+   ke dashboard, yang sekarang SCOPED ke Data Usaha itu. Ada link "Ganti
+   Data Usaha" di paling bawah sidebar (sebelum tombol ciutkan). Struktur
+   konseptual baru: **Data Usaha → Modul → Fitur (sub-modul)** — "Fitur"
+   di sini yang saat ini disebut `moduleKey` di kode (Purchase Invoice,
+   dst), dikelompokkan di bawah "Modul" (grouping lebih tinggi, mis.
+   Pembelian/Penjualan), semuanya bernaung di 1 Data Usaha spesifik.
+   Langganan/billing tetap terjadi di level Fitur (granularitas tidak
+   berubah), tapi navigasi & scoping akses sekarang mengikuti Data Usaha.
+2. **Batasi jumlah device/sesi login bersamaan per user** — default 1,
    admin bisa naikkan ke 2/3/dst secara global. Login di device baru
    melebihi batas = otomatis logout device yang paling lama tidak aktif.
-2. **User tambahan (seat) yang menumpang langganan user utama** — user
-   utama beli slot user tambahan (harga terpisah dari modul, bulanan/
-   tahunan), undang orang lain lewat email, orang itu login dengan akun
-   sendiri (password ATAU Google) tanpa perlu subscribe modul sendiri —
-   tapi HANYA modul/instance spesifik yang di-grant oleh user utama
-   (granular, bukan otomatis semua modul aktif).
-3. **Satu user bisa punya lebih dari 1 langganan aktif untuk modul yang
-   SAMA** — mis. "Purchase Invoice" x2, masing-masing terhubung ke Data
-   Usaha Accurate yang berbeda (2 perusahaan berbeda dikelola dari 1
-   akun Facport). Kebutuhan ini MUNCUL dari poin 2: akses granular per
-   user tambahan cuma masuk akal kalau ada lebih dari 1 instance untuk
-   digranulasi ("user tambahan A boleh akses Purchase Invoice milik PT
-   Maju, TIDAK boleh akses milik PT Sejahtera").
+3. **User tambahan (seat) yang menumpang langganan user utama** — user
+   utama beli slot user tambahan (harga terpisah, bulanan/tahunan),
+   undang orang lain lewat email, orang itu login dengan akun sendiri
+   (password ATAU Google) tanpa perlu subscribe modul sendiri — akses
+   di-grant per Data Usaha/Fitur spesifik (bukan otomatis semua).
 
-**Kenapa ini besar, bukan 3 fitur kecil**: poin 3 mengubah invariant inti
-yang sudah lama dipegang sistem sejak Fase 01 ("1 modul aktif = 1
-subscription per user") dan menyentuh alur konfirmasi pembayaran yang
-sudah production-proven (fix bug nyata 2026-09-07). Poin 2 sepenuhnya
-baru — tidak ada fondasi "team/organization/seat/member" apa pun di kode
-saat ini (dicek eksplisit lewat riset, greenfield total).
+**Kenapa poin 1 sekarang jadi fondasi, bukan cuma "tambahan"**: begitu
+Data Usaha jadi anchor navigasi, masalah "1 user bisa >1 langganan aktif
+untuk modul yang sama" (draf lama, poin terpisah) **HILANG sebagai
+masalah tersendiri** — itu otomatis terjadi kalau user punya 2 Data
+Usaha yang masing-masing subscribe Purchase Invoice sendiri-sendiri,
+tidak perlu logic multi-instance yang rumit di level 1 akun. Yang justru
+jadi lebih besar sekarang: DATA USAHA itu sendiri adalah entity baru
+yang harus dibangun dari nol (lihat § Ringkasan Riset), dan invariant
+"1 modul aktif = 1 subscription" perlu digeser jadi "per Data Usaha"
+(bukan dihapus).
 
 ## Ringkasan Riset (fakta kunci yang membentuk desain)
 
-### Batas device/sesi
-- **Tidak ada plugin bawaan Better Auth untuk "batasi N sesi per user."**
-  Plugin `multi-session` bawaan Better Auth itu untuk hal BEDA (ganti-ganti
-  akun dalam 1 browser, account-switcher ala Google) — bukan pembatasan
-  device per akun. Harus custom lewat `databaseHooks.session.create.before`
-  (`apps/api/src/lib/auth.ts`).
-- **Dikonfirmasi ADA** di versi Better Auth terpasang (`@better-auth/core@1.7.1`
-  — diverifikasi langsung ke file `.d.mts` instalasi,
-  `node_modules/.bun/@better-auth+core@1.7.1+.../dist/types/init-options.d.mts`
-  baris 1280-1293), MESKIPUN ada komentar di `apps/api/src/app.ts`
-  (~baris 103-111) yang salah mengklaim hook ini "tidak ada di versi ini."
-- **Bonus temuan (bug keamanan nyata, bukan hipotetis)**: karena
-  kesalahpahaman itu, guard akun `disabled` SAAT INI cuma jalan untuk
-  login password (`app.ts` intercept manual di route
-  `POST /api/auth/sign-in/email`) — **TIDAK jalan untuk login Google**.
-  Akun yang dinonaktifkan admin masih bisa dapat sesi via Google OAuth
-  hari ini. Ini WAJIB diperbaiki begitu fitur batas-device dikerjakan
-  (pakai hook yang sama, retire guard manual yang cuma cover 1 jalur).
-- Tabel `session` (`apps/api/src/db/schema/auth.schema.ts`) tidak punya
-  kolom identitas device asli (cuma `ipAddress`/`userAgent`) — "device"
-  realistisnya = "sesi login," bukan fingerprint perangkat fisik. 2
-  browser berbeda di 1 komputer yang sama = 2 "device" di mata sistem.
-  **Diterima sebagai batasan yang wajar** (keputusan user, sama seperti
-  kebanyakan SaaS — mis. Netflix).
-- `cookieCache` (`auth.ts`, `maxAge: 300`) berarti device yang di-evict
-  tetap bisa akses sampai 5 menit lewat cache, sebelum request
-  berikutnya kena cek ulang ke DB — known limitation, bukan bug.
+### Restrukturisasi navigasi per Data Usaha
+- **Sidebar sudah punya struktur grup** (`components/app-shell/sidebar.tsx`)
+  — `NavGroup = {label, items[]}`, tiap grup collapsible sendiri. Surface
+  `app` (customer) punya 3 grup: "Utama"/"Import Data"/"Langganan".
+  Filter modul (`navGroupsFor`) dan filter permission jalan terpisah,
+  lalu grup kosong di-drop otomatis. **Belum ada level ke-3** (grup di
+  dalam grup) — perlu ditambah untuk nesting "Modul" di dalam tampilan
+  yang sudah scoped ke 1 Data Usaha.
+- **Tidak ada elemen apa pun di paling bawah sidebar hari ini** selain
+  tombol ciutkan — link "Ganti Data Usaha" perlu disisipkan sebelum
+  tombol itu (dan versi mobile drawer, yang saat ini tidak punya elemen
+  bawah sama sekali, perlu ditambah dari nol).
+- **Tidak ada preseden "gerbang sebelum dashboard"** di kode manapun
+  (dicek eksplisit — tidak ada wizard/onboarding/checklist). TAPI pola
+  `redirect()` di Server Component (`apps/web/app/app/(protected)/layout.tsx`,
+  dipakai buat cek role login) adalah idiom yang PAS untuk gerbang baru
+  ini — tambah 1 kondisi lagi di file yang sama, pola sama persis.
+- **Tabrakan #1 (URUTAN)**: hari ini WAJIB "subscribe fitur dulu → baru
+  bisa connect Accurate" (`POST /accurate/connect` menolak kalau belum
+  ada subscription aktif, error `SUBSCRIPTION_NOT_FOUND`). Tidak ada
+  jalan bikin "Data Usaha" tanpa OAuth Accurate DAN tanpa subscription
+  aktif lebih dulu — kalau gerbang "pilih Data Usaha" dipasang di paling
+  awal (sebelum subscribe apa pun), ini membalik urutan yang sudah
+  tertanam di banyak tempat.
+- **Tabrakan #2 (TRIAL LEBIH BERAT)**: trial subscription hari ini
+  SENGAJA bisa dibuat TANPA koneksi Accurate sama sekali (`lib/trial.ts`
+  — tidak ada cek Accurate/Data Usaha di jalur trial). Kalau gerbang
+  "harus pilih/buat Data Usaha dulu" mengharuskan OAuth Accurate di
+  depan, funnel trial jadi jauh lebih berat dari sekarang (user baru mau
+  coba-coba dipaksa OAuth duluan).
+- **Resolusi kedua tabrakan (keputusan final, lihat § Keputusan Desain
+  #6)**: "Data Usaha" dibuat sebagai ENTITY LOKAL BARU (tabel sendiri,
+  cuma nama), TERPISAH dari `accurate_connections`. Tidak perlu OAuth
+  saat dibuat. OAuth terjadi belakangan (kapan pun — bisa langsung saat
+  dibuat kalau user mau, bisa nanti saat subscribe fitur pertama), dan
+  begitu terhubung, **PERMANEN 1:1** untuk Data Usaha itu — tidak pernah
+  ditanya ulang "connect ke Data Usaha mana" untuk fitur ke-2 dst di
+  Data Usaha yang sama.
+- **[TERJAWAB dari preseden kode sendiri, 2026-09-11 — sebelumnya sempat
+  ditandai "belum terjawab", TERNYATA sudah ada jawabannya]** Scope OAuth
+  Accurate saat connect: hari ini, scope di-derive dari `plan.modules`
+  SUBSCRIPTION SPESIFIK yang sedang di-connect (`accurate.route.ts`,
+  `target.plan.modules`, via `scopesForModules()` di `lib/accurate-scopes.ts`
+  yang SUDAH menerima ARRAY modul — bukan cuma 1). Pertanyaan "apakah
+  Accurate mendukung nambah scope ke koneksi yang sudah ada" **SUDAH
+  TERJAWAB EMPIRIS dari riwayat proyek sendiri**: `accurate-scopes.ts`
+  mencatat 4 kali kejadian nyata (Fase 04, 13, 78, 98) di mana modul
+  butuh scope baru setelah koneksi lama sudah ada — solusinya SELALU
+  sama: user diminta **"Hubungkan Ulang"** (`reconnect: true`, fitur
+  yang SUDAH ADA & SUDAH TERBUKTI di `accurate.route.ts`) — re-authorize
+  penuh (bukan top-up diam-diam, Accurate TIDAK mendukung itu), tapi
+  ini SUDAH mekanisme yang ada, bukan yang perlu dibangun baru.
+  **Resolusi untuk Data Usaha**: connect (kapan pun terjadi) minta scope
+  sesuai fitur yang SUDAH aktif saat itu (bisa 0 fitur = scope minimal/
+  cuma untuk pilih Data Usaha-nya Accurate); begitu fitur BARU
+  disubscribe di Data Usaha yang sama dan butuh scope belum dimiliki →
+  tawarkan "Hubungkan Ulang" (pola SAMA PERSIS 4 kejadian di atas,
+  `scopesForModules()` tinggal dipanggil dengan UNION semua fitur aktif
+  Data Usaha itu, bukan cuma 1 subscription). **TIDAK PERLU tanya/
+  verifikasi eksternal ke Accurate** — jawabannya sudah ada di kode &
+  riwayat proyek sendiri, tidak menghalangi mulai Fase B1.
+- **Istilah "Data Usaha" sudah jadi bahasa produk resmi** — dipakai
+  konsisten di `/app/accurate` ("Pilih Data Usaha", "Hubungkan Data
+  Usaha Baru", selalu digloss "(perusahaan)"). Tidak perlu istilah baru,
+  user tidak akan bingung dengan terminologi asing.
+- **UI "pilih Data Usaha yang sudah ada / hubungkan baru" SUDAH ADA
+  PERSIS** di `/app/accurate` (`SelectDatabaseCard`, radio list dari
+  `GET /accurate/connections`) — cuma scoped per-subscription, bukan
+  gerbang global. Tinggal diangkat/digeneralisasi, BUKAN dibangun dari
+  nol. Accurate sendiri TIDAK punya picker database di tengah alur OAuth
+  (dikonfirmasi di `architecture-accurate-integration.md`) — picker yang
+  ada murni buatan Facport sendiri (panggil `db-list.do`/`open-db.do`
+  setelah token didapat) — jadi gerbang baru ini tidak bentrok/duplikat
+  dengan apa pun yang di-host Accurate.
+- **Pengelompokan "Modul" (Pembelian/Penjualan/dst) SUDAH ADA**, di
+  `apps/web/lib/module-options.ts` — 5 grup: Penjualan, Pembelian, Buku
+  Besar, Data Master, Kas & Bank. **SUDAH DIKONFIRMASI cuma dipakai
+  kosmetik** (radio list form admin Paket), TIDAK PERNAH dipakai untuk
+  access control sejak ADR-0019 (yang justru MENGHAPUS grouping ini dari
+  gating, karena dulu grouping = unit akses, sekarang unit akses = per
+  sub-modul). **Menata ulang jadi layer navigasi di sidebar customer
+  TIDAK membuka lagi masalah ADR-0019** — selama ditegaskan di ADR baru
+  bahwa "Modul" di sini murni UI, bukan unit gating (unit gating tetap
+  di level Fitur/sub-modul, tidak berubah).
+- **Import batches** (`import_batches`) di-scope oleh `subscriptionId`,
+  BUKAN langsung oleh Data Usaha — perlu 2-hop join
+  (`subscriptionId`→`accurateConnectionId`) untuk filter "riwayat import
+  Data Usaha X", ATAU (lebih simpel) tinggal filter
+  `subscriptionId IN (subscription-subscription milik Data Usaha itu)`
+  begitu `subscriptions.dataUsahaId` ada (lihat skema). Tidak perlu
+  migrasi `import_batches` itu sendiri.
+- **Notifikasi & audit log TIDAK ADA konsep Data Usaha sama sekali**
+  (cuma `userId`) — direkomendasikan TETAP account-wide (lonceng
+  notifikasi tidak usah difilter per Data Usaha), jalur yang paling
+  minim perubahan dan tidak mengorbankan apa pun secara fungsional.
 
-### Multi-instance modul
-- **Titik penegakan "1 modul = 1 subscription" yang SEBENARNYA bukan di
-  guard checkout** (`subscriptions.route.ts` `DUPLICATE_MODULE_IN_CART`/
-  `MODULE_ALREADY_SUBSCRIBED`), **tapi di `admin/orders.route.ts`
-  `POST /:id/confirm`** (~baris 120-149) — kode ini UNCONDITIONALLY
-  membatalkan (cancel) subscription aktif LAIN yang modulnya sama,
-  setiap kali order baru dikonfirmasi. Sengaja ditulis 2026-09-07 untuk
-  fix bug production nyata (trial+asli sama-sama "active" bersamaan,
-  status UI jadi ambigu tergantung urutan array). Kalau cuma guard
-  checkout yang dilonggarkan tanpa menyentuh logic ini, instance ke-2
-  akan langsung membatalkan instance ke-1 saat admin konfirmasi bayar —
-  fitur multi-instance gagal total secara DIAM-DIAM (tanpa error), yang
-  paling berbahaya dari semua temuan riset ini.
-- 3 struktur data `Record<moduleKey, X>` di frontend akan rusak begitu 1
-  modul bisa >1 subscription aktif (data instance ke-2 menimpa/hilang
-  diam-diam, bukan error jelas): `apps/web/app/app/(protected)/layout.tsx`
-  `modulePlanNames`, `apps/web/app/app/(protected)/subscribe/page.tsx`
-  `activeModuleMap`, dan sidebar nav (`components/app-shell/sidebar.tsx`)
-  yang statis 1-entry-per-moduleKey.
-- **Lapisan Accurate/koneksi SUDAH siap multi-instance, TIDAK perlu
-  diubah**: `accurate_connections` (`apps/api/src/db/schema/accurate.schema.ts`)
-  sudah di-scope ke `userId` TANPA unique constraint (bisa banyak
-  koneksi per user — desain ADR-0020 "connection reusable lintas
-  subscription"), OAuth connect (`apps/api/src/routes/accurate.route.ts`)
-  sudah di-scope per-`subscriptionId` (bukan per-user, `state` OAuth
-  terikat `subscriptionId`), dan halaman `/accurate` SUDAH render 1
-  baris per subscription (bukan per modul) — sudah 100% kompatibel.
+### Batas device/sesi
+*(tidak berubah dari draf sebelumnya)*
+- Tidak ada plugin bawaan Better Auth untuk "batasi N sesi per user" —
+  custom lewat `databaseHooks.session.create.before`
+  (`apps/api/src/lib/auth.ts`), **dikonfirmasi ADA** di versi terpasang
+  (`@better-auth/core@1.7.1`, diverifikasi ke `.d.mts` instalasi),
+  meski ada komentar salah di `app.ts` (~baris 103-111) yang mengklaim
+  sebaliknya.
+- **Bonus temuan (bug keamanan nyata)**: karena kesalahpahaman itu,
+  guard akun `disabled` cuma jalan untuk login password, **TIDAK jalan
+  untuk login Google** — akan diperbaiki sekalian pakai hook yang sama.
+- "Device" = sesi login (bukan fingerprint fisik) — diterima sebagai
+  batasan wajar. `cookieCache` 5 menit = known limitation (evicted
+  device tetap jalan sampai 5 menit).
 
 ### User tambahan (seat)
-- **Tidak ada fondasi "team/organization/seat/member" apa pun** di
-  kode/skema (dicek eksplisit via grep menyeluruh, greenfield total).
-  Better Auth punya plugin `organization` bawaan (tidak dipakai project
-  ini) — org/member/invitation/team tables + alur invite siap pakai —
-  tapi didesain untuk multi-tenant umum, bukan spesifik "user utama +
-  user gratis menumpang." **Keputusan: bangun tabel custom minimal**,
-  bukan pakai plugin itu, supaya nyambung persis ke model "grant akses
-  per subscription instance spesifik" (lihat § Keputusan Desain #1).
-- Pola provisioning admin (`admin/staff.route.ts`, `admin/users.route.ts`)
-  + mekanisme job email (pg-boss `JOBS.SEND_EMAIL`, sudah ada, dipakai
-  verifikasi email & reset password Better Auth) adalah template
-  siap-pakai untuk alur invite: `auth.api.signUpEmail()` server-side,
-  paksa `emailVerified=true`, assign role via `userRoles`, email lewat
-  job queue — semua polanya sudah ada, tinggal direplikasi untuk invite
-  user tambahan.
-- RBAC (`apps/api/src/lib/permission.ts`) flat, cek `userRoles`→
-  `rolePermissions`→`permissions` — akun user tambahan WAJIB tetap dapat
-  role `customer` (bukan "sebagai pengganti" mekanisme grant, tapi
-  "selain itu") supaya semua permission check yang sudah ada tetap jalan.
+*(tidak berubah dari draf sebelumnya, TAPI model grant jadi lebih
+intuitif berkat Data Usaha — lihat § Keputusan Desain #4 revisi)*
+- Tidak ada fondasi "team/organization/seat/member" apa pun di
+  kode/skema (greenfield total). Better Auth punya plugin `organization`
+  bawaan (tidak dipakai) — **keputusan: bangun tabel custom minimal**.
+- Pola provisioning admin + job email (pg-boss `JOBS.SEND_EMAIL`) adalah
+  template siap-pakai untuk alur invite.
+- RBAC flat — akun user tambahan WAJIB tetap dapat role `customer`
+  (selain mekanisme grant, bukan gantinya).
 
 ## Keputusan Desain
 
 | # | Keputusan | Pilihan Final & Alasan |
 |---|---|---|
-| 1 | Fondasi hubungan user utama ↔ user tambahan | **Tabel custom minimal baru**, bukan plugin Organization Better Auth — supaya nyambung persis ke grant per-subscription-instance (poin 4), tanpa bawa kompleksitas multi-tenant umum yang tidak dibutuhkan. |
-| 2 | Definisi "device" | **Sesi login**, bukan fingerprint perangkat fisik. Diterima sebagai batasan wajar. |
-| 3 | Cara beli user tambahan | **Input jumlah sekaligus (quantity) di UI** — TAPI di backend diimplementasikan sebagai N baris terpisah (pola "1 row = 1 unit" yang SUDAH dipakai semua invoice/subscription saat ini), BUKAN kolom `quantity` baru di skema. Tiap seat butuh row/id sendiri sebagai target FK (supaya bisa di-revoke satu per satu) — kolom quantity di level plan/invoice tidak menghilangkan kebutuhan "expand jadi N row," cuma memindah kerjanya ke tempat lebih rawan (downstream). Keterbacaan invoice/PDF ("5x Tambahan User @ Rp20.000") diselesaikan di RENDER TIME (kelompokkan baris identik saat tampil), bukan di skema. |
-| 4 | Cakupan akses user tambahan | **Granular per subscription instance** — user utama pilih persis subscription MANA (bukan cuma "modul mana") yang boleh diakses tiap user tambahan. |
-| 5 | Alur "beli modul yang sama lagi" — perpanjang vs instance baru | **Restrukturisasi UI, TIDAK PERNAH menebak dari kesamaan plan** (menghindari pola bug 2026-09-07 terulang). Tiap modul di halaman Subscribe menampilkan: (a) kartu untuk TIAP subscription aktif yang sudah ada, masing-masing dengan tombol **"Perpanjang/Ganti Paket"** sendiri (update baris subscription YANG SAMA di tempat — `endAt`/`planId` diganti, `id` TETAP SAMA, supaya koneksi Accurate & grant user tambahan yang sudah ada tidak putus), DAN (b) tombol terpisah **"+ Tambah Langganan Baru"** di katalog yang SELALU membuat instance baru. Dua aksi ini selalu tersedia terpisah secara visual — user tidak pernah ditanya/menebak. |
+| 6 | **[BARU]** Cara "Data Usaha" dibuat & terhubung ke Accurate | **Entity lokal ringan dulu** (tabel baru `data_usaha` — cuma nama, TANPA OAuth), OAuth Accurate terjadi BELAKANGAN — bisa langsung saat dibuat (tombol "Hubungkan ke Accurate sekarang", untuk user yang sudah siap) ATAU dilewati dulu (tombol "Lewati, coba-coba dulu", untuk trial/eksplorasi). **Begitu terhubung (kapan pun), 1:1 PERMANEN** — Data Usaha itu tidak akan pernah menampilkan picker Accurate lagi untuk fitur berikutnya. Ini menjaga alur trial & subscribe yang sudah ada (tidak dipaksa OAuth di depan), SEKALIGUS mencegah "harus pilih Data Usaha berulang-ulang" yang bikin bingung — dipilih persis karena user friendly untuk 2 tipe user (yang serius langsung connect, yang mau coba-coba dulu). |
+| 7 | **[BARU]** Hierarki navigasi | **Data Usaha → Modul (grup UI, reuse `module-options.ts` yang sudah ada) → Fitur (sub-modul, unit billing/gating TIDAK berubah)**. "Modul" murni pengelompokan tampilan sidebar, BUKAN unit akses baru — ditegaskan eksplisit di ADR final nanti supaya tidak membuka lagi ambiguitas yang sudah diperbaiki ADR-0019. **Klarifikasi status saat ini (dijawab 2026-09-11, user bertanya langsung)**: "Modul" HARI INI BUKAN struktur database sama sekali — cuma konstanta hardcode di `apps/web/lib/module-options.ts` (`MODULE_OPTIONS`/`MODULE_GROUPS`, murni TypeScript, tidak ada tabel `modules` di DB, `plans.modules` cuma simpan key Fitur mentah tanpa referensi ke apa pun). **AMAN diformalkan jadi tabel database sungguhan kapan pun** — karena grouping ini sejak ADR-0019 sudah dikonfirmasi TIDAK PERNAH dipakai untuk gating (gating selalu di level Fitur), jadi memindahkannya ke DB murni soal penyimpanan data, TIDAK menyentuh perilaku akses apa pun yang sudah berjalan. Pemetaan Fitur→Modul juga sudah stabil & diketahui (7 Fitur, 5 grup) — kalau nanti diformalkan, itu migrasi seed data deterministik (BUKAN migrasi berisiko/tebak-tebakan seperti Data Usaha di Fase B0). Keputusan APAKAH mau diformalkan sekarang (bikin tabel `modules` sungguhan, biar admin bisa atur grup tanpa deploy kode) atau tetap pakai konstanta frontend (lebih simpel, cukup untuk kebutuhan saat ini) — BELUM diputuskan, aman ditunda sampai Fase B2 benar-benar dieksekusi, tidak mendesak. |
+| 8 | **[BARU]** Gerbang "Pilih Data Usaha" | Ditambahkan sebagai kondisi baru di `apps/web/app/app/(protected)/layout.tsx` (pola SAMA PERSIS `redirect("/login")` yang sudah ada untuk cek role) — belum ada Data Usaha terpilih → redirect ke halaman pilih/buat. Link "Ganti Data Usaha" baru di paling bawah sidebar (sebelum tombol ciutkan), juga di mobile drawer. |
+| 1 | Fondasi hubungan user utama ↔ user tambahan | Tabel custom minimal baru, bukan plugin Organization Better Auth. |
+| 2 | Definisi "device" | Sesi login, bukan fingerprint perangkat fisik. |
+| 3 | Cara beli user tambahan | Input jumlah sekaligus (quantity) di UI — backend tetap N baris terpisah (pola "1 row = 1 unit"), keterbacaan invoice diselesaikan di render time. |
+| 4 | Cakupan akses user tambahan | **DIKONFIRMASI CLIENT (2026-09-11), lebih sederhana dari draf sebelumnya**: 1 seat = akses PERMANEN ke 1 Data Usaha SAJA (bukan per-Fitur di dalamnya) — begitu di-grant, otomatis dapat SEMUA fitur yang aktif di Data Usaha itu, ikut naik/turun kalau fitur di Data Usaha itu berubah. Kata client sendiri: *"facport menjual jumlah slot akses ke suatu DATABASE"* — unit jualannya Data Usaha, bukan Fitur. Ini menghapus kebutuhan tabel `member_module_grants` yang tadinya direncanakan — cukup 1 kolom `dataUsahaId` yang DIKUNCI di `member_seats` sejak dibeli (lihat § Skema Database). TIDAK BISA dipindah ke Data Usaha lain — kalau mau kasih akses ke Data Usaha lain juga, itu PEMBELIAN SEAT BARU, terpisah, biaya terpisah. |
+| 5 | Alur "perpanjang vs beli baru" untuk modul yang sama | **Dipersempit cakupannya** berkat Data Usaha: kasus "2 instance modul sama dalam 1 Data Usaha" jadi jarang/tidak perlu (kalau butuh 2 Purchase Invoice, biasanya karena 2 Data Usaha, sudah otomatis terpisah). Yang masih perlu: aksi "Perpanjang/Ganti Paket" EKSPLISIT (update row yang sama di tempat, `id` tetap) untuk kasus renewal/upgrade tier DALAM Data Usaha yang sama, terpisah dari katalog "+ Tambah Langganan" — prinsip "tidak pernah menebak" tetap dipegang. |
+| 9 | **[BARU, DIKONFIRMASI CLIENT]** Reassign slot seat (ganti orang yang menempati) | User tambahan yang resign/diganti BISA di-swap oleh user utama (revoke Iwan → slot balik `available` → invite Ahmad ke slot yang SAMA). **Durasi slot melekat ke SLOT, bukan ke orangnya** — Ahmad melanjutkan sisa waktu berlangganan yang tersisa, BUKAN dapat masa aktif baru dari nol. Ini sudah sesuai desain `member_seats` yang sudah ada (status `available`→`invited`→`active`, `seatSubscriptionId` tetap sama), tidak perlu tabel/kolom baru. |
+| 10 | **[BARU, DIKONFIRMASI CLIENT + diperluas]** Transfer kepemilikan Data Usaha ("Super User") | User utama (pemilik) bisa transfer HAK KELOLA seluruh akun Facport-nya (semua Data Usaha miliknya) ke orang lain — skenario: pemilik lama resign, digantikan orang baru. Didesain sebagai **pointer kepemilikan yang bisa dipindah** (`dataUsaha.userId`), TERPISAH dari riwayat pembayaran (`subscriptions.userId`/`invoices.userId` TETAP tercatat atas nama pembeli asli). **2 jalur**: (a) **self-service** oleh customer — WAJIB konfirmasi 2 langkah (pemilik lama ajukan → calon pemilik baru terima eksplisit), TIDAK BOLEH 1 klik unilateral; (b) **[BARU, diminta user 2026-09-11]** **dibantu admin Facport** lewat menu admin (mis. di halaman detail user, `admin/users/[id]`) — admin bisa langsung eksekusi transfer TANPA proses 2-langkah via email (admin sudah terverifikasi lewat channel support sendiri, mis. tiket/WA), untuk kasus customer kesulitan pakai alur self-service. Jalur admin WAJIB: permission terpisah (bukan `users.manage` biasa — pola sama `subscriptions.manage` yang sudah dipisah dari `users.manage` untuk cegah eskalasi privilege tidak sengaja), tercatat di `auditLogs` dengan jelas (siapa admin yang eksekusi, dari→ke siapa), dan kirim notifikasi email ke KEDUA pihak (pemilik lama & baru) supaya transparan meski admin yang mengeksekusi — mencegah kejutan/dispute di kemudian hari kalau ternyata bukan permintaan pemilik asli. |
 
 ## Skema Database (diusulkan)
 
-### Batas device — tidak ada tabel baru
-1 setting baru di tabel `settings` yang sudah ada:
-`security.maxDevicesPerUser` (group `"security"`, integer, default 1,
-validasi range 1–10, pola sama persis `IMPORT_RETENTION_SETTING_KEY`
-yang sudah ada di `settings.route.ts`).
-
-### Multi-instance modul — tidak ada tabel baru
-`subscriptions` tidak berubah strukturnya — "perpanjang di tempat" cukup
-`UPDATE subscriptions SET planId=?, endAt=? WHERE id=?`. Perubahan murni
-di LOGIC (`admin/orders.route.ts` confirm), bukan skema.
-
-### User tambahan (seat) — 2 tabel baru + 1 kolom baru
+### Data Usaha — 1 tabel baru + 1 kolom baru
 ```ts
-// plans — tambah 1 kolom, default aman untuk row lama
-kind: varchar("kind", { length: 20 }).notNull().default("module"),
-// "module" | "seat_addon" — migrasi: semua row lama otomatis "module",
-// tidak ada perubahan perilaku untuk plan yang sudah ada.
+// data_usaha — entity BARU, TERPISAH dari accurate_connections (yang tetap
+// menyimpan token OAuth). 1 Data Usaha = 1 "workspace" yang dipilih user
+// setelah login, opsional terhubung ke 1 accurate_connections permanen.
+export const dataUsaha = pgTable("data_usaha", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull().references(() => user.id),
+  // § Keputusan #10 — INI POINTER KEPEMILIKAN YANG BISA DIPINDAH (transfer
+  // "super user"), BUKAN sekadar "siapa yang bikin dulu". Hak kelola
+  // (tambah fitur, kelola user tambahan) SELALU ikut nilai kolom ini SAAT
+  // DICEK, bukan siapa yang mengisi saat Data Usaha ini pertama dibuat.
+  // Riwayat pembayaran (subscriptions.userId/invoices.userId) SENGAJA
+  // TIDAK ikut berubah saat transfer — itu catatan akuntansi historis.
+  // User tambahan TIDAK punya baris ini sendiri, mereka akses lewat
+  // `member_seats.dataUsahaId` (lihat di bawah).
+  name: varchar("name", { length: 200 }).notNull(),
+  // nama bebas user, mis. "PT Maju Jaya" — TIDAK harus sama dengan
+  // accurateDbAlias (yang baru terisi begitu benar-benar connect)
+  accurateConnectionId: uuid("accurate_connection_id").unique()
+    .references(() => accurateConnections.id),
+  // NULLABLE — diisi begitu Data Usaha ini terhubung ke Accurate (kapan
+  // pun terjadi). UNIQUE — 1 Data Usaha lokal = maksimal 1 koneksi
+  // Accurate permanen, tidak pernah ganti-ganti diam-diam.
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
 
-// member_seats — 1 row = 1 slot user tambahan yang sudah dibeli
+// subscriptions — tambah 1 kolom
+dataUsahaId: uuid("data_usaha_id").notNull().references(() => dataUsaha.id),
+// diisi SAAT CHECKOUT (user sedang berada di dalam konteks 1 Data Usaha
+// ketika subscribe) — bukan lewat accurateConnectionId (yang bisa masih
+// kosong kalau belum connect). Ini yang bikin scoping "1 modul aktif per
+// Data Usaha" (bukan per akun) bisa dicek LANGSUNG tanpa join ke Accurate.
+```
+
+**Migrasi data lama (perhatian khusus, BUKAN sekadar tambah kolom
+kosong)**: user yang sudah py subscription+koneksi Accurate sebelum
+fitur ini ada WAJIB dapat backfill — buat 1 `data_usaha` row per
+`accurate_connections` unik yang mereka punya (pakai `accurateDbAlias`
+jadi `name` awal), lalu isi `subscriptions.dataUsahaId` masing-masing
+berdasarkan `accurateConnectionId` yang sudah ada. Subscription yang
+BELUM pernah connect Accurate (trial murni, atau baru checkout belum
+sempat connect) perlu 1 "Data Usaha Utama" default per user supaya
+`dataUsahaId` tetap NOT NULL. Ini bagian paling berisiko dari seluruh
+rencana — WAJIB jadi fase tersendiri dengan dry-run di data produksi
+sebelum di-apply, bukan disatukan diam-diam dengan fase lain.
+
+### Batas device — tidak ada tabel baru
+1 setting baru: `security.maxDevicesPerUser` (pola sama
+`IMPORT_RETENTION_SETTING_KEY`).
+
+### User tambahan (seat) — 1 tabel baru + 1 kolom baru di `plans`
+*(disederhanakan setelah konfirmasi client 2026-09-11 — tabel
+`member_module_grants` yang tadinya direncanakan TIDAK JADI dibuat,
+karena cakupan akses ternyata per-Data-Usaha, bukan per-Fitur)*
+```ts
+// plans — tambah 1 kolom (SAMA seperti draf sebelumnya)
+kind: varchar("kind", { length: 20 }).notNull().default("module"),
+// "module" | "seat_addon"
+
+// member_seats — 1 row = 1 slot user tambahan yang sudah dibeli,
+// TERKUNCI ke 1 Data Usaha sejak dibeli (§ Keputusan #4/#9)
 export const memberSeats = pgTable("member_seats", {
   id: uuid("id").defaultRandom().primaryKey(),
   primaryUserId: text("primary_user_id").notNull().references(() => user.id),
-  // user utama, pemilik & pembayar
+  // user utama yang beli/mengelola slot ini
+  dataUsahaId: uuid("data_usaha_id").notNull().references(() => dataUsaha.id),
+  // § DIKUNCI SAAT DIBUAT (checkout), TIDAK PERNAH diubah setelahnya —
+  // ini yang menegakkan "tidak bisa dipindah ke Data Usaha lain" (Keputusan
+  // #4). Akses = SEMUA fitur yang aktif di Data Usaha ini, otomatis ikut
+  // berubah kalau fitur di Data Usaha ini berubah — TIDAK perlu tabel
+  // grant terpisah per-Fitur.
   seatSubscriptionId: uuid("seat_subscription_id").notNull().unique()
     .references(() => subscriptions.id),
-  // 1:1 dgn 1 subscription "seat_addon" yang sudah aktif — expiry/lifecycle
-  // slot ini otomatis ikut expiry subscription ini, TIDAK perlu job
-  // cleanup terpisah.
+  // 1:1 dgn 1 subscription "seat_addon" — durasi/expiry slot ikut baris
+  // ini, BUKAN ikut siapa yang menempati (§ Keputusan #9 — reassign
+  // Iwan→Ahmad melanjutkan sisa waktu, bukan mulai dari nol).
   memberUserId: text("member_user_id").references(() => user.id),
   // diisi setelah invite di-accept. SENGAJA TIDAK unique — 1 orang boleh
-  // jadi user tambahan di BANYAK user utama berbeda (skenario nyata:
-  // akuntan yang pegang beberapa klien berbeda).
+  // menempati BANYAK slot (di Data Usaha berbeda, bahkan di bawah user
+  // utama berbeda — skenario nyata: akuntan yang pegang beberapa klien).
   invitedEmail: varchar("invited_email", { length: 255 }),
   inviteTokenHash: text("invite_token_hash"),
   inviteTokenExpiresAt: timestamp("invite_token_expires_at", { withTimezone: true }),
   status: varchar("status", { length: 20 }).notNull().default("available"),
-  // available | invited | active | revoked
+  // available (slot kosong, siap diisi/di-reassign) | invited | active | revoked
   invitedAt: timestamp("invited_at", { withTimezone: true }),
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
@@ -179,136 +299,244 @@ export const memberSeats = pgTable("member_seats", {
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
-
-// member_module_grants — subscription SPESIFIK mana yang di-grant ke slot mana
-export const memberModuleGrants = pgTable("member_module_grants", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  memberSeatId: uuid("member_seat_id").notNull().references(() => memberSeats.id),
-  subscriptionId: uuid("subscription_id").notNull().references(() => subscriptions.id),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-}, (t) => [unique().on(t.memberSeatId, t.subscriptionId)]);
 ```
+
+**Transfer kepemilikan Data Usaha (§ Keputusan #10)** — tidak perlu
+tabel baru untuk transfer itu sendiri, cukup:
+- Endpoint `POST /me/data-usaha/:id/transfer-ownership` — pemilik saat
+  ini (`dataUsaha.userId`) ajukan transfer ke email calon pemilik baru
+  (harus sudah/akan punya akun Facport, alur mirip invite seat: kalau
+  belum terdaftar, daftar dulu).
+  Simpan sebagai token pending (pola sama `inviteTokenHash`/`Expires`,
+  bisa reuse kolom yang sama di tabel `dataUsaha` atau tabel kecil
+  terpisah `data_usaha_ownership_transfers` kalau mau riwayat lengkap —
+  detail final ditentukan saat eksekusi Fase C).
+- Endpoint `POST /transfer-ownership/:token/accept` (calon pemilik baru,
+  WAJIB login dulu) — baru setelah diterima, `dataUsaha.userId` di-update.
+  TIDAK ADA jalur 1-klik langsung ubah tanpa persetujuan pihak baru.
+- Efek: hak kelola SEMUA aspek Data Usaha itu (tambah fitur, kelola user
+  tambahan, dst) ikut pemilik baru sejak saat itu. Riwayat invoice/
+  subscription LAMA tetap atas nama pemilik lama (tidak ditulis ulang).
+- **Jalur admin (§ Keputusan #10, diminta user 2026-09-11)**: endpoint
+  terpisah `POST /admin/data-usaha/:id/transfer-ownership` (body: email
+  atau userId calon pemilik baru) — permission BARU (mis.
+  `data-usaha.transfer-ownership`, TERPISAH dari `users.manage`, pola
+  sama pemisahan `subscriptions.manage`). Langsung eksekusi (`dataUsaha.userId`
+  di-update seketika, TANPA token/accept-flow — admin dianggap sudah
+  verifikasi identitas & persetujuan lewat channel support-nya sendiri
+  di luar sistem). WAJIB: insert `auditLogs` (actorId = admin, detail
+  from→to userId), kirim email notifikasi ke pemilik LAMA dan BARU
+  (transparansi, supaya tidak ada yang kaget/dispute belakangan kalau
+  ternyata bukan benar-benar permintaan pemilik asli). UI natural di
+  `admin/users/[id]` (halaman detail user yang sudah ada) — tambah
+  section "Data Usaha yang Dimiliki" dengan aksi "Pindahkan Kepemilikan".
+- **[GAP ditemukan saat audit final, 2026-09-11] Transfer SELURUH akun,
+  bukan cuma 1 Data Usaha**: ilustrasi client (Budi→Alex) menyiratkan
+  ambil-alih SEMUA Data Usaha milik Budi sekaligus ("Alex punya akses
+  yang sama dengan Budi"), TAPI desain endpoint di atas cuma operasi 1
+  Data Usaha (`:id`). Kalau pemilik punya banyak Data Usaha, transfer
+  satu-satu jadi kontradiksi dengan tujuan "self-service, kurangi
+  ribet." **Perlu ditambah 1 aksi lagi**: `POST /me/data-usaha/transfer-all-ownership`
+  (dan versi admin-nya) — pindahkan SEMUA Data Usaha milik pemilik saat
+  ini ke pemilik baru dalam 1 transaksi/konfirmasi, TETAP sediakan opsi
+  per-1-Data-Usaha untuk kasus "cuma mau lepas 1 bisnis tertentu, bukan
+  seluruh akun."
+- **[GAP ditemukan saat audit final] Visibilitas riwayat tagihan ikut
+  kepemilikan SAAT INI, bukan `invoices.userId` historis**: setelah Alex
+  ambil-alih Data Usaha A dari Budi, Alex WAJAR bisa lihat riwayat
+  invoice LAMA Data Usaha itu (dia yang sekarang pegang bisnisnya) —
+  meski secara data invoice-invoice lama itu tetap tercatat
+  `userId = Budi` (tidak ditulis ulang, § Keputusan #10). Ini berarti
+  `GET /me/invoices` (halaman Tagihan) perlu logic TAMBAHAN: bukan cuma
+  `WHERE invoices.userId = session.user.id`, tapi UNION dengan invoice
+  yang subscription-nya ada di bawah Data Usaha yang SAAT INI dimiliki
+  `session.user.id` (pola query sama dengan pivot gating di Fase B1) —
+  belum tertulis di rencana manapun sebelum ini, WAJIB masuk scope Fase C.
 
 ## Rencana Fase (kalau/ketika dilanjutkan — urutan wajib)
 
 ### Fase A — Batasi Device/Sesi per User (independen, bisa duluan)
-- Setting `security.maxDevicesPerUser` + kartu "Keamanan" di Admin Settings.
-- `databaseHooks.session.create.before` di `auth.ts`: hitung sesi aktif
-  user, evict yang paling lama kalau sudah di batas; SEKALIGUS cek
-  `user.disabled` di sini (perbaiki gap Google-login, retire guard
-  manual di `app.ts`).
-- Known limitation yang didokumentasikan (bukan dikerjakan): evicted
-  device tetap jalan ≤5 menit karena `cookieCache`; tidak ada halaman
-  "device saya" self-service di v1 (pola scope-cut yang sama seperti
-  Fase 22 sebelumnya).
-- Hal yang WAJIB divalidasi di awal eksekusi: konfirmasi langsung hook
-  ini benar-benar terpanggil di runtime (bukan cuma ada di type
-  declaration) — quick spike sebelum commit ke pendekatan ini.
+Tidak berubah dari draf sebelumnya — setting + `databaseHooks.session.create.before`
++ perbaikan gap Google-login sekalian.
 
-### Fase B1 — Backend: Multi-Instance Subscription per Modul
-- Longgarkan `DUPLICATE_MODULE_IN_CART`/`MODULE_ALREADY_SUBSCRIBED`.
-- **Persempit** logic cancel-otomatis di `admin/orders.route.ts` confirm
-  — HANYA supersede trial, TIDAK LAGI supersede subscription asli lain
-  di modul yang sama.
-- Endpoint baru "Perpanjang/Ganti Paket" — UPDATE row yang SAMA (`id`
-  tidak berubah), terpisah dari jalur checkout beli-baru.
-- `subscription-gate.ts` `moduleAccess`: tambah disambiguasi
-  `subscriptionId` untuk route yang butuh pilih instance mana.
-  `getActiveSubscriptionsWithPlans` TIDAK berubah (tetap primary-only).
+### Fase B0 — Migrasi Data Usaha (WAJIB paling hati-hati, sebelum kode apa pun)
+- Buat tabel `data_usaha`, kolom `subscriptions.dataUsahaId`.
+- Skrip backfill (dry-run dulu di data produksi, direview manual sebelum
+  apply) sesuai § Skema Database di atas.
+- **Verifikasi WAJIB**: tidak ada subscription yang "kehilangan" Data
+  Usaha setelah backfill; tidak ada Data Usaha ganda tak sengaja untuk
+  koneksi Accurate yang sama.
 
-### Fase B2 — Frontend: UI Multi-Instance
-- `layout.tsx`: reshape `subscriptionModules`/`modulePlanNames` jadi
-  array `{subscriptionId, moduleKey, label}` (label pakai
-  `accurateDbAlias` kalau sudah connect).
-- Sidebar nav dinamis per subscription aktif.
-- `subscribe/page.tsx`: kartu per-instance-aktif ("Perpanjang/Ganti
-  Paket") + katalog "+ Tambah Langganan Baru" terpisah (Keputusan #5).
-- 7 import page: terima/pakai `subscriptionId` eksplisit.
+### Fase B1 — Backend: Gerbang & Scoping per Data Usaha
+- Endpoint baru: `GET/POST /me/data-usaha` (list, create — cuma nama,
+  tanpa OAuth), `POST /me/data-usaha/:id/connect` (trigger OAuth,
+  reuse alur `accurate.route.ts` yang sudah ada, hasilnya diikat ke
+  `dataUsaha.accurateConnectionId`).
+- `subscriptions.route.ts` checkout: WAJIB `dataUsahaId` di body,
+  guard `MODULE_ALREADY_SUBSCRIBED` di-scope ulang jadi **per Data
+  Usaha** (bukan per akun) — perubahan lebih kecil & lebih aman dari
+  draf sebelumnya (dulu diusulkan "hapus guard total", sekarang cukup
+  "tambah filter `dataUsahaId`").
+- `admin/orders.route.ts` confirm-time cancel-logic: scope yang sama
+  (per Data Usaha, bukan per akun) — trial-supersede tetap jalan seperti
+  sekarang (trial ditutup begitu beli asli, tidak berubah).
+- `subscription-gate.ts`: tambah `dataUsahaId` sebagai bagian resolusi
+  akses (subscription harus match `dataUsahaId` yang sedang aktif di
+  sesi/context request, BUKAN cuma `moduleKey`).
+- **Penyesuaian penting (imbas Keputusan #10, transfer kepemilikan)**:
+  cek akses "user ini pemilik Data Usaha ini?" HARUS lewat
+  `dataUsaha.userId` SAAT INI (bisa sudah pindah tangan), BUKAN lewat
+  `subscriptions.userId` (nilai historis, siapa yang dulu beli). Titik
+  cek berubah dari "apakah `subscriptions.userId` = aku" jadi "apakah
+  `dataUsaha.userId` (punya subscription ini) = aku." Perubahan kecil di
+  query tapi konsekuensinya besar — kalau salah pasang, transfer
+  kepemilikan tidak akan benar-benar memindahkan hak kelola.
 
-### Fase C — User Tambahan (Seat) + Invite + Akses Granular
-*Bergantung PENUH pada B1+B2 — grant per-instance tidak masuk akal
-tanpa multi-instance jalan end-to-end.*
-- Migrasi skema (`plans.kind`, `member_seats`, `member_module_grants`).
-- Field `kind` di form admin Paket. Checkout beli N seat = N `planId`
-  sama diulang di array `planIds` (quantity UI meng-generate ini).
-- Aktivasi seat_addon subscription → auto-create `member_seats` row
-  `available` (hook di titik subscription lain jadi aktif).
-- Endpoint customer-facing baru (kemungkinan `routes/team.route.ts`):
-  `GET /me/team`, `POST /me/team/invite`, `.../resend`, `.../revoke`
-  (WAJIB juga evict sesi aktif user tambahan — reuse primitive Fase A),
-  `PUT /me/team/:seatId/grants`.
-- Endpoint publik `GET/POST /invites/:token` (tanpa auth): validasi
-  hash+expiry, buat akun (`auth.api.signUpEmail()`), **WAJIB** assign
-  role `customer` juga (bukan gantinya), link `memberUserId`, status
-  → `active`. Google-login: cek `member_seats` pending dgn
-  `invitedEmail` cocok di `databaseHooks.user.create.after` cabang OAuth.
-- Cek `apps/api/src/lib/rate-limit.ts` — terapkan pola sama ke
-  `/invites/:token` (endpoint publik sensitif).
-- `subscription-gate.ts` rewrite jadi **UNION** (bukan if/else): fetch
-  subscription primary-owned DAN grant-derived (join flat, bukan loop
-  per-grant), gabungkan sebelum matching. 1 akun BISA jadi primary
-  sekaligus user tambahan di tempat lain — tidak boleh eksklusif.
-- Guard defensif tambahan: checkout, trial, `/accurate/connect`,
-  `/accurate/reuse` — tolak (403) eksplisit kalau pemanggil punya
-  `member_seats` aktif (user tambahan tidak pernah masuk alur
-  billing/koneksi Accurate).
-- Invoice/PDF: kelompokkan baris item identik jadi 1 baris tampilan
-  ("5x Tambahan User @ Rp20.000 = Rp100.000") — render-time saja, data
-  mentah tetap N baris.
-- UI: halaman "Kelola Tim" (list seat, invite form, checkbox grant per
-  subscription, tombol revoke), halaman publik `/invite/[token]`,
-  sidebar menyembunyikan Subscribe/Billing/Kelola-Tim untuk akun
-  bertipe user tambahan.
-- Keputusan yang didokumentasikan (bukan gap): tidak ada grace period
-  saat seat_addon expired (konsisten cara modul expired sekarang); job
-  import yang sedang berjalan saat revoke dibiarkan selesai.
-- Notifikasi expiring-soon: varian copy khusus seat_addon (beda dari
-  notifikasi expiry modul).
+### Fase B2 — Frontend: Gerbang & Sidebar Bertingkat
+- Halaman baru "Pilih Data Usaha" (`/app/pilih-usaha` atau serupa) —
+  list Data Usaha milik user (reuse `GET /me/data-usaha`), tombol "Buat
+  Data Usaha Baru", tiap card ada status terhubung/belum ke Accurate.
+- `layout.tsx`: tambah kondisi redirect (pola sama cek role) — belum
+  ada Data Usaha terpilih (baca dari cookie/session baru) → redirect ke
+  halaman di atas.
+- Sidebar: nesting baru Modul (grup UI) di dalam tampilan yang sudah
+  scoped ke 1 Data Usaha; link "Ganti Data Usaha" di paling bawah
+  (desktop + mobile drawer).
+- `subscribe/page.tsx`: scoped ke Data Usaha yang sedang aktif; badge
+  "Sedang Aktif"/aksi "Perpanjang/Ganti Paket" per Keputusan #5.
+- 7 halaman import: tidak perlu tahu `dataUsahaId` eksplisit lagi (sudah
+  implisit dari context Data Usaha yang aktif di sesi).
 
-### Fase D — Polish (opsional, setelah A–C stabil)
-- Admin: kolom "Anggota dari: X" di halaman Pengguna.
-- Audit log UI untuk histori invite/revoke/grant-change.
-- ADR resmi untuk model seat (menutup catatan ADR-0008), update
-  `architecture-subscription.md` & `architecture-auth.md` dengan hasil
-  final (dokumen ini akan digantikan/di-supersede oleh ADR + update
-  dokumen arsitektur yang sudah ada, bukan dipertahankan selamanya
-  sebagai dokumen terpisah).
+### Fase C — User Tambahan (Seat) per Data Usaha + Invite + Transfer Kepemilikan
+Bergantung penuh pada B0+B1+B2. Scope final (sudah disederhanakan +
+ditambah 1 kebutuhan baru setelah konfirmasi client 2026-09-11):
+- Schema `plans.kind` + `member_seats` (dengan `dataUsahaId` terkunci,
+  TANPA `member_module_grants` — lihat § Skema Database, Keputusan #4).
+- Alur invite (2 jalur penerimaan, lihat di bawah).
+- Reassign slot (Keputusan #9) — revoke + invite ulang ke slot yang sama.
+- **Transfer kepemilikan Data Usaha** (Keputusan #10) — fitur BARU,
+  tidak ada di draf awal mana pun, WAJIB masuk scope Fase C karena
+  sama-sama soal "siapa yang berhak kelola" — lihat detail endpoint di
+  § Skema Database.
+- `subscription-gate.ts`: union primary-owned (via `dataUsaha.userId`
+  SAAT INI, bukan `subscriptions.userId` historis — lihat penyesuaian
+  Fase B1) + grant-derived (member_seats aktif).
+
+**Penyempurnaan alur invite (hasil validasi ilustrasi user, 2026-09-11)
+— penerimaan undangan lewat 2 jalur, bukan cuma 1**:
+- **Jalur A (utama)**: klik link di email undangan (`/invite/:token`) →
+  kalau email BELUM terdaftar → form daftar (password atau tombol
+  Google) → otomatis diterima setelah akun dibuat. Kalau email SUDAH
+  terdaftar → link ini WAJIB deteksi ini dan arahkan ke halaman login
+  (BUKAN coba bikin akun baru/dobel) → setelah login, lanjut ke
+  penerimaan otomatis.
+- **Jalur B (cadangan/robustness, BARU)**: kalau orang yang diundang
+  login normal (tanpa lewat link email — mis. email hilang/link
+  kedaluwarsa, atau dia login dari rute lain), sistem tetap HARUS
+  mendeteksi ada `member_seats` pending dengan `invitedEmail` cocok ke
+  email akun yang login, lalu tampilkan **notifikasi besar** (banner
+  mencolok, BUKAN cuma item kecil di dropdown lonceng) — "Anda diundang
+  ke Data Usaha X, klik untuk terima." Klik = aksi terima eksplisit
+  (sama seperti klik link, keduanya berujung ke endpoint accept yang
+  sama). Ini bikin penerimaan undangan TIDAK 100% bergantung ke link
+  email yang bisa hilang/kedaluwarsa — Data Usaha yang di-invite-kan
+  "otomatis muncul" begitu orangnya login, sesuai yang diminta user.
+- Entry point beli seat: dipicu dari dalam halaman 1 Data Usaha ("Tambah
+  User" di context Data Usaha yang sedang aktif) — sejak Keputusan #4
+  dikonfirmasi PERMANEN (bukan cuma default awal), entry point ini SAMA
+  DENGAN cakupan aslinya, tidak ada ambiguitas lagi.
+- Setelah pembayaran seat disetujui admin, tawarkan LANGSUNG isi
+  nama+email undangan (form muncul begitu approve, bukan cuma
+  dokumentasikan slot kosong lalu tunggu user buka halaman Kelola Tim
+  lain waktu) — opsi "isi nanti saja" tetap ada untuk yang belum tahu
+  siapa yang mau diundang.
+- Halaman "Kelola Tim" per Data Usaha juga jadi tempat: reassign slot
+  (revoke lalu invite ulang ke slot yang sama, § Keputusan #9), dan
+  (kalau login sebagai pemilik) tombol "Transfer Kepemilikan Data Usaha
+  Ini" (§ Keputusan #10).
+
+## Keputusan Final dari Client (2026-09-11) — dasar Keputusan #4/#9/#10
+
+Client memberi ilustrasi konkret yang menjawab tuntas pertanyaan yang
+sebelumnya tertunda, sekaligus menambah 1 kebutuhan baru (transfer
+kepemilikan) yang belum ada di draf mana pun sebelumnya:
+
+1. Budi berlangganan Facport, bikin Data Usaha A, aktifkan Purchase
+   Invoice + Sales Invoice.
+2. Budi (akun sama) juga bikin Data Usaha B, aktifkan Other Payment +
+   Purchase Invoice.
+3. Budi tambah user tambahan (Iwan) untuk Data Usaha B.
+4. **Hasil**: Iwan HANYA bisa akses Data Usaha B, dengan SEMUA fitur
+   yang aktif di sana (Other Payment + Purchase Invoice) — tidak bisa
+   pilih sebagian.
+5. Iwan TIDAK BISA dipindah ke Data Usaha A oleh Budi.
+6. Kalau Budi mau kasih Iwan akses ke Data Usaha A juga → beli seat
+   BARU (biaya tambahan), khusus untuk Data Usaha A.
+7. Kalau Iwan resign, Budi bisa keluarkan Iwan dan isi slot yang sama
+   dengan Ahmad — sisa masa aktif ikut slot, bukan reset (§ Keputusan #9).
+8. Kalau Budi (pemilik) sendiri yang resign, harus ada cara SELF-SERVICE
+   (tanpa lewat admin Facport) memindahkan hak kelola SELURUH akun ke
+   Alex — Alex lalu punya hak yang sama persis dengan Budi, termasuk
+   menambah user baru (§ Keputusan #10, kebutuhan baru).
+
+### Fase D — Polish
+Sama seperti draf sebelumnya + ADR resmi menutup dokumen ini, update
+`architecture-subscription.md`/`architecture-auth.md`/
+`architecture-accurate-integration.md`/`architecture-app-dashboard.md`
+dengan hasil final.
 
 ## Dependensi Antar Fase
-A — independen. B1 → B2 (backend dulu). C bergantung PENUH ke B1+B2. D
-setelah C stabil.
+A — independen. B0 → B1 → B2 (WAJIB berurutan, B0 paling berisiko/hati-hati
+karena migrasi data produksi). C bergantung PENUH ke B0+B1+B2. D setelah
+C stabil.
 
 ## Risiko & Hal yang Perlu Dievaluasi Lebih Lanjut
 
-Ini alasan eksplisit user menunda eksekusi — daftar berikut BUKAN daftar
-lengkap, tapi titik-titik yang paling mungkin "bertabrakan":
-
-- **Perubahan invariant inti** ("1 modul = 1 subscription") menyentuh
-  kode yang sudah production-proven dan pernah py bug nyata — risiko
-  regresi ke perilaku trial/renewal yang sudah stabil.
-- **Kompleksitas gabungan**: 3 sub-fitur ini saling bergantung erat
-  (device-limit independen, tapi seat bergantung PENUH ke multi-instance)
-  — total footprint perubahan jauh lebih besar dari yang terlihat dari
-  masing-masing poin permintaan awal.
-- **UX checkout berubah signifikan** (Keputusan #5) — dari "pilih 1
-  tier per modul" jadi "kelola banyak instance + perpanjang individual"
-  — perlu divalidasi ke user akhir/client sebelum dibangun penuh.
-  Pertimbangkan: apakah perlu dipecah jadi lebih banyak sub-fase, atau
-  ada model lebih sederhana yang belum tergali di sesi riset ini.
-  Timeline & prioritas relatif terhadap fase-fase lain yang sedang
-  berjalan JUGA belum ditentukan.
+- **Migrasi data produksi (Fase B0)** adalah risiko TERBESAR di seluruh
+  rencana ini — user/subscription/koneksi Accurate yang SUDAH ADA harus
+  di-backfill dengan benar tanpa kehilangan akses siapa pun. WAJIB
+  dry-run + review manual, bukan migrasi sekali jalan.
+- **Scope bertambah dari draf awal** — restrukturisasi navigasi (Fase
+  B0-B2) adalah pekerjaan baru yang tidak ada di permintaan awal
+  ("cuma" batas device + user tambahan) — total footprint jauh lebih
+  besar dari perkiraan awal siapa pun.
+- **UX gerbang login berubah untuk SEMUA customer** (bukan cuma yang
+  mau pakai user tambahan) — setiap login sekarang lewat 1 langkah
+  tambahan (pilih Data Usaha kalau py lebih dari 1, atau auto-masuk
+  kalau cuma py 1 — perlu diputuskan: kalau user cuma py 1 Data Usaha,
+  apakah tetap ditampilkan gerbang pilihnya atau auto-skip langsung ke
+  dashboard? Ini detail UX yang belum diputuskan, kandidat kuat: auto-skip
+  kalau cuma 1, supaya user existing yang belum butuh multi-Data-Usaha
+  tidak merasakan friksi tambahan sama sekali).
+- **Keamanan transfer kepemilikan (Keputusan #10, BARU)** — ini aksi
+  paling sensitif di seluruh rencana (memindahkan hak kelola SELURUH
+  akun berbayar ke orang lain). WAJIB 2 langkah (ajukan + terima
+  eksplisit, tidak boleh 1 klik), dan sebaiknya ada notifikasi ke email
+  pemilik LAMA begitu transfer selesai (jaga-jaga kalau proses ini
+  disalahgunakan tanpa sepengetahuan pemilik asli). Detail keamanan
+  penuh (rate limit, audit log, apakah perlu re-auth password sebelum
+  ajukan transfer) belum dirancang — WAJIB masuk security review khusus
+  saat Fase C dieksekusi, bukan ditambahkan belakangan.
+- Timeline & prioritas relatif ke fase-fase lain yang sedang berjalan
+  belum ditentukan.
 
 ## Referensi
-- `docs/decisions/adr-0008-model-langganan.md` — catatan asal yang
-  memicu dokumen ini.
-- `docs/architecture/architecture-subscription.md`,
-  `architecture-auth.md`, `architecture-accurate-integration.md` — akan
-  di-update begitu ada keputusan final (§ Fase D).
-- File inti yang akan disentuh kalau dilanjutkan: `apps/api/src/lib/auth.ts`,
+- `docs/decisions/adr-0008-model-langganan.md`,
+  `docs/decisions/adr-0019-gating-per-sub-modul-dan-katalog-plan.md`
+  (rasional kenapa grouping "Modul" harus TETAP UI-only, tidak boleh
+  jadi unit gating lagi).
+- `docs/architecture/architecture-subscription.md`, `architecture-auth.md`,
+  `architecture-accurate-integration.md`, `architecture-app-dashboard.md`
+  — akan di-update begitu ada keputusan final (§ Fase D).
+- File inti yang akan disentuh: `apps/api/src/lib/auth.ts`,
   `apps/api/src/lib/subscription-gate.ts`,
   `apps/api/src/routes/subscriptions.route.ts`,
   `apps/api/src/routes/admin/orders.route.ts`,
+  `apps/api/src/routes/accurate.route.ts`,
   `apps/api/src/db/schema/subscription.schema.ts`,
+  `apps/api/src/db/schema/accurate.schema.ts` (tabel baru `data_usaha`),
   `apps/web/app/app/(protected)/layout.tsx`,
   `apps/web/app/app/(protected)/subscribe/page.tsx`,
-  `apps/web/components/app-shell/sidebar.tsx`.
+  `apps/web/app/app/(protected)/accurate/page.tsx`,
+  `apps/web/components/app-shell/sidebar.tsx`,
+  `apps/web/lib/module-options.ts`.

@@ -19,7 +19,17 @@ import { currencyFormatter } from "@/lib/utils";
 import { MODULE_OPTIONS, MODULE_GROUPS, type ModuleKey } from "@/lib/module-options";
 import { DURATION_UNIT_LABELS, formatDuration, inferDurationUnit, toDurationDays, type DurationUnit } from "@/lib/duration";
 
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; trialEligible: boolean };
+type PlanKind = "module" | "seat_addon";
+type Plan = {
+  id: string;
+  name: string;
+  price: number;
+  durationDays: number;
+  modules: string[];
+  isActive: boolean;
+  trialEligible: boolean;
+  kind: PlanKind;
+};
 
 function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
@@ -33,6 +43,10 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
   const [durationUnit, setDurationUnit] = useState<DurationUnit>(inferred.unit);
   // § 1 plan = 1 sub-modul (radio, bukan checkbox lagi sejak Fase 14)
   const [moduleKey, setModuleKey] = useState<ModuleKey | "">((plan?.modules[0] as ModuleKey) ?? "");
+  // § Fase 110, architecture-user-tambahan.md — "seat_addon" (slot User
+  // Tambahan) TIDAK terikat modul import apa pun — pilih fitur disembunyikan
+  // sepenuhnya kalau jenis ini dipilih, § handleSave (`modules: []`).
+  const [kind, setKind] = useState<PlanKind>(plan?.kind ?? "module");
   // § Fase 43 (koreksi) — trial BUKAN otomatis semua paket, admin WAJIB
   // tandai eksplisit per paket. Default OFF untuk paket baru (bukan ON) —
   // admin yang memutuskan, bukan sistem yang mengaktifkan diam-diam.
@@ -56,13 +70,25 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
       return;
     }
     const days = toDurationDays(amount, durationUnit);
-    if (!moduleKey) {
+    if (kind === "module" && !moduleKey) {
       setError("Pilih fitur untuk paket ini.");
       return;
     }
     setSubmitting(true);
     setError(null);
-    const body = { name: name.trim(), price: priceValue, durationDays: days, modules: [moduleKey], isActive: true, trialEligible };
+    const modules: ModuleKey[] = kind === "seat_addon" ? [] : [moduleKey as ModuleKey];
+    const body = {
+      name: name.trim(),
+      price: priceValue,
+      durationDays: days,
+      modules,
+      isActive: true,
+      // § seat_addon TIDAK PERNAH trial (§ subscriptions.route.ts guard) —
+      // server juga memaksa ini, checkbox disembunyikan di UI supaya
+      // tidak menyesatkan admin (§ render di bawah).
+      trialEligible: kind === "seat_addon" ? false : trialEligible,
+      kind,
+    };
     const res = plan ? await api.admin.plans({ id: plan.id }).put(body) : await api.admin.plans.post(body);
     setSubmitting(false);
     if (res.error) {
@@ -109,6 +135,24 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             <Input type="number" min={0} value={price} onChange={(e) => setPrice(e.target.value)} />
           </label>
           <div className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-foreground">Jenis Paket</span>
+            <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label="Jenis Paket">
+              <label className="flex items-center gap-2">
+                <input type="radio" name="kind" checked={kind === "module"} onChange={() => setKind("module")} />
+                Fitur Modul (paket import biasa)
+              </label>
+              <label className="flex items-center gap-2">
+                <input type="radio" name="kind" checked={kind === "seat_addon"} onChange={() => setKind("seat_addon")} />
+                Slot User Tambahan (seat)
+              </label>
+            </div>
+            {kind === "seat_addon" && (
+              <span className="text-xs text-muted-foreground">
+                Dijual per Data Usaha — pembeli bisa undang orang lain akses SEMUA fitur aktif Data Usaha itu. Tidak terikat modul tertentu.
+              </span>
+            )}
+          </div>
+          <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">Durasi</span>
             <div className="flex gap-2">
               <Input type="number" min={1} className="flex-1" value={durationAmount} onChange={(e) => setDurationAmount(e.target.value)} />
@@ -121,32 +165,36 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
               </Select>
             </div>
           </div>
-          <div className="flex flex-col gap-3">
-            <span className="text-xs font-medium text-foreground">Fitur (1 paket = 1 fitur)</span>
-            {MODULE_GROUPS.map((group) => (
-              <div key={group} className="flex flex-col gap-1.5">
-                <span className="text-xs text-muted-foreground">{group}</span>
-                <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={group}>
-                  {MODULE_OPTIONS.filter((m) => m.group === group).map((m) => (
-                    <label key={m.key} className="flex items-center gap-2">
-                      <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
-                      {m.label}
-                    </label>
-                  ))}
+          {kind === "module" && (
+            <div className="flex flex-col gap-3">
+              <span className="text-xs font-medium text-foreground">Fitur (1 paket = 1 fitur)</span>
+              {MODULE_GROUPS.map((group) => (
+                <div key={group} className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">{group}</span>
+                  <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={group}>
+                    {MODULE_OPTIONS.filter((m) => m.group === group).map((m) => (
+                      <label key={m.key} className="flex items-center gap-2">
+                        <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
+                        {m.label}
+                      </label>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
-          <label className="flex items-start gap-2">
-            <Checkbox checked={trialEligible} onCheckedChange={(checked) => setTrialEligible(checked === true)} className="mt-0.5" />
-            <span className="flex flex-col">
-              <span className="text-xs font-medium text-foreground">Bisa Dicoba Gratis (Trial)</span>
-              <span className="text-xs text-muted-foreground">
-                Kalau diaktifkan, customer bisa coba paket ini gratis (dibatasi jumlah baris, § Pengaturan Trial) tanpa
-                bayar dulu. Nonaktif secara default — Anda yang menentukan paket mana yang boleh ditrial.
+              ))}
+            </div>
+          )}
+          {kind === "module" && (
+            <label className="flex items-start gap-2">
+              <Checkbox checked={trialEligible} onCheckedChange={(checked) => setTrialEligible(checked === true)} className="mt-0.5" />
+              <span className="flex flex-col">
+                <span className="text-xs font-medium text-foreground">Bisa Dicoba Gratis (Trial)</span>
+                <span className="text-xs text-muted-foreground">
+                  Kalau diaktifkan, customer bisa coba paket ini gratis (dibatasi jumlah baris, § Pengaturan Trial) tanpa
+                  bayar dulu. Nonaktif secara default — Anda yang menentukan paket mana yang boleh ditrial.
+                </span>
               </span>
-            </span>
-          </label>
+            </label>
+          )}
           {error && <p className="text-destructive">{error}</p>}
           <Button onClick={handleSave} disabled={submitting} className="self-end">
             {submitting ? "Menyimpan..." : "Simpan"}
@@ -202,9 +250,14 @@ export default function AdminPlansPage() {
     columnHelper.display({
       id: "modules",
       header: "Fitur",
-      cell: ({ row }) => (
-        <span className="text-muted-foreground">{row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}</span>
-      ),
+      cell: ({ row }) =>
+        row.original.kind === "seat_addon" ? (
+          <span className="text-muted-foreground">Slot User Tambahan</span>
+        ) : (
+          <span className="text-muted-foreground">
+            {row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}
+          </span>
+        ),
     }),
     columnHelper.display({
       id: "status",

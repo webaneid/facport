@@ -3,6 +3,7 @@ import { user } from "./auth.schema";
 import { orders } from "./payment.schema";
 import { accurateConnections } from "./accurate.schema";
 import { invoiceItems } from "./invoice.schema";
+import { dataUsaha } from "./data-usaha.schema";
 
 // § architecture-subscription.md — model langganan. § Fase 14, ADR-0019 —
 // 1 row = 1 SKU per SATU sub-modul (sales_invoice/purchase_invoice/dst),
@@ -19,6 +20,13 @@ export const plans = pgTable("plans", {
   // Tipe TETAP array (hindari migration breaking untuk data lama).
   modules: jsonb("modules").$type<string[]>().notNull(),
   isActive: boolean("is_active").notNull().default(true),
+  // § Fase 110, architecture-user-tambahan.md — bedakan plan "module"
+  // (SKU sub-modul biasa, default — semua baris lama otomatis ini) dari
+  // "seat_addon" (slot User Tambahan, dijual per Data Usaha, TIDAK
+  // pernah lewat jalur trial — § subscriptions.route.ts). Dipakai di
+  // titik aktivasi (confirm order/manual-subscription) untuk tahu kapan
+  // harus sekalian bikin baris `member_seats`.
+  kind: varchar("kind", { length: 20 }).notNull().default("module"),
   // § Fase 43 (koreksi) — admin HARUS eksplisit mengaktifkan trial per
   // paket, BUKAN semua paket otomatis bisa trial (kalau otomatis, admin
   // tidak punya otoritas atas paketnya sendiri). Default false — trial
@@ -47,6 +55,17 @@ export const subscriptions = pgTable("subscriptions", {
   // kalau Data Usaha-nya sama (§ architecture-subscription.md § "Koneksi
   // Accurate — Reusable Lintas Subscription").
   accurateConnectionId: uuid("accurate_connection_id").references(() => accurateConnections.id),
+  // § Fase 107, architecture-user-tambahan.md § Fase B0 — diisi SAAT
+  // CHECKOUT (user berada di dalam konteks 1 Data Usaha ketika subscribe),
+  // BUKAN lewat `accurateConnectionId` (yang bisa masih kosong kalau
+  // belum connect Accurate). Ini yang bikin scoping "1 modul aktif per
+  // Data Usaha" (bukan per akun) bisa dicek LANGSUNG tanpa join ke
+  // Accurate. Sempat NULLABLE (migrasi 2 tahap, § phase doc Fase 107) —
+  // sudah dikunci NOT NULL setelah backfill data lama terverifikasi
+  // 100% terisi (`scripts/backfill-data-usaha.ts`, 0 baris NULL tersisa).
+  dataUsahaId: uuid("data_usaha_id")
+    .notNull()
+    .references(() => dataUsaha.id),
   // § Fase 15, ADR-0021 — pointer BALIK ke baris invoice yang membuat
   // subscription ini. Nullable — subscription BOLEH dibuat TANPA invoice
   // (jalur admin "Tandai Sudah Dibayar Manual", Fase 18, atau subscription

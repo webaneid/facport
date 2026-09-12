@@ -26,11 +26,16 @@ muncul belakangan — nggak jelas dari perubahan mana asalnya.
   tapi tetap perlu diingat).
 - Status fase di `docs/PROGRESS.md` diubah ke `In Progress`.
 
-### 3. Type check
+### 3. Type check + Lint
 ```bash
 bun run typecheck   # atau: bunx tsc --noEmit
+bun run lint
 ```
-- WAJIB nol error sebelum lanjut ke langkah berikutnya.
+- WAJIB nol error sebelum lanjut ke langkah berikutnya — termasuk `lint`,
+  bukan cuma `typecheck`. **(2026-09-12: sebelumnya `lint` cuma jalan di
+  CI, tidak pernah dijalankan lokal sebagai bagian SOP — 4 error
+  `react-hooks/set-state-in-effect` dari Fase 109/110 numpuk tak
+  terdeteksi sampai hampir rilis v2.0.0, lihat `docs/lessons-learned.md`.)**
 - Kalau ada error yang "sengaja" dibiarkan (edge case yang belum ditangani),
   itu HARUS ditulis eksplisit di `docs/phases/phase-XX-{nama}.md` sebagai
   known limitation — bukan didiamkan begitu saja.
