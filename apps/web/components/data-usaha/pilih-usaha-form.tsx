@@ -87,6 +87,7 @@ export function PilihUsahaForm({
     }
     load();
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- baca localStorage (external system) SEKALI saat mount, pola standar
       setBannerCollapsed(localStorage.getItem(BANNER_COLLAPSE_STORAGE_KEY) === "1");
     } catch {
       // § localStorage bisa gagal (private window dkk) — biarkan default terbuka.

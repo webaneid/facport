@@ -105,13 +105,18 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
   // invoice SELALU nyasar ke "Data Usaha Utama" (default backend) walau
   // customer yang dipilih punya Data Usaha lain — muat daftar Data Usaha
   // user begitu dipilih, biar admin bisa pilih eksplisit.
-  useEffect(() => {
+  // § reset pilihan lama dihitung SAAT render (bukan di effect) begitu
+  // `selectedUserId` berubah — pola "adjust state during render" React,
+  // menghindari 1 render tambahan dibanding setState di effect.
+  const [prevSelectedUserId, setPrevSelectedUserId] = useState(selectedUserId);
+  if (selectedUserId !== prevSelectedUserId) {
+    setPrevSelectedUserId(selectedUserId);
     setSelectedDataUsahaId("");
-    if (!selectedUserId) {
-      setDataUsahaOptions(null);
-      return;
-    }
     setDataUsahaOptions(null);
+  }
+
+  useEffect(() => {
+    if (!selectedUserId) return;
     api.admin["data-usaha"].get({ query: { userId: selectedUserId } }).then((res) => {
       if (res.data) setDataUsahaOptions((res.data as unknown as { dataUsaha: DataUsahaOption[] }).dataUsaha);
     });

@@ -57,6 +57,7 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal saat mount, pola standar
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);

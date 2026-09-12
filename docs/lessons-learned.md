@@ -6,6 +6,61 @@
 
 ---
 
+## 2026-09-12 — 4 error lint `react-hooks/set-state-in-effect` numpuk sampai mau rilis v2.0.0 — `lint` tidak pernah di-gate lokal
+**Konteks:** Saat CI (`ci.yml`) jalan di PR #58 (release develop→main),
+step "Lint" gagal dengan 4 error `react-hooks/set-state-in-effect` di 4
+file BERBEDA dari 3 fase berbeda (Fase 109 `pilih-usaha-form.tsx`, Fase
+110 `subscribe-form.tsx` & `team-form.tsx`, dan fix admin invoice dari
+re-audit sesi ini `admin/invoices/page.tsx`) — semuanya lolos `bun run
+typecheck` (yang memang TIDAK cek aturan ini) dan tidak pernah ketahuan
+karena **`bun run lint` tidak pernah dijalankan lokal**, cuma jalan di
+CI (`ci.yml`) yang sebelumnya juga gagal lebih dulu di step "Start MinIO"
+(§ entri di atas) — jadi step Lint yang sebenarnya gagal tidak pernah
+sampai dieksekusi sampai bug MinIO itu ketutup duluan.
+
+**Root cause SOP:** `docs/SOP.md` Langkah 3 cuma menyebut `bun run
+typecheck`, TIDAK PERNAH menyebut `bun run lint` — jadi skill
+`phase-workflow` pun tidak pernah menjalankannya sebagai gate penutup
+fase. Lint HANYA jadi gate di CI (`ci.yml`), bukan gate lokal sebelum
+fase ditutup.
+
+**Fix kode (3 pola beda, disesuaikan kasusnya):**
+1. `pilih-usaha-form.tsx` — baca `localStorage` sekali saat mount: pola
+   SUDAH ADA di codebase (`app-shell/sidebar.tsx`,
+   `import/arsip/page.tsx`) — pakai `// eslint-disable-next-line
+   react-hooks/set-state-in-effect` dengan alasan ("baca external system
+   sekali saat mount"), BUKAN lazy `useState` initializer (sempat dicoba,
+   dibatalkan — beresiko hydration mismatch karena komponen ini SSR
+   sebagai bagian Server Component `page.tsx`, `typeof window` di
+   initializer bikin render server vs client pertama beda).
+2. `subscribe-form.tsx` — `selectedSeatPlanId` di-derive ULANG dari
+   `seatPlans` via effect, padahal `seatPlans` sendiri sudah derived
+   (via `useMemo`) dari state yang sama, tanpa sistem eksternal apa pun
+   — diubah total jadi "derived value dihitung saat render": state cuma
+   simpan override eksplisit user (`selectedSeatPlanIdOverride`),
+   `selectedSeatPlan` dihitung tiap render sebagai
+   `seatPlans.find(...) ?? seatPlans[0] ?? null` — effect dihapus total.
+3. `team-form.tsx` — fetch data awal via fungsi `load()` level-komponen
+   dipanggil di effect: pola SAMA PERSIS yang sudah ada di ~15 file lain
+   (semua halaman `import/.../page.tsx`, `notifications/page.tsx`, dst)
+   — cukup tambah `eslint-disable-next-line` yang sama.
+4. `admin/invoices/page.tsx` — effect reset `selectedDataUsahaId`/
+   `dataUsahaOptions` SINKRON begitu `selectedUserId` berubah (murni
+   derived dari prop yang sama, bukan sinkronisasi sistem eksternal) —
+   diubah ke pola resmi React "adjust state during render" (bandingkan
+   `selectedUserId` vs state `prevSelectedUserId` yang disimpan, reset
+   LANGSUNG di body komponen saat beda, tanpa `useEffect`) — effect-nya
+   sendiri disederhanakan jadi CUMA fetch (bagian yang genuinely butuh
+   effect, sinkron ke API eksternal).
+
+**Fix proses:** `docs/SOP.md` Langkah 3 diupdate — `bun run lint` sekarang
+WAJIB nol error bersamaan dengan `typecheck`, bukan cuma gate CI.
+
+**Pencegahan:** jangan anggap fase "bersih" cuma dari `typecheck` hijau —
+`lint` cek kelas bug berbeda (pola hook yang salah, bukan type error) dan
+HARUS dijalankan lokal di setiap penutupan fase mulai sekarang, sesuai
+SOP yang sudah diupdate.
+
 ## 2026-09-12 — CI/CD `Start MinIO` gagal `pull access denied` — docker.io rate-limit anonymous pull, pindah ke quay.io
 **Konteks:** Tepat saat mau release v2.0.0 (develop → main), `Deploy Staging`
 lalu `ci.yml` di PR #58 gagal berulang (3x, ~20 menit) di step "Start

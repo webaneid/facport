@@ -75,17 +75,16 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
     () => (plans ?? []).filter((p) => p.kind === "seat_addon" && p.isActive).sort((a, b) => b.durationDays - a.durationDays),
     [plans],
   );
-  const [selectedSeatPlanId, setSelectedSeatPlanId] = useState<string | null>(null);
+  // § pilihan EKSPLISIT user — null berarti "belum pilih", fallback ke
+  // seatPlans[0] dihitung saat render (derived), bukan di-setState lewat
+  // effect supaya tidak ada render tambahan begitu `seatPlans` termuat.
+  const [selectedSeatPlanIdOverride, setSelectedSeatPlanIdOverride] = useState<string | null>(null);
   // § 0 = tidak disertakan ke pesanan (opt-in, beda dari tier modul yang
   // opt-in lewat toggle "Berlangganan" — di sini cukup quantity > 0).
   const [seatQuantity, setSeatQuantity] = useState(0);
-  useEffect(() => {
-    if (seatPlans.length > 0 && !seatPlans.some((p) => p.id === selectedSeatPlanId)) {
-      setSelectedSeatPlanId(seatPlans[0]!.id);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [seatPlans]);
-  const selectedSeatPlan = seatPlans.find((p) => p.id === selectedSeatPlanId) ?? null;
+  const selectedSeatPlan =
+    seatPlans.find((p) => p.id === selectedSeatPlanIdOverride) ?? seatPlans[0] ?? null;
+  const selectedSeatPlanId = selectedSeatPlan?.id ?? null;
 
   async function load() {
     const [plansRes, subsRes] = await Promise.all([api.plans.get(), api.me.subscriptions.get()]);
@@ -344,7 +343,7 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
                       <button
                         key={p.id}
                         type="button"
-                        onClick={() => setSelectedSeatPlanId(p.id)}
+                        onClick={() => setSelectedSeatPlanIdOverride(p.id)}
                         className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                           selectedSeatPlanId === p.id
                             ? "border-primary-600 bg-primary-600 text-white"
