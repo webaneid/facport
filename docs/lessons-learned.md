@@ -6,6 +6,71 @@
 
 ---
 
+## 2026-09-12 — `drizzle-kit migrate` gagal generic di production (root cause TIDAK ditemukan) — migration+backfill v2.0.0 akhirnya dijalankan manual via `psql`
+**Konteks:** Deploy manual v2.0.0 ke production (migration 0019-0023,
+Data Usaha/seat/transfer ownership) butuh urutan 2-tahap: migration 0019
+(kolom nullable) → backfill data lama → migration 0020 (kunci NOT NULL)
+→ 0021-0023. `bun run db:migrate` (`drizzle-kit migrate`) SELALU gagal
+dengan pesan generic `[spinner] applying migrations...error: script
+"db:migrate" exited with code 1` — TIDAK PERNAH mengeluarkan pesan error
+postgres yang sebenarnya (ditelan oleh spinner `hanji`/`ora` milik
+drizzle-kit CLI).
+
+**Yang SUDAH dicoba & TIDAK terbukti jadi sebab:**
+- Package `pg` hilang/tidak ter-symlink di image (`/repo/node_modules/pg`
+  memang tidak ada, tapi drizzle-kit ternyata resolve `pg` dari bundling
+  internalnya sendiri — pesan "Using 'pg' driver" tetap muncul normal
+  baik SEBELUM maupun SESUDAH symlink manual ditambahkan, jadi BUKAN ini
+  sebabnya meski awalnya kelihatan mencurigakan).
+- Koneksi DB — diverifikasi OK lewat script manual pakai `pg` DAN
+  `postgres` (package app sendiri), `SELECT 1` sukses dari container
+  yang SAMA.
+- Permission DB user — `CREATE SCHEMA`/`CREATE TABLE` untuk tabel
+  tracking `drizzle.__drizzle_migrations` SUKSES dijalankan manual.
+- SQL migration 0019 itu sendiri — SEMUA 5 statement-nya SUKSES
+  dijalankan manual via `pg.Client` dalam transaksi (lalu di-ROLLBACK,
+  cuma tes).
+- **Root cause asli TIDAK PERNAH ditemukan** — waktu terbatas, diputuskan
+  pindah strategi daripada lanjut debug drizzle-kit CLI-nya.
+
+**Fix yang dipakai (berhasil, rilis ini)**: jalankan SQL mentah tiap
+migration manual via `docker compose exec postgres psql -c "..."`
+(per-statement, drop quote identifier yang tidak perlu karena semua
+nama kolom/tabel project ini lowercase+underscore, kecuali `"user"` yang
+memang reserved keyword) + `INSERT` manual ke
+`drizzle.__drizzle_migrations` dengan `hash` (sha256 isi file .sql,
+`sha256sum <file>.sql`) dan `created_at` (field `"when"` di
+`drizzle/meta/_journal.json` untuk migration itu) yang SAMA PERSIS
+supaya tetap konsisten untuk `db:migrate` normal di masa depan.
+Untuk migration 2-tahap (0019 nullable → backfill → 0020 NOT NULL):
+jalankan migration 0019 SAJA dulu dengan cara ini, baru
+`bun run db:backfill-data-usaha` (script ini TIDAK lewat drizzle-kit,
+pakai `lib/db.ts`/package `postgres` langsung — tidak terpengaruh bug
+di atas), verifikasi `0` baris NULL, baru lanjut 0020-0023.
+
+**Pencegahan/untuk sesi depan**: kalau `bun run db:migrate` gagal generic
+di production lagi TANPA pesan error jelas — JANGAN ulang-ulang coba
+`drizzle-kit migrate` dengan variasi kecil (sudah dicoba: symlink pg,
+journal ditruncate manual, container terpisah — semua tidak mengubah
+hasil). Langsung pivot ke psql manual per-statement (pola di atas) lebih
+cepat & predictable. Investigasi root cause drizzle-kit CLI ini sendiri
+BELUM dilakukan — kalau ada waktu luang, reproduce di lingkungan lokal
+dengan image production yang SAMA (bukan dev environment, yang migrate
+selalu lancar) untuk isolasi bug-nya.
+
+**Temuan sampingan penting**: klien (Claude Code, sesi ini) paste
+command lewat SSH ke VPS dari MacBook — command multi-baris (heredoc,
+`sh -c` dengan kutip bersarang) SERING rusak saat di-paste (baris
+ter-indent otomatis, heredoc delimiter ikut ter-indent sehingga gagal
+match, dsb). **Command SATU BARIS (meski panjang, asal SEMUA di dalam
+1 pasang kutip yang sama) jauh lebih robust** — kutip yang terbuka
+membuat shell menunggu sampai kutip penutup ketemu, jadi tahan terhadap
+line-wrap apa pun yang disisipkan terminal. Hindari heredoc/`sh -c`
+bersarang untuk instruksi SSH manual ke user — pakai `psql -c "..."`
+satu statement per command kalau isinya SQL, atau `echo '...' >> file`
+per baris (SEMUA di bawah ~100 karakter) + `base64 -d` kalau butuh
+transfer file/script yang kompleks.
+
 ## 2026-09-12 — 4 error lint `react-hooks/set-state-in-effect` numpuk sampai mau rilis v2.0.0 — `lint` tidak pernah di-gate lokal
 **Konteks:** Saat CI (`ci.yml`) jalan di PR #58 (release develop→main),
 step "Lint" gagal dengan 4 error `react-hooks/set-state-in-effect` di 4
