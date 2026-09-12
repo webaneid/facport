@@ -184,13 +184,13 @@ alur CI/CD otomatis, sama seperti host lain):
    (`build-and-push` image ke GHCR; job `deploy-to-server` dibiarkan gagal,
    itu memang belum dipakai). Ambil `IMAGE_TAG` (versi baru) dari situ.
 2. **User** — jalankan salah satu runbook di bawah via SSH ke VPS
-   (`wasugi@76.13.18.136`, path `/opt/app`).
+   (`wasugi@76.13.18.136`, path `/opt/facport`).
 
 ### Minimal — fix kecil, tanpa migration DB, tanpa ubah worker/queue
 Cocok untuk: fix UI, pesan error/teks, perubahan 1 route tanpa skema baru.
 ```bash
 ssh wasugi@76.13.18.136
-cd /opt/app
+cd /opt/facport
 export GITHUB_REPO="webaneid/facport"
 export IMAGE_TAG="vX.Y.Z"   # ganti sesuai versi rilis terbaru
 echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy
@@ -203,7 +203,7 @@ docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-f
 ### Full — default kalau ragu; WAJIB kalau ada migration DB, perubahan worker/job, atau rilis besar
 ```bash
 ssh wasugi@76.13.18.136
-cd /opt/app
+cd /opt/facport
 export GITHUB_REPO="webaneid/facport"
 export IMAGE_TAG="vX.Y.Z"
 echo "GITHUB_REPO=$GITHUB_REPO" > .env.deploy

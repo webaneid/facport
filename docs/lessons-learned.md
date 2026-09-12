@@ -6,6 +6,50 @@
 
 ---
 
+## 2026-09-12 — Bug backfill Data Usaha: 1 company Accurate reconnect berkali-kali jadi puluhan Data Usaha duplikat
+**Konteks:** Sesaat setelah deploy v2.0.0 + backfill Data Usaha selesai,
+user lapor langsung ("setiap koneksi... data usahanya jadi masing-masing,
+harusnya satu"). Dicek ke DB: 1 user nyata (`reza.eka17@gmail.com`, "Eka")
+punya **16 Data Usaha terpisah** semuanya bernama "Retail Demo" — total 22
+duplikat di 3 user berbeda (bukan cuma test data).
+
+**Root cause:** `backfillDataUsaha()` (`src/scripts/backfill-data-usaha.ts`)
+bikin 1 `data_usaha` row per baris `accurate_connections`, bukan per
+COMPANY Accurate sungguhan. `accurate_connections.id` berubah tiap kali
+user reconnect (token expired → reconnect → baris BARU, bukan update baris
+lama) — sementara `accurate_connections.accurateDbId` (ID company dari API
+Accurate sendiri) TETAP SAMA. User ini reconnect ke company yang sama
+("Retail Demo", `accurateDbId=2905935`) 16-19 kali dalam 4 hari (kemungkinan
+bingung alur re-auth, bukan sengaja) — backfill membuatkan Data Usaha BARU
+tiap kali, bukan reuse yang sudah ada.
+
+**Fix data production**: 22 `data_usaha` duplikat (3 grup) digabung manual
+jadi 3 — pilih 1 "canonical" per grup (koneksi `status='active'` +
+`connectedAt` paling baru), pindahkan semua `subscriptions.dataUsahaId`
+yang nyasar ke situ, hapus duplikatnya. `member_seats`/`ownership_transfers`
+masih kosong total (tabel baru) jadi tidak perlu disentuh.
+`subscriptions` total tetap 52 sebelum/sesudah — tidak ada data hilang,
+cuma referensinya dirapikan. Dieksekusi lewat `psql -c` manual, SATU
+STATEMENT per command, 3 UUID per `IN(...)` — lihat § "Temuan sampingan"
+di entri lain soal kenapa harus sependek itu.
+
+**Fix source code** (`backfillDataUsaha`, untuk jalan-lagi-di-masa-depan):
+group `accurate_connections` dulu per `(userId, accurateDbId)` SEBELUM
+bikin `data_usaha` — pilih 1 koneksi "canonical" per grup (status active,
+`connectedAt` terbaru) buat `dataUsaha.accurateConnectionId` (kolom itu
+UNIQUE, cuma bisa nunjuk 1), tapi subscription dari SEMUA connection_id
+dalam grup (bukan cuma canonical) tetap diarahkan ke Data Usaha yang sama.
+Koneksi tanpa `accurateDbId` (kolom ini NULLABLE, beberapa baris lama
+kosong) dianggap grup sendiri-sendiri (fallback ke `connection.id` sebagai
+key), tidak digabung sembarangan.
+
+**Pencegahan**: kalau bikin entity baru dari data "connection/koneksi" yang
+historinya bisa reconnect berkali-kali (OAuth, API key rotation, dst) —
+JANGAN pakai `connection.id` sebagai kunci identitas bisnis, cari field
+yang benar-benar stabil dari sisi provider (di sini `accurateDbId`). Test
+manual HARUS include skenario "1 entity reconnect N kali", bukan cuma
+"1 entity 1 connection" yang kelihatan wajar di data kecil/baru.
+
 ## 2026-09-12 — `drizzle-kit migrate` gagal generic di production (root cause TIDAK ditemukan) — migration+backfill v2.0.0 akhirnya dijalankan manual via `psql`
 **Konteks:** Deploy manual v2.0.0 ke production (migration 0019-0023,
 Data Usaha/seat/transfer ownership) butuh urutan 2-tahap: migration 0019
@@ -157,13 +201,30 @@ tidak ada di server) — didownload ke komputer lokal user lewat `scp`
 supaya tidak cuma nginap di server yang sama.
 
 **WAJIB ditindaklanjuti** (belum dikerjakan saat entri ini ditulis):
-- Setup backup otomatis SUNGGUHAN di `/opt/facport` (scp script, install
-  `mc`, verifikasi rclone remote, tambah crontab yang benar).
-- Update SEMUA path `/opt/app` → `/opt/facport` di 3 file dokumentasi
-  (`architecture-deployment.md`, `deployment-server-setup.md`,
-  `deployment-new-domain-onboarding.md`) — BELUM dilakukan, jangan lupa.
-- `deployment-server-setup.md` tambah langkah scp `scripts/` eksplisit
-  (gap yang bikin backup tidak pernah ke-setup dari awal).
+- ~~Setup backup otomatis SUNGGUHAN di `/opt/facport`~~ — ✅ **RESOLVED
+  2026-09-12 (hari yang sama)**. Ternyata ada referensi SIAP PAKAI:
+  project lain di VPS yang sama (`webane-admin`) sudah punya
+  `docs/SOP-backup-template.md` + `api/scripts/backup-db.sh` generik yang
+  SUDAH terbukti jalan (dipakai sejak 2026-08-22). Diadaptasi untuk
+  facport: reuse remote `gdrive` yang sudah ada (skip OAuth), ganti
+  `pg_dump -h localhost` jadi `docker compose exec` (postgres facport
+  tidak expose port ke host, beda dari webane-admin), skip MinIO dulu
+  (`mc` belum terinstall). Hasil: `/opt/facport/scripts/backup-db.sh`
+  jalan manual TERVERIFIKASI (upload ke `gdrive:backup-app/facport/`
+  sukses), crontab `0 2 * * *` ditambahkan TANPA ganggu baris cron
+  project lain. `scripts/backup-db.sh` di REPO (bukan server) juga
+  diperbaiki terpisah (path default + `source $ENV_FILE` yang rusak
+  karena baris "EOF" sisa di `.env.production` — lihat fix di file itu
+  sendiri) — **versi repo ini SEDIKIT BEDA dari yang sudah live di
+  server** (repo: coba MinIO kalau `mc` ada; server: Postgres-only saja)
+  — sinkronkan (`scp scripts/backup-db.sh` ke server) di sesi berikutnya,
+  tidak urgent karena MinIO tetap ke-skip dengan aman di kedua versi.
+- ~~Update SEMUA path `/opt/app` → `/opt/facport`~~ — ✅ **RESOLVED** di
+  `architecture-deployment.md`, `deployment-server-setup.md`,
+  `deployment-new-domain-onboarding.md`, `architecture-backup.md`.
+- `deployment-server-setup.md` tambah langkah scp `scripts/` eksplisit —
+  BELUM dilakukan, technical debt dokumentasi kecil, tidak urgent (backup
+  sudah jalan via jalur lain hari ini).
 
 **Pencegahan**: dokumentasi server-setup yang ditulis SEBELUM server
 sungguhan pernah dites end-to-end itu rencana, bukan fakta — verifikasi

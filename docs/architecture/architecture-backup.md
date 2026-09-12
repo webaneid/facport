@@ -1,5 +1,13 @@
 # Architecture — Backup
 
+> **✅ Status 2026-09-12: TERVERIFIKASI jalan nyata di production.**
+> Sebelum tanggal ini, backup otomatis untuk facport TIDAK PERNAH benar-benar
+> di-setup di server (dokumen ini rencana yang belum dieksekusi — ditemukan
+> saat deploy manual v2.0.0). Remote `gdrive` di VPS sudah ada duluan (dipakai
+> project lain di VPS yang sama, `webane-admin`) — TIDAK perlu OAuth ulang,
+> langsung reuse. Detail lengkap temuan & fix → `docs/lessons-learned.md`
+> entri 2026-09-12 "Deploy manual v2.0.0 pertama...".
+
 ## Prinsip
 Backup yang **cuma ada di VPS yang sama** dengan data aslinya bukan backup
 sungguhan — kalau VPS kena serangan, disk corrupt, atau provider bermasalah,
@@ -42,7 +50,14 @@ scp ~/.config/rclone/rclone.conf user@ip-vps:~/.config/rclone/rclone.conf
 Setelah ini, `rclone` di VPS bisa akses Google Drive **tanpa perlu login
 ulang** — token refresh otomatis, cocok dipanggil dari cron non-interaktif.
 
-> Install rclone di VPS: `curl https://rclone.org/install.sh | sudo bash`
+> **Kalau VPS ini sudah pernah dipakai backup project LAIN** dengan akun
+> Google yang sama — cek `rclone listremotes` dulu, remote `gdrive` mungkin
+> sudah ada (kasus nyata facport: sudah ada dari setup `webane-admin`
+> duluan) — **skip langkah di atas sepenuhnya**, langsung reuse.
+>
+> Install rclone di VPS: `sudo apt install rclone` — **JANGAN**
+> `curl install.sh | sudo bash` (sudo di dalam pipe sering gagal minta
+> password interaktif).
 
 ## Apa yang Di-backup
 1. **Postgres** — `pg_dump` terkompresi (`.sql.gz`), lewat `docker compose exec`
@@ -51,12 +66,20 @@ ulang** — token refresh otomatis, cocok dipanggil dari cron non-interaktif.
    raw copy Docker volume (raw copy berisiko korup kalau ada write
    bersamaan saat backup jalan).
 
-Detail implementasi → `scripts/backup-db.sh` (sudah jadi, tinggal jadwalkan).
+Detail implementasi → `scripts/backup-db.sh`.
+
+> **Known limitation (2026-09-12):** `mc` (MinIO client) BELUM terinstall di
+> VPS production — script otomatis skip backup MinIO kalau `mc` tidak
+> ditemukan (tidak gagal, cuma warning). Saat ini HANYA Postgres yang
+> ter-backup otomatis. Install `mc` sebagai tindak lanjut kalau bucket
+> MinIO (logo/lampiran upload) juga perlu di-backup rutin — lihat instruksi
+> di komentar `scripts/backup-db.sh`.
 
 ## Jadwal (Cron di VPS)
 ```bash
-# crontab -e di VPS, backup tiap hari jam 2 pagi
-0 2 * * * /opt/app/scripts/backup-db.sh >> /var/log/app-backup.log 2>&1
+# crontab -e di VPS — TAMBAH baris baru, JANGAN hapus/timpa baris project
+# lain yang sudah ada (VPS ini shared). Backup tiap hari jam 2 pagi.
+0 2 * * * /opt/facport/scripts/backup-db.sh >> /home/wasugi/facport-backups/backup.log 2>&1
 ```
 
 ## Retensi
@@ -73,8 +96,8 @@ Script minta konfirmasi eksplisit (ketik ulang nama database) sebelum
 menimpa data — **ini operasi destruktif, tidak pernah dijalankan otomatis/CI**.
 
 ## Verifikasi Backup Beneran Jalan (jangan cuma percaya cron "kelihatannya" jalan)
-- Cek log: `tail -f /var/log/app-backup.log`
-- Cek isi remote: `rclone ls gdrive:backups/app`
+- Cek log: `tail -f /home/wasugi/facport-backups/backup.log`
+- Cek isi remote: `rclone lsf gdrive:backup-app/facport`
 - **Disarankan**: pakai dead-man's-switch monitoring gratis (mis.
   healthchecks.io free tier) — kirim ping tiap backup sukses, dan kamu dapat
   notifikasi otomatis kalau cron BERHENTI jalan diam-diam (bukan cuma tahu
