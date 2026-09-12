@@ -6,6 +6,78 @@
 
 ---
 
+## 2026-09-12 — Lompatan versi ke `2.0.0`: utang override breaking-change sejak `v1.0.0` (2026-08-22) akhirnya ditutup
+**Konteks:** User minta rekomendasi kapan push+release setelah audit
+menyeluruh (bersih, 0 Critical/High). Sekalian tanya kenapa versi
+"mentok" di `v1.28.0` dan mengusulkan skema penomoran custom (salah paham
+— dikoreksi: semver TIDAK PERNAH "rollover" di angka 9 manapun, tiap
+segmen MAJOR/MINOR/PATCH cuma naik terus, reset ke 0 HANYA kalau segmen
+di atasnya naik).
+
+**Root cause "mentok" di v1.x**: entri 2026-08-22 (di atas, sekarang
+ditandai RESOLVED) sudah mencatat override `releaseRules:
+[{breaking:true, release:"minor"}]` di `.releaserc.json` **belum sempat
+dihapus** pas `v1.0.0` — tapi catatan itu sendiri TIDAK PERNAH ditindak-
+lanjuti selama 28 rilis berikutnya (`v1.0.1` → `v1.28.0`). Restrukturisasi
+Data Usaha/Seat/Transfer Kepemilikan (Fase 106-111, sesi ini) jadi momen
+yang dianggap user cukup fundamental untuk lompat MAJOR — dipakai sebagai
+kesempatan sekalian menutup utang lama itu.
+
+**Fix**: override dihapus dari `.releaserc.json` (lihat entri di atas +
+`docs/decisions/adr-0002-versioning-strategy.md` § "Update 2026-09-12"),
+commit yang menyertai pakai `feat!:` supaya semantic-release deteksi
+`1.28.0 → 2.0.0`.
+
+**Pencegahan**: langkah manual yang "cuma perlu dilakukan sekali di masa
+depan" (seperti hapus override ini) gampang terlewat kalau tidak ada
+pengingat AKTIF (bukan cuma catatan pasif di lessons-learned) — kalau ada
+langkah serupa lagi ke depan (mis. kebijakan versioning berubah lagi),
+pertimbangkan pengingat yang lebih aktif (mis. komentar di file config
+yang bersangkutan, bukan cuma di dokumen terpisah yang harus diingat
+untuk dibaca).
+
+---
+
+## 2026-09-12 — Runbook deploy "Full" ditandai "WAJIB kalau ada migration DB" tapi TIDAK PERNAH menyertakan perintah migrate-nya
+**Masalah:** Ditemukan saat user minta re-audit menyeluruh sebelum deploy
+(bukan lewat insiden nyata) — `docs/architecture/architecture-deployment.md`
+§ "Deploy Manual ke Server" varian **Full** diberi label eksplisit "WAJIB
+kalau ada migration DB, perubahan worker/job, atau rilis besar", TAPI blok
+perintahnya cuma `pull` → `up -d api web worker minio postgres` → `prune`.
+Tidak ada satu baris pun yang menjalankan `bun run db:migrate` di dalam
+container. Kalau runbook ini diikuti APA ADANYA untuk rilis yang bawa
+migration Drizzle baru, container `api` versi baru naik dan jalan dengan
+kode BARU di atas skema LAMA — endpoint yang menyentuh kolom/tabel baru
+akan error 500 sampai seseorang SADAR dan migrate manual terpisah (tidak
+ada langkah eksplisit yang mengingatkan).
+
+**Root cause:** Dockerfile `apps/api` SUDAH diperbaiki (2026-09-06, catatan
+komentar di file itu sendiri) untuk menyertakan `drizzle.config.ts`,
+`drizzle/`, dan `src/` supaya `bun run db:migrate` BISA dijalankan dari
+dalam container production — tapi perbaikan itu cuma menjawab kasus "deploy
+pertama kali ke instance BARU, DB kosong" (didokumentasikan di
+`docs/deployment-new-domain-onboarding.md`, yang MEMANG punya baris
+`docker exec ... bun run db:migrate`). Runbook REDEPLOY RUTIN (dipakai
+tiap rilis baru) tidak pernah disatukan dengan pelajaran yang sama — 2
+dokumen deploy berkembang terpisah, satu dapat perbaikan, satunya tidak.
+
+**Fix:** Tambah baris `docker compose ... exec api bun run db:migrate` ke
+runbook **Full** di `architecture-deployment.md`, persis setelah `up -d`
+— pakai `docker compose exec` (bukan `docker exec <nama-container>`
+seperti di onboarding doc) supaya tidak bergantung pada nama container
+hasil auto-generate Compose yang bisa beda-beda. Ditambah catatan soal
+jeda singkat kode-baru-atas-skema-lama antara `up -d` dan migrate selesai
+(diterima sebagai risiko kecil untuk migration ADD-only, dicatat sebagai
+known limitation untuk migration yang mengubah/hapus kolom).
+
+**Pencegahan:** Kalau ada 2 dokumen runbook yang membahas topik SAMA
+(migrasi database saat deploy) di 2 skenario berbeda (fresh install vs
+redeploy rutin), audit KEDUANYA sekaligus saat salah satu diperbaiki —
+jangan asumsikan pelajaran dari 1 skenario otomatis ke-carry ke skenario
+lain yang isi commandnya ditulis terpisah.
+
+---
+
 ## 2026-09-11 — Fase 110 (Seat/User Tambahan): 1 fungsi 2 keperluan hampir jadi privilege escalation, dan celah expiry invite di jalur Google
 **Masalah 1 (dicegah saat planning, bukan post-mortem):** `accurate.route.ts`
 `POST /connect`/`POST /reuse` memakai `getActiveSubscriptionsWithPlans(user.id)`
@@ -3300,6 +3372,11 @@ MAJOR — melanggar ekspektasi semver untuk konsumen API.
 **Pencegahan:** Sebelum commit breaking change berikutnya, hapus override
 `releaseRules` itu dari `.releaserc.json` (lihat langkah 2 di
 `docs/decisions/adr-0002-versioning-strategy.md`).
+
+**✅ RESOLVED 2026-09-12** — override akhirnya dihapus (bukan pas `v1.0.0`
+dulu, telat ~28 rilis) bersamaan lompatan manual ke `v2.0.0`. Lihat entri
+2026-09-12 di atas & `docs/decisions/adr-0002-versioning-strategy.md` §
+"Update 2026-09-12".
 
 ---
 
