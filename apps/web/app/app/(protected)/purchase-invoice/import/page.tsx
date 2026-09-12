@@ -10,6 +10,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
 
@@ -188,6 +189,7 @@ export default function PurchaseInvoiceImportPage() {
     control: mappingControl,
     handleSubmit: handleMappingSubmit,
     getValues,
+    reset: resetMapping,
   } = useForm<Record<string, string>>();
 
   async function onUpload(values: UploadValues) {
@@ -201,7 +203,19 @@ export default function PurchaseInvoiceImportPage() {
     }
     // § adr-0010 — t.File() route: Eden infer sukses jadi `{}`, cast scoped
     // sudah diverifikasi manual (pola sama media-library-modal.tsx).
-    setResult(res.data as unknown as UploadResult);
+    const uploadResult = res.data as unknown as UploadResult;
+    setResult(uploadResult);
+    // § diminta user 2026-09-12 — tabel "Cocokkan Kolom" sekarang accordion
+    // TERTUTUP by default (client sering tidak perlu buka sama sekali kalau
+    // pemetaan otomatis sudah benar, cukup langsung klik "Mulai Import").
+    // WAJIB seed nilai mapping form DI SINI (bukan cuma `defaultValue` per
+    // `Controller` di dalam tabel) — accordion Radix UNMOUNT isinya saat
+    // tertutup, jadi `Controller` yang defaultValue-nya bergantung pada
+    // dia ke-mount TIDAK PERNAH register kalau user tidak pernah buka
+    // accordion-nya, dan submit akan kirim mapping KOSONG. `reset()` di
+    // sini isi form values LANGSUNG ke instance `useForm`, independen dari
+    // apakah `Controller`-nya sedang ter-mount atau tidak.
+    resetMapping(uploadResult.suggestedMapping);
   }
 
   async function onConfirmMapping() {
@@ -229,6 +243,8 @@ export default function PurchaseInvoiceImportPage() {
     }
     router.push(`/purchase-invoice/import/${result.batchId}`);
   }
+
+  const mappedCount = result ? result.excelColumns.filter((col) => result.suggestedMapping[col]).length : 0;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -286,36 +302,57 @@ export default function PurchaseInvoiceImportPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleMappingSubmit(onConfirmMapping)} className="flex flex-col gap-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Kolom Excel</TableHead>
-                    <TableHead>Field Accurate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.excelColumns.map((col) => (
-                    <TableRow key={col}>
-                      <TableCell className="font-medium text-foreground">{col}</TableCell>
-                      <TableCell>
-                        <Controller
-                          control={mappingControl}
-                          name={col}
-                          defaultValue={result.suggestedMapping[col] ?? ""}
-                          render={({ field }) => (
-                            <Combobox
-                              options={[...ACCURATE_FIELDS]}
-                              value={field.value}
-                              onChange={field.onChange}
-                              placeholder="(tidak dipetakan)"
-                            />
-                          )}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              {/* § diminta user 2026-09-12 — accordion TERTUTUP by default,
+                  supaya client tidak perlu scroll lewat tabel panjang ini
+                  buat sampai ke tombol "Mulai Import" kalau pemetaan
+                  otomatis sudah benar. Nilai mapping form di-seed di
+                  `onUpload` (`resetMapping`), BUKAN bergantung pada
+                  `Controller` di bawah ini ke-mount — lihat komentar di
+                  sana kenapa itu WAJIB. */}
+              <Accordion type="single" collapsible>
+                <AccordionItem value="mapping" className="border-none">
+                  <AccordionTrigger className="rounded-lg border border-border/60 px-4 py-3 hover:no-underline">
+                    <span className="flex flex-col items-start gap-0.5 text-left">
+                      <span>Cocokkan Kolom Manual (opsional)</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {mappedCount} dari {result.excelColumns.length} kolom sudah otomatis terpetakan — buka kalau mau cek/ubah.
+                      </span>
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-0 pt-3">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Kolom Excel</TableHead>
+                          <TableHead>Field Accurate</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.excelColumns.map((col) => (
+                          <TableRow key={col}>
+                            <TableCell className="font-medium text-foreground">{col}</TableCell>
+                            <TableCell>
+                              <Controller
+                                control={mappingControl}
+                                name={col}
+                                defaultValue={result.suggestedMapping[col] ?? ""}
+                                render={({ field }) => (
+                                  <Combobox
+                                    options={[...ACCURATE_FIELDS]}
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    placeholder="(tidak dipetakan)"
+                                  />
+                                )}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
               <p className="text-xs text-muted-foreground">
                 💡 Baris dengan <strong>Nomor Referensi Tagihan Pemasok</strong> yang SAMA akan digabung jadi 1 faktur
                 (banyak barang) — pastikan tiap faktur yang berbeda pakai nomor yang berbeda juga.
