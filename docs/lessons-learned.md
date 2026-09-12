@@ -61,6 +61,50 @@ WAJIB nol error bersamaan dengan `typecheck`, bukan cuma gate CI.
 HARUS dijalankan lokal di setiap penutupan fase mulai sekarang, sesuai
 SOP yang sudah diupdate.
 
+## 2026-09-12 — Deploy manual v2.0.0 pertama sejak restrukturisasi Data Usaha: 2 gap dokumentasi-vs-realita ditemukan
+**Konteks:** Saat akhirnya deploy manual production untuk v2.0.0 (migrasi
+besar Data Usaha Fase 106-111, backfill wajib), ketahuan 2 hal yang
+SEMUA dokumen (`architecture-deployment.md`, `deployment-server-setup.md`,
+`architecture-backup.md`) asumsikan tapi TIDAK PERNAH diverifikasi ke
+server nyata:
+
+1. **Path server SEBENARNYA `/opt/facport`, bukan `/opt/app`** seperti
+   ditulis di SEMUA dokumen deploy. User konfirmasi langsung dari
+   `wasugi@srv1269544:/opt/facport$`.
+2. **Backup otomatis untuk facport TIDAK PERNAH disetup di server
+   produksi nyata** — `crontab -l` cuma berisi jadwal project LAIN yang
+   numpang di VPS sama (`webane-admin`, `jalamandala`/`forbis.id`), tidak
+   ada satu baris pun untuk facport. `scripts/backup-db.sh` tidak ada di
+   server (cuma ada di git repo, langkah scp-nya tidak pernah dijelaskan
+   eksplisit di `deployment-server-setup.md` — cuma `docker-compose.prod.yml`/
+   `Caddyfile`/`.env.production.example` yang ada instruksi scp-nya).
+   `mc` (MinIO client) juga belum terinstall, `rclone` ADA tapi remote
+   `gdrive`-nya belum diverifikasi kepakai untuk project ini.
+
+**Kenapa baru ketahuan sekarang**: ini DEPLOY MANUAL PERTAMA sejak
+restrukturisasi besar — sebelumnya tidak pernah ada kebutuhan urgent
+untuk benar-benar SSH+verifikasi server nyata sedetail ini (Fase-fase
+sebelumnya lebih kecil/tidak butuh migration berisiko).
+
+**Mitigasi SEMENTARA untuk deploy ini**: backup manual sekali via
+`pg_dump` langsung (bukan lewat `scripts/backup-db.sh`, karena script-nya
+tidak ada di server) — didownload ke komputer lokal user lewat `scp`
+supaya tidak cuma nginap di server yang sama.
+
+**WAJIB ditindaklanjuti** (belum dikerjakan saat entri ini ditulis):
+- Setup backup otomatis SUNGGUHAN di `/opt/facport` (scp script, install
+  `mc`, verifikasi rclone remote, tambah crontab yang benar).
+- Update SEMUA path `/opt/app` → `/opt/facport` di 3 file dokumentasi
+  (`architecture-deployment.md`, `deployment-server-setup.md`,
+  `deployment-new-domain-onboarding.md`) — BELUM dilakukan, jangan lupa.
+- `deployment-server-setup.md` tambah langkah scp `scripts/` eksplisit
+  (gap yang bikin backup tidak pernah ke-setup dari awal).
+
+**Pencegahan**: dokumentasi server-setup yang ditulis SEBELUM server
+sungguhan pernah dites end-to-end itu rencana, bukan fakta — verifikasi
+ke server nyata (path, crontab, binary yang terinstall) sebelum
+mempercayai dokumennya, terutama untuk hal safety-critical seperti backup.
+
 ## 2026-09-12 — CI/CD `Start MinIO` gagal `pull access denied` — docker.io rate-limit anonymous pull, pindah ke quay.io
 **Konteks:** Tepat saat mau release v2.0.0 (develop → main), `Deploy Staging`
 lalu `ci.yml` di PR #58 gagal berulang (3x, ~20 menit) di step "Start
@@ -80,6 +124,21 @@ limit, bukan image hilang/rename.
 `quay.io/minio/minio` — ini registry resmi MinIO saat ini (docs MinIO
 sendiri sudah mengarahkan ke quay.io, docker.io jadi distribusi lama),
 dan request-nya tidak masuk pool anonymous-pull Docker Hub sama sekali.
+
+**Addendum (sama hari) — ternyata juga kena di VPS produksi, bukan cuma CI.**
+Saat `docker compose pull` pertama kali untuk deploy v2.0.0 di VPS
+produksi (`/opt/facport`, shared dengan project lain), `minio/minio:latest`
+gagal dengan error IDENTIK. VPS ini IP-nya dipakai bersama banyak
+workload docker lain (beberapa project lain numpang di server yang sama)
+— jadi limit anonymous docker.io kena dari sisi server juga, bukan cuma
+runner CI. Fix yang SAMA diterapkan ke `docker-compose.prod.yml` DAN
+`docker-compose.staging.yml` (`image: quay.io/minio/minio:latest`).
+**Konsekuensi praktis**: file compose di server (`/opt/facport/*.yml`)
+adalah COPY manual (`scp`), TIDAK auto-update dari git — begitu file ini
+berubah di repo, WAJIB di-`scp` ulang ke server supaya fix-nya kepakai,
+lihat § runbook deploy. Data volume MinIO (bucket yang sudah ada) TIDAK
+terpengaruh sama sekali oleh ganti registry ini — cuma soal dari mana
+image-nya ditarik, isi volume persis sama.
 
 **Pencegahan:** Kalau ada step CI yang `docker run` image publik pihak
 ketiga dan gagal dengan "pull access denied"/"repository does not exist"

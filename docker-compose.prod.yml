@@ -95,7 +95,10 @@ services:
     cpus: 1.0
 
   minio:
-    image: minio/minio:latest
+    # § 2026-09-12 — docker.io/minio/minio kena rate-limit anonymous pull
+    # (VPS shared, IP sama dipakai banyak project lain) — pindah ke quay.io,
+    # registry resmi MinIO saat ini, software identik. Lihat lessons-learned.md.
+    image: quay.io/minio/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
