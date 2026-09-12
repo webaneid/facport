@@ -237,6 +237,8 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [history, setHistory] = useState<SubscriptionHistoryItem[] | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
+  const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
   const [endAt, setEndAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -245,14 +247,20 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   async function load() {
-    const [plansRes, historyRes] = await Promise.all([api.admin.plans.get(), api.admin.subscriptions.get({ query: { userId: user.id } })]);
+    const [plansRes, historyRes, dataUsahaRes] = await Promise.all([
+      api.admin.plans.get(),
+      api.admin.subscriptions.get({ query: { userId: user.id } }),
+      api.admin["data-usaha"].get({ query: { userId: user.id } }),
+    ]);
     if (plansRes.data) setPlans((plansRes.data as unknown as { plans: Plan[] }).plans.filter((p) => p.isActive));
     if (historyRes.data) setHistory((historyRes.data as unknown as { subscriptions: SubscriptionHistoryItem[] }).subscriptions);
+    if (dataUsahaRes.data) setDataUsahaOptions((dataUsahaRes.data as unknown as { dataUsaha: DataUsahaOption[] }).dataUsaha);
   }
 
   function openDialog() {
     setOpen(true);
     setSelectedPlanId("");
+    setSelectedDataUsahaId("");
     setEndAt("");
     setError(null);
     setEditingId(null);
@@ -262,6 +270,16 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   async function handleAssign() {
     if (!selectedPlanId) {
       setError("Pilih paket dulu.");
+      return;
+    }
+    // § diminta user 2026-09-12 — gap ditemukan re-audit alur admin: dialog
+    // ini SEBELUMNYA tidak pernah kirim `dataUsahaId` sama sekali walau
+    // backend (`admin/subscriptions.route.ts`) sudah mendukungnya sejak
+    // Fase 107/108 — assign paket SELALU nyasar ke "Data Usaha Utama"
+    // default. Sama seperti `CreateInvoiceDialog`: WAJIB pilih eksplisit
+    // kalau customer punya Data Usaha, biarkan default kalau belum py sama sekali.
+    if (dataUsahaOptions && dataUsahaOptions.length > 0 && !selectedDataUsahaId) {
+      setError("Pilih Data Usaha tujuan paket ini dulu.");
       return;
     }
     // § ADR-0016 — endAt WAJIB diisi admin secara manual, tidak lagi
@@ -286,6 +304,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       userId: user.id,
       planId: selectedPlanId,
       endAt: endOfDayInTimezone(endAt, companyTimezone).toISOString(),
+      dataUsahaId: selectedDataUsahaId || undefined,
     });
     setSubmitting(false);
     if (res.error) {
@@ -405,6 +424,23 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 placeholder="(pilih paket)"
               />
             )}
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-medium text-foreground">
+                Data Usaha Tujuan{dataUsahaOptions?.length ? " *" : ""}
+              </span>
+              {!dataUsahaOptions ? (
+                <Skeleton className="h-9 w-full" />
+              ) : dataUsahaOptions.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Belum punya Data Usaha — &quot;Data Usaha Utama&quot; akan dibuat otomatis.</p>
+              ) : (
+                <Combobox
+                  options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
+                  value={selectedDataUsahaId}
+                  onChange={setSelectedDataUsahaId}
+                  placeholder="(pilih Data Usaha)"
+                />
+              )}
+            </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">Tanggal Expired</span>
               <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />

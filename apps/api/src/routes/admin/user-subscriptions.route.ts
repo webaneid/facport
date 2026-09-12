@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, inArray, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { subscriptions, plans, accurateConnections, user as userTable } from "../../db/schema";
+import { subscriptions, plans, accurateConnections, user as userTable, dataUsaha } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 
 // § Fase 92 (2026-09-10) — mirror pola `admin/import-batches.route.ts`
@@ -16,6 +16,14 @@ import { permissionPlugin } from "../../lib/permission";
 // 91 — `connected` cuma "active" kalau statusnya BENERAN "active", bukan
 // cuma "ada baris koneksi") — supaya admin lihat gambaran yang SAMA
 // akuratnya dengan yang dilihat customer sendiri, bukan info basi.
+//
+// § diminta user 2026-09-12 — endpoint ini dibuat Fase 92 (SEBELUM Data
+// Usaha jadi entity, Fase 107), jadi awalnya TIDAK JOIN `data_usaha` sama
+// sekali. Ini bikin admin tidak bisa tahu 1 subscription itu punya
+// Data Usaha yang mana (padahal 1 user SEKARANG bisa punya banyak Data
+// Usaha, tiap satu status koneksi Accurate-nya independen) — tambah
+// `dataUsahaId`/`dataUsahaName` supaya FE bisa kelompokkan per Data Usaha
+// (§ `admin/users/[id]/page.tsx`).
 export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
   .use(permissionPlugin)
   .get(
@@ -38,9 +46,12 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           accurateConnectionId: subscriptions.accurateConnectionId,
           planName: plans.name,
           moduleKey: plans.modules,
+          dataUsahaId: dataUsaha.id,
+          dataUsahaName: dataUsaha.name,
         })
         .from(subscriptions)
         .innerJoin(plans, eq(plans.id, subscriptions.planId))
+        .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
         .where(eq(subscriptions.userId, params.id))
         .orderBy(desc(subscriptions.createdAt));
 
@@ -63,6 +74,8 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
             connected: connection?.status === "active",
             connectionStatus: connection?.status ?? null,
             accurateDbAlias: connection?.accurateDbAlias ?? null,
+            dataUsahaId: r.dataUsahaId,
+            dataUsahaName: r.dataUsahaName,
           };
         }),
       };

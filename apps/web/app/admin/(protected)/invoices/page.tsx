@@ -45,6 +45,7 @@ type InvoiceRow = {
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
 type UserOption = { id: string; name: string; email: string };
+type DataUsahaOption = { id: string; name: string };
 type CreatedInvoiceResult = { invoiceId: string; orderId: string; amountDue: number };
 
 function publicPayLink(orderId: string) {
@@ -70,6 +71,8 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
   const [userQuery, setUserQuery] = useState("");
   const [userOptions, setUserOptions] = useState<UserOption[]>([]);
   const [selectedUserId, setSelectedUserId] = useState("");
+  const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
+  const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [selectedPlanIds, setSelectedPlanIds] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
@@ -97,6 +100,23 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
     else if (res.error) setSearchDenied(true);
   }
 
+  // § diminta user 2026-09-12 — gap ditemukan re-audit alur admin: dialog
+  // ini SEBELUMNYA tidak pernah tanya Data Usaha mana yang dituju, jadi
+  // invoice SELALU nyasar ke "Data Usaha Utama" (default backend) walau
+  // customer yang dipilih punya Data Usaha lain — muat daftar Data Usaha
+  // user begitu dipilih, biar admin bisa pilih eksplisit.
+  useEffect(() => {
+    setSelectedDataUsahaId("");
+    if (!selectedUserId) {
+      setDataUsahaOptions(null);
+      return;
+    }
+    setDataUsahaOptions(null);
+    api.admin["data-usaha"].get({ query: { userId: selectedUserId } }).then((res) => {
+      if (res.data) setDataUsahaOptions((res.data as unknown as { dataUsaha: DataUsahaOption[] }).dataUsaha);
+    });
+  }, [selectedUserId]);
+
   function togglePlan(planId: string) {
     setSelectedPlanIds((prev) => {
       const next = new Set(prev);
@@ -115,9 +135,22 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
       setError("Pilih minimal 1 paket.");
       return;
     }
+    // § kalau customer PUNYA Data Usaha, admin WAJIB pilih eksplisit —
+    // JANGAN biarkan diam-diam jatuh ke default (§ komentar di atas soal
+    // gap yang baru diperbaiki). Kalau customer belum punya sama sekali
+    // (`dataUsahaOptions.length === 0`), lanjut tanpa memilih — backend
+    // akan buat "Data Usaha Utama" default, satu-satunya pilihan wajar.
+    if (dataUsahaOptions && dataUsahaOptions.length > 0 && !selectedDataUsahaId) {
+      setError("Pilih Data Usaha tujuan invoice ini dulu.");
+      return;
+    }
     setSubmitting(true);
     setError(null);
-    const res = await api.admin.invoices.post({ userId: selectedUserId, planIds: [...selectedPlanIds] });
+    const res = await api.admin.invoices.post({
+      userId: selectedUserId,
+      planIds: [...selectedPlanIds],
+      dataUsahaId: selectedDataUsahaId || undefined,
+    });
     setSubmitting(false);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
@@ -140,6 +173,8 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
       setUserQuery("");
       setUserOptions([]);
       setSelectedUserId("");
+      setDataUsahaOptions(null);
+      setSelectedDataUsahaId("");
       setSelectedPlanIds(new Set());
       setCreated(null);
       setError(null);
@@ -192,6 +227,27 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
                 placeholder={userQuery || "Cari nama atau email..."}
               />
             </FormField>
+
+            {selectedUserId && (
+              <FormField
+                label="Data Usaha Tujuan"
+                required={!!dataUsahaOptions?.length}
+                hint={dataUsahaOptions?.length === 0 ? 'Belum punya Data Usaha — "Data Usaha Utama" akan dibuat otomatis.' : undefined}
+              >
+                {!dataUsahaOptions ? (
+                  <Skeleton className="h-9 w-full" />
+                ) : dataUsahaOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Belum ada Data Usaha.</p>
+                ) : (
+                  <Combobox
+                    options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
+                    value={selectedDataUsahaId}
+                    onChange={setSelectedDataUsahaId}
+                    placeholder="(pilih Data Usaha)"
+                  />
+                )}
+              </FormField>
+            )}
 
             <div className="flex flex-col gap-2 border-t border-border pt-3">
               <span className="text-xs font-medium text-foreground">Paket (pilih 1 atau lebih)</span>
