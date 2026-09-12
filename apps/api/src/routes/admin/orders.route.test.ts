@@ -4,8 +4,9 @@ import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminOrdersRoute } from "./orders.route";
 import { db } from "../../lib/db";
-import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable } from "../../db/schema";
+import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable, memberSeats, dataUsaha } from "../../db/schema";
 import { env } from "../../lib/env";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(adminOrdersRoute);
@@ -241,6 +242,10 @@ describe("POST /admin/orders/:id/confirm", () => {
       .insert(plans)
       .values({ name: `Trial Plan Supersede ${runId}`, price: 0, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
       .returning();
+    // § dataUsahaId WAJIB sama dengan yang akan di-resolve confirm endpoint
+    // (order.dataUsahaId null → getOrCreateDefaultDataUsaha(customerId)),
+    // supaya query supersede-trial ketemu baris ini.
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(customerId);
     const [oldTrialSub] = await db
       .insert(subscriptions)
       .values({
@@ -250,6 +255,7 @@ describe("POST /admin/orders/:id/confirm", () => {
         isTrial: true,
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
       })
       .returning();
 
@@ -263,6 +269,93 @@ describe("POST /admin/orders/:id/confirm", () => {
     const [newSub] = await db.select().from(subscriptions).where(eq(subscriptions.orderId, order.id));
     expect(newSub!.status).toBe("active");
     expect(newSub!.isTrial).toBe(false);
+  });
+});
+
+// § Fase 110, architecture-user-tambahan.md — plan `seat_addon` (modules: [])
+// TIDAK bisa lewat `createSubmittedOrder` di atas (WAJIB moduleKey per item).
+async function createSubmittedSeatOrder(userId: string, dataUsahaId: string, seatCount: number) {
+  const planRows = [];
+  for (let i = 0; i < seatCount; i++) {
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `AdminOrders Seat Plan ${runId}-${i}-${Math.random()}`, price: 20000, durationDays: 30, modules: [], kind: "seat_addon" })
+      .returning();
+    planRows.push(plan!);
+  }
+  const total = planRows.reduce((s, p) => s + p.price, 0);
+  const [invoice] = await db
+    .insert(invoices)
+    .values({
+      invoiceNumber: nextInvoiceNumber(),
+      userId,
+      status: "unpaid",
+      billToName: "Test User",
+      subtotal: total,
+      total,
+      dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
+    })
+    .returning();
+  for (const plan of planRows) {
+    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: "seat_addon", label: plan.name, price: plan.price });
+  }
+  const [order] = await db
+    .insert(orders)
+    .values({
+      invoiceId: invoice!.id,
+      uniqueCode: 222,
+      method: "bank_transfer",
+      bankAccountRef: "bank-1",
+      status: "submitted",
+      submittedAt: new Date(),
+      proofUrl: "orders/fake/fake.webp",
+      dataUsahaId,
+    })
+    .returning();
+  return { order: order!, invoice: invoice!, plans: planRows };
+}
+
+describe("POST /admin/orders/:id/confirm — seat_addon (Fase 110)", () => {
+  test("confirm N seat_addon sekaligus — N member_seats dibuat, TIDAK saling membatalkan (regression bug supersede)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-seat-multi-${runId}@test.local`);
+    const [du] = await db.insert(dataUsaha).values({ userId: customerId, name: `DU Seat Multi ${runId}` }).returning();
+    const { order } = await createSubmittedSeatOrder(customerId, du!.id, 3);
+
+    const res = await testApp.handle(new Request(`http://localhost/admin/orders/${order.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscriptionsCreated: number };
+    expect(body.subscriptionsCreated).toBe(3);
+
+    const subs = await db.select().from(subscriptions).where(eq(subscriptions.orderId, order.id));
+    expect(subs.length).toBe(3);
+    // § INTI regression test — SEBELUM fix, ke-3 subscription seat_addon
+    // ini akan saling "supersede" (moduleKey undefined === undefined),
+    // cuma yang terakhir insert yang tersisa "active".
+    expect(subs.every((s) => s.status === "active")).toBe(true);
+
+    const seats = await db.select().from(memberSeats).where(eq(memberSeats.dataUsahaId, du!.id));
+    expect(seats.length).toBe(3);
+    expect(seats.every((s) => s.status === "available")).toBe(true);
+  });
+
+  test("beli seat_addon TAMBAHAN tidak membatalkan seat yang sudah aktif lebih dulu (order/confirm terpisah)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-seat-sequential-${runId}@test.local`);
+    const [du] = await db.insert(dataUsaha).values({ userId: customerId, name: `DU Seat Sequential ${runId}` }).returning();
+
+    const { order: order1 } = await createSubmittedSeatOrder(customerId, du!.id, 1);
+    await testApp.handle(new Request(`http://localhost/admin/orders/${order1.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+    const [firstSub] = await db.select().from(subscriptions).where(eq(subscriptions.orderId, order1.id));
+
+    const { order: order2 } = await createSubmittedSeatOrder(customerId, du!.id, 1);
+    await testApp.handle(new Request(`http://localhost/admin/orders/${order2.id}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+
+    const [refreshedFirstSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, firstSub!.id));
+    expect(refreshedFirstSub!.status).toBe("active"); // § TIDAK ikut ke-cancel oleh confirm order KEDUA
+
+    const seats = await db.select().from(memberSeats).where(eq(memberSeats.dataUsahaId, du!.id));
+    expect(seats.length).toBe(2);
   });
 });
 

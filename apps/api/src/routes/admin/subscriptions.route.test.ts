@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, accurateConnections, auditLogs, notifications } from "../../db/schema";
 import { adminSubscriptionsRoute } from "./subscriptions.route";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 92 (2026-09-10) — TIDAK ADA test file untuk endpoint lain di
 // `subscriptions.route.ts` sebelumnya (gap pre-existing, di luar scope
@@ -73,9 +74,10 @@ describe("POST /admin/subscriptions/:id/disconnect-accurate", () => {
       .insert(plans)
       .values({ name: `Disconnect NoConn ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
 
     const res = await testApp.handle(
@@ -105,6 +107,7 @@ describe("POST /admin/subscriptions/:id/disconnect-accurate", () => {
       .insert(plans)
       .values({ name: `Disconnect Success ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
       .values({
@@ -114,6 +117,7 @@ describe("POST /admin/subscriptions/:id/disconnect-accurate", () => {
         startAt: new Date(),
         endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         accurateConnectionId: connection!.id,
+        dataUsahaId,
       })
       .returning();
 

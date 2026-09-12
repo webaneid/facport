@@ -65,6 +65,13 @@ Admin → buka antrian "Konfirmasi Pembayaran" (order status="submitted")
 export const orders = pgTable("orders", {
   id: uuid("id").defaultRandom().primaryKey(),
   invoiceId: uuid("invoice_id").notNull().references(() => invoices.id), // 1 invoice = 1 order (order dibuat BARENG invoice saat checkout)
+  // § Fase 108, architecture-user-tambahan.md § Fase B1 (ditambah ke
+  // dokumen ini re-audit 2026-09-12 — kolom ini SUDAH ada di kode sejak
+  // Fase 108, dokumen ini yang telat diupdate). NULLABLE — order LAMA
+  // (sebelum Data Usaha jadi entity) sengaja TIDAK di-backfill, confirm
+  // logic (`admin/orders.route.ts`) fallback ke Data Usaha default milik
+  // pembeli kalau kosong. Diisi dari `createInvoiceAndOrder()`, § architecture-transaction-flow.md.
+  dataUsahaId: uuid("data_usaha_id").references(() => dataUsaha.id),
   method: varchar("method", { length: 20 }), // "bank_transfer" | "qris" — NULLABLE, dipilih customer BELAKANGAN (bukan saat checkout)
   // § kode unik ditambahkan ke invoice.total agar admin bisa cocokkan
   // mutasi bank ke invoice yang tepat TANPA API cek-mutasi otomatis.

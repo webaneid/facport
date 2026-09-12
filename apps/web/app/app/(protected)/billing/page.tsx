@@ -12,6 +12,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/lib/status-badges";
 import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
+import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 type InvoiceItem = { id: string; label: string; moduleKey: string; price: number };
@@ -71,7 +72,7 @@ export default function BillingPage() {
                 {invoices.map((inv) => (
                   <TableRow key={inv.id}>
                     <TableCell className="font-medium text-foreground">{inv.invoiceNumber}</TableCell>
-                    <TableCell className="text-muted-foreground">{inv.items.map((i) => i.label).join(", ") || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">{groupInvoiceItemLabels(inv.items) || "-"}</TableCell>
                     <TableCell>{currencyFormatter.format(inv.total)}</TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(inv.dueDate, companyTimezone)}</TableCell>
                     <TableCell>

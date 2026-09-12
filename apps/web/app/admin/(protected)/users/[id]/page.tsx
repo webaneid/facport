@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
-import { Eye, Inbox, Link2 } from "lucide-react";
+import { Building2, Eye, Inbox, Link2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -45,6 +46,8 @@ type SubscriptionRow = {
   connected: boolean;
   connectionStatus: string | null;
   accurateDbAlias: string | null;
+  dataUsahaId: string;
+  dataUsahaName: string;
 };
 
 export default function AdminUserDetailPage() {
@@ -84,6 +87,25 @@ export default function AdminUserDetailPage() {
 
   const { user, batches, total } = detail;
 
+  // § diminta user 2026-09-12 — kelompokkan per Data Usaha (accordion),
+  // supaya admin tahu langganan/fitur mana milik Data Usaha yang mana —
+  // sebelumnya flat list tanpa konteks ini (endpoint dibuat Fase 92,
+  // SEBELUM Data Usaha jadi entity Fase 107). Urutan grup ikut urutan
+  // kemunculan pertama subscription-nya (backend sudah `orderBy(desc(createdAt))`).
+  const dataUsahaGroups: { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionRow[] }[] = [];
+  if (subscriptions) {
+    const byId = new Map<string, { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionRow[] }>();
+    for (const sub of subscriptions) {
+      let group = byId.get(sub.dataUsahaId);
+      if (!group) {
+        group = { dataUsahaId: sub.dataUsahaId, dataUsahaName: sub.dataUsahaName, subs: [] };
+        byId.set(sub.dataUsahaId, group);
+        dataUsahaGroups.push(group);
+      }
+      group.subs.push(sub);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Detail User" description="Profil & riwayat import — buat referensi saat user telepon support." />
@@ -106,7 +128,7 @@ export default function AdminUserDetailPage() {
       <Card>
         <CardHeader>
           <CardTitle>Langganan & Koneksi Accurate</CardTitle>
-          <CardDescription>Status tiap fitur yang dilanggan user, beserta koneksi Accurate Online-nya.</CardDescription>
+          <CardDescription>Dikelompokkan per Data Usaha — tiap Data Usaha punya koneksi Accurate sendiri-sendiri.</CardDescription>
         </CardHeader>
         <CardContent>
           {subscriptions === null ? (
@@ -114,47 +136,63 @@ export default function AdminUserDetailPage() {
           ) : subscriptions.length === 0 ? (
             <EmptyState icon={Link2} title="Belum punya langganan" />
           ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Fitur</TableHead>
-                  <TableHead>Paket</TableHead>
-                  <TableHead>Status Langganan</TableHead>
-                  <TableHead>Koneksi Accurate</TableHead>
-                  <TableHead>Data Usaha</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {subscriptions.map((sub) => (
-                  <TableRow key={sub.subscriptionId}>
-                    <TableCell className="text-muted-foreground">{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TableCell>
-                    <TableCell className="font-medium text-foreground">{sub.planName}</TableCell>
-                    <TableCell>
-                      <StatusBadge domain="subscription" status={sub.status} />
-                    </TableCell>
-                    <TableCell>
-                      {sub.connectionStatus === null ? (
-                        <Badge variant="default">Belum Terhubung</Badge>
-                      ) : (
-                        <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
-                      )}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{sub.accurateDbAlias ?? "-"}</TableCell>
-                    <TableCell>
-                      {sub.connectionStatus !== null && (
-                        <div className="flex justify-end">
-                          <DisconnectAccurateDialog
-                            subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
-                            onDisconnected={loadSubscriptions}
-                          />
-                        </div>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
+            <Accordion type="multiple" defaultValue={dataUsahaGroups.map((g) => g.dataUsahaId)}>
+              {dataUsahaGroups.map((group) => (
+                <AccordionItem key={group.dataUsahaId} value={group.dataUsahaId}>
+                  <AccordionTrigger>
+                    <span className="flex items-center gap-2">
+                      <Building2 className="h-4 w-4 text-muted-foreground" />
+                      {group.dataUsahaName}
+                      <span className="text-xs font-normal text-muted-foreground">({group.subs.length} fitur)</span>
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Fitur</TableHead>
+                          <TableHead>Paket</TableHead>
+                          <TableHead>Status Langganan</TableHead>
+                          <TableHead>Koneksi Accurate</TableHead>
+                          <TableHead className="text-right">Aksi</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {group.subs.map((sub) => (
+                          <TableRow key={sub.subscriptionId}>
+                            <TableCell className="text-muted-foreground">{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TableCell>
+                            <TableCell className="font-medium text-foreground">{sub.planName}</TableCell>
+                            <TableCell>
+                              <StatusBadge domain="subscription" status={sub.status} />
+                            </TableCell>
+                            <TableCell>
+                              {sub.connectionStatus === null ? (
+                                <Badge variant="default">Belum Terhubung</Badge>
+                              ) : (
+                                <span className="flex items-center gap-1.5">
+                                  <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
+                                  {sub.accurateDbAlias && <span className="text-xs text-muted-foreground">({sub.accurateDbAlias})</span>}
+                                </span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {sub.connectionStatus !== null && (
+                                <div className="flex justify-end">
+                                  <DisconnectAccurateDialog
+                                    subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
+                                    onDisconnected={loadSubscriptions}
+                                  />
+                                </div>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </AccordionContent>
+                </AccordionItem>
+              ))}
+            </Accordion>
           )}
         </CardContent>
       </Card>

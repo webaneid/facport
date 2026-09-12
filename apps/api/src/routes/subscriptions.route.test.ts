@@ -5,6 +5,7 @@ import { auth } from "../lib/auth";
 import { subscriptionsRoute } from "./subscriptions.route";
 import { db } from "../lib/db";
 import { plans, subscriptions, invoices, invoiceItems, orders, notifications, user as userTable } from "../db/schema";
+import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § Fase 16, ADR-0022 — checkout REWORK: cart multi-modul `{planIds}`,
 // bikin invoice+order (BUKAN lagi subscription "pending_payment"
@@ -37,38 +38,39 @@ async function signIn(email: string) {
   return res.headers.get("set-cookie") ?? "";
 }
 
-async function postCheckout(cookie: string, planIds: string[]) {
+async function postCheckout(cookie: string, planIds: string[], dataUsahaId: string) {
   return testApp.handle(
     new Request("http://localhost/subscriptions/checkout", {
       method: "POST",
       headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ planIds }),
+      body: JSON.stringify({ planIds, dataUsahaId }),
     }),
   );
 }
 
-async function postTrial(cookie: string, planId: string) {
+async function postTrial(cookie: string, planId: string, dataUsahaId: string) {
   return testApp.handle(
     new Request("http://localhost/subscriptions/trial", {
       method: "POST",
       headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ planId }),
+      body: JSON.stringify({ planId, dataUsahaId }),
     }),
   );
 }
 
 describe("POST /subscriptions/checkout", () => {
   test("401 kalau tidak login", async () => {
-    const res = await postCheckout("", ["00000000-0000-0000-0000-000000000000"]);
+    const res = await postCheckout("", ["00000000-0000-0000-0000-000000000000"], "00000000-0000-0000-0000-000000000000");
     expect(res.status).toBe(401);
   });
 
   test("404 PLAN_NOT_FOUND kalau salah satu planId tidak ada", async () => {
     const email = `checkout-notfound-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
-    const res = await postCheckout(cookie, ["00000000-0000-0000-0000-000000000000"]);
+    const res = await postCheckout(cookie, ["00000000-0000-0000-0000-000000000000"], dataUsahaId);
     expect(res.status).toBe(404);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("PLAN_NOT_FOUND");
@@ -76,15 +78,16 @@ describe("POST /subscriptions/checkout", () => {
 
   test("400 PLAN_NOT_ACTIVE kalau plan sudah dinonaktifkan", async () => {
     const email = `checkout-inactive-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [plan] = await db
       .insert(plans)
       .values({ name: `Plan Inactive ${runId}`, price: 100000, durationDays: 30, modules: ["sales_invoice"], isActive: false })
       .returning();
 
-    const res = await postCheckout(cookie, [plan!.id]);
+    const res = await postCheckout(cookie, [plan!.id], dataUsahaId);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("PLAN_NOT_ACTIVE");
@@ -92,8 +95,9 @@ describe("POST /subscriptions/checkout", () => {
 
   test("400 DUPLICATE_MODULE_IN_CART kalau 1 checkout mengandung 2 tier plan untuk modul yang sama (Fase 53)", async () => {
     const email = `checkout-dup-tier-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [monthly] = await db
       .insert(plans)
@@ -104,7 +108,7 @@ describe("POST /subscriptions/checkout", () => {
       .values({ name: `Plan Tahunan ${runId}`, price: 1000000, durationDays: 360, modules: ["sales_invoice"], isActive: true })
       .returning();
 
-    const res = await postCheckout(cookie, [monthly!.id, yearly!.id]);
+    const res = await postCheckout(cookie, [monthly!.id, yearly!.id], dataUsahaId);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; moduleKey: string };
     expect(body.code).toBe("DUPLICATE_MODULE_IN_CART");
@@ -115,6 +119,7 @@ describe("POST /subscriptions/checkout", () => {
     const email = `checkout-dup-${runId}@test.local`;
     const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [existingPlan] = await db
       .insert(plans)
@@ -126,6 +131,7 @@ describe("POST /subscriptions/checkout", () => {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     const [newPlan] = await db
@@ -133,7 +139,7 @@ describe("POST /subscriptions/checkout", () => {
       .values({ name: `Plan New ${runId}`, price: 120000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
 
-    const res = await postCheckout(cookie, [newPlan!.id]);
+    const res = await postCheckout(cookie, [newPlan!.id], dataUsahaId);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; moduleKey: string };
     expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
@@ -149,21 +155,22 @@ describe("POST /subscriptions/checkout", () => {
   // pernah dikonfirmasi admin (belum ada subscription sama sekali).
   test("400 MODULE_ALREADY_SUBSCRIBED kalau modul yang sama masih ada di invoice/order PENDING lain (belum tentu ada subscription aktif)", async () => {
     const email = `checkout-inflight-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [planA] = await db
       .insert(plans)
       .values({ name: `Plan Inflight A ${runId}`, price: 100000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
-    const firstRes = await postCheckout(cookie, [planA!.id]);
+    const firstRes = await postCheckout(cookie, [planA!.id], dataUsahaId);
     expect(firstRes.status).toBe(200); // checkout PERTAMA sukses, order status "pending", TIDAK ada subscription
 
     const [planB] = await db
       .insert(plans)
       .values({ name: `Plan Inflight B ${runId}`, price: 90000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
-    const secondRes = await postCheckout(cookie, [planB!.id]);
+    const secondRes = await postCheckout(cookie, [planB!.id], dataUsahaId);
     expect(secondRes.status).toBe(400);
     const body = (await secondRes.json()) as { code: string; moduleKey: string };
     expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
@@ -172,8 +179,9 @@ describe("POST /subscriptions/checkout", () => {
 
   test("200 checkout 2 plan (cart) — 1 invoice dengan 2 invoiceItems + 1 order, amountDue = subtotal + uniqueCode", async () => {
     const email = `checkout-cart-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [planA] = await db
       .insert(plans)
@@ -184,7 +192,7 @@ describe("POST /subscriptions/checkout", () => {
       .values({ name: `Cart Plan B ${runId}`, price: 175000, durationDays: 30, modules: ["journal_voucher"] })
       .returning();
 
-    const res = await postCheckout(cookie, [planA!.id, planB!.id]);
+    const res = await postCheckout(cookie, [planA!.id, planB!.id], dataUsahaId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { invoiceId: string; orderId: string; amountDue: number };
 
@@ -208,22 +216,54 @@ describe("POST /subscriptions/checkout", () => {
     expect(notif!.type).toBe("order_created");
     expect(notif!.entityType).toBe("order");
   });
+
+  // § Fase 110, architecture-user-tambahan.md — REGRESSION: sebelum fix,
+  // `uniquePlanIds = [...new Set(body.planIds)]` dipakai LANGSUNG bikin
+  // `planRows` (bukan cuma validasi) — planId yang SAMA dikirim N kali
+  // (beli N slot User Tambahan sekaligus, § UI subscribe-form.tsx
+  // "Jumlah slot") diam-diam DEDUP jadi 1 baris invoiceItem/subscription
+  // — quantity hilang tanpa error apa pun. Ditemukan via browser test
+  // manual (checkout 2 seat, invoice cuma punya 1 baris seat), BUKAN dari
+  // membaca kode/test lama (semua test sebelumnya cuma checkout plan
+  // BERBEDA, tidak pernah checkout plan id yang SAMA berulang).
+  test("checkout planId SAMA dikirim N kali (N slot seat_addon) — N invoiceItems terpisah, BUKAN di-dedup jadi 1", async () => {
+    const email = `checkout-seat-quantity-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
+
+    const [seatPlan] = await db
+      .insert(plans)
+      .values({ name: `Seat Quantity Plan ${runId}`, price: 20000, durationDays: 30, modules: [], kind: "seat_addon" })
+      .returning();
+
+    const res = await postCheckout(cookie, [seatPlan!.id, seatPlan!.id, seatPlan!.id], dataUsahaId);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invoiceId: string; amountDue: number };
+
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, body.invoiceId));
+    expect(items.length).toBe(3); // § INTI regresi — dulu jadi 1
+
+    const [invoice] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId));
+    expect(invoice!.subtotal).toBe(60000); // 3 x 20.000
+  });
 });
 
 // § Fase 43 — self-service "Coba Gratis": TANPA invoice/order/pembayaran
 // sama sekali, subscription langsung "active" dengan `isTrial: true`.
 describe("POST /subscriptions/trial", () => {
   test("401 kalau tidak login", async () => {
-    const res = await postTrial("", "00000000-0000-0000-0000-000000000000");
+    const res = await postTrial("", "00000000-0000-0000-0000-000000000000", "00000000-0000-0000-0000-000000000000");
     expect(res.status).toBe(401);
   });
 
   test("404 PLAN_NOT_FOUND kalau planId tidak ada", async () => {
     const email = `trial-notfound-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
-    const res = await postTrial(cookie, "00000000-0000-0000-0000-000000000000");
+    const res = await postTrial(cookie, "00000000-0000-0000-0000-000000000000", dataUsahaId);
     expect(res.status).toBe(404);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("PLAN_NOT_FOUND");
@@ -235,15 +275,16 @@ describe("POST /subscriptions/trial", () => {
   // ditolak, BUKAN diam-diam diizinkan.
   test("400 TRIAL_NOT_AVAILABLE_FOR_PLAN kalau paket TIDAK ditandai admin boleh ditrial", async () => {
     const email = `trial-not-eligible-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [plan] = await db
       .insert(plans)
       .values({ name: `Non Trial Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_invoice"], trialEligible: false })
       .returning();
 
-    const res = await postTrial(cookie, plan!.id);
+    const res = await postTrial(cookie, plan!.id, dataUsahaId);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("TRIAL_NOT_AVAILABLE_FOR_PLAN");
@@ -251,15 +292,16 @@ describe("POST /subscriptions/trial", () => {
 
   test("200 — trial langsung aktif, isTrial=true, TANPA invoice/order (paket trialEligible)", async () => {
     const email = `trial-success-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [plan] = await db
       .insert(plans)
       .values({ name: `Trial Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_invoice"], trialEligible: true })
       .returning();
 
-    const res = await postTrial(cookie, plan!.id);
+    const res = await postTrial(cookie, plan!.id, dataUsahaId);
     expect(res.status).toBe(200);
     const body = (await res.json()) as { subscriptionId: string };
 
@@ -276,22 +318,23 @@ describe("POST /subscriptions/trial", () => {
 
   test("400 TRIAL_ALREADY_USED kalau modul yang sama sudah pernah ditrial (1x seumur hidup)", async () => {
     const email = `trial-reused-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [plan] = await db
       .insert(plans)
       .values({ name: `Trial Reused Plan ${runId}`, price: 100000, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
       .returning();
 
-    const firstRes = await postTrial(cookie, plan!.id);
+    const firstRes = await postTrial(cookie, plan!.id, dataUsahaId);
     expect(firstRes.status).toBe(200);
 
     const [planSameModule] = await db
       .insert(plans)
       .values({ name: `Trial Reused Plan B ${runId}`, price: 120000, durationDays: 30, modules: ["sales_invoice"], trialEligible: true })
       .returning();
-    const secondRes = await postTrial(cookie, planSameModule!.id);
+    const secondRes = await postTrial(cookie, planSameModule!.id, dataUsahaId);
     expect(secondRes.status).toBe(400);
     const body = (await secondRes.json()) as { code: string; moduleKey: string };
     expect(body.code).toBe("TRIAL_ALREADY_USED");
@@ -303,6 +346,7 @@ describe("POST /subscriptions/trial", () => {
     const userId = await signUp(email);
     const cookie = await signIn(email);
 
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [existingPlan] = await db
       .insert(plans)
       .values({ name: `Real Plan ${runId}`, price: 100000, durationDays: 30, modules: ["vendor_payable_account"] })
@@ -313,13 +357,14 @@ describe("POST /subscriptions/trial", () => {
       status: "active",
       startAt: new Date(),
       endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
     });
 
     const [trialPlan] = await db
       .insert(plans)
       .values({ name: `Trial Attempt Plan ${runId}`, price: 90000, durationDays: 30, modules: ["vendor_payable_account"], trialEligible: true })
       .returning();
-    const res = await postTrial(cookie, trialPlan!.id);
+    const res = await postTrial(cookie, trialPlan!.id, dataUsahaId);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; moduleKey: string };
     expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
@@ -328,21 +373,22 @@ describe("POST /subscriptions/trial", () => {
 
   test("checkout TETAP bisa dipanggil untuk modul yang sedang trial (trial tidak memblokir upgrade ke paket asli)", async () => {
     const email = `trial-then-checkout-${runId}@test.local`;
-    await signUp(email);
+    const userId = await signUp(email);
     const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
 
     const [trialPlan] = await db
       .insert(plans)
       .values({ name: `Trial Upgrade Plan ${runId}`, price: 100000, durationDays: 30, modules: ["purchase_payment"], trialEligible: true })
       .returning();
-    const trialRes = await postTrial(cookie, trialPlan!.id);
+    const trialRes = await postTrial(cookie, trialPlan!.id, dataUsahaId);
     expect(trialRes.status).toBe(200);
 
     const [realPlan] = await db
       .insert(plans)
       .values({ name: `Real Upgrade Plan ${runId}`, price: 150000, durationDays: 30, modules: ["purchase_payment"] })
       .returning();
-    const checkoutRes = await postCheckout(cookie, [realPlan!.id]);
+    const checkoutRes = await postCheckout(cookie, [realPlan!.id], dataUsahaId);
     expect(checkoutRes.status).toBe(200);
   });
 });

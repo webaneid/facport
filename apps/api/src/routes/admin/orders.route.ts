@@ -1,11 +1,12 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
+import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs, memberSeats } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
 const PROOF_URL_EXPIRY_SECONDS = 10 * 60; // 10 menit
 
@@ -115,6 +116,12 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             .innerJoin(plans, eq(plans.id, invoiceItems.planId))
             .where(eq(invoiceItems.invoiceId, lockedInvoice.id));
 
+          // § Fase 108, architecture-user-tambahan.md § Fase B1 —
+          // `orders.dataUsahaId` NULLABLE (order LAMA sebelum fitur ini
+          // ada tidak di-backfill, § schema payment.schema.ts) — fallback
+          // ke "Data Usaha Utama" default milik pembeli kalau kosong.
+          const dataUsahaId = lockedOrder.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(lockedInvoice.userId));
+
           // § ditemukan 2026-09-07 (feedback user soal logika trial) —
           // trial SENGAJA tidak memblokir beli paket asli modul yang sama
           // (§ komentar checkout, subscriptions.route.ts) supaya user bisa
@@ -129,18 +136,40 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
           // = 1 subscription lagi beneran terjaga (invariant yang sebelumnya
           // cuma dijaga best-effort via `orderBy(desc(createdAt))` di
           // beberapa query, § subscription-gate.ts).
+          // § Fase 108 — di-SCOPE PER DATA USAHA (bukan lagi per akun) —
+          // modul yang sama BOLEH aktif bersamaan di Data Usaha LAIN
+          // milik user yang sama (tujuan utama restrukturisasi Data
+          // Usaha). Trial-supersede (komentar di atas) TETAP jalan
+          // persis seperti sebelumnya SELAMA trial & pembelian asli ini
+          // sama-sama untuk Data Usaha yang sama (kasus normal).
           const activeSubs = await tx
             .select({ id: subscriptions.id, modules: plans.modules })
             .from(subscriptions)
             .innerJoin(plans, eq(plans.id, subscriptions.planId))
-            .where(and(eq(subscriptions.userId, lockedInvoice.userId), eq(subscriptions.status, "active")));
+            .where(
+              and(
+                eq(subscriptions.userId, lockedInvoice.userId),
+                eq(subscriptions.status, "active"),
+                eq(subscriptions.dataUsahaId, dataUsahaId),
+              ),
+            );
 
           const createdSubscriptionIds: string[] = [];
           for (const { item, plan } of items) {
             const moduleKey = plan.modules[0];
-            const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
-            for (const s of superseded) {
-              await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+            // § Fase 110 — supersede-trial CUMA berlaku untuk plan `module`
+            // (moduleKey ada). `seat_addon` punya `modules: []` (moduleKey
+            // undefined) — TANPA guard ini, filter `s.modules[0] ===
+            // moduleKey` akan cocok SEMUA subscription seat_addon LAIN yang
+            // sudah aktif (sama-sama `modules[0] === undefined`) dan diam-
+            // diam MEMBATALKAN seat yang sudah dibeli sebelumnya — bug
+            // serius, seat tidak punya konsep "upgrade dari trial" sama
+            // sekali.
+            if (moduleKey) {
+              const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
+              for (const s of superseded) {
+                await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+              }
             }
 
             const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
@@ -154,9 +183,22 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
                 status: "active",
                 startAt: now,
                 endAt,
+                dataUsahaId,
               })
               .returning();
             createdSubscriptionIds.push(sub!.id);
+
+            // § Fase 110 — aktivasi seat: 1 subscription `seat_addon` aktif
+            // = 1 slot `member_seats` baru (`available`, siap di-invite).
+            // Expiry slot ini OTOMATIS ikut expiry subscription (job
+            // EXPIRE_SUBSCRIPTIONS yang sudah ada), tidak perlu job baru.
+            if (plan.kind === "seat_addon") {
+              await tx.insert(memberSeats).values({
+                primaryUserId: lockedInvoice.userId,
+                dataUsahaId,
+                seatSubscriptionId: sub!.id,
+              });
+            }
           }
 
           await tx.insert(auditLogs).values({

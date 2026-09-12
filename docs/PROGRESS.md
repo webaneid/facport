@@ -110,10 +110,15 @@
 | 99   | Fix PPh23 Sales Receipt (Struktur `detailTax` yang Benar) | Done | `docs/architecture/architecture-sales-receipt.md` | `docs/phases/phase-99-fix-pph23-sales-receipt.md` |
 | 100  | Mirror Speculative Fix PPh (`detailTax` di Root) ke Purchase Payment | Done | `docs/architecture/architecture-purchase-payment.md` | `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md` |
 | 101  | Fix Tanggal Excel Serial Terkirim Mentah (Other Payment & Journal Voucher) | Done | `docs/architecture/architecture-other-payment.md`, `architecture-journal-voucher.md` | `docs/phases/phase-101-fix-tanggal-excel-serial.md` |
-| 102  | Fix Trim Header Excel di `parseExcelBuffer` (Bug Generik Lintas Modul) | Done (kode, di `develop`) — **belum di-release** | `docs/architecture/architecture-accurate-integration.md` § 3 | `docs/phases/phase-102-fix-trim-header-excel.md` |
-| 103  | Logo Perusahaan di Header + Footer Copyright | Done — **belum di-release** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
-| 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **belum di-release** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
-| 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **belum di-release** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
+| 102  | Fix Trim Header Excel di `parseExcelBuffer` (Bug Generik Lintas Modul) | Done — **released v1.28.0** | `docs/architecture/architecture-accurate-integration.md` § 3 | `docs/phases/phase-102-fix-trim-header-excel.md` |
+| 103  | Logo Perusahaan di Header + Footer Copyright | Done — **released v1.28.0** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
+| 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **released v1.28.0** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
+| 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **released v1.28.0** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
+| 106  | Batas Device/Sesi Login per User | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
+| 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
+| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
+| 110  | User Tambahan (Seat) + Invite | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
+| 111  | Transfer Kepemilikan Data Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

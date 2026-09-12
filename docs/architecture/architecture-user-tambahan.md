@@ -1,13 +1,14 @@
 # Architecture — Restrukturisasi Dashboard per Data Usaha, User Tambahan (Seat), & Batas Device
 
-> **STATUS: DIUSULKAN — BELUM DIIMPLEMENTASIKAN.** Dokumen ini adalah hasil
-> riset arsitektur mendalam (2026-09-11, direvisi hari yang sama setelah user
-> minta pendekatan LEBIH RADIKAL) untuk beberapa kemampuan besar yang diminta
-> client, TAPI user (pemilik project) secara eksplisit memilih untuk
-> **mengevaluasi dulu sebelum eksekusi** — "ini akan bertabrakan banyak hal."
-> JANGAN mulai implementasi fase mana pun di dokumen ini tanpa konfirmasi
-> ulang eksplisit dari user. Riset & keputusan desain di bawah tetap valid
-> sebagai referensi kalau/ketika fitur ini dilanjutkan.
+> **STATUS: SELESAI DIIMPLEMENTASIKAN** (2026-09-11, Fase 106→107→109→110→111,
+> lihat `docs/PROGRESS.md`) — branch lokal `feature/data-usaha-restructure`,
+> **BELUM di-push/deploy ke production**. Dokumen ini semula riset arsitektur
+> yang sengaja ditunda eksekusinya menunggu evaluasi user; setelah dikonfirmasi,
+> seluruh rencana di bawah dieksekusi penuh dalam sesi yang sama. Riset &
+> keputusan desain di bawah tetap jadi referensi historis kenapa desain akhir
+> begini — detail eksekusi & penyimpangan kecil dari rencana awal ada di
+> masing-masing `docs/phases/phase-{106,107,109,110,111}-*.md` dan
+> `docs/decisions/adr-0032-model-seat-user-tambahan.md`.
 >
 > Memenuhi catatan yang sudah lama menunggu di
 > `docs/decisions/adr-0008-model-langganan.md`: *"Per-seat pricing... belum

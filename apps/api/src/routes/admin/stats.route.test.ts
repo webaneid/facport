@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { adminStatsRoute } from "./stats.route";
 import { db } from "../../lib/db";
 import { plans, subscriptions, importBatches, importBatchRows, roles, userRoles, user as userTable } from "../../db/schema";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 59 — dashboard admin. Angka agregat di sini GLOBAL (bukan
 // per-user), jadi tes pakai pola DELTA (before/after) terhadap DB dev
@@ -117,7 +118,8 @@ describe("GET /admin/stats/module-popularity", () => {
     const before = (await (await get("/admin/stats/module-popularity", adminCookie)).json()) as { moduleKey: string; count: number }[];
     const beforeCount = before.find((r) => r.moduleKey === "vendor_payable_account")?.count ?? 0;
 
-    await db.insert(subscriptions).values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) });
+    const dataUsahaId = await createTestDataUsaha(userId);
+    await db.insert(subscriptions).values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId });
 
     const after = (await (await get("/admin/stats/module-popularity", adminCookie)).json()) as { moduleKey: string; count: number }[];
     const afterCount = after.find((r) => r.moduleKey === "vendor_payable_account")?.count ?? 0;
@@ -133,9 +135,10 @@ describe("GET /admin/stats/efficiency", () => {
       .insert(plans)
       .values({ name: `Admin Stats Efficiency Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
 
     const before = (await (await get("/admin/stats/efficiency", adminCookie)).json()) as { rowsThisMonth: number; totalEfficiencySeconds: number };
@@ -169,9 +172,10 @@ describe("GET /admin/stats/efficiency", () => {
       .insert(plans)
       .values({ name: `Admin Stats Early Fail Plan ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
       .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
     const [sub] = await db
       .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
       .returning();
 
     const before = (await (await get("/admin/stats/efficiency", adminCookie)).json()) as { efficiencyPercent: number };

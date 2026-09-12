@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows } from "../../db/schema";
 import { adminImportBatchesRoute } from "./import-batches.route";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § diminta user 2026-09-05 — admin (Super Admin/Admin) lihat riwayat &
 // detail log import SEMUA user, READ-ONLY, buat bantu diagnosa pas user
@@ -51,9 +52,10 @@ async function createCustomerWithBatch(fileName: string, module: string) {
   await db.insert(userRoles).values({ userId, roleId: customerRole!.id }).onConflictDoNothing();
 
   const [plan] = await db.insert(plans).values({ name: `Import Batches Test Plan ${email}`, price: 1000, durationDays: 30, modules: [module] }).returning();
+  const dataUsahaId = await createTestDataUsaha(userId);
   const [subscription] = await db
     .insert(subscriptions)
-    .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) })
+    .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
     .returning();
 
   const [batch] = await db

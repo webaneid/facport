@@ -4,7 +4,8 @@ import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminInvoicesRoute } from "./invoices.route";
 import { db } from "../../lib/db";
-import { plans, invoices, invoiceItems, orders, roles, userRoles, permissions, rolePermissions, user as userTable } from "../../db/schema";
+import { plans, invoices, invoiceItems, orders, roles, userRoles, permissions, rolePermissions, user as userTable, dataUsaha } from "../../db/schema";
+import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(adminInvoicesRoute);
@@ -274,5 +275,53 @@ describe("POST /admin/invoices", () => {
     const [order] = await db.select().from(orders).where(eq(orders.id, body.orderId));
     expect(order!.status).toBe("pending");
     expect(body.amountDue).toBe(300000 + order!.uniqueCode);
+  });
+
+  // § diminta user 2026-09-12 — gap ditemukan saat re-audit: endpoint ini
+  // sebelumnya SELALU `getOrCreateDefaultDataUsaha`, mengabaikan customer
+  // yang punya BANYAK Data Usaha (kasus normal sejak Fase 107) — admin
+  // tidak bisa targetkan Data Usaha spesifik, invoice selalu nyasar ke
+  // "Data Usaha Utama".
+  test("200 — dataUsahaId eksplisit dipakai (order nempel ke Data Usaha yang benar, BUKAN default)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-inv-post-du-${runId}@test.local`);
+    const targetDataUsahaId = await createTestDataUsaha(customerId, `DU Target Invoice ${runId}`);
+    const [plan] = await db.insert(plans).values({ name: `Inv Post DU Plan ${runId}`, price: 50000, durationDays: 30, modules: ["purchase_invoice"] }).returning();
+
+    const res = await testApp.handle(
+      new Request("http://localhost/admin/invoices", {
+        method: "POST",
+        headers: { cookie: adminCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: customerId, planIds: [plan!.id], dataUsahaId: targetDataUsahaId }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { orderId: string };
+    const [order] = await db.select().from(orders).where(eq(orders.id, body.orderId));
+    expect(order!.dataUsahaId).toBe(targetDataUsahaId);
+
+    // § tidak boleh diam-diam bikin "Data Usaha Utama" tambahan begitu
+    // dataUsahaId eksplisit dikirim.
+    const defaultRows = await db.select().from(dataUsaha).where(eq(dataUsaha.userId, customerId));
+    expect(defaultRows.some((d) => d.name === "Data Usaha Utama")).toBe(false);
+  });
+
+  test("404 DATA_USAHA_NOT_FOUND kalau dataUsahaId BUKAN milik userId target (cegah admin tempel invoice ke Data Usaha user lain)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-inv-post-du-owner-${runId}@test.local`);
+    const otherUserId = await signUp(`admin-inv-post-du-other-${runId}@test.local`);
+    const otherDataUsahaId = await createTestDataUsaha(otherUserId, `DU Other ${runId}`);
+    const [plan] = await db.insert(plans).values({ name: `Inv Post DU Wrong Plan ${runId}`, price: 50000, durationDays: 30, modules: ["purchase_invoice"] }).returning();
+
+    const res = await testApp.handle(
+      new Request("http://localhost/admin/invoices", {
+        method: "POST",
+        headers: { cookie: adminCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: customerId, planIds: [plan!.id], dataUsahaId: otherDataUsahaId }),
+      }),
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("DATA_USAHA_NOT_FOUND");
   });
 });

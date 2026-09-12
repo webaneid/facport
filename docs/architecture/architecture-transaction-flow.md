@@ -65,10 +65,11 @@ tanggal custom), baris 5 WAJIB diinput manual (kontrak korporat, dst,
 
 ### `createInvoiceAndOrder()` — `apps/api/src/lib/invoice-order.ts`
 ```ts
-createInvoiceAndOrder(tx, { userId, billToName, planRows }): { invoiceId, orderId, subtotal, uniqueCode, amountDue }
+createInvoiceAndOrder(tx, { userId, billToName, planRows, dataUsahaId }): { invoiceId, orderId, subtotal, uniqueCode, amountDue }
 ```
 Bikin 1 invoice + N `invoiceItems` (1 per plan) + 1 order (status
-`pending`, `uniqueCode` acak 100-999 buat cocokkan mutasi bank manual).
+`pending`, `uniqueCode` acak 100-999 buat cocokkan mutasi bank manual,
+`dataUsahaId` disimpan di `orders.dataUsahaId`).
 Diekstrak Fase 18 dari checkout customer (Fase 16) SPESIFIK supaya
 dipakai ulang tanpa duplikasi. **SENGAJA TIDAK** menyertakan guard
 "modul sudah aktif"/row-lock user — itu KONTEKS-SPESIFIK checkout
@@ -82,15 +83,29 @@ langsung panggil.
 lihat komentar tipe `Tx` di file, `tx` structurally BEDA dari
 `typeof db`).
 
+**`dataUsahaId` (Fase 108, ditambah re-audit 2026-09-12 ke dokumen ini —
+SUDAH ada di kode sejak Fase 108, dokumen ini yang lupa diupdate)**: WAJIB
+diisi caller, 1 checkout/invoice = 1 Data Usaha. Baris #1 (checkout
+customer) dapat dari body request (`ownsDataUsaha` dicek dulu). Baris #2/#3
+(admin) OPSIONAL di body — kalau dikirim, WAJIB divalidasi
+`ownsDataUsaha(targetUserId, dataUsahaId)` dulu (cegah admin nempel
+invoice ke Data Usaha user lain), fallback `getOrCreateDefaultDataUsaha()`
+kalau tidak dikirim (kompatibel API lama). **Kalau bikin titik masuk
+transaksi BARU (§ "Untuk Pengembangan Landing Page" di bawah), JANGAN
+lupakan parameter ini** — 2 endpoint admin (`admin/invoices.route.ts`,
+`admin/subscriptions.route.ts`) sempat lupa expose pilihan ini ke UI
+sampai ditemukan re-audit 2026-09-12, sudah diperbaiki.
+
 ### `createManualSubscriptions()` — `apps/api/src/lib/manual-subscription.ts`
 ```ts
-createManualSubscriptions(tx, { userId, planRows, actorId }): subscriptionIds[]
+createManualSubscriptions(tx, { userId, planRows, actorId, dataUsahaId }): subscriptionIds[]
 ```
 Insert N `subscriptions` (status `active` LANGSUNG, `endAt` dihitung
-`now + plan.durationDays`), + `auditLogs` per subscription (`changes:
-{provisionedBy:"admin", markedPaidAtOnboarding:true}`). **Dipanggil
-dari**: baris #4 saja. BEDA dari `POST /admin/subscriptions` (baris #5)
-yang endAt-nya manual — 2 kebutuhan beda, SENGAJA 2 fungsi.
+`now + plan.durationDays`, `dataUsahaId` WAJIB — sama alasan di atas), +
+`auditLogs` per subscription (`changes: {provisionedBy:"admin",
+markedPaidAtOnboarding:true}`). **Dipanggil dari**: baris #4 saja. BEDA
+dari `POST /admin/subscriptions` (baris #5) yang endAt-nya manual — 2
+kebutuhan beda, SENGAJA 2 fungsi.
 
 ### `lib/order-payment.ts` — logic PEMBAYARAN (bukan pembuatan invoice)
 ```ts

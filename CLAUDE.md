@@ -139,7 +139,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Modul Sales Receipt (Penerimaan Penjualan) | `docs/architecture/architecture-sales-receipt.md` |
 | Modul Jurnal Umum (Journal Voucher) | `docs/architecture/architecture-journal-voucher.md` |
 | Model langganan, paket, gating akses modul | `docs/architecture/architecture-subscription.md` |
-| User tambahan (seat), multi-instance modul, batas device (DIUSULKAN, belum diimplementasikan) | `docs/architecture/architecture-user-tambahan.md` |
+| User tambahan (seat), multi-instance modul, batas device, transfer kepemilikan Data Usaha | `docs/architecture/architecture-user-tambahan.md` |
 | Routing 3 surface (landing/admin/app), subdomain | `docs/architecture/architecture-domain-routing.md` |
 | Dashboard pelanggan, App Shell (sidebar/nav modul baru) | `docs/architecture/architecture-app-dashboard.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |

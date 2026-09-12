@@ -7,6 +7,7 @@ import { roles, userRoles, auditLogs, subscriptions, plans, user as userTable, s
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
 import { createManualSubscriptions } from "../../lib/manual-subscription";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { boss, JOBS, startQueue } from "../../lib/queue";
 import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
@@ -196,13 +197,19 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
       let subscriptionIds: string[] | undefined;
 
       if (planRows.length > 0) {
+        // § Fase 108, architecture-user-tambahan.md § Fase B1 — user
+        // BARU pasti belum punya Data Usaha apa pun, auto-buat "Data
+        // Usaha Utama" default (admin belum atur pilih Data Usaha
+        // spesifik di alur provisioning ini — UI itu menyusul Fase
+        // 109/110, dicatat sebagai Known Limitation phase doc).
+        const dataUsahaId = await getOrCreateDefaultDataUsaha(result.user!.id);
         if (body.markAsPaid) {
           subscriptionIds = await db.transaction((tx) =>
-            createManualSubscriptions(tx, { userId: result.user!.id, planRows, actorId: user.id }),
+            createManualSubscriptions(tx, { userId: result.user!.id, planRows, actorId: user.id, dataUsahaId }),
           );
         } else {
           const created = await db.transaction((tx) =>
-            createInvoiceAndOrder(tx, { userId: result.user!.id, billToName: body.name, planRows }),
+            createInvoiceAndOrder(tx, { userId: result.user!.id, billToName: body.name, planRows, dataUsahaId }),
           );
           invoiceId = created.invoiceId;
           orderId = created.orderId;
