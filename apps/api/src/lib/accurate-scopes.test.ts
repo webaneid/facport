@@ -1,5 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { MODULE_ACCURATE_SCOPES, scopesForModules } from "./accurate-scopes";
+import { MODULE_CATALOG } from "./module-catalog";
 
 // § Fase 78 (2026-09-09) — BUG ditemukan lewat retest client (import
 // Purchase Invoice 403 di baris pertama SETIAP grup): ADR-0026 (commit
@@ -46,5 +47,19 @@ describe("MODULE_ACCURATE_SCOPES — Fase 98 fix", () => {
     const scopes = scopesForModules(["journal_voucher"]);
     expect(scopes).toContain("data_classification_view");
     expect(scopes).toContain("data_classification_save");
+  });
+});
+
+// § Fase 117, ADR-0033 — guard konsolidasi: `MODULE_ACCURATE_SCOPES` HARUS
+// subset dari Varian Produk "facport" di `module-catalog.ts` (satu-satunya
+// Produk yang integrasi Accurate Online). Kalau ada modul non-Accurate
+// (Konverter/AutoProduksi) ke-wire keliru ke sini, test ini gagal —
+// mencegah modul yang TIDAK PERNAH call Accurate diberi OAuth scope.
+describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117)", () => {
+  test("semua key MODULE_ACCURATE_SCOPES adalah Varian Produk facport di module-catalog.ts", () => {
+    const facportKeys = new Set<string>(MODULE_CATALOG.filter((m) => m.productLine === "facport").map((m) => m.key));
+    for (const key of Object.keys(MODULE_ACCURATE_SCOPES)) {
+      expect(facportKeys.has(key)).toBe(true);
+    }
   });
 });

@@ -124,6 +124,7 @@
 | 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
 | 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
+| 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2798,3 +2799,46 @@ Chrome) — kedua mode render dikonfirmasi visual benar di admin & customer
 view. Migration **cuma dijalankan lokal**, belum ke production — deploy
 menunggu konfirmasi terpisah. Detail lengkap →
 `docs/phases/phase-116-fitur-promo-pilih-usaha.md`.
+
+## Update 2026-09-14 — Fase 117 Done: Peta Struktur Produk Multi-Brand (ADR-0033)
+Client ingin gabung 3 produk terpisah (Facport, Konverter — aplikasi lama
+PHP untuk pengguna Accurate Desktop, AutoProduksi — modul manufaktur/BOM
+belum ada kode) jadi 1 aplikasi bernama Facport, 1 pendaftaran/billing.
+User eksplisit minta struktur dipetakan DULU sebelum lanjut bangun modul
+lain dari 21 modul katalog Facport (6 sudah Done). Dikerjakan via Plan
+Mode: 3 subagent Explore paralel (subscription/billing/katalog, sidebar/
+domain-routing/branding, kopling Data Usaha/pipeline import ke Accurate)
++ 1 Plan agent validasi, semua grounded ke kode nyata. Temuan kunci:
+fondasi Data Usaha/subscription/job-queue Facport SUDAH lentur untuk
+Produk baru (koneksi Accurate opsional by design, gate `moduleAccess()`
+cuma string-membership, TIDAK query Accurate sama sekali) — tidak perlu
+rombak besar, cuma perlu dimensi "Produk" baru (kolom `productLine` di
+`plans`/`invoiceItems`, ortogonal terhadap `modules`/`kind`) + source of
+truth katalog baru (`module-catalog.ts`, ganti duplikasi manual 7
+module-key di ≥4 tempat).
+
+Draf plan pertama DITOLAK user di `ExitPlanMode` — istilah "product line"
+terkesan seperti 3 sub-brand terpisah, padahal maksudnya 1 brand
+("Facport") jual beberapa produk (analog toko jual kaos/ban mobil/jasa
+web). Dikoreksi jadi kerangka "Brand → Produk → Varian" sebelum disetujui
+— disimpan ke memory session (`feedback_brand_produk_varian_terminology`)
+untuk konsistensi ke depan.
+
+ADR-0033 ditulis (extend, bukan superseding, ADR-0019). Deliverable: ADR
+baru, architecture doc baru (`architecture-product-lines.md`, referensi
+hidup diupdate tiap Konverter/AutoProduksi nambah Varian nyata), 5 doc
+arsitektur diupdate, glossary disambiguasi istilah "Modul" (3 arti
+overlap). Kode: 2 kolom baru (migration murni `ADD COLUMN NOT NULL
+DEFAULT`, tanpa backfill), `module-catalog.ts` baru, `module-options.ts`
+jadi re-export, denormalisasi `productLine` di invoice-order.ts, field
+opsional `NavGroup.productLine?` di sidebar (render ditunda). 2 test
+guard baru kunci konsolidasi katalog. Desain (BUKAN implementasi) untuk
+riwayat Konverter dikunci di ADR: `import_batches` DITOLAK sengaja
+(pipeline server-verified, Konverter 100% client-side) — tabel
+`conversion_logs` terpisah didesain, dibuat pas fase build Konverter.
+
+Typecheck 0 error, test 781 pass/0 fail (3 baru), lint 0 error/0 warning,
+security review 0 temuan. Fase ini SENGAJA tidak membangun UI Konverter,
+schema AutoProduksi, atau migrasi 34 user lama Konverter — semua itu
+fase terpisah nanti. Detail lengkap →
+`docs/phases/phase-117-peta-struktur-multi-produk.md`.

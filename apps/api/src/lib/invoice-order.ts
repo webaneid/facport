@@ -4,7 +4,7 @@ import { generateInvoiceNumber } from "./invoice-number";
 
 const INVOICE_DUE_DAYS = 3;
 
-type PlanRow = { id: string; name: string; price: number; modules: string[] };
+type PlanRow = { id: string; name: string; price: number; modules: string[]; productLine: string };
 
 // § `tx` (dari `db.transaction(async (tx) => ...)`) TIDAK structurally
 // compatible dengan `typeof db` (beda tipe Drizzle — transaction hilang
@@ -62,6 +62,9 @@ export async function createInvoiceAndOrder(
       // NOT NULL) — ditemukan saat tulis test regresi, bukan lewat baca
       // kode saja.
       moduleKey: p.modules[0] ?? "seat_addon",
+      // § Fase 117, ADR-0033 — denormalisasi dari plan.productLine, pola
+      // sama moduleKey di atas.
+      productLine: p.productLine,
       label: p.name,
       price: p.price,
     })),

@@ -146,6 +146,19 @@ pernah jadi bug nyata ("Database not opened" saat route coba enqueue job,
 - **Refresh token OAuth Accurate** sebelum expired (§ `architecture-accurate-integration.md`)
 - Export data (CSV/PDF besar)
 
+## Multi-Produk (Fase 117) — Queue Sudah Cukup Generik
+`JOBS` cuma string enum, `boss.work()`/`boss.schedule()` job-type-agnostic —
+dikonfirmasi (riset Fase 117) sistem ini TIDAK butuh perubahan apa pun untuk
+Produk baru. Job Accurate-specific (`IMPORT_TO_ACCURATE`, `CANCEL_IMPORT`,
+`REFRESH_ACCURATE_TOKEN`) TETAP scope Produk Facport saja. AutoProduksi
+(kalau butuh proses async, mis. rekalkulasi stok dari formula) akan dapat
+job type BARU sendiri (pola sama `SEND_ANNOUNCEMENT`/`PURGE_OLD_IMPORTS` —
+1 baris konstanta + 1 `boss.work()`) pas fase build-nya, TIDAK lewat
+`IMPORT_TO_ACCURATE` (2 titik gating di worker-nya unconditional assume
+koneksi Accurate ada — lihat `architecture-product-lines.md`). Konverter
+(100% client-side) TIDAK butuh job/queue sama sekali. Tidak ada perubahan
+kode di file ini fase 117.
+
 ## Job Terjadwal (Scheduled, Bukan Cuma Reaktif dari Enqueue)
 `pg-boss` juga support **cron-style scheduling** (`boss.schedule()`), dipakai
 untuk job yang jalan berkala tanpa trigger user, mis.:

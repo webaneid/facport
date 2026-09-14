@@ -172,7 +172,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
                 <div key={group} className="flex flex-col gap-1.5">
                   <span className="text-xs text-muted-foreground">{group}</span>
                   <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={group}>
-                    {MODULE_OPTIONS.filter((m) => m.group === group).map((m) => (
+                    {MODULE_OPTIONS.filter((m) => m.category === group).map((m) => (
                       <label key={m.key} className="flex items-center gap-2">
                         <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
                         {m.label}

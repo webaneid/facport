@@ -5,6 +5,7 @@ import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
 import { user as userTable, roles, userRoles, plans } from "../../db/schema";
 import { adminPlansRoute } from "./plans.route";
+import { MODULE_CATALOG } from "../../lib/module-catalog";
 
 // § Fase 110, architecture-user-tambahan.md — TIDAK ADA test file untuk
 // endpoint lain di `plans.route.ts` sebelumnya (gap pre-existing, di luar
@@ -112,5 +113,40 @@ describe("POST /admin/plans — validasi kind<->modules", () => {
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("SEAT_ADDON_CANNOT_HAVE_MODULES");
+  });
+});
+
+// § Fase 117, ADR-0033 — guard drift: union literal `modules` di
+// `planBody` (plans.route.ts) DITULIS MANUAL (generate otomatis dari
+// module-catalog.ts TERBUKTI merusak inferensi Eden Treaty, temuan
+// 2026-09-04, lihat komentar di plans.route.ts) — test ini mengecek LEWAT
+// PERILAKU (bukan introspeksi internal TypeBox) bahwa union itu tetap
+// SAMA PERSIS dengan Varian Produk "facport" di module-catalog.ts, supaya
+// kalau salah satu berubah tanpa yang lain, test ini gagal duluan
+// sebelum ke production.
+describe("POST /admin/plans — drift guard union `modules` vs module-catalog.ts (Fase 117)", () => {
+  test("SEMUA Varian Produk facport di module-catalog.ts diterima sebagai plan modules", async () => {
+    const cookie = await makeAdminCookie();
+    const facportKeys = MODULE_CATALOG.filter((m) => m.productLine === "facport").map((m) => m.key);
+    for (const key of facportKeys) {
+      const res = await postPlan(cookie, {
+        name: `Plan Drift Guard ${key} ${runId}`,
+        price: 10000,
+        durationDays: 30,
+        modules: [key],
+      });
+      expect(res.status).toBe(200);
+    }
+  });
+
+  test("key yang BUKAN Varian Produk facport DITOLAK (union tidak lebih longgar dari katalog)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await postPlan(cookie, {
+      name: `Plan Drift Guard Invalid ${runId}`,
+      price: 10000,
+      durationDays: 30,
+      modules: ["bukan_varian_valid"],
+    });
+    expect(res.status).toBe(422);
   });
 });

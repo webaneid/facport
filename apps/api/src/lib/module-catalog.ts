@@ -1,0 +1,39 @@
+// § Fase 117, ADR-0033, architecture-product-lines.md — SOURCE OF TRUTH
+// katalog Produk+Varian. Leaf file MURNI — JANGAN import db.ts/env.ts atau
+// apa pun server-only di sini, karena `apps/web/lib/module-options.ts`
+// re-export file ini secara RUNTIME (bukan type-only) dan akan ikut
+// di-bundle Next.js.
+//
+// Kerangka: Brand ("Facport", tunggal, di luar file ini) → Produk
+// (PRODUCT_LINES di bawah) → Kategori (field `category`, presentasional
+// SAJA, JANGAN dipakai gating) → Varian (1 entri MODULE_CATALOG = 1
+// sub-modul/tipe-transaksi, field `key`-nya = "moduleKey"/"module" yang
+// dipakai `moduleAccess()`, `plans.modules`, `import_batches.module`, dst).
+//
+// Produk Konverter/AutoProduksi SENGAJA belum py entri Varian apa pun —
+// JANGAN tebak nama modul/kategori sebelum fase build masing-masing
+// (hindari over-scope, § ADR-0033 "Eksplisit Di Luar Scope").
+
+export const PRODUCT_LINES = [
+  { key: "facport", label: "Facport" },
+  { key: "konverter", label: "Konverter" },
+  { key: "autoproduksi", label: "AutoProduksi" },
+] as const;
+
+export type ProductLineKey = (typeof PRODUCT_LINES)[number]["key"];
+
+export const MODULE_CATALOG = [
+  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Penjualan" },
+  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Penjualan" },
+  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Pembelian" },
+  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Pembelian" },
+  { key: "journal_voucher", label: "Jurnal Umum", productLine: "facport", category: "Buku Besar" },
+  { key: "vendor_payable_account", label: "Akun Hutang Pemasok", productLine: "facport", category: "Data Master" },
+  { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", productLine: "facport", category: "Kas & Bank" },
+] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
+
+export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
+
+export function moduleLabel(key: string): string {
+  return MODULE_CATALOG.find((m) => m.key === key)?.label ?? key;
+}
