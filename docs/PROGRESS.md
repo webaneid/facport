@@ -114,11 +114,16 @@
 | 103  | Logo Perusahaan di Header + Footer Copyright | Done — **released v1.28.0** | `docs/architecture/architecture-settings.md`, `architecture-app-dashboard.md` | `docs/phases/phase-103-logo-header-footer-copyright.md` |
 | 104  | Logo Perusahaan & Urutan Bukti Transfer di PDF Invoice | Done — **released v1.28.0** | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-104-logo-dan-urutan-bukti-transfer-invoice-pdf.md` |
 | 105  | Search Form di Semua Halaman Admin + Hapus "Cari Cepat" | Done — **released v1.28.0** | - | `docs/phases/phase-105-search-form-admin-dan-hapus-cari-cepat.md` |
-| 106  | Batas Device/Sesi Login per User | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
-| 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
-| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
-| 110  | User Tambahan (Seat) + Invite | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
-| 111  | Transfer Kepemilikan Data Usaha | Done — **branch lokal `feature/data-usaha-restructure`, BELUM push** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
+| 106  | Batas Device/Sesi Login per User | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase A | `docs/phases/phase-106-batas-device-per-user.md` |
+| 107  | Migrasi Skema Data Usaha + Scoping Backend (Checkout/Trial/Admin) | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase B0/B1 | `docs/phases/phase-107-migrasi-data-usaha.md` |
+| 109  | Gerbang "Pilih Data Usaha" + Frontend Multi-Data-Usaha | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-109-gerbang-pilih-data-usaha.md` |
+| 110  | User Tambahan (Seat) + Invite | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
+| 111  | Transfer Kepemilikan Data Usaha | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
+| 112  | Deploy v2.0.0 ke Production & Perbaikan Pasca-Deploy | Done | `docs/architecture/architecture-deployment.md`, `docs/architecture/architecture-backup.md` | `docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md` |
+| 113  | Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate | Done | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-113-scoping-data-usaha-dashboard.md` |
+| 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
+| 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
+| 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2721,3 +2726,75 @@ sanitizing header Excel, dikonfirmasi berlaku ke SEMUA modul termasuk
 Sales Receipt — 1 fungsi shared), baru eksplisit minta commit+push ke
 `develop`. **Belum di-release ke `main`/deploy** — sesuai instruksi
 user setelah insiden timing release v1.27.1, menunggu instruksi lanjut.
+
+## Update 2026-09-12/13 — Fase 112 Done: v2.0.0 resmi live di production
+User minta rilis Fase 106-111 (restrukturisasi Data Usaha) yang selama
+ini cuma ada di branch lokal. Proses: push → merge `develop` → PR →
+`v2.0.0` (breaking change resmi, override `.releaserc.json` sejak
+v1.0.0 akhirnya dihapus) → migration+backfill manual ke production →
+container baru live. 7 bug/gap ditemukan & diperbaiki SAAT proses ini
+(semuanya jenis yang cuma kelihatan di deploy manual nyata, tidak
+pernah muncul di dev): rate-limit Docker Hub (CI & VPS), 4 lint error
+numpuk, `drizzle-kit migrate` gagal generic di production (akhirnya
+migrate manual via `psql`), **bug nyata data production**: backfill
+bikin 1 Data Usaha per baris koneksi Accurate bukan per company
+sungguhan (1 user reconnect 16-19x ke company sama dapat 16 Data Usaha
+duplikat — sudah digabung manual + source code-nya diperbaiki), backup
+otomatis facport yang ternyata TIDAK PERNAH disetup (sekarang aktif +
+terverifikasi), dan domain lama `*.ane.web.id` (+ container `app-*`-nya)
+ternyata masih live tanpa disadari — dikonfirmasi user sebagai domain
+lama sebelum pindah ke `facinstitute.id`, sudah di-decommission aman
+(backup dulu, baru dihapus). Detail lengkap tiap temuan →
+`docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md`
+dan `docs/lessons-learned.md` (5 entri baru).
+
+## Update 2026-09-14 — Fase 113 Done: Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate
+User lapor dashboard pasca-pilih-Data-Usaha masih "umum" (koneksi Accurate
+& langganan tidak spesifik ke Data Usaha aktif). Audit (subagent Explore)
+membuktikan 3 halaman (`/app`, `/app/import/arsip`, `/app/accurate`) dibuat
+SEBELUM restrukturisasi multi-Data-Usaha (Fase 106-111) dan tidak pernah
+di-retrofit ke pola scoping yang sudah benar di `/app/team`/`/app/subscribe`.
+Dikerjakan via Plan Mode (riset menyeluruh sebelum eksekusi, sesuai
+permintaan eksplisit user "perencanaan yang matang dulu"). 5 endpoint
+backend (`/me/subscriptions`, `/accurate/subscriptions`,
+`/accurate/connections`, `/me/stats`, `/me/import-batches`) sekarang
+menerima & memfilter `dataUsahaId`. Security review (subagent) menemukan 1
+Medium (3 endpoint baru rentan ke mantan pemilik/member yang kehilangan
+akses tapi masih ingat `dataUsahaId`, karena kolom `userId` yang dipakai
+dibekukan saat transfer kepemilikan/seat di-revoke — TIDAK divalidasi ulang
+terhadap akses SAAT INI) + 1 Low (query string belum di-`encodeURIComponent`)
+— keduanya diperbaiki langsung, termasuk helper baru
+`hasAccessToDataUsaha` (`apps/api/src/lib/data-usaha.ts`). Typecheck 0
+error, lint 0 error, test suite 753 pass/0 fail (21 baru). Billing/Tagihan
+SENGAJA tidak di-scope di fase ini (keputusan produk terpisah, tidak
+diminta user). Detail lengkap →
+`docs/phases/phase-113-scoping-data-usaha-dashboard.md`.
+
+## Update 2026-09-14 — Fase 116 Done: Fitur "Promo" di /pilih-usaha
+User minta banner promo dinamis (bisa dikelola admin) di gerbang
+`/pilih-usaha` — eksplisit minta hati-hati karena perlu tabel database
+baru ("saya takut banget bener2 harus hati2"). Dikerjakan via Plan Mode
+(riset dulu: ketemu `banner-slider.tsx` Fase 109 memang sengaja hardcode
++ digeneralisasi untuk disambung data dinamis nanti). Tabel baru `promos`
+(migration CREATE-TABLE murni, tanpa backfill — kategori risiko migration
+paling rendah di project ini), permission `promos.manage`, CRUD admin
+penuh + halaman `/admin/promos`, endpoint publik `GET /promos`
+(`isActive`+`LIMIT 5`+`sortOrder`, maksimal 5 tampil diminta user
+eksplisit di tengah riset), dan `banner-slider.tsx` dirombak jadi 2 mode
+render: kartu+tombol (title+deskripsi+label tombol semua terisi) vs
+gambar-klik-penuh (ketiganya kosong). Upload gambar pakai pola bucket
+publik (sama logo perusahaan) — sengaja BUKAN Media Library generik yang
+masih punya gap URL belum selesai.
+
+Security review (subagent) menemukan 1 Medium (`url` cuma divalidasi
+"tidak kosong", celah `javascript:` URI yang bisa dieksekusi customer
+saat klik promo) — diperbaiki langsung via `validatePromoUrlScheme()` di
+backend+frontend+test. Ketemu juga gap tak terkait: script
+`cleanup-test-data.ts` belum pernah cover `media`/`promos` (FK tanpa
+cascade ke `user`) karena belum ada test upload gambar sungguhan sebelum
+fase ini — sekarang sudah ditambahkan. Typecheck 0 error, test 778
+pass/0 fail, lint 0 error/0 warning. Verifikasi manual browser (Claude in
+Chrome) — kedua mode render dikonfirmasi visual benar di admin & customer
+view. Migration **cuma dijalankan lokal**, belum ke production — deploy
+menunggu konfirmasi terpisah. Detail lengkap →
+`docs/phases/phase-116-fitur-promo-pilih-usaha.md`.

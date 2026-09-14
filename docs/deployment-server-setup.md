@@ -24,16 +24,16 @@ sudo usermod -aG docker $USER
 
 ## 2. Siapkan folder deploy
 ```bash
-sudo mkdir -p /opt/app
-sudo chown $USER:$USER /opt/app
-cd /opt/app
+sudo mkdir -p /opt/facport
+sudo chown $USER:$USER /opt/facport
+cd /opt/facport
 ```
 
 ## 3. Copy file yang dibutuhkan ke server (SEKALI ini aja manual, selanjutnya otomatis lewat CI)
 Dari komputer lokal kamu:
 ```bash
-scp docker-compose.prod.yml Caddyfile user@ip-vps:/opt/app/
-scp .env.production.example user@ip-vps:/opt/app/.env.production
+scp docker-compose.prod.yml Caddyfile user@ip-vps:/opt/facport/
+scp .env.production.example user@ip-vps:/opt/facport/.env.production
 ```
 Lalu di server, edit `.env.production` isi nilai asli (password DB, MinIO
 keys, JWT secret, domain) — JANGAN pakai nilai default/contoh.
@@ -81,7 +81,7 @@ Di GitHub repo → Settings → Secrets and variables → Actions, tambahkan:
 
 ## 7. First deploy (manual sekali, buat mastiin semua bener sebelum serahin ke CI)
 ```bash
-cd /opt/app
+cd /opt/facport
 docker compose -f docker-compose.prod.yml --env-file .env.production pull
 docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 docker compose -f docker-compose.prod.yml ps   # pastikan semua "healthy"/"running"
@@ -95,7 +95,7 @@ kecuali buat maintenance/rollback.
 ## Rollback Manual (kalau perlu cepat, sebelum CI sempat jalan lagi)
 ```bash
 ssh user@ip-vps
-cd /opt/app
+cd /opt/facport
 IMAGE_TAG=v0.2.9 docker compose -f docker-compose.prod.yml --env-file .env.production up -d
 ```
 
@@ -114,12 +114,12 @@ baru, update `SERVER_HOST` secret, dan arahkan DNS ke IP baru.
 docker network create edge
 
 # Copy env staging (isi nilai asli, JANGAN pakai kredensial production):
-scp .env.staging.example user@ip-vps:/opt/app/.env.staging
+scp .env.staging.example user@ip-vps:/opt/facport/.env.staging
 # lalu edit .env.staging di server, isi nilai asli
 
 # First deploy staging manual (setelahnya otomatis lewat deploy-staging.yml
 # tiap push ke branch develop):
-cd /opt/app
+cd /opt/facport
 docker compose -f docker-compose.staging.yml -p app-staging \
   --env-file .env.staging pull
 docker compose -f docker-compose.staging.yml -p app-staging \
@@ -153,7 +153,7 @@ scp ~/.config/rclone/rclone.conf user@ip-vps:~/.config/rclone/rclone.conf
 # 3. Jadwalkan cron (backup harian jam 2 pagi):
 crontab -e
 # tambahkan baris:
-# 0 2 * * * /opt/app/scripts/backup-db.sh >> /var/log/app-backup.log 2>&1
+# 0 2 * * * /opt/facport/scripts/backup-db.sh >> /var/log/app-backup.log 2>&1
 ```
 
 ## Backup — jangan lupa cek berkala

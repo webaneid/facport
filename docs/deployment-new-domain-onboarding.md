@@ -12,7 +12,7 @@
   beberapa project lain jalan di server yang sama: `jalamandala-*`,
   `tokoambu`, `storage-forbis`, situs di `webane.com`/`admin.webane.com`,
   dst. Tiap project = compose project sendiri (`-p <nama>`), direktori
-  sendiri di `/opt/<nama>` (facport pakai `/opt/app`).
+  sendiri di `/opt/<nama>` (facport pakai `/opt/facport`).
 - **Reverse proxy SESUNGGUHNYA = nginx yang sudah ada duluan di server**,
   BUKAN Caddy. Service `caddy` di `docker-compose.prod.yml` **TIDAK PERNAH
   dipakai** — network `edge` yang dia butuhkan sengaja tidak pernah

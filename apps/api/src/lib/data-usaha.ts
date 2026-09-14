@@ -1,6 +1,6 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull, or } from "drizzle-orm";
 import { db } from "./db";
-import { dataUsaha } from "../db/schema";
+import { dataUsaha, memberSeats } from "../db/schema";
 
 // § Fase 107/108, architecture-user-tambahan.md § Fase B0/B1 — SATU
 // sumber kebenaran nama default (dipakai juga
@@ -36,5 +36,40 @@ export async function getOrCreateDefaultDataUsaha(userId: string): Promise<strin
 // project ini).
 export async function ownsDataUsaha(userId: string, dataUsahaId: string): Promise<boolean> {
   const [row] = await db.select({ id: dataUsaha.id }).from(dataUsaha).where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, userId)));
+  return !!row;
+}
+
+// § Fase 113, security review — pemilik SEKARANG (`ownsDataUsaha`) ATAU
+// member seat AKTIF SEKARANG untuk Data Usaha ini. Dipakai endpoint READ
+// yang scoped `dataUsahaId` tapi query dasarnya cuma filter kolom `userId`
+// yang DIBEKUKAN saat dibuat (`importBatches.userId`,
+// `accurateConnections.userId`) — kolom itu TIDAK ikut berubah saat
+// kepemilikan Data Usaha ditransfer (`lib/ownership-transfer.ts`) atau
+// seat di-revoke, jadi filter `userId` saja TIDAK CUKUP untuk buktikan
+// user masih berhak akses Data Usaha itu SEKARANG (temuan security review:
+// mantan pemilik/member yang sudah kehilangan akses tetap bisa lihat
+// histori/koneksi Data Usaha itu kalau masih ingat/simpan `dataUsahaId`-nya
+// dan panggil endpoint API langsung, bypass gate `layout.tsx`). Dipakai
+// `GET /me/stats`, `GET /me/import-batches`, `GET /accurate/connections`
+// SEBELUM query utama dijalankan — bukan cuma andalkan narrowing JOIN.
+export async function hasAccessToDataUsaha(userId: string, dataUsahaId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: dataUsaha.id })
+    .from(dataUsaha)
+    .where(
+      and(
+        eq(dataUsaha.id, dataUsahaId),
+        or(
+          eq(dataUsaha.userId, userId),
+          inArray(
+            dataUsaha.id,
+            db
+              .select({ dataUsahaId: memberSeats.dataUsahaId })
+              .from(memberSeats)
+              .where(and(eq(memberSeats.memberUserId, userId), eq(memberSeats.status, "active"))),
+          ),
+        ),
+      ),
+    );
   return !!row;
 }

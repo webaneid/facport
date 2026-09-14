@@ -13,21 +13,40 @@
 set -euo pipefail
 
 # ── Konfigurasi (sesuaikan atau override lewat environment) ──
-COMPOSE_FILE="${COMPOSE_FILE:-/opt/app/docker-compose.prod.yml}"
-ENV_FILE="${ENV_FILE:-/opt/app/.env.production}"
-BACKUP_DIR="${BACKUP_DIR:-/opt/app/backups}"
-RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive:backups/$(basename "$(dirname "$COMPOSE_FILE")")}"
+# § 2026-09-12 — path default diperbaiki ke /opt/facport (path server NYATA,
+# bukan /opt/app seperti ditulis semua dokumen sebelumnya — terverifikasi
+# langsung lewat SSH saat setup backup otomatis pertama kali, lihat
+# lessons-learned.md). Juga: JANGAN `source "$ENV_FILE"` — .env.production
+# di server ini punya baris sisa "EOF" (dari heredoc lama) yang bikin bash
+# error kalau di-source sebagai script; cukup grep var spesifik yang dipakai.
+COMPOSE_FILE="${COMPOSE_FILE:-/opt/facport/docker-compose.prod.yml}"
+ENV_FILE="${ENV_FILE:-/opt/facport/.env.production}"
+BACKUP_DIR="${BACKUP_DIR:-/home/wasugi/facport-backups}"
+RCLONE_REMOTE="${RCLONE_REMOTE:-gdrive:backup-app/$(basename "$(dirname "$COMPOSE_FILE")")}"
 RETENTION_DAYS="${RETENTION_DAYS:-30}"
 DATE=$(date +%F_%H%M)
 
 mkdir -p "$BACKUP_DIR"
-source "$ENV_FILE"
+# § 2026-09-13 — .env.production TIDAK PUNYA baris DB_USER=/DB_NAME=
+# terpisah (cuma DATABASE_URL gabungan) — grep di bawah selalu gagal
+# (exit 1), dan karena `set -eo pipefail`, itu bikin SELURUH SCRIPT
+# berhenti diam-diam SEBELUM baris echo pertama pun tercetak (exit code
+# 1, tanpa output apa pun). DB_USER/DB_NAME di-hardcode langsung (stabil,
+# tidak pernah berubah). MINIO_* TETAP pakai grep tapi WAJIB `|| true` —
+# var itu opsional (dipakai HANYA kalau `mc` ada), grep gagal untuk var
+# opsional TIDAK BOLEH menjatuhkan seluruh backup Postgres yang sudah
+# jalan duluan.
+DB_USER="${DB_USER:-facport}"
+DB_NAME="${DB_NAME:-facport}"
+MINIO_PORT="${MINIO_PORT:-$(grep -E '^MINIO_PORT=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-$(grep -E '^MINIO_ACCESS_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-$(grep -E '^MINIO_SECRET_KEY=' "$ENV_FILE" | cut -d= -f2- | tr -d '"' 2>/dev/null || true)}"
 
 echo "▶ [$DATE] Mulai backup..."
 
 # ── 1. Postgres ──
 DUMP_FILE="$BACKUP_DIR/postgres_${DATE}.sql.gz"
-docker compose -f "$COMPOSE_FILE" exec -T postgres \
+docker compose -f "$COMPOSE_FILE" --env-file "$ENV_FILE" exec -T postgres \
   pg_dump -U "$DB_USER" "$DB_NAME" | gzip > "$DUMP_FILE"
 echo "  ✓ Postgres dump: $DUMP_FILE ($(du -h "$DUMP_FILE" | cut -f1))"
 

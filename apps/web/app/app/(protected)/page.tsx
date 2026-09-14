@@ -1,4 +1,5 @@
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import Link from "next/link";
 import { FileSpreadsheet, Link2, CreditCard, Inbox, AlertTriangle, FileCheck2, Clock } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +13,7 @@ import { formatDate, currencyFormatter, formatWorkTimeSaved } from "@/lib/utils"
 import { moduleLabel } from "@/lib/module-options";
 import { getPublicSettings } from "@/lib/get-public-settings";
 import { DEFAULT_COMPANY_TIMEZONE } from "@/lib/timezone";
+import { getActiveDataUsahaIdCookie } from "@/lib/active-data-usaha";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 
@@ -60,18 +62,30 @@ async function fetchJson<T>(path: string, cookie: string): Promise<T | null> {
 
 export default async function DashboardPage() {
   const cookie = (await headers()).get("cookie") ?? "";
+  // § Fase 113 — dashboard WAJIB di-scope ke Data Usaha aktif (gerbang
+  // `/pilih-usaha`, § Fase 109). Redirect ini defensive (layout.tsx SUDAH
+  // guard duluan) — konsisten pola `team/page.tsx`/`subscribe/page.tsx`.
+  const dataUsahaId = await getActiveDataUsahaIdCookie();
+  if (!dataUsahaId) redirect("/pilih-usaha");
+
   // § Fase 43 (audit timezone 2026-09-06) — Server Component TIDAK bisa
   // pakai `useCompanyTimezone()` (hook), fetch langsung sama seperti
   // `generateMetadata`/root layout (Next.js dedup otomatis).
   const publicSettings = await getPublicSettings();
   const companyTimezone = publicSettings["company.timezone"] ?? DEFAULT_COMPANY_TIMEZONE;
 
+  // § security review Fase 113 (Low) — `dataUsahaId` datang dari cookie
+  // NON-httpOnly (§ `getActiveDataUsahaIdCookie`), `encodeURIComponent`
+  // sebagai praktik baik sebelum disisipkan ke query string manual
+  // (backend tetap validasi format UUID, jadi bukan celah, murni
+  // robustness).
+  const encodedDataUsahaId = encodeURIComponent(dataUsahaId);
   const [subscriptionsInfo, accurateSubscriptionsInfo, invoicesInfo, meStats, recentImportBatches] = await Promise.all([
-    fetchJson<SubscriptionsResponse>("/me/subscriptions", cookie),
-    fetchJson<AccurateSubscriptionsResponse>("/accurate/subscriptions", cookie),
+    fetchJson<SubscriptionsResponse>(`/me/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
+    fetchJson<AccurateSubscriptionsResponse>(`/accurate/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<InvoicesResponse>("/me/invoices", cookie),
-    fetchJson<MeStats>("/me/stats", cookie),
-    fetchJson<{ batches: UnifiedImportBatch[]; total: number }>("/me/import-batches?limit=5", cookie),
+    fetchJson<MeStats>(`/me/stats?dataUsahaId=${encodedDataUsahaId}`, cookie),
+    fetchJson<{ batches: UnifiedImportBatch[]; total: number }>(`/me/import-batches?limit=5&dataUsahaId=${encodedDataUsahaId}`, cookie),
   ]);
   const accurateSubscriptions = accurateSubscriptionsInfo?.subscriptions ?? [];
   const unpaidInvoices = (invoicesInfo?.invoices ?? []).filter((inv) => inv.status === "unpaid");

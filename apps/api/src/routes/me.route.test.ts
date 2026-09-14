@@ -3,7 +3,18 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, plans, subscriptions, memberSeats, importBatches, importBatchRows, settings, ownershipTransfers, dataUsaha } from "../db/schema";
+import {
+  user as userTable,
+  plans,
+  subscriptions,
+  memberSeats,
+  importBatches,
+  importBatchRows,
+  settings,
+  ownershipTransfers,
+  dataUsaha,
+  accurateConnections,
+} from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
@@ -144,6 +155,59 @@ describe("GET & POST /me/data-usaha", () => {
     const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie: memberCookie } }));
     const body = (await res.json()) as { dataUsaha: { id: string }[] };
     expect(body.dataUsaha.some((d) => d.id === dataUsahaId)).toBe(false);
+  });
+
+  // § Fase 114 — REGRESSION TEST persis untuk bug yang dilaporkan production
+  // 2026-09-14: `connected` HARUS dihitung dari subscription+koneksi live,
+  // BUKAN dari kolom `data_usaha.accurate_connection_id` yang mati (cuma
+  // pernah ditulis backfill script one-time, TIDAK PERNAH oleh alur live
+  // sejak Fase 14/ADR-0020) — SEBELUM fix ini, Data Usaha di bawah akan
+  // salah lapor `connected:false` walau subscription-nya sudah terhubung
+  // penuh, karena kolom itu memang selalu NULL untuk Data Usaha yang
+  // dibuat lewat `createTestDataUsaha` (persis kondisi live, bukan lewat
+  // backfill script).
+  test("connected:true kalau subscription di Data Usaha ini punya koneksi Accurate AKTIF, MESKIPUN kolom data_usaha.accurate_connection_id NULL", async () => {
+    const userId = await signUp(`me-data-usaha-connected-${runId}@test.local`);
+    const cookie = await signIn(`me-data-usaha-connected-${runId}@test.local`);
+
+    const dataUsahaConnectedId = await createTestDataUsaha(userId, `DU Connected ${runId}`);
+    const dataUsahaDisconnectedId = await createTestDataUsaha(userId, `DU Disconnected ${runId}`);
+
+    const [connection] = await db
+      .insert(accurateConnections)
+      .values({
+        userId,
+        accessTokenEncrypted: "dummy",
+        refreshTokenEncrypted: "dummy",
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        accurateDbId: "555",
+        accurateDbAlias: "PT Connected Test",
+      })
+      .returning();
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan DU Connected ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: plan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      accurateConnectionId: connection!.id,
+      dataUsahaId: dataUsahaConnectedId,
+    });
+
+    // § kolom lama TETAP NULL untuk keduanya — persis kondisi Data Usaha
+    // yang dibuat lewat alur live (bukan backfill script).
+    const [rowConnected] = await db.select({ v: dataUsaha.accurateConnectionId }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaConnectedId));
+    expect(rowConnected!.v).toBeNull();
+
+    const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { dataUsaha: { id: string; connected: boolean }[] };
+    expect(body.dataUsaha.find((d) => d.id === dataUsahaConnectedId)?.connected).toBe(true);
+    expect(body.dataUsaha.find((d) => d.id === dataUsahaDisconnectedId)?.connected).toBe(false);
   });
 });
 
@@ -361,8 +425,15 @@ describe("POST /me/data-usaha/:id/transfer-ownership/cancel", () => {
 
 describe("GET /me/stats", () => {
   test("401 kalau tidak login", async () => {
-    const res = await testApp.handle(new Request("http://localhost/me/stats"));
+    const res = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${crypto.randomUUID()}`));
     expect(res.status).toBe(401);
+  });
+
+  test("422 kalau dataUsahaId tidak dikirim", async () => {
+    await signUp(`me-stats-noparam-${runId}@test.local`);
+    const cookie = await signIn(`me-stats-noparam-${runId}@test.local`);
+    const res = await testApp.handle(new Request("http://localhost/me/stats", { headers: { cookie } }));
+    expect(res.status).toBe(422);
   });
 
   test("hitung total baris sukses lintas modul × setting admin, abaikan baris failed/cancelled dan batch user lain", async () => {
@@ -420,18 +491,71 @@ describe("GET /me/stats", () => {
       .returning();
     await db.insert(importBatchRows).values([{ batchId: otherBatch!.id, rowNumber: 1, rawData: {}, status: "success" }]);
 
-    const res = await testApp.handle(new Request("http://localhost/me/stats", { headers: { cookie } }));
+    const res = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaId}`, { headers: { cookie } }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { successfulRowCount: number; estimatedTimeSavedSeconds: number };
     expect(body.successfulRowCount).toBe(3); // 2 (PI success) + 1 (SI success), TIDAK termasuk failed/cancelled/user lain
     expect(body.estimatedTimeSavedSeconds).toBe(3 * 45);
   });
+
+  // § Fase 113 — bug ditemukan: dashboard belum di-scope ke Data Usaha
+  // aktif, `/me/stats` union lintas SEMUA Data Usaha milik user (walau
+  // beda company). Test ini pastikan `dataUsahaId` benar-benar
+  // mempersempit, bukan cuma diterima lalu diabaikan.
+  test("cuma hitung baris di Data Usaha yang diminta, bukan gabungan semua Data Usaha milik user yang sama", async () => {
+    const userId = await signUp(`me-stats-multi-du-${runId}@test.local`);
+    const cookie = await signIn(`me-stats-multi-du-${runId}@test.local`);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Me Stats Multi-DU Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+
+    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
+    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
+    const [subA] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaA })
+      .returning();
+    const [subB] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaB })
+      .returning();
+
+    const [batchA] = await db
+      .insert(importBatches)
+      .values({ userId, subscriptionId: subA!.id, module: "purchase_invoice", fileName: "du-a.xlsx", totalRows: 2, status: "completed" })
+      .returning();
+    const [batchB] = await db
+      .insert(importBatches)
+      .values({ userId, subscriptionId: subB!.id, module: "purchase_invoice", fileName: "du-b.xlsx", totalRows: 5, status: "completed" })
+      .returning();
+    await db.insert(importBatchRows).values([
+      { batchId: batchA!.id, rowNumber: 1, rawData: {}, status: "success" },
+      { batchId: batchA!.id, rowNumber: 2, rawData: {}, status: "success" },
+    ]);
+    await db.insert(importBatchRows).values(
+      Array.from({ length: 5 }, (_, i) => ({ batchId: batchB!.id, rowNumber: i + 1, rawData: {}, status: "success" as const })),
+    );
+
+    const resA = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
+    const resB = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaB}`, { headers: { cookie } }));
+    expect(((await resA.json()) as { successfulRowCount: number }).successfulRowCount).toBe(2);
+    expect(((await resB.json()) as { successfulRowCount: number }).successfulRowCount).toBe(5);
+  });
 });
 
 describe("GET /me/import-batches", () => {
   test("401 kalau tidak login", async () => {
-    const res = await testApp.handle(new Request("http://localhost/me/import-batches"));
+    const res = await testApp.handle(new Request(`http://localhost/me/import-batches?dataUsahaId=${crypto.randomUUID()}`));
     expect(res.status).toBe(401);
+  });
+
+  test("422 kalau dataUsahaId tidak dikirim", async () => {
+    await signUp(`me-batches-noparam-${runId}@test.local`);
+    const cookie = await signIn(`me-batches-noparam-${runId}@test.local`);
+    const res = await testApp.handle(new Request("http://localhost/me/import-batches", { headers: { cookie } }));
+    expect(res.status).toBe(422);
   });
 
   test("gabungan lintas modul, urut terbaru dulu, TIDAK termasuk batch user lain, `total` hitungan penuh", async () => {
@@ -470,12 +594,50 @@ describe("GET /me/import-batches", () => {
       .returning();
     await db.insert(importBatches).values({ userId: otherUserId, subscriptionId: otherSub!.id, module: "purchase_invoice", fileName: "punya-orang-lain.xlsx", totalRows: 1, status: "completed" });
 
-    const res = await testApp.handle(new Request("http://localhost/me/import-batches?limit=2", { headers: { cookie } }));
+    const res = await testApp.handle(
+      new Request(`http://localhost/me/import-batches?limit=2&dataUsahaId=${dataUsahaId}`, { headers: { cookie } }),
+    );
     expect(res.status).toBe(200);
     const body = (await res.json()) as { batches: { fileName: string; module: string }[]; total: number };
     expect(body.batches).toHaveLength(2);
     expect(body.batches.map((b) => b.fileName)).toEqual(["batch-3-pi.xlsx", "batch-2-jv.xlsx"]);
     expect(body.batches.some((b) => b.fileName === "punya-orang-lain.xlsx")).toBe(false);
     expect(body.total).toBe(3);
+  });
+
+  // § Fase 113 — bug ditemukan: arsip import belum di-scope ke Data Usaha
+  // aktif, union lintas SEMUA Data Usaha milik user. Test ini pastikan
+  // `dataUsahaId` benar-benar mempersempit.
+  test("cuma balikin batch di Data Usaha yang diminta, bukan gabungan semua Data Usaha milik user yang sama", async () => {
+    const userId = await signUp(`me-batches-multi-du-${runId}@test.local`);
+    const cookie = await signIn(`me-batches-multi-du-${runId}@test.local`);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Me Batches Multi-DU Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+
+    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
+    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
+    const [subA] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaA })
+      .returning();
+    const [subB] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaB })
+      .returning();
+    await db.insert(importBatches).values({ userId, subscriptionId: subA!.id, module: "purchase_invoice", fileName: "du-a.xlsx", totalRows: 1, status: "completed" });
+    await db.insert(importBatches).values({ userId, subscriptionId: subB!.id, module: "purchase_invoice", fileName: "du-b.xlsx", totalRows: 1, status: "completed" });
+
+    const resA = await testApp.handle(new Request(`http://localhost/me/import-batches?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
+    const bodyA = (await resA.json()) as { batches: { fileName: string }[]; total: number };
+    expect(bodyA.batches.map((b) => b.fileName)).toEqual(["du-a.xlsx"]);
+    expect(bodyA.total).toBe(1);
+
+    const resB = await testApp.handle(new Request(`http://localhost/me/import-batches?dataUsahaId=${dataUsahaB}`, { headers: { cookie } }));
+    const bodyB = (await resB.json()) as { batches: { fileName: string }[]; total: number };
+    expect(bodyB.batches.map((b) => b.fileName)).toEqual(["du-b.xlsx"]);
+    expect(bodyB.total).toBe(1);
   });
 });

@@ -22,6 +22,7 @@ import {
   FileText,
   Megaphone,
   Headset,
+  Image as ImageIcon,
   ChevronDown,
   ChevronsLeft,
   ChevronsRight,
@@ -104,6 +105,7 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/orders", label: "Konfirmasi Pembayaran", icon: CreditCard, permission: "orders.manage" },
         // § Fase 45 — broadcast/pengumuman ke customer.
         { href: "/announcements", label: "Pengumuman", icon: Megaphone, permission: "notifications.broadcast" },
+        { href: "/promos", label: "Promo", icon: ImageIcon, permission: "promos.manage" },
         // § Fase 46 — profil CS, jam kerja, rotasi WhatsApp.
         { href: "/customer-care", label: "Customer Care", icon: Headset, permission: "customer_care.manage" },
       ],

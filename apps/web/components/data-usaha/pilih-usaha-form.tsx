@@ -24,7 +24,13 @@ import { BannerSlider, BANNER_COLLAPSE_STORAGE_KEY } from "./banner-slider";
 // Usaha ini BUKAN milik user (dia numpang lewat seat User Tambahan aktif,
 // § GET /me/data-usaha union kepemilikan+seat) — ditandai badge "Anggota"
 // biar user tidak bingung kenapa ada Data Usaha "orang lain" di daftarnya.
-type DataUsahaRow = { id: string; name: string; accurateConnectionId: string | null; isOwner: boolean };
+// § Fase 114 — `connected` DIHITUNG LIVE server-side (join subscription→
+// koneksi aktif), bukan lagi kolom `dataUsaha.accurateConnectionId` yang
+// mati (§ me.route.ts `GET /me/data-usaha`).
+type DataUsahaRow = { id: string; name: string; connected: boolean; isOwner: boolean };
+// § Fase 116, architecture-promo.md — shape response `GET /promos`
+// (sudah diperkecil server-side, cuma field yang dipakai render).
+type PromoRow = { id: string; title: string | null; description: string | null; buttonLabel: string | null; url: string; imageUrl: string };
 
 const createSchema = z.object({ name: z.string().min(1, "Nama wajib diisi").max(200) });
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -72,6 +78,7 @@ export function PilihUsahaForm({
 }) {
   const router = useRouter();
   const [rows, setRows] = useState<DataUsahaRow[] | null>(null);
+  const [promos, setPromos] = useState<PromoRow[] | null>(null);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [bannerCollapsed, setBannerCollapsed] = useState(false);
@@ -79,11 +86,17 @@ export function PilihUsahaForm({
   const form = useForm<CreateFormValues>({ resolver: zodResolver(createSchema) });
   const renameForm = useForm<CreateFormValues>({ resolver: zodResolver(createSchema) });
 
+  // § Fase 116, architecture-promo.md — `promos` di-fetch DI SINI (parent),
+  // BUKAN di dalam `BannerSlider`, supaya parent juga tahu kalau 0 promo
+  // aktif untuk atur `effectiveCollapsed` (lebar grid Data Usaha di
+  // sebelahnya) — lihat pemakaian di bawah.
   useEffect(() => {
     async function load() {
-      const res = await api.me["data-usaha"].get();
-      const list = (res.data as unknown as { dataUsaha: DataUsahaRow[] } | undefined)?.dataUsaha ?? [];
+      const [dataUsahaRes, promosRes] = await Promise.all([api.me["data-usaha"].get(), api.promos.get()]);
+      const list = (dataUsahaRes.data as unknown as { dataUsaha: DataUsahaRow[] } | undefined)?.dataUsaha ?? [];
       setRows(list);
+      const promoList = (promosRes.data as unknown as { promos: PromoRow[] } | undefined)?.promos ?? [];
+      setPromos(promoList);
     }
     load();
     try {
@@ -140,6 +153,11 @@ export function PilihUsahaForm({
   }
 
   const filteredRows = rows?.filter((r) => r.name.toLowerCase().includes(search.trim().toLowerCase())) ?? null;
+  // § Fase 116 — 0 promo aktif diperlakukan SAMA seperti "banner diciutkan"
+  // untuk lebar grid (kolom lebih banyak, tidak nyisa ruang kosong).
+  // `promos?.length === 0` sengaja `false` selama masih loading
+  // (`promos === null`), cegah flash grid "collapsed" sebelum fetch selesai.
+  const effectiveCollapsed = bannerCollapsed || promos?.length === 0;
 
   return (
     <div className="flex min-h-screen flex-col bg-muted/20">
@@ -147,7 +165,7 @@ export function PilihUsahaForm({
 
       {/* § Desktop (>= lg): banner + grid. Lihat komentar di atas untuk alasan breakpoint. */}
       <div className="mx-auto hidden w-full max-w-6xl flex-1 gap-6 p-6 lg:flex">
-        <BannerSlider collapsed={bannerCollapsed} onToggleCollapsed={toggleBannerCollapsed} />
+        {promos !== null && <BannerSlider promos={promos} collapsed={bannerCollapsed} onToggleCollapsed={toggleBannerCollapsed} />}
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
           <div className="flex items-center justify-between gap-4">
@@ -165,8 +183,8 @@ export function PilihUsahaForm({
           </div>
 
           {!filteredRows ? (
-            <div className={cn("grid gap-4", bannerCollapsed ? "grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 xl:grid-cols-3")}>
-              {Array.from({ length: bannerCollapsed ? 5 : 3 }).map((_, i) => (
+            <div className={cn("grid gap-4", effectiveCollapsed ? "grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 xl:grid-cols-3")}>
+              {Array.from({ length: effectiveCollapsed ? 5 : 3 }).map((_, i) => (
                 <Skeleton key={i} className="aspect-[4/3] w-full rounded-xl" />
               ))}
             </div>
@@ -181,7 +199,7 @@ export function PilihUsahaForm({
               Tidak ada Data Usaha yang cocok dengan pencarian &quot;{search}&quot;.
             </p>
           ) : (
-            <div className={cn("grid gap-4", bannerCollapsed ? "grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 xl:grid-cols-3")}>
+            <div className={cn("grid gap-4", effectiveCollapsed ? "grid-cols-3 xl:grid-cols-5 2xl:grid-cols-6" : "grid-cols-2 xl:grid-cols-3")}>
               {filteredRows.map((row) => (
                 <div
                   key={row.id}
@@ -224,7 +242,7 @@ export function PilihUsahaForm({
                   <span className="flex flex-col gap-0.5 bg-primary-600 px-3 py-2 text-white">
                     <span className="truncate text-sm font-medium">{row.name}</span>
                     <span className="truncate text-[11px] text-white/75">
-                      {row.accurateConnectionId ? "Terhubung Accurate" : "Belum terhubung Accurate"}
+                      {row.connected ? "Terhubung Accurate" : "Belum terhubung Accurate"}
                     </span>
                   </span>
                 </div>
@@ -270,7 +288,7 @@ export function PilihUsahaForm({
                         )}
                       </span>
                       <span className="block text-xs text-muted-foreground">
-                        {row.accurateConnectionId ? "Terhubung Accurate" : "Belum terhubung Accurate"}
+                        {row.connected ? "Terhubung Accurate" : "Belum terhubung Accurate"}
                       </span>
                     </span>
                     {row.isOwner && (

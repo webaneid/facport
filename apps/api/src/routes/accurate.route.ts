@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { accurateConnections, subscriptions } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
+import { hasAccessToDataUsaha } from "../lib/data-usaha";
 import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase } from "../lib/accurate";
 import { scopesForModules } from "../lib/accurate-scopes";
 import { createState, consumeState } from "../lib/oauth-state";
@@ -43,10 +44,16 @@ export const accurateRoute = new Elysia()
   // koneksinya sendiri. Dipakai halaman /accurate render daftar per modul.
   .get(
     "/accurate/subscriptions",
-    async ({ user }) => {
+    async ({ user, query }) => {
       // § Fase 110 — Accessible (bukan Owned): read-only, member BOLEH lihat
       // status koneksi modul yang dia numpang pakai (bukan cuma pemilik).
-      const activeSubs = await getAccessibleSubscriptionsWithPlans(user.id);
+      const allActiveSubs = await getAccessibleSubscriptionsWithPlans(user.id);
+      // § Fase 113 — `dataUsahaId` OPSIONAL, sama alasan `GET /me/subscriptions`
+      // (subscriptions.route.ts): cuma narrowing dari union yang sudah
+      // access-controlled, dibiarkan opsional untuk jaga kompatibilitas
+      // pemanggil yang mungkin masih butuh union (saat ini tidak ada, tapi
+      // konsisten dengan endpoint kembarannya).
+      const activeSubs = query.dataUsahaId ? allActiveSubs.filter((s) => s.subscription.dataUsahaId === query.dataUsahaId) : allActiveSubs;
       const connectionIds = activeSubs
         .map((s) => s.subscription.accurateConnectionId)
         .filter((id): id is string => id !== null);
@@ -79,20 +86,50 @@ export const accurateRoute = new Elysia()
         }),
       };
     },
-    { auth: true },
+    { auth: true, query: t.Object({ dataUsahaId: t.Optional(t.String({ format: "uuid" })) }) },
   )
   // § daftar koneksi EXISTING milik user — sumber dropdown "pakai koneksi
-  // yang sudah ada" di halaman /accurate.
+  // yang sudah ada" di halaman /accurate. `dataUsahaId` WAJIB (Fase 113,
+  // beda dari `/accurate/subscriptions` di atas) — cuma 1 pemanggil
+  // (halaman itu sendiri, sedang diperbaiki bareng fase ini), dan tujuan
+  // endpoint ini MEMANG "koneksi yang bisa dipakai untuk Data Usaha X"
+  // (reuse), jadi tidak masuk akal punya mode "tanpa Data Usaha".
+  // Koneksi tidak punya kolom `dataUsahaId` langsung — di-join lewat
+  // `subscriptions.accurateConnectionId` (tiap koneksi pasti sudah
+  // ter-assign ke minimal 1 subscription sejak dibuat, lihat callback
+  // OAuth di bawah). `Map` dedupe karena 1 koneksi bisa dipakai >1
+  // subscription pada Data Usaha yang sama (reuse berulang).
+  // § security review Fase 113 (Medium, DIPERBAIKI) — `accurateConnections.userId`
+  // DIBEKUKAN ke user yang OAuth pertama kali, TIDAK ikut berubah saat
+  // kepemilikan Data Usaha ditransfer. `hasAccessToDataUsaha` WAJIB dicek
+  // dulu, sama alasan `GET /me/stats`/`GET /me/import-batches`
+  // (me.route.ts) — mantan pemilik yang sudah kehilangan akses TIDAK
+  // boleh tetap lihat metadata koneksi (bisa jadi company Accurate yang
+  // MASIH aktif dipakai pemilik baru).
   .get(
     "/accurate/connections",
-    async ({ user }) => {
-      const connections = await db
-        .select()
+    async ({ user, query, set }) => {
+      if (!(await hasAccessToDataUsaha(user.id, query.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const rows = await db
+        .select({ connection: accurateConnections })
         .from(accurateConnections)
-        .where(and(eq(accurateConnections.userId, user.id), eq(accurateConnections.status, "active")));
-      return { connections: connections.map((c) => ({ id: c.id, accurateDbId: c.accurateDbId, accurateDbAlias: c.accurateDbAlias })) };
+        .innerJoin(subscriptions, eq(subscriptions.accurateConnectionId, accurateConnections.id))
+        .where(
+          and(
+            eq(accurateConnections.userId, user.id),
+            eq(accurateConnections.status, "active"),
+            eq(subscriptions.dataUsahaId, query.dataUsahaId),
+          ),
+        );
+      const connectionById = new Map(rows.map((r) => [r.connection.id, r.connection]));
+      return {
+        connections: [...connectionById.values()].map((c) => ({ id: c.id, accurateDbId: c.accurateDbId, accurateDbAlias: c.accurateDbAlias })),
+      };
     },
-    { auth: true },
+    { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/accurate/connect",
@@ -188,7 +225,15 @@ export const accurateRoute = new Elysia()
         set.status = 404;
         return { code: "SUBSCRIPTION_NOT_FOUND" };
       }
-      if (target.subscription.accurateConnectionId) {
+      // § Fase 114 — `reconnect: true` (dikirim tombol "Pakai Koneksi yang
+      // Sudah Ada" di kartu status sehat/rusak, § accurate-connections-form.tsx)
+      // melewati guard ini secara EKSPLISIT — pola PERSIS `/accurate/connect`
+      // di atas (§ Fase 91). SEBELUM ini, reuse cuma bisa dipakai first-connect
+      // (belum pernah punya `accurateConnectionId` sama sekali) — reconnect
+      // SELALU dipaksa OAuth baru walau company-nya sama, bikin koneksi
+      // numpuk (temuan debugging production 2026-09-14, 2 customer nyata
+      // sampai 5-17 koneksi terpisah ke company yang SAMA — § lessons-learned.md).
+      if (target.subscription.accurateConnectionId && !body.reconnect) {
         set.status = 409;
         return { code: "ALREADY_CONNECTED" };
       }
@@ -199,10 +244,38 @@ export const accurateRoute = new Elysia()
         return { code: "CONNECTION_NOT_FOUND" };
       }
 
+      // § security review Fase 114 (Medium, DIPERBAIKI) — `getOwnedConnection`
+      // di atas cuma cek koneksi ini MILIK user (lintas SEMUA Data Usaha
+      // dia), TIDAK cek koneksi ini sebelumnya dipakai untuk Data Usaha
+      // yang SAMA dengan `target.subscription.dataUsahaId`. User yang py
+      // >1 Data Usaha (kasus SAH, § lessons-learned.md 2026-09-14) bisa
+      // salah kirim `connectionId` milik Data Usaha LAIN — tidak ketahuan
+      // sebagai IDOR (masih 1 user yang sama), tapi bisa bikin data
+      // import kekirim ke company Accurate yang SALAH, persis kelas bug
+      // yang baru saja diperbaiki manual di production hari ini. UI
+      // (`GET /accurate/connections?dataUsahaId=X`, § Fase 113) sudah
+      // filter benar, tapi backend WAJIB validasi ulang, bukan andalkan
+      // filter UI saja (defense-in-depth, § architecture-security.md).
+      const [reusableForThisDataUsaha] = await db
+        .select({ id: subscriptions.id })
+        .from(subscriptions)
+        .where(and(eq(subscriptions.accurateConnectionId, connection.id), eq(subscriptions.dataUsahaId, target.subscription.dataUsahaId)));
+      if (!reusableForThisDataUsaha) {
+        set.status = 400;
+        return { code: "CONNECTION_DATA_USAHA_MISMATCH" };
+      }
+
       await db.update(subscriptions).set({ accurateConnectionId: connection.id }).where(eq(subscriptions.id, target.subscription.id));
       return { subscriptionId: target.subscription.id, accurateConnectionId: connection.id };
     },
-    { auth: true, body: t.Object({ subscriptionId: t.String({ format: "uuid" }), connectionId: t.String({ format: "uuid" }) }) },
+    {
+      auth: true,
+      body: t.Object({
+        subscriptionId: t.String({ format: "uuid" }),
+        connectionId: t.String({ format: "uuid" }),
+        reconnect: t.Optional(t.Boolean()),
+      }),
+    },
   )
   .get(
     "/accurate/databases",
