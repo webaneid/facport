@@ -9,7 +9,15 @@
 // jadi tingkat resmi "Kategori" dalam struktur Brand→Produk→Kategori→
 // Varian) — konsumen yang masih baca `.group` perlu diupdate ke
 // `.category` (cek `admin/plans/page.tsx`).
-import { MODULE_CATALOG, moduleLabel as moduleLabelSource, PRODUCT_LINES, type ModuleKey, type ProductLineKey } from "../../api/src/lib/module-catalog";
+import {
+  MODULE_CATALOG,
+  moduleLabel as moduleLabelSource,
+  productLineLabel as productLineLabelSource,
+  moduleCategory as moduleCategorySource,
+  PRODUCT_LINES,
+  type ModuleKey,
+  type ProductLineKey,
+} from "../../api/src/lib/module-catalog";
 
 export { PRODUCT_LINES };
 export type { ModuleKey, ProductLineKey };
@@ -19,3 +27,9 @@ export const MODULE_OPTIONS = MODULE_CATALOG;
 export const MODULE_GROUPS = [...new Set(MODULE_OPTIONS.map((m) => m.category))];
 
 export const moduleLabel = moduleLabelSource;
+
+// § Fase 118 — dipakai keterangan invoice (admin: tabel/dialog Detail
+// Invoice), resolve label Produk & Kategori dari moduleKey/productLine
+// yang di-snapshot ke `invoiceItems`.
+export const productLineLabel = productLineLabelSource;
+export const moduleCategory = moduleCategorySource;

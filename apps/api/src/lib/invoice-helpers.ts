@@ -28,23 +28,34 @@ export async function attachInvoiceItems<T extends { id: string }>(rows: T[]) {
 // MURNI render-time (dipanggil di titik pembuatan PDF/tampilan billing,
 // BUKAN mengubah cara insert `invoiceItems`) — group by `(planId, price)`,
 // urutan baris pertama-kemunculan dipertahankan (bukan alfabetis/harga).
-export function groupIdenticalInvoiceItems<T extends { planId: string | null; price: number; label: string }>(
+export function groupIdenticalInvoiceItems<T extends { planId: string | null; price: number; label: string; moduleKey: string; productLine: string }>(
   items: T[],
-): { label: string; price: number }[] {
+): { label: string; price: number; moduleKey: string; productLine: string }[] {
   const order: string[] = [];
-  const groups = new Map<string, { label: string; unitPrice: number; quantity: number }>();
+  // § Fase 118 — `moduleKey`/`productLine` dibawa serta (bukan cuma
+  // label/price) supaya PDF/admin bisa tampilkan Produk+Modul+Sub-modul
+  // per baris. Aman ikut grouping key `(planId, price)` yang sudah ada —
+  // 2 baris dengan `planId` SAMA otomatis punya `moduleKey`/`productLine`
+  // SAMA juga (1 plan = 1 sub-modul, § ADR-0019), jadi tidak perlu
+  // dimasukkan ke key grouping-nya sendiri.
+  const groups = new Map<string, { label: string; unitPrice: number; quantity: number; moduleKey: string; productLine: string }>();
   for (const item of items) {
     const key = `${item.planId ?? item.label}:${item.price}`;
     const existing = groups.get(key);
     if (existing) {
       existing.quantity += 1;
     } else {
-      groups.set(key, { label: item.label, unitPrice: item.price, quantity: 1 });
+      groups.set(key, { label: item.label, unitPrice: item.price, quantity: 1, moduleKey: item.moduleKey, productLine: item.productLine });
       order.push(key);
     }
   }
   return order.map((key) => {
     const g = groups.get(key)!;
-    return { label: g.quantity > 1 ? `${g.quantity}x ${g.label}` : g.label, price: g.unitPrice * g.quantity };
+    return {
+      label: g.quantity > 1 ? `${g.quantity}x ${g.label}` : g.label,
+      price: g.unitPrice * g.quantity,
+      moduleKey: g.moduleKey,
+      productLine: g.productLine,
+    };
   });
 }

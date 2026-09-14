@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { desc, eq, or, ilike, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { invoices, orders, plans, user as userTable } from "../../db/schema";
+import { invoices, orders, plans, user as userTable, dataUsaha } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { attachInvoiceItems } from "../../lib/invoice-helpers";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
@@ -37,11 +37,27 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
       // sendiri (§ `order-pay-flow.tsx`), bukan cuma status invoice kasar.
       const orderRows = invoiceIds.length ? await db.select().from(orders).where(inArray(orders.invoiceId, invoiceIds)) : [];
       const orderByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o]));
+      // § Fase 118 — nama Data Usaha per invoice (§ ADR-0033, "supaya
+      // admin tahu customer A beli untuk Data Usaha mana"). Batch query 1x
+      // (bukan N+1), `dataUsahaId` nullable di `orders` (order lama pra-
+      // Fase 108) — invoice tanpa Data Usaha diketahui cukup tampil null,
+      // TIDAK error.
+      const dataUsahaIds = [...new Set(orderRows.map((o) => o.dataUsahaId).filter((id): id is string => !!id))];
+      const dataUsahaRows = dataUsahaIds.length ? await db.select().from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)) : [];
+      const dataUsahaNameById = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
       const withItems = await attachInvoiceItems(rows);
       return {
         invoices: withItems.map((inv) => {
           const order = orderByInvoiceId.get(inv.id);
-          return { ...inv, orderId: order?.id ?? null, orderStatus: order?.status ?? null, hasProof: !!order?.proofUrl };
+          const dataUsahaId = order?.dataUsahaId ?? null;
+          return {
+            ...inv,
+            orderId: order?.id ?? null,
+            orderStatus: order?.status ?? null,
+            hasProof: !!order?.proofUrl,
+            dataUsahaId,
+            dataUsahaName: dataUsahaId ? (dataUsahaNameById.get(dataUsahaId) ?? null) : null,
+          };
         }),
       };
     },

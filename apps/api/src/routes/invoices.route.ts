@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import sharp from "sharp";
 import { eq, desc, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
-import { invoices, invoiceItems, settings, orders } from "../db/schema";
+import { invoices, invoiceItems, settings, orders, dataUsaha } from "../db/schema";
 import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
 import { attachInvoiceItems, groupIdenticalInvoiceItems } from "../lib/invoice-helpers";
@@ -113,6 +113,15 @@ export const invoicesRoute = new Elysia()
       // sehingga bisa kelihatan" di PDF). `orders.invoiceId` 1:1, sama
       // pola JOIN dengan `GET /me/invoices` & `admin/invoices.route.ts`.
       const [order] = await db.select().from(orders).where(eq(orders.invoiceId, invoice.id));
+      // § Fase 118 — nama Data Usaha (§ InvoicePdfData.dataUsahaName).
+      // `order?.dataUsahaId` nullable (order lama pra-Fase 108, atau
+      // belum ada order sama sekali) — null-kan dengan aman, JANGAN
+      // gagalkan generate PDF cuma karena info ini tidak ada.
+      let dataUsahaName: string | null = null;
+      if (order?.dataUsahaId) {
+        const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, order.dataUsahaId));
+        dataUsahaName = du?.name ?? null;
+      }
       let proofImage: Buffer | null = null;
       if (order?.proofUrl) {
         try {
@@ -132,6 +141,7 @@ export const invoicesRoute = new Elysia()
           dueDate: invoice.dueDate,
           billToName: invoice.billToName,
           billToAddress: invoice.billToAddress,
+          dataUsahaName,
           items: groupIdenticalInvoiceItems(items),
           subtotal: invoice.subtotal,
           total: invoice.total,

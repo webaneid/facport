@@ -37,3 +37,15 @@ export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
 export function moduleLabel(key: string): string {
   return MODULE_CATALOG.find((m) => m.key === key)?.label ?? key;
 }
+
+// § Fase 118 — dipakai keterangan invoice (admin panel + PDF): resolve
+// label Produk & Kategori ("Modul") dari 1 moduleKey ("Sub-modul"),
+// supaya admin/customer lihat jelas "beli Sub-modul apa, dari Modul apa,
+// di Produk mana" tanpa hardcode ulang lookup di tiap tempat yang butuh.
+export function productLineLabel(key: string): string {
+  return PRODUCT_LINES.find((p) => p.key === key)?.label ?? key;
+}
+
+export function moduleCategory(key: string): string | null {
+  return MODULE_CATALOG.find((m) => m.key === key)?.category ?? null;
+}

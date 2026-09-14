@@ -125,6 +125,7 @@
 | 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 | 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
+| 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2842,3 +2843,28 @@ security review 0 temuan. Fase ini SENGAJA tidak membangun UI Konverter,
 schema AutoProduksi, atau migrasi 34 user lama Konverter — semua itu
 fase terpisah nanti. Detail lengkap →
 `docs/phases/phase-117-peta-struktur-multi-produk.md`.
+
+## Update 2026-09-14 — Fase 118 Done: Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice
+Menutup known limitation eksplisit Fase 117 ("belum ada UI yang
+menampilkan productLine"). User minta admin bisa lihat jelas di invoice:
+customer beli Produk apa, untuk Data Usaha mana, Modul apa, Sub-modul apa
+— dikonfirmasi via `AskUserQuestion` scope-nya panel admin DAN PDF invoice
+(bukan cuma admin). Investigasi menemukan datanya SUDAH lengkap tersimpan
+sejak Fase 117 (`orders.dataUsahaId`, `invoiceItems.productLine`/
+`moduleKey`) — gap murni di lapisan tampilan, 0 migration/kolom baru
+dibutuhkan.
+
+2 helper baru (`productLineLabel`/`moduleCategory` di `module-catalog.ts`),
+join `data_usaha` di 2 endpoint (`GET /invoices/:id/pdf`,
+`GET /admin/invoices`, keduanya di-scope dari order yang sudah
+ownership-verified — dikonfirmasi tidak ada celah IDOR di security
+review), render di admin panel (kolom Data Usaha + dialog detail per
+item) dan PDF invoice. Typecheck 0 error, test 782 pass/0 fail (1 baru),
+lint 0 error/0 warning, security review 0 temuan.
+
+**Verifikasi manual browser dilakukan end-to-end memakai data invoice
+REAL di dev DB lokal** (bukan data test) — dikonfirmasi visual: tabel
+list, dialog detail, DAN PDF hasil download semua menampilkan "Data
+Usaha: FAC Institute" + "Facport · Penjualan · Sales Receipt (Customer
+Receipt)" dengan benar. Detail lengkap →
+`docs/phases/phase-118-keterangan-produk-invoice.md`.
