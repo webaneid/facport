@@ -93,3 +93,24 @@ export function middayInTimezone(dateStr: string, timeZone: string): Date {
   const { y, m, d } = parseDateOnly(dateStr);
   return zonedTimeToUtc(y, m, d, 12, 0, 0, 0, timeZone);
 }
+
+// § Fase 115 — tanggal HARI INI (kalender) di timezone perusahaan, format
+// "YYYY-MM-DD" (cocok langsung buat value `<input type="date">`). Locale
+// "en-CA" SENGAJA dipakai — satu-satunya locale umum yang native format
+// tanggalnya persis ISO "YYYY-MM-DD", tidak perlu susun manual dari parts.
+export function todayInTimezone(timeZone: string): string {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+}
+
+// § tambah N hari KALENDER ke tanggal "YYYY-MM-DD" — dipakai buat
+// auto-suggest tanggal expired dari `plan.durationDays` (§
+// ManageSubscriptionDialog, apps/web/app/admin/(protected)/users/page.tsx).
+// Murni aritmatika kalender lewat `Date.UTC` NETRAL (bukan
+// `zonedTimeToUtc` seperti fungsi lain di file ini) — ini cuma geser
+// tanggal kalender, BUKAN konversi wall-clock ke instant timezone asli,
+// jadi tidak butuh (dan tidak boleh kena) offset timezone sama sekali.
+export function addDaysToDateString(dateStr: string, days: number): string {
+  const { y, m, d } = parseDateOnly(dateStr);
+  const result = new Date(Date.UTC(y, m - 1, d) + days * 24 * 60 * 60 * 1000);
+  return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, "0")}-${String(result.getUTCDate()).padStart(2, "0")}`;
+}

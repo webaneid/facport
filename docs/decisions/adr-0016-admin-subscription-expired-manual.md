@@ -62,3 +62,20 @@ Limitation Fase 10), murni belum dibangun.
 - Basis awal → `docs/decisions/adr-0008-model-langganan.md`
 - Detail skema & endpoint → `docs/architecture/architecture-subscription.md`
 - Phase doc → `docs/phases/phase-11-admin-subscription-expired-manual.md`
+
+## Update 2026-09-14
+User lapor UX dialog "Kelola Langganan" (`/admin/users`) membebani admin —
+kalau paket jelas "1 Bulan"/"1 Tahun"/dst, admin tetap harus hitung &
+ketik tanggal expired dari nol tiap kali assign. **Ini BUKAN pembalikan
+keputusan di atas** — dievaluasi eksplisit dulu terhadap alasan alternatif
+"auto + override opsional" yang DITOLAK (dua sumber kebenaran bikin
+bingung admin mana yang berlaku): fix yang diterapkan (Fase 115) TETAP
+satu field `endAt` yang WAJIB diisi di body request (backend TIDAK
+berubah sama sekali, validasi "harus di masa depan" tetap sama) dan TETAP
+fully-editable di UI — yang berubah HANYA nilai AWAL field itu, di-pre-fill
+otomatis dari `plan.durationDays` (`startAt` hari ini + durasi paket)
+begitu admin pilih paket, bukan dibiarkan kosong. Tidak ada mode
+"auto" vs "manual" terpisah, tidak ada indikator dua sumber kebenaran —
+cuma default form yang lebih membantu untuk kasus umum (durasi standar),
+admin tetap bebas timpa untuk kasus kontrak custom yang jadi alasan asli
+keputusan ini. Detail implementasi → `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md`.

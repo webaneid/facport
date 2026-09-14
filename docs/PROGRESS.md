@@ -122,6 +122,7 @@
 | 112  | Deploy v2.0.0 ke Production & Perbaikan Pasca-Deploy | Done | `docs/architecture/architecture-deployment.md`, `docs/architecture/architecture-backup.md` | `docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md` |
 | 113  | Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate | Done | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-113-scoping-data-usaha-dashboard.md` |
 | 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
+| 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

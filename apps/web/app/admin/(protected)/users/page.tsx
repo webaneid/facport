@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft } from "lucide-react";
+import { Building2, CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { Input } from "@/components/ui/input";
 import { SearchForm } from "@/components/ui/search-form";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -21,7 +22,7 @@ import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
-import { endOfDayInTimezone } from "@/lib/timezone";
+import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
 import { moduleLabel } from "@/lib/module-options";
 
 const PAGE_SIZE = 20;
@@ -38,13 +39,22 @@ type UserRow = {
   activeSubscriptions: ActiveSubscription[];
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
+// § Fase 115 — field SEKARANG match response `GET /admin/users/:id/subscriptions`
+// (`apps/api/src/routes/admin/user-subscriptions.route.ts`, sudah JOIN
+// `dataUsaha` sejak 2026-09-12) — ganti dari `GET /admin/subscriptions?userId=`
+// yang TIDAK ada info Data Usaha sama sekali, akar masalah "Riwayat
+// Langganan tidak jelas Data Usaha mana".
 type SubscriptionHistoryItem = {
-  id: string;
+  subscriptionId: string;
   status: string;
-  startAt: string | null;
   endAt: string | null;
-  createdAt: string;
+  moduleKey: string | null;
   planName: string;
+  connected: boolean;
+  connectionStatus: string | null;
+  accurateDbAlias: string | null;
+  dataUsahaId: string;
+  dataUsahaName: string;
 };
 
 type CreatedUserResult = {
@@ -247,9 +257,12 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [editSubmitting, setEditSubmitting] = useState(false);
 
   async function load() {
+    // § Fase 115 — riwayat sekarang dari `GET /admin/users/:id/subscriptions`
+    // (endpoint yang sudah dipakai `[id]/page.tsx`, sudah JOIN Data Usaha),
+    // bukan `GET /admin/subscriptions?userId=` lagi.
     const [plansRes, historyRes, dataUsahaRes] = await Promise.all([
       api.admin.plans.get(),
-      api.admin.subscriptions.get({ query: { userId: user.id } }),
+      api.admin.users({ id: user.id }).subscriptions.get(),
       api.admin["data-usaha"].get({ query: { userId: user.id } }),
     ]);
     if (plansRes.data) setPlans((plansRes.data as unknown as { plans: Plan[] }).plans.filter((p) => p.isActive));
@@ -265,6 +278,19 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setError(null);
     setEditingId(null);
     load();
+  }
+
+  // § Fase 115 — auto-suggest tanggal expired dari `plan.durationDays`
+  // begitu admin pilih paket, TIDAK melanggar ADR-0016 (endAt TETAP field
+  // manual di backend & TETAP fully-editable di sini — cuma nilai
+  // AWALNYA tidak lagi kosong). § docs/decisions/adr-0016-...md "Update
+  // 2026-09-14". Dihitung LANGSUNG di event handler pilih paket (bukan
+  // `useEffect`) — konsisten aturan project "derived state dihitung saat
+  // event terjadi, bukan react ke perubahan state via effect".
+  function handleSelectPlan(planId: string) {
+    setSelectedPlanId(planId);
+    const plan = plans?.find((p) => p.id === planId);
+    if (plan) setEndAt(addDaysToDateString(todayInTimezone(companyTimezone), plan.durationDays));
   }
 
   async function handleAssign() {
@@ -319,7 +345,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   }
 
   function startEdit(h: SubscriptionHistoryItem) {
-    setEditingId(h.id);
+    setEditingId(h.subscriptionId);
     setEditEndAt(h.endAt ? h.endAt.slice(0, 10) : "");
   }
 
@@ -337,6 +363,23 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setEditingId(null);
     load();
     onAssigned();
+  }
+
+  // § Fase 115 — kelompokkan riwayat per Data Usaha, pola SAMA PERSIS
+  // `[id]/page.tsx` (baris 95-107) — urutan grup ikut urutan kemunculan
+  // pertama subscription-nya (backend sudah `orderBy(desc(createdAt))`).
+  const dataUsahaGroups: { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionHistoryItem[] }[] = [];
+  if (history) {
+    const byId = new Map<string, { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionHistoryItem[] }>();
+    for (const h of history) {
+      let group = byId.get(h.dataUsahaId);
+      if (!group) {
+        group = { dataUsahaId: h.dataUsahaId, dataUsahaName: h.dataUsahaName, subs: [] };
+        byId.set(h.dataUsahaId, group);
+        dataUsahaGroups.push(group);
+      }
+      group.subs.push(h);
+    }
   }
 
   return (
@@ -360,54 +403,73 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
             ) : history.length === 0 ? (
               <p className="text-muted-foreground">Belum pernah punya langganan.</p>
             ) : (
-              <ul className="flex flex-col divide-y divide-border">
-                {history.map((h) => (
-                  <li key={h.id} className="flex items-center justify-between py-2">
-                    <span className="text-foreground">{h.planName}</span>
-                    {editingId === h.id ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          type="date"
-                          value={editEndAt}
-                          onChange={(e) => setEditEndAt(e.target.value)}
-                          className="h-8 w-36"
-                        />
-                        <Button
-                          onClick={() => handleSaveEdit(h.id)}
-                          disabled={editSubmitting || !editEndAt}
-                          className="h-8 px-2.5 py-0 text-xs"
-                        >
-                          {editSubmitting ? "..." : "Simpan"}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={() => setEditingId(null)}
-                          disabled={editSubmitting}
-                          className="h-8 px-2.5 py-0 text-xs"
-                        >
-                          Batal
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <StatusBadge domain="subscription" status={h.status} />
-                        {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt, companyTimezone)}</span>}
-                        {h.status === "active" && (
-                          <button
-                            type="button"
-                            title="Ubah tanggal expired"
-                            aria-label="Ubah tanggal expired"
-                            onClick={() => startEdit(h)}
-                            className={buttonVariants("ghost", "h-6 w-6 p-0")}
-                          >
-                            <Pencil className="h-3 w-3" />
-                          </button>
-                        )}
-                      </div>
-                    )}
-                  </li>
+              // § Fase 115 — accordion per Data Usaha, default TERTUTUP
+              // (TANPA `defaultValue`, beda dari `[id]/page.tsx` yang
+              // default terbuka) — diminta user supaya gampang klasifikasi
+              // fitur mana milik Data Usaha mana tanpa layar penuh sekaligus.
+              <Accordion type="multiple">
+                {dataUsahaGroups.map((group) => (
+                  <AccordionItem key={group.dataUsahaId} value={group.dataUsahaId}>
+                    <AccordionTrigger>
+                      <span className="flex items-center gap-2">
+                        <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                        {group.dataUsahaName}
+                        <span className="text-xs font-normal text-muted-foreground">({group.subs.length} fitur)</span>
+                      </span>
+                    </AccordionTrigger>
+                    <AccordionContent>
+                      <ul className="flex flex-col divide-y divide-border">
+                        {group.subs.map((h) => (
+                          <li key={h.subscriptionId} className="flex items-center justify-between py-2">
+                            <span className="text-foreground">{h.planName}</span>
+                            {editingId === h.subscriptionId ? (
+                              <div className="flex items-center gap-2">
+                                <Input
+                                  type="date"
+                                  value={editEndAt}
+                                  onChange={(e) => setEditEndAt(e.target.value)}
+                                  className="h-8 w-36"
+                                />
+                                <Button
+                                  onClick={() => handleSaveEdit(h.subscriptionId)}
+                                  disabled={editSubmitting || !editEndAt}
+                                  className="h-8 px-2.5 py-0 text-xs"
+                                >
+                                  {editSubmitting ? "..." : "Simpan"}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  onClick={() => setEditingId(null)}
+                                  disabled={editSubmitting}
+                                  className="h-8 px-2.5 py-0 text-xs"
+                                >
+                                  Batal
+                                </Button>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                <StatusBadge domain="subscription" status={h.status} />
+                                {h.endAt && <span className="text-xs text-muted-foreground">s/d {formatDate(h.endAt, companyTimezone)}</span>}
+                                {h.status === "active" && (
+                                  <button
+                                    type="button"
+                                    title="Ubah tanggal expired"
+                                    aria-label="Ubah tanggal expired"
+                                    onClick={() => startEdit(h)}
+                                    className={buttonVariants("ghost", "h-6 w-6 p-0")}
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
                 ))}
-              </ul>
+              </Accordion>
             )}
           </div>
           <div className="flex flex-col gap-2 border-t border-border pt-3">
@@ -420,7 +482,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <Combobox
                 options={plans.map((p) => ({ value: p.id, label: `${p.name} — ${p.durationDays} hari` }))}
                 value={selectedPlanId}
-                onChange={setSelectedPlanId}
+                onChange={handleSelectPlan}
                 placeholder="(pilih paket)"
               />
             )}
