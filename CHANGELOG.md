@@ -1,3 +1,15 @@
+## 2.1.0 (2026-09-14)
+
+* Merge pull request #59 from webaneid/develop ([cefa93b](https://github.com/webaneid/facport/commit/cefa93b)), closes [#59](https://github.com/webaneid/facport/issues/59)
+* feat: fitur banner Promo dinamis di /pilih-usaha + admin CRUD (Fase 116) ([25b95e5](https://github.com/webaneid/facport/commit/25b95e5))
+* fix: bug backfill Data Usaha (grouping per koneksi bukan per company) + setup backup otomatis produc ([911f80c](https://github.com/webaneid/facport/commit/911f80c))
+* fix: scope dashboard/arsip/koneksi ke Data Usaha aktif + reconnect Accurate bisa reuse koneksi (Fase ([96b4890](https://github.com/webaneid/facport/commit/96b4890))
+* fix(admin): riwayat langganan jadi accordion per Data Usaha + auto-suggest tanggal expired dari dura ([d03cc6f](https://github.com/webaneid/facport/commit/d03cc6f))
+* fix(deploy): pindah image MinIO runtime ke quay.io, hindari rate-limit docker.io ([318d3ac](https://github.com/webaneid/facport/commit/318d3ac))
+* fix(scripts): backup-db.sh gagal total (exit 1, tanpa output) karena grep DB_USER/DB_NAME tidak kete ([3c05908](https://github.com/webaneid/facport/commit/3c05908))
+* docs: catat deploy manual v2.0.0 - bug drizzle-kit CLI di production + workaround psql manual ([053147d](https://github.com/webaneid/facport/commit/053147d))
+* docs: tutup Fase 112 - dokumentasikan deploy v2.0.0 ke production + semua perbaikan pasca-deploy ([ab81cec](https://github.com/webaneid/facport/commit/ab81cec))
+
 ## 2.0.0 (2026-09-12)
 
 * feat!: tutup restrukturisasi Data Usaha (Fase 106-111) sebagai rilis v2.0.0 ([421c2aa](https://github.com/webaneid/facport/commit/421c2aa))
