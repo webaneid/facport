@@ -19,6 +19,7 @@ const ADMIN_PERMISSION_KEYS = [
   "orders.manage", // § Fase 16 — antrian konfirmasi pembayaran (GET/POST /admin/orders/*)
   "notifications.broadcast", // § Fase 45 — buat pengumuman/broadcast ke customer
   "customer_care.manage", // § Fase 46 — kelola profil CS, jam kerja, analitik
+  "promos.manage", // § Fase 116 — kelola banner promo di /pilih-usaha
 ];
 
 // § Fase 29, ADR-0027 — role "staff" (label UI "Admin", beda dari

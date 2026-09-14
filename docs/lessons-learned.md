@@ -6,6 +6,38 @@
 
 ---
 
+## 2026-09-14 — `cleanup-test-data.ts` gagal FK `media_uploaded_by_user_id_fk` — script cleanup belum pernah cover tabel yang baru pertama kali diisi test
+**Masalah:** Saat mengerjakan Fase 116 (fitur Promo, upload gambar ke
+MinIO via `POST /admin/promos/image`), `bun run db:cleanup-test-data`
+gagal total dengan `PostgresError: update or delete on table "user"
+violates foreign key constraint "media_uploaded_by_user_id_fk" on table
+"media"`. Script (dibuat Fase 113, terus diperluas tiap fase yang butuh
+tabel baru) menghapus baris `user` test SEBELUM baris `media` yang masih
+mereferensikannya (`media.uploaded_by` → `user.id`, TANPA `ON DELETE
+CASCADE`).
+**Root cause:** Ini FASE PERTAMA yang benar-benar menjalankan test lewat
+endpoint upload gambar sungguhan (`sharp()` + `minioClient.putObject()` +
+insert baris `media` untuk audit) — sebelumnya tabel `media` ada di
+schema sejak lama tapi tidak pernah "kotor" oleh test manapun, jadi
+gap-nya baru ketahuan sekarang, bukan waktu tabel itu dibuat.
+**Fix:** Tambah `await tx.delete(promos)...` dan `await tx.delete(media)
+.where(inArray(media.uploadedBy, testUserIds))` di
+`apps/api/src/scripts/cleanup-test-data.ts`, SEBELUM baris `userTable`
+dihapus. Diverifikasi: setelah fix, cleanup jalan bersih (498 users, 258
+plans, 226 dataUsaha, 204 subscriptions dibersihkan di 1 run tanpa
+error), dan 3 baris `media` yang TERSISA setelahnya dikonfirmasi
+legitimate (upload branding real admin: QRIS, favicon, logo — bukan
+sampah test).
+**Pencegahan:** Kalau fase berikutnya menambah tabel baru yang punya FK
+tanpa cascade ke `user` (atau ke tabel lain yang sudah di-cleanup script
+ini), JANGAN asumsikan "belum pernah error = aman" — cek dulu apakah
+test fase itu BENERAN mengisi baris di tabel itu (bukan cuma schema-nya
+ada). `cleanup-test-data.ts` tetap SATU sumber kebenaran, harus terus
+diperluas seiring fitur baru yang benar-benar ditest end-to-end, bukan
+ditambal reaktif tiap kali gagal di production dev DB.
+
+---
+
 ## 2026-09-14 — Customer nyata (Untung Suroto, PT Maginet Indonesia) kena 3 gejala Data Usaha/koneksi berantakan — didiagnosis via SSH read-only, diperbaiki manual di production
 **Konteks:** Diskusi soal "apakah production perlu di-reset total karena database berantakan" berujung mengecek 1 akun customer nyata (`untung.suroto@intertouch.com`) langsung di production. Ditemukan 3 gejala SEKALIGUS, masing-masing beda akar masalah — **kesimpulan penting: "berantakan" bukan alasan reset total, karena 3 gejala ini semua traceable & fixable tanpa kehilangan data customer**.
 

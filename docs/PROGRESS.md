@@ -123,6 +123,7 @@
 | 113  | Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate | Done | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-113-scoping-data-usaha-dashboard.md` |
 | 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
 | 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
+| 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2768,3 +2769,32 @@ error, lint 0 error, test suite 753 pass/0 fail (21 baru). Billing/Tagihan
 SENGAJA tidak di-scope di fase ini (keputusan produk terpisah, tidak
 diminta user). Detail lengkap →
 `docs/phases/phase-113-scoping-data-usaha-dashboard.md`.
+
+## Update 2026-09-14 — Fase 116 Done: Fitur "Promo" di /pilih-usaha
+User minta banner promo dinamis (bisa dikelola admin) di gerbang
+`/pilih-usaha` — eksplisit minta hati-hati karena perlu tabel database
+baru ("saya takut banget bener2 harus hati2"). Dikerjakan via Plan Mode
+(riset dulu: ketemu `banner-slider.tsx` Fase 109 memang sengaja hardcode
++ digeneralisasi untuk disambung data dinamis nanti). Tabel baru `promos`
+(migration CREATE-TABLE murni, tanpa backfill — kategori risiko migration
+paling rendah di project ini), permission `promos.manage`, CRUD admin
+penuh + halaman `/admin/promos`, endpoint publik `GET /promos`
+(`isActive`+`LIMIT 5`+`sortOrder`, maksimal 5 tampil diminta user
+eksplisit di tengah riset), dan `banner-slider.tsx` dirombak jadi 2 mode
+render: kartu+tombol (title+deskripsi+label tombol semua terisi) vs
+gambar-klik-penuh (ketiganya kosong). Upload gambar pakai pola bucket
+publik (sama logo perusahaan) — sengaja BUKAN Media Library generik yang
+masih punya gap URL belum selesai.
+
+Security review (subagent) menemukan 1 Medium (`url` cuma divalidasi
+"tidak kosong", celah `javascript:` URI yang bisa dieksekusi customer
+saat klik promo) — diperbaiki langsung via `validatePromoUrlScheme()` di
+backend+frontend+test. Ketemu juga gap tak terkait: script
+`cleanup-test-data.ts` belum pernah cover `media`/`promos` (FK tanpa
+cascade ke `user`) karena belum ada test upload gambar sungguhan sebelum
+fase ini — sekarang sudah ditambahkan. Typecheck 0 error, test 778
+pass/0 fail, lint 0 error/0 warning. Verifikasi manual browser (Claude in
+Chrome) — kedua mode render dikonfirmasi visual benar di admin & customer
+view. Migration **cuma dijalankan lokal**, belum ke production — deploy
+menunggu konfirmasi terpisah. Detail lengkap →
+`docs/phases/phase-116-fitur-promo-pilih-usaha.md`.

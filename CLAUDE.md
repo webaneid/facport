@@ -142,6 +142,7 @@ untuk task kecil, itu justru lebih mahal token.
 | User tambahan (seat), multi-instance modul, batas device, transfer kepemilikan Data Usaha | `docs/architecture/architecture-user-tambahan.md` |
 | Routing 3 surface (landing/admin/app), subdomain | `docs/architecture/architecture-domain-routing.md` |
 | Dashboard pelanggan, App Shell (sidebar/nav modul baru) | `docs/architecture/architecture-app-dashboard.md` |
+| Banner promo di /pilih-usaha, kelola admin Promo | `docs/architecture/architecture-promo.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan

@@ -17,8 +17,9 @@ import {
   ownershipTransfers,
 } from "../db/schema";
 import { announcements, notifications } from "../db/schema/notification.schema";
-import { auditLogs, settings } from "../db/schema/core.schema";
+import { auditLogs, settings, media } from "../db/schema/core.schema";
 import { customerCareClicks } from "../db/schema/customer-care.schema";
+import { promos } from "../db/schema/promo.schema";
 
 // § feedback_dev_db_test_cleanup (memory) — `bun run test` jalan lewat DB
 // dev LOKAL yang sama dipakai manual browsing (bukan DB test terpisah),
@@ -83,6 +84,13 @@ async function main() {
       await tx.delete(auditLogs).where(inArray(auditLogs.actorId, testUserIds)); // no cascade
       await tx.update(settings).set({ updatedBy: null }).where(inArray(settings.updatedBy, testUserIds)); // JANGAN hapus baris settings-nya sendiri, cuma null-kan ref
       await tx.delete(customerCareClicks).where(inArray(customerCareClicks.userId, testUserIds)); // no cascade
+      // § Fase 116 — `promos.createdBy` & `media.uploadedBy` referensi
+      // `user` TANPA cascade (ketemu pas cleanup script ini pertama kali
+      // gagal FK `media_uploaded_by_user_id_fk` — test upload gambar
+      // Promo bikin baris `media` yang belum pernah di-cover script ini
+      // sebelumnya, karena belum ada fitur upload yang dites sungguhan).
+      await tx.delete(promos).where(inArray(promos.createdBy, testUserIds));
+      await tx.delete(media).where(inArray(media.uploadedBy, testUserIds));
     }
 
     // import_batches punya FK userId DAN subscriptionId sendiri-sendiri —
