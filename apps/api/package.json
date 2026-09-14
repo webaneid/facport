@@ -15,7 +15,8 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "bun run src/db/seed.ts",
-    "db:backfill-data-usaha": "bun run src/scripts/backfill-data-usaha.ts"
+    "db:backfill-data-usaha": "bun run src/scripts/backfill-data-usaha.ts",
+    "db:cleanup-test-data": "bun run src/scripts/cleanup-test-data.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.7.1",

@@ -24,7 +24,10 @@ import { BannerSlider, BANNER_COLLAPSE_STORAGE_KEY } from "./banner-slider";
 // Usaha ini BUKAN milik user (dia numpang lewat seat User Tambahan aktif,
 // § GET /me/data-usaha union kepemilikan+seat) — ditandai badge "Anggota"
 // biar user tidak bingung kenapa ada Data Usaha "orang lain" di daftarnya.
-type DataUsahaRow = { id: string; name: string; accurateConnectionId: string | null; isOwner: boolean };
+// § Fase 114 — `connected` DIHITUNG LIVE server-side (join subscription→
+// koneksi aktif), bukan lagi kolom `dataUsaha.accurateConnectionId` yang
+// mati (§ me.route.ts `GET /me/data-usaha`).
+type DataUsahaRow = { id: string; name: string; connected: boolean; isOwner: boolean };
 
 const createSchema = z.object({ name: z.string().min(1, "Nama wajib diisi").max(200) });
 type CreateFormValues = z.infer<typeof createSchema>;
@@ -224,7 +227,7 @@ export function PilihUsahaForm({
                   <span className="flex flex-col gap-0.5 bg-primary-600 px-3 py-2 text-white">
                     <span className="truncate text-sm font-medium">{row.name}</span>
                     <span className="truncate text-[11px] text-white/75">
-                      {row.accurateConnectionId ? "Terhubung Accurate" : "Belum terhubung Accurate"}
+                      {row.connected ? "Terhubung Accurate" : "Belum terhubung Accurate"}
                     </span>
                   </span>
                 </div>
@@ -270,7 +273,7 @@ export function PilihUsahaForm({
                         )}
                       </span>
                       <span className="block text-xs text-muted-foreground">
-                        {row.accurateConnectionId ? "Terhubung Accurate" : "Belum terhubung Accurate"}
+                        {row.connected ? "Terhubung Accurate" : "Belum terhubung Accurate"}
                       </span>
                     </span>
                     {row.isOwner && (

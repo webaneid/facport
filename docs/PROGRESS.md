@@ -120,6 +120,8 @@
 | 110  | User Tambahan (Seat) + Invite | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md`, `docs/decisions/adr-0032-model-seat-user-tambahan.md` | `docs/phases/phase-110-user-tambahan-seat.md` |
 | 111  | Transfer Kepemilikan Data Usaha | Done — **DEPLOYED production v2.0.0 (2026-09-12)** | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-111-transfer-kepemilikan-data-usaha.md` |
 | 112  | Deploy v2.0.0 ke Production & Perbaikan Pasca-Deploy | Done | `docs/architecture/architecture-deployment.md`, `docs/architecture/architecture-backup.md` | `docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md` |
+| 113  | Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate | Done | `docs/architecture/architecture-user-tambahan.md` § Fase B2 | `docs/phases/phase-113-scoping-data-usaha-dashboard.md` |
+| 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2743,3 +2745,25 @@ lama sebelum pindah ke `facinstitute.id`, sudah di-decommission aman
 (backup dulu, baru dihapus). Detail lengkap tiap temuan →
 `docs/phases/phase-112-deploy-v2-production-dan-perbaikan-pasca-deploy.md`
 dan `docs/lessons-learned.md` (5 entri baru).
+
+## Update 2026-09-14 — Fase 113 Done: Fix Scoping Data Usaha di Dashboard, Arsip Import, & Koneksi Accurate
+User lapor dashboard pasca-pilih-Data-Usaha masih "umum" (koneksi Accurate
+& langganan tidak spesifik ke Data Usaha aktif). Audit (subagent Explore)
+membuktikan 3 halaman (`/app`, `/app/import/arsip`, `/app/accurate`) dibuat
+SEBELUM restrukturisasi multi-Data-Usaha (Fase 106-111) dan tidak pernah
+di-retrofit ke pola scoping yang sudah benar di `/app/team`/`/app/subscribe`.
+Dikerjakan via Plan Mode (riset menyeluruh sebelum eksekusi, sesuai
+permintaan eksplisit user "perencanaan yang matang dulu"). 5 endpoint
+backend (`/me/subscriptions`, `/accurate/subscriptions`,
+`/accurate/connections`, `/me/stats`, `/me/import-batches`) sekarang
+menerima & memfilter `dataUsahaId`. Security review (subagent) menemukan 1
+Medium (3 endpoint baru rentan ke mantan pemilik/member yang kehilangan
+akses tapi masih ingat `dataUsahaId`, karena kolom `userId` yang dipakai
+dibekukan saat transfer kepemilikan/seat di-revoke — TIDAK divalidasi ulang
+terhadap akses SAAT INI) + 1 Low (query string belum di-`encodeURIComponent`)
+— keduanya diperbaiki langsung, termasuk helper baru
+`hasAccessToDataUsaha` (`apps/api/src/lib/data-usaha.ts`). Typecheck 0
+error, lint 0 error, test suite 753 pass/0 fail (21 baru). Billing/Tagihan
+SENGAJA tidak di-scope di fase ini (keputusan produk terpisah, tidak
+diminta user). Detail lengkap →
+`docs/phases/phase-113-scoping-data-usaha-dashboard.md`.

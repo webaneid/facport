@@ -21,12 +21,20 @@ export const subscriptionsRoute = new Elysia()
   // modul yang dia langganan.
   .get(
     "/me/subscriptions",
-    async ({ user }) => {
+    async ({ user, query }) => {
       // § Fase 110 — Accessible (bukan raw `eq(subscriptions.userId, ...)`):
       // dashboard/sidebar HARUS reflect akses lewat seat juga (union
       // kepemilikan Data Usaha SAAT INI + seat aktif), bukan cuma histori
       // "siapa yang beli". Lihat komentar lengkap di `lib/subscription-gate.ts`.
       const rows = await getAccessibleSubscriptionsWithPlans(user.id);
+
+      // § Fase 113 — `dataUsahaId` OPSIONAL: cuma NARROWING dari union di
+      // atas (yang sudah access-controlled), TIDAK PERNAH memperluas akses.
+      // Dibiarkan opsional (bukan wajib) karena `layout.tsx` (nav sidebar)
+      // dan `subscribe-form.tsx` (cek modul aktif LINTAS Data Usaha) masih
+      // butuh union penuh lalu filter sendiri di frontend — jangan pecah
+      // kontrak itu.
+      const filteredRows = query.dataUsahaId ? rows.filter((r) => r.subscription.dataUsahaId === query.dataUsahaId) : rows;
 
       // § Fase 43 — union modul yang PERNAH ditrial user ini, APA PUN
       // status subscription-nya sekarang (aktif/expired/habis kuota) —
@@ -39,9 +47,9 @@ export const subscriptionsRoute = new Elysia()
         .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.isTrial, true)));
       const everTrialedModules = [...new Set(everTrialedRows.flatMap((r) => r.modules))];
 
-      return { subscriptions: rows, everTrialedModules };
+      return { subscriptions: filteredRows, everTrialedModules };
     },
-    { auth: true },
+    { auth: true, query: t.Object({ dataUsahaId: t.Optional(t.String({ format: "uuid" })) }) },
   )
   // § Fase 16, ADR-0022 — REWORK TOTAL: dari 1-plan-per-checkout (return
   // 501, provider belum ada) jadi CART multi-modul beneran. Checkout

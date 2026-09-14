@@ -1,10 +1,10 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, inArray, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers } from "../db/schema";
+import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
-import { ownsDataUsaha } from "../lib/data-usaha";
+import { ownsDataUsaha, hasAccessToDataUsaha } from "../lib/data-usaha";
 import { generateTransferToken } from "../lib/ownership-transfer";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { escapeHtml } from "../lib/email";
@@ -55,11 +55,23 @@ export const meRoute = new Elysia()
   // numpang di gerbang ini, walau `subscription-gate.ts` sudah kasih dia
   // akses (gap ditemukan saat desain halaman `/invite/[token]`, sebelum
   // sempat jadi bug production).
+  // § Fase 114 — `connected` DIHITUNG LIVE dari
+  // `subscriptions`→`accurateConnections` (JOIN, cek ada yang
+  // `status:"active"`), BUKAN baca `dataUsaha.accurateConnectionId` lagi.
+  // Kolom itu kolom MATI sejak Fase 14/ADR-0020 (pointer koneksi
+  // sebenarnya pindah ke `subscriptions.accurateConnectionId`) — cuma
+  // pernah ditulis script backfill one-time, TIDAK PERNAH oleh alur live,
+  // jadi SELALU `null` untuk Data Usaha yang dibuat setelah backfill
+  // walau sudah terhubung penuh (bug nyata, ditemukan debugging production
+  // 2026-09-14, § lessons-learned.md — "PT. MAGINET INDONESIA" customer
+  // py 5 subscription aktif terhubung tapi gerbang ini lapor "Belum
+  // terhubung Accurate"). Kolom lama dibiarkan ada di schema (dead,
+  // cleanup migration terpisah kalau mau), TIDAK dibaca lagi di sini.
   .get(
     "/me/data-usaha",
     async ({ user }) => {
       const rows = await db
-        .select({ id: dataUsaha.id, name: dataUsaha.name, accurateConnectionId: dataUsaha.accurateConnectionId, ownerId: dataUsaha.userId })
+        .select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: dataUsaha.userId })
         .from(dataUsaha)
         .where(
           or(
@@ -74,7 +86,21 @@ export const meRoute = new Elysia()
           ),
         )
         .orderBy(desc(dataUsaha.createdAt));
-      return { dataUsaha: rows.map((r) => ({ ...r, isOwner: r.ownerId === user.id })) };
+
+      const dataUsahaIds = rows.map((r) => r.id);
+      const connectedIds = dataUsahaIds.length
+        ? new Set(
+            (
+              await db
+                .selectDistinct({ dataUsahaId: subscriptions.dataUsahaId })
+                .from(subscriptions)
+                .innerJoin(accurateConnections, eq(accurateConnections.id, subscriptions.accurateConnectionId))
+                .where(and(inArray(subscriptions.dataUsahaId, dataUsahaIds), eq(accurateConnections.status, "active")))
+            ).map((r) => r.dataUsahaId),
+          )
+        : new Set<string>();
+
+      return { dataUsaha: rows.map((r) => ({ id: r.id, name: r.name, isOwner: r.ownerId === user.id, connected: connectedIds.has(r.id) })) };
     },
     { auth: true },
   )
@@ -190,15 +216,40 @@ export const meRoute = new Elysia()
   // Baris `cancelled` (Batal Import) TIDAK dihitung — sama prinsipnya
   // dengan `admin/stats.route.ts`. Perhitungan waktu dilakukan DI SINI
   // (server), frontend cuma format tampilan — 1 sumber kebenaran logic.
+  // § Fase 113 — `dataUsahaId` WAJIB: sebelum ini cuma filter `userId`,
+  // union lintas SEMUA Data Usaha milik/di-seat user (bug, dashboard belum
+  // scoped ke Data Usaha aktif). Di-join lewat `importBatches.subscriptionId`
+  // → `subscriptions.dataUsahaId` — TIDAK butuh migration, kolom join
+  // sudah ada.
+  // § security review Fase 113 (Medium, DIPERBAIKI) — `importBatches.userId`
+  // DIBEKUKAN ke pelaku import asli, TIDAK ikut berubah saat kepemilikan
+  // Data Usaha ditransfer (`lib/ownership-transfer.ts`) atau seat
+  // di-revoke. Filter `userId` SAJA tidak cukup buktikan user masih
+  // berhak akses Data Usaha ini SEKARANG — mantan pemilik/member yang
+  // sudah kehilangan akses tapi masih ingat `dataUsahaId` bisa panggil
+  // endpoint ini langsung (bypass gate `layout.tsx`) dan tetap dapat
+  // datanya. `hasAccessToDataUsaha` (`lib/data-usaha.ts`) WAJIB dicek
+  // eksplisit dulu, bukan andalkan JOIN doang.
   .get(
     "/me/stats",
-    async ({ user }) => {
+    async ({ user, query, set }) => {
+      if (!(await hasAccessToDataUsaha(user.id, query.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
       const [rowCountRows, manualInputSetting] = await Promise.all([
         db
           .select({ successfulRowCount: count() })
           .from(importBatchRows)
           .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
-          .where(and(eq(importBatches.userId, user.id), eq(importBatchRows.status, "success"))),
+          .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+          .where(
+            and(
+              eq(importBatches.userId, user.id),
+              eq(importBatchRows.status, "success"),
+              eq(subscriptions.dataUsahaId, query.dataUsahaId),
+            ),
+          ),
         db.select().from(settings).where(eq(settings.key, MANUAL_INPUT_SECONDS_SETTING_KEY)),
       ]);
 
@@ -210,7 +261,7 @@ export const meRoute = new Elysia()
         estimatedTimeSavedSeconds: successfulRowCount * manualInputSecondsPerRow,
       };
     },
-    { auth: true },
+    { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
   )
   // § diminta user 2026-09-06 — "Arsip Import" gabungan: SEMUA batch
   // import milik user ini, LINTAS SEMUA modul (`import_batches.userId`,
@@ -219,21 +270,44 @@ export const meRoute = new Elysia()
   // dibatasi subscription AKTIF SEKARANG — riwayat batch lama dari modul
   // yang mungkin sudah tidak disubscribe lagi TETAP muncul (ini archive
   // milik user, bukan filter akses modul).
+  // § Fase 113 — `dataUsahaId` WAJIB, sama alasan `GET /me/stats` di atas.
+  // Join ke `subscriptions` ditambah di KEDUA query (`batches` DAN
+  // `totalRows`) supaya total pagination konsisten dengan data yang
+  // ditampilkan. `hasAccessToDataUsaha` WAJIB dicek dulu — sama alasan
+  // security review `GET /me/stats` (`importBatches.userId` dibekukan,
+  // tidak ikut berubah saat transfer kepemilikan/seat di-revoke).
   .get(
     "/me/import-batches",
-    async ({ user, query }) => {
+    async ({ user, query, set }) => {
+      if (!(await hasAccessToDataUsaha(user.id, query.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
       const limit = query.limit ?? 10;
       const offset = query.offset ?? 0;
-      const where = eq(importBatches.userId, user.id);
+      const where = and(eq(importBatches.userId, user.id), eq(subscriptions.dataUsahaId, query.dataUsahaId));
       const [batches, totalRows] = await Promise.all([
-        db.select().from(importBatches).where(where).orderBy(desc(importBatches.createdAt)).limit(limit).offset(offset),
-        db.select({ total: count() }).from(importBatches).where(where),
+        db
+          .select({ importBatches })
+          .from(importBatches)
+          .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+          .where(where)
+          .orderBy(desc(importBatches.createdAt))
+          .limit(limit)
+          .offset(offset)
+          .then((rows) => rows.map((r) => r.importBatches)),
+        db
+          .select({ total: count() })
+          .from(importBatches)
+          .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+          .where(where),
       ]);
       return { batches, total: totalRows[0]?.total ?? 0 };
     },
     {
       auth: true,
       query: t.Object({
+        dataUsahaId: t.String({ format: "uuid" }),
         limit: t.Optional(t.Numeric({ minimum: 1, maximum: 50 })),
         offset: t.Optional(t.Numeric({ minimum: 0 })),
       }),

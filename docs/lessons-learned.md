@@ -6,6 +6,90 @@
 
 ---
 
+## 2026-09-14 — Customer nyata (Untung Suroto, PT Maginet Indonesia) kena 3 gejala Data Usaha/koneksi berantakan — didiagnosis via SSH read-only, diperbaiki manual di production
+**Konteks:** Diskusi soal "apakah production perlu di-reset total karena database berantakan" berujung mengecek 1 akun customer nyata (`untung.suroto@intertouch.com`) langsung di production. Ditemukan 3 gejala SEKALIGUS, masing-masing beda akar masalah — **kesimpulan penting: "berantakan" bukan alasan reset total, karena 3 gejala ini semua traceable & fixable tanpa kehilangan data customer**.
+
+**Gejala 1 — 5 subscription pakai 5 koneksi Accurate TERPISAH ke company Accurate yang SAMA (`accurate_db_id: 2734175`, "PT. MAGINET INDONESIA")**, semua dibuat ulang dalam <2 menit (2026-09-14 05:57-05:58). Root cause: tombol "Hubungkan Ulang" (`handleConnectNew(reconnect=true)`, `apps/web/components/accurate/accurate-connections-form.tsx`) SELALU trigger OAuth penuh baru (`POST /accurate/connect`), TIDAK PERNAH menawarkan opsi reuse (`POST /accurate/reuse`) walau company-nya sama — beda dari alur connect PERTAMA kali yang memang kasih 2 pilihan.
+
+**✅ RESOLVED 2026-09-14 (sesi sama, Fase 114)** — `POST /accurate/reuse` sekarang terima `reconnect: boolean` (bypass guard 409, pola sama `/accurate/connect`), tombol "Pakai Koneksi yang Sudah Ada" sekarang muncul di kartu status sehat & rusak, bukan cuma first-connect. Security review nemuin 1 Medium TAMBAHAN saat fix ini: `getOwnedConnection` cuma cek koneksi MILIK user, TIDAK cek koneksi itu dipakai Data Usaha yang SAMA — user dengan >1 Data Usaha bisa salah kirim connectionId Data Usaha lain (lolos ownership check, tapi salah company) — DIPERBAIKI sekalian, guard baru `CONNECTION_DATA_USAHA_MISMATCH`. Detail lengkap → `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md`. **Belum di-deploy ke production** — baru sampai kode lokal.
+
+**Gejala 2 — 1 dari 5 koneksi (modul Jurnal Umum) macet di tengah: OAuth berhasil tapi `accurate_db_id` kosong** (customer belum/gagal menyelesaikan langkah "pilih Data Usaha" di UI, mungkin karena reconnect beruntun bikin bingung mana yang sudah selesai). Efek: modul itu tampil "connected" tapi tidak bisa dipakai import. **Fix darurat production**: `UPDATE accurate_connections SET accurate_db_id='2734175', accurate_db_alias='PT. MAGINET INDONESIA' WHERE id='668b069d-...'` — aman karena token masih valid (expire 2026-09-29) dan 5 koneksi lain user yang sama SEMUA ke company yang persis sama, jadi datanya bukan tebakan.
+
+**Gejala 3 — 2 Data Usaha untuk 1 company Accurate yang sama**: "Data Usaha Utama" (nama default, isinya 5 subscription REAL) + "PT MAGINET INDONESIA" (dibuat customer sendiri HARI INI, KOSONG — 0 subscription/member_seat/order). Root cause: nama "Data Usaha Utama" (default generik) tidak mencerminkan nama company asli di Accurate, customer bingung dan bikin Data Usaha baru dengan nama yang benar tanpa sadar itu company yang sama. **Fix production**: hapus Data Usaha kosong (sudah diverifikasi 0 dependent di `member_seats`/`ownership_transfers`/`orders` sebelum dihapus), rename "Data Usaha Utama" jadi "PT. MAGINET INDONESIA" biar tidak terulang.
+
+**Gejala 4 — `data_usaha.accurate_connection_id` adalah kolom MATI**: cuma pernah ditulis oleh `scripts/backfill-data-usaha.ts` (migrasi one-time Fase 106-107), TIDAK PERNAH ditulis lagi oleh alur koneksi normal sejak Fase 14 (ADR-0020 pindahkan pointer koneksi ke `subscriptions.accurateConnectionId`, bukan `dataUsaha.accurateConnectionId`). Akibat: `GET /me/data-usaha` (dipakai halaman `/pilih-usaha`) SELALU melaporkan "Belum terhubung Accurate" untuk Data Usaha manapun yang dibuat SETELAH backfill — walau sudah terhubung penuh via subscription-nya.
+
+**✅ RESOLVED 2026-09-14 (sesi sama, Fase 114)** — `GET /me/data-usaha` sekarang hitung `connected: boolean` LIVE lewat JOIN `subscriptions`→`accurateConnections` (`status:"active"`), bukan baca kolom mati lagi. Kolom `data_usaha.accurate_connection_id` SENGAJA TIDAK di-drop (butuh migration, scope diperkecil sengaja untuk kurangi risiko production) — dibiarkan ada tapi makin dead, cleanup schema jadi fase terpisah kalau mau. Detail → `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md`. **Belum di-deploy ke production**.
+
+**Sebelum fix apa pun ke production, DULU dicek dulu tidak ada dependent** (`member_seats`/`ownership_transfers`/`orders` count = 0) SEBELUM delete `data_usaha`, dan tiap UPDATE/DELETE production dijalankan lewat pola `BEGIN;...;ROLLBACK;` (dry-run) dulu baru `BEGIN;...;COMMIT;` — konsisten [[feedback_deploy_and_prod_debug_style]].
+
+**Pencegahan:** Gejala 1 & 4 di atas masih ada di kode (belum di-fix) — kemungkinan customer LAIN yang sign-up sebelum/sesudah tanggal yang sama bisa kena gejala serupa. Kalau ada laporan "koneksi Accurate saya aneh/nyangkut" lagi, cek dulu pola yang sama: (a) berapa `accurate_connections` per `data_usaha` (>1 ke `accurate_db_id` yang sama = gejala 1), (b) ada baris `accurate_db_id IS NULL` yang `status='active'` (gejala 2, koneksi nyangkut), (c) 2+ `data_usaha` dengan subscription mengarah ke `accurate_db_id` yang sama (gejala 3).
+
+**Update 2026-09-14 (hari sama) — kasus KEDUA ditemukan, konfirmasi gejala 3 bukan kebetulan**: dicek juga `reza.eka17@gmail.com` ("Eka", customer ASLI dari bug backfill Fase 112) — ternyata SETELAH backfill+merge manual Fase 112, dia masih tersisa **4 Data Usaha** (3 KOSONG: "Manufaktur Demo", "(LATIHAN) Kelas Akuntansi Manufaktur (Duplikat)", "Data Usaha (63624590)" — semua dibuat di detik yang SAMA PERSIS `2026-09-12 02:52:00` oleh backfill script, 0 subscription/member_seat/order di ketiganya) + 1 yang REAL ("Retail Demo", isinya SEMUA 6 subscription). Sama seperti Untung Suroto: field `data_usaha.accurate_connection_id` untuk "Retail Demo" JUSTRU TERISI (beda dari Untung Suroto) — karena Data Usaha ini dibuat backfill script (yang MEMANG isi field itu), bukan alur live customer (yang TIDAK PERNAH isi field itu, § Gejala 4 di atas). Juga ditemukan 17 baris `accurate_connections` ke company yang sama "Retail Demo" (`2905935`: 10 active + 5 revoked + 2 expired) — cuma 6 yang benar-benar dipakai subscription, 11 sisanya sampah reconnect (Gejala 1). **Fix**: hapus 3 Data Usaha kosong (setelah verifikasi 0 dependent), tidak perlu rename (nama "Retail Demo" sudah benar). Koneksi sampah (11 extra) TIDAK dibersihkan — harmless, tidak ada yang merujuk lagi setelah subscription-nya sudah pakai 6 connection spesifik.
+
+**Kesimpulan diperkuat**: 3 Data Usaha kosong Eka SEMUANYA berasal dari backfill script Fase 112 (bukan dari live reconnect bug seperti Untung Suroto) — artinya kemungkinan BESAR **customer lain yang di-backfill Fase 112 dulu juga masih py Data Usaha kosong sisa backfill yang belum dibersihkan** (backfill bikin 1 Data Usaha per `accurate_db_id` unik yang PERNAH terhubung, termasuk yang company-nya sudah tidak dipakai lagi/demo/latihan) — bukan cuma soal duplikat company yang sama. Kalau mau audit menyeluruh: cari SEMUA user dengan `data_usaha` yang 0 subscription DAN dibuat di window waktu backfill (`2026-09-12 02:5x`), itu kandidat kuat buat dibersihkan massal (bukan cuma reaktif per-laporan).
+
+**Update 2026-09-14 (lanjutan) — audit menyeluruh production, hasil: SEBAGIAN BESAR bukan bug**. Setelah fix Eka, dijalankan query audit skala-DB (`data_usaha` 0-subscription dibuat di window backfill `2026-09-12 02:50-03:00`) — **hasilnya 0 baris**, artinya Eka SATU-SATUNYA yang kena pola backfill-kosong ini, tidak perlu bulk cleanup. Audit ke-2: cari SEMUA user dengan >1 `data_usaha` SAAT INI (apa pun sebabnya) — ketemu 7 user. **Pelajaran penting: >1 Data Usaha per user BUKAN indikator bug** — itu FITUR (1 customer boleh kelola banyak company). Baru jadi masalah kalau 2+ Data Usaha ternyata mengarah ke `accurate_db_id` Accurate yang SAMA (JOIN lewat `subscriptions.accurate_connection_id` → `accurate_connections.accurate_db_id` untuk verifikasi, BUKAN cuma tebak dari nama). Dari 7 user yang dicek satu-satu:
+- `markhatussfac@gmail.com`, `ekalestari@fac-institute.com`, `pembukuan.fac@gmail.com` — LEGIT, masing-masing company BEDA (atau company sama tapi subscription REAL & aktif di keduanya, bukan 1 kosong) — TIDAK disentuh.
+- `untung.suroto@intertouch.com` — sempat dikira duplikat baru ("Database 2", 5 subscription dibuat persis di jam yang sama dengan sesi debugging ini) — **TERNYATA DISENGAJA** dikonfirmasi user, BUKAN bug. Hampir salah hapus subscription REAL karena asumsi "baru dibuat = pasti kecelakaan" — **PELAJARAN: selalu konfirmasi ke user/pemilik produk dulu sebelum eksekusi DELETE terhadap subscription AKTIF, walau semua sinyal teknis (timing, 0 order/invoice, nama generik) mengarah ke 'kelihatan seperti duplikat tidak sengaja'.** Sinyal teknis bisa salah baca konteks bisnis.
+- `usuroto@yahoo.co.id` — dikonfirmasi user: orang/company YANG SAMA dengan `untung.suroto@intertouch.com`, cuma daftar akun 2x dari jaman sebelum ada konsep Data Usaha ("1 database = 1 username" dulu). **Fix: `disabled=true` + cabut sesi (bukan hapus data)** — pola SAMA PERSIS tombol admin "Nonaktifkan User" (Fase 29), dieksekusi manual via SQL (3 langkah: `UPDATE user SET disabled=true`, `DELETE session`, `INSERT audit_logs`) karena lebih cepat daripada pindah ke browser admin. Data historis (Data Usaha, subscription lama)-nya TIDAK dihapus, cuma dorman.
+- `webane.com@gmail.com` — akun pribadi user sendiri, keputusan ditunda ke user.
+
+**Pencegahan lanjutan**: kalau audit serupa diulang, JANGAN asumsikan "Data Usaha baru + subscription banyak + 0 order = pasti kecelakaan" — selalu tanya dulu ke pemilik produk apakah itu disengaja, KHUSUSNYA kalau dibuat BARU SAJA (bisa jadi customer/admin lagi aktif kerja, bukan sampah lama).
+
+---
+
+## 2026-09-14 — Halaman customer-facing lama (Dashboard, Arsip Import, Koneksi Accurate) tidak pernah di-retrofit ke scoping Data Usaha
+**Konteks:** User lapor dashboard (`/app`) masih menampilkan info "umum"
+setelah pilih Data Usaha di gerbang `/pilih-usaha` — koneksi Accurate dan
+langganan tidak spesifik ke Data Usaha aktif.
+
+**Root cause:** Restrukturisasi multi-Data-Usaha (Fase 106-111) menetapkan
+pola scoping yang benar (Server Component baca cookie
+`getActiveDataUsahaIdCookie()` → teruskan `dataUsahaId` ke tiap fetch) dan
+menerapkannya ke halaman BARU (`/app/team`, `/app/subscribe`) — tapi 3
+halaman LAMA yang dibuat sebelum Fase 106+ (`/app`, `/app/import/arsip`,
+`/app/accurate`) tidak pernah di-retrofit. Endpoint backend-nya (`GET
+/me/subscriptions`, `GET /accurate/subscriptions`, `GET /accurate/connections`,
+`GET /me/stats`, `GET /me/import-batches`) memang tidak pernah menerima
+parameter `dataUsahaId` sama sekali — union lintas SEMUA Data Usaha
+milik/di-seat user selalu dikembalikan, dan halaman-halaman itu adalah
+Client Component (`"use client"`) sehingga tidak bisa langsung baca cookie
+lewat `next/headers` seperti Server Component lain.
+
+**Fix:** `docs/phases/phase-113-scoping-data-usaha-dashboard.md`. Endpoint
+dengan pemanggil existing yang butuh union (`layout.tsx`, `subscribe-form.tsx`)
+dapat query param `dataUsahaId` OPSIONAL (filter kalau diisi); endpoint
+dengan 1 pemanggil dapat WAJIB. Halaman Client Component dipecah jadi
+Server Component tipis (baca cookie, redirect) + Client Component (terima
+`dataUsahaId` sebagai prop) — pola persis `team/page.tsx`.
+
+**Temuan security review (Medium, DIPERBAIKI langsung, bukan ditunda):**
+3 endpoint baru (`/me/stats`, `/me/import-batches`, `/accurate/connections`)
+awalnya diasumsikan aman cukup dengan filter `userId` + JOIN `dataUsahaId`
+("kirim id bukan milik → hasil natural kosong"). Asumsi ini SALAH untuk
+`dataUsahaId` yang user PERNAH punya akses ke situ: kolom `importBatches.userId`
+dan `accurateConnections.userId` DIBEKUKAN ke pelaku asli, tidak ikut
+berubah saat kepemilikan Data Usaha ditransfer (`lib/ownership-transfer.ts`)
+atau seat di-revoke. Mantan pemilik/member yang sudah kehilangan akses
+tapi masih ingat `dataUsahaId` bisa panggil endpoint API langsung (bypass
+gate `layout.tsx` yang cuma proteksi UI) dan tetap dapat datanya —
+termasuk metadata koneksi Accurate yang mungkin MASIH aktif dipakai
+pemilik baru.
+
+**Pencegahan:** Kalau nanti bikin endpoint READ baru yang menerima
+`dataUsahaId`/resource-id serupa dan query dasarnya cuma filter kolom
+`userId`/ownership yang DIBEKUKAN saat dibuat (bukan dihitung ulang tiap
+request), JANGAN andalkan "JOIN yang mempersempit sudah cukup" — cek dulu
+apakah user MASIH punya akses SEKARANG (helper `hasAccessToDataUsaha`,
+`apps/api/src/lib/data-usaha.ts`, cek pemilik SEKARANG ATAU seat AKTIF
+SEKARANG — reuse ini, jangan bikin helper serupa lagi). Kolom
+ownership/actor yang beku (dicatat saat baris dibuat) itu sendiri BUKAN
+bukti akses masih berlaku — beda dari kolom yang selalu dihitung ulang
+dari state terkini (`dataUsaha.userId`, `memberSeats.status`).
+
+---
+
 ## 2026-09-12 — Bug backfill Data Usaha: 1 company Accurate reconnect berkali-kali jadi puluhan Data Usaha duplikat
 **Konteks:** Sesaat setelah deploy v2.0.0 + backfill Data Usaha selesai,
 user lapor langsung ("setiap koneksi... data usahanya jadi masing-masing,

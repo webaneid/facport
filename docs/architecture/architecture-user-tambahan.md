@@ -406,6 +406,36 @@ Tidak berubah dari draf sebelumnya — setting + `databaseHooks.session.create.b
 - 7 halaman import: tidak perlu tahu `dataUsahaId` eksplisit lagi (sudah
   implisit dari context Data Usaha yang aktif di sesi).
 
+**Update Fase 113 (2026-09-14) — gap retrofit ditemukan & diperbaiki**: 3
+halaman customer-facing (Dashboard `/app`, Arsip Import
+`/app/import/arsip`, Koneksi Accurate `/app/accurate`) TERNYATA dibuat
+SEBELUM Fase B2 ini dieksekusi dan tidak pernah di-retrofit ke pola
+scoping Data Usaha di atas — beda dari `/app/team` dan `/app/subscribe`
+yang memang dibangun SETELAH pola ini ada sehingga otomatis benar sejak
+awal. User melapor dashboard "masih umum" pasca-pilih-Data-Usaha; audit
+membuktikan endpoint backend-nya (`GET /me/subscriptions`,
+`GET /accurate/subscriptions`, `GET /accurate/connections`,
+`GET /me/stats`, `GET /me/import-batches`) memang tidak pernah menerima
+parameter `dataUsahaId` sama sekali — union lintas SEMUA Data Usaha milik/
+di-seat user selalu dikembalikan. Fix (detail → phase doc Fase 113):
+endpoint yang SUDAH punya pemanggil existing yang butuh union
+(`/me/subscriptions`, `/accurate/subscriptions` — dipakai `layout.tsx`
+untuk nav & `subscribe-form.tsx` untuk cek modul lintas Data Usaha) dapat
+query param `dataUsahaId` OPSIONAL (filter kalau diisi, union kalau
+tidak); endpoint yang cuma 1 pemanggil (`/accurate/connections`,
+`/me/stats`, `/me/import-batches`) dapat query param `dataUsahaId` WAJIB.
+
+**Konvensi WAJIB untuk halaman customer-facing BARU ke depan**: setiap
+Server Component baru di bawah `app/app/(protected)/` yang fetch data
+per-company HARUS baca `getActiveDataUsahaIdCookie()`
+(`apps/web/lib/active-data-usaha.ts`) dan teruskan `dataUsahaId` ke setiap
+endpoint yang datanya bisa berbeda antar Data Usaha — jangan asumsikan
+"nanti gampang di-scope belakangan" seperti yang terjadi ke 3 halaman di
+atas. Kalau halaman itu Client Component murni (butuh interaktivitas
+berat), pecah jadi Server Component tipis (baca cookie, redirect
+`/pilih-usaha` kalau kosong) + Client Component yang terima `dataUsahaId`
+sebagai prop — pola persis `team/page.tsx` + `team-form.tsx`.
+
 ### Fase C — User Tambahan (Seat) per Data Usaha + Invite + Transfer Kepemilikan
 Bergantung penuh pada B0+B1+B2. Scope final (sudah disederhanakan +
 ditambah 1 kebutuhan baru setelah konfirmasi client 2026-09-11):

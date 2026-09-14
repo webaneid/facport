@@ -392,3 +392,90 @@ describe("POST /subscriptions/trial", () => {
     expect(checkoutRes.status).toBe(200);
   });
 });
+
+describe("GET /me/subscriptions", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(new Request("http://localhost/me/subscriptions"));
+    expect(res.status).toBe(401);
+  });
+
+  test("tanpa dataUsahaId: union semua Data Usaha milik user (perilaku lama, dipakai layout.tsx & subscribe-form.tsx)", async () => {
+    const email = `me-subs-union-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+
+    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
+    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
+    const [planA] = await db
+      .insert(plans)
+      .values({ name: `Me Subs Union Plan A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [planB] = await db
+      .insert(plans)
+      .values({ name: `Me Subs Union Plan B ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planA!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId: dataUsahaA,
+    });
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planB!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId: dataUsahaB,
+    });
+
+    const res = await testApp.handle(new Request("http://localhost/me/subscriptions", { headers: { cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscriptions: { plan: { name: string } }[] };
+    expect(body.subscriptions.map((s) => s.plan.name).sort()).toEqual([`Me Subs Union Plan A ${runId}`, `Me Subs Union Plan B ${runId}`].sort());
+  });
+
+  // § Fase 113 — bug ditemukan: dashboard (`page.tsx`) belum kirim
+  // `dataUsahaId` sama sekali, jadi kartu "Langganan" menampilkan
+  // gabungan semua Data Usaha. Test ini pastikan param OPSIONAL ini
+  // benar-benar mempersempit kalau diisi.
+  test("dengan dataUsahaId: mempersempit ke 1 Data Usaha, TIDAK gabungan semua Data Usaha milik user yang sama", async () => {
+    const email = `me-subs-scoped-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+
+    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
+    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
+    const [planA] = await db
+      .insert(plans)
+      .values({ name: `Me Subs Scoped Plan A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [planB] = await db
+      .insert(plans)
+      .values({ name: `Me Subs Scoped Plan B ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planA!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId: dataUsahaA,
+    });
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planB!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId: dataUsahaB,
+    });
+
+    const res = await testApp.handle(new Request(`http://localhost/me/subscriptions?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscriptions: { plan: { name: string } }[] };
+    expect(body.subscriptions.map((s) => s.plan.name)).toEqual([`Me Subs Scoped Plan A ${runId}`]);
+  });
+});
