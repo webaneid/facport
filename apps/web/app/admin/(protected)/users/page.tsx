@@ -675,24 +675,44 @@ export default function AdminUsersPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // § diminta user 2026-09-15 — tabel dulu 6 kolom (Nama/Email/Status/
+  // Langganan Aktif/Terdaftar/Aksi), selalu perlu scroll ke samping.
+  // Disederhanakan jadi 4 kolom tampak: Status ditumpuk DI BAWAH Nama,
+  // Terdaftar ditumpuk DI BAWAH Email (2 baris per sel, bukan kolom
+  // terpisah), dan "Langganan Aktif" dibatasi `max-w` supaya badge WRAP
+  // ke bawah kalau banyak, bukan melebarkan tabel ke samping.
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
   const columns = [
-    columnHelper.accessor("name", { header: "Nama", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue() || "-"}</span> }),
-    columnHelper.accessor("email", { header: "Email", cell: (ctx) => <span className="text-muted-foreground">{ctx.getValue()}</span> }),
-    columnHelper.display({
-      id: "status",
-      header: "Status",
-      // § halaman ini SEKARANG cuma customer (§ Fase 29 lanjutan, `GET
-      // /admin/users` difilter server-side) — kolom "Role" yang dulu di
-      // sini SELALU "Pelanggan" jadi dihapus, tidak ada nilai informasi.
-      cell: ({ row }) => (row.original.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <span className="text-xs text-muted-foreground">Aktif</span>),
+    columnHelper.accessor("name", {
+      header: "Nama",
+      cell: ({ row }) => (
+        <div className="flex flex-col gap-0.5">
+          <span className="font-medium text-foreground">{row.original.name || "-"}</span>
+          {row.original.disabled ? (
+            <Badge variant="destructive" className="w-fit">
+              Nonaktif
+            </Badge>
+          ) : (
+            <span className="text-xs text-muted-foreground">Aktif</span>
+          )}
+        </div>
+      ),
+    }),
+    columnHelper.accessor("email", {
+      header: "Email",
+      cell: ({ row }) => (
+        <div className="flex flex-col gap-0.5">
+          <span className="text-muted-foreground">{row.original.email}</span>
+          <span className="text-xs text-muted-foreground">Terdaftar {formatDate(row.original.createdAt, companyTimezone)}</span>
+        </div>
+      ),
     }),
     columnHelper.display({
       id: "activeSubscription",
       header: "Langganan Aktif",
       cell: ({ row }) =>
         row.original.activeSubscriptions.length > 0 ? (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex max-w-56 flex-wrap gap-1">
             {row.original.activeSubscriptions.map((s, i) => (
               <Badge key={i} variant="success">
                 {s.planName}
@@ -703,7 +723,6 @@ export default function AdminUsersPage() {
           <span className="text-xs text-muted-foreground">Tidak ada</span>
         ),
     }),
-    columnHelper.accessor("createdAt", { header: "Terdaftar", cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span> }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",

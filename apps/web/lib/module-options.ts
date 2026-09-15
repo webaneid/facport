@@ -11,15 +11,17 @@
 // `.category` (cek `admin/plans/page.tsx`).
 import {
   MODULE_CATALOG,
+  MODULE_CATEGORIES,
   moduleLabel as moduleLabelSource,
   productLineLabel as productLineLabelSource,
   moduleCategory as moduleCategorySource,
+  moduleProductLine as moduleProductLineSource,
   PRODUCT_LINES,
   type ModuleKey,
   type ProductLineKey,
 } from "../../api/src/lib/module-catalog";
 
-export { PRODUCT_LINES };
+export { PRODUCT_LINES, MODULE_CATEGORIES };
 export type { ModuleKey, ProductLineKey };
 
 export const MODULE_OPTIONS = MODULE_CATALOG;
@@ -33,3 +35,5 @@ export const moduleLabel = moduleLabelSource;
 // yang di-snapshot ke `invoiceItems`.
 export const productLineLabel = productLineLabelSource;
 export const moduleCategory = moduleCategorySource;
+// § Fase 127 — dipakai `/subscribe` split grup modul per Produk sebelum render per section.
+export const moduleProductLine = moduleProductLineSource;

@@ -136,7 +136,9 @@ staging dalam satu proses), dan `.env.production.example`/`.env.staging.example`
 sudah dibuat di root repo (services: api, web, postgres, minio, caddy sebagai
 reverse proxy + HTTPS otomatis).
 
-> **⚠️ Realita production (`ane.web.id`) BEDA dari deskripsi di atas** —
+> **⚠️ Realita production (`facinstitute.id`, sebelumnya `ane.web.id`
+> sampai Fase 112 — sudah decommission, § `docs/PROGRESS.md` Update
+> 2026-09-12) BEDA dari deskripsi di atas** —
 > VPS-nya SHARED (banyak project lain jalan bareng), reverse proxy
 > SESUNGGUHNYA nginx yang sudah ada duluan, `caddy` service di
 > `docker-compose.prod.yml` **tidak pernah dipakai nyata**. Untuk
@@ -251,7 +253,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}"
 ### Verifikasi setelah deploy (WAJIB, jangan skip)
 1. `docker ps --format "table {{.Names}}\t{{.Status}}"` — service yang
    di-deploy harus `healthy`/`Up` dengan waktu restart baru saja.
-2. Buka domain publik (`https://app.ane.web.id` dst) dan tes LANGSUNG fitur
+2. Buka domain publik (`https://app.facinstitute.id` dst) dan tes LANGSUNG fitur
    yang baru di-deploy — jangan cuma percaya status container (healthcheck
    internal container bisa OK walau port EXTERNAL tidak ke-mapping sama
    sekali).

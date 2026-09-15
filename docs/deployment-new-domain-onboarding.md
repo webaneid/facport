@@ -3,9 +3,10 @@
 > Dokumen ini beda dari `docs/deployment-server-setup.md` — file itu
 > nulis skenario "VPS BARU, dedicated, pakai Caddy" (belum pernah benar-benar
 > dipakai persis begitu). Dokumen INI nulis apa yang **BENERAN terjadi**
-> di server production kita (`wasugi@76.13.18.136`, domain `ane.web.id`)
-> per 2026-09-04 — dipakai lagi kapan pun mau nambah domain/instance baru
-> ke VPS yang SAMA.
+> di server production kita (`wasugi@76.13.18.136`, domain `facinstitute.id`
+> — sebelumnya `ane.web.id` sampai Fase 112, sudah decommission, §
+> `docs/PROGRESS.md` Update 2026-09-12) per 2026-09-04 — dipakai lagi
+> kapan pun mau nambah domain/instance baru ke VPS yang SAMA.
 
 ## Realita Server Ini (Baca Dulu Sebelum Mulai)
 - **VPS ini SHARED** — bukan didedikasikan buat 1 project. Sudah ada
@@ -57,7 +58,7 @@ scp .env.production.example user@76.13.18.136:/opt/<nama-project-baru>/.env.prod
 
 ## Langkah 3 — Isi `.env.production`
 Edit `.env.production` di server, isi nilai **BARU dan UNIK** untuk instance
-ini (jangan pernah reuse punya `ane.web.id`):
+ini (jangan pernah reuse punya `facinstitute.id`, instance facport sendiri):
 - `PORT=3001` — **JANGAN LEWATKAN**, `.env.production.example` sempat tidak
   pernah mencantumkan ini sejak awal (ketemu nyata 2026-09-07, sudah
   diperbaiki di example-nya juga, tapi cek lagi kalau copy dari versi lama)

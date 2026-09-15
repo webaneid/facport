@@ -3,29 +3,19 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { Check, Package } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { Package } from "lucide-react";
+import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
-import { moduleLabel, type ModuleKey } from "@/lib/module-options";
+import { moduleLabel, moduleProductLine, PRODUCT_LINES, productLineLabel } from "@/lib/module-options";
 import { currencyFormatter } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
-import { useGroupedPlans } from "@/lib/use-grouped-plans";
-import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
-
-type Plan = {
-  id: string;
-  name: string;
-  price: number;
-  durationDays: number;
-  modules: string[];
-  isActive: boolean;
-  trialEligible: boolean;
-  kind: "module" | "seat_addon";
-};
+import { useGroupedPlans, type ModuleGroup } from "@/lib/use-grouped-plans";
+import { ProductCatalogSection } from "./product-catalog-section";
+import type { Plan } from "./module-pricing-panel";
 
 // § Fase 17 — cart halaman dashboard (sudah login). Reuse endpoint yang
 // SUDAH ADA sejak Fase 16 (`POST /subscriptions/checkout`) — halaman ini
@@ -67,9 +57,29 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
   // (`modules: []`, § lib/use-grouped-plans.ts `if (!moduleKey) continue`)
   // — seat DITANGANI TERPISAH di bawah (`seatPlans`/`seatQuantity`), bukan
   // dipaksa masuk konsep "grup modul" yang memang tidak cocok untuknya.
-  const { groups, isModuleSelected, isTierActive, activePlanFor, toggleModule, selectTier, setSelectedModules, selectedPlans } = useGroupedPlans(
-    plans ?? [],
-  );
+  const { groups, isModuleSelected, activePlanFor, toggleModule, selectTier, setSelectedModules, selectedPlans } = useGroupedPlans(plans ?? []);
+
+  // § Fase 127 — 1 Varian boleh terbuka SE-HALAMAN (lintas kartu Kategori,
+  // lintas Produk) — Radix `Accordion type="single" collapsible` di SATU
+  // Root yang membungkus SEMUA `ProductCatalogSection` di bawah (bukan 1
+  // Accordion per kartu) kasih exclusivity ini otomatis lewat 1 state ini.
+  const [openModuleKey, setOpenModuleKey] = useState<string | undefined>(undefined);
+
+  // § split `groups` (flat, semua Produk campur) per `productLine` —
+  // tiap Produk yang py minimal 1 grup dapat section sendiri (§
+  // `ProductCatalogSection`), Produk 0 grup (Konverter/AutoProduksi hari
+  // ini) TIDAK dapat section sama sekali (bukan "Coming Soon" kosong).
+  const groupsByProductLine = useMemo(() => {
+    const byLine = new Map<string, ModuleGroup<Plan>[]>();
+    for (const group of groups) {
+      const line = moduleProductLine(group.moduleKey);
+      if (!line) continue;
+      const bucket = byLine.get(line) ?? [];
+      bucket.push(group);
+      byLine.set(line, bucket);
+    }
+    return byLine;
+  }, [groups]);
 
   const seatPlans = useMemo(
     () => (plans ?? []).filter((p) => p.kind === "seat_addon" && p.isActive).sort((a, b) => b.durationDays - a.durationDays),
@@ -162,6 +172,15 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
     load();
   }
 
+  // § Fase 127 lanjutan (diminta user 2026-09-15) — "Tambahan Anggota"
+  // cuma masuk akal begitu Data Usaha ini SUDAH punya minimal 1 fitur
+  // aktif YANG DIBAYAR (bukan trial — trial gratis, belum "membeli"),
+  // dari Produk MANAPUN (Facport/Konverter/AutoProduksi, bukan Facport
+  // doang) — nambah anggota tim baru berguna kalau sudah ada fitur buat
+  // mereka pakai. `=== false` di `activeModuleMap` berarti aktif ASLI
+  // (bukan trial, § komentar `activeModuleMap` di atas).
+  const hasAnyRealActiveSubscription = [...activeModuleMap.values()].some((isTrial) => isTrial === false);
+
   const seatTotal = selectedSeatPlan ? selectedSeatPlan.price * seatQuantity : 0;
   const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0) + seatTotal, [selectedPlans, seatTotal]);
 
@@ -201,178 +220,93 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
   }
 
   return (
-    <div className="mx-auto flex max-w-3xl flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Berlangganan</h1>
-        <p className="text-sm text-muted-foreground">Pilih fitur yang kamu butuhkan — bisa lebih dari satu sekaligus.</p>
-      </div>
-
+    <div className="mx-auto flex max-w-5xl flex-col gap-6">
       {groups.length === 0 ? (
         <EmptyState icon={Package} title="Belum ada paket tersedia" />
       ) : (
         <>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {groups.map((group) => {
-              // § Fase 43 — "aktif" sekarang punya 2 rasa: paket ASLI
-              // (blokir card, sama perilaku lama) vs trial (card TETAP
-              // bisa diklik pilih ke cart, ini jalur upgrade).
-              const isRealActive = activeModuleMap.get(group.moduleKey) === false;
-              const isTrialActive = activeModuleMap.get(group.moduleKey) === true;
-              const hasEverTrialed = everTrialedModules.has(group.moduleKey);
-              const isSelected = isModuleSelected(group.moduleKey);
-              const activePlan = activePlanFor(group);
-              // § Fase 43 (koreksi) — tombol "Coba Gratis" cuma tampil
-              // untuk TIER YANG SEDANG DIPILIH kalau admin tandai eksplisit
-              // boleh ditrial (`trialEligible`) — kalau admin cuma nyalakan
-              // di 1 tier, tombol otomatis hilang/muncul ikut pill aktif.
-              const showTrialButton = activePlan?.trialEligible && !isRealActive && !isTrialActive && !hasEverTrialed;
-              const moduleKey = group.moduleKey as ModuleKey;
-              const Icon = LANDING_MODULE_ICON[moduleKey];
-              const tagline = LANDING_MODULE_TAGLINE[moduleKey];
+          {/* § Fase 127 — SATU Accordion Root membungkus SEMUA section
+             Produk supaya "1 Varian terbuka se-halaman" berlaku LINTAS
+             kartu Kategori, bahkan lintas Produk — bukan 1 Accordion per
+             kartu (§ plan "Redesign /subscribe" poin 4). */}
+          <Accordion type="single" collapsible value={openModuleKey} onValueChange={setOpenModuleKey} className="flex flex-col gap-8">
+            {PRODUCT_LINES.map((productLine) => {
+              const lineGroups = groupsByProductLine.get(productLine.key) ?? [];
+              if (lineGroups.length === 0) return null;
               return (
-                // § Fase 53 (revisi UX) — kartu TIDAK lagi diklik langsung
-                // (dulu whole-card-click toggle cart, ambigu begitu ada 2
-                // aksi berbeda: "Berlangganan" vs "Coba Gratis"). SEMUA
-                // aksi sekarang eksplisit lewat pill berlabel "Paket:".
-                <div
-                  key={group.moduleKey}
-                  className={`rounded-xl border p-5 transition-colors ${isRealActive ? "opacity-50" : ""} ${
-                    isSelected ? "border-primary-600 bg-primary-50" : "border-border/60"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      {Icon && (
-                        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary-600 text-white">
-                          <Icon className="h-5 w-5" />
-                        </span>
-                      )}
-                      <h3 className="font-medium text-foreground">{moduleLabel(group.moduleKey)}</h3>
-                    </div>
-                    {isRealActive && <Badge variant="success">Sudah Berlangganan</Badge>}
-                    {isTrialActive && <Badge variant="warning">Sedang Trial</Badge>}
-                  </div>
-                  {tagline && <p className="mt-2 text-xs text-muted-foreground">{tagline}</p>}
-
-                  {activePlan && (
-                    <p className="mt-3 text-2xl font-semibold text-foreground">
-                      {currencyFormatter.format(activePlan.price)}
-                      <span className="text-sm font-normal text-muted-foreground"> / {formatDuration(activePlan.durationDays)}</span>
-                    </p>
-                  )}
-
-                  {/* § border pemisah — pisahkan info (nama/deskripsi/harga) dari area pilihan interaktif di bawahnya */}
-                  <div className="mt-4 border-t border-border" />
-
-                  {group.tiers.length > 1 && (
-                    <div className="mt-4 flex flex-col gap-2">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Periode</span>
-                      <div className="flex gap-1.5">
-                        {group.tiers.map((tier) => (
-                          <button
-                            key={tier.id}
-                            type="button"
-                            disabled={isRealActive}
-                            onClick={() => selectTier(group.moduleKey, tier.id)}
-                            className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-                              isTierActive(group, tier.id)
-                                ? "border-primary-600 bg-primary-600 text-white"
-                                : "border-border text-muted-foreground hover:border-primary-300"
-                            }`}
-                          >
-                            {formatDuration(tier.durationDays)}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* § ditemukan 2026-09-07 (feedback user) — trial itu OPSIONAL,
-                     TIDAK boleh blokir upgrade ke paket asli. Sebelumnya
-                     section ini ikut disembunyikan kalau `isTrialActive`,
-                     bikin user yang lagi trial TIDAK BISA klik
-                     "Berlangganan" sama sekali (harus nunggu trial habis
-                     dulu) — salah, bukan itu maksud trial. `showTrialButton`
-                     di bawah TETAP correctly exclude "Coba Gratis" saat
-                     trial aktif (tidak masuk akal re-trial modul yang sama). */}
-                  {!isRealActive && activePlan && (
-                    <div className="mt-4 flex flex-col gap-2">
-                      <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Paket</span>
-                      <div className="flex gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => toggleModule(group.moduleKey)}
-                          className={`flex items-center gap-1.5 rounded-[3px] border border-primary-600 px-3 py-1.5 text-xs font-medium transition-colors ${
-                            isSelected ? "bg-primary-600 text-white" : "text-primary-700 hover:bg-primary-50"
-                          }`}
-                        >
-                          {isSelected && <Check className="h-3 w-3" />}
-                          Berlangganan
-                        </button>
-                        {showTrialButton && (
-                          <button
-                            type="button"
-                            disabled={tryingPlanId === activePlan.id}
-                            onClick={(e) => handleStartTrial(e, activePlan)}
-                            className="rounded-[3px] border border-primary-600 px-3 py-1.5 text-xs font-medium text-primary-700 transition-colors hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {tryingPlanId === activePlan.id ? "Memproses..." : "Coba Gratis"}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  )}
-                  {!isRealActive && !isTrialActive && !showTrialButton && hasEverTrialed && (
-                    <p className="mt-2 text-xs text-muted-foreground">Trial sudah pernah dipakai</p>
-                  )}
-                </div>
+                <ProductCatalogSection
+                  key={productLine.key}
+                  title={productLineLabel(productLine.key)}
+                  groups={lineGroups}
+                  activeModuleMap={activeModuleMap}
+                  everTrialedModules={everTrialedModules}
+                  isModuleSelected={isModuleSelected}
+                  activePlanFor={activePlanFor}
+                  toggleModule={toggleModule}
+                  selectTier={selectTier}
+                  tryingPlanId={tryingPlanId}
+                  onStartTrial={handleStartTrial}
+                />
               );
             })}
-          </div>
+          </Accordion>
 
-          {seatPlans.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Slot User Tambahan</CardTitle>
-                <CardDescription>Undang orang lain akses SEMUA fitur aktif Data Usaha ini — dikelola di halaman &quot;Kelola Tim&quot;.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {seatPlans.length > 1 && (
-                  <div className="flex gap-1.5">
-                    {seatPlans.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedSeatPlanIdOverride(p.id)}
-                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                          selectedSeatPlanId === p.id
-                            ? "border-primary-600 bg-primary-600 text-white"
-                            : "border-border text-muted-foreground hover:border-primary-300"
-                        }`}
-                      >
-                        {formatDuration(p.durationDays)} — {currencyFormatter.format(p.price)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-3">
-                  <label htmlFor="seat-quantity" className="text-sm text-foreground">
-                    Jumlah slot
-                  </label>
-                  <input
-                    id="seat-quantity"
-                    type="number"
-                    min={0}
-                    value={seatQuantity}
-                    onChange={(e) => setSeatQuantity(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
-                  />
-                  {selectedSeatPlan && seatQuantity > 0 && (
-                    <span className="text-sm text-muted-foreground">= {currencyFormatter.format(selectedSeatPlan.price * seatQuantity)}</span>
+          {/* § Fase 127 lanjutan — "Tambahan Anggota" diperlakukan seperti
+             1 Produk lagi (judul besar + garis, konsisten section
+             Facport/Konverter/AutoProduksi di atas), diletakkan SETELAH
+             grid Produk, TAPI cuma muncul kalau Data Usaha ini sudah
+             punya minimal 1 fitur aktif yang dibayar (§ `hasAnyRealActiveSubscription`
+             di atas) — beli slot anggota sebelum punya fitur apa pun
+             tidak masuk akal. */}
+          {seatPlans.length > 0 && hasAnyRealActiveSubscription && (
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">Tambahan Anggota</h2>
+                <div className="mt-3 border-t border-border" />
+              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Slot User Tambahan</CardTitle>
+                  <CardDescription>Undang orang lain akses SEMUA fitur aktif Data Usaha ini — dikelola di halaman &quot;Kelola Tim&quot;.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {seatPlans.length > 1 && (
+                    <div className="flex gap-1.5">
+                      {seatPlans.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setSelectedSeatPlanIdOverride(p.id)}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                            selectedSeatPlanId === p.id
+                              ? "border-primary-600 bg-primary-600 text-white"
+                              : "border-border text-muted-foreground hover:border-primary-300"
+                          }`}
+                        >
+                          {formatDuration(p.durationDays)} — {currencyFormatter.format(p.price)}
+                        </button>
+                      ))}
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="seat-quantity" className="text-sm text-foreground">
+                      Jumlah slot
+                    </label>
+                    <input
+                      id="seat-quantity"
+                      type="number"
+                      min={0}
+                      value={seatQuantity}
+                      onChange={(e) => setSeatQuantity(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
+                    />
+                    {selectedSeatPlan && seatQuantity > 0 && (
+                      <span className="text-sm text-muted-foreground">= {currencyFormatter.format(selectedSeatPlan.price * seatQuantity)}</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           <Card>

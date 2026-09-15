@@ -7,7 +7,8 @@
 >
 > **⚠️ Dokumen ini nulis skenario VPS BARU/dedicated pakai Caddy — belum
 > pernah benar-benar dipakai persis begitu di production nyata kita.**
-> Server production nyata (`ane.web.id`) ternyata SHARED (banyak project
+> Server production nyata (`facinstitute.id`, sebelumnya `ane.web.id`
+> sampai Fase 112 — sudah decommission) ternyata SHARED (banyak project
 > lain jalan di situ) dan pakai **nginx existing, BUKAN Caddy**. Kalau
 > mau nambah domain/instance baru ke VPS yang SUDAH DIPAKAI (skenario
 > paling mungkin ke depan), pakai
