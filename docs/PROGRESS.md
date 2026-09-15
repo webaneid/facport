@@ -126,6 +126,7 @@
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 | 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
 | 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
+| 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Planned | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2899,3 +2900,30 @@ baru — memperbaiki bug yang sama, bukan scope baru), lengkap di
 `docs/architecture/architecture-sales-receipt.md` § "Update 2026-09-15".
 **Masih menunggu retest client berikutnya untuk konfirmasi akhir** —
 tidak ada akses test call nyata ke akun Accurate client di sesi ini.
+
+## Update 2026-09-15 — Fase 119 Planned: Arsitektur 5 Sub-Modul Baru (Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return)
+Client siapkan panduan Excel per-modul (`docs/referencehtml/facport/developmen-15-september-2026.xlsx`,
+**gitignored, dikonfirmasi ulang sebelum dibuka**) untuk 5 sub-modul
+baru — melengkapi 5 dari 15 modul tersisa dari 21 katalog Accurate.
+Riset silang kolom Excel client terhadap spec resmi Accurate
+(`accurate-openapi.json`, `/api/{purchase-order,receive-item,purchase-return,
+sales-quotation,sales-return}/save.do`) menghasilkan 5 architecture doc
+lengkap (field mapping, struktur `detailItem[]`/`detailExpense[]`,
+keputusan auto-create vendor/customer/item per modul, grouping
+multi-baris).
+
+Temuan kunci: Receive Item punya kunci grouping BEDA dari modul lain
+(`receiveNumber` — nomor surat jalan vendor, REQUIRED — bukan `number`
+yang opsional seperti modul lain). Purchase Return & Sales Return
+punya `returnType` enum yang menentukan dokumen acuan — **2 keputusan
+scope butuh konfirmasi user**: Purchase Return `INVOICE_DP` tidak
+didukung, Sales Return `DELIVERY`+`INVOICE_DP` tidak didukung (Facport
+tidak punya modul Delivery Order sama sekali). Sales Order (kelanjutan
+Sales Quotation) sengaja belum masuk scope — client belum siapkan
+panduannya.
+
+Fase ini MURNI dokumentasi — 0 kode diubah, eksekusi tiap modul jadi
+fase terpisah nanti (pola "satu-satu" konsisten Fase 33-35). Status
+"Planned", menunggu konfirmasi user atas keputusan scope sebelum ditutup
+"Done". Detail lengkap →
+`docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.
