@@ -19,12 +19,14 @@ import { Can } from "@/components/auth/can";
 import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
-import { moduleLabel } from "@/lib/module-options";
+import { moduleLabel, moduleCategory, productLineLabel } from "@/lib/module-options";
 import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
 
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:6209";
 
-type InvoiceItem = { id: string; label: string; moduleKey: string; price: number };
+// § Fase 118 — `productLine` (§ ADR-0033), dipakai bareng `moduleKey`
+// resolve "Produk · Modul · Sub-modul" di dialog Detail Invoice.
+type InvoiceItem = { id: string; label: string; moduleKey: string; productLine: string; price: number };
 type InvoiceRow = {
   id: string;
   invoiceNumber: string;
@@ -35,6 +37,10 @@ type InvoiceRow = {
   createdAt: string;
   items: InvoiceItem[];
   orderId: string | null;
+  // § Fase 118 — Data Usaha tujuan invoice (dari `orders.dataUsahaId`,
+  // nullable — order lama pra-Fase 108 atau belum ada order sama sekali).
+  dataUsahaId: string | null;
+  dataUsahaName: string | null;
   // § Fase 94 (2026-09-10) — `orderStatus` = status pembayaran GRANULAR
   // (pending/submitted/paid/rejected/cancelled/expired, § `orders.status`),
   // BEDA dari `status` di atas (invoice.status, cuma unpaid/paid/void/
@@ -339,15 +345,32 @@ function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
             <p className="text-foreground">{invoice.billToName}</p>
           </div>
 
+          {/* § Fase 118 — Data Usaha tujuan invoice, supaya admin langsung
+              tahu customer ini beli untuk Data Usaha mana (§ ADR-0033). */}
+          <div>
+            <p className="text-xs font-medium uppercase text-muted-foreground">Data Usaha</p>
+            <p className="text-foreground">{invoice.dataUsahaName ?? "-"}</p>
+          </div>
+
           <div>
             <p className="mb-1.5 text-xs font-medium uppercase text-muted-foreground">Yang Dibeli</p>
             <div className="flex flex-col gap-1 rounded-md border border-border p-3">
-              {invoice.items.map((item) => (
-                <div key={item.id} className="flex items-center justify-between">
-                  <span className="text-foreground">{item.label}</span>
-                  <span className="text-muted-foreground">{currencyFormatter.format(item.price)}</span>
-                </div>
-              ))}
+              {invoice.items.map((item) => {
+                // § Fase 118 — sentinel "seat_addon" (§ invoice-order.ts)
+                // bukan Varian Facport sungguhan, skip Modul/Sub-modul.
+                const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
+                const subModule = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
+                const metaParts = [productLineLabel(item.productLine), category, subModule].filter((v): v is string => !!v);
+                return (
+                  <div key={item.id} className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <span className="text-foreground">{item.label}</span>
+                      {metaParts.length > 0 && <p className="text-xs text-muted-foreground">{metaParts.join(" · ")}</p>}
+                    </div>
+                    <span className="shrink-0 text-muted-foreground">{currencyFormatter.format(item.price)}</span>
+                  </div>
+                );
+              })}
               <div className="mt-1 flex items-center justify-between border-t border-border pt-1.5 font-medium text-foreground">
                 <span>Total</span>
                 <span>{currencyFormatter.format(invoice.total)}</span>
@@ -406,6 +429,13 @@ export default function AdminInvoicesPage() {
   const columns = [
     columnHelper.accessor("invoiceNumber", { header: "Nomor", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span> }),
     columnHelper.accessor("billToName", { header: "Ditagihkan Ke" }),
+    // § Fase 118 — kolom Data Usaha, supaya admin langsung tahu di layar
+    // list tanpa buka dialog detail (§ ADR-0033).
+    columnHelper.display({
+      id: "dataUsaha",
+      header: "Data Usaha",
+      cell: ({ row }) => <span className="text-muted-foreground">{row.original.dataUsahaName ?? "-"}</span>,
+    }),
     columnHelper.display({
       id: "items",
       header: "Paket",

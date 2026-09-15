@@ -120,6 +120,36 @@ export async function generateInvoicePdf(data: InvoicePdfData): Promise<Buffer> 
   tidak bisa import dari apps/web (app terpisah). Kalau label sumbernya
   berubah, update juga mapping di `invoice-pdf.tsx`.
 
+## Keterangan Produk/Data Usaha/Modul/Sub-Modul (§ Fase 118, ADR-0033)
+Fase 117 menambah dimensi Produk (`invoiceItems.productLine`) tapi TIDAK ada
+UI yang menampilkannya (known limitation eksplisit). Fase 118 menutup itu —
+admin/customer sekarang bisa lihat jelas: **Data Usaha** (invoice ini untuk
+Data Usaha mana), **Produk** (Facport/Konverter/AutoProduksi), **Modul**
+(kategori, mis. "Penjualan" — field `category` di `module-catalog.ts`), dan
+**Sub-modul** (varian konkret, mis. "Sales Invoice" — `moduleKey`). MURNI
+kerja surfacing — TIDAK ada kolom/migration baru, data-nya sudah tersimpan
+sejak Fase 117.
+
+- **Data Usaha** — 1 per invoice (bukan per item, § "1 checkout = 1 Data
+  Usaha"), diambil via join `orders.dataUsahaId → data_usaha.name`. Nullable
+  (order lama pra-Fase 108, atau belum ada order sama sekali) — ditampilkan
+  `"-"`/tidak ditampilkan, TIDAK error.
+- **Produk/Modul/Sub-modul** — per item, resolve dari `moduleKey`/
+  `productLine` yang sudah di-snapshot ke `invoiceItems` via
+  `apps/api/src/lib/module-catalog.ts` (`productLineLabel()`,
+  `moduleCategory()`, `moduleLabel()`). Sentinel `"seat_addon"` (§
+  `invoice-order.ts`, bukan Varian Facport sungguhan) SENGAJA skip
+  Modul/Sub-modul, cukup tampilkan Produk-nya.
+- **Ditampilkan di 2 tempat**: panel admin `/admin/invoices` (kolom Data
+  Usaha di tabel list + baris "Produk · Modul · Sub-modul" di dialog Detail
+  Invoice per item) DAN PDF invoice (`invoice-pdf.tsx` — baris "Data Usaha:
+  X" di blok Ditagihkan Kepada, anak-kalimat kecil di bawah tiap item).
+  Scope disepakati via `AskUserQuestion` — sengaja TIDAK menyentuh halaman
+  daftar invoice customer sendiri (`GET /me/invoices`, tidak diminta).
+- `groupIdenticalInvoiceItems()` (`invoice-helpers.ts`) sekarang bawa serta
+  `moduleKey`/`productLine` lewat grouping (aman — 2 baris dengan `planId`
+  sama otomatis punya `moduleKey`/`productLine` sama juga, § ADR-0019/0033).
+
 ## API
 ```
 GET  /me/invoices                → riwayat invoice caller SAJA (auth: true, filter userId dari session)
@@ -127,6 +157,8 @@ GET  /admin/invoices             → SEMUA invoice, permission "invoices.view". 
                                     baris ikut punya `orderStatus` (granular, null kalau belum
                                     ada order) dan `hasProof` (boolean) dari JOIN ke `orders` —
                                     dipakai dialog "Detail Invoice" (§ halaman admin di bawah).
+                                    § Fase 118: ikut `dataUsahaId`/`dataUsahaName` (nullable, join
+                                    `orders.dataUsahaId → data_usaha.name`).
 POST /admin/invoices             → { userId, planIds: uuid[] } — buat invoice BARU untuk user
                                     EXISTING (§ "Admin Membuat Invoice" di bawah), permission
                                     "invoices.manage" (BARU, ADR-0025 — terpisah dari

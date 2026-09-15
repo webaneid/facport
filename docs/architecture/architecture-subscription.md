@@ -87,6 +87,26 @@ plan aktif". `getActiveSubscription()` (singular, ambil 1 baris terbaru)
 diganti `getActiveSubscriptions()` (plural, ambil SEMUA baris aktif) —
 lihat § "Gating Akses Modul" di bawah.
 
+## Dimensi Produk — Ortogonal Terhadap Sub-Modul (Fase 117, ADR-0033)
+Sejak Fase 117, `plans` punya kolom **`productLine`** (varchar20, NOT NULL,
+DEFAULT `'facport'`) — dimensi "Produk" (Facport/Konverter/AutoProduksi, §
+`architecture-product-lines.md`), TERPISAH dari `modules` (sub-modul/varian,
+bagian ini) dan `kind` (mekanisme billing: module/seat_addon, § di atas).
+**Tidak mengubah apa pun di bagian ini** — semua yang dijelaskan soal
+`modules`/`getActiveSubscriptions()`/cart-multi-modul TETAP berlaku identik
+untuk SEMUA Produk, `productLine` cuma menambah 1 kolom klasifikasi di atas
+skema yang sudah ada.
+
+`invoiceItems.productLine` — snapshot yang sama polanya dengan `moduleKey`
+(§ di atas), diisi saat invoice dibuat. `subscriptions` TIDAK punya kolom
+`productLine` sendiri (join `plans.productLine` kalau perlu — record
+operasional live, bukan dokumen legal yang perlu snapshot).
+
+Source of truth katalog varian (module key) sekarang
+`apps/api/src/lib/module-catalog.ts`, BUKAN lagi hardcode terpisah di
+`module-options.ts`/`accurate-scopes.ts`/`plans.route.ts` — detail lengkap
+konsolidasi & test guard-nya → `architecture-product-lines.md`.
+
 ## Retensi Data Import (Fase 10)
 Data Excel yang diimpor (`import_batches`/`import_batch_rows`, § architecture-accurate-integration.md
 § 2) berisi data bisnis sensitif milik client (harga beli, nama vendor,

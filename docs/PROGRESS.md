@@ -124,6 +124,8 @@
 | 114  | Reconnect Bisa Reuse Koneksi + Status "Terhubung Accurate" di /pilih-usaha Dibetulkan | Done | `docs/architecture/architecture-accurate-integration.md` | `docs/phases/phase-114-reconnect-reuse-dan-status-koneksi-data-usaha.md` |
 | 115  | Perbaikan UI "Kelola Langganan" Admin: Riwayat per Data Usaha (Accordion) + Auto-Suggest Tanggal Expired | Done | `docs/decisions/adr-0016-admin-subscription-expired-manual.md` | `docs/phases/phase-115-riwayat-langganan-accordion-dan-auto-suggest-expired.md` |
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
+| 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
+| 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2798,3 +2800,102 @@ Chrome) — kedua mode render dikonfirmasi visual benar di admin & customer
 view. Migration **cuma dijalankan lokal**, belum ke production — deploy
 menunggu konfirmasi terpisah. Detail lengkap →
 `docs/phases/phase-116-fitur-promo-pilih-usaha.md`.
+
+## Update 2026-09-14 — Fase 117 Done: Peta Struktur Produk Multi-Brand (ADR-0033)
+Client ingin gabung 3 produk terpisah (Facport, Konverter — aplikasi lama
+PHP untuk pengguna Accurate Desktop, AutoProduksi — modul manufaktur/BOM
+belum ada kode) jadi 1 aplikasi bernama Facport, 1 pendaftaran/billing.
+User eksplisit minta struktur dipetakan DULU sebelum lanjut bangun modul
+lain dari 21 modul katalog Facport (6 sudah Done). Dikerjakan via Plan
+Mode: 3 subagent Explore paralel (subscription/billing/katalog, sidebar/
+domain-routing/branding, kopling Data Usaha/pipeline import ke Accurate)
++ 1 Plan agent validasi, semua grounded ke kode nyata. Temuan kunci:
+fondasi Data Usaha/subscription/job-queue Facport SUDAH lentur untuk
+Produk baru (koneksi Accurate opsional by design, gate `moduleAccess()`
+cuma string-membership, TIDAK query Accurate sama sekali) — tidak perlu
+rombak besar, cuma perlu dimensi "Produk" baru (kolom `productLine` di
+`plans`/`invoiceItems`, ortogonal terhadap `modules`/`kind`) + source of
+truth katalog baru (`module-catalog.ts`, ganti duplikasi manual 7
+module-key di ≥4 tempat).
+
+Draf plan pertama DITOLAK user di `ExitPlanMode` — istilah "product line"
+terkesan seperti 3 sub-brand terpisah, padahal maksudnya 1 brand
+("Facport") jual beberapa produk (analog toko jual kaos/ban mobil/jasa
+web). Dikoreksi jadi kerangka "Brand → Produk → Varian" sebelum disetujui
+— disimpan ke memory session (`feedback_brand_produk_varian_terminology`)
+untuk konsistensi ke depan.
+
+ADR-0033 ditulis (extend, bukan superseding, ADR-0019). Deliverable: ADR
+baru, architecture doc baru (`architecture-product-lines.md`, referensi
+hidup diupdate tiap Konverter/AutoProduksi nambah Varian nyata), 5 doc
+arsitektur diupdate, glossary disambiguasi istilah "Modul" (3 arti
+overlap). Kode: 2 kolom baru (migration murni `ADD COLUMN NOT NULL
+DEFAULT`, tanpa backfill), `module-catalog.ts` baru, `module-options.ts`
+jadi re-export, denormalisasi `productLine` di invoice-order.ts, field
+opsional `NavGroup.productLine?` di sidebar (render ditunda). 2 test
+guard baru kunci konsolidasi katalog. Desain (BUKAN implementasi) untuk
+riwayat Konverter dikunci di ADR: `import_batches` DITOLAK sengaja
+(pipeline server-verified, Konverter 100% client-side) — tabel
+`conversion_logs` terpisah didesain, dibuat pas fase build Konverter.
+
+Typecheck 0 error, test 781 pass/0 fail (3 baru), lint 0 error/0 warning,
+security review 0 temuan. Fase ini SENGAJA tidak membangun UI Konverter,
+schema AutoProduksi, atau migrasi 34 user lama Konverter — semua itu
+fase terpisah nanti. Detail lengkap →
+`docs/phases/phase-117-peta-struktur-multi-produk.md`.
+
+## Update 2026-09-14 — Fase 118 Done: Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice
+Menutup known limitation eksplisit Fase 117 ("belum ada UI yang
+menampilkan productLine"). User minta admin bisa lihat jelas di invoice:
+customer beli Produk apa, untuk Data Usaha mana, Modul apa, Sub-modul apa
+— dikonfirmasi via `AskUserQuestion` scope-nya panel admin DAN PDF invoice
+(bukan cuma admin). Investigasi menemukan datanya SUDAH lengkap tersimpan
+sejak Fase 117 (`orders.dataUsahaId`, `invoiceItems.productLine`/
+`moduleKey`) — gap murni di lapisan tampilan, 0 migration/kolom baru
+dibutuhkan.
+
+2 helper baru (`productLineLabel`/`moduleCategory` di `module-catalog.ts`),
+join `data_usaha` di 2 endpoint (`GET /invoices/:id/pdf`,
+`GET /admin/invoices`, keduanya di-scope dari order yang sudah
+ownership-verified — dikonfirmasi tidak ada celah IDOR di security
+review), render di admin panel (kolom Data Usaha + dialog detail per
+item) dan PDF invoice. Typecheck 0 error, test 782 pass/0 fail (1 baru),
+lint 0 error/0 warning, security review 0 temuan.
+
+**Verifikasi manual browser dilakukan end-to-end memakai data invoice
+REAL di dev DB lokal** (bukan data test) — dikonfirmasi visual: tabel
+list, dialog detail, DAN PDF hasil download semua menampilkan "Data
+Usaha: FAC Institute" + "Facport · Penjualan · Sales Receipt (Customer
+Receipt)" dengan benar. Detail lengkap →
+`docs/phases/phase-118-keterangan-produk-invoice.md`.
+
+## Update 2026-09-15 — Fix Lanjutan PPh23 Sales Receipt/Purchase Payment (Bukan Fase Baru — Tindak Lanjut Fase 99/100)
+User forward jawaban Accurate Support (ulang, sumber yang sama dipakai
+Fase 99) minta evaluasi ulang karena retest client kemarin masih gagal
+("PPh-nya salah/kosong"). Investigasi ulang membuktikan struktur payload
+Fase 99/100 (`detailTax` di root, `paidPph`/`pphNumber` di
+`detailInvoice`) SUDAH BENAR — dicek baris-per-baris terhadap contoh
+resmi, cocok persis. Sempat curiga `pphNumber` harus dikirim sebagai
+angka (bukan string) berdasar contoh JSON yang tidak diberi tanda kutip
+— **hipotesis ini DIBUKTIKAN SALAH** setelah cek `accurate-openapi.json`
+resmi (`pphNumber` memang type `string`, contoh spec-nya sendiri teks
+bebas "Halo Semua 123").
+
+Root cause sebenarnya: `findTaxByIdentifier` (resolve kolom Excel "Tax
+ID" ke id numerik Accurate) mencari ke SELURUH Master Data Pajak
+(PPh15/21/22/23/PS4/PPN/PPNBM sekaligus) TANPA filter jenis pajak — bisa
+salah cocok ke record BUKAN PPh23 kalau kode/deskripsi kebetulan sama,
+mengirim `taxId` salah jenis TANPA error. Fix: filter
+`taxType === "PPH23"` sebelum matching. 6 unit test baru mengunci
+perilaku ini (fungsi ini sebelumnya 0 test coverage). Sekalian dibetulkan
+teks deskripsi kolom "Paid PPH" yang kontradiktif di template guide
+(sisa kesimpulan Fase 85 yang sudah terbukti salah sejak Fase 99, tidak
+pernah diupdate).
+
+Typecheck 0 error, test 788 pass/0 fail (6 baru), lint 0 error, security
+review 0 temuan. Dicatat sebagai tindak lanjut Fase 99/100 (bukan fase
+baru — memperbaiki bug yang sama, bukan scope baru), lengkap di
+`docs/lessons-learned.md` 2026-09-15 dan
+`docs/architecture/architecture-sales-receipt.md` § "Update 2026-09-15".
+**Masih menunggu retest client berikutnya untuk konfirmasi akhir** —
+tidak ada akses test call nyata ke akun Accurate client di sesi ini.

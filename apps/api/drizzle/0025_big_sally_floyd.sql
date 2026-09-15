@@ -1,0 +1,2 @@
+ALTER TABLE "plans" ADD COLUMN "product_line" varchar(20) DEFAULT 'facport' NOT NULL;--> statement-breakpoint
+ALTER TABLE "invoice_items" ADD COLUMN "product_line" varchar(20) DEFAULT 'facport' NOT NULL;

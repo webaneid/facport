@@ -27,6 +27,12 @@ export const plans = pgTable("plans", {
   // titik aktivasi (confirm order/manual-subscription) untuk tahu kapan
   // harus sekalian bikin baris `member_seats`.
   kind: varchar("kind", { length: 20 }).notNull().default("module"),
+  // § Fase 117, ADR-0033 — dimensi "Produk" (Facport/Konverter/AutoProduksi,
+  // architecture-product-lines.md), ORTOGONAL terhadap `modules` (varian di
+  // dalam 1 Produk) dan `kind` (mekanisme billing di atas). Nilai valid ada
+  // di `PRODUCT_LINES` (apps/api/src/lib/module-catalog.ts). DEFAULT
+  // "facport" karena SEMUA plan existing memang Produk Facport.
+  productLine: varchar("product_line", { length: 20 }).notNull().default("facport"),
   // § Fase 43 (koreksi) — admin HARUS eksplisit mengaktifkan trial per
   // paket, BUKAN semua paket otomatis bisa trial (kalau otomatis, admin
   // tidak punya otoritas atas paketnya sendiri). Default false — trial

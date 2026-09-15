@@ -593,10 +593,41 @@ di-skip Fase 85) DIKEMBALIKAN sebagai field aktif.
 
 Detail lengkap → `docs/lessons-learned.md` entri 2026-09-10 "PPh23 di
 Sales Receipt" (update resolusi) dan
-`docs/phases/phase-99-fix-pph23-sales-receipt.md`. **Belum diverifikasi
-test call nyata ke production** (fix ini berdasar jawaban tertulis
-resmi Accurate Support, bukan test call kami sendiri) — disarankan
-client retest 1x setelah deploy untuk konfirmasi akhir end-to-end.
+`docs/phases/phase-99-fix-pph23-sales-receipt.md`.
+
+### ⚠️ Update 2026-09-15 — Retest Client: Struktur Payload Benar, Tapi Tetap Salah/Kosong
+Client retest sungguhan (yang direkomendasikan di atas) melaporkan
+transaksi TETAP tersimpan tapi PPh-nya salah/kosong — struktur
+`detailTax`/`paidPph`/`pphNumber` di atas TERBUKTI SUDAH BENAR (dicek
+ulang baris-per-baris terhadap contoh resmi Support, cocok persis),
+jadi bukan itu yang salah. Root cause SEBENARNYA ditemukan di fungsi
+`findTaxByIdentifier` (`accurate-tax.ts`, dipakai resolve kolom Excel
+"Tax ID" ke id numerik Accurate SEBELUM masuk `detailTax[].taxId`):
+fungsi ini mencari ke **SELURUH Master Data Pajak** (`/api/tax/list.do`
+balikin PPh15/21/22/23/PS4/PPN/PPNBM sekaligus, dikonfirmasi lewat
+`taxType` enum resmi di `accurate-openapi.json`) **TANPA filter jenis
+pajak** — kalau `taxCode`/`description` yang diisi user (Excel kolom
+"Tax ID") kebetulan cocok record BUKAN PPh23 (mis. record PPN dengan
+teks sama), `.find()` diam-diam balikin match PERTAMA di urutan list
+APAPUN jenisnya, mengirim `taxId` yang SALAH JENIS PAJAK ke Accurate —
+tanpa error, cuma hasil PPh yang salah/tidak sesuai.
+
+**Fix**: `findTaxByIdentifier` sekarang filter `taxType === "PPH23"`
+SEBELUM matching by id/kode/deskripsi — fitur "Tax ID"/"Tax Amount" di
+modul ini memang secara eksplisit cuma untuk PPh23 (dokumentasi & UI-nya
+sendiri bilang begitu), jadi mempersempit pencarian ke kategori yang
+benar TIDAK mengurangi kapabilitas apa pun, cuma menutup kelas
+kesalahan silent-cross-type-match ini seluruhnya. 6 unit test baru
+(`accurate-tax.test.ts`) mengunci perilaku ini, termasuk kasus record
+non-PPh23 dengan kode/deskripsi IDENTIK yang sengaja ditaruh lebih dulu
+di list.
+
+**Masih belum bisa dipastikan 100%** ini SATU-SATUNYA penyebab (tidak
+ada akses test call nyata ke akun Accurate client di sesi investigasi
+ini) — kalau retest berikutnya MASIH salah, kemungkinan besar berarti
+nilai "Tax ID" yang diisi user memang tidak ketemu SAMA SEKALI di
+Master Data Pajak PPh23 company mereka (harus dicek manual ke Accurate
+langsung: Data Master → Pajak, filter jenis PPh23).
 
 ## Belum Diputuskan (Di Luar Scope Fase Ini)
 - ~~Apakah ekspansi ini JUGA perlu di-mirror ke Purchase Payment~~ —

@@ -40,6 +40,18 @@ tabel di atas cuma peta cepat "cari tabel X ada di file mana", bukan
 duplikat definisi kolom (definisi kolom gampang basi, jangan disalin ke
 sini).
 
+**Fase 117 (ADR-0033)** — `plans.productLine` dan `invoiceItems.productLine`
+(keduanya `varchar(20) NOT NULL DEFAULT 'facport'`) ditambahkan sebagai
+dimensi "Produk" (Facport/Konverter/AutoProduksi), ortogonal terhadap
+`plans.modules`/`kind` — lihat `architecture-product-lines.md`. Migration
+kategori paling aman (ADD COLUMN NOT NULL DEFAULT, tanpa backfill manual —
+default value sudah benar untuk semua baris existing). **Tabel
+`conversion_logs`** (riwayat Konverter) DIDESAIN tapi BELUM DIBUAT fase ini
+— bentuknya: `id`, `userId`, `dataUsahaId`, `subscriptionId`, `moduleKey`,
+`fileName`, `rowCount` (semua self-reported client, BUKAN server-verified —
+beda dari `import_batches` yang server-verified via respons Accurate).
+Dibuat pas fase build Konverter sungguhan.
+
 ## ⚠️ Timezone — Aturan Non-Negotiable
 **Semua kolom timestamp WAJIB `timestamptz` (menyimpan UTC), TIDAK PERNAH
 `timestamp` tanpa timezone atau local time yang sudah di-convert sebelum

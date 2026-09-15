@@ -1,10 +1,16 @@
 import { Document, Page, View, Text, Image, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { moduleLabel, moduleCategory, productLineLabel } from "./module-catalog";
 
 // § Fase 15, ADR-0021 — generator PDF SERVER-SIDE murni (React elemen →
 // PDF langsung), TANPA browser/Chromium. SATU-SATUNYA pemakai JSX di
 // apps/api (§ tsconfig.json `jsx: react-jsx`). Lihat architecture-invoice.md.
 
-export type InvoicePdfItem = { label: string; price: number };
+// § Fase 118 — `moduleKey`/`productLine` ditambah supaya tiap baris bisa
+// tampilkan "Produk · Modul · Sub-modul" (§ ADR-0033). `moduleKey`
+// `"seat_addon"` (sentinel, § `invoice-order.ts`) BUKAN varian Facport
+// sungguhan — baris rendering SENGAJA skip anak-kalimat Modul/Sub-modul
+// untuk sentinel ini, cukup tampilkan Produk-nya.
+export type InvoicePdfItem = { label: string; price: number; moduleKey: string; productLine: string };
 
 export type InvoicePdfData = {
   invoiceNumber: string;
@@ -12,6 +18,11 @@ export type InvoicePdfData = {
   dueDate: Date;
   billToName: string;
   billToAddress: string | null;
+  // § Fase 118 — nama Data Usaha tujuan invoice ini (1 invoice = 1 Data
+  // Usaha, § "1 checkout = 1 Data Usaha"). Null kalau order lama pra-Fase
+  // 108 (tidak pernah diisi, § `orders.schema.ts`) atau belum ada order
+  // sama sekali (invoice admin yang belum pernah checkout).
+  dataUsahaName: string | null;
   items: InvoicePdfItem[];
   subtotal: number;
   total: number;
@@ -83,6 +94,8 @@ const styles = StyleSheet.create({
   tableCell: { fontSize: 10 },
   tableCellLabel: { flex: 1 },
   tableCellPrice: { width: 120, textAlign: "right" },
+  // § Fase 118 — anak-kalimat "Produk · Modul · Sub-modul" di bawah label item.
+  tableCellMeta: { fontSize: 8, color: "#888888", marginTop: 2 },
   totals: { alignItems: "flex-end", marginTop: 8, marginBottom: 24 },
   totalsRow: { flexDirection: "row", width: 220, justifyContent: "space-between", paddingVertical: 3 },
   totalsLabel: { fontSize: 10, color: "#555555" },
@@ -170,6 +183,10 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
           <Text style={styles.billToLabel}>Ditagihkan kepada</Text>
           <Text style={styles.billToName}>{data.billToName}</Text>
           {data.billToAddress && <Text style={styles.billToDetail}>{data.billToAddress}</Text>}
+          {/* § Fase 118 — Data Usaha tujuan invoice, supaya admin/customer
+              yang punya >1 Data Usaha langsung tahu invoice ini untuk
+              yang mana tanpa perlu cek terpisah. */}
+          {data.dataUsahaName && <Text style={styles.billToDetail}>Data Usaha: {data.dataUsahaName}</Text>}
         </View>
 
         <View style={styles.paymentStatus}>
@@ -190,13 +207,24 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             <Text style={[styles.tableCell, styles.tableCellLabel]}>Deskripsi</Text>
             <Text style={[styles.tableCell, styles.tableCellPrice]}>Harga</Text>
           </View>
-          {data.items.map((item, i) => (
-            // eslint-disable-next-line react/no-array-index-key -- baris invoice immutable/snapshot, tidak pernah reorder
-            <View style={styles.tableRow} key={i}>
-              <Text style={[styles.tableCell, styles.tableCellLabel]}>{item.label}</Text>
-              <Text style={[styles.tableCell, styles.tableCellPrice]}>{formatRupiah(item.price)}</Text>
-            </View>
-          ))}
+          {data.items.map((item, i) => {
+            // § Fase 118 — sentinel "seat_addon" (§ invoice-order.ts)
+            // BUKAN varian Facport sungguhan, tidak ada di module-catalog
+            // — skip anak-kalimat Modul/Sub-modul, cukup label Produk-nya.
+            const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
+            const subModuleLabel = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
+            const metaParts = [productLineLabel(item.productLine), category, subModuleLabel].filter((v): v is string => !!v);
+            return (
+              // eslint-disable-next-line react/no-array-index-key -- baris invoice immutable/snapshot, tidak pernah reorder
+              <View style={styles.tableRow} key={i}>
+                <View style={styles.tableCellLabel}>
+                  <Text style={styles.tableCell}>{item.label}</Text>
+                  {metaParts.length > 0 && <Text style={styles.tableCellMeta}>{metaParts.join(" · ")}</Text>}
+                </View>
+                <Text style={[styles.tableCell, styles.tableCellPrice]}>{formatRupiah(item.price)}</Text>
+              </View>
+            );
+          })}
         </View>
 
         <View style={styles.totals}>

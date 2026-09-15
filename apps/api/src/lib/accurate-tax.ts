@@ -36,9 +36,25 @@ async function fetchTaxList(ctx: AccurateSessionContext): Promise<TaxRecord[]> {
 // ⚠️ DIKONFIRMASI via test call nyata (2026-09-10, company demo): `taxCode`
 // TIDAK UNIK untuk PPh23 — mis. "Pajak Penghasilan Ps.23" dipakai banyak
 // `description` berbeda (Jasa Kebersihan, Jasa Software Komputer, dst).
-// `.find()` balikin match PERTAMA di urutan list kalau user isi kode
-// yang ambigu ini — bisa salah jenis TANPA notifikasi. Template guide
-// SUDAH sarankan pakai `description` (unik), bukan `taxCode`.
+// Template guide SUDAH sarankan pakai `description` (unik), bukan `taxCode`.
+//
+// § Fase 118+ (2026-09-15) — DIPERKUAT setelah customer retest nyata
+// melaporkan PPh salah/tidak terpotong meski payload sudah ikuti struktur
+// resmi Accurate Support (`detailTax[]` di root, dst — § sales-receipt.mapping.ts
+// Fase 99). Root cause paling mungkin: fungsi ini SEBELUMNYA mencari ke
+// SELURUH Master Data Pajak (`/api/tax/list.do` balikin PPh15/21/22/23/
+// PS4/PPN/PPNBM SEKALIGUS, § `taxType` enum resmi accurate-openapi.json)
+// TANPA filter jenis — kalau `taxCode`/`description` yang diisi user
+// (sengaja/tidak sengaja) kebetulan cocok ke record BUKAN PPh23 (mis.
+// record PPN), `.find()` balikin match PERTAMA di urutan list APAPUN
+// jenisnya, TANPA notifikasi kalau itu bukan PPh23. Fitur "Tax ID"/"Tax
+// Amount" di Sales Receipt & Purchase Payment SECARA EKSPLISIT dokumentasi
+// & UI-nya ("Nomor bukti potong PPh23") cuma untuk PPh23 — filter
+// `taxType === "PPH23"` di sini MEMPERSEMPIT pencarian ke kategori yang
+// benar SAJA, mengeliminasi kelas kesalahan ini SELURUHNYA (bukan cuma
+// mengurangi kemungkinan), termasuk untuk match numerik (kalau user
+// kebetulan ketik id internal record yang BUKAN PPh23, sekarang gagal
+// jelas alih-alih diam-diam terkirim dengan taxId salah jenis).
 export async function findTaxByIdentifier(
   ctx: AccurateSessionContext,
   identifier: string,
@@ -46,10 +62,11 @@ export async function findTaxByIdentifier(
   const trimmed = identifier.trim();
   if (trimmed === "") return undefined;
   const list = await fetchTaxList(ctx);
+  const pph23Only = list.filter((t) => t.taxType === "PPH23");
   const asNumber = Number(trimmed);
   const isNumeric = !Number.isNaN(asNumber);
   const needle = trimmed.toLowerCase();
-  return list.find((t) => {
+  return pph23Only.find((t) => {
     if (isNumeric && Number(t.id) === asNumber) return true;
     const code = typeof t.taxCode === "string" ? t.taxCode.trim().toLowerCase() : "";
     const desc = typeof t.description === "string" ? t.description.trim().toLowerCase() : "";

@@ -31,6 +31,10 @@ export const invoiceItems = pgTable("invoice_items", {
     .references(() => invoices.id, { onDelete: "cascade" }),
   planId: uuid("plan_id").notNull().references(() => plans.id), // 1 baris = 1 SKU sub-modul yang dibeli
   moduleKey: varchar("module_key", { length: 50 }).notNull(), // denormalisasi dari plan.modules[0] saat invoice dibuat
+  // § Fase 117, ADR-0033 — denormalisasi dari plan.productLine, pola SAMA
+  // seperti moduleKey di atas (snapshot, bukan join-live). DEFAULT "facport"
+  // karena semua invoiceItem existing memang Produk Facport.
+  productLine: varchar("product_line", { length: 20 }).notNull().default("facport"),
   label: varchar("label", { length: 200 }).notNull(), // SNAPSHOT plan.name
   price: integer("price").notNull(), // SNAPSHOT plan.price
 });

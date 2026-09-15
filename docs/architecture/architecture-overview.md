@@ -18,6 +18,13 @@ Accurate Online adalah dependency eksternal INTI (bukan integrasi tambahan)
 — seluruh fungsi Facport (impor Excel → transaksi Accurate) bergantung
 padanya. Detail lengkap → `docs/architecture/architecture-accurate-integration.md`.
 
+> **Sejak Fase 117**: Facport bukan cuma 1 produk lagi — 1 brand ("Facport"),
+> 1 pendaftaran/billing, menaungi 3 Produk (Facport/Konverter/AutoProduksi,
+> masing-masing integrasi eksternal beda: Accurate Online API, file XML
+> Accurate Desktop, atau tanpa integrasi eksternal sama sekali). Diagram di
+> atas menggambarkan Produk "Facport" secara spesifik. Detail struktur
+> Produk → `docs/architecture/architecture-product-lines.md`.
+
 ## Prinsip
 - Frontend TIDAK PERNAH akses database, MinIO, atau Accurate API langsung —
   selalu lewat apps/api.

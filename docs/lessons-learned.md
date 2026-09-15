@@ -6,6 +6,55 @@
 
 ---
 
+## 2026-09-15 — PPh23 Sales Receipt/Purchase Payment MASIH salah/kosong setelah "fix" Fase 99/100 — root cause SEBENARNYA di `findTaxByIdentifier` (cross-match jenis pajak), bukan struktur payload
+**Masalah:** Fase 99 (2026-09-10) memperbaiki struktur payload `detailTax`
+Sales Receipt berdasar jawaban resmi Accurate Support, Fase 100 mirror
+fix yang sama ke Purchase Payment. Kedua fase ditutup dengan Known
+Limitation eksplisit "belum diverifikasi test call nyata, disarankan
+client retest". Retest itu akhirnya dilakukan (2026-09-15) — hasilnya
+transaksi TETAP tersimpan tapi PPh-nya salah/kosong, PADAHAL struktur
+payload (`detailTax` di root, `paidPph`/`pphNumber` di `detailInvoice`)
+sudah dicek ulang persis sesuai contoh resmi Support.
+
+**Root cause:** `findTaxByIdentifier` (`apps/api/src/lib/accurate-tax.ts`,
+dipakai resolve kolom Excel "Tax ID" ke id numerik Accurate) query
+`/api/tax/list.do` yang balikin SELURUH Master Data Pajak (PPh15/21/22/
+23/PS4/PPN/PPNBM sekaligus, dikonfirmasi via `taxType` enum resmi di
+`accurate-openapi.json`) dan match by `taxCode`/`description` **TANPA
+filter jenis pajak**. Kalau nilai yang diisi user di Excel kebetulan
+cocok record BUKAN PPh23 (taxCode/description bisa sama antar jenis
+pajak berbeda), `.find()` diam-diam balikin match PERTAMA di urutan
+list — mengirim `taxId` yang salah jenis pajak ke Accurate, TANPA error
+apa pun (Accurate terima transaksinya, cuma PPh yang dihasilkan salah/
+tidak sesuai). Risiko ini SEBENARNYA sudah didokumentasikan sejak Fase
+86 ("taxCode TIDAK UNIK untuk PPh23"), tapi cakupannya diremehkan — yang
+didokumentasikan cuma "ambigu ANTAR sub-jenis PPh23", padahal fungsi ini
+juga rentan salah cocok ke jenis pajak LAIN SAMA SEKALI (PPN, dst).
+
+**Fix:** `findTaxByIdentifier` sekarang filter `taxType === "PPH23"`
+SEBELUM matching by id/kode/deskripsi — fitur ini memang eksplisit cuma
+untuk PPh23 (dokumentasi & UI-nya sendiri), jadi mempersempit pencarian
+TIDAK mengurangi kapabilitas apa pun. 6 unit test baru
+(`accurate-tax.test.ts`, sebelumnya fungsi ini 0 test coverage sama
+sekali) mengunci perilaku ini. Sekalian dibetulkan: teks deskripsi kolom
+"Paid PPH" di template guide (Sales Receipt & Purchase Payment) yang
+kontradiktif — sisa dari kesimpulan Fase 85 ("PPh dihitung otomatis")
+yang sudah terbukti salah sejak Fase 99 tapi tidak pernah diupdate.
+
+**Pencegahan:** Kalau ada gap serupa (fungsi resolve identifier ke
+Master Data Accurate yang punya beberapa "jenis"/kategori dalam 1
+endpoint list), SELALU filter eksplisit ke jenis yang relevan dengan
+fitur itu — jangan asumsikan "match by nama/kode" otomatis aman cuma
+karena field pembanding (description) "biasanya unik" DALAM 1 jenis;
+kalau list-nya gabungan lintas-jenis, keunikan itu tidak berlaku lintas
+jenis. Juga: kalau menutup fase dengan Known Limitation "belum
+diverifikasi test call nyata, X pihak yang retest" — JANGAN anggap fase
+itu selesai sampai retest itu benar-benar terjadi dan hasilnya
+dikonfirmasi; 2 fase (99 dan 100) sempat berstatus "Done" selama 5 hari
+dengan bug produksi aktif karena retest-nya baru terjadi belakangan.
+
+---
+
 ## 2026-09-14 — `cleanup-test-data.ts` gagal FK `media_uploaded_by_user_id_fk` — script cleanup belum pernah cover tabel yang baru pertama kali diisi test
 **Masalah:** Saat mengerjakan Fase 116 (fitur Promo, upload gambar ke
 MinIO via `POST /admin/promos/image`), `bun run db:cleanup-test-data`

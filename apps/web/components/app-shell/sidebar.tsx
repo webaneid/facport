@@ -46,7 +46,12 @@ export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey
 // `isDataUsahaOwner === false` (user cuma member/seat, bukan pemilik Data
 // Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Tagihan/
 // Berlangganan/Kelola Tim) BUKAN wilayah member.
-export type NavGroup = { label: string; items: NavItem[]; ownerOnly?: boolean };
+// § Fase 117, ADR-0033 — `productLine?` OPSIONAL, belum dipakai render
+// apa pun (clustering per Produk SENGAJA ditunda — belum ada item nav
+// Konverter/AutoProduksi nyata untuk divalidasi terhadapnya). Ditambah
+// sekarang cuma supaya tipe-nya siap dipakai fase build Produk baru
+// nanti, pola additive sama seperti `ownerOnly?`.
+export type NavGroup = { label: string; items: NavItem[]; ownerOnly?: boolean; productLine?: string };
 
 const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
   app: [
