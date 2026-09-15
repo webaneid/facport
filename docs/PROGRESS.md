@@ -126,7 +126,7 @@
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 | 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
 | 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
-| 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Planned | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
+| 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Done | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2926,4 +2926,31 @@ Fase ini MURNI dokumentasi — 0 kode diubah, eksekusi tiap modul jadi
 fase terpisah nanti (pola "satu-satu" konsisten Fase 33-35). Status
 "Planned", menunggu konfirmasi user atas keputusan scope sebelum ditutup
 "Done". Detail lengkap →
+`docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.
+
+## Update 2026-09-15 — Fase 119 Done: Koreksi & Klarifikasi Scope
+2 klarifikasi penting dari user menutup Fase 119:
+
+1. **"Custom Character/Number/Date" TERNYATA SUDAH terjawab** — sempat
+   didokumentasikan sebagai "tidak ada di API" (absen dari OpenAPI spec
+   resmi kelima endpoint baru). User koreksi: mekanisme ini SUDAH
+   dipecahkan tuntas saat membangun Purchase Invoice/Sales Invoice
+   (Fase 64/71-73) lewat tiket resmi Accurate Support #357901, yang
+   eksplisit menyatakan field ini **konsisten lintas jenis transaksi**.
+   Field resmi: Header `charField1-10`/`numericField1-10`/`dateField1-2`;
+   Item field sama (Karakter sampai 15 slot). Ke-5 architecture doc
+   diupdate dari "skip" jadi "dikonfirmasi", draf pertanyaan baru ke
+   Accurate Support yang sudah disiapkan jadi tidak diperlukan lagi.
+2. **Prinsip scope Facport diklarifikasi eksplisit**: cakupan TIDAK
+   terpaku ke modul yang sudah dibangun dari awal — kalau client butuh
+   sesuatu dan Accurate Online API mendukungnya, itu akan dikerjakan
+   (dikonsultasikan ke Accurate Support kalau ada kesulitan). Ditemukan
+   Accurate PUNYA endpoint resmi untuk "Invoice DP"
+   (`create-down-payment.do`) dan modul "Delivery Order" penuh — 2
+   kemampuan yang sempat ditulis "tidak didukung Facport sama sekali"
+   dikoreksi jadi "belum jadi prioritas sekarang, bisa ditambahkan kapan
+   pun client butuh" (bukan batas teknis permanen).
+
+Sales Order dikonfirmasi memang belum disiapkan panduannya oleh user
+(bukan salah paham) — tetap di luar scope fase ini. Detail lengkap →
 `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.

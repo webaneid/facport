@@ -86,7 +86,9 @@ company settingnya kalau ada ambiguitas saat eksekusi).
 | ITEM: Cash Discount / Disc Percent | itemCashDiscount / itemDiscPercent | detailItem[] |
 | ITEM: Requisite No | purchaseRequisitionNumber | detailItem[] |
 | ITEM: Department / Project No | departmentName / projectNo | detailItem[] |
-| ITEM: Custom Character/Number/Date 1-10 | ⚠️ TIDAK ADA di schema resmi `save.do` — kemungkinan field UI-only/report, BUKAN payload API | **skip**, § Known Limitations |
+| ITEM: Custom Character 1-10 | `detailItem[].charField1`-`charField10` | **Dikonfirmasi**, § "Atribut Tambahan" di bawah — TIDAK ADA di OpenAPI spec statis, tapi terverifikasi resmi (tiket Accurate Support, sudah jalan di Purchase Invoice/Sales Invoice) |
+| ITEM: Custom Number 1-10 | `detailItem[].numericField1`-`numericField10` | sama |
+| ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 | PPN / PPnBM / PPh | useTax1 / useTax2 / useTax3 | detailItem[], boolean |
 | ITEM: Finance Category 1-10 | dataClassification1Name..10Name | detailItem[], Kategori Keuangan |
 | Expense Acc No/Name/Amount/Note | accountNo/expenseName/expenseAmount/expenseNotes | detailExpense[] |
@@ -108,12 +110,29 @@ company settingnya kalau ada ambiguitas saat eksekusi).
    Receipt (2 PO nominal sama bukan duplikat, bisa jadi 2 pesanan sah
    beda) — KECUALI ternyata client eksplisit minta beda, dikonfirmasi
    saat eksekusi.
-4. **Kolom "ITEM: Custom Character/Number/Date 1-10" DI-SKIP** — tidak
-   ada di schema resmi `save.do` (dicek exhaustif, beda dari
-   Custom Character di LEVEL HEADER yang juga tidak ada di schema PO —
-   Purchase Order TIDAK punya header-level custom field sama sekali per
-   API, beda dari modul lain yang punya). Kalau nanti ternyata field ini
-   ADA tapi under nama beda, revisit saat eksekusi (test call nyata).
+4. **Kolom "ITEM: Custom Character/Number/Date 1-10" DIDUKUNG** (§
+   "Atribut Tambahan" di bawah) — Excel client cuma minta versi ITEM
+   (tidak ada versi header-level di sheet Purchase Order), map ke
+   `detailItem[].charField1-10`/`numericField1-10`/`dateField1-2`.
+
+## Atribut Tambahan (Custom Character/Number/Date) — Field Resmi SUDAH Diketahui
+**Bukan hal baru** — mekanisme ini SUDAH dikonfirmasi resmi Accurate
+Support (tiket #357901, 2026-04-24) saat membangun Purchase Invoice/
+Sales Invoice (Fase 64/73), dan didokumentasikan eksplisit "API
+Accurate konsisten lintas jenis transaksi" — jadi field yang sama
+berlaku di sini, BUKAN cuma tebakan/mirror. Field resmi:
+- **Level Item** (satu-satunya yang diminta Excel client untuk modul
+  ini, nested di `detailItem[]`): Karakter `charField1`-`charField15`
+  (15 slot di level item, BUKAN 10 — dikonfirmasi tiket kedua khusus
+  level item, § `architecture-sales-invoice.md` Fase 73), Angka
+  `numericField1`-`numericField10`, Tanggal `dateField1`-`dateField2`.
+
+Rekomendasi eksekusi: tetap 1x verifikasi test call nyata KHUSUS
+endpoint `purchase-order/save.do` sebelum full rollout (murah, cuma
+1 panggilan) — "konsisten lintas jenis transaksi" adalah pernyataan
+resmi Accurate, TAPI belum pernah dites literal ke endpoint PO. Kalau
+gagal, baru eskalasi ke Accurate Support dengan bukti konkret (bukan
+dari nol lagi).
 
 ## ⚠️ Branch Wajib (Preseden Fase 90)
 Purchase Payment & Sales Receipt SUDAH terbukti (test call nyata, Fase
@@ -126,12 +145,9 @@ ulang lewat test call nyata saat eksekusi (jangan cuma asumsi dari modul
 lain).
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- Kolom "ITEM: Custom Character/Number/Date 1-10" di Excel client TIDAK
-  ADA padanan di schema resmi `save.do` — kemungkinan besar field ini
-  cuma ada di UI Accurate (custom field per-perusahaan), bukan expose
-  API. Perlu test call nyata untuk pastikan (bukan asumsi dari absennya
-  di OpenAPI spec saja — preseden Fase 90 membuktikan spec statis bisa
-  tidak menangkap semua perilaku).
+- Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat (tiket
+  resmi Accurate Support) tapi BELUM literal dites ke endpoint PO —
+  1x test call nyata tetap direkomendasikan sebelum rollout penuh.
 - `manual-close-order.do` (endpoint terpisah, "tutup PO manual" tanpa
   full receive) ADA di spec tapi TIDAK diminta client — sengaja tidak
   masuk scope fase ini.

@@ -68,13 +68,17 @@ user) ikut header apa adanya (tetap dari baris pertama grup).
 | Shipment Name / Shipment Date | shipmentName / shipDate | header |
 | To Address | toAddress | header |
 | Branch Name | branchName | header, **WAJIB diisi** (§ preseden Fase 90, mirror Purchase Order) |
-| Custom Character/Number/Date 1-10 (LEVEL HEADER) | ⚠️ TIDAK ADA di schema `save.do` | **skip**, § Known Limitations |
+| Custom Character 1-10 (LEVEL HEADER) | `charField1`-`charField10` | **Dikonfirmasi**, § "Atribut Tambahan" |
+| Custom Number 1-10 (LEVEL HEADER) | `numericField1`-`numericField10` | sama |
+| Custom Date 1-2 (LEVEL HEADER) | `dateField1`-`dateField2` | sama |
 | Item No/Name/Quantity/Unit Name | itemNo/-/quantity/itemUnitName | detailItem[] |
 | Item Warehouse | warehouseName | detailItem[] |
 | ITEM: Department / Project No | departmentName / projectNo | detailItem[] |
 | ITEM: Description | detailNotes ATAU detailName (perlu dikonfirmasi test call — spec tidak jelas beda `detailName` vs `detailNotes`) | detailItem[] |
 | ITEM: Finance Category 1-10 | dataClassification1Name..10Name | detailItem[] |
-| ITEM: Custom Character/Number/Date 1-10 | ⚠️ TIDAK ADA di schema `save.do` | **skip**, § Known Limitations |
+| ITEM: Custom Character 1-10 | `detailItem[].charField1`-`charField15` (15 slot tersedia, Excel client cuma pakai 10) | **Dikonfirmasi**, § "Atribut Tambahan" |
+| ITEM: Custom Number 1-10 | `detailItem[].numericField1`-`numericField10` | sama |
+| ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 
 **Kolom yang DISEDIAKAN API tapi TIDAK ADA di Excel client** (opsional,
 bisa ditambah admin manual kalau perlu nanti, TIDAK wajib dipetakan
@@ -86,6 +90,19 @@ sekarang): `purchaseOrderNumber` (link ke PO), `purchaseRequisitionNumber`,
 ke PO) — nilai bisnis tinggi (menutup rantai PO→Receive), effort kecil
 (field sudah ada di spec, tinggal petakan), TAPI TIDAK diminta client di
 Excel — konfirmasi dulu sebelum nambah kolom di luar apa yang diminta.
+
+## Atribut Tambahan (Custom Character/Number/Date) — Field Resmi SUDAH Diketahui
+Sama seperti `architecture-purchase-order.md` § "Atribut Tambahan" —
+mekanisme ini SUDAH dikonfirmasi resmi Accurate Support (tiket #357901),
+"konsisten lintas jenis transaksi". Beda dari Purchase Order, Receive
+Item minta KEDUA level (header DAN item) — field resmi:
+- **Header**: `charField1`-`charField10`, `numericField1`-`numericField10`,
+  `dateField1`-`dateField2`.
+- **Item** (nested `detailItem[]`): field SAMA (`charField1`-`15`,
+  `numericField1`-`10`, `dateField1`-`2`).
+
+Rekomendasi eksekusi sama: 1x verifikasi test call nyata ke
+`receive-item/save.do` sebelum full rollout.
 
 ## Keputusan Desain (Rencana)
 1. **TIDAK auto-create vendor/item** — beda dari Purchase Order. Receive
@@ -101,10 +118,9 @@ Excel — konfirmasi dulu sebelum nambah kolom di luar apa yang diminta.
    Receipt.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- Kolom "Custom Character/Number/Date 1-10" (baik level header maupun
-  ITEM) TIDAK ADA di schema resmi `save.do` — sama temuan seperti
-  Purchase Order, kemungkinan UI-only. Perlu test call nyata untuk
-  pastikan.
+- Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat tapi
+  BELUM literal dites ke endpoint Receive Item — 1x test call nyata
+  tetap direkomendasikan.
 - `ITEM: Description` di Excel client — API punya 2 field mirip
   (`detailName`, `detailNotes`), belum jelas yang mana dimaksud tanpa
   test call nyata (§ tabel mapping di atas).

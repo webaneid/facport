@@ -90,7 +90,9 @@ detailExpense[] tiap baris:
 | Shipment Name | shipmentName | header |
 | Item No/Name/Qty/Unit Name/Notes | itemNo/-/quantity/itemUnitName/detailNotes | detailItem[] |
 | Item Department / Project No | departmentName / projectNo | detailItem[] |
-| ITEM: Custom Character/Number/Date 1-10 | ⚠️ TIDAK ADA di schema | **skip** |
+| ITEM: Custom Character 1-10 | `detailItem[].charField1`-`charField15` | **Dikonfirmasi**, § "Atribut Tambahan" |
+| ITEM: Custom Number 1-10 | `detailItem[].numericField1`-`numericField10` | sama |
+| ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 | ITEM: Finance Category 1-10 | dataClassification1Name..10Name | detailItem[] |
 | Expense Acc No/Name/Amount/Notes | accountNo/expenseName/expenseAmount/expenseNotes | detailExpense[] |
 | Expense Department / Project | departmentName / projectNo | detailExpense[] |
@@ -115,6 +117,13 @@ function validatePurchaseReturnType(returnType: string, row: {...}): { code: str
 }
 ```
 
+## Atribut Tambahan (Custom Character/Number/Date) — Field Resmi SUDAH Diketahui
+Sama seperti `architecture-purchase-order.md` § "Atribut Tambahan" —
+dikonfirmasi resmi Accurate Support (tiket #357901), konsisten lintas
+jenis transaksi. Excel client cuma minta versi ITEM: `detailItem[].charField1`-`15`,
+`numericField1`-`10`, `dateField1`-`2`. Rekomendasi: 1x verifikasi test
+call nyata ke `purchase-return/save.do` sebelum full rollout.
+
 ## Keputusan Desain (Rencana)
 1. **TIDAK auto-create vendor/item** — dokumen LANJUTAN (retur terhadap
    transaksi yang sudah ada), mirror Receive Item/Purchase Payment.
@@ -134,8 +143,8 @@ function validatePurchaseReturnType(returnType: string, row: {...}): { code: str
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
 - **`INVOICE_DP` tidak didukung** (§ Keputusan Scope) — WAJIB
   dikonfirmasi user sebelum eksekusi, bukan cuma dicatat di sini.
-- Kolom "ITEM: Custom Character/Number/Date 1-10" TIDAK ADA di schema
-  resmi — sama pola temuan modul lain.
+- Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat tapi
+  BELUM literal dites ke endpoint ini — 1x test call nyata direkomendasikan.
 - `detailExpense[]` ditandai REQUIRED di spec tapi TIDAK semua retur
   logically punya biaya tambahan — perlu test call nyata untuk
   konfirmasi apakah array KOSONG `[]` diterima Accurate (kemungkinan

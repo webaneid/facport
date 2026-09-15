@@ -74,10 +74,13 @@ detailExpense[] tiap baris:
   salesOrderNumber, salesQuotationNumber, dataClassification1Name..10Name
 ```
 
-**Dikonfirmasi TIDAK ADA** custom field level header apa pun
-(`Header - CF1/CF2/CF3/DF1/DF2` di Excel client) di schema resmi —
-dicek langsung ke daftar properti root, absen total. **Skip**, bukan
-kelalaian.
+**`Header - CF1/CF2/CF3/DF1/DF2` DIDUKUNG** — TIDAK ADA di daftar
+properti root schema resmi OpenAPI (dicek langsung, absen total), TAPI
+ini persis mekanisme "Atribut Tambahan" yang SUDAH dikonfirmasi resmi
+Accurate Support di modul lain (§ "Atribut Tambahan" di bawah) — nama
+kolom client sendiri ("CF"/"DF") kemungkinan besar singkatan
+"Character Field"/"Date Field", cocok PERSIS istilah field API asli
+(`charField`/`dateField`).
 
 ## Field Mapping Excel Client → API (Rencana)
 | Excel Column | API Field | Catatan |
@@ -100,7 +103,8 @@ kelalaian.
 | Fiscal Rate | fiscalRate | header |
 | FOB Name | fobName | header |
 | Shipment Name | shipmentName | header |
-| Header - CF1/CF2/CF3/DF1/DF2 | ⚠️ TIDAK ADA di schema | **skip** |
+| Header - CF1/CF2/CF3 | `charField1`-`charField3` | **Dikonfirmasi**, § "Atribut Tambahan" — cuma 3 dari 10 slot dipakai client |
+| Header - DF1/DF2 | `dateField1`-`dateField2` | sama |
 | Item No/Name/Unit Price/Qty/Unit Name/Note | itemNo/-/unitPrice/quantity/itemUnitName/detailNotes | detailItem[] |
 | Item Return Status Type | returnDetailStatusType | detailItem[] (level item, beda dari header) |
 | Item Project No / Department / Warehouse | projectNo / departmentName / warehouseName | detailItem[] |
@@ -112,6 +116,15 @@ kelalaian.
 | Expense Department | departmentName | detailExpense[] |
 | Expense Sales Order No / Sales Quotation No | salesOrderNumber / salesQuotationNumber | detailExpense[] |
 | Expense CLS1/CLS2/CLS3 | dataClassification1Name/2Name/3Name | detailExpense[] |
+
+## Atribut Tambahan (Custom Character/Date) — Field Resmi SUDAH Diketahui
+Sama seperti `architecture-purchase-order.md` § "Atribut Tambahan" —
+dikonfirmasi resmi Accurate Support (tiket #357901), konsisten lintas
+jenis transaksi. Excel client cuma minta versi HEADER, dan cuma 3 slot
+Karakter + 2 slot Tanggal (dari 10 Karakter/10 Angka/2 Tanggal yang
+tersedia) — TIDAK ada kolom Angka (`numericField`) sama sekali di sheet
+ini, TIDAK ada versi ITEM-level. Rekomendasi: 1x verifikasi test call
+nyata ke `sales-return/save.do`.
 
 ## Keputusan Desain (Rencana)
 1. **TIDAK auto-create customer/item** — dokumen LANJUTAN (retur
@@ -139,7 +152,8 @@ kelalaian.
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
 - **`DELIVERY` dan `INVOICE_DP` tidak didukung** (§ Keputusan Scope) —
   WAJIB dikonfirmasi user, bukan cuma dicatat.
-- Kolom "Header - CF1/CF2/CF3/DF1/DF2" TIDAK ADA di schema resmi.
+- Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat tapi
+  BELUM literal dites ke endpoint ini — 1x test call nyata direkomendasikan.
 - `detailExpense[]` REQUIRED tapi belum jelas apakah array kosong
   diterima — sama catatan Purchase Return, perlu test call nyata.
 - `detailSerialNumber[]` — belum ada preseden modul lain di project ini

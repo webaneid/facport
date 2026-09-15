@@ -74,7 +74,9 @@ diterima" — jangan asumsikan TIDAK BISA tanpa test).
 | Cash Discount / Cash Discount Percent | cashDiscount / cashDiscPercent | header |
 | FOB Name | fobName | header |
 | Taxable / Include Tax | taxable / inclusiveTax | header, boolean |
-| Custom Character/Number/Date 1-10 (LEVEL HEADER) | ⚠️ TIDAK ADA di schema | **skip** |
+| Custom Character 1-10 (LEVEL HEADER) | `charField1`-`charField10` | **Dikonfirmasi**, § "Atribut Tambahan" |
+| Custom Number 1-10 (LEVEL HEADER) | `numericField1`-`numericField10` | sama |
+| Custom Date 1-2 (LEVEL HEADER) | `dateField1`-`dateField2` | sama |
 | Item Number/Name/price/Quantity/Unit Name | itemNo/-/unitPrice/quantity/itemUnitName | detailItem[] |
 | Item Salesman No | salesmanListNumber | detailItem[], **ARRAY** — 1 sel Excel → 1-elemen array `[nilai]`, KECUALI client butuh multi-salesman per baris (perlu konvensi pemisah, mis. koma, kalau iya — konfirmasi saat eksekusi) |
 | Item Cash Discount / Discount Percent | itemCashDiscount / itemDiscPercent | detailItem[] |
@@ -82,10 +84,21 @@ diterima" — jangan asumsikan TIDAK BISA tanpa test).
 | Item Note | detailNotes | detailItem[] |
 | Item Project No / Department | projectNo / departmentName | detailItem[] |
 | ITEM: Finance Category 1-10 | dataClassification1Name..10Name | detailItem[] |
-| ITEM: Custom Character/Number/Date 1-10 | ⚠️ TIDAK ADA di schema | **skip** |
+| ITEM: Custom Character 1-10 | `detailItem[].charField1`-`charField15` | **Dikonfirmasi**, § "Atribut Tambahan" |
+| ITEM: Custom Number 1-10 | `detailItem[].numericField1`-`numericField10` | sama |
+| ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 | Expense Account no/Name/Amount/Note | accountNo/expenseName/expenseAmount/expenseNotes | detailExpense[] |
 | Expense Department / Project No | departmentName / projectNo | detailExpense[] |
 | Expense: Finance Category 1-10 | dataClassification1Name..10Name | detailExpense[] |
+
+## Atribut Tambahan (Custom Character/Number/Date) — Field Resmi SUDAH Diketahui
+Sama seperti `architecture-purchase-order.md` § "Atribut Tambahan" —
+dikonfirmasi resmi Accurate Support (tiket #357901), konsisten lintas
+jenis transaksi, SUDAH jalan di Sales Invoice (modul kembar terdekat).
+Excel client minta KEDUA level: Header `charField1`-`10`,
+`numericField1`-`10`, `dateField1`-`2`; Item (`detailItem[]`) field
+SAMA (`charField1`-`15`, `numericField1`-`10`, `dateField1`-`2`).
+Rekomendasi: 1x verifikasi test call nyata ke `sales-quotation/save.do`.
 
 ## Keputusan Desain (Rencana, Mirror Sales Invoice)
 1. **Auto-create Customer + Item** — Sales Quotation adalah dokumen
@@ -107,8 +120,9 @@ diterima" — jangan asumsikan TIDAK BISA tanpa test).
    perlu — di luar scope Facport untuk sekarang, sama pola modul lain).
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- Kolom "Custom Character/Number/Date 1-10" (header maupun ITEM) TIDAK
-  ADA di schema resmi — pola sama modul lain.
+- Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat (SUDAH
+  jalan di Sales Invoice) tapi BELUM literal dites ke endpoint Sales
+  Quotation — 1x test call nyata direkomendasikan.
 - `salesmanListNumber` array — konvensi input Excel untuk multi-value
   belum ditentukan (§ tabel mapping).
 - `rate` (kurs mata uang asing) TIDAK terlihat di schema resmi level
