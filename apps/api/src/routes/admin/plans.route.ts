@@ -40,6 +40,8 @@ const planBody = t.Object({
       t.Literal("vendor_payable_account"),
       // § Fase 96 (2026-09-10) — modul baru, SKU sendiri sejak awal.
       t.Literal("other_payment"),
+      // § Fase 120 — modul baru, SKU sendiri sejak awal.
+      t.Literal("purchase_order"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

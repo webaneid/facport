@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, type LucideIcon } from "lucide-react";
+import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, type LucideIcon } from "lucide-react";
 import type { ModuleKey } from "./module-options";
 
 // § Fase 47 — icon per modul di kartu Fitur landing page. REUSE PERSIS
@@ -13,6 +13,7 @@ export const LANDING_MODULE_ICON: Record<ModuleKey, LucideIcon> = {
   sales_receipt: HandCoins,
   journal_voucher: BookOpenCheck,
   other_payment: Banknote,
+  purchase_order: ShoppingCart,
 };
 
 // § 1 baris tagline singkat per modul — konten MARKETING murni (bukan
@@ -27,4 +28,5 @@ export const LANDING_MODULE_TAGLINE: Record<ModuleKey, string> = {
   sales_receipt: "Catat penerimaan pembayaran penjualan dari Excel, langsung ter-link ke faktur customer.",
   journal_voucher: "Import jurnal umum multi-baris, validasi debit-kredit seimbang sebelum masuk ke Accurate.",
   other_payment: "Catat pengeluaran kas/bank untuk beban langsung (listrik, gaji, dll) dari Excel, tanpa faktur atau vendor.",
+  purchase_order: "Import pesanan pembelian ke Accurate dari Excel, otomatis buat Pemasok & Barang baru kalau belum ada.",
 };

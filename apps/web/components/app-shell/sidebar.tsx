@@ -27,6 +27,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Building2,
+  ShoppingCart,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -68,6 +69,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
         { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
         { href: "/other-payment/import", label: "Import Other Payment", icon: Banknote, moduleKey: "other_payment" },
+        // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
+        // (architecture-purchase-order.md).
+        { href: "/purchase-order/import", label: "Import Purchase Order", icon: ShoppingCart, moduleKey: "purchase_order" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu — beda dari item import di atas). SENGAJA

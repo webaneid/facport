@@ -96,6 +96,16 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // disertakan dari awal (§ pelajaran Fase 98: jangan tambah field
   // Kategori Keuangan tanpa scope pendukungnya).
   other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  // § Fase 120, architecture-purchase-order.md — mirror Purchase Invoice
+  // (auto-create vendor+item, § Fase 05/78): `vendor_view`/`vendor_save`
+  // untuk findOrCreateVendor, `item_save` untuk findOrCreateItem (baseline
+  // `item_view` selalu ada, § scopesForModules), `data_classification_*`
+  // untuk Kategori Keuangan (dataClassificationNName).
+  // § dikonfirmasi dari `accurate-openapi.json` security requirement
+  // `/api/purchase-order/save.do` — HANYA `purchase_order_save` (TIDAK
+  // ada `purchase_order_view` terpisah, beda dari modul lain yang
+  // security block-nya minta scope _view juga untuk save.do).
+  purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

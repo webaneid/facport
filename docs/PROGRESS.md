@@ -127,6 +127,7 @@
 | 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
 | 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
 | 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Done | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
+| 120  | Modul Purchase Order (Pesanan Pembelian) | Done | `docs/architecture/architecture-purchase-order.md` | `docs/phases/phase-120-modul-purchase-order.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2954,3 +2955,28 @@ fase terpisah nanti (pola "satu-satu" konsisten Fase 33-35). Status
 Sales Order dikonfirmasi memang belum disiapkan panduannya oleh user
 (bukan salah paham) — tetap di luar scope fase ini. Detail lengkap →
 `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.
+
+## Update 2026-09-15 — Fase 120 Done: Modul Purchase Order (Pesanan Pembelian)
+Modul pertama dari 5 sub-modul yang direncanakan Fase 119 dieksekusi
+penuh, mengikuti pola per-fase eksekusi→test→push-develop (batch release
+di akhir). Mirror terdekat: Purchase Invoice — auto-create vendor+item,
+`detailItem[]`+`detailExpense[]`, Atribut Tambahan level ITEM (charField/
+numericField/dateField, sudah dikonfirmasi resmi Accurate Support di
+Fase 119). Beda dari Purchase Invoice: grouping MURNI by `number` (Trans
+No WAJIB sejak awal, tidak ada fallback Bill No seperti retrofit Fase
+81), dan TIDAK ADA endpoint "Batal Import" (PO bukan transaksi akuntansi,
+tidak ada jurnal GL, 2 PO nominal sama bukan duplikat).
+
+Cakupan: mapping+service+route+worker integration+registrasi module key
+di 4 titik (module-catalog, accurate-scopes, plans.route.ts literal
+union, app.ts)+UI frontend lengkap (import/detail/riwayat/edit-row/
+delete). OAuth scope dikoreksi sendiri jadi HANYA `purchase_order_save`
+(tanpa `_view` terpisah) setelah cek ulang `security` block OpenAPI
+spec. 52 test baru (32 unit + 20 integrasi), 840 test total pass,
+typecheck+lint bersih, security review 0 temuan.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/purchase-order/save.do` (tidak ada kredensial Accurate live di
+sesi ini) — perlu 1x verifikasi sebelum rollout penuh ke customer,
+sesuai rekomendasi `architecture-purchase-order.md`. Detail lengkap →
+`docs/phases/phase-120-modul-purchase-order.md`.

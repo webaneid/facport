@@ -30,6 +30,9 @@ export const MODULE_CATALOG = [
   { key: "journal_voucher", label: "Jurnal Umum", productLine: "facport", category: "Buku Besar" },
   { key: "vendor_payable_account", label: "Akun Hutang Pemasok", productLine: "facport", category: "Data Master" },
   { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", productLine: "facport", category: "Kas & Bank" },
+  // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
+  // yang direncanakan Fase 119 (architecture-purchase-order.md).
+  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Pembelian" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];

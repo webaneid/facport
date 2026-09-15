@@ -89,6 +89,20 @@ import {
 } from "../lib/import-mapping/sales-invoice.mapping";
 import { findOrCreateCustomer } from "../lib/accurate-customer";
 import { findOrCreateDataClassification } from "../lib/accurate-data-classification";
+// § Fase 120 — Purchase Order, mirror Purchase Invoice (auto-create
+// vendor+item) TAPI hasil-tracking sesederhana Sales Receipt/Purchase
+// Payment (TIDAK ADA Batal Import, § accurate-purchase-order.ts).
+import { savePurchaseOrder } from "../lib/accurate-purchase-order";
+import {
+  buildPurchaseOrderPayload,
+  groupPurchaseOrderRows,
+  validateGroupVendorConsistency as validateGroupVendorConsistencyForPO,
+  extractVendorCreateFields as extractVendorCreateFieldsPO,
+  extractItemCreateFields as extractItemCreateFieldsPO,
+  extractDataClassificationValues as extractDataClassificationValuesPO,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesPO,
+  type PurchaseOrderGroup,
+} from "../lib/import-mapping/purchase-order.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -178,6 +192,26 @@ async function ensureOtherPaymentDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractOtherPaymentDataClassificationValues(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 120 — mirror `ensurePurchaseInvoiceDataClassifications`, untuk
+// Purchase Order (extractor terpisah di file mapping-nya sendiri,
+// konsisten filosofi "3 baris mirip lebih baik dari abstraksi prematur").
+async function ensurePurchaseOrderDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesPO(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPO(rawRow, columnMapping)];
+    for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -707,6 +741,49 @@ export async function processSalesReceiptGroup(
 }
 
 // ============================================================
+// § Fase 120 — Purchase Order, titik AWAL rantai procurement. BEDA dari
+// Sales Receipt/Purchase Payment: BUTUH auto-create vendor+item (mirror
+// Purchase Invoice, § `processPurchaseInvoiceGroup`), TAPI hasil-tracking
+// SESEDERHANA Sales Receipt (TIDAK ADA Batal Import/update-existing —
+// PO bukan transaksi akuntansi, 2 PO nominal sama bukan duplikat).
+export type PurchaseOrderGroupResult = {
+  orderId: number;
+  rowIds: string[];
+};
+
+export async function processPurchaseOrderGroup(
+  ctx: AccurateSessionContext,
+  group: PurchaseOrderGroup,
+  columnMapping: Record<string, string>,
+): Promise<PurchaseOrderGroupResult> {
+  const mismatchError = validateGroupVendorConsistencyForPO(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildPurchaseOrderPayload(rawRows, columnMapping);
+
+  const vendorNo = String(payload.vendorNo ?? "");
+  if (vendorNo) {
+    await findOrCreateVendor(ctx, vendorNo, extractVendorCreateFieldsPO(rawRows[0]!, columnMapping));
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const rawRow of rawRows) {
+    const itemNoColumn = Object.entries(columnMapping).find(([, field]) => field === "itemNo")?.[0];
+    const detailItem = itemNoColumn ? rawRow[itemNoColumn] : undefined;
+    const itemNo = detailItem !== undefined && detailItem !== null && detailItem !== "" ? String(detailItem) : null;
+    if (!itemNo || seenItemNo.has(itemNo)) continue;
+    seenItemNo.add(itemNo);
+    await findOrCreateItem(ctx, itemNo, extractItemCreateFieldsPO(rawRow, columnMapping));
+  }
+
+  await ensurePurchaseOrderDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await savePurchaseOrder(ctx, payload);
+  return { orderId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
 // atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
 // — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
@@ -1196,6 +1273,33 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.receiptId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 120 — Purchase Order, grouping DALAM 1 batch, create-only
+      // (TANPA findExisting/append, § komentar `processPurchaseOrderGroup`).
+    } else if (batch.module === "purchase_order") {
+      const groups = groupPurchaseOrderRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processPurchaseOrderGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.orderId),
               errorMessage: null,
               processedAt: new Date(),
             })
