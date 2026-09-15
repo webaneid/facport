@@ -22,30 +22,42 @@ export const PRODUCT_LINES = [
 
 export type ProductLineKey = (typeof PRODUCT_LINES)[number]["key"];
 
+// § Fase 126 — label `category` diseragamkan ke Bahasa Inggris (diminta
+// user 2026-09-15) supaya konsisten dengan nama fitur/modul yang memang
+// sudah Inggris (Purchase Order, Sales Invoice, dst — istilah Accurate
+// Online sendiri). Set kategori MENGIKUTI taksonomi menu Accurate Online
+// (Cash & Bank, Sales, Purchase, General Ledger) + 2 kategori BARU yang
+// SENGAJA belum py modul apa pun (Inventory, Manufacture) — disiapkan
+// dari sekarang di sidebar (§ sidebar.tsx) supaya begitu modul pertama
+// di kategori itu jadi ADA, langsung otomatis muncul tanpa ubah struktur
+// nav lagi, TANPA menebak nama modul-nya sekarang (konsisten prinsip
+// ADR-0033 "jangan tebak sebelum fase build-nya" — 2 kategori ini
+// sengaja kosong, BUKAN lupa diisi).
+// `vendor_payable_account` (dulu kategori "Data Master" sendiri) digabung
+// ke "Purchase" — data vendor memang sisi pembelian, sama seperti
+// penempatannya di menu Accurate Online sendiri.
 export const MODULE_CATALOG = [
-  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Penjualan" },
-  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Penjualan" },
-  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Pembelian" },
-  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Pembelian" },
-  { key: "journal_voucher", label: "Jurnal Umum", productLine: "facport", category: "Buku Besar" },
-  { key: "vendor_payable_account", label: "Akun Hutang Pemasok", productLine: "facport", category: "Data Master" },
-  { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", productLine: "facport", category: "Kas & Bank" },
-  // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
-  // yang direncanakan Fase 119 (architecture-purchase-order.md).
-  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Pembelian" },
-  // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru
-  // (architecture-receive-item.md).
-  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Pembelian" },
-  // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
-  // (architecture-purchase-return.md).
-  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Pembelian" },
-  // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
-  // (architecture-sales-quotation.md).
-  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Penjualan" },
-  // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul baru
-  // (architecture-sales-return.md).
-  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Penjualan" },
+  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Sales" },
+  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Sales" },
+  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Sales" },
+  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
+  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
+  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
+  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Purchase" },
+  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Purchase" },
+  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Purchase" },
+  { key: "vendor_payable_account", label: "Vendor Payable Account", productLine: "facport", category: "Purchase" },
+  { key: "other_payment", label: "Other Payment (Cash/Bank Payment)", productLine: "facport", category: "Cash & Bank" },
+  { key: "journal_voucher", label: "Journal Voucher", productLine: "facport", category: "General Ledger" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
+
+// § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank
+// dulu, dst) — SENGAJA daftar terpisah dari MODULE_CATALOG (bukan
+// di-infer dari urutan modul) supaya urutan kategori TETAP stabil walau
+// urutan modul di atas berubah. Inventory & Manufacture SENGAJA masuk
+// daftar ini walau 0 modul hari ini — konsumen (sidebar) yang tanggung
+// jawab sembunyikan kategori kosong, bukan file ini yang mengecualikannya.
+export const MODULE_CATEGORIES = ["Cash & Bank", "General Ledger", "Purchase", "Sales", "Inventory", "Manufacture"] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
 

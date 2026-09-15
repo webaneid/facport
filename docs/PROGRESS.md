@@ -133,6 +133,7 @@
 | 123  | Modul Sales Quotation (Penawaran Harga) | Done | `docs/architecture/architecture-sales-quotation.md` | `docs/phases/phase-123-modul-sales-quotation.md` |
 | 124  | Modul Sales Return (Retur Penjualan) | Done | `docs/architecture/architecture-sales-return.md` | `docs/phases/phase-124-modul-sales-return.md` |
 | 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
+| 126  | Sidebar App: Grup Produk "Facport" + Flyout Kategori, Fix Popup Admin Tambah Paket | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-126-sidebar-produk-kategori-varian.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3160,3 +3161,42 @@ tombol Delete tampil untuk owner dan hilang untuk member (data QA
 dibersihkan lagi setelahnya). Ketiga poin audit user + follow-up UX-nya
 kini SELESAI ditindaklanjuti. Detail lengkap →
 `docs/phases/phase-125-fix-delete-owner-only.md`.
+
+## Update 2026-09-15 — Fase 126 Done: Sidebar App Grup Produk + Flyout Kategori, Fix Popup Admin
+
+Dua permintaan user dieksekusi bareng. **Bug popup "Tambah Paket" admin**:
+`DialogContent` (komponen shared, semua dialog di app) tidak punya
+`max-h`/`overflow-y-auto` — form panjang (radiogroup semua modul) tumpah
+keluar viewport, tombol Simpan tidak terjangkau, fitur tambah paket jadi
+TIDAK BISA DIPAKAI. Fix: `max-h-[85vh] overflow-y-auto`.
+
+**Restrukturisasi sidebar app**: grup flat "Import Data" (12 modul
+sejajar) → grup Produk **"Facport"** (Brand→Produk→Kategori→Varian,
+ADR-0033/Fase 117) — kategori (Cash & Bank/General Ledger/Purchase/Sales,
+Bahasa Inggris konsisten nama Varian) jadi trigger **flyout** (hover atau
+klik buka panel modul di sebelah kanan, bukan sub-header teks statis —
+draf pertama ditolak user "tidak elegan"). Kategori kosong (Inventory/
+Manufacture, belum py Varian) otomatis tersembunyi — arsitektur SUDAH
+siap begitu modul pertama di situ ada, tanpa ubah struktur nav lagi.
+`vendor_payable_account` (dulu kategori "Data Master" sendiri) digabung
+ke "Purchase".
+
+3 putaran styling/interaksi bareng user, semua ditemukan lewat screenshot
+feedback: (1) scrollbar goyang tanpa henti saat hover — Radix
+`DropdownMenu` default `modal=true` mengunci scroll body tiap `open`
+berubah, toggle cepat via hover bikin layout geser PERSIS di batas
+trigger (loop mouseenter/mouseleave tanpa habis) — fix `modal={false}`;
+(2) hover item "saru"/nge-blend — komponen shared `DropdownMenuItem`
+bawa default `hover:bg-muted` yang lewat Radix `Slot` (asChild) cuma
+di-KONKATENASI STRING ke className `<Link>` anaknya (bukan di-override
+via `tailwind-merge`, itu cuma jalan di dalam 1 komponen) — fix pakai
+`DropdownMenuPrimitive.Item` MENTAH tanpa className bawaan sama sekali;
+(3) panel flyout jadi glassmorphism (`backdrop-blur-xl` + tone gelap
+sama seperti rail sidebar) + item chip putih semi-transparan tipis→tebal
+saat hover, diminta eksplisit user ("biar tambah keren").
+
+Security review: 0 temuan (filter subscription `navGroupsFor()` tidak
+disentuh, clustering kategori murni beroperasi di atas item yang sudah
+difilter). `bun run typecheck`/`lint` 0 error, `bun run test` 1067 pass.
+User konfirmasi visual "sudah bagus" setelah iterasi terakhir. Detail
+lengkap → `docs/phases/phase-126-sidebar-produk-kategori-varian.md`.

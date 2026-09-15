@@ -11,6 +11,7 @@
 // `.category` (cek `admin/plans/page.tsx`).
 import {
   MODULE_CATALOG,
+  MODULE_CATEGORIES,
   moduleLabel as moduleLabelSource,
   productLineLabel as productLineLabelSource,
   moduleCategory as moduleCategorySource,
@@ -19,7 +20,7 @@ import {
   type ProductLineKey,
 } from "../../api/src/lib/module-catalog";
 
-export { PRODUCT_LINES };
+export { PRODUCT_LINES, MODULE_CATEGORIES };
 export type { ModuleKey, ProductLineKey };
 
 export const MODULE_OPTIONS = MODULE_CATALOG;

@@ -21,7 +21,13 @@ export function DialogContent({
           // Admin UI Kit v2 (spec `architecture-component-feedback.md`),
           // tetap Radix Dialog (focus-trap/portal teruji) — bukan Modal
           // custom baru, lihat phase-24 doc § Keputusan Kecil.
-          "fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-white p-6 shadow-[0_30px_70px_rgba(16,24,40,.22)]",
+          // § Fase 126 — `max-h-[85vh] overflow-y-auto` (bug ditemukan
+          // user: form panjang seperti "Tambah Paket", yang makin panjang
+          // seiring jumlah modul bertambah, tumpah ke luar viewport TANPA
+          // cara scroll — tombol submit di bawah jadi tidak terjangkau
+          // sama sekali). Komponen SHARED dipakai semua dialog di app,
+          // bukan tambal 1 halaman.
+          "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-border bg-white p-6 shadow-[0_30px_70px_rgba(16,24,40,.22)]",
           className,
         )}
         {...props}

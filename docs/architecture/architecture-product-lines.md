@@ -14,8 +14,14 @@
 - **Produk** (3): field `productLine` di data model. Nilai: `facport`,
   `konverter`, `autoproduksi`.
 - **Kategori**: pengelompokan presentasional varian DALAM 1 Produk (mis.
-  "Penjualan"/"Pembelian" untuk Produk Facport) — TIDAK PERNAH dipakai
-  gating, murni tampilan (form admin/katalog).
+  "Sales"/"Purchase" untuk Produk Facport) — TIDAK PERNAH dipakai gating,
+  murni tampilan (form admin/katalog, DAN sejak Fase 126 juga sidebar app
+  `/*` — grup nav "Facport" di-cluster per Kategori, kategori kosong
+  otomatis hilang, § "Sidebar App — Cluster per Kategori" di bawah).
+  Label Kategori Bahasa Inggris (diminta user 2026-09-15) — konsisten
+  dengan nama Varian yang memang sudah Inggris (istilah Accurate Online
+  sendiri), BEDA dari string UI lain di project yang boleh Bahasa
+  Indonesia (project ini tidak pakai i18n).
 - **Varian**: field `module`/`moduleKey` — unit gating/billing sesungguhnya
   (persis konsep "sub-modul" ADR-0019, sekarang scoped di dalam 1 Produk).
 
@@ -31,16 +37,48 @@ export const PRODUCT_LINES = [
 ] as const;
 
 export const MODULE_CATALOG = [
-  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Penjualan" },
-  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Penjualan" },
-  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Pembelian" },
-  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Pembelian" },
-  { key: "journal_voucher", label: "Jurnal Umum", productLine: "facport", category: "Buku Besar" },
-  { key: "vendor_payable_account", label: "Akun Hutang Pemasok", productLine: "facport", category: "Data Master" },
-  { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", productLine: "facport", category: "Kas & Bank" },
+  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Sales" },
+  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Sales" },
+  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Sales" },
+  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
+  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
+  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
+  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Purchase" },
+  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Purchase" },
+  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Purchase" },
+  { key: "vendor_payable_account", label: "Vendor Payable Account", productLine: "facport", category: "Purchase" },
+  { key: "other_payment", label: "Other Payment (Cash/Bank Payment)", productLine: "facport", category: "Cash & Bank" },
+  { key: "journal_voucher", label: "Journal Voucher", productLine: "facport", category: "General Ledger" },
   // Konverter / AutoProduksi: SENGAJA KOSONG — isi pas fase build masing-masing.
 ] as const;
+
+// § Fase 126 — urutan tampil Kategori (sidebar/form admin), daftar
+// TERPISAH dari MODULE_CATALOG supaya stabil walau urutan Varian di atas
+// berubah. Inventory & Manufacture SENGAJA masuk daftar walau 0 Varian
+// hari ini (kategori Accurate Online yang belum digarap Facport) —
+// konsumen (sidebar) yang tanggung jawab sembunyikan kategori kosong.
+export const MODULE_CATEGORIES = ["Cash & Bank", "General Ledger", "Purchase", "Sales", "Inventory", "Manufacture"] as const;
 ```
+
+## Sidebar App — Cluster per Kategori (Fase 126)
+
+Sejak Fase 126, sidebar app (`apps/web/components/app-shell/sidebar.tsx`)
+tidak lagi 1 grup flat "Import Data" — jadi grup Produk **"Facport"**
+(`NavGroup.productLine: "facport"`), item-nya di-cluster jadi sub-header per
+Kategori di dalam `NavGroupBlock` (fungsi `groupItemsByCategory()`), urut
+ikut `MODULE_CATEGORIES`. Kaidah "kosong = hilang" berlaku 2 lapis sekarang:
+- Item (Varian) hilang kalau `subscriptionModules` tidak meng-cover — SUDAH
+  ada sejak dulu (`navGroupsFor`), TIDAK berubah.
+- Kategori hilang total kalau SEMUA item di dalamnya hilang (clustering
+  dihitung dari item yang SUDAH difilter subscription, bukan filter
+  terpisah) — otomatis, bukan logic khusus per kategori.
+
+Ini alasan Inventory & Manufacture (0 Varian hari ini) aman ditulis di
+`MODULE_CATEGORIES` dari sekarang — begitu Varian pertama di kategori itu
+ADA + di-subscribe, langsung muncul tanpa ubah struktur nav lagi. Produk
+Konverter/AutoProduksi (nanti) pakai pola SAMA — grup nav baru dengan
+`productLine` masing-masing, `MODULE_CATEGORIES`-nya sendiri (BELUM
+didesain — konsisten prinsip "jangan tebak sebelum fase build-nya" di atas).
 
 `apps/web/lib/module-options.ts` adalah **re-export** dari file ini (relative
 import, bukan type-only — beda dari pola `api-client.ts` yang cuma butuh

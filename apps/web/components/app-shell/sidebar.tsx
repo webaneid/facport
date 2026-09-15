@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -24,6 +24,7 @@ import {
   Headset,
   Image as ImageIcon,
   ChevronDown,
+  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Building2,
@@ -32,11 +33,44 @@ import {
   Undo2,
   FileSignature,
   RotateCcw,
+  PiggyBank,
+  NotebookText,
+  ShoppingBag,
+  TrendingUp,
+  Warehouse,
+  Factory,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/use-permissions";
+import { moduleCategory, MODULE_CATEGORIES } from "@/lib/module-options";
+import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
+// § `DropdownMenuPrimitive.Item` MENTAH (bukan `DropdownMenuItem` yang
+// sudah dibungkus `components/ui/dropdown-menu.tsx`) — wrapper itu bawa
+// default `hover:bg-muted` (abu, didesain dialog putih) yang lewat Radix
+// `Slot` (asChild) CUMA di-KONKATENASI STRING ke className Link anaknya
+// (BUKAN di-override via tailwind-merge — itu cuma jalan DI DALAM 1
+// komponen, bukan lintas batas Slot). Ganti wrapper-nya ke `hover:bg-transparent`
+// TETAP bocor (cuma tukar KELAS mana yang menang-kalahnya acak, § insiden
+// 2026-09-15 "putihnya hilang sama sekali"). Primitive mentah TANPA
+// className bawaan = tidak ada apa pun yang bisa bentrok sama sekali.
+import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
+
+// § Fase 126 lanjutan (diminta user 2026-09-15, "tidak elegan" — sub-header
+// teks diganti flyout hover/klik, pola sama menu app desktop) — icon per
+// KATEGORI (beda dari icon per Varian yang sudah ada di NAV_GROUPS_BY_SURFACE),
+// dipakai trigger flyout `NavCategoryFlyout`. Sengaja beda icon dari
+// Varian di dalamnya (walau kadang 1 kategori = 1 Varian hari ini) supaya
+// trigger vs isi flyout tetap gampang dibedakan sekilas.
+const CATEGORY_ICON: Record<string, LucideIcon> = {
+  "Cash & Bank": PiggyBank,
+  "General Ledger": NotebookText,
+  Purchase: ShoppingBag,
+  Sales: TrendingUp,
+  Inventory: Warehouse,
+  Manufacture: Factory,
+};
 
 // § ADR-0024, Admin UI Kit v2 — nav TETAP didefinisikan DI SINI (file
 // "use client"), BUKAN dioper sebagai prop dari Server Component
@@ -62,17 +96,25 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
   app: [
     { label: "Utama", items: [{ href: "/", label: "Dashboard", icon: LayoutDashboard }] },
     {
-      label: "Import Data",
+      // § Fase 126 — dulu "Import Data" (grup flat, tanpa kategori).
+      // Sekarang grup PRODUK "Facport" (Brand→Produk→Kategori→Varian,
+      // ADR-0033) — `productLine: "facport"` men-trigger `NavGroupBlock`
+      // cluster item-item di bawah ini jadi sub-header per `category`
+      // (§ `moduleCategory()`, urutan tetap ikut `MODULE_CATEGORIES`).
+      // Urutan item DI SINI sengaja dikelompokkan per kategori (Cash &
+      // Bank → General Ledger → Purchase → Sales) supaya enak dibaca
+      // walau clustering-nya sendiri sebenarnya tidak bergantung urutan
+      // array (dihitung dari `moduleCategory()`, bukan posisi).
+      label: "Facport",
+      productLine: "facport",
       items: [
-        { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "purchase_invoice" },
-        // § ADR-0026 — dulu moduleKey "purchase_invoice" (bundel gratis),
-        // sekarang sub-modul sendiri, dijual terpisah.
-        { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "vendor_payable_account" },
-        { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "sales_invoice" },
-        { href: "/purchase-payment/import", label: "Import Purchase Payment", icon: Wallet, moduleKey: "purchase_payment" },
-        { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
-        { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
+        // Cash & Bank
         { href: "/other-payment/import", label: "Import Other Payment", icon: Banknote, moduleKey: "other_payment" },
+        // General Ledger
+        { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
+        // Purchase
+        { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "purchase_invoice" },
+        { href: "/purchase-payment/import", label: "Import Purchase Payment", icon: Wallet, moduleKey: "purchase_payment" },
         // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
         // (architecture-purchase-order.md).
         { href: "/purchase-order/import", label: "Import Purchase Order", icon: ShoppingCart, moduleKey: "purchase_order" },
@@ -82,6 +124,12 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
         // (architecture-purchase-return.md).
         { href: "/purchase-return/import", label: "Import Purchase Return", icon: Undo2, moduleKey: "purchase_return" },
+        // § ADR-0026 — dulu moduleKey "purchase_invoice" (bundel gratis),
+        // sekarang sub-modul sendiri, dijual terpisah.
+        { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "vendor_payable_account" },
+        // Sales
+        { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "sales_invoice" },
+        { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
         // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
         // (architecture-sales-quotation.md).
         { href: "/sales-quotation/import", label: "Import Sales Quotation", icon: FileSignature, moduleKey: "sales_quotation" },
@@ -90,8 +138,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
-        // modul tertentu — beda dari item import di atas). SENGAJA
-        // ditaruh PALING BAWAH grup ini.
+        // modul tertentu). TANPA kategori (moduleKey kosong → cluster
+        // taruh di bagian "Lainnya" paling bawah, § NavGroupBlock).
         { href: "/import/arsip", label: "Arsip Import", icon: Archive },
       ],
     },
@@ -189,6 +237,27 @@ function IdentityCard({ collapsed, logoUrl, subtitle }: { collapsed: boolean; lo
   );
 }
 
+// § Fase 126 — cluster item (SUDAH difilter subscription oleh
+// `navGroupsFor`, dipanggil SEBELUM fungsi ini) ke bucket per Kategori,
+// urut ikut `MODULE_CATEGORIES` (Cash & Bank → ... → Manufacture).
+// Kategori yang 0 item (semua modulnya belum ada ATAU belum di-subscribe)
+// OTOMATIS tidak muncul di hasil — bukan logic khusus, cuma konsekuensi
+// `.filter((b) => b.items.length > 0)` di akhir, sama pola "grup kosong
+// disembunyikan" yang sudah dipakai `navGroupsFor`. Item TANPA moduleKey
+// (mis. "Arsip Import") atau moduleKey yang kategori-nya tidak dikenal
+// masuk bucket `category: null` ("Lainnya"), SELALU tampil paling akhir.
+function groupItemsByCategory(items: NavItem[]): { category: string | null; items: NavItem[] }[] {
+  const buckets = new Map<string | null, NavItem[]>();
+  for (const item of items) {
+    const category = item.moduleKey ? moduleCategory(item.moduleKey) : null;
+    const bucket = buckets.get(category) ?? [];
+    bucket.push(item);
+    buckets.set(category, bucket);
+  }
+  const ordered = [...MODULE_CATEGORIES, null].map((category) => ({ category, items: buckets.get(category) ?? [] }));
+  return ordered.filter((b) => b.items.length > 0);
+}
+
 function NavGroupBlock({
   group,
   collapsed,
@@ -203,6 +272,11 @@ function NavGroupBlock({
   modulePlanNames?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(true);
+  // § grup ber-`productLine` (sekarang cuma "Facport") di-cluster per
+  // Kategori — grup lain (Langganan, admin Manajemen/Sistem) TETAP flat
+  // seperti sebelumnya, TIDAK terpengaruh (§ `groupItemsByCategory`
+  // hanya dipanggil kalau `group.productLine` ada).
+  const categoryBuckets = group.productLine ? groupItemsByCategory(group.items) : null;
   return (
     <div>
       {!collapsed && (
@@ -217,24 +291,152 @@ function NavGroupBlock({
       )}
       {open && (
         <div className="space-y-1">
-          {group.items.map((item) => (
-            <NavRow
-              key={item.href}
-              item={item}
-              // § label diganti nama paket yang aktif untuk modul ini, KALAU
-              // ada — href/ikon/urutan item TIDAK berubah sama sekali,
-              // cuma teks yang ditampilkan. Diminta user 2026-09-05 supaya
-              // customer langsung tahu link itu bagian dari paket apa yang
-              // mereka beli, bukan nama fitur generik.
-              displayLabel={(item.moduleKey && modulePlanNames?.[item.moduleKey]) || item.label}
-              collapsed={collapsed}
-              active={isActive(pathname, item.href)}
-              onNavigate={onNavigate}
-            />
-          ))}
+          {(categoryBuckets ?? [{ category: null, items: group.items }]).flatMap(({ category, items }) =>
+            category ? (
+              // § Fase 126 lanjutan — kategori jadi trigger flyout (icon +
+              // nama + panah), BUKAN sub-header teks (versi pertama dinilai
+              // "tidak elegan" oleh user) — isi Varian-nya muncul di panel
+              // sebelah kanan saat hover/klik, mirip menu app desktop.
+              <NavCategoryFlyout
+                key={category}
+                category={category}
+                items={items}
+                collapsed={collapsed}
+                pathname={pathname}
+                onNavigate={onNavigate}
+                modulePlanNames={modulePlanNames}
+              />
+            ) : (
+              // § item TANPA kategori (mis. "Arsip Import") — tetap link
+              // biasa langsung di rail, TIDAK dibungkus flyout.
+              items.map((item) => (
+                <NavRow
+                  key={item.href}
+                  item={item}
+                  displayLabel={(item.moduleKey && modulePlanNames?.[item.moduleKey]) || item.label}
+                  collapsed={collapsed}
+                  active={isActive(pathname, item.href)}
+                  onNavigate={onNavigate}
+                />
+              ))
+            ),
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+// § Fase 126 lanjutan — trigger flyout 1 Kategori. Dibuka HOVER (mouse
+// masuk trigger ATAU panel, delay kecil sebelum nutup supaya cursor bisa
+// pindah trigger→panel tanpa flicker) ATAU KLIK (fallback layar
+// sentuh/keyboard — Radix `DropdownMenu` sudah tangani klik+keyboard
+// bawaan lewat `open`/`onOpenChange` controlled). `side="right"` — panel
+// selalu muncul di SEBELAH KANAN rail, konsisten collapsed maupun expanded.
+function NavCategoryFlyout({
+  category,
+  items,
+  collapsed,
+  pathname,
+  onNavigate,
+  modulePlanNames,
+}: {
+  category: string;
+  items: NavItem[];
+  collapsed: boolean;
+  pathname: string;
+  onNavigate?: () => void;
+  modulePlanNames?: Record<string, string>;
+}) {
+  const [open, setOpen] = useState(false);
+  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const Icon = CATEGORY_ICON[category] ?? Package;
+  const categoryActive = items.some((item) => isActive(pathname, item.href));
+
+  function openNow() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    setOpen(true);
+  }
+  function closeSoon() {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+    closeTimer.current = setTimeout(() => setOpen(false), 150);
+  }
+
+  return (
+    // § `modal={false}` — Radix `DropdownMenu` default `modal=true` KUNCI
+    // scroll body tiap kali `open` berubah (nambah/lepas padding kompensasi
+    // lebar scrollbar). Karena flyout ini dibuka via HOVER (bukan klik
+    // eksplisit), toggle `open` yang cepat bikin layout goyang PERSIS di
+    // batas trigger — scrollbar muncul/hilang geser trigger keluar dari
+    // bawah kursor → mouseleave → nutup → scrollbar balik → trigger geser
+    // balik ke bawah kursor → mouseenter → buka lagi → LOOP tanpa henti
+    // (ditemukan user 2026-09-15, "goyang-goyang tidak berhenti"). `modal={false}`
+    // matikan scroll-lock ini sepenuhnya — cocok juga secara UX, ini menu
+    // navigasi biasa, BUKAN dialog aksi yang perlu kunci fokus modal.
+    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          onMouseEnter={openNow}
+          onMouseLeave={closeSoon}
+          title={collapsed ? category : undefined}
+          className={cn(
+            "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition",
+            // § resting SELALU ada background tipis (`bg-white/5`), hover
+            // nebel jadi `bg-white/18` — BUKAN "tanpa background lalu
+            // muncul pas hover" (transisi dari nol kesannya "saru"/nge-blend,
+            // diprotes user 2026-09-15), konsisten pola yang sama dipakai
+            // chip item di dalam flyout (§ NavCategoryFlyout content).
+            categoryActive || open ? "bg-white/14 text-white" : "bg-white/5 text-white/90 hover:bg-white/18",
+          )}
+        >
+          <Icon className="size-4 shrink-0" />
+          {!collapsed && (
+            <>
+              <span className="flex-1 truncate text-left">{category}</span>
+              <ChevronRight className="size-3.5 shrink-0 text-white/50" />
+            </>
+          )}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        side="right"
+        align="start"
+        sideOffset={10}
+        onMouseEnter={openNow}
+        onMouseLeave={closeSoon}
+        // § diminta user 2026-09-15 "biar tambah keren" — panel kaca buram
+        // (glassmorphism): background "secondary" = tone gelap SAMA seperti
+        // rail sidebar sendiri (`--admin-accent-strong`, BUKAN warna baru
+        // sembarang) di opacity rendah + `backdrop-blur-xl` (blur konten DI
+        // BALIK panel, bukan cuma warna solid transparan).
+        className="min-w-56 border-white/15 bg-admin-accent-strong/70 p-1.5 shadow-[0_20px_50px_rgba(4,18,24,.45)] backdrop-blur-xl"
+      >
+        {items.map((item) => {
+          const ItemIcon = item.icon;
+          const label = (item.moduleKey && modulePlanNames?.[item.moduleKey]) || item.label;
+          const active = isActive(pathname, item.href);
+          return (
+            <DropdownMenuPrimitive.Item key={item.href} asChild onSelect={onNavigate} className="mb-1 outline-none last:mb-0">
+              <Link
+                href={item.href}
+                className={cn(
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+                  // § chip putih semi-transparan, tipis pas diam → NEBEL
+                  // jelas pas hover (diminta user 2026-09-15, 2 iterasi —
+                  // percobaan pertama "hilang sama sekali" karena bentrok
+                  // class lewat Radix Slot, § catatan import di atas).
+                  active ? "bg-white text-admin-accent-strong" : "bg-white/10 text-white/90 hover:bg-white/40",
+                )}
+              >
+                <ItemIcon className="size-4 shrink-0" />
+                <span className="truncate">{label}</span>
+              </Link>
+            </DropdownMenuPrimitive.Item>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
