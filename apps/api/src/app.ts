@@ -45,6 +45,7 @@ import { salesReceiptImportRoute } from "./routes/sales-receipt-import.route";
 import { journalVoucherImportRoute } from "./routes/journal-voucher-import.route";
 import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
 import { purchaseOrderImportRoute } from "./routes/purchase-order-import.route";
+import { receiveItemImportRoute } from "./routes/receive-item-import.route";
 import { teamRoute } from "./routes/team.route";
 import { invitesRoute } from "./routes/invites.route";
 import { transfersRoute } from "./routes/transfers.route";
@@ -222,6 +223,7 @@ export const app = new Elysia()
   .use(journalVoucherImportRoute)
   .use(otherPaymentImportRoute)
   .use(purchaseOrderImportRoute)
+  .use(receiveItemImportRoute)
   .use(teamRoute)
   .use(invitesRoute)
   .use(transfersRoute)

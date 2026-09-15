@@ -106,6 +106,15 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // ada `purchase_order_view` terpisah, beda dari modul lain yang
   // security block-nya minta scope _view juga untuk save.do).
   purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 121, architecture-receive-item.md — TIDAK auto-create
+  // vendor/item (dokumen LANJUTAN, vendorNo/itemNo dikirim apa adanya,
+  // mirror Purchase Payment) — jadi TIDAK butuh vendor_view/vendor_save/
+  // item_save (baseline `item_view` selalu ada, § scopesForModules).
+  // `data_classification_view`/`_save` tetap untuk Kategori Keuangan
+  // item-level (dataClassificationNName). `receive_item_save` HANYA
+  // (tanpa `_view` terpisah), dikonfirmasi OpenAPI security block —
+  // sama pola Purchase Order.
+  receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

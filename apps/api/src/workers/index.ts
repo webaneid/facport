@@ -103,6 +103,18 @@ import {
   extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesPO,
   type PurchaseOrderGroup,
 } from "../lib/import-mapping/purchase-order.mapping";
+// § Fase 121 — Receive Item, dokumen LANJUTAN (TIDAK auto-create
+// vendor/item, mirror Purchase Payment — vendorNo/itemNo dikirim apa
+// adanya) TAPI multi-item + Atribut Tambahan header&item mirror
+// Purchase Order. TIDAK ADA detailExpense sama sekali.
+import { saveReceiveItem } from "../lib/accurate-receive-item";
+import {
+  buildReceiveItemPayload,
+  groupReceiveItemRows,
+  validateGroupVendorConsistency as validateGroupVendorConsistencyForRI,
+  extractDataClassificationValues as extractDataClassificationValuesRI,
+  type ReceiveItemGroup,
+} from "../lib/import-mapping/receive-item.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -212,6 +224,25 @@ async function ensurePurchaseOrderDataClassifications(
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesPO(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPO(rawRow, columnMapping)];
     for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 121 — mirror `ensurePurchaseOrderDataClassifications`, untuk
+// Receive Item (extractor terpisah di file mapping-nya sendiri, TIDAK
+// ada versi Expense — modul ini tidak punya detailExpense sama sekali).
+async function ensureReceiveItemDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesRI(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -784,6 +815,35 @@ export async function processPurchaseOrderGroup(
 }
 
 // ============================================================
+// § Fase 121 — Receive Item: multi-item grouping mirror Purchase Order,
+// TAPI TIDAK auto-create vendor/item (dokumen LANJUTAN, mirror Purchase
+// Payment — vendorNo/itemNo dikirim apa adanya, Accurate yang validasi
+// eksistensi), dan TIDAK ADA detailExpense sama sekali. Grouping key
+// `receiveNumber` (BUKAN `number`), § `groupReceiveItemRows`.
+// ============================================================
+export type ReceiveItemGroupResult = {
+  receiveId: number;
+  rowIds: string[];
+};
+
+export async function processReceiveItemGroup(
+  ctx: AccurateSessionContext,
+  group: ReceiveItemGroup,
+  columnMapping: Record<string, string>,
+): Promise<ReceiveItemGroupResult> {
+  const mismatchError = validateGroupVendorConsistencyForRI(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildReceiveItemPayload(rawRows, columnMapping);
+
+  await ensureReceiveItemDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveReceiveItem(ctx, payload);
+  return { receiveId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
 // atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
 // — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
@@ -1300,6 +1360,34 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.orderId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 121 — Receive Item, grouping DALAM 1 batch by
+      // `receiveNumber` (BUKAN `number`), create-only, TANPA auto-create
+      // vendor/item (§ komentar `processReceiveItemGroup`).
+    } else if (batch.module === "receive_item") {
+      const groups = groupReceiveItemRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processReceiveItemGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.receiveId),
               errorMessage: null,
               processedAt: new Date(),
             })

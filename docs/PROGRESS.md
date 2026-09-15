@@ -128,6 +128,7 @@
 | 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
 | 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Done | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
 | 120  | Modul Purchase Order (Pesanan Pembelian) | Done | `docs/architecture/architecture-purchase-order.md` | `docs/phases/phase-120-modul-purchase-order.md` |
+| 121  | Modul Receive Item (Penerimaan Barang) | Done | `docs/architecture/architecture-receive-item.md` | `docs/phases/phase-121-modul-receive-item.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2980,3 +2981,42 @@ typecheck+lint bersih, security review 0 temuan.
 sesi ini) — perlu 1x verifikasi sebelum rollout penuh ke customer,
 sesuai rekomendasi `architecture-purchase-order.md`. Detail lengkap →
 `docs/phases/phase-120-modul-purchase-order.md`.
+
+## Update 2026-09-15 — fix: `branchName` kelupaan di `requiredFields` Purchase Order (Fase 120)
+Ditemukan saat memulai eksekusi Fase 121: `architecture-purchase-order.md`
+§ "Branch Wajib" eksplisit mewajibkan `branchName` (preseden Fase 90),
+frontend (`edit-row-dialog.tsx`) sudah benar menganggapnya wajib, TAPI
+`purchaseOrderMapping.requiredFields` (sumber validasi SERVER)
+kelupaan menyertakannya — upload tanpa Branch Name lolos validasi awal,
+baru berpotensi gagal belakangan untuk company multi-cabang. Diperbaiki
+SEBELUM sempat rilis ke `main` (masih di `develop`, batching release).
+Detail: `docs/lessons-learned.md` 2026-09-15.
+
+## Update 2026-09-15 — Fase 121 Done: Modul Receive Item (Penerimaan Barang)
+Modul ke-2 dari 5 sub-modul Fase 119, dieksekusi mengikuti pola SOP yang
+sama (rencana→eksekusi→test→security review→tutup fase). BEDA
+STRUKTURAL dari Purchase Order: TIDAK auto-create vendor/item (dokumen
+LANJUTAN dalam rantai procurement, vendorNo/itemNo dikirim apa adanya —
+mirror Purchase Payment), grouping by `receiveNumber` (nomor surat jalan
+VENDOR, BUKAN `number` internal Accurate seperti modul lain), TIDAK ada
+`detailExpense[]` sama sekali, dan Atribut Tambahan diminta di KEDUA
+level (header DAN item — Purchase Order cuma level item).
+
+2 keputusan scope dikonfirmasi user sebelum eksekusi: (1) kolom
+`ITEM: Purchase Order No` ditambahkan sebagai field OPSIONAL walau tidak
+diminta di Excel client (menutup rantai PO→Receive Item), (2) "ITEM:
+Description" di-map ke `detailNotes` bukan `detailName` (diinferensi
+dari struktur Excel client sendiri — kolom "Item Name" terpisah sudah
+ada). Scope OAuth minimal: `receive_item_save` + `data_classification_*`
+saja, TANPA `vendor_save`/`item_save`.
+
+45 test baru (25 unit + 20 integrasi), 885 test total pass, typecheck+
+lint bersih, security review 0 temuan — termasuk verifikasi khusus bahwa
+`requiredFields` (memuat `branchName` sejak awal, pelajaran Fase 120 di
+atas) konsisten di endpoint confirm/edit-row/edit-bulk.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/receive-item/save.do`, dan mapping "ITEM: Description" →
+`detailNotes` adalah inferensi dari struktur Excel (bukan hasil test
+call) — keduanya perlu 1x verifikasi nyata sebelum rollout penuh. Detail
+lengkap → `docs/phases/phase-121-modul-receive-item.md`.
