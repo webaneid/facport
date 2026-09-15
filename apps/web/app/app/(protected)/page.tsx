@@ -80,13 +80,17 @@ export default async function DashboardPage() {
   // (backend tetap validasi format UUID, jadi bukan celah, murni
   // robustness).
   const encodedDataUsahaId = encodeURIComponent(dataUsahaId);
-  const [subscriptionsInfo, accurateSubscriptionsInfo, invoicesInfo, meStats, recentImportBatches] = await Promise.all([
+  const [subscriptionsInfo, accurateSubscriptionsInfo, invoicesInfo, meStats, recentImportBatches, dataUsahaListInfo] = await Promise.all([
     fetchJson<SubscriptionsResponse>(`/me/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<AccurateSubscriptionsResponse>(`/accurate/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<InvoicesResponse>("/me/invoices", cookie),
     fetchJson<MeStats>(`/me/stats?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<{ batches: UnifiedImportBatch[]; total: number }>(`/me/import-batches?limit=5&dataUsahaId=${encodedDataUsahaId}`, cookie),
+    // § Fase 125 poin 3 (2026-09-15) — "Import Terakhir" sekarang gabungan
+    // SEMUA anggota tim, tombol hapus tetap HANYA pemilik Data Usaha.
+    fetchJson<{ dataUsaha: { id: string; isOwner: boolean }[] }>("/me/data-usaha", cookie),
   ]);
+  const isDataUsahaOwner = dataUsahaListInfo?.dataUsaha.find((d) => d.id === dataUsahaId)?.isOwner ?? false;
   const accurateSubscriptions = accurateSubscriptionsInfo?.subscriptions ?? [];
   const unpaidInvoices = (invoicesInfo?.invoices ?? []).filter((inv) => inv.status === "unpaid");
 
@@ -214,7 +218,7 @@ export default async function DashboardPage() {
                 <FileSpreadsheet className="h-4 w-4 text-primary-600" />
                 <CardTitle>Import Terakhir</CardTitle>
               </div>
-              <CardDescription>5 import terakhir dari semua fitur.</CardDescription>
+              <CardDescription>{isDataUsahaOwner ? "5 import terakhir dari semua fitur dan anggota tim." : "5 import terakhir dari semua fitur."}</CardDescription>
             </div>
             <Link href="/import/arsip" className={buttonVariants("outline")}>
               Tampilkan Arsip Lain
@@ -225,7 +229,7 @@ export default async function DashboardPage() {
           {recentBatches.length === 0 ? (
             <EmptyState icon={Inbox} title="Belum ada riwayat import" description="Upload file Excel pertama kamu untuk mulai." />
           ) : (
-            <ImportBatchTable batches={recentBatches} timezone={companyTimezone} />
+            <ImportBatchTable batches={recentBatches} timezone={companyTimezone} isDataUsahaOwner={isDataUsahaOwner} />
           )}
         </CardContent>
       </Card>

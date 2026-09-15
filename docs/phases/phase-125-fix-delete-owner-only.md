@@ -21,15 +21,10 @@ diperbaiki.
    Checkout (`subscriptions.route.ts:82`) dan invite seat
    (`team.route.ts`) sama-sama pakai `ownsDataUsaha(user.id, dataUsahaId)`.
 2. **Akun tambahan tidak bisa delete hasil upload** — ❌ TIDAK SESUAI
-   (gap lebih parah dari dugaan) — **DIPERBAIKI fase ini**.
-3. **Akun utama lihat semua riwayat upload timnya** — ⚠️ TIDAK KONSISTEN.
-   Riwayat per-modul (`GET /{modul}/import`) sudah benar (scoped
-   `subscriptionId`, otomatis mencakup semua uploader). Arsip gabungan
-   (`GET /me/import-batches`, dipakai dashboard + `/import/arsip`)
-   di-scope `userId` (siapa yang login), BUKAN semua orang di Data
-   Usaha — owner tidak lihat upload member di situ. **BELUM diperbaiki
-   fase ini** (di luar scope permintaan eksplisit user — user minta
-   lanjut poin 2 dulu) — dicatat di Known Limitations.
+   (gap lebih parah dari dugaan) — **DIPERBAIKI**.
+3. **Akun utama lihat semua riwayat upload timnya** — ⚠️ TIDAK KONSISTEN
+   (Riwayat per-modul sudah benar, Arsip gabungan belum) — **DIPERBAIKI**
+   (lihat § "Update — Poin 3" di bawah).
 
 ## Verifikasi Tambahan (diminta user, dikonfirmasi TANPA perlu kode baru)
 User minta pastikan menu Berlangganan/Tambah Anggota tidak muncul untuk
@@ -91,30 +86,62 @@ sejak awal, tidak perlu perubahan**:
       ditunda — poin 3 (arsip gabungan) dicatat sebagai Known Limitation
 - [x] `docs/PROGRESS.md` diupdate
 
+## Update — Poin 3 (2026-09-15, lanjutan sesi yang sama)
+User minta lanjut poin 3 setelah poin 2 selesai. Fix:
+
+- **Backend** (`apps/api/src/routes/me.route.ts`, `GET /me/import-batches`):
+  drop filter `importBatches.userId === user.id`, ganti MURNI
+  `subscriptions.dataUsahaId === query.dataUsahaId` — konsisten pola
+  riwayat per-modul yang sudah benar sejak awal. Akses TETAP digerbang
+  `hasAccessToDataUsaha` (owner ATAU member aktif) di awal handler,
+  tidak berubah. Response tambah `uploadedByName` (JOIN eksplisit ke
+  `user.name` saja, bukan select *) dan `uploadedByYou` per baris.
+- **Test baru** (`me.route.test.ts`): 1 test simetris — owner lihat
+  upload member, member lihat upload owner + member lain, `uploadedByYou`
+  benar dari kedua sudut pandang. 1 test lama di-rename (judulnya
+  sebelumnya menyiratkan filter per-user, padahal sebenarnya soal
+  Data-Usaha-scoping — tetap valid, cuma nama diperjelas).
+- **Frontend** (`import-batch-table.tsx` + 2 pemanggil — dashboard
+  `page.tsx`, `import/arsip/page.tsx`): tambah kolom "Diupload oleh",
+  DAN gating tombol Delete ke `isDataUsahaOwner` (murni kosmetik,
+  backend `DELETE_OWNER_ONLY` dari fix poin 2 di atas tetap satu-satunya
+  gerbang sesungguhnya) — supaya member yang sekarang lihat upload orang
+  lain TIDAK disodori tombol Delete yang bakal 403 kalau diklik. Copy
+  teks disesuaikan ("...dari semua fitur dan anggota tim" utk owner).
+- Security review lanjutan: 0 temuan (verifikasi eksplisit: query tetap
+  ter-scope `dataUsahaId`, SELECT eksplisit tidak bocorkan field
+  sensitif, UI-gating tidak diperlakukan sebagai boundary keamanan).
+
 ## Known Limitations
-- **Poin 3 dari audit BELUM diperbaiki** (`GET /me/import-batches`,
-  dipakai dashboard + `/import/arsip`, di-scope `userId` bukan semua
-  orang di Data Usaha) — user secara eksplisit minta prioritaskan poin
-  2 dulu di pesan ini. Perlu fase terpisah: ganti filter jadi union
-  owner+semua member Data Usaha itu, mirror pola `subscriptionId` yang
-  sudah benar di endpoint per-modul (`GET /{modul}/import`).
-- Fix ini HANYA endpoint DELETE (hapus riwayat lokal). Tidak ada
-  endpoint lain (edit-row/edit-bulk/retry) yang perlu ownership
-  serupa — endpoint-endpoint itu memang didesain bisa dipakai siapa pun
-  yang punya akses modul (member termasuk), cuma DELETE yang perlu
-  dibatasi ke pemilik karena sifatnya destruktif/permanen & lintas-user
-  dalam 1 Data Usaha.
+- **12 halaman Riwayat per-modul** (`{modul}/import/riwayat/page.tsx`)
+  MASIH menampilkan tombol Delete tanpa gating owner — backend-nya
+  SUDAH benar (403 `DELETE_OWNER_ONLY` sejak fix poin 2), jadi member
+  yang klik Delete di situ akan dapat toast error, BUKAN celah
+  keamanan, murni papercut UX (tombol yang seharusnya disembunyikan).
+  SENGAJA tidak disentuh fase ini — di luar scope eksplisit yang diminta
+  user (poin 3 = visibilitas riwayat, bukan konsistensi tombol Delete
+  di 12 halaman terpisah), dan perlu pendekatan lebih besar (context/hook
+  client-side baru untuk `isDataUsahaOwner`, BUKAN cuma fetch ulang per
+  halaman) kalau mau dibereskan rapi. Dicatat di sini untuk follow-up
+  kalau user mau.
+- Fix DELETE (poin 2) HANYA endpoint DELETE (hapus riwayat lokal).
+  Endpoint lain (edit-row/edit-bulk/retry/cancel) TETAP bisa dipakai
+  member (didesain begitu — cuma DELETE yang dibatasi karena sifatnya
+  destruktif/permanen & lintas-user dalam 1 Data Usaha).
 
 ## Ringkasan Hasil
 Audit arsitektur akun utama/tambahan (fork subagent, read-only)
-menemukan gap privilege escalation nyata: member bisa hapus batch
-import SIAPA SAJA di Data Usaha yang dia numpang, bukan cuma tidak bisa
-hapus miliknya sendiri. Diperbaiki di 12 modul import sekaligus dengan
-1 baris check konsisten (`ownsDataUsaha`, fungsi yang sudah dipakai
-endpoint sensitif lain) — 14 test baru (12 test fix + 2 test regresi
-untuk modul yang sebelumnya tidak punya test DELETE). Poin 1 (beli
-produk/tambah akun owner-only) dan verifikasi menu Berlangganan/Tambah
-Anggota (owner-only per konteks Data Usaha AKTIF, bukan flag global)
-dikonfirmasi SUDAH BENAR tanpa perlu perubahan kode. Poin 3 (arsip
-gabungan tidak tampilkan upload member) dicatat sebagai known
-limitation, fase terpisah kalau user mau diperbaiki juga.
+menemukan gap privilege escalation nyata di poin 2: member bisa hapus
+batch import SIAPA SAJA di Data Usaha yang dia numpang. Diperbaiki di
+12 modul import sekaligus dengan 1 baris check konsisten (`ownsDataUsaha`,
+fungsi yang sudah dipakai endpoint sensitif lain) — 14 test baru.
+
+Poin 3 (arsip gabungan tidak tampilkan upload anggota tim) JUGA
+diperbaiki dalam sesi yang sama: drop filter per-user di
+`GET /me/import-batches`, tambah info "diupload oleh", dan gating UI
+tombol Delete supaya konsisten dengan fix poin 2. Poin 1 (beli
+produk/tambah akun owner-only) dan menu Berlangganan/Tambah Anggota
+(owner-only per konteks Data Usaha AKTIF, bukan flag global — member di
+1 Data Usaha bisa jadi owner penuh di Data Usaha lain miliknya sendiri)
+dikonfirmasi SUDAH BENAR tanpa perlu perubahan kode. Ketiga poin audit
+user SELESAI ditindaklanjuti.

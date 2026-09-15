@@ -3137,9 +3137,19 @@ user — dikonfirmasi PERSIS skenario user: member di Data Usaha A bisa
 jadi owner penuh di Data Usaha B miliknya sendiri) dikonfirmasi SUDAH
 BENAR tanpa perlu perubahan kode.
 
-**Known limitation**: Poin 3 (arsip gabungan `GET /me/import-batches`,
-dipakai dashboard + `/import/arsip`, di-scope `userId` bukan semua
-orang di Data Usaha — owner tidak lihat upload member di situ, beda
-dari riwayat per-modul yang sudah benar) BELUM diperbaiki — user minta
-prioritaskan poin 2 dulu, dicatat untuk fase terpisah. Detail lengkap →
-`docs/phases/phase-125-fix-delete-owner-only.md`.
+**Update 2026-09-15 (sesi sama) — Poin 3 JUGA diperbaiki**: arsip
+gabungan `GET /me/import-batches` (dipakai dashboard + `/import/arsip`)
+sebelumnya di-scope `userId` (cuma lihat upload sendiri) — diganti
+MURNI `subscriptions.dataUsahaId`, konsisten pola riwayat per-modul
+yang sudah benar. Response tambah `uploadedByName`/`uploadedByYou`.
+Frontend: kolom "Diupload oleh" baru + tombol Delete di-gate
+`isDataUsahaOwner` (kosmetik, backend `DELETE_OWNER_ONLY` tetap gerbang
+sesungguhnya) supaya member yang sekarang lihat upload orang lain tidak
+disodori tombol yang bakal 403. Security review lanjutan 0 temuan.
+
+**Known limitation sisa**: 12 halaman Riwayat per-modul MASIH tampilkan
+tombol Delete tanpa gating owner (backend sudah benar, cuma UX
+papercut — bukan celah keamanan) — sengaja tidak disentuh, di luar
+scope poin 3, perlu hook/context client-side baru kalau mau dibereskan
+rapi. Ketiga poin audit user kini SELESAI ditindaklanjuti. Detail
+lengkap → `docs/phases/phase-125-fix-delete-owner-only.md`.

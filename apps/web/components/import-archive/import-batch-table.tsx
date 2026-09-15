@@ -24,6 +24,11 @@ export type UnifiedImportBatch = {
   status: string;
   totalRows: number;
   createdAt: string;
+  // § Fase 125 poin 3 (2026-09-15) — endpoint `/me/import-batches` SEKARANG
+  // gabungan SEMUA uploader di Data Usaha ini (bukan cuma milik sendiri
+  // lagi), jadi tabel ini perlu tahu SIAPA yang upload tiap baris.
+  uploadedByName?: string;
+  uploadedByYou?: boolean;
 };
 
 // § diminta user 2026-09-06 — tabel "Import Terakhir"/"Arsip Import"
@@ -41,13 +46,31 @@ export type UnifiedImportBatch = {
 // (`import/arsip/page.tsx`) — `timezone` WAJIB dikirim sebagai prop
 // (bukan `useCompanyTimezone()`, hook itu tidak bisa dipanggil dari
 // Server Component pemanggil pertama).
-export function ImportBatchTable({ batches, onChanged, timezone }: { batches: UnifiedImportBatch[]; onChanged?: () => void; timezone: string }) {
+// § Fase 125 poin 3 (2026-09-15) — `isDataUsahaOwner` BARU: data di tabel
+// ini sekarang gabungan SEMUA anggota tim (bukan cuma upload sendiri
+// lagi, § `/me/import-batches`), tapi hapus tetap HANYA boleh pemilik
+// Data Usaha (backend `DELETE_OWNER_ONLY`, § phase-125). `undefined` =
+// anggap owner (kompatibilitas pemanggil lama yang belum kirim prop ini)
+// — kedua pemanggil SEKARANG selalu kirim eksplisit, lihat masing-masing.
+export function ImportBatchTable({
+  batches,
+  onChanged,
+  timezone,
+  isDataUsahaOwner,
+}: {
+  batches: UnifiedImportBatch[];
+  onChanged?: () => void;
+  timezone: string;
+  isDataUsahaOwner?: boolean;
+}) {
+  const canDeleteAtAll = isDataUsahaOwner !== false;
   return (
     <Table>
       <TableHeader>
         <TableRow>
           <TableHead>File</TableHead>
           <TableHead>Fitur</TableHead>
+          <TableHead>Diupload oleh</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Baris</TableHead>
           <TableHead>Tanggal</TableHead>
@@ -57,12 +80,13 @@ export function ImportBatchTable({ batches, onChanged, timezone }: { batches: Un
       <TableBody>
         {batches.map((batch) => {
           const basePath = MODULE_IMPORT_BASE_PATH[batch.module];
-          const canDelete = !DELETE_BLOCKED_BATCH_STATUS.has(batch.status);
+          const canDelete = canDeleteAtAll && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status);
           const canCancel = CANCELLABLE_BATCH_STATUS.has(batch.status);
           return (
             <TableRow key={batch.id}>
               <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
               <TableCell className="text-muted-foreground">{moduleLabel(batch.module)}</TableCell>
+              <TableCell className="text-muted-foreground">{batch.uploadedByYou ? "Anda" : (batch.uploadedByName ?? "-")}</TableCell>
               <TableCell>
                 <StatusBadge domain="import-batch" status={batch.status} />
               </TableCell>
