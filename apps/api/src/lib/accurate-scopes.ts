@@ -127,6 +127,12 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // Keuangan. `sales_quotation_save` HANYA (tanpa `_view` terpisah,
   // dikonfirmasi OpenAPI security block).
   sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 124, architecture-sales-return.md — TIDAK auto-create
+  // customer/item (dokumen LANJUTAN, mirror Purchase Return). `_view`
+  // HANYA dari baseline `item_view` (§ scopesForModules).
+  // `sales_return_save` HANYA (tanpa `_view` terpisah, dikonfirmasi
+  // OpenAPI security block).
+  sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

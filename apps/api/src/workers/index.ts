@@ -145,6 +145,21 @@ import {
   extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesSQ,
   type SalesQuotationGroup,
 } from "../lib/import-mapping/sales-quotation.mapping";
+// § Fase 124 — Sales Return, dokumen LANJUTAN (TIDAK auto-create
+// customer/item, mirror Purchase Return) TAPI grouping DEFAULT
+// ADR-0011 (opsional by "number"). Validasi `returnType` (4 nilai:
+// DELIVERY/INVOICE/INVOICE_DP/NO_INVOICE, SEMUA didukung) WAJIB lolos
+// sebelum payload dibangun.
+import { saveSalesReturn } from "../lib/accurate-sales-return";
+import {
+  buildSalesReturnPayload,
+  groupSalesReturnRows,
+  validateGroupCustomerConsistency as validateGroupCustomerConsistencyForSR,
+  extractDataClassificationValues as extractDataClassificationValuesSR,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesSR,
+  returnTypeRowError as returnTypeRowErrorSR,
+  type SalesReturnGroup,
+} from "../lib/import-mapping/sales-return.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -312,6 +327,25 @@ async function ensureSalesQuotationDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesSQ(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSQ(rawRow, columnMapping)];
+    for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 124 — mirror `ensurePurchaseReturnDataClassifications`, untuk
+// Sales Return (item-level DAN expense-level).
+async function ensureSalesReturnDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesSR(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSR(rawRow, columnMapping)];
     for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
@@ -995,6 +1029,43 @@ export async function processSalesQuotationGroup(
 }
 
 // ============================================================
+// § Fase 124 — Sales Return: TIDAK auto-create customer/item (mirror
+// Purchase Return), grouping DEFAULT ADR-0011 (opsional by "number"),
+// dan validasi `returnType` (§ `returnTypeRowErrorSR`) WAJIB lolos dari
+// baris PERTAMA grup SEBELUM payload dibangun — gerbang otoritatif
+// final, sama pola Purchase Return (§ komentar `processPurchaseReturnGroup`).
+// ============================================================
+export type SalesReturnGroupResult = {
+  returnId: number;
+  rowIds: string[];
+};
+
+export async function processSalesReturnGroup(
+  ctx: AccurateSessionContext,
+  group: SalesReturnGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesReturnGroupResult> {
+  const mismatchError = validateGroupCustomerConsistencyForSR(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const headerRow = group.rows[0]!.rawData;
+  const returnTypeErrors = returnTypeRowErrorSR(headerRow, columnMapping);
+  if (returnTypeErrors.length > 0) {
+    throw new Error(
+      `Return Type tidak valid atau field pendukungnya (Invoice No/Delivery Order No) belum diisi — kolom bermasalah: ${returnTypeErrors.join(", ")}.`,
+    );
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildSalesReturnPayload(rawRows, columnMapping);
+
+  await ensureSalesReturnDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveSalesReturn(ctx, payload);
+  return { returnId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
 // atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
 // — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
@@ -1595,6 +1666,34 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.quotationId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 124 — Sales Return, grouping DEFAULT ADR-0011 (opsional
+      // by "number"), TANPA auto-create customer/item (§ komentar
+      // `processSalesReturnGroup`).
+    } else if (batch.module === "sales_return") {
+      const groups = groupSalesReturnRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processSalesReturnGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.returnId),
               errorMessage: null,
               processedAt: new Date(),
             })

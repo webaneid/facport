@@ -31,6 +31,7 @@ import {
   PackageCheck,
   Undo2,
   FileSignature,
+  RotateCcw,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -84,6 +85,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
         // (architecture-sales-quotation.md).
         { href: "/sales-quotation/import", label: "Import Sales Quotation", icon: FileSignature, moduleKey: "sales_quotation" },
+        // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul
+        // baru (architecture-sales-return.md).
+        { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu — beda dari item import di atas). SENGAJA

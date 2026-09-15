@@ -29,14 +29,22 @@ returnType enum (REQUIRED): DELIVERY | INVOICE | INVOICE_DP | NO_INVOICE
 `taxDate` + `taxNumber` REQUIRED tanpa syarat (sama alasan Purchase
 Return — PPN keluar terdampak retur).
 
-## ⚠️ Keputusan Scope: Cuma `INVOICE` dan `NO_INVOICE` yang Didukung
-**Didukung**: `INVOICE` (Sales Invoice sudah ada di Facport), `NO_INVOICE`.
-**TIDAK didukung**: `DELIVERY` (Facport tidak punya & tidak berencana
-punya modul Delivery Order — beda dari Purchase Return yang RECEIVE-nya
-memang dibangun barengan), `INVOICE_DP` (sama alasan Purchase Return,
-tidak ada konsep invoice DP terpisah). **WAJIB dikonfirmasi ke user**
-sebelum eksekusi — 2 dari 4 opsi resmi Accurate TIDAK akan berfungsi di
-Facport, harus jelas dari awal bukan ditemukan customer saat pakai.
+## ⚠️ Keputusan Scope: SEMUA 4 `returnType` Didukung
+**Update 2026-09-15 (dikonfirmasi user sebelum eksekusi Fase 124)**:
+SEMUA 4 nilai didukung — `DELIVERY`, `INVOICE`, `INVOICE_DP`,
+`NO_INVOICE`. Draf awal (Fase 119) sempat menolak `DELIVERY` dan
+`INVOICE_DP` dengan alasan "Facport tidak punya/tidak akan punya modul
+itu" — KELIRU KERANGKA BERPIKIRNYA (persis koreksi yang sama di Purchase
+Return): Facport tidak perlu MEMBANGUN Delivery Order atau Invoice DP
+sebagai fitur sendiri untuk bisa MEREFERENSIKAN nomornya di sini.
+`DELIVERY` cuma butuh `deliveryOrderNumber` (referensi teks, dokumen
+sesungguhnya dikelola di Accurate langsung/fitur lain di luar Facport),
+`INVOICE_DP` cuma butuh `invoiceNumber` — PERSIS field yang sama dengan
+`INVOICE`. Konsisten prinsip scope Facport: kalau Accurate API mendukung
+dan Facport bisa mengembangkan tanpa fitur baru yang belum ada, bangun.
+Validasi (§ di bawah): `INVOICE`/`INVOICE_DP` butuh `invoiceNumber`,
+`DELIVERY` butuh `deliveryOrderNumber`, `NO_INVOICE` tidak butuh
+keduanya.
 
 ## Endpoint Accurate
 `POST /accurate/api/sales-return/save.do`.
@@ -92,7 +100,7 @@ kolom client sendiri ("CF"/"DF") kemungkinan besar singkatan
 | Return Type | returnType | header, REQUIRED, § validasi enum (mirror Purchase Return) |
 | To Address | toAddress | header |
 | Transaction Description | description | header |
-| Delivery Order No | deliveryOrderNumber | header, **TIDAK DIDUKUNG** (§ Keputusan Scope) — kalau diisi, tolak eksplisit |
+| Delivery Order No | deliveryOrderNumber | header, WAJIB kalau `Return Type` = DELIVERY (§ Keputusan Scope, update 2026-09-15 — DIDUKUNG penuh sebagai referensi teks) |
 | Currency Code / Rate | currencyCode / rate | header |
 | Cash Disc / Cash Disc Percent | cashDiscount / cashDiscPercent | header |
 | Return Status Type | returnStatusType | header (level dokumen) |
@@ -138,10 +146,11 @@ nyata ke `sales-return/save.do`.
    TIDAK dikirim setengah-setengah). Kolom ini KEMUNGKINAN BESAR jarang
    dipakai (barang bernomor seri bukan kasus umum) — tetap dipetakan
    karena diminta eksplisit di Excel client.
-4. **`DELIVERY` dan `INVOICE_DP` ditolak eksplisit** dengan kode error
-   jelas (mirror pola validasi Purchase Return) — termasuk kalau kolom
-   `Delivery Order No` terisi tanpa `Return Type`-nya DELIVERY (data
-   ambigu, gagalkan dengan pesan jelas, jangan diam-diam diabaikan).
+4. **Semua 4 `returnType` didukung** (§ Keputusan Scope, update
+   2026-09-15) — `DELIVERY` butuh `deliveryOrderNumber`,
+   `INVOICE`/`INVOICE_DP` butuh `invoiceNumber` (field sama, tanpa
+   logic beda selain nilai enum-nya). Hanya nilai `returnType` DI LUAR
+   4 ini yang ditolak eksplisit.
 5. **`returnStatusType` (root) vs `returnDetailStatusType` (item) — DUA
    FIELD BEDA, JANGAN disatukan jadi 1 kolom internal** — beri nama
    field internal yang jelas beda (mis. `returnStatusType` vs
@@ -150,8 +159,6 @@ nyata ke `sales-return/save.do`.
    lain.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **`DELIVERY` dan `INVOICE_DP` tidak didukung** (§ Keputusan Scope) —
-  WAJIB dikonfirmasi user, bukan cuma dicatat.
 - Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat tapi
   BELUM literal dites ke endpoint ini — 1x test call nyata direkomendasikan.
 - `detailExpense[]` REQUIRED tapi belum jelas apakah array kosong

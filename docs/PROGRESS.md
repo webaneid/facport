@@ -131,6 +131,7 @@
 | 121  | Modul Receive Item (Penerimaan Barang) | Done | `docs/architecture/architecture-receive-item.md` | `docs/phases/phase-121-modul-receive-item.md` |
 | 122  | Modul Purchase Return (Retur Pembelian) | Done | `docs/architecture/architecture-purchase-return.md` | `docs/phases/phase-122-modul-purchase-return.md` |
 | 123  | Modul Sales Quotation (Penawaran Harga) | Done | `docs/architecture/architecture-sales-quotation.md` | `docs/phases/phase-123-modul-sales-quotation.md` |
+| 124  | Modul Sales Return (Retur Penjualan) | Done | `docs/architecture/architecture-sales-return.md` | `docs/phases/phase-124-modul-sales-return.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3082,3 +3083,29 @@ Atribut Tambahan dua level, dan `rate` (kurs asing, tidak terlihat di
 schema resmi level root). Sales Order (kelanjutan alami modul ini)
 masih di luar scope, client belum siapkan panduannya. Detail lengkap →
 `docs/phases/phase-123-modul-sales-quotation.md`.
+
+## Update 2026-09-15 — Fase 124 Done: Modul Sales Return (Retur Penjualan) — TERAKHIR dari 5 Sub-Modul Fase 119
+Modul TERAKHIR dari batch 5 sub-modul Fase 119. Sebelum eksekusi, user
+mengonfirmasi lagi koreksi scope seperti Purchase Return: SEMUA 4 nilai
+`returnType` (`DELIVERY`, `INVOICE`, `INVOICE_DP`, `NO_INVOICE`)
+didukung — draf awal Fase 119 sempat menolak `DELIVERY` (Facport tidak
+punya/berencana punya modul Delivery Order) dan `INVOICE_DP`, dikoreksi
+dengan alasan sama seperti Purchase Return: Facport tidak perlu
+MEMBANGUN dokumen acuan untuk bisa MEREFERENSIKAN nomornya.
+
+2 perbedaan struktural dari Purchase Return (bukan mirror persis):
+`returnStatusType` (status dokumen) vs `returnDetailStatusType` (status
+per-baris) sebagai 2 field internal terpisah biar tidak ketuker, dan
+`detailSerialNumber[]` — struktur NESTED 2 LEVEL pertama di codebase ini
+(tracking barang bernomor seri, syarat minimal serialNumberNo+quantity
+sama-sama terisi).
+
+55 test baru (34 unit + 21 integrasi), 1052 test total pass, typecheck+
+lint bersih, security review 0 temuan (termasuk verifikasi khusus
+isolasi data nested `detailSerialNumber[]` per-baris).
+
+**Dengan ini, kelima sub-modul Fase 119 SELESAI dieksekusi**: Purchase
+Order (Fase 120), Receive Item (Fase 121), Purchase Return (Fase 122),
+Sales Quotation (Fase 123), Sales Return (Fase 124) — semua di `develop`,
+belum dirilis ke `main` (batching, menunggu keputusan user kapan rilis
+bersamaan). Detail lengkap → `docs/phases/phase-124-modul-sales-return.md`.

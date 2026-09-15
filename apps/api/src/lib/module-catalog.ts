@@ -42,6 +42,9 @@ export const MODULE_CATALOG = [
   // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
   // (architecture-sales-quotation.md).
   { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Penjualan" },
+  // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul baru
+  // (architecture-sales-return.md).
+  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Penjualan" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
