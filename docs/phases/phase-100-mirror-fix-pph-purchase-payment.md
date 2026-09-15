@@ -69,6 +69,15 @@ bukan menunggu pertanyaan terpisah ke Accurate Support dulu.
 - Kalau Accurate menolak struktur ini, baris gagal dengan error jelas
   (tidak silent) — tapi user/client perlu tahu ini MUNGKIN terjadi,
   bukan dijamin 100% jalan seperti Sales Receipt.
+- **✅ Update 2026-09-15**: retest nyata (Sales Receipt) menemukan bug
+  di `findTaxByIdentifier` (dipakai SAMA oleh Purchase Payment) — salah
+  cocok ke record pajak jenis lain kalau kode/deskripsi kebetulan sama
+  lintas jenis pajak. Sudah diperbaiki (filter `taxType === "PPH23"`),
+  otomatis ikut membetulkan Purchase Payment juga (fungsi shared) — §
+  lessons-learned.md 2026-09-15. Status "SPECULATIVE" struktur
+  `detailTax` untuk endpoint ini sendiri BELUM berubah (masih perlu
+  konfirmasi resmi Accurate Support khusus `purchase-payment/save.do`
+  kalau retest client masih gagal setelah fix ini).
 
 ## Ringkasan Hasil
 Fix PPh23 yang sudah dikonfirmasi resmi untuk Sales Receipt (Fase 99)

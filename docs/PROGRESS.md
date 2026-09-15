@@ -2868,3 +2868,34 @@ list, dialog detail, DAN PDF hasil download semua menampilkan "Data
 Usaha: FAC Institute" + "Facport · Penjualan · Sales Receipt (Customer
 Receipt)" dengan benar. Detail lengkap →
 `docs/phases/phase-118-keterangan-produk-invoice.md`.
+
+## Update 2026-09-15 — Fix Lanjutan PPh23 Sales Receipt/Purchase Payment (Bukan Fase Baru — Tindak Lanjut Fase 99/100)
+User forward jawaban Accurate Support (ulang, sumber yang sama dipakai
+Fase 99) minta evaluasi ulang karena retest client kemarin masih gagal
+("PPh-nya salah/kosong"). Investigasi ulang membuktikan struktur payload
+Fase 99/100 (`detailTax` di root, `paidPph`/`pphNumber` di
+`detailInvoice`) SUDAH BENAR — dicek baris-per-baris terhadap contoh
+resmi, cocok persis. Sempat curiga `pphNumber` harus dikirim sebagai
+angka (bukan string) berdasar contoh JSON yang tidak diberi tanda kutip
+— **hipotesis ini DIBUKTIKAN SALAH** setelah cek `accurate-openapi.json`
+resmi (`pphNumber` memang type `string`, contoh spec-nya sendiri teks
+bebas "Halo Semua 123").
+
+Root cause sebenarnya: `findTaxByIdentifier` (resolve kolom Excel "Tax
+ID" ke id numerik Accurate) mencari ke SELURUH Master Data Pajak
+(PPh15/21/22/23/PS4/PPN/PPNBM sekaligus) TANPA filter jenis pajak — bisa
+salah cocok ke record BUKAN PPh23 kalau kode/deskripsi kebetulan sama,
+mengirim `taxId` salah jenis TANPA error. Fix: filter
+`taxType === "PPH23"` sebelum matching. 6 unit test baru mengunci
+perilaku ini (fungsi ini sebelumnya 0 test coverage). Sekalian dibetulkan
+teks deskripsi kolom "Paid PPH" yang kontradiktif di template guide
+(sisa kesimpulan Fase 85 yang sudah terbukti salah sejak Fase 99, tidak
+pernah diupdate).
+
+Typecheck 0 error, test 788 pass/0 fail (6 baru), lint 0 error, security
+review 0 temuan. Dicatat sebagai tindak lanjut Fase 99/100 (bukan fase
+baru — memperbaiki bug yang sama, bukan scope baru), lengkap di
+`docs/lessons-learned.md` 2026-09-15 dan
+`docs/architecture/architecture-sales-receipt.md` § "Update 2026-09-15".
+**Masih menunggu retest client berikutnya untuk konfirmasi akhir** —
+tidak ada akses test call nyata ke akun Accurate client di sesi ini.

@@ -91,6 +91,11 @@ Kesalahan di percobaan sebelumnya: `detailTax` dikirim NESTED di dalam
   client retest 1x dengan PPh23 sungguhan setelah deploy, untuk
   konfirmasi akhir bahwa potongan PPh benar-benar muncul di Accurate
   (bukan cuma `s: true` tanpa error seperti 4 percobaan sebelumnya).
+  **✅ Update 2026-09-15**: retest itu akhirnya dilakukan — struktur
+  payload fase ini TERBUKTI BENAR, TAPI ditemukan bug LAIN
+  (`findTaxByIdentifier` salah cocok ke record pajak jenis lain, § lessons-learned.md
+  2026-09-15 dan `architecture-sales-receipt.md` § "Update 2026-09-15").
+  Fase ini sendiri TIDAK perlu diubah — perbaikannya di file terpisah.
 - Kolom "Tax Amount" sekarang WAJIB diisi MANUAL oleh user (dihitung
   sendiri dari persentase PPh23 × nilai faktur) — BEDA dari ekspektasi
   awal (dikira auto-hitung seperti UI Accurate). Kalau user salah
