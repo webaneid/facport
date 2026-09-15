@@ -126,6 +126,13 @@
 | 116  | Fitur "Promo" di /pilih-usaha (Tabel Baru + Admin CRUD) | Done | `docs/architecture/architecture-promo.md` | `docs/phases/phase-116-fitur-promo-pilih-usaha.md` |
 | 117  | Peta Struktur Produk: Facport sebagai Super-App (Facport + Konverter + AutoProduksi) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-117-peta-struktur-multi-produk.md` |
 | 118  | Keterangan Produk/Data Usaha/Modul/Sub-Modul di Invoice | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-118-keterangan-produk-invoice.md` |
+| 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Done | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
+| 120  | Modul Purchase Order (Pesanan Pembelian) | Done | `docs/architecture/architecture-purchase-order.md` | `docs/phases/phase-120-modul-purchase-order.md` |
+| 121  | Modul Receive Item (Penerimaan Barang) | Done | `docs/architecture/architecture-receive-item.md` | `docs/phases/phase-121-modul-receive-item.md` |
+| 122  | Modul Purchase Return (Retur Pembelian) | Done | `docs/architecture/architecture-purchase-return.md` | `docs/phases/phase-122-modul-purchase-return.md` |
+| 123  | Modul Sales Quotation (Penawaran Harga) | Done | `docs/architecture/architecture-sales-quotation.md` | `docs/phases/phase-123-modul-sales-quotation.md` |
+| 124  | Modul Sales Return (Retur Penjualan) | Done | `docs/architecture/architecture-sales-return.md` | `docs/phases/phase-124-modul-sales-return.md` |
+| 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -2899,3 +2906,257 @@ baru — memperbaiki bug yang sama, bukan scope baru), lengkap di
 `docs/architecture/architecture-sales-receipt.md` § "Update 2026-09-15".
 **Masih menunggu retest client berikutnya untuk konfirmasi akhir** —
 tidak ada akses test call nyata ke akun Accurate client di sesi ini.
+
+## Update 2026-09-15 — Fase 119 Planned: Arsitektur 5 Sub-Modul Baru (Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return)
+Client siapkan panduan Excel per-modul (`docs/referencehtml/facport/developmen-15-september-2026.xlsx`,
+**gitignored, dikonfirmasi ulang sebelum dibuka**) untuk 5 sub-modul
+baru — melengkapi 5 dari 15 modul tersisa dari 21 katalog Accurate.
+Riset silang kolom Excel client terhadap spec resmi Accurate
+(`accurate-openapi.json`, `/api/{purchase-order,receive-item,purchase-return,
+sales-quotation,sales-return}/save.do`) menghasilkan 5 architecture doc
+lengkap (field mapping, struktur `detailItem[]`/`detailExpense[]`,
+keputusan auto-create vendor/customer/item per modul, grouping
+multi-baris).
+
+Temuan kunci: Receive Item punya kunci grouping BEDA dari modul lain
+(`receiveNumber` — nomor surat jalan vendor, REQUIRED — bukan `number`
+yang opsional seperti modul lain). Purchase Return & Sales Return
+punya `returnType` enum yang menentukan dokumen acuan — **2 keputusan
+scope butuh konfirmasi user**: Purchase Return `INVOICE_DP` tidak
+didukung, Sales Return `DELIVERY`+`INVOICE_DP` tidak didukung (Facport
+tidak punya modul Delivery Order sama sekali). Sales Order (kelanjutan
+Sales Quotation) sengaja belum masuk scope — client belum siapkan
+panduannya.
+
+Fase ini MURNI dokumentasi — 0 kode diubah, eksekusi tiap modul jadi
+fase terpisah nanti (pola "satu-satu" konsisten Fase 33-35). Status
+"Planned", menunggu konfirmasi user atas keputusan scope sebelum ditutup
+"Done". Detail lengkap →
+`docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.
+
+## Update 2026-09-15 — Fase 119 Done: Koreksi & Klarifikasi Scope
+2 klarifikasi penting dari user menutup Fase 119:
+
+1. **"Custom Character/Number/Date" TERNYATA SUDAH terjawab** — sempat
+   didokumentasikan sebagai "tidak ada di API" (absen dari OpenAPI spec
+   resmi kelima endpoint baru). User koreksi: mekanisme ini SUDAH
+   dipecahkan tuntas saat membangun Purchase Invoice/Sales Invoice
+   (Fase 64/71-73) lewat tiket resmi Accurate Support #357901, yang
+   eksplisit menyatakan field ini **konsisten lintas jenis transaksi**.
+   Field resmi: Header `charField1-10`/`numericField1-10`/`dateField1-2`;
+   Item field sama (Karakter sampai 15 slot). Ke-5 architecture doc
+   diupdate dari "skip" jadi "dikonfirmasi", draf pertanyaan baru ke
+   Accurate Support yang sudah disiapkan jadi tidak diperlukan lagi.
+2. **Prinsip scope Facport diklarifikasi eksplisit**: cakupan TIDAK
+   terpaku ke modul yang sudah dibangun dari awal — kalau client butuh
+   sesuatu dan Accurate Online API mendukungnya, itu akan dikerjakan
+   (dikonsultasikan ke Accurate Support kalau ada kesulitan). Ditemukan
+   Accurate PUNYA endpoint resmi untuk "Invoice DP"
+   (`create-down-payment.do`) dan modul "Delivery Order" penuh — 2
+   kemampuan yang sempat ditulis "tidak didukung Facport sama sekali"
+   dikoreksi jadi "belum jadi prioritas sekarang, bisa ditambahkan kapan
+   pun client butuh" (bukan batas teknis permanen).
+
+Sales Order dikonfirmasi memang belum disiapkan panduannya oleh user
+(bukan salah paham) — tetap di luar scope fase ini. Detail lengkap →
+`docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md`.
+
+## Update 2026-09-15 — Fase 120 Done: Modul Purchase Order (Pesanan Pembelian)
+Modul pertama dari 5 sub-modul yang direncanakan Fase 119 dieksekusi
+penuh, mengikuti pola per-fase eksekusi→test→push-develop (batch release
+di akhir). Mirror terdekat: Purchase Invoice — auto-create vendor+item,
+`detailItem[]`+`detailExpense[]`, Atribut Tambahan level ITEM (charField/
+numericField/dateField, sudah dikonfirmasi resmi Accurate Support di
+Fase 119). Beda dari Purchase Invoice: grouping MURNI by `number` (Trans
+No WAJIB sejak awal, tidak ada fallback Bill No seperti retrofit Fase
+81), dan TIDAK ADA endpoint "Batal Import" (PO bukan transaksi akuntansi,
+tidak ada jurnal GL, 2 PO nominal sama bukan duplikat).
+
+Cakupan: mapping+service+route+worker integration+registrasi module key
+di 4 titik (module-catalog, accurate-scopes, plans.route.ts literal
+union, app.ts)+UI frontend lengkap (import/detail/riwayat/edit-row/
+delete). OAuth scope dikoreksi sendiri jadi HANYA `purchase_order_save`
+(tanpa `_view` terpisah) setelah cek ulang `security` block OpenAPI
+spec. 52 test baru (32 unit + 20 integrasi), 840 test total pass,
+typecheck+lint bersih, security review 0 temuan.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/purchase-order/save.do` (tidak ada kredensial Accurate live di
+sesi ini) — perlu 1x verifikasi sebelum rollout penuh ke customer,
+sesuai rekomendasi `architecture-purchase-order.md`. Detail lengkap →
+`docs/phases/phase-120-modul-purchase-order.md`.
+
+## Update 2026-09-15 — fix: `branchName` kelupaan di `requiredFields` Purchase Order (Fase 120)
+Ditemukan saat memulai eksekusi Fase 121: `architecture-purchase-order.md`
+§ "Branch Wajib" eksplisit mewajibkan `branchName` (preseden Fase 90),
+frontend (`edit-row-dialog.tsx`) sudah benar menganggapnya wajib, TAPI
+`purchaseOrderMapping.requiredFields` (sumber validasi SERVER)
+kelupaan menyertakannya — upload tanpa Branch Name lolos validasi awal,
+baru berpotensi gagal belakangan untuk company multi-cabang. Diperbaiki
+SEBELUM sempat rilis ke `main` (masih di `develop`, batching release).
+Detail: `docs/lessons-learned.md` 2026-09-15.
+
+## Update 2026-09-15 — Fase 121 Done: Modul Receive Item (Penerimaan Barang)
+Modul ke-2 dari 5 sub-modul Fase 119, dieksekusi mengikuti pola SOP yang
+sama (rencana→eksekusi→test→security review→tutup fase). BEDA
+STRUKTURAL dari Purchase Order: TIDAK auto-create vendor/item (dokumen
+LANJUTAN dalam rantai procurement, vendorNo/itemNo dikirim apa adanya —
+mirror Purchase Payment), grouping by `receiveNumber` (nomor surat jalan
+VENDOR, BUKAN `number` internal Accurate seperti modul lain), TIDAK ada
+`detailExpense[]` sama sekali, dan Atribut Tambahan diminta di KEDUA
+level (header DAN item — Purchase Order cuma level item).
+
+2 keputusan scope dikonfirmasi user sebelum eksekusi: (1) kolom
+`ITEM: Purchase Order No` ditambahkan sebagai field OPSIONAL walau tidak
+diminta di Excel client (menutup rantai PO→Receive Item), (2) "ITEM:
+Description" di-map ke `detailNotes` bukan `detailName` (diinferensi
+dari struktur Excel client sendiri — kolom "Item Name" terpisah sudah
+ada). Scope OAuth minimal: `receive_item_save` + `data_classification_*`
+saja, TANPA `vendor_save`/`item_save`.
+
+45 test baru (25 unit + 20 integrasi), 885 test total pass, typecheck+
+lint bersih, security review 0 temuan — termasuk verifikasi khusus bahwa
+`requiredFields` (memuat `branchName` sejak awal, pelajaran Fase 120 di
+atas) konsisten di endpoint confirm/edit-row/edit-bulk.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/receive-item/save.do`, dan mapping "ITEM: Description" →
+`detailNotes` adalah inferensi dari struktur Excel (bukan hasil test
+call) — keduanya perlu 1x verifikasi nyata sebelum rollout penuh. Detail
+lengkap → `docs/phases/phase-121-modul-receive-item.md`.
+
+## Update 2026-09-15 — Fase 122 Done: Modul Purchase Return (Retur Pembelian)
+Modul ke-3 dari 5 sub-modul Fase 119. Sebelum eksekusi, user mengoreksi
+keputusan scope draf Fase 119 yang sempat menolak `returnType:
+INVOICE_DP` — dikonfirmasi SEMUA 4 nilai (`INVOICE`/`INVOICE_DP`/
+`RECEIVE`/`NO_INVOICE`) didukung, konsisten prinsip "kalau Accurate API
+mendukung dan bisa dikembangkan, bangun" (INVOICE_DP cuma butuh
+`invoiceNumber`, field yang sama dengan INVOICE — Facport tidak perlu
+membangun konsep "Invoice DP" sendiri).
+
+Saat eksekusi, ditemukan 2 kesalahan dokumentasi Fase 119: kolom Excel
+"Item Warehouse" dan "Expense Project" ternyata TIDAK punya field API
+sama sekali di endpoint `purchase-return/save.do` (dikonfirmasi
+`accurate-openapi.json`) — salah satunya (Item Warehouse) sebelumnya
+malah diklaim architecture doc "tidak ada di Excel client", padahal ADA.
+Kedua kolom dibiarkan tidak terpetakan (tidak ada field tujuan yang
+valid), didokumentasikan jelas di architecture doc + phase doc.
+
+Kompleksitas utama modul ini: validasi `returnType` per-baris
+(`returnTypeRowError`, mirror pola `debitCreditRowError` Journal
+Voucher) — worker jadi gerbang otoritatif final, WAJIB lolos validasi
+SEBELUM payload dikirim ke Accurate, di setiap eksekusi (bukan cuma saat
+user edit baris gagal). Security review eksplisit memverifikasi tidak
+ada jalur bypass ke Accurate dengan Return Type invalid.
+
+59 test baru (38 unit + 21 integrasi), 944 test total pass, typecheck+
+lint bersih, security review 0 temuan.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/purchase-return/save.do` — termasuk asumsi `detailExpense: []`
+diterima Accurate dan kombinasi `INVOICE_DP` dengan nomor Faktur
+Pembelian Uang Muka sungguhan. Detail lengkap →
+`docs/phases/phase-122-modul-purchase-return.md`.
+
+## Update 2026-09-15 — Fase 123 Done: Modul Sales Quotation (Penawaran Harga)
+Modul ke-4 dari 5 sub-modul Fase 119, dokumen PALING AWAL rantai
+penjualan (analog Purchase Order di rantai pembelian) — mirror Sales
+Invoice (auto-create Customer+Item) tapi pola CREATE-ONLY seperti
+Purchase Order (bukan findExisting/append) karena Sales Quotation tidak
+punya dampak GL/stok, jadi tidak relevan bicara "faktur existing".
+
+Keunikan modul ini: field `salesmanListNumber` bertipe ARRAY of string
+di API (Excel client cuma 1 kolom "Item Salesman No" → dipetakan array
+1-elemen, tanpa parsing multi-value, sesuai rekomendasi architecture
+doc), dan Atribut Tambahan didukung di KEDUA level header+item (beda
+dari Purchase Order yang cuma level item). Ditemukan & dikoreksi 1
+kesalahan dokumentasi Fase 119 lagi — kolom Excel "Expense Project No"
+ternyata tidak punya field API di endpoint ini (pola sama seperti
+"Expense Project" Purchase Return sebelumnya).
+
+53 test baru (33 unit + 20 integrasi), 997 test total pass, typecheck+
+lint bersih, security review 0 temuan (termasuk verifikasi tenant
+isolation auto-create customer/item).
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/sales-quotation/save.do` — termasuk `salesmanListNumber` array,
+Atribut Tambahan dua level, dan `rate` (kurs asing, tidak terlihat di
+schema resmi level root). Sales Order (kelanjutan alami modul ini)
+masih di luar scope, client belum siapkan panduannya. Detail lengkap →
+`docs/phases/phase-123-modul-sales-quotation.md`.
+
+## Update 2026-09-15 — Fase 124 Done: Modul Sales Return (Retur Penjualan) — TERAKHIR dari 5 Sub-Modul Fase 119
+Modul TERAKHIR dari batch 5 sub-modul Fase 119. Sebelum eksekusi, user
+mengonfirmasi lagi koreksi scope seperti Purchase Return: SEMUA 4 nilai
+`returnType` (`DELIVERY`, `INVOICE`, `INVOICE_DP`, `NO_INVOICE`)
+didukung — draf awal Fase 119 sempat menolak `DELIVERY` (Facport tidak
+punya/berencana punya modul Delivery Order) dan `INVOICE_DP`, dikoreksi
+dengan alasan sama seperti Purchase Return: Facport tidak perlu
+MEMBANGUN dokumen acuan untuk bisa MEREFERENSIKAN nomornya.
+
+2 perbedaan struktural dari Purchase Return (bukan mirror persis):
+`returnStatusType` (status dokumen) vs `returnDetailStatusType` (status
+per-baris) sebagai 2 field internal terpisah biar tidak ketuker, dan
+`detailSerialNumber[]` — struktur NESTED 2 LEVEL pertama di codebase ini
+(tracking barang bernomor seri, syarat minimal serialNumberNo+quantity
+sama-sama terisi).
+
+55 test baru (34 unit + 21 integrasi), 1052 test total pass, typecheck+
+lint bersih, security review 0 temuan (termasuk verifikasi khusus
+isolasi data nested `detailSerialNumber[]` per-baris).
+
+**Dengan ini, kelima sub-modul Fase 119 SELESAI dieksekusi**: Purchase
+Order (Fase 120), Receive Item (Fase 121), Purchase Return (Fase 122),
+Sales Quotation (Fase 123), Sales Return (Fase 124) — semua di `develop`,
+belum dirilis ke `main` (batching, menunggu keputusan user kapan rilis
+bersamaan). Detail lengkap → `docs/phases/phase-124-modul-sales-return.md`.
+
+## Update 2026-09-15 — Fase 125 Done: Fix Privilege Escalation di DELETE Riwayat Import (Semua 12 Modul)
+User minta audit arsitektur hierarki akun utama (owner) vs akun
+tambahan (member/seat) terhadap 3 ekspektasi: (1) hanya owner bisa beli
+produk/tambah akun, (2) member tidak bisa hapus hasil uploadnya sendiri,
+(3) owner bisa lihat semua riwayat upload timnya. Audit (fork subagent,
+read-only) menemukan gap NYATA di poin 2 — lebih serius dari dugaan:
+endpoint DELETE `/*/import/:batchId` di SEMUA 12 modul import cuma cek
+`subscriptionId` sama, TIDAK cek pemilik Data Usaha sebenarnya — member
+MANAPUN bisa hapus batch SIAPA SAJA di Data Usaha yang sama (bukan
+cuma tidak bisa hapus miliknya sendiri).
+
+Diperbaiki di 12 file `*-import.route.ts` sekaligus: tambah
+`ownsDataUsaha(user.id, subscription.dataUsahaId)` check (fungsi
+EXISTING, sama yang dipakai checkout/invite — bukan reimplementasi
+baru) SEBELUM audit log + delete actual, kode error 403
+`DELETE_OWNER_ONLY`. 14 test baru (12 fix + 2 regresi untuk
+purchase-invoice/sales-invoice yang ternyata TIDAK PUNYA test DELETE
+sama sekali sebelumnya — gap coverage lama ditemukan sekalian).
+
+Poin 1 (owner-only checkout/invite) dan verifikasi menu
+Berlangganan/Kelola Tim (`ownerOnly: true` di sidebar, dihitung per
+KONTEKS Data Usaha AKTIF via `GET /me/data-usaha`, bukan flag global 1
+user — dikonfirmasi PERSIS skenario user: member di Data Usaha A bisa
+jadi owner penuh di Data Usaha B miliknya sendiri) dikonfirmasi SUDAH
+BENAR tanpa perlu perubahan kode.
+
+**Update 2026-09-15 (sesi sama) — Poin 3 JUGA diperbaiki**: arsip
+gabungan `GET /me/import-batches` (dipakai dashboard + `/import/arsip`)
+sebelumnya di-scope `userId` (cuma lihat upload sendiri) — diganti
+MURNI `subscriptions.dataUsahaId`, konsisten pola riwayat per-modul
+yang sudah benar. Response tambah `uploadedByName`/`uploadedByYou`.
+Frontend: kolom "Diupload oleh" baru + tombol Delete di-gate
+`isDataUsahaOwner` (kosmetik, backend `DELETE_OWNER_ONLY` tetap gerbang
+sesungguhnya) supaya member yang sekarang lihat upload orang lain tidak
+disodori tombol yang bakal 403. Security review lanjutan 0 temuan.
+
+**Update 2026-09-15 (sesi sama) — 12 halaman Riwayat per-modul JUGA
+dibereskan**: Context baru `apps/web/lib/use-data-usaha-owner.tsx`
+(`DataUsahaOwnerProvider`/`useIsDataUsahaOwner()`) — expose ulang nilai
+`isDataUsahaOwner` yang sudah dihitung server-side di `layout.tsx`
+lewat Context (TANPA fetch ulang), dipasang sekali di `AppShell`.
+Semua 12 `{modul}/import/riwayat/page.tsx` sekarang gate tombol Delete
+dengan `isOwner &&`, konsisten dengan Arsip gabungan/dashboard. Selain
+typecheck+lint (0 error), diverifikasi LANGSUNG di browser: seed Data
+Usaha + owner + member seat di dev DB, login kedua akun, konfirmasi
+tombol Delete tampil untuk owner dan hilang untuk member (data QA
+dibersihkan lagi setelahnya). Ketiga poin audit user + follow-up UX-nya
+kini SELESAI ditindaklanjuti. Detail lengkap →
+`docs/phases/phase-125-fix-delete-owner-only.md`.

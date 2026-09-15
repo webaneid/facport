@@ -96,6 +96,43 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // disertakan dari awal (§ pelajaran Fase 98: jangan tambah field
   // Kategori Keuangan tanpa scope pendukungnya).
   other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  // § Fase 120, architecture-purchase-order.md — mirror Purchase Invoice
+  // (auto-create vendor+item, § Fase 05/78): `vendor_view`/`vendor_save`
+  // untuk findOrCreateVendor, `item_save` untuk findOrCreateItem (baseline
+  // `item_view` selalu ada, § scopesForModules), `data_classification_*`
+  // untuk Kategori Keuangan (dataClassificationNName).
+  // § dikonfirmasi dari `accurate-openapi.json` security requirement
+  // `/api/purchase-order/save.do` — HANYA `purchase_order_save` (TIDAK
+  // ada `purchase_order_view` terpisah, beda dari modul lain yang
+  // security block-nya minta scope _view juga untuk save.do).
+  purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 121, architecture-receive-item.md — TIDAK auto-create
+  // vendor/item (dokumen LANJUTAN, vendorNo/itemNo dikirim apa adanya,
+  // mirror Purchase Payment) — jadi TIDAK butuh vendor_view/vendor_save/
+  // item_save (baseline `item_view` selalu ada, § scopesForModules).
+  // `data_classification_view`/`_save` tetap untuk Kategori Keuangan
+  // item-level (dataClassificationNName). `receive_item_save` HANYA
+  // (tanpa `_view` terpisah), dikonfirmasi OpenAPI security block —
+  // sama pola Purchase Order.
+  receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 122, architecture-purchase-return.md — TIDAK auto-create
+  // vendor/item (dokumen LANJUTAN, mirror Receive Item). `_view` HANYA
+  // dari baseline `item_view` (§ scopesForModules). `purchase_return_save`
+  // HANYA (tanpa `_view` terpisah, dikonfirmasi OpenAPI security block).
+  purchase_return: ["purchase_return_save", "data_classification_view", "data_classification_save"],
+  // § Fase 123, architecture-sales-quotation.md — mirror Sales Invoice
+  // (auto-create customer+item): `customer_view`/`customer_save` untuk
+  // findOrCreateCustomer, `item_save` untuk findOrCreateItem (baseline
+  // `item_view` selalu ada), `data_classification_*` untuk Kategori
+  // Keuangan. `sales_quotation_save` HANYA (tanpa `_view` terpisah,
+  // dikonfirmasi OpenAPI security block).
+  sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 124, architecture-sales-return.md — TIDAK auto-create
+  // customer/item (dokumen LANJUTAN, mirror Purchase Return). `_view`
+  // HANYA dari baseline `item_view` (§ scopesForModules).
+  // `sales_return_save` HANYA (tanpa `_view` terpisah, dikonfirmasi
+  // OpenAPI security block).
+  sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

@@ -17,6 +17,7 @@ import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/imp
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/riwayat/page.tsx`.
 type ImportBatch = { id: string; fileName: string; status: string; totalRows: number; createdAt: string };
@@ -25,6 +26,7 @@ const PAGE_SIZE = 20;
 
 export default function SalesInvoiceImportArchivePage() {
   const companyTimezone = useCompanyTimezone();
+  const isOwner = useIsDataUsahaOwner();
   const [batches, setBatches] = useState<ImportBatch[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -89,7 +91,7 @@ export default function SalesInvoiceImportArchivePage() {
                             <Eye className="h-4 w-4" />
                           </Link>
                           {CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} onCancelled={load} />}
-                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <DeleteImportDialog batch={batch} onDeleted={load} />}
+                          {isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <DeleteImportDialog batch={batch} onDeleted={load} />}
                         </div>
                       </TableCell>
                     </TableRow>

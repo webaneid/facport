@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, inArray, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
+import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
 import { ownsDataUsaha, hasAccessToDataUsaha } from "../lib/data-usaha";
@@ -285,23 +285,33 @@ export const meRoute = new Elysia()
       }
       const limit = query.limit ?? 10;
       const offset = query.offset ?? 0;
-      const where = and(eq(importBatches.userId, user.id), eq(subscriptions.dataUsahaId, query.dataUsahaId));
-      const [batches, totalRows] = await Promise.all([
+      // § Fase 125 poin 3 (2026-09-15) — SEBELUM ini di-scope
+      // `importBatches.userId === user.id` (cuma lihat upload sendiri) —
+      // DIPERBAIKI jadi scope MURNI per Data Usaha (siapa pun yang
+      // upload, asal Data Usaha sama), konsisten pola riwayat per-modul
+      // (`GET /{modul}/import`) yang sudah benar sejak awal. Akses SUDAH
+      // digerbang `hasAccessToDataUsaha` di atas (owner ATAU member aktif)
+      // — begitu lolos gerbang itu, semua upload Data Usaha ini SATU
+      // riwayat bersama (owner bisa lihat punya semua anggota tim, bukan
+      // cuma uploadnya sendiri), bukan riwayat pribadi per-user.
+      const where = eq(subscriptions.dataUsahaId, query.dataUsahaId);
+      const [rows, totalRows] = await Promise.all([
         db
-          .select({ importBatches })
+          .select({ importBatches, uploadedByName: userTable.name })
           .from(importBatches)
           .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+          .innerJoin(userTable, eq(importBatches.userId, userTable.id))
           .where(where)
           .orderBy(desc(importBatches.createdAt))
           .limit(limit)
-          .offset(offset)
-          .then((rows) => rows.map((r) => r.importBatches)),
+          .offset(offset),
         db
           .select({ total: count() })
           .from(importBatches)
           .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
           .where(where),
       ]);
+      const batches = rows.map((r) => ({ ...r.importBatches, uploadedByName: r.uploadedByName, uploadedByYou: r.importBatches.userId === user.id }));
       return { batches, total: totalRows[0]?.total ?? 0 };
     },
     {

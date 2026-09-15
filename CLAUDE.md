@@ -138,6 +138,11 @@ untuk task kecil, itu justru lebih mahal token.
 | Modul Purchase Payment (Pembayaran Pembelian) | `docs/architecture/architecture-purchase-payment.md` |
 | Modul Sales Receipt (Penerimaan Penjualan) | `docs/architecture/architecture-sales-receipt.md` |
 | Modul Jurnal Umum (Journal Voucher) | `docs/architecture/architecture-journal-voucher.md` |
+| Modul Purchase Order (Pesanan Pembelian) | `docs/architecture/architecture-purchase-order.md` |
+| Modul Receive Item (Penerimaan Barang) | `docs/architecture/architecture-receive-item.md` |
+| Modul Purchase Return (Retur Pembelian) | `docs/architecture/architecture-purchase-return.md` |
+| Modul Sales Quotation (Penawaran Harga) | `docs/architecture/architecture-sales-quotation.md` |
+| Modul Sales Return (Retur Penjualan) | `docs/architecture/architecture-sales-return.md` |
 | Model langganan, paket, gating akses modul | `docs/architecture/architecture-subscription.md` |
 | User tambahan (seat), multi-instance modul, batas device, transfer kepemilikan Data Usaha | `docs/architecture/architecture-user-tambahan.md` |
 | Routing 3 surface (landing/admin/app), subdomain | `docs/architecture/architecture-domain-routing.md` |

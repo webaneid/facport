@@ -76,7 +76,7 @@ function RetentionNotice({ retentionDays }: { retentionDays: number | null }) {
 // — SEBELUM ini halaman fetch tanpa scoping Data Usaha sama sekali (bug,
 // arsip menampilkan import dari SEMUA Data Usaha milik user, lihat
 // `docs/phases/phase-113-scoping-data-usaha-dashboard.md`).
-export function ImportArchiveView({ dataUsahaId }: { dataUsahaId: string }) {
+export function ImportArchiveView({ dataUsahaId, isDataUsahaOwner }: { dataUsahaId: string; isDataUsahaOwner: boolean }) {
   const companyTimezone = useCompanyTimezone();
   const [batches, setBatches] = useState<UnifiedImportBatch[] | null>(null);
   const [total, setTotal] = useState(0);
@@ -114,7 +114,14 @@ export function ImportArchiveView({ dataUsahaId }: { dataUsahaId: string }) {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Arsip Import" description="Semua import kamu, dari semua fitur, termasuk yang lebih lama." />
+      <PageHeader
+        title="Arsip Import"
+        description={
+          isDataUsahaOwner
+            ? "Semua import di Data Usaha ini, dari semua fitur dan anggota tim, termasuk yang lebih lama."
+            : "Semua import di Data Usaha ini, dari semua fitur, termasuk yang lebih lama."
+        }
+      />
 
       <RetentionNotice retentionDays={retentionDays} />
 
@@ -130,7 +137,7 @@ export function ImportArchiveView({ dataUsahaId }: { dataUsahaId: string }) {
             <EmptyState icon={Inbox} title="Belum ada riwayat import" />
           ) : (
             <>
-              <ImportBatchTable batches={batches} onChanged={load} timezone={companyTimezone} />
+              <ImportBatchTable batches={batches} onChanged={load} timezone={companyTimezone} isDataUsahaOwner={isDataUsahaOwner} />
               <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
             </>
           )}

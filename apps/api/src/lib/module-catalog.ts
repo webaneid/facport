@@ -30,6 +30,21 @@ export const MODULE_CATALOG = [
   { key: "journal_voucher", label: "Jurnal Umum", productLine: "facport", category: "Buku Besar" },
   { key: "vendor_payable_account", label: "Akun Hutang Pemasok", productLine: "facport", category: "Data Master" },
   { key: "other_payment", label: "Other Payment (Pembayaran Bank/Kas)", productLine: "facport", category: "Kas & Bank" },
+  // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
+  // yang direncanakan Fase 119 (architecture-purchase-order.md).
+  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Pembelian" },
+  // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru
+  // (architecture-receive-item.md).
+  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Pembelian" },
+  // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
+  // (architecture-purchase-return.md).
+  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Pembelian" },
+  // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
+  // (architecture-sales-quotation.md).
+  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Penjualan" },
+  // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul baru
+  // (architecture-sales-return.md).
+  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Penjualan" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];

@@ -17,6 +17,7 @@ import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/imp
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 // § Fase 09, ADR-0013 — halaman arsip SEMUA batch import (dashboard cuma
 // tampil 5 terakhir, § app/(protected)/page.tsx). Kolom aksi icon SVG
@@ -29,6 +30,7 @@ const PAGE_SIZE = 20;
 
 export default function PurchaseInvoiceImportArchivePage() {
   const companyTimezone = useCompanyTimezone();
+  const isOwner = useIsDataUsahaOwner();
   const [batches, setBatches] = useState<ImportBatch[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -100,7 +102,7 @@ export default function PurchaseInvoiceImportArchivePage() {
                           {CANCELLABLE_BATCH_STATUS.has(batch.status) && (
                             <CancelImportDialog batch={batch} onCancelled={load} />
                           )}
-                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
+                          {isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
                             <DeleteImportDialog batch={batch} onDeleted={load} />
                           )}
                         </div>

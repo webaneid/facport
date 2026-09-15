@@ -558,7 +558,7 @@ describe("GET /me/import-batches", () => {
     expect(res.status).toBe(422);
   });
 
-  test("gabungan lintas modul, urut terbaru dulu, TIDAK termasuk batch user lain, `total` hitungan penuh", async () => {
+  test("gabungan lintas modul, urut terbaru dulu, TIDAK termasuk batch Data Usaha LAIN, `total` hitungan penuh", async () => {
     const userId = await signUp(`me-batches-owner-${runId}@test.local`);
     const cookie = await signIn(`me-batches-owner-${runId}@test.local`);
     const otherUserId = await signUp(`me-batches-other-${runId}@test.local`);
@@ -639,5 +639,50 @@ describe("GET /me/import-batches", () => {
     const bodyB = (await resB.json()) as { batches: { fileName: string }[]; total: number };
     expect(bodyB.batches.map((b) => b.fileName)).toEqual(["du-b.xlsx"]);
     expect(bodyB.total).toBe(1);
+  });
+
+  // § Fase 125 poin 3 (2026-09-15) — INI PERBAIKAN UTAMA: sebelumnya
+  // endpoint ini di-scope `importBatches.userId === user.id` (cuma lihat
+  // upload sendiri, walau sudah scoped `dataUsahaId` yang benar) — owner
+  // TIDAK BISA lihat upload anggota tim-nya sama sekali. Test ini
+  // memverifikasi SIMETRIS: owner lihat upload member, DAN member lihat
+  // upload owner + member lain — semua dalam 1 Data Usaha yang sama.
+  test("owner BISA lihat upload MEMBER, dan member BISA lihat upload owner + member lain (riwayat bersama 1 Data Usaha)", async () => {
+    const ownerId = await signUp(`me-batches-shared-owner-${runId}@test.local`);
+    const ownerCookie = await signIn(`me-batches-shared-owner-${runId}@test.local`);
+
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Me Batches Shared Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId: ownerId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
+      .returning();
+
+    const memberId = await signUp(`me-batches-shared-member-${runId}@test.local`);
+    const memberCookie = await signIn(`me-batches-shared-member-${runId}@test.local`);
+    const seatId = await createTestSeat(ownerId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    await db.insert(importBatches).values({ userId: ownerId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "upload-owner.xlsx", totalRows: 1, status: "completed" });
+    await db.insert(importBatches).values({ userId: memberId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "upload-member.xlsx", totalRows: 1, status: "completed" });
+
+    const ownerRes = await testApp.handle(new Request(`http://localhost/me/import-batches?dataUsahaId=${dataUsahaId}`, { headers: { cookie: ownerCookie } }));
+    const ownerBody = (await ownerRes.json()) as { batches: { fileName: string; uploadedByName: string; uploadedByYou: boolean }[]; total: number };
+    expect(ownerBody.total).toBe(2);
+    expect(ownerBody.batches.map((b) => b.fileName).sort()).toEqual(["upload-member.xlsx", "upload-owner.xlsx"]);
+    const ownerUploadFromOwnerView = ownerBody.batches.find((b) => b.fileName === "upload-owner.xlsx")!;
+    expect(ownerUploadFromOwnerView.uploadedByYou).toBe(true);
+    const memberUploadFromOwnerView = ownerBody.batches.find((b) => b.fileName === "upload-member.xlsx")!;
+    expect(memberUploadFromOwnerView.uploadedByYou).toBe(false);
+
+    const memberRes = await testApp.handle(new Request(`http://localhost/me/import-batches?dataUsahaId=${dataUsahaId}`, { headers: { cookie: memberCookie } }));
+    const memberBody = (await memberRes.json()) as { batches: { fileName: string; uploadedByYou: boolean }[]; total: number };
+    expect(memberBody.total).toBe(2);
+    expect(memberBody.batches.map((b) => b.fileName).sort()).toEqual(["upload-member.xlsx", "upload-owner.xlsx"]);
+    const memberUploadFromMemberView = memberBody.batches.find((b) => b.fileName === "upload-member.xlsx")!;
+    expect(memberUploadFromMemberView.uploadedByYou).toBe(true);
   });
 });
