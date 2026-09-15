@@ -1,3 +1,10 @@
+## 2.2.0 (2026-09-15)
+
+* docs+feat: peta struktur produk multi-brand Facport/Konverter/AutoProduksi (Fase 117, ADR-0033) ([7feae80](https://github.com/webaneid/facport/commit/7feae80))
+* Merge pull request #60 from webaneid/develop ([4169796](https://github.com/webaneid/facport/commit/4169796)), closes [#60](https://github.com/webaneid/facport/issues/60)
+* fix(accurate): PPh23 Sales Receipt/Purchase Payment salah cocok jenis pajak ([a894f63](https://github.com/webaneid/facport/commit/a894f63))
+* feat(invoice): tampilkan Data Usaha + Produk/Modul/Sub-modul di admin panel & PDF (Fase 118) ([03a468c](https://github.com/webaneid/facport/commit/03a468c))
+
 ## 2.1.0 (2026-09-14)
 
 * Merge pull request #59 from webaneid/develop ([cefa93b](https://github.com/webaneid/facport/commit/cefa93b)), closes [#59](https://github.com/webaneid/facport/issues/59)
