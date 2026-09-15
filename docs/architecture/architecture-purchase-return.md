@@ -28,14 +28,23 @@ returnType enum (REQUIRED): INVOICE | INVOICE_DP | NO_INVOICE | RECEIVE
 retur), konsisten aturan pajak Indonesia.
 
 ## ⚠️ Keputusan Scope: `returnType` yang DIDUKUNG Fase Ini
-**Didukung**: `INVOICE` (Purchase Invoice SUDAH ada di Facport) dan
-`RECEIVE` (Receive Item dibangun BARENGAN fase ini) dan `NO_INVOICE`
-(tidak butuh dokumen lain). **TIDAK didukung dulu**: `INVOICE_DP` (retur
-terhadap Faktur Pembelian Uang Muka/DP — Facport TIDAK punya konsep
-"invoice DP" terpisah dari Purchase Invoice biasa saat ini, butuh riset
-desain sendiri kalau dibutuhkan nanti). Ini KEPUTUSAN SEPIHAK berdasar
-apa yang sudah/sedang dibangun Facport — **WAJIB dikonfirmasi ke user**
-sebelum eksekusi, bukan diam-diam dipersempit.
+**Update 2026-09-15 (dikonfirmasi user sebelum eksekusi Fase 122)**:
+SEMUA 4 nilai `returnType` DIDUKUNG — `INVOICE`, `INVOICE_DP`, `RECEIVE`,
+`NO_INVOICE`. Keputusan awal (draf riset Fase 119) sempat menolak
+`INVOICE_DP` dengan alasan "Facport tidak punya konsep Invoice DP
+sendiri" — ini KELIRU KERANGKA BERPIKIRNYA: Facport tidak perlu
+MEMBANGUN atau MENGELOLA Invoice DP sebagai fitur sendiri supaya bisa
+MEREFERENSIKANNYA di sini. `INVOICE_DP` di Purchase Return cuma butuh
+`invoiceNumber` — PERSIS field yang sama dengan `INVOICE` — nomor faktur
+DP itu sendiri dibuat/dikelola lewat fitur lain (Accurate langsung, atau
+`create-down-payment.do` kalau nanti dibangun) di LUAR modul ini; retur
+cuma perlu tahu nomornya. Konsisten prinsip scope Facport (§
+`docs/lessons-learned.md`/memory "scope grows with client need if
+Accurate API supports it") — kalau Accurate API mendukung dan Facport
+BISA mengembangkannya tanpa fitur baru yang belum ada, bangun, jangan
+tolak duluan. Validasi (§ di bawah): `INVOICE` DAN `INVOICE_DP`
+sama-sama butuh `invoiceNumber` terisi; `RECEIVE` butuh
+`receiveItemNumber`; `NO_INVOICE` tidak butuh keduanya.
 
 ## Endpoint Accurate
 `POST /accurate/api/purchase-return/save.do`.
@@ -95,12 +104,29 @@ detailExpense[] tiap baris:
 | ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 | ITEM: Finance Category 1-10 | dataClassification1Name..10Name | detailItem[] |
 | Expense Acc No/Name/Amount/Notes | accountNo/expenseName/expenseAmount/expenseNotes | detailExpense[] |
-| Expense Department / Project | departmentName / projectNo | detailExpense[] |
+| Expense Department | departmentName | detailExpense[] |
+| Expense Project | **TIDAK ADA field API** — lihat koreksi di bawah | detailExpense[] tidak punya `projectNo` |
 | EXPENSE: Finance Category 1-10 | dataClassification1Name..10Name | detailExpense[] |
 
-**Catatan**: Excel client TIDAK punya kolom `Item Warehouse` untuk sheet
-ini — konsisten dengan absennya `warehouseName` di schema resmi
-`detailItem[]` (§ di atas), BUKAN kelalaian.
+**Koreksi 2026-09-15 (ditemukan saat eksekusi Fase 122)**: klaim
+sebelumnya "Excel client TIDAK punya kolom Item Warehouse" TERNYATA
+KELIRU — dibaca ulang langsung dari file, sheet "Purchase Return"
+MEMANG punya kolom "Item Warehouse" (persis posisi setelah "Item
+Notes"). TAPI dikonfirmasi ulang ke `accurate-openapi.json`:
+`detailItem[]` Purchase Return **genuinely TIDAK PUNYA** field
+`warehouseName` sama sekali (beda dari Purchase Order/Receive Item yang
+punya) — bukan salah baca sebelumnya, field-nya memang tidak ada di API.
+**Keputusan**: kolom "Item Warehouse" TIDAK dimasukkan ke
+`defaultColumnMap`/opsi field mapping (tidak ada field Accurate valid
+untuk dipetakan) — kalau user tetap punya kolom ini di file Excel-nya,
+cukup dibiarkan "(tidak dipetakan)" saat konfirmasi mapping, tidak
+memengaruhi baris lain. Tidak ada cara mengirim nilai ini ke Accurate
+lewat endpoint ini, terlepas dari apa yang diminta client.
+
+**Temuan kedua serupa**: kolom Excel "Expense Project" JUGA tidak punya
+field API — dikonfirmasi `detailExpense[]` Purchase Return TIDAK punya
+`projectNo` sama sekali (beda dari Purchase Order yang punya). Perlakuan
+sama: tidak dimasukkan ke `defaultColumnMap`.
 
 ## Validasi `Return Type` (Wajib Sebelum Kirim ke Accurate)
 ```ts
@@ -108,10 +134,10 @@ ini — konsisten dengan absennya `warehouseName` di schema resmi
 // (validasi custom di layer Facport, gagal cepat dengan pesan jelas —
 // JANGAN kirim payload ambigu ke Accurate lalu tebak error-nya)
 function validatePurchaseReturnType(returnType: string, row: {...}): { code: string } | null {
-  if (!["INVOICE", "RECEIVE", "NO_INVOICE"].includes(returnType)) {
-    return { code: "RETURN_TYPE_NOT_SUPPORTED" }; // termasuk INVOICE_DP, § Keputusan Scope
+  if (!["INVOICE", "INVOICE_DP", "RECEIVE", "NO_INVOICE"].includes(returnType)) {
+    return { code: "RETURN_TYPE_NOT_SUPPORTED" };
   }
-  if ((returnType === "INVOICE") && !row.invoiceNumber) return { code: "INVOICE_NUMBER_REQUIRED_FOR_RETURN_TYPE" };
+  if ((returnType === "INVOICE" || returnType === "INVOICE_DP") && !row.invoiceNumber) return { code: "INVOICE_NUMBER_REQUIRED_FOR_RETURN_TYPE" };
   if (returnType === "RECEIVE" && !row.receiveItemNumber) return { code: "RECEIVE_ITEM_NUMBER_REQUIRED_FOR_RETURN_TYPE" };
   return null;
 }
@@ -134,15 +160,15 @@ call nyata ke `purchase-return/save.do` sebelum full rollout.
    kasus khusus seperti Receive Item, karena `number` di sini memang
    field utama pengenal dokumen (tidak ada field wajib terpisah yang
    lebih cocok jadi kunci).
-3. **`INVOICE_DP` ditolak eksplisit** dengan kode error jelas (§ di
-   atas) — BUKAN silent-skip atau best-effort kirim tanpa
-   `invoiceNumber`.
+3. **Semua 4 `returnType` didukung** (§ Keputusan Scope, update
+   2026-09-15) — `INVOICE`/`INVOICE_DP` sama-sama cuma butuh
+   `invoiceNumber`, TIDAK ada logic beda selain nilai enum-nya. Hanya
+   nilai `returnType` DI LUAR 4 ini yang ditolak eksplisit
+   (`RETURN_TYPE_NOT_SUPPORTED`).
 4. **Tidak ada "Batal Import"** — konsisten pola modul non-invoice
    lain.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **`INVOICE_DP` tidak didukung** (§ Keputusan Scope) — WAJIB
-  dikonfirmasi user sebelum eksekusi, bukan cuma dicatat di sini.
 - Field "Atribut Tambahan" (§ di atas) sudah punya dasar kuat tapi
   BELUM literal dites ke endpoint ini — 1x test call nyata direkomendasikan.
 - `detailExpense[]` ditandai REQUIRED di spec tapi TIDAK semua retur

@@ -115,6 +115,11 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // (tanpa `_view` terpisah), dikonfirmasi OpenAPI security block —
   // sama pola Purchase Order.
   receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 122, architecture-purchase-return.md — TIDAK auto-create
+  // vendor/item (dokumen LANJUTAN, mirror Receive Item). `_view` HANYA
+  // dari baseline `item_view` (§ scopesForModules). `purchase_return_save`
+  // HANYA (tanpa `_view` terpisah, dikonfirmasi OpenAPI security block).
+  purchase_return: ["purchase_return_save", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

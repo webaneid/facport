@@ -29,6 +29,7 @@ import {
   Building2,
   ShoppingCart,
   PackageCheck,
+  Undo2,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -76,6 +77,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru
         // (architecture-receive-item.md).
         { href: "/receive-item/import", label: "Import Receive Item", icon: PackageCheck, moduleKey: "receive_item" },
+        // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
+        // (architecture-purchase-return.md).
+        { href: "/purchase-return/import", label: "Import Purchase Return", icon: Undo2, moduleKey: "purchase_return" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu — beda dari item import di atas). SENGAJA

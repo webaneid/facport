@@ -129,6 +129,7 @@
 | 119  | Arsitektur 5 Sub-Modul Baru: Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return | Done | `docs/architecture/architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-return.md`, `architecture-sales-quotation.md`, `architecture-sales-return.md` | `docs/phases/phase-119-arsitektur-5-submodul-purchase-sales.md` |
 | 120  | Modul Purchase Order (Pesanan Pembelian) | Done | `docs/architecture/architecture-purchase-order.md` | `docs/phases/phase-120-modul-purchase-order.md` |
 | 121  | Modul Receive Item (Penerimaan Barang) | Done | `docs/architecture/architecture-receive-item.md` | `docs/phases/phase-121-modul-receive-item.md` |
+| 122  | Modul Purchase Return (Retur Pembelian) | Done | `docs/architecture/architecture-purchase-return.md` | `docs/phases/phase-122-modul-purchase-return.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3020,3 +3021,36 @@ atas) konsisten di endpoint confirm/edit-row/edit-bulk.
 `detailNotes` adalah inferensi dari struktur Excel (bukan hasil test
 call) — keduanya perlu 1x verifikasi nyata sebelum rollout penuh. Detail
 lengkap → `docs/phases/phase-121-modul-receive-item.md`.
+
+## Update 2026-09-15 — Fase 122 Done: Modul Purchase Return (Retur Pembelian)
+Modul ke-3 dari 5 sub-modul Fase 119. Sebelum eksekusi, user mengoreksi
+keputusan scope draf Fase 119 yang sempat menolak `returnType:
+INVOICE_DP` — dikonfirmasi SEMUA 4 nilai (`INVOICE`/`INVOICE_DP`/
+`RECEIVE`/`NO_INVOICE`) didukung, konsisten prinsip "kalau Accurate API
+mendukung dan bisa dikembangkan, bangun" (INVOICE_DP cuma butuh
+`invoiceNumber`, field yang sama dengan INVOICE — Facport tidak perlu
+membangun konsep "Invoice DP" sendiri).
+
+Saat eksekusi, ditemukan 2 kesalahan dokumentasi Fase 119: kolom Excel
+"Item Warehouse" dan "Expense Project" ternyata TIDAK punya field API
+sama sekali di endpoint `purchase-return/save.do` (dikonfirmasi
+`accurate-openapi.json`) — salah satunya (Item Warehouse) sebelumnya
+malah diklaim architecture doc "tidak ada di Excel client", padahal ADA.
+Kedua kolom dibiarkan tidak terpetakan (tidak ada field tujuan yang
+valid), didokumentasikan jelas di architecture doc + phase doc.
+
+Kompleksitas utama modul ini: validasi `returnType` per-baris
+(`returnTypeRowError`, mirror pola `debitCreditRowError` Journal
+Voucher) — worker jadi gerbang otoritatif final, WAJIB lolos validasi
+SEBELUM payload dikirim ke Accurate, di setiap eksekusi (bukan cuma saat
+user edit baris gagal). Security review eksplisit memverifikasi tidak
+ada jalur bypass ke Accurate dengan Return Type invalid.
+
+59 test baru (38 unit + 21 integrasi), 944 test total pass, typecheck+
+lint bersih, security review 0 temuan.
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/purchase-return/save.do` — termasuk asumsi `detailExpense: []`
+diterima Accurate dan kombinasi `INVOICE_DP` dengan nomor Faktur
+Pembelian Uang Muka sungguhan. Detail lengkap →
+`docs/phases/phase-122-modul-purchase-return.md`.

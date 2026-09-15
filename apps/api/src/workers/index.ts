@@ -115,6 +115,21 @@ import {
   extractDataClassificationValues as extractDataClassificationValuesRI,
   type ReceiveItemGroup,
 } from "../lib/import-mapping/receive-item.mapping";
+// § Fase 122 — Purchase Return, dokumen LANJUTAN (TIDAK auto-create
+// vendor/item, mirror Receive Item) TAPI grouping DEFAULT ADR-0011
+// (opsional by "number", BUKAN wajib seperti Receive Item). Punya
+// detailExpense[] (SELALU disertakan, default [] — beda dari Purchase
+// Order yang omit key kalau kosong, § komentar mapping file).
+import { savePurchaseReturn } from "../lib/accurate-purchase-return";
+import {
+  buildPurchaseReturnPayload,
+  groupPurchaseReturnRows,
+  validateGroupVendorConsistency as validateGroupVendorConsistencyForPR,
+  extractDataClassificationValues as extractDataClassificationValuesPR,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesPR,
+  returnTypeRowError,
+  type PurchaseReturnGroup,
+} from "../lib/import-mapping/purchase-return.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -243,6 +258,26 @@ async function ensureReceiveItemDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractDataClassificationValuesRI(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 122 — mirror `ensurePurchaseOrderDataClassifications`, untuk
+// Purchase Return (item-level DAN expense-level, sama seperti Purchase
+// Order — beda dari Receive Item yang tidak punya versi expense).
+async function ensurePurchaseReturnDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesPR(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPR(rawRow, columnMapping)];
+    for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -844,6 +879,44 @@ export async function processReceiveItemGroup(
 }
 
 // ============================================================
+// § Fase 122 — Purchase Return: TIDAK auto-create vendor/item (mirror
+// Receive Item), grouping DEFAULT ADR-0011 (opsional by "number"), dan
+// validasi `returnType` (§ `returnTypeRowError`) WAJIB lolos dari baris
+// PERTAMA grup SEBELUM payload dibangun — beda dari
+// `validateGroupVendorConsistency` yang cuma soal konsistensi ANTAR
+// baris, ini soal VALIDITAS header itu sendiri.
+// ============================================================
+export type PurchaseReturnGroupResult = {
+  returnId: number;
+  rowIds: string[];
+};
+
+export async function processPurchaseReturnGroup(
+  ctx: AccurateSessionContext,
+  group: PurchaseReturnGroup,
+  columnMapping: Record<string, string>,
+): Promise<PurchaseReturnGroupResult> {
+  const mismatchError = validateGroupVendorConsistencyForPR(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const headerRow = group.rows[0]!.rawData;
+  const returnTypeErrors = returnTypeRowError(headerRow, columnMapping);
+  if (returnTypeErrors.length > 0) {
+    throw new Error(
+      `Return Type tidak valid atau field pendukungnya (Invoice No/Receive Item No) belum diisi — kolom bermasalah: ${returnTypeErrors.join(", ")}.`,
+    );
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildPurchaseReturnPayload(rawRows, columnMapping);
+
+  await ensurePurchaseReturnDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await savePurchaseReturn(ctx, payload);
+  return { returnId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
 // atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
 // — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
@@ -1388,6 +1461,34 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.receiveId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 122 — Purchase Return, grouping DEFAULT ADR-0011
+      // (opsional by "number"), TANPA auto-create vendor/item (§
+      // komentar `processPurchaseReturnGroup`).
+    } else if (batch.module === "purchase_return") {
+      const groups = groupPurchaseReturnRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processPurchaseReturnGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.returnId),
               errorMessage: null,
               processedAt: new Date(),
             })

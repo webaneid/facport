@@ -36,6 +36,9 @@ export const MODULE_CATALOG = [
   // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru
   // (architecture-receive-item.md).
   { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Pembelian" },
+  // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
+  // (architecture-purchase-return.md).
+  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Pembelian" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
