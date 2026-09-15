@@ -3147,9 +3147,16 @@ Frontend: kolom "Diupload oleh" baru + tombol Delete di-gate
 sesungguhnya) supaya member yang sekarang lihat upload orang lain tidak
 disodori tombol yang bakal 403. Security review lanjutan 0 temuan.
 
-**Known limitation sisa**: 12 halaman Riwayat per-modul MASIH tampilkan
-tombol Delete tanpa gating owner (backend sudah benar, cuma UX
-papercut — bukan celah keamanan) — sengaja tidak disentuh, di luar
-scope poin 3, perlu hook/context client-side baru kalau mau dibereskan
-rapi. Ketiga poin audit user kini SELESAI ditindaklanjuti. Detail
-lengkap → `docs/phases/phase-125-fix-delete-owner-only.md`.
+**Update 2026-09-15 (sesi sama) — 12 halaman Riwayat per-modul JUGA
+dibereskan**: Context baru `apps/web/lib/use-data-usaha-owner.tsx`
+(`DataUsahaOwnerProvider`/`useIsDataUsahaOwner()`) — expose ulang nilai
+`isDataUsahaOwner` yang sudah dihitung server-side di `layout.tsx`
+lewat Context (TANPA fetch ulang), dipasang sekali di `AppShell`.
+Semua 12 `{modul}/import/riwayat/page.tsx` sekarang gate tombol Delete
+dengan `isOwner &&`, konsisten dengan Arsip gabungan/dashboard. Selain
+typecheck+lint (0 error), diverifikasi LANGSUNG di browser: seed Data
+Usaha + owner + member seat di dev DB, login kedua akun, konfirmasi
+tombol Delete tampil untuk owner dan hilang untuk member (data QA
+dibersihkan lagi setelahnya). Ketiga poin audit user + follow-up UX-nya
+kini SELESAI ditindaklanjuti. Detail lengkap →
+`docs/phases/phase-125-fix-delete-owner-only.md`.

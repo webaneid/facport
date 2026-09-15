@@ -16,6 +16,7 @@ import { DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
 import { formatDate } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 // § mirror `purchase-invoice/import/riwayat/page.tsx` — TANPA Batal Import
 // (modul ini tidak punya cancel, § architecture-journal-voucher.md).
@@ -25,6 +26,7 @@ const PAGE_SIZE = 20;
 
 export default function JournalVoucherImportArchivePage() {
   const companyTimezone = useCompanyTimezone();
+  const isOwner = useIsDataUsahaOwner();
   const [batches, setBatches] = useState<ImportBatch[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
@@ -93,7 +95,7 @@ export default function JournalVoucherImportArchivePage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Link>
-                          {!DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
+                          {isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
                             <DeleteImportDialog batch={batch} onDeleted={load} />
                           )}
                         </div>

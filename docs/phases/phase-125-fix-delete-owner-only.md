@@ -112,18 +112,47 @@ User minta lanjut poin 3 setelah poin 2 selesai. Fix:
   ter-scope `dataUsahaId`, SELECT eksplisit tidak bocorkan field
   sensitif, UI-gating tidak diperlakukan sebagai boundary keamanan).
 
+## Update — 12 Halaman Riwayat Per-Modul (2026-09-15, lanjutan sesi yang sama)
+User minta beresin juga 12 halaman Riwayat per-modul yang sebelumnya
+dicatat sebagai Known Limitation (tombol Delete tidak ter-gating owner
+di halaman itu, meski backend sudah benar). Fix:
+
+- **Baru** `apps/web/lib/use-data-usaha-owner.tsx` — Context/hook
+  `DataUsahaOwnerProvider`/`useIsDataUsahaOwner()`. BEDA dari
+  `PermissionsProvider` (`use-permissions.tsx`) yang fetch sendiri via
+  `useEffect` — di sini TIDAK ADA fetch ulang sama sekali, cuma
+  expose ulang nilai `isDataUsahaOwner` yang SUDAH dihitung server-side
+  di `layout.tsx` (§ Update Poin 3 di atas) lewat Context, supaya Client
+  Component mana pun di bawah `AppShell` bisa baca tanpa prop-drilling
+  atau `GET /me/data-usaha` berulang per halaman. Default context `true`
+  (konsisten konvensi "assume owner kecuali eksplisit false" yang sudah
+  dipakai `ImportBatchTable`).
+- `apps/web/components/app-shell/app-shell.tsx` — dibungkus
+  `<DataUsahaOwnerProvider isOwner={isDataUsahaOwner ?? true}>` (nested
+  di dalam `<PermissionsProvider>`, mount sekali untuk semua halaman
+  di bawah App Shell).
+- Semua 12 `{modul}/import/riwayat/page.tsx` — tambah
+  `const isOwner = useIsDataUsahaOwner();`, tombol Delete sekarang
+  `{isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (...)}`
+  (prefix `isOwner &&` ditambah ke kondisi render yang sudah ada,
+  murni kosmetik — backend `DELETE_OWNER_ONLY` dari fix poin 2 TETAP
+  satu-satunya gerbang sesungguhnya).
+- **Verifikasi browser** (bukan cuma typecheck/lint): seed Data Usaha +
+  subscription + 1 import batch untuk user owner baru, plus 1 member
+  seat aktif untuk user kedua, langsung di dev DB (data QA, sudah
+  dibersihkan lagi setelah verifikasi). Login sebagai owner →
+  `/purchase-order/import/riwayat` tampilkan tombol Delete (ikon
+  sampah) di kolom Aksi. Login sebagai member (Data Usaha sama) →
+  halaman yang SAMA cuma tampilkan tombol Detail (ikon mata), tombol
+  Delete hilang — DAN grup sidebar "Langganan" (Kelola Tim,
+  Berlangganan, dst) ikut hilang seperti yang sudah dikonfirmasi § Fase
+  125 poin 1, mengonfirmasi provider baru ini tidak merusak gating yang
+  sudah ada.
+- `bun run typecheck` (api+web) — 0 error. `bun run lint` (web) — 0
+  error. Tidak ada file backend yang berubah di update ini (murni
+  frontend), jadi tidak ada regresi test backend untuk dicek ulang.
+
 ## Known Limitations
-- **12 halaman Riwayat per-modul** (`{modul}/import/riwayat/page.tsx`)
-  MASIH menampilkan tombol Delete tanpa gating owner — backend-nya
-  SUDAH benar (403 `DELETE_OWNER_ONLY` sejak fix poin 2), jadi member
-  yang klik Delete di situ akan dapat toast error, BUKAN celah
-  keamanan, murni papercut UX (tombol yang seharusnya disembunyikan).
-  SENGAJA tidak disentuh fase ini — di luar scope eksplisit yang diminta
-  user (poin 3 = visibilitas riwayat, bukan konsistensi tombol Delete
-  di 12 halaman terpisah), dan perlu pendekatan lebih besar (context/hook
-  client-side baru untuk `isDataUsahaOwner`, BUKAN cuma fetch ulang per
-  halaman) kalau mau dibereskan rapi. Dicatat di sini untuk follow-up
-  kalau user mau.
 - Fix DELETE (poin 2) HANYA endpoint DELETE (hapus riwayat lokal).
   Endpoint lain (edit-row/edit-bulk/retry/cancel) TETAP bisa dipakai
   member (didesain begitu — cuma DELETE yang dibatasi karena sifatnya
@@ -145,3 +174,9 @@ produk/tambah akun owner-only) dan menu Berlangganan/Tambah Anggota
 1 Data Usaha bisa jadi owner penuh di Data Usaha lain miliknya sendiri)
 dikonfirmasi SUDAH BENAR tanpa perlu perubahan kode. Ketiga poin audit
 user SELESAI ditindaklanjuti.
+
+Follow-up terakhir: 12 halaman Riwayat per-modul (Known Limitation di
+atas) juga dibereskan — Context baru `use-data-usaha-owner.tsx` supaya
+tombol Delete konsisten ter-gating di SEMUA tempat (Arsip gabungan,
+dashboard, dan 12 halaman per-modul), diverifikasi langsung di browser
+(bukan cuma typecheck) dengan skenario owner vs member nyata.
