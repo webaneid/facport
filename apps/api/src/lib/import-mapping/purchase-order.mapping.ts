@@ -12,7 +12,16 @@ export const purchaseOrderMapping = {
   // § "number" (Trans No) dijadikan WAJIB sejak awal (bukan retrofit
   // seperti Purchase Invoice/Sales Invoice Fase 81) — supaya grouping
   // multi-item selalu punya kunci reliable dari hari pertama.
-  requiredFields: ["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName"] as const,
+  // § BUG DITEMUKAN & DIPERBAIKI (2026-09-15, saat eksekusi Fase 121) —
+  // "branchName" HARUSNYA WAJIB sejak Fase 120 (§ architecture-
+  // purchase-order.md "Branch Wajib (Preseden Fase 90)": Accurate
+  // MENOLAK transaksi tanpa branchName eksplisit untuk company
+  // multi-cabang), frontend (`edit-row-dialog.tsx` REQUIRED_INTERNAL_FIELDS)
+  // SUDAH benar menganggapnya wajib, tapi array ini kelupaan — akibatnya
+  // validasi server TIDAK menolak upload tanpa Branch Name di-mapping,
+  // baru gagal belakangan (kalau company client multi-cabang) dengan
+  // error Accurate yang kurang jelas. Lihat `docs/lessons-learned.md`.
+  requiredFields: ["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
   fieldToAccuratePath: {
     vendorNo: "vendorNo",
     transDate: "transDate",

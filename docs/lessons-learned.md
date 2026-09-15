@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-09-15 — Purchase Order (Fase 120): `branchName` didokumentasikan WAJIB di architecture doc, tapi tidak ikut masuk `requiredFields` kode
+**Masalah:** `architecture-purchase-order.md` § "Branch Wajib (Preseden
+Fase 90)" eksplisit menyatakan `branchName` HARUS divalidasi non-kosong
+sebelum kirim ke Accurate (company multi-cabang ditolak Accurate kalau
+kosong, preseden Purchase Payment/Sales Receipt Fase 90) — dan frontend
+(`edit-row-dialog.tsx` `REQUIRED_INTERNAL_FIELDS`) SUDAH benar
+menganggapnya wajib. TAPI array `purchaseOrderMapping.requiredFields`
+(`apps/api/src/lib/import-mapping/purchase-order.mapping.ts`) — sumber
+kebenaran validasi SERVER di endpoint `/purchase-order/import/:batchId/confirm`
+dan edit-row — kelupaan menyertakannya. Akibatnya upload tanpa kolom
+Branch Name di-mapping LOLOS validasi awal, baru berpotensi gagal
+belakangan (kalau company client multi-cabang) dengan error Accurate
+yang kurang jelas di tengah proses import, bukan fail-fast di langkah
+konfirmasi mapping seperti yang didesain.
+**Root cause:** Saat eksekusi Fase 120, `requiredFields` ditulis manual
+mengikuti daftar field WAJIB versi API resmi (`itemNo`, `unitPrice`, dst)
+tanpa menyilangkan ulang ke bagian "Branch Wajib" architecture doc yang
+sama — 2 sumber kebenaran (kode vs dokumen) sempat tidak sinkron tanpa
+ada test yang menangkapnya (test suite Fase 120 tidak menguji isi
+LENGKAP `requiredFields`, cuma sebagian via `toContain`).
+**Fix:** Tambah `"branchName"` ke `requiredFields`, update test route
+(`purchase-order-import.route.test.ts`) yang sebelumnya tidak menyertakan
+kolom Branch Name di `columnMapping`/`rawData` fixture-nya. Ditemukan &
+diperbaiki SEBELUM rilis ke `main` (masih di `develop`, batching release
+5 sub-modul), jadi belum sempat menyentuh customer produksi.
+**Pencegahan:** Saat menulis `requiredFields` modul baru, cek ULANG
+setiap poin "WAJIB"/"Preseden Fase X" di architecture doc-nya satu per
+satu (bukan cuma field yang secara skema API `required: true`) — 2
+sumber ini sering beda (skema API "opsional" tapi validasi RUNTIME
+Accurate mewajibkannya untuk kondisi tertentu, § Fase 90). Pertimbangkan
+test guard otomatis (assert `requiredFields` superset dari checklist di
+architecture doc) untuk fase mendatang kalau pola ini terulang lagi.
+
+---
+
 ## 2026-09-15 — PPh23 Sales Receipt/Purchase Payment MASIH salah/kosong setelah "fix" Fase 99/100 — root cause SEBENARNYA di `findTaxByIdentifier` (cross-match jenis pajak), bukan struktur payload
 **Masalah:** Fase 99 (2026-09-10) memperbaiki struktur payload `detailTax`
 Sales Receipt berdasar jawaban resmi Accurate Support, Fase 100 mirror
