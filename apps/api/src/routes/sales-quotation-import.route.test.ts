@@ -3,10 +3,10 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
 import { salesQuotationImportRoute } from "./sales-quotation-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
-import { createTestDataUsaha } from "../lib/test-fixtures";
+import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Fase 123 — mirror `purchase-order-import.route.test.ts` (modul yang
 // juga TIDAK punya endpoint cancel).
@@ -71,7 +71,7 @@ async function createProvisionedUser(email: string) {
     })
     .returning();
 
-  return { userId, cookie, subscriptionId: subscription!.id };
+  return { userId, cookie, subscriptionId: subscription!.id, dataUsahaId };
 }
 
 describe("GET /sales-quotation/import/template", () => {
@@ -502,6 +502,31 @@ describe("DELETE /sales-quotation/import/:batchId — hapus riwayat lokal", () =
       new Request(`http://localhost/sales-quotation/import/${batch!.id}`, { method: "DELETE", headers: { cookie: attacker.cookie } }),
     );
     expect(res.status).toBe(404);
+  });
+
+  test("403 DELETE_OWNER_ONLY kalau yang hapus MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {
+    const owner = await createProvisionedUser(`sq-delete-memberowner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_quotation", fileName: "test.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const memberEmail = `sq-delete-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+    await db.insert(userRoles).values({ userId: memberId, roleId: customerRole!.id }).onConflictDoNothing();
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(owner.userId, owner.dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-quotation/import/${batch!.id}`, { method: "DELETE", headers: { cookie: memberCookie } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DELETE_OWNER_ONLY");
+
+    const [stillThere] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(stillThere).toBeDefined();
   });
 
   test("409 BATCH_BUSY kalau status processing", async () => {

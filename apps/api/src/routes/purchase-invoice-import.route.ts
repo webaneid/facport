@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
+import { ownsDataUsaha } from "../lib/data-usaha";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
@@ -432,6 +433,15 @@ export const purchaseInvoiceImportRoute = new Elysia()
       if (!batch || batch.subscriptionId !== subscription.id) {
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
+      }
+      // § poin 2 audit hierarki akun utama/tambahan (2026-09-15) — hapus
+      // riwayat import HANYA pemilik Data Usaha SAAT INI (§ ownsDataUsaha,
+      // ikut transfer kepemilikan), BUKAN sekadar subscription yang sama.
+      // Sebelumnya SIAPA PUN yang punya akses (owner ATAU member seat
+      // manapun) bisa hapus batch siapa saja di Data Usaha itu.
+      if (!(await ownsDataUsaha(user.id, subscription.dataUsahaId))) {
+        set.status = 403;
+        return { code: "DELETE_OWNER_ONLY" };
       }
       if (batch.status === "processing" || batch.status === "cancelling") {
         set.status = 409;

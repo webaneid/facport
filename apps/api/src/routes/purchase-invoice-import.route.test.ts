@@ -3,11 +3,11 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, settings } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, settings, memberSeats } from "../db/schema";
 import { purchaseInvoiceImportRoute } from "./purchase-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { TRIAL_MAX_ROWS_SETTING_KEY } from "../lib/trial";
-import { createTestDataUsaha } from "../lib/test-fixtures";
+import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Dua Lapis Gate (architecture-auth.md) — route ini PERTAMA yang gabung
 // dua macro (`permission` dari permissionPlugin + `moduleAccess` dari
@@ -67,7 +67,7 @@ async function createProvisionedUser(email: string) {
     })
     .returning();
 
-  return { userId, cookie, subscriptionId: subscription!.id };
+  return { userId, cookie, subscriptionId: subscription!.id, dataUsahaId };
 }
 
 // § Fase 43 — versi TRIAL dari `createProvisionedUser` (isTrial: true) —
@@ -341,5 +341,53 @@ describe("Fase 43 — batas baris trial di confirm/retry", () => {
     expect(body.code).toBe("TRIAL_ROW_LIMIT_EXCEEDED");
     expect(body.remaining).toBe(1); // 3 - 2 sukses
     expect(body.max).toBe(3);
+  });
+});
+
+// § poin 2 audit hierarki akun utama/tambahan (2026-09-15) — modul ini
+// SEBELUMNYA tidak punya test DELETE sama sekali (gap coverage lama, bukan
+// disengaja), ditambah sekaligus dengan fix ownership `ownsDataUsaha` di
+// route-nya sendiri. Cuma 2 test terfokus (bukan replikasi describe block
+// lengkap modul lain) — coverage 401/404/409/200 generik dianggap sudah
+// terwakili pola identik di modul lain, di sini fokus ke REGRESI pemilik +
+// FIX member.
+describe("DELETE /purchase-invoice/import/:batchId — ownership (pemilik vs member)", () => {
+  test("200 pemilik Data Usaha tetap BISA hapus batch miliknya sendiri (regresi)", async () => {
+    const owner = await createProvisionedUser(`pi-delete-owner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "hapus-saya.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}`, { method: "DELETE", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; deleted: boolean }).toEqual({ batchId: batch!.id, deleted: true });
+  });
+
+  test("403 DELETE_OWNER_ONLY kalau yang hapus MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {
+    const owner = await createProvisionedUser(`pi-delete-memberowner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "test.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const memberEmail = `pi-delete-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+    await db.insert(userRoles).values({ userId: memberId, roleId: customerRole!.id }).onConflictDoNothing();
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(owner.userId, owner.dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}`, { method: "DELETE", headers: { cookie: memberCookie } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DELETE_OWNER_ONLY");
+
+    const [stillThere] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(stillThere).toBeDefined();
   });
 });

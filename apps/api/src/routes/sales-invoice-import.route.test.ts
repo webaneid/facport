@@ -3,10 +3,10 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, memberSeats } from "../db/schema";
 import { salesInvoiceImportRoute } from "./sales-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
-import { createTestDataUsaha } from "../lib/test-fixtures";
+import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice-import.route.test.ts` (modul
 // "penjualan"/"sales_invoice").
@@ -61,7 +61,7 @@ async function createProvisionedUser(email: string) {
     })
     .returning();
 
-  return { userId, cookie, subscriptionId: subscription!.id };
+  return { userId, cookie, subscriptionId: subscription!.id, dataUsahaId };
 }
 
 describe("GET /sales-invoice/import/template", () => {
@@ -165,5 +165,50 @@ describe("GET /sales-invoice/import (list)", () => {
     expect(body.batches).toHaveLength(2);
     expect(body.batches.map((b) => b.fileName)).toEqual(["batch-3.xlsx", "batch-2.xlsx"]);
     expect(body.batches.some((b) => b.fileName === "punya-orang-lain.xlsx")).toBe(false);
+  });
+});
+
+// § poin 2 audit hierarki akun utama/tambahan (2026-09-15) — modul ini
+// SEBELUMNYA tidak punya test DELETE sama sekali (gap coverage lama, bukan
+// disengaja), ditambah sekaligus dengan fix ownership `ownsDataUsaha` di
+// route-nya sendiri. Cuma 2 test terfokus, sama pola `purchase-invoice-import.route.test.ts`.
+describe("DELETE /sales-invoice/import/:batchId — ownership (pemilik vs member)", () => {
+  test("200 pemilik Data Usaha tetap BISA hapus batch miliknya sendiri (regresi)", async () => {
+    const owner = await createProvisionedUser(`si-delete-owner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_invoice", fileName: "hapus-saya.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-invoice/import/${batch!.id}`, { method: "DELETE", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; deleted: boolean }).toEqual({ batchId: batch!.id, deleted: true });
+  });
+
+  test("403 DELETE_OWNER_ONLY kalau yang hapus MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {
+    const owner = await createProvisionedUser(`si-delete-memberowner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_invoice", fileName: "test.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const memberEmail = `si-delete-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+    await db.insert(userRoles).values({ userId: memberId, roleId: customerRole!.id }).onConflictDoNothing();
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(owner.userId, owner.dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-invoice/import/${batch!.id}`, { method: "DELETE", headers: { cookie: memberCookie } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DELETE_OWNER_ONLY");
+
+    const [stillThere] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(stillThere).toBeDefined();
   });
 });

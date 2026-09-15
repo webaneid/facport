@@ -132,6 +132,7 @@
 | 122  | Modul Purchase Return (Retur Pembelian) | Done | `docs/architecture/architecture-purchase-return.md` | `docs/phases/phase-122-modul-purchase-return.md` |
 | 123  | Modul Sales Quotation (Penawaran Harga) | Done | `docs/architecture/architecture-sales-quotation.md` | `docs/phases/phase-123-modul-sales-quotation.md` |
 | 124  | Modul Sales Return (Retur Penjualan) | Done | `docs/architecture/architecture-sales-return.md` | `docs/phases/phase-124-modul-sales-return.md` |
+| 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3109,3 +3110,36 @@ Order (Fase 120), Receive Item (Fase 121), Purchase Return (Fase 122),
 Sales Quotation (Fase 123), Sales Return (Fase 124) — semua di `develop`,
 belum dirilis ke `main` (batching, menunggu keputusan user kapan rilis
 bersamaan). Detail lengkap → `docs/phases/phase-124-modul-sales-return.md`.
+
+## Update 2026-09-15 — Fase 125 Done: Fix Privilege Escalation di DELETE Riwayat Import (Semua 12 Modul)
+User minta audit arsitektur hierarki akun utama (owner) vs akun
+tambahan (member/seat) terhadap 3 ekspektasi: (1) hanya owner bisa beli
+produk/tambah akun, (2) member tidak bisa hapus hasil uploadnya sendiri,
+(3) owner bisa lihat semua riwayat upload timnya. Audit (fork subagent,
+read-only) menemukan gap NYATA di poin 2 — lebih serius dari dugaan:
+endpoint DELETE `/*/import/:batchId` di SEMUA 12 modul import cuma cek
+`subscriptionId` sama, TIDAK cek pemilik Data Usaha sebenarnya — member
+MANAPUN bisa hapus batch SIAPA SAJA di Data Usaha yang sama (bukan
+cuma tidak bisa hapus miliknya sendiri).
+
+Diperbaiki di 12 file `*-import.route.ts` sekaligus: tambah
+`ownsDataUsaha(user.id, subscription.dataUsahaId)` check (fungsi
+EXISTING, sama yang dipakai checkout/invite — bukan reimplementasi
+baru) SEBELUM audit log + delete actual, kode error 403
+`DELETE_OWNER_ONLY`. 14 test baru (12 fix + 2 regresi untuk
+purchase-invoice/sales-invoice yang ternyata TIDAK PUNYA test DELETE
+sama sekali sebelumnya — gap coverage lama ditemukan sekalian).
+
+Poin 1 (owner-only checkout/invite) dan verifikasi menu
+Berlangganan/Kelola Tim (`ownerOnly: true` di sidebar, dihitung per
+KONTEKS Data Usaha AKTIF via `GET /me/data-usaha`, bukan flag global 1
+user — dikonfirmasi PERSIS skenario user: member di Data Usaha A bisa
+jadi owner penuh di Data Usaha B miliknya sendiri) dikonfirmasi SUDAH
+BENAR tanpa perlu perubahan kode.
+
+**Known limitation**: Poin 3 (arsip gabungan `GET /me/import-batches`,
+dipakai dashboard + `/import/arsip`, di-scope `userId` bukan semua
+orang di Data Usaha — owner tidak lihat upload member di situ, beda
+dari riwayat per-modul yang sudah benar) BELUM diperbaiki — user minta
+prioritaskan poin 2 dulu, dicatat untuk fase terpisah. Detail lengkap →
+`docs/phases/phase-125-fix-delete-owner-only.md`.
