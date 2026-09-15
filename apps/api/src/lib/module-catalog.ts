@@ -76,3 +76,10 @@ export function productLineLabel(key: string): string {
 export function moduleCategory(key: string): string | null {
   return MODULE_CATALOG.find((m) => m.key === key)?.category ?? null;
 }
+
+// § Fase 127 — dipakai halaman katalog langganan (`/subscribe`) buat
+// split grup modul per Produk sebelum di-render per section (§
+// `product-catalog-section.tsx`). Pola sama `moduleCategory`.
+export function moduleProductLine(key: string): ProductLineKey | null {
+  return MODULE_CATALOG.find((m) => m.key === key)?.productLine ?? null;
+}

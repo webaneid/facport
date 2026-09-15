@@ -15,6 +15,7 @@ import {
   moduleLabel as moduleLabelSource,
   productLineLabel as productLineLabelSource,
   moduleCategory as moduleCategorySource,
+  moduleProductLine as moduleProductLineSource,
   PRODUCT_LINES,
   type ModuleKey,
   type ProductLineKey,
@@ -34,3 +35,5 @@ export const moduleLabel = moduleLabelSource;
 // yang di-snapshot ke `invoiceItems`.
 export const productLineLabel = productLineLabelSource;
 export const moduleCategory = moduleCategorySource;
+// § Fase 127 — dipakai `/subscribe` split grup modul per Produk sebelum render per section.
+export const moduleProductLine = moduleProductLineSource;

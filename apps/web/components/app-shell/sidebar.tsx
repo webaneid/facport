@@ -33,18 +33,13 @@ import {
   Undo2,
   FileSignature,
   RotateCcw,
-  PiggyBank,
-  NotebookText,
-  ShoppingBag,
-  TrendingUp,
-  Warehouse,
-  Factory,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/use-permissions";
 import { moduleCategory, MODULE_CATEGORIES } from "@/lib/module-options";
+import { CATEGORY_ICON, CATEGORY_ICON_FALLBACK } from "@/lib/category-icons";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
 // § `DropdownMenuPrimitive.Item` MENTAH (bukan `DropdownMenuItem` yang
 // sudah dibungkus `components/ui/dropdown-menu.tsx`) — wrapper itu bawa
@@ -56,21 +51,6 @@ import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/compon
 // 2026-09-15 "putihnya hilang sama sekali"). Primitive mentah TANPA
 // className bawaan = tidak ada apa pun yang bisa bentrok sama sekali.
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
-
-// § Fase 126 lanjutan (diminta user 2026-09-15, "tidak elegan" — sub-header
-// teks diganti flyout hover/klik, pola sama menu app desktop) — icon per
-// KATEGORI (beda dari icon per Varian yang sudah ada di NAV_GROUPS_BY_SURFACE),
-// dipakai trigger flyout `NavCategoryFlyout`. Sengaja beda icon dari
-// Varian di dalamnya (walau kadang 1 kategori = 1 Varian hari ini) supaya
-// trigger vs isi flyout tetap gampang dibedakan sekilas.
-const CATEGORY_ICON: Record<string, LucideIcon> = {
-  "Cash & Bank": PiggyBank,
-  "General Ledger": NotebookText,
-  Purchase: ShoppingBag,
-  Sales: TrendingUp,
-  Inventory: Warehouse,
-  Manufacture: Factory,
-};
 
 // § ADR-0024, Admin UI Kit v2 — nav TETAP didefinisikan DI SINI (file
 // "use client"), BUKAN dioper sebagai prop dari Server Component
@@ -350,7 +330,7 @@ function NavCategoryFlyout({
 }) {
   const [open, setOpen] = useState(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const Icon = CATEGORY_ICON[category] ?? Package;
+  const Icon = CATEGORY_ICON[category] ?? CATEGORY_ICON_FALLBACK;
   const categoryActive = items.some((item) => isActive(pathname, item.href));
 
   function openNow() {

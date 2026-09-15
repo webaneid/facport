@@ -134,6 +134,7 @@
 | 124  | Modul Sales Return (Retur Penjualan) | Done | `docs/architecture/architecture-sales-return.md` | `docs/phases/phase-124-modul-sales-return.md` |
 | 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
 | 126  | Sidebar App: Grup Produk "Facport" + Flyout Kategori, Fix Popup Admin Tambah Paket | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-126-sidebar-produk-kategori-varian.md` |
+| 127  | Redesain /subscribe: Grup Produk → Kategori → Varian (Accordion) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3200,3 +3201,37 @@ disentuh, clustering kategori murni beroperasi di atas item yang sudah
 difilter). `bun run typecheck`/`lint` 0 error, `bun run test` 1067 pass.
 User konfirmasi visual "sudah bagus" setelah iterasi terakhir. Detail
 lengkap → `docs/phases/phase-126-sidebar-produk-kategori-varian.md`.
+
+## Update 2026-09-15 — Fase 127 Done: Redesain /subscribe Grup Produk → Kategori → Varian (Accordion)
+
+User minta redesain radikal halaman `/subscribe` (dieksekusi via Plan
+Mode — riset dulu, rencana ditulis, disetujui, baru eksekusi) supaya
+konsisten dengan taksonomi Produk→Kategori→Varian yang baru dibangun di
+sidebar (Fase 126): grid flat 1-kartu-per-modul → grid 1-kartu-per-
+Kategori (checklist Varian bercentang), klik 1 Varian buka panel harga
+accordion DI BAWAH item itu, HANYA 1 Varian boleh terbuka se-halaman
+(lintas kartu Kategori, lintas Produk) — dicapai dengan SATU
+`Accordion.Root type="single"` membungkus SEMUA section Produk, bukan 1
+Accordion per kartu.
+
+3 komponen baru (`module-pricing-panel.tsx`, `category-card.tsx`,
+`product-catalog-section.tsx`) dibuat presentational murni (state lewat
+props, tidak fetch sendiri) — disiapkan reusable buat ditarik ke landing
+page publik nanti (BUKAN scope fase ini, panggilan terpisah setelah user
+konfirmasi). Isi panel accordion adalah LIFT LANGSUNG dari kartu modul
+kode lama (icon+harga+pilih periode+Berlangganan/Coba Gratis) — bukan
+ditulis ulang, cuma direlokasi. Fetch data/checkout/trial
+(`load()`/`handleCheckout`/`handleStartTrial`, endpoint
+`/subscriptions/checkout`/`/subscriptions/trial`) TIDAK disentuh sama
+sekali. Icon per Kategori diekstrak jadi `lib/category-icons.ts` (dulu
+private ke `sidebar.tsx`) — dipakai konsisten sidebar ↔ katalog langganan.
+
+Security review: 0 temuan (state UI baru — kategori mana yang expand —
+tidak pernah dipakai sebagai keputusan otorisasi, backend checkout/trial
+tetap satu-satunya penjaga). `bun run typecheck`/`lint` 0 error,
+`bun run test` 1067 pass. **Verifikasi visual browser TIDAK berhasil**
+(login customer test gagal berulang di environment otomasi sesi ini,
+termasuk stale cookie `active_data_usaha_id` yang mengganggu) — diganti
+review kode baris-demi-baris + typecheck/lint/test, user diminta cek
+visual sendiri sebelum final. Detail lengkap →
+`docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md`.
