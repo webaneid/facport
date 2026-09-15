@@ -1,3 +1,19 @@
+## 2.3.0 (2026-09-15)
+
+* Merge pull request #61 from webaneid/develop ([cd2e490](https://github.com/webaneid/facport/commit/cd2e490)), closes [#61](https://github.com/webaneid/facport/issues/61)
+* fix(import): gating tombol Delete owner-only di 12 halaman Riwayat per-modul (Fase 125 lanjutan) ([3a3bb2d](https://github.com/webaneid/facport/commit/3a3bb2d))
+* fix(import): member hanya bisa hapus batch di Data Usaha sendiri, bukan siapa saja (Fase 125) ([1578874](https://github.com/webaneid/facport/commit/1578874))
+* fix(purchase-order): branchName kelupaan di requiredFields (Fase 120) ([3b58709](https://github.com/webaneid/facport/commit/3b58709))
+* feat(import): owner bisa lihat riwayat upload semua anggota tim (Fase 125 poin 3) ([92208e2](https://github.com/webaneid/facport/commit/92208e2))
+* feat(purchase-order): modul import Purchase Order ke Accurate (Fase 120) ([2de0786](https://github.com/webaneid/facport/commit/2de0786))
+* feat(purchase-return): modul import Purchase Return ke Accurate (Fase 122) ([a685056](https://github.com/webaneid/facport/commit/a685056))
+* feat(receive-item): modul import Receive Item ke Accurate (Fase 121) ([dde9115](https://github.com/webaneid/facport/commit/dde9115))
+* feat(sales-quotation): modul import Sales Quotation ke Accurate (Fase 123) ([9cb21ef](https://github.com/webaneid/facport/commit/9cb21ef))
+* feat(sales-return): modul import Sales Return ke Accurate (Fase 124) ([8b37f80](https://github.com/webaneid/facport/commit/8b37f80))
+* docs: arsitektur 5 sub-modul baru — Purchase Order/Receive Item/Purchase Return/Sales Quotation/Sale ([be414e2](https://github.com/webaneid/facport/commit/be414e2))
+* docs: koreksi field Custom Character/Number/Date + klarifikasi scope Fase 119 ([d43b27d](https://github.com/webaneid/facport/commit/d43b27d))
+* docs: perbarui Peta Dokumen CLAUDE.md — 5 sub-modul Fase 119 selesai ([3ff5d49](https://github.com/webaneid/facport/commit/3ff5d49))
+
 ## 2.2.0 (2026-09-15)
 
 * docs+feat: peta struktur produk multi-brand Facport/Konverter/AutoProduksi (Fase 117, ADR-0033) ([7feae80](https://github.com/webaneid/facport/commit/7feae80))
