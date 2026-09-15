@@ -130,6 +130,7 @@
 | 120  | Modul Purchase Order (Pesanan Pembelian) | Done | `docs/architecture/architecture-purchase-order.md` | `docs/phases/phase-120-modul-purchase-order.md` |
 | 121  | Modul Receive Item (Penerimaan Barang) | Done | `docs/architecture/architecture-receive-item.md` | `docs/phases/phase-121-modul-receive-item.md` |
 | 122  | Modul Purchase Return (Retur Pembelian) | Done | `docs/architecture/architecture-purchase-return.md` | `docs/phases/phase-122-modul-purchase-return.md` |
+| 123  | Modul Sales Quotation (Penawaran Harga) | Done | `docs/architecture/architecture-sales-quotation.md` | `docs/phases/phase-123-modul-sales-quotation.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3054,3 +3055,30 @@ lint bersih, security review 0 temuan.
 diterima Accurate dan kombinasi `INVOICE_DP` dengan nomor Faktur
 Pembelian Uang Muka sungguhan. Detail lengkap →
 `docs/phases/phase-122-modul-purchase-return.md`.
+
+## Update 2026-09-15 — Fase 123 Done: Modul Sales Quotation (Penawaran Harga)
+Modul ke-4 dari 5 sub-modul Fase 119, dokumen PALING AWAL rantai
+penjualan (analog Purchase Order di rantai pembelian) — mirror Sales
+Invoice (auto-create Customer+Item) tapi pola CREATE-ONLY seperti
+Purchase Order (bukan findExisting/append) karena Sales Quotation tidak
+punya dampak GL/stok, jadi tidak relevan bicara "faktur existing".
+
+Keunikan modul ini: field `salesmanListNumber` bertipe ARRAY of string
+di API (Excel client cuma 1 kolom "Item Salesman No" → dipetakan array
+1-elemen, tanpa parsing multi-value, sesuai rekomendasi architecture
+doc), dan Atribut Tambahan didukung di KEDUA level header+item (beda
+dari Purchase Order yang cuma level item). Ditemukan & dikoreksi 1
+kesalahan dokumentasi Fase 119 lagi — kolom Excel "Expense Project No"
+ternyata tidak punya field API di endpoint ini (pola sama seperti
+"Expense Project" Purchase Return sebelumnya).
+
+53 test baru (33 unit + 20 integrasi), 997 test total pass, typecheck+
+lint bersih, security review 0 temuan (termasuk verifikasi tenant
+isolation auto-create customer/item).
+
+**Known limitation**: belum ada verifikasi test call nyata ke
+`/api/sales-quotation/save.do` — termasuk `salesmanListNumber` array,
+Atribut Tambahan dua level, dan `rate` (kurs asing, tidak terlihat di
+schema resmi level root). Sales Order (kelanjutan alami modul ini)
+masih di luar scope, client belum siapkan panduannya. Detail lengkap →
+`docs/phases/phase-123-modul-sales-quotation.md`.

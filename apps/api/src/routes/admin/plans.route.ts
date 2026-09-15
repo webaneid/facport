@@ -46,6 +46,8 @@ const planBody = t.Object({
       t.Literal("receive_item"),
       // § Fase 122 — modul baru, SKU sendiri sejak awal.
       t.Literal("purchase_return"),
+      // § Fase 123 — modul baru, SKU sendiri sejak awal.
+      t.Literal("sales_quotation"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

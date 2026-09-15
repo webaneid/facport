@@ -130,6 +130,21 @@ import {
   returnTypeRowError,
   type PurchaseReturnGroup,
 } from "../lib/import-mapping/purchase-return.mapping";
+// § Fase 123 — Sales Quotation, dokumen PALING AWAL rantai penjualan,
+// auto-create customer+item (mirror Purchase Order's create-only
+// pattern, TANPA findExisting/append seperti Sales Invoice — tidak ada
+// dampak GL/stok, 2 quotation nominal sama bukan duplikat).
+import { saveSalesQuotation } from "../lib/accurate-sales-quotation";
+import {
+  buildSalesQuotationPayload,
+  groupSalesQuotationRows,
+  validateGroupCustomerConsistency as validateGroupCustomerConsistencyForSQ,
+  extractCustomerCreateFields as extractCustomerCreateFieldsSQ,
+  extractItemCreateFields as extractItemCreateFieldsSQ,
+  extractDataClassificationValues as extractDataClassificationValuesSQ,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesSQ,
+  type SalesQuotationGroup,
+} from "../lib/import-mapping/sales-quotation.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -277,6 +292,26 @@ async function ensurePurchaseReturnDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesPR(rawRow, columnMapping), ...extractExpenseDataClassificationValuesPR(rawRow, columnMapping)];
+    for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 123 — mirror `ensurePurchaseOrderDataClassifications`, untuk
+// Sales Quotation (item-level DAN expense-level, sama seperti Purchase
+// Order).
+async function ensureSalesQuotationDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesSQ(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSQ(rawRow, columnMapping)];
     for (const { index, name } of values) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
@@ -917,6 +952,49 @@ export async function processPurchaseReturnGroup(
 }
 
 // ============================================================
+// § Fase 123 — Sales Quotation: dokumen PALING AWAL rantai penjualan,
+// auto-create customer+item (mirror `processPurchaseOrderGroup` —
+// create-only, TANPA findExisting/append seperti Sales Invoice, TIDAK
+// ada dampak GL/stok jadi 2 quotation nominal sama bukan duplikat).
+// ============================================================
+export type SalesQuotationGroupResult = {
+  quotationId: number;
+  rowIds: string[];
+};
+
+export async function processSalesQuotationGroup(
+  ctx: AccurateSessionContext,
+  group: SalesQuotationGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesQuotationGroupResult> {
+  const mismatchError = validateGroupCustomerConsistencyForSQ(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildSalesQuotationPayload(rawRows, columnMapping);
+
+  const customerNo = String(payload.customerNo ?? "");
+  if (customerNo) {
+    await findOrCreateCustomer(ctx, customerNo, extractCustomerCreateFieldsSQ(rawRows[0]!, columnMapping));
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const rawRow of rawRows) {
+    const itemNoColumn = Object.entries(columnMapping).find(([, field]) => field === "itemNo")?.[0];
+    const detailItem = itemNoColumn ? rawRow[itemNoColumn] : undefined;
+    const itemNo = detailItem !== undefined && detailItem !== null && detailItem !== "" ? String(detailItem) : null;
+    if (!itemNo || seenItemNo.has(itemNo)) continue;
+    seenItemNo.add(itemNo);
+    await findOrCreateItem(ctx, itemNo, extractItemCreateFieldsSQ(rawRow, columnMapping));
+  }
+
+  await ensureSalesQuotationDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveSalesQuotation(ctx, payload);
+  return { quotationId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt di
 // atas (vendorNo ganti customerNo, paymentNumber ganti receiptNumber)
 // — SEDERHANA, TANPA findExisting/append (alasan sama: 2 pembayaran
@@ -1489,6 +1567,34 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.returnId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 123 — Sales Quotation, grouping DEFAULT ADR-0011
+      // (opsional by "number"), auto-create customer+item (§ komentar
+      // `processSalesQuotationGroup`).
+    } else if (batch.module === "sales_quotation") {
+      const groups = groupSalesQuotationRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processSalesQuotationGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.quotationId),
               errorMessage: null,
               processedAt: new Date(),
             })

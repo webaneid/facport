@@ -88,7 +88,8 @@ diterima" — jangan asumsikan TIDAK BISA tanpa test).
 | ITEM: Custom Number 1-10 | `detailItem[].numericField1`-`numericField10` | sama |
 | ITEM: Custom Date 1-2 | `detailItem[].dateField1`-`dateField2` | sama |
 | Expense Account no/Name/Amount/Note | accountNo/expenseName/expenseAmount/expenseNotes | detailExpense[] |
-| Expense Department / Project No | departmentName / projectNo | detailExpense[] |
+| Expense Department | departmentName | detailExpense[] |
+| Expense Project No | **TIDAK ADA field API** — koreksi 2026-09-15, sama pola Purchase Return: `detailExpense[]` Sales Quotation TIDAK punya `projectNo` sama sekali (dikonfirmasi `accurate-openapi.json`), klaim tabel ini sebelumnya KELIRU | detailExpense[] tidak punya `projectNo` |
 | Expense: Finance Category 1-10 | dataClassification1Name..10Name | detailExpense[] |
 
 ## Atribut Tambahan (Custom Character/Number/Date) — Field Resmi SUDAH Diketahui

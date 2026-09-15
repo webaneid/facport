@@ -30,6 +30,7 @@ import {
   ShoppingCart,
   PackageCheck,
   Undo2,
+  FileSignature,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -80,6 +81,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
         // (architecture-purchase-return.md).
         { href: "/purchase-return/import", label: "Import Purchase Return", icon: Undo2, moduleKey: "purchase_return" },
+        // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
+        // (architecture-sales-quotation.md).
+        { href: "/sales-quotation/import", label: "Import Sales Quotation", icon: FileSignature, moduleKey: "sales_quotation" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu — beda dari item import di atas). SENGAJA
