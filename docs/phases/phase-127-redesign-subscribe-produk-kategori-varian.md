@@ -66,6 +66,32 @@ disentuh fase ini.
   sama seperti kode lama) — hindari duplikasi visual/clutter, closed
   row tetap simpel (checkmark + nama) sesuai referensi gambar user.
 
+## Update — "Tambahan Anggota" jadi Produk ke-4 (2026-09-15, sesi sama)
+User inget ada 1 "produk" lagi yang kelewat: **Tambahan Anggota** (seat
+add-on, section "Slot User Tambahan" yang SUDAH ada sejak Fase 110,
+TIDAK disentuh saat redesain awal di atas). Diperlakukan konsisten
+section Produk lain (judul besar + garis) diletakkan SETELAH grid
+Facport/Konverter/AutoProduksi — TAPI dengan syarat baru: cuma muncul
+kalau Data Usaha ini SUDAH punya minimal 1 fitur AKTIF YANG DIBAYAR
+(bukan trial — trial gratis, belum "membeli"), dari **Produk manapun**
+(bukan Facport doang) — dikonfirmasi eksplisit user ("harus sudah
+membeli salah satu fitur, baik dari facport, konverter maupun
+autoproduksi"). Sebelumnya section ini tampil asal admin sudah bikin
+paket seat, TANPA syarat subscription aktif sama sekali — nambah anggota
+tim sebelum punya fitur apa pun buat mereka pakai memang tidak masuk akal.
+
+`hasAnyRealActiveSubscription` (baru, `subscribe-form.tsx`) — cek
+`activeModuleMap` (SUDAH ada dari fetch `load()`, tidak ada fetch baru)
+punya minimal 1 entry `=== false` (aktif ASLI, bukan trial). Gate ini
+murni presentasional (kapan Card ditampilkan) — endpoint checkout seat
+(`/subscriptions/checkout`) TIDAK berubah, TIDAK ada validasi server
+baru (di luar scope, backend memang sudah izinkan beli seat kapan saja
+selama seat plan aktif — gate ini cuma UX supaya urutan pembelian masuk
+akal, bukan pembatasan keamanan baru).
+
+`bun run typecheck`/`lint` — 0 error (tidak ada file backend disentuh,
+tidak perlu re-run test suite).
+
 ## Checklist Sebelum Ditutup (sesuai SOP)
 - [x] Type check nol error (`bun run typecheck`) — api+web, 0 error
 - [x] `bun run lint` — 0 error

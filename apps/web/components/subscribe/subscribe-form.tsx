@@ -172,6 +172,15 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
     load();
   }
 
+  // § Fase 127 lanjutan (diminta user 2026-09-15) — "Tambahan Anggota"
+  // cuma masuk akal begitu Data Usaha ini SUDAH punya minimal 1 fitur
+  // aktif YANG DIBAYAR (bukan trial — trial gratis, belum "membeli"),
+  // dari Produk MANAPUN (Facport/Konverter/AutoProduksi, bukan Facport
+  // doang) — nambah anggota tim baru berguna kalau sudah ada fitur buat
+  // mereka pakai. `=== false` di `activeModuleMap` berarti aktif ASLI
+  // (bukan trial, § komentar `activeModuleMap` di atas).
+  const hasAnyRealActiveSubscription = [...activeModuleMap.values()].some((isTrial) => isTrial === false);
+
   const seatTotal = selectedSeatPlan ? selectedSeatPlan.price * seatQuantity : 0;
   const total = useMemo(() => selectedPlans.reduce((sum, p) => sum + p.price, 0) + seatTotal, [selectedPlans, seatTotal]);
 
@@ -242,49 +251,62 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
             })}
           </Accordion>
 
-          {seatPlans.length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Slot User Tambahan</CardTitle>
-                <CardDescription>Undang orang lain akses SEMUA fitur aktif Data Usaha ini — dikelola di halaman &quot;Kelola Tim&quot;.</CardDescription>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {seatPlans.length > 1 && (
-                  <div className="flex gap-1.5">
-                    {seatPlans.map((p) => (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setSelectedSeatPlanIdOverride(p.id)}
-                        className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
-                          selectedSeatPlanId === p.id
-                            ? "border-primary-600 bg-primary-600 text-white"
-                            : "border-border text-muted-foreground hover:border-primary-300"
-                        }`}
-                      >
-                        {formatDuration(p.durationDays)} — {currencyFormatter.format(p.price)}
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div className="flex items-center gap-3">
-                  <label htmlFor="seat-quantity" className="text-sm text-foreground">
-                    Jumlah slot
-                  </label>
-                  <input
-                    id="seat-quantity"
-                    type="number"
-                    min={0}
-                    value={seatQuantity}
-                    onChange={(e) => setSeatQuantity(Math.max(0, Number(e.target.value) || 0))}
-                    className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
-                  />
-                  {selectedSeatPlan && seatQuantity > 0 && (
-                    <span className="text-sm text-muted-foreground">= {currencyFormatter.format(selectedSeatPlan.price * seatQuantity)}</span>
+          {/* § Fase 127 lanjutan — "Tambahan Anggota" diperlakukan seperti
+             1 Produk lagi (judul besar + garis, konsisten section
+             Facport/Konverter/AutoProduksi di atas), diletakkan SETELAH
+             grid Produk, TAPI cuma muncul kalau Data Usaha ini sudah
+             punya minimal 1 fitur aktif yang dibayar (§ `hasAnyRealActiveSubscription`
+             di atas) — beli slot anggota sebelum punya fitur apa pun
+             tidak masuk akal. */}
+          {seatPlans.length > 0 && hasAnyRealActiveSubscription && (
+            <div className="flex flex-col gap-4">
+              <div>
+                <h2 className="text-2xl font-bold tracking-tight text-foreground">Tambahan Anggota</h2>
+                <div className="mt-3 border-t border-border" />
+              </div>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Slot User Tambahan</CardTitle>
+                  <CardDescription>Undang orang lain akses SEMUA fitur aktif Data Usaha ini — dikelola di halaman &quot;Kelola Tim&quot;.</CardDescription>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {seatPlans.length > 1 && (
+                    <div className="flex gap-1.5">
+                      {seatPlans.map((p) => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setSelectedSeatPlanIdOverride(p.id)}
+                          className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                            selectedSeatPlanId === p.id
+                              ? "border-primary-600 bg-primary-600 text-white"
+                              : "border-border text-muted-foreground hover:border-primary-300"
+                          }`}
+                        >
+                          {formatDuration(p.durationDays)} — {currencyFormatter.format(p.price)}
+                        </button>
+                      ))}
+                    </div>
                   )}
-                </div>
-              </CardContent>
-            </Card>
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="seat-quantity" className="text-sm text-foreground">
+                      Jumlah slot
+                    </label>
+                    <input
+                      id="seat-quantity"
+                      type="number"
+                      min={0}
+                      value={seatQuantity}
+                      onChange={(e) => setSeatQuantity(Math.max(0, Number(e.target.value) || 0))}
+                      className="w-20 rounded-lg border border-border px-2 py-1.5 text-sm"
+                    />
+                    {selectedSeatPlan && seatQuantity > 0 && (
+                      <span className="text-sm text-muted-foreground">= {currencyFormatter.format(selectedSeatPlan.price * seatQuantity)}</span>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           <Card>

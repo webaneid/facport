@@ -3235,3 +3235,11 @@ termasuk stale cookie `active_data_usaha_id` yang mengganggu) — diganti
 review kode baris-demi-baris + typecheck/lint/test, user diminta cek
 visual sendiri sebelum final. Detail lengkap →
 `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md`.
+
+**Update 2026-09-15 (sesi sama) — "Tambahan Anggota" ditambah jadi
+Produk ke-4**: section "Slot User Tambahan" (sudah ada sejak Fase 110)
+sekarang diperlakukan konsisten section Produk lain (judul besar+garis)
+diletakkan setelah grid Facport, TAPI cuma muncul kalau Data Usaha
+sudah punya minimal 1 fitur AKTIF YANG DIBAYAR (bukan trial) dari Produk
+manapun — sebelumnya tampil tanpa syarat subscription sama sekali.
+Murni gate presentasional, endpoint checkout tidak berubah.
