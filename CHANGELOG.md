@@ -1,3 +1,12 @@
+## 2.4.0 (2026-09-15)
+
+* Merge pull request #62 from webaneid/develop ([af03b19](https://github.com/webaneid/facport/commit/af03b19)), closes [#62](https://github.com/webaneid/facport/issues/62)
+* fix(admin): sederhanakan tabel Pengguna jadi 4 kolom, hindari scroll horizontal ([aee2705](https://github.com/webaneid/facport/commit/aee2705))
+* feat(sidebar): grup Produk "Facport" + flyout Kategori, fix scroll popup Tambah Paket (Fase 126) ([2fcd530](https://github.com/webaneid/facport/commit/2fcd530))
+* feat(subscribe): "Tambahan Anggota" jadi section Produk ke-4, gated fitur aktif dibayar (Fase 127 la ([23973bf](https://github.com/webaneid/facport/commit/23973bf))
+* feat(subscribe): redesain /subscribe jadi grup Produk → Kategori → Varian dengan accordion (Fase 127 ([123ec7e](https://github.com/webaneid/facport/commit/123ec7e))
+* docs: perbaiki domain production di runbook deploy (ane.web.id sudah decommission sejak Fase 112) ([e21b92c](https://github.com/webaneid/facport/commit/e21b92c))
+
 ## 2.3.0 (2026-09-15)
 
 * Merge pull request #61 from webaneid/develop ([cd2e490](https://github.com/webaneid/facport/commit/cd2e490)), closes [#61](https://github.com/webaneid/facport/issues/61)
