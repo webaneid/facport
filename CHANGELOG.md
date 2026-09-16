@@ -1,3 +1,13 @@
+## 2.5.0 (2026-09-16)
+
+* Merge pull request #63 from webaneid/develop ([14bfdf9](https://github.com/webaneid/facport/commit/14bfdf9)), closes [#63](https://github.com/webaneid/facport/issues/63)
+* feat(invoice): tampilkan durasi paket + tanggal berlaku aktual (Fase 131) ([020815f](https://github.com/webaneid/facport/commit/020815f))
+* feat(notifications): notifikasi expiry spesifik + email + banner (Fase 132) ([bb87aa8](https://github.com/webaneid/facport/commit/bb87aa8))
+* feat(other-deposit): modul import Other Deposit ke Accurate (Fase 128) ([af16d04](https://github.com/webaneid/facport/commit/af16d04))
+* feat(subscribe): subtitle + accordion default-open per kartu Kategori (Fase 129) ([48ed3b6](https://github.com/webaneid/facport/commit/48ed3b6))
+* feat(subscription): tampilkan tanggal expiry aktual di admin & /subscribe (Fase 130) ([b03d064](https://github.com/webaneid/facport/commit/b03d064))
+* docs: SOP checklist permanen buat titik registrasi modul import baru (gap kejadian ke-2) ([ae6df39](https://github.com/webaneid/facport/commit/ae6df39))
+
 ## 2.4.0 (2026-09-15)
 
 * Merge pull request #62 from webaneid/develop ([af03b19](https://github.com/webaneid/facport/commit/af03b19)), closes [#62](https://github.com/webaneid/facport/issues/62)
