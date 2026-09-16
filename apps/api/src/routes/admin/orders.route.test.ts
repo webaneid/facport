@@ -81,7 +81,7 @@ async function createSubmittedOrder(userId: string, planSpecs: { moduleKey: stri
     })
     .returning();
   for (const plan of planRows) {
-    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price });
+    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price, durationDays: plan.durationDays });
   }
   const [order] = await db
     .insert(orders)
@@ -297,7 +297,7 @@ async function createSubmittedSeatOrder(userId: string, dataUsahaId: string, sea
     })
     .returning();
   for (const plan of planRows) {
-    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: "seat_addon", label: plan.name, price: plan.price });
+    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: "seat_addon", label: plan.name, price: plan.price, durationDays: plan.durationDays });
   }
   const [order] = await db
     .insert(orders)

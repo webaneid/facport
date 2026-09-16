@@ -78,6 +78,7 @@ async function insertInvoiceWithItems(userId: string) {
     moduleKey: "sales_invoice",
     label: plan!.name,
     price: plan!.price,
+    durationDays: plan!.durationDays,
   });
   return invoice!;
 }

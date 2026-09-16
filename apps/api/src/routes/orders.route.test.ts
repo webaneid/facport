@@ -110,7 +110,7 @@ async function createOrderForUser(userId: string) {
       dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
     })
     .returning();
-  await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan!.id, moduleKey: "sales_invoice", label: plan!.name, price: plan!.price });
+  await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan!.id, moduleKey: "sales_invoice", label: plan!.name, price: plan!.price, durationDays: plan!.durationDays });
   const [order] = await db.insert(orders).values({ invoiceId: invoice!.id, uniqueCode: 321 }).returning();
   return { order: order!, invoice: invoice! };
 }

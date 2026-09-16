@@ -37,6 +37,16 @@ export const invoiceItems = pgTable("invoice_items", {
   productLine: varchar("product_line", { length: 20 }).notNull().default("facport"),
   label: varchar("label", { length: 200 }).notNull(), // SNAPSHOT plan.name
   price: integer("price").notNull(), // SNAPSHOT plan.price
+  // § Fase 131 (diminta user 2026-09-17) — SNAPSHOT plan.durationDays,
+  // pola sama label/price di atas (§ "Kenapa SEMUA Field Penting
+  // Snapshot" di architecture-invoice.md) — invoice yang SUDAH terbit
+  // harus tetap tunjukkan durasi yang BENAR-BENAR ditagihkan saat itu,
+  // bukan durasi plan yang berlaku sekarang kalau admin ubah belakangan.
+  // Tanggal AKTUAL (startAt/endAt) SENGAJA TIDAK di-snapshot di sini —
+  // itu live-join ke `subscriptions` saat render (§ invoices.route.ts),
+  // karena baru ADA setelah subscription tercipta dan HARUS reflect
+  // perpanjangan admin (PATCH endAt) — snapshot justru salah utk itu.
+  durationDays: integer("duration_days").notNull(),
 });
 
 // § Fase 16, ADR-0022 — ganti pola `COUNT(*) LIKE 'INV/...%'` (Fase 15,

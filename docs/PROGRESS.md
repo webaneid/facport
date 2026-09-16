@@ -138,7 +138,7 @@
 | 128  | Modul Other Deposit (Penerimaan Bank/Kas) | Done | `docs/architecture/architecture-other-deposit.md` | `docs/phases/phase-128-modul-other-deposit.md` |
 | 129  | /subscribe: Subtitle + Accordion Default-Open Per Kartu | Done | - | `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md` |
 | 130  | Tampilkan Expiry Aktual (Admin User-Detail + /subscribe) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-130-expiry-admin-customer.md` |
-| 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Planned | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
+| 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
 | 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Planned | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
@@ -3318,3 +3318,28 @@ tidak (kredensial dev stale, diganti code review). Detail lengkap →
 Lanjut Fase 131 (durasi & tanggal di invoice) dan Fase 132 (notifikasi
 expiry — teks spesifik + email + banner), sesuai rencana yang sudah
 disetujui.
+
+## Update 2026-09-17 — Fase 131 Done: Durasi & Tanggal di Invoice
+
+Bagian 2.3 dari audit Part 2. Invoice (PDF + dialog "Detail Invoice"
+admin) sebelumnya sama sekali tidak menampilkan durasi paket atau
+tanggal mulai/berakhir subscription. Migration baru
+`invoice_items.duration_days` (snapshot, backfill dari `plans` di
+migration yang sama) + fungsi baru `attachSubscriptionDates()` (live
+join ke `subscriptions` via `invoiceItemId`, sudah ada sejak Fase
+15/ADR-0021 — tidak perlu kolom baru untuk tanggal).
+
+PDF (`GET /invoices/:id/pdf`, 1 generator dipakai customer MAUPUN admin)
+sekarang render "Durasi: 1 Tahun · Berlaku: 14 September 2026 – 09
+September 2027" per item — diverifikasi langsung di browser, cocok
+dengan data subscription aktual. Dialog admin dapat treatment yang sama
+(tidak lewat PDF, render raw per-item).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1106 pass (1 baru).
+Security review 0 temuan (ownership sudah benar di kedua pemanggil,
+backfill migration aman karena `plans` tidak pernah hard-delete).
+Verifikasi visual PDF berhasil; dialog admin diganti code review
+(kredensial dev stale, sama limitation Fase 130). Detail lengkap →
+`docs/phases/phase-131-invoice-durasi-tanggal.md`.
+
+Lanjut Fase 132 (notifikasi expiry — teks spesifik + email + banner).

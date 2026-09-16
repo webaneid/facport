@@ -5,7 +5,7 @@ import { db } from "../lib/db";
 import { invoices, invoiceItems, settings, orders, dataUsaha } from "../db/schema";
 import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
-import { attachInvoiceItems, groupIdenticalInvoiceItems } from "../lib/invoice-helpers";
+import { attachInvoiceItems, attachSubscriptionDates, groupIdenticalInvoiceItems } from "../lib/invoice-helpers";
 import { getProofImageAsPng } from "../lib/order-payment";
 import { logger } from "../lib/logger";
 
@@ -95,7 +95,11 @@ export const invoicesRoute = new Elysia()
         }
       }
 
-      const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+      const rawItems = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+      // § Fase 131 — tanggal AKTUAL mulai/berakhir subscription (live join,
+      // § komentar `attachSubscriptionDates`), null kalau invoice belum
+      // dibayar (subscription belum tercipta).
+      const items = await attachSubscriptionDates(rawItems);
       const company = await getCompanySettingsForPdf();
       let logoImage: Buffer | null = null;
       if (company.logoUrl) {
