@@ -16,6 +16,17 @@ import { DeleteImportDialog as PurchasePaymentDeleteImportDialog } from "@/compo
 import { DeleteImportDialog as SalesReceiptDeleteImportDialog } from "@/components/sales-receipt/delete-import-dialog";
 import { DeleteImportDialog as JournalVoucherDeleteImportDialog } from "@/components/journal-voucher/delete-import-dialog";
 import { DeleteImportDialog as OtherPaymentDeleteImportDialog } from "@/components/other-payment/delete-import-dialog";
+// § Fase 128 — ditemukan sekalian: 5 modul Fase 120-124 TIDAK PERNAH
+// ditambahkan ke dispatch tabel gabungan ini (checklist di komentar
+// bawah kelewat) — "Arsip Import" jadi tidak punya tombol Delete utk
+// batch modul itu (beda dari 12 halaman Riwayat PER-MODUL yang sudah
+// benar sejak Fase 126). Diperbaiki sekalian di sini.
+import { DeleteImportDialog as PurchaseOrderDeleteImportDialog } from "@/components/purchase-order/delete-import-dialog";
+import { DeleteImportDialog as ReceiveItemDeleteImportDialog } from "@/components/receive-item/delete-import-dialog";
+import { DeleteImportDialog as PurchaseReturnDeleteImportDialog } from "@/components/purchase-return/delete-import-dialog";
+import { DeleteImportDialog as SalesQuotationDeleteImportDialog } from "@/components/sales-quotation/delete-import-dialog";
+import { DeleteImportDialog as SalesReturnDeleteImportDialog } from "@/components/sales-return/delete-import-dialog";
+import { DeleteImportDialog as OtherDepositDeleteImportDialog } from "@/components/other-deposit/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -130,6 +141,24 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "other_payment" && (
                     <OtherPaymentDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "other_deposit" && (
+                    <OtherDepositDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "purchase_order" && (
+                    <PurchaseOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "receive_item" && (
+                    <ReceiveItemDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "purchase_return" && (
+                    <PurchaseReturnDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "sales_quotation" && (
+                    <SalesQuotationDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "sales_return" && (
+                    <SalesReturnDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

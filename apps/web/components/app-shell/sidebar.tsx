@@ -33,6 +33,7 @@ import {
   Undo2,
   FileSignature,
   RotateCcw,
+  Coins,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -90,6 +91,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       items: [
         // Cash & Bank
         { href: "/other-payment/import", label: "Import Other Payment", icon: Banknote, moduleKey: "other_payment" },
+        // § Fase 128 — Other Deposit, kebalikan Other Payment.
+        { href: "/other-deposit/import", label: "Import Other Deposit", icon: Coins, moduleKey: "other_deposit" },
         // General Ledger
         { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
         // Purchase

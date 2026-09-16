@@ -135,6 +135,7 @@
 | 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
 | 126  | Sidebar App: Grup Produk "Facport" + Flyout Kategori, Fix Popup Admin Tambah Paket | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-126-sidebar-produk-kategori-varian.md` |
 | 127  | Redesain /subscribe: Grup Produk → Kategori → Varian (Accordion) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md` |
+| 128  | Modul Other Deposit (Penerimaan Bank/Kas) | Done | `docs/architecture/architecture-other-deposit.md` | `docs/phases/phase-128-modul-other-deposit.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3243,3 +3244,31 @@ diletakkan setelah grid Facport, TAPI cuma muncul kalau Data Usaha
 sudah punya minimal 1 fitur AKTIF YANG DIBAYAR (bukan trial) dari Produk
 manapun — sebelumnya tampil tanpa syarat subscription sama sekali.
 Murni gate presentasional, endpoint checkout tidak berubah.
+
+## Update 2026-09-16 — Fase 128 Done: Modul Other Deposit (Penerimaan Bank/Kas)
+
+Client kirim 5 sheet fitur baru (Other Deposit, Sales Order, Item
+Requisition, Item Transfer, Inventory Adjustment). Dicek dulu — **4/5
+sheet TERNYATA KOSONG TOTAL** (tab ada, 0 kolom/screenshot sampai level
+XML mentah), cuma "Othe Deposit" (typo client) yang siap. User setuju
+kerjakan yang siap dulu.
+
+**Other Deposit** = kebalikan Other Payment (penerimaan kas/bank di
+luar penjualan — setoran modal, pendapatan lain-lain — bukan
+pengeluaran), kategori "Cash & Bank". Struktur API diverifikasi ULANG
+ke `accurate-openapi.json` (bukan diasumsikan sama Other Payment tanpa
+cek) — ternyata memang identik byte-for-byte, termasuk gap yang sama
+(field `expenseName` wajib tapi tidak ada di sheet client → kolom baru
+"Expense Name", nama field API dipertahankan apa adanya).
+
+**Sekalian ditemukan & diperbaiki**: 5 modul Fase 120-124 (Purchase
+Order/Receive Item/Purchase Return/Sales Quotation/Sales Return) TIDAK
+PERNAH ditambahkan ke 3 file "daftar semua modul" (`module-import-routes.ts`,
+`import-batch-table.tsx` — Arsip Import gabungan tidak ada tombol
+Delete/link Detail utk batch modul itu, admin `[batchId]/page.tsx` —
+detail batch kosong tanpa tabel per-baris). Dibackfill sekalian untuk
+6 modul (5 lama + other_deposit baru), bukan ditunda.
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1105 pass (38 test
+baru). Security review 0 temuan. Detail lengkap →
+`docs/phases/phase-128-modul-other-deposit.md`.

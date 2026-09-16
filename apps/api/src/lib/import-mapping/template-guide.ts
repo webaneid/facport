@@ -609,6 +609,58 @@ export const otherPaymentTemplateGuide: TemplateFieldGuide[] = [
   { column: "Kategori Keuangan 10", required: false, example: "", description: "Data Classification 10, sama catatan di atas." },
 ];
 
+// § Fase 128, architecture-other-deposit.md — kebalikan Other Payment
+// (uang MASUK, bukan keluar), struktur API IDENTIK (dikonfirmasi ulang
+// terhadap accurate-openapi.json, bukan asumsi).
+export const otherDepositTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "10/09/2026", description: "Tanggal transaksi penerimaan." },
+  { column: "Trans No", required: true, example: "OD.2026.09.00001", description: "Nomor transaksi — isi SAMA di beberapa baris untuk menggabungkannya jadi 1 penerimaan dengan BANYAK akun (N akun, tidak terbatas 1)." },
+  { column: "Branch Name", required: true, example: "JAKARTA", description: "Nama cabang — WAJIB diisi (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Bank No", required: true, example: "1-10200", description: "Kode Akun (COA) kas/bank TUJUAN dana masuk, PERSIS seperti terdaftar di Accurate — WAJIB SUDAH ADA." },
+  { column: "Payee", required: true, example: "PT Mitra Jaya", description: "Informasi pemberi/sumber dana (siapa/apa yang menyetor), bebas teks." },
+  { column: "Cheque No", required: false, example: "", description: "Nomor cek/giro — kalau ada." },
+  { column: "Description", required: false, example: "", description: "Catatan bebas untuk transaksi ini." },
+  { column: "Rate", required: false, example: "1", description: "Nilai tukar mata uang — isi kalau transaksi pakai mata uang asing." },
+  { column: "Acc No", required: true, example: "4-10100", description: "Kode Akun (COA) untuk BARIS INI, PERSIS seperti terdaftar di Accurate — WAJIB SUDAH ADA." },
+  { column: "Expense Name", required: true, example: "Pendapatan Lain-lain", description: "Nama/keterangan untuk baris ini (field API Accurate literal namanya \"expenseName\" walau konteks penerimaan, § mapping.ts) — BUKAN nama master akun, ini teks bebas spesifik untuk transaksi ini, WAJIB diisi." },
+  { column: "Amount", required: true, example: "500000", description: "Nominal untuk baris ini. Angka polos, TANPA titik/koma pemisah ribuan." },
+  { column: "Memo", required: false, example: "", description: "Catatan bebas khusus baris ini." },
+  { column: "Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate. ⚠️ Belum diverifikasi end-to-end untuk endpoint ini." },
+  { column: "Atribut Tambahan 1", required: false, example: "", description: "Atribut tambahan (teks bebas) level transaksi, dari baris PERTAMA grup saja. ⚠️ Belum diverifikasi end-to-end untuk endpoint ini." },
+  { column: "Atribut Tambahan 2", required: false, example: "", description: "Atribut tambahan 2, sama catatan di atas." },
+  { column: "Atribut Tambahan 3", required: false, example: "", description: "Atribut tambahan 3, sama catatan di atas." },
+  { column: "Atribut Tambahan 4", required: false, example: "", description: "Atribut tambahan 4, sama catatan di atas." },
+  { column: "Atribut Tambahan 5", required: false, example: "", description: "Atribut tambahan 5, sama catatan di atas." },
+  { column: "Atribut Tambahan 6", required: false, example: "", description: "Atribut tambahan 6, sama catatan di atas." },
+  { column: "Atribut Tambahan 7", required: false, example: "", description: "Atribut tambahan 7, sama catatan di atas." },
+  { column: "Atribut Tambahan 8", required: false, example: "", description: "Atribut tambahan 8, sama catatan di atas." },
+  { column: "Atribut Tambahan 9", required: false, example: "", description: "Atribut tambahan 9, sama catatan di atas." },
+  { column: "Atribut Tambahan 10", required: false, example: "", description: "Atribut tambahan 10, sama catatan di atas." },
+  { column: "Atribut Number 1", required: false, example: "", description: "Atribut angka level transaksi, dari baris PERTAMA grup saja. ⚠️ Belum diverifikasi end-to-end untuk endpoint ini." },
+  { column: "Atribut Number 2", required: false, example: "", description: "Atribut angka 2, sama catatan di atas." },
+  { column: "Atribut Number 3", required: false, example: "", description: "Atribut angka 3, sama catatan di atas." },
+  { column: "Atribut Number 4", required: false, example: "", description: "Atribut angka 4, sama catatan di atas." },
+  { column: "Atribut Number 5", required: false, example: "", description: "Atribut angka 5, sama catatan di atas." },
+  { column: "Atribut Number 6", required: false, example: "", description: "Atribut angka 6, sama catatan di atas." },
+  { column: "Atribut Number 7", required: false, example: "", description: "Atribut angka 7, sama catatan di atas." },
+  { column: "Atribut Number 8", required: false, example: "", description: "Atribut angka 8, sama catatan di atas." },
+  { column: "Atribut Number 9", required: false, example: "", description: "Atribut angka 9, sama catatan di atas." },
+  { column: "Atribut Number 10", required: false, example: "", description: "Atribut angka 10, sama catatan di atas." },
+  { column: "Atribut Tanggal 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut tanggal 1 level transaksi, dari baris PERTAMA grup saja. ⚠️ Belum diverifikasi end-to-end untuk endpoint ini." },
+  { column: "Atribut Tanggal 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tanggal 2, sama catatan di atas." },
+  { column: "Kategori Keuangan 1", required: false, example: "", description: "Data Classification 1 (Kategori Keuangan) untuk baris ini, harus PERSIS terdaftar di Accurate — dibuat otomatis kalau belum ada." },
+  { column: "Kategori Keuangan 2", required: false, example: "", description: "Data Classification 2, sama catatan di atas." },
+  { column: "Kategori Keuangan 3", required: false, example: "", description: "Data Classification 3, sama catatan di atas." },
+  { column: "Kategori Keuangan 4", required: false, example: "", description: "Data Classification 4, sama catatan di atas." },
+  { column: "Kategori Keuangan 5", required: false, example: "", description: "Data Classification 5, sama catatan di atas." },
+  { column: "Kategori Keuangan 6", required: false, example: "", description: "Data Classification 6, sama catatan di atas." },
+  { column: "Kategori Keuangan 7", required: false, example: "", description: "Data Classification 7, sama catatan di atas." },
+  { column: "Kategori Keuangan 8", required: false, example: "", description: "Data Classification 8, sama catatan di atas." },
+  { column: "Kategori Keuangan 9", required: false, example: "", description: "Data Classification 9, sama catatan di atas." },
+  { column: "Kategori Keuangan 10", required: false, example: "", description: "Data Classification 10, sama catatan di atas." },
+];
+
 // § Fase 120, architecture-purchase-order.md — titik AWAL rantai
 // procurement, mirror Purchase Invoice (auto-create vendor+item). "Trans
 // No" WAJIB sejak awal modul ini (bukan retrofit) — kunci grouping

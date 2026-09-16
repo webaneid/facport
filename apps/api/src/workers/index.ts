@@ -65,6 +65,14 @@ import {
   extractDataClassificationValues as extractOtherPaymentDataClassificationValues,
   type OtherPaymentGroup,
 } from "../lib/import-mapping/other-payment.mapping";
+import { saveOtherDeposit } from "../lib/accurate-other-deposit";
+import {
+  buildOtherDepositPayload,
+  groupOtherDepositRows,
+  // § Fase 128 — sama pola alias "OD" (nama collide `extractDataClassificationValues`).
+  extractDataClassificationValues as extractOtherDepositDataClassificationValues,
+  type OtherDepositGroup,
+} from "../lib/import-mapping/other-deposit.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
 import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guard";
@@ -249,6 +257,24 @@ async function ensureOtherPaymentDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractOtherPaymentDataClassificationValues(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 128 — mirror `ensureOtherPaymentDataClassifications` PERSIS,
+// dibangun dari AWAL modul ini dibuat.
+async function ensureOtherDepositDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractOtherDepositDataClassificationValues(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1160,6 +1186,24 @@ export async function processOtherPaymentGroup(
   return { otherPaymentId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
+export type OtherDepositGroupResult = {
+  otherDepositId: number;
+  rowIds: string[];
+};
+
+export async function processOtherDepositGroup(
+  ctx: AccurateSessionContext,
+  group: OtherDepositGroup,
+  columnMapping: Record<string, string>,
+): Promise<OtherDepositGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  await ensureOtherDepositDataClassifications(ctx, rawRows, columnMapping);
+  const payload = buildOtherDepositPayload(rawRows, columnMapping);
+
+  const result = await saveOtherDeposit(ctx, payload);
+  return { otherDepositId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
 async function main() {
   await startQueue();
 
@@ -1776,6 +1820,33 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.otherPaymentId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 128 — Other Deposit, mirror Other Payment PERSIS (grouping
+      // by "Trans No" sejak awal).
+    } else if (batch.module === "other_deposit") {
+      const groups = groupOtherDepositRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processOtherDepositGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.otherDepositId),
               errorMessage: null,
               processedAt: new Date(),
             })

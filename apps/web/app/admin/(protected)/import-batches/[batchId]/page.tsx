@@ -302,6 +302,176 @@ function OtherPaymentView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 128 — ditemukan sekalian: 5 modul Fase 120-124 (Purchase Order/
+// Receive Item/Purchase Return/Sales Quotation/Sales Return) TIDAK
+// PERNAH dapat cabang render di sini (persis pola gap yang sama
+// ditemukan 2026-09-06 utk Purchase Payment/Sales Receipt/Jurnal Umum,
+// § komentar atas) — admin yang buka detail batch modul itu cuma lihat
+// Ringkasan tanpa tabel per-baris. Diperbaiki sekalian di sini, sama
+// pola generik (rowNumber/status/id atau error, tanpa grouping kolom)
+// seperti VendorPayableAccountView/OtherPaymentView.
+function OtherDepositView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Other Deposit Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PurchaseOrderView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Purchase Order Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function ReceiveItemView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Receive Item Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function PurchaseReturnView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Purchase Return Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function SalesQuotationView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Sales Quotation Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function SalesReturnView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead>Baris</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>ID Sales Return Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -310,6 +480,12 @@ const MODULE_TITLE: Record<string, string> = {
   sales_receipt: "Hasil Import Sales Receipt",
   journal_voucher: "Hasil Import Jurnal Umum",
   other_payment: "Hasil Import Other Payment",
+  other_deposit: "Hasil Import Other Deposit",
+  purchase_order: "Hasil Import Purchase Order",
+  receive_item: "Hasil Import Receive Item",
+  purchase_return: "Hasil Import Purchase Return",
+  sales_quotation: "Hasil Import Sales Quotation",
+  sales_return: "Hasil Import Sales Return",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -377,6 +553,12 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "sales_receipt" && <SalesReceiptView batch={batch} rows={rows} />}
           {batch.module === "journal_voucher" && <JournalVoucherView rows={rows} />}
           {batch.module === "other_payment" && <OtherPaymentView rows={rows} />}
+          {batch.module === "other_deposit" && <OtherDepositView rows={rows} />}
+          {batch.module === "purchase_order" && <PurchaseOrderView rows={rows} />}
+          {batch.module === "receive_item" && <ReceiveItemView rows={rows} />}
+          {batch.module === "purchase_return" && <PurchaseReturnView rows={rows} />}
+          {batch.module === "sales_quotation" && <SalesQuotationView rows={rows} />}
+          {batch.module === "sales_return" && <SalesReturnView rows={rows} />}
         </CardContent>
       </Card>
     </div>

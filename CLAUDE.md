@@ -138,6 +138,8 @@ untuk task kecil, itu justru lebih mahal token.
 | Modul Purchase Payment (Pembayaran Pembelian) | `docs/architecture/architecture-purchase-payment.md` |
 | Modul Sales Receipt (Penerimaan Penjualan) | `docs/architecture/architecture-sales-receipt.md` |
 | Modul Jurnal Umum (Journal Voucher) | `docs/architecture/architecture-journal-voucher.md` |
+| Modul Other Payment (Pembayaran Bank/Kas) | `docs/architecture/architecture-other-payment.md` |
+| Modul Other Deposit (Penerimaan Bank/Kas) | `docs/architecture/architecture-other-deposit.md` |
 | Modul Purchase Order (Pesanan Pembelian) | `docs/architecture/architecture-purchase-order.md` |
 | Modul Receive Item (Penerimaan Barang) | `docs/architecture/architecture-receive-item.md` |
 | Modul Purchase Return (Retur Pembelian) | `docs/architecture/architecture-purchase-return.md` |
