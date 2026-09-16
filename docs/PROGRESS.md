@@ -137,6 +137,9 @@
 | 127  | Redesain /subscribe: Grup Produk → Kategori → Varian (Accordion) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md` |
 | 128  | Modul Other Deposit (Penerimaan Bank/Kas) | Done | `docs/architecture/architecture-other-deposit.md` | `docs/phases/phase-128-modul-other-deposit.md` |
 | 129  | /subscribe: Subtitle + Accordion Default-Open Per Kartu | Done | - | `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md` |
+| 130  | Tampilkan Expiry Aktual (Admin User-Detail + /subscribe) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-130-expiry-admin-customer.md` |
+| 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Planned | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
+| 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Planned | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3291,3 +3294,27 @@ saling tutup).
 logic backend disentuh). Verifikasi visual browser berhasil. Security
 review 0 temuan. Detail lengkap →
 `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md`.
+
+## Update 2026-09-17 — Fase 130 Done: Tampilkan Expiry Aktual (Admin + Customer)
+
+Bagian 2.1 & 2.2 dari audit Part 2 (permintaan besar user soal
+subscription/expiry, 2026-09-17). `startAt`/`endAt` subscription sudah
+ada di DB sejak lama tapi tidak pernah ditampilkan ke admin (halaman
+detail user) maupun customer (`/subscribe`, cuma tampil info katalog
+plan). Fase ini murni surfacing — 0 endpoint/logic baru.
+
+Sekalian menutup audit "apakah 1 Data Usaha bisa punya >1 subscription
+aktif untuk modul yang sama" — jawaban: tidak, dicegah di 3 jalur
+pembuatan subscription (checkout/trial/admin), TIDAK ada unique
+constraint DB (diterima sebagai risiko rendah, didokumentasikan formal
+di `architecture-subscription.md`, bukan di-fix sekarang — di luar
+scope audit yang diminta).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1105 pass. Security
+review 0 temuan. Verifikasi browser berhasil sisi customer; sisi admin
+tidak (kredensial dev stale, diganti code review). Detail lengkap →
+`docs/phases/phase-130-expiry-admin-customer.md`.
+
+Lanjut Fase 131 (durasi & tanggal di invoice) dan Fase 132 (notifikasi
+expiry — teks spesifik + email + banner), sesuai rencana yang sudah
+disetujui.

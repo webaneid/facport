@@ -508,7 +508,54 @@ POST /admin/subscriptions            → assign plan manual ke user (tanpa payme
                                         dari plan.durationDays untuk jalur admin-provisioned)
 PATCH /admin/subscriptions/:id       → ubah `endAt` subscription "active" yang sudah ada,
                                         tanpa bikin baris baru (§ Fase 11, ADR-0016)
+GET  /admin/users/:id/subscriptions  → riwayat lengkap subscription+koneksi Accurate 1 user
+                                        (dikelompokkan per Data Usaha di FE, § `admin/users/[id]/page.tsx`),
+                                        § Fase 130 — ikut `startAt`+`durationDays` (join `plans`) di
+                                        samping `endAt` yang sudah ada sejak Fase 92, supaya admin
+                                        lihat jelas durasi paket + kapan mulai/berakhir tanpa buka DB.
 ```
+
+## Expiry Subscription Aktual — Ditampilkan ke Admin & Customer (Fase 130)
+Sebelum Fase 130, `startAt`/`endAt` subscription TERSIMPAN di DB tapi
+TIDAK PERNAH ditampilkan di 2 tempat yang paling dibutuhkan: halaman
+detail user admin (`admin/users/[id]/page.tsx`, cuma tampil status badge
+tanpa tanggal) dan `/subscribe` customer sendiri (cuma tampil harga+durasi
+dari KATALOG plan, bukan tanggal subscription AKTUAL miliknya). Fase 130
+menutup keduanya — MURNI tampilan, tidak ada endpoint/logic baru:
+- **Admin** — `GET /admin/users/:id/subscriptions` (di atas) ikut
+  `startAt`+`durationDays`, tabel FE dapat 2 kolom baru "Durasi"/"Berlaku".
+- **Customer** — `GET /me/subscriptions` SUDAH mengembalikan
+  `subscription.startAt`/`endAt` sejak awal (lewat `getAccessibleSubscriptionsWithPlans`),
+  cuma dibuang di `subscribe-form.tsx`. Sekarang ditangkap ke state
+  `activeSubscriptionInfo` (Map moduleKey→{startAt,endAt}), di-thread ke
+  `ModulePricingPanel` — render "Mulai {tanggal} — Berakhir {tanggal}" di
+  bawah badge "Sudah Berlangganan"/"Sedang Trial".
+- Format tanggal KEDUANYA pakai `formatDate()`+`useCompanyTimezone()`
+  (pola sama dashboard `app/app/(protected)/page.tsx` "Berlaku sampai...")
+  — konsisten ADR-0028, bukan `.toLocaleDateString()` lokal.
+
+### Audit — 1 Modul Bisa >1 Subscription Aktif untuk Data Usaha yang Sama?
+Ditanyakan eksplisit user 2026-09-17. Jawaban: **tidak bisa lewat jalur
+resmi manapun**, tapi **tidak ada unique constraint DB** yang menjaminnya
+— murni mitigasi APLIKASI, didokumentasikan di sini SUPAYA eksplisit
+(bukan diam-diam dianggap "aman selamanya"):
+- Ke-3 jalur pembuatan subscription (checkout self-service, trial
+  self-service, admin manual-create/confirm-order) SEMUA melakukan
+  "tutup subscription aktif LAIN untuk modul+Data Usaha yang sama SEBELUM
+  insert baris baru" (§ `subscriptions.route.ts`, `admin/subscriptions.route.ts`,
+  `admin/orders.route.ts` — 3 titik, guard identik, ditemukan &
+  diseragamkan 2026-09-07).
+- Checkout customer di dalam 1 `db.transaction()` + row-lock `user` FOR
+  UPDATE (cegah TOCTOU dari 2 tab/double-click bersamaan, § security
+  review 2026-09-04).
+- **Kenapa TIDAK ditambah partial unique index sekarang**: `subscriptions`
+  tidak punya kolom `moduleKey` langsung (turunan `plans.modules[0]` via
+  JOIN) — index partial butuh ekspresi dari kolom TABEL ITU SENDIRI, jadi
+  perlu denormalisasi kolom baru dulu. Skala perbaikan itu lebih besar
+  dari yang diminta (audit "apakah sudah aman", bukan "tambah hard
+  guarantee") — diterima sebagai risiko RENDAH (butuh race condition
+  DI LUAR jalur checkout yang sudah row-locked) untuk sekarang. Revisit
+  kalau ada laporan nyata subscription dobel di production.
 
 ## Referensi
 - Rasional keputusan model dasar → `docs/decisions/adr-0008-model-langganan.md`

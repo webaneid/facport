@@ -45,6 +45,12 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
   // membedakan badge "Sudah Berlangganan" vs "Sedang Trial", dan trial
   // TETAP boleh diklik pilih ke cart untuk upgrade (§ isModuleBlocked).
   const [activeModuleMap, setActiveModuleMap] = useState<Map<string, boolean>>(new Map());
+  // § Fase 130 (diminta user 2026-09-17) — data `startAt`/`endAt` SUDAH
+  // ada di response `GET /me/subscriptions` (sama request yang mengisi
+  // `activeModuleMap` di atas), sebelumnya dibuang begitu saja — customer
+  // tidak pernah lihat tanggal langganannya SENDIRI di halaman ini, cuma
+  // harga+durasi paket dari katalog (§ `ModulePricingPanel`).
+  const [activeSubscriptionInfo, setActiveSubscriptionInfo] = useState<Map<string, { startAt: string | null; endAt: string | null }>>(new Map());
   const [everTrialedModules, setEverTrialedModules] = useState<Set<string>>(new Set());
   const [checkingOut, setCheckingOut] = useState(false);
   const [tryingPlanId, setTryingPlanId] = useState<string | null>(null);
@@ -96,7 +102,10 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
 
     const subsData = subsRes.data as unknown as
       | {
-          subscriptions: { subscription: { isTrial: boolean; dataUsahaId: string }; plan: { modules: string[] } }[];
+          subscriptions: {
+            subscription: { isTrial: boolean; dataUsahaId: string; startAt: string | null; endAt: string | null };
+            plan: { modules: string[] };
+          }[];
           everTrialedModules: string[];
         }
       | undefined;
@@ -105,10 +114,15 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
     // WAJIB sejak 1 modul bisa aktif di >1 Data Usaha).
     const subs = (subsData?.subscriptions ?? []).filter((s) => s.subscription.dataUsahaId === dataUsahaId);
     const moduleMap = new Map<string, boolean>();
+    const subscriptionInfoMap = new Map<string, { startAt: string | null; endAt: string | null }>();
     for (const s of subs) {
-      for (const m of s.plan.modules) moduleMap.set(m, s.subscription.isTrial);
+      for (const m of s.plan.modules) {
+        moduleMap.set(m, s.subscription.isTrial);
+        subscriptionInfoMap.set(m, { startAt: s.subscription.startAt, endAt: s.subscription.endAt });
+      }
     }
     setActiveModuleMap(moduleMap);
+    setActiveSubscriptionInfo(subscriptionInfoMap);
     // § "pernah ditrial" WAJIB ikut di-scope per Data Usaha juga — kalau
     // tidak, modul yang pernah ditrial di Data Usaha LAIN ikut dianggap
     // "sudah pernah" di sini, padahal trial itu scope-nya per Data Usaha
@@ -234,6 +248,7 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
                   title={productLineLabel(productLine.key)}
                   groups={lineGroups}
                   activeModuleMap={activeModuleMap}
+                  activeSubscriptionInfo={activeSubscriptionInfo}
                   everTrialedModules={everTrialedModules}
                   isModuleSelected={isModuleSelected}
                   activePlanFor={activePlanFor}

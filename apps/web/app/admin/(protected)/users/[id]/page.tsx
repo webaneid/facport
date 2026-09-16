@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
 import { formatDate } from "@/lib/utils";
+import { formatDuration } from "@/lib/duration";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate-dialog";
 import { api } from "@/lib/api-client";
@@ -40,7 +41,9 @@ type Detail = {
 type SubscriptionRow = {
   subscriptionId: string;
   status: string;
+  startAt: string | null;
   endAt: string | null;
+  durationDays: number | null;
   moduleKey: string | null;
   planName: string;
   connected: boolean;
@@ -152,6 +155,8 @@ export default function AdminUserDetailPage() {
                         <TableRow>
                           <TableHead>Fitur</TableHead>
                           <TableHead>Paket</TableHead>
+                          <TableHead>Durasi</TableHead>
+                          <TableHead>Berlaku</TableHead>
                           <TableHead>Status Langganan</TableHead>
                           <TableHead>Koneksi Accurate</TableHead>
                           <TableHead className="text-right">Aksi</TableHead>
@@ -162,6 +167,18 @@ export default function AdminUserDetailPage() {
                           <TableRow key={sub.subscriptionId}>
                             <TableCell className="text-muted-foreground">{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TableCell>
                             <TableCell className="font-medium text-foreground">{sub.planName}</TableCell>
+                            <TableCell className="text-muted-foreground">{sub.durationDays !== null ? formatDuration(sub.durationDays) : "-"}</TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {sub.startAt || sub.endAt ? (
+                                <>
+                                  {sub.startAt ? formatDate(sub.startAt, companyTimezone) : "-"}
+                                  {" – "}
+                                  {sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}
+                                </>
+                              ) : (
+                                "-"
+                              )}
+                            </TableCell>
                             <TableCell>
                               <StatusBadge domain="subscription" status={sub.status} />
                             </TableCell>

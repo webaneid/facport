@@ -6,7 +6,7 @@ import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/
 import { CATEGORY_ICON, CATEGORY_ICON_FALLBACK } from "@/lib/category-icons";
 import { moduleLabel } from "@/lib/module-options";
 import type { ModuleGroup } from "@/lib/use-grouped-plans";
-import { ModulePricingPanel, type Plan } from "./module-pricing-panel";
+import { ModulePricingPanel, type Plan, type SubscriptionInfo } from "./module-pricing-panel";
 
 // § Fase 127 — 1 kartu = 1 Kategori (dulu 1 kartu = 1 modul, § plan
 // "Redesign /subscribe" poin 2). Checklist Varian di bawah header —
@@ -24,6 +24,7 @@ export function CategoryCard({
   category,
   groups,
   activeModuleMap,
+  activeSubscriptionInfo,
   everTrialedModules,
   isModuleSelected,
   activePlanFor,
@@ -35,6 +36,7 @@ export function CategoryCard({
   category: string;
   groups: ModuleGroup<Plan>[];
   activeModuleMap: Map<string, boolean>;
+  activeSubscriptionInfo: Map<string, SubscriptionInfo>;
   everTrialedModules: Set<string>;
   isModuleSelected: (moduleKey: string) => boolean;
   activePlanFor: (group: ModuleGroup<Plan>) => Plan | undefined;
@@ -80,6 +82,7 @@ export function CategoryCard({
                     isSelected={isSelected}
                     isRealActive={isRealActive}
                     isTrialActive={isTrialActive}
+                    subscriptionInfo={activeSubscriptionInfo.get(group.moduleKey)}
                     hasEverTrialed={hasEverTrialed}
                     showTrialButton={showTrialButton}
                     tryingPlanId={tryingPlanId}
