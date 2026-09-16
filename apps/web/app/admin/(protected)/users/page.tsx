@@ -18,6 +18,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { Pagination } from "@/components/ui/pagination";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
@@ -682,12 +683,15 @@ export default function AdminUsersPage() {
   // terpisah), dan "Langganan Aktif" dibatasi `max-w` supaya badge WRAP
   // ke bawah kalau banyak, bukan melebarkan tabel ke samping.
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
+  // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom, Nama/Email
+  // dibungkus `TruncateText` (nama/email bebas panjang).
   const columns = [
     columnHelper.accessor("name", {
       header: "Nama",
+      meta: { width: "22%" },
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
-          <span className="font-medium text-foreground">{row.original.name || "-"}</span>
+          <TruncateText className="font-medium text-foreground">{row.original.name || "-"}</TruncateText>
           {row.original.disabled ? (
             <Badge variant="destructive" className="w-fit">
               Nonaktif
@@ -700,9 +704,10 @@ export default function AdminUsersPage() {
     }),
     columnHelper.accessor("email", {
       header: "Email",
+      meta: { width: "28%" },
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
-          <span className="text-muted-foreground">{row.original.email}</span>
+          <TruncateText className="text-muted-foreground">{row.original.email}</TruncateText>
           <span className="text-xs text-muted-foreground">Terdaftar {formatDate(row.original.createdAt, companyTimezone)}</span>
         </div>
       ),
@@ -710,6 +715,7 @@ export default function AdminUsersPage() {
     columnHelper.display({
       id: "activeSubscription",
       header: "Langganan Aktif",
+      meta: { width: "30%" },
       cell: ({ row }) =>
         row.original.activeSubscriptions.length > 0 ? (
           <div className="flex max-w-56 flex-wrap gap-1">
@@ -726,6 +732,7 @@ export default function AdminUsersPage() {
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "20%" },
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           {/* § diminta user 2026-09-05 — lihat detail user (profil +

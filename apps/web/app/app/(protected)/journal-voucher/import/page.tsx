@@ -10,6 +10,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
@@ -187,14 +188,14 @@ export default function JournalVoucherImportPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Kolom Excel</TableHead>
-                    <TableHead>Field Accurate</TableHead>
+                    <TableHead className="w-[35%]">Kolom Excel</TableHead>
+                    <TableHead className="w-[65%]">Field Accurate</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {result.excelColumns.map((col) => (
                     <TableRow key={col}>
-                      <TableCell className="font-medium text-foreground">{col}</TableCell>
+                      <TableCell className="font-medium text-foreground"><TruncateText>{col}</TruncateText></TableCell>
                       <TableCell>
                         <Controller
                           control={mappingControl}

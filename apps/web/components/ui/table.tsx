@@ -5,10 +5,15 @@ import { cn } from "@/lib/utils";
 // bikin body ikut scroll horizontal). Dipakai bareng `@tanstack/react-table`
 // (ADR-0004) untuk sorting/pagination kalau perlu — komponen ini cuma
 // urusan tampilan, bukan logic data.
+// § ADR-0034 (2026-09-17) — `table-fixed` (BUKAN `table-auto` default
+// browser) supaya lebar kolom yang dideklarasikan tiap caller (className
+// `w-[..]` di `TableHead`, atau `meta.width` via `DataTable`) BENAR-BENAR
+// dihormati, bukan auto-mengikuti konten kolom terlebar (root cause tabel
+// melebar tak terkendali sebelum ADR ini).
 export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTableElement>) {
   return (
     <div className="w-full overflow-x-auto">
-      <table className={cn("w-full text-sm", className)} {...props} />
+      <table className={cn("w-full table-fixed text-sm", className)} {...props} />
     </div>
   );
 }

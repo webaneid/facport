@@ -13,6 +13,7 @@ import {
   useTable,
   type ColumnDef,
   type RowData,
+  type TableFeatures,
 } from "@tanstack/react-table";
 import { ArrowDown, ArrowUp, ArrowUpDown } from "lucide-react";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -37,6 +38,19 @@ const features = tableFeatures({
 
 export type DataTableFeatures = typeof features;
 export type DataTableColumn<TData extends RowData, TValue = unknown> = ColumnDef<DataTableFeatures, TData, TValue>;
+
+// § ADR-0034 (2026-09-17) — `meta.width` dibaca manual di render loop
+// `DataTable` di bawah (BUKAN tanstack `columnSizingFeature` bawaan —
+// fitur itu didesain utk resize INTERAKTIF drag-handle, terlalu berat utk
+// kebutuhan "cuma declare lebar statis per kolom"). Module augmentation
+// resmi tanstack v9 (`ColumnMeta` generic-augmentable) — taruh SEKALI di
+// sini, semua pemakai `columnHelper.accessor/display({ meta: {width} })`
+// otomatis type-safe.
+declare module "@tanstack/react-table" {
+  interface ColumnMeta<TFeatures extends TableFeatures, TData extends RowData, TValue> {
+    width?: string;
+  }
+}
 
 // Caller bikin kolom lewat helper ini (bukan `createColumnHelper` langsung)
 // supaya selalu terikat ke `features` yang SAMA dengan yang dipakai
@@ -85,8 +99,9 @@ export function DataTable<TData extends RowData>({
               {headerGroup.headers.map((header) => {
                 const canSort = header.column.getCanSort();
                 const sorted = header.column.getIsSorted();
+                const width = header.column.columnDef.meta?.width;
                 return (
-                  <TableHead key={header.id}>
+                  <TableHead key={header.id} style={width ? { width } : undefined}>
                     {header.isPlaceholder ? null : canSort ? (
                       <button
                         type="button"
@@ -110,11 +125,14 @@ export function DataTable<TData extends RowData>({
         <TableBody>
           {table.getRowModel().rows.map((row) => (
             <TableRow key={row.id}>
-              {row.getAllCells().map((cell) => (
-                <TableCell key={cell.id}>
-                  <table.FlexRender cell={cell} />
-                </TableCell>
-              ))}
+              {row.getAllCells().map((cell) => {
+                const width = cell.column.columnDef.meta?.width;
+                return (
+                  <TableCell key={cell.id} style={width ? { width } : undefined}>
+                    <table.FlexRender cell={cell} />
+                  </TableCell>
+                );
+              })}
             </TableRow>
           ))}
         </TableBody>

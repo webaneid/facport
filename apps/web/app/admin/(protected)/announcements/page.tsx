@@ -13,6 +13,7 @@ import { Combobox } from "@/components/ui/combobox";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { SearchForm } from "@/components/ui/search-form";
 import { api } from "@/lib/api-client";
 import { formatDate } from "@/lib/utils";
@@ -206,21 +207,28 @@ export default function AdminAnnouncementsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
+  // § ADR-0034 (2026-09-17) — width eksplisit + "Judul"/"Target" (bisa
+  // panjang, join modul) dibungkus `TruncateText`.
   const columns = [
-    columnHelper.accessor("title", { header: "Judul", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span> }),
+    columnHelper.accessor("title", {
+      header: "Judul",
+      meta: { width: "38%" },
+      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
+    }),
     columnHelper.display({
       id: "target",
       header: "Target",
+      meta: { width: "32%" },
       cell: ({ row }) => {
         const { target, targetModules } = row.original;
         if (target === "specific_modules" && targetModules) {
-          return <span className="text-muted-foreground">{targetModules.map(moduleLabel).join(", ")}</span>;
+          return <TruncateText className="text-muted-foreground">{targetModules.map(moduleLabel).join(", ")}</TruncateText>;
         }
         return <Badge variant="default">{TARGET_LABEL[target]}</Badge>;
       },
     }),
-    columnHelper.accessor("recipientCount", { header: "Penerima", cell: (ctx) => ctx.getValue() }),
-    columnHelper.accessor("createdAt", { header: "Dikirim", cell: (ctx) => formatDate(ctx.getValue(), companyTimezone) }),
+    columnHelper.accessor("recipientCount", { header: "Penerima", meta: { width: "12%" }, cell: (ctx) => ctx.getValue() }),
+    columnHelper.accessor("createdAt", { header: "Dikirim", meta: { width: "18%" }, cell: (ctx) => formatDate(ctx.getValue(), companyTimezone) }),
   ];
 
   return (

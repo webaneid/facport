@@ -11,6 +11,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
@@ -110,16 +111,25 @@ export default function AdminOrdersPage() {
   // berubah) sambil nambah risiko stale closure kalau deps kurang
   // lengkap. Volume data admin/orders kecil, biaya rebuild kolom tiap
   // render bisa diabaikan.
+  // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom + "Customer"
+  // (billToName, nama bebas) dibungkus `TruncateText`.
   const columns = [
       columnHelper.accessor((row) => row.invoice.invoiceNumber, {
         id: "invoiceNumber",
         header: "Invoice",
+        meta: { width: "13%" },
         cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
       }),
-      columnHelper.accessor((row) => row.invoice.billToName, { id: "billToName", header: "Customer" }),
+      columnHelper.accessor((row) => row.invoice.billToName, {
+        id: "billToName",
+        header: "Customer",
+        meta: { width: "18%" },
+        cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText>,
+      }),
       columnHelper.display({
         id: "amountDue",
         header: "Nominal (+kode unik)",
+        meta: { width: "16%" },
         cell: ({ row }) => (
           <>
             {currencyFormatter.format(row.original.amountDue)}
@@ -130,21 +140,25 @@ export default function AdminOrdersPage() {
       columnHelper.display({
         id: "status",
         header: "Status",
+        meta: { width: "10%" },
         cell: ({ row }) => <StatusBadge domain="order" status={row.original.status} />,
       }),
       columnHelper.display({
         id: "method",
         header: "Metode",
+        meta: { width: "12%" },
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.method === "qris" ? "QRIS" : row.original.method === "bank_transfer" ? "Transfer Bank" : "-"}</span>,
       }),
       columnHelper.display({
         id: "submittedAt",
         header: "Diupload",
+        meta: { width: "11%" },
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.submittedAt ? formatDate(row.original.submittedAt, companyTimezone) : "-"}</span>,
       }),
       columnHelper.display({
         id: "actions",
         header: "Aksi",
+        meta: { width: "180px" },
         cell: ({ row }) => {
           const order = row.original;
           const canAct = order.status === "submitted";

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/sales-invoice/edit-row-dialog";
 import { EditableGrid } from "@/components/import/editable-grid";
@@ -180,11 +181,11 @@ export default function SalesInvoiceImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Nomor Transaksi</TableHead>
-                <TableHead>Baris</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead className="w-32">Nomor Transaksi</TableHead>
+                <TableHead className="w-20">Baris</TableHead>
+                <TableHead className="w-28">Status</TableHead>
                 <TableHead>ID Transaksi Accurate / Error</TableHead>
-                <TableHead className="text-right">Aksi</TableHead>
+                <TableHead className="w-16 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -195,7 +196,7 @@ export default function SalesInvoiceImportResultPage() {
                   <TableCell>
                     <StatusBadge status={row.status} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+                  <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
                   <TableCell>
                     {row.status === "failed" && batch.columnMapping && (
                       <div className="flex justify-end">
