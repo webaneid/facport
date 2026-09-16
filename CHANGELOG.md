@@ -1,3 +1,9 @@
+## <small>2.5.1 (2026-09-16)</small>
+
+* Merge pull request #64 from webaneid/develop ([5b257f8](https://github.com/webaneid/facport/commit/5b257f8)), closes [#64](https://github.com/webaneid/facport/issues/64)
+* fix(ui): lebar kolom tabel tidak terkontrol di seluruh app (Fase 133) ([40a431a](https://github.com/webaneid/facport/commit/40a431a))
+* docs: catat rilis v2.5.0 & deploy manual ke production ([4985627](https://github.com/webaneid/facport/commit/4985627))
+
 ## 2.5.0 (2026-09-16)
 
 * Merge pull request #63 from webaneid/develop ([14bfdf9](https://github.com/webaneid/facport/commit/14bfdf9)), closes [#63](https://github.com/webaneid/facport/issues/63)
