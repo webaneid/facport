@@ -4,7 +4,6 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { Package } from "lucide-react";
-import { Accordion } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -58,12 +57,6 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
   // — seat DITANGANI TERPISAH di bawah (`seatPlans`/`seatQuantity`), bukan
   // dipaksa masuk konsep "grup modul" yang memang tidak cocok untuknya.
   const { groups, isModuleSelected, activePlanFor, toggleModule, selectTier, setSelectedModules, selectedPlans } = useGroupedPlans(plans ?? []);
-
-  // § Fase 127 — 1 Varian boleh terbuka SE-HALAMAN (lintas kartu Kategori,
-  // lintas Produk) — Radix `Accordion type="single" collapsible` di SATU
-  // Root yang membungkus SEMUA `ProductCatalogSection` di bawah (bukan 1
-  // Accordion per kartu) kasih exclusivity ini otomatis lewat 1 state ini.
-  const [openModuleKey, setOpenModuleKey] = useState<string | undefined>(undefined);
 
   // § split `groups` (flat, semua Produk campur) per `productLine` —
   // tiap Produk yang py minimal 1 grup dapat section sendiri (§
@@ -225,11 +218,13 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
         <EmptyState icon={Package} title="Belum ada paket tersedia" />
       ) : (
         <>
-          {/* § Fase 127 — SATU Accordion Root membungkus SEMUA section
-             Produk supaya "1 Varian terbuka se-halaman" berlaku LINTAS
-             kartu Kategori, bahkan lintas Produk — bukan 1 Accordion per
-             kartu (§ plan "Redesign /subscribe" poin 4). */}
-          <Accordion type="single" collapsible value={openModuleKey} onValueChange={setOpenModuleKey} className="flex flex-col gap-8">
+          {/* § Fase 129 (diminta user 2026-09-17) — DULU 1 Accordion Root
+             di sini membungkus semua section Produk supaya "1 Varian
+             terbuka se-halaman". SEKARANG tiap kartu Kategori (§
+             `category-card.tsx`) punya Accordion Root SENDIRI dengan
+             Varian pertama default terbuka — jadi di sini cukup wrapper
+             layout polos, TIDAK ada state/exclusivity lintas-kartu lagi. */}
+          <div className="flex flex-col gap-8">
             {PRODUCT_LINES.map((productLine) => {
               const lineGroups = groupsByProductLine.get(productLine.key) ?? [];
               if (lineGroups.length === 0) return null;
@@ -249,7 +244,7 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
                 />
               );
             })}
-          </Accordion>
+          </div>
 
           {/* § Fase 127 lanjutan — "Tambahan Anggota" diperlakukan seperti
              1 Produk lagi (judul besar + garis, konsisten section

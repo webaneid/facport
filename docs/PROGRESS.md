@@ -136,6 +136,7 @@
 | 126  | Sidebar App: Grup Produk "Facport" + Flyout Kategori, Fix Popup Admin Tambah Paket | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-126-sidebar-produk-kategori-varian.md` |
 | 127  | Redesain /subscribe: Grup Produk → Kategori → Varian (Accordion) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md` |
 | 128  | Modul Other Deposit (Penerimaan Bank/Kas) | Done | `docs/architecture/architecture-other-deposit.md` | `docs/phases/phase-128-modul-other-deposit.md` |
+| 129  | /subscribe: Subtitle + Accordion Default-Open Per Kartu | Done | - | `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3272,3 +3273,21 @@ detail batch kosong tanpa tabel per-baris). Dibackfill sekalian untuk
 `bun run typecheck`/`lint` 0 error, `bun run test` 1105 pass (38 test
 baru). Security review 0 temuan. Detail lengkap →
 `docs/phases/phase-128-modul-other-deposit.md`.
+
+## Update 2026-09-17 — Fase 129 Done: /subscribe Subtitle + Accordion Default-Open Per Kartu
+
+Bagian 1 dari permintaan 3-bagian user (UI kecil, audit expiry, notifikasi
+expiry — 2 bagian terakhir belum dikerjakan). Subtitle "Pilih fitur yang
+ingin Anda gunakan" ditambah di bawah judul Produk. Accordion Varian
+di-restrukturisasi: dulu (Fase 127) 1 Accordion Root membungkus SELURUH
+halaman (exclusivity "1 Varian terbuka se-halaman"), sekarang tiap kartu
+Kategori (`CategoryCard`) punya Accordion Root SENDIRI dengan Varian
+pertama default terbuka — supaya semua kartu bisa menampilkan harga
+pertamanya SEKALIGUS (trigger konversi), exclusivity dipersempit jadi per
+kartu (bukan hilang total — klik Varian lain di kartu YANG SAMA tetap
+saling tutup).
+
+`bun run typecheck`/`lint` 0 error (murni presentational, tidak ada
+logic backend disentuh). Verifikasi visual browser berhasil. Security
+review 0 temuan. Detail lengkap →
+`docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md`.
