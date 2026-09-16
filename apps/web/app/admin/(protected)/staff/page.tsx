@@ -12,6 +12,7 @@ import { Can } from "@/components/auth/can";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { SearchForm } from "@/components/ui/search-form";
 import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
@@ -159,12 +160,23 @@ export default function AdminStaffPage() {
     load();
   }
 
+  // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom, Nama/Email
+  // dibungkus `TruncateText`.
   const columns = [
-    columnHelper.accessor("name", { header: "Nama", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue() || "-"}</span> }),
-    columnHelper.accessor("email", { header: "Email", cell: (ctx) => <span className="text-muted-foreground">{ctx.getValue()}</span> }),
+    columnHelper.accessor("name", {
+      header: "Nama",
+      meta: { width: "22%" },
+      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue() || "-"}</TruncateText>,
+    }),
+    columnHelper.accessor("email", {
+      header: "Email",
+      meta: { width: "30%" },
+      cell: (ctx) => <TruncateText className="text-muted-foreground">{ctx.getValue()}</TruncateText>,
+    }),
     columnHelper.display({
       id: "role",
       header: "Role",
+      meta: { width: "24%" },
       cell: ({ row }) => (
         <div className="flex items-center gap-1.5">
           <span className="text-foreground">{roleLabel(row.original.role)}</span>
@@ -172,10 +184,15 @@ export default function AdminStaffPage() {
         </div>
       ),
     }),
-    columnHelper.accessor("createdAt", { header: "Bergabung", cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span> }),
+    columnHelper.accessor("createdAt", {
+      header: "Bergabung",
+      meta: { width: "14%" },
+      cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span>,
+    }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "60px" },
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <Can permission="users.manage">

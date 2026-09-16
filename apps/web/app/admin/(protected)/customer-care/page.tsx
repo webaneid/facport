@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatCard } from "@/components/ui/stat-card";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 
 type Agent = {
@@ -260,10 +261,13 @@ export default function AdminCustomerCarePage() {
 
   const totalServedToday = Object.values(analytics).reduce((sum, n) => sum + n, 0);
 
+  // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom, Nama/Posisi
+  // dibungkus `TruncateText`.
   const columns = [
     columnHelper.display({
       id: "photo",
       header: "Foto",
+      meta: { width: "56px" },
       cell: ({ row }) =>
         row.original.photoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -274,12 +278,21 @@ export default function AdminCustomerCarePage() {
           </div>
         ),
     }),
-    columnHelper.accessor("name", { header: "Nama", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span> }),
-    columnHelper.accessor("position", { header: "Posisi", cell: (ctx) => <span className="text-muted-foreground">{ctx.getValue()}</span> }),
-    columnHelper.accessor("whatsappNumber", { header: "WhatsApp", cell: (ctx) => ctx.getValue() }),
+    columnHelper.accessor("name", {
+      header: "Nama",
+      meta: { width: "18%" },
+      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
+    }),
+    columnHelper.accessor("position", {
+      header: "Posisi",
+      meta: { width: "18%" },
+      cell: (ctx) => <TruncateText className="text-muted-foreground">{ctx.getValue()}</TruncateText>,
+    }),
+    columnHelper.accessor("whatsappNumber", { header: "WhatsApp", meta: { width: "16%" }, cell: (ctx) => ctx.getValue() }),
     columnHelper.display({
       id: "status",
       header: "Status",
+      meta: { width: "12%" },
       cell: ({ row }) =>
         !row.original.isActive ? (
           <Badge variant="default">Nonaktif</Badge>
@@ -292,11 +305,13 @@ export default function AdminCustomerCarePage() {
     columnHelper.display({
       id: "servedToday",
       header: "Dilayani Hari Ini",
+      meta: { width: "14%" },
       cell: ({ row }) => analytics[row.original.id] ?? 0,
     }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "112px" },
       cell: ({ row }) => {
         const agent = row.original;
         return (

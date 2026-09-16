@@ -6,6 +6,7 @@ import { Eye, Inbox } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
@@ -69,17 +70,17 @@ export default function OtherDepositImportArchivePage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>File</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Baris</TableHead>
-                    <TableHead>Tanggal</TableHead>
-                    <TableHead className="text-right">Aksi</TableHead>
+                    <TableHead className="w-[32%]">File</TableHead>
+                    <TableHead className="w-[16%]">Status</TableHead>
+                    <TableHead className="w-[12%]">Baris</TableHead>
+                    <TableHead className="w-[16%]">Tanggal</TableHead>
+                    <TableHead className="w-[60px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {batches.map((batch) => (
                     <TableRow key={batch.id}>
-                      <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
+                      <TableCell className="font-medium text-foreground"><TruncateText>{batch.fileName}</TruncateText></TableCell>
                       <TableCell>
                         <StatusBadge domain="import-batch" status={batch.status} />
                       </TableCell>

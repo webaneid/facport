@@ -16,6 +16,7 @@ import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
 import { formatDate } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate-dialog";
 import { api } from "@/lib/api-client";
@@ -153,57 +154,66 @@ export default function AdminUserDetailPage() {
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead>Fitur</TableHead>
-                          <TableHead>Paket</TableHead>
-                          <TableHead>Durasi</TableHead>
-                          <TableHead>Berlaku</TableHead>
-                          <TableHead>Status Langganan</TableHead>
-                          <TableHead>Koneksi Accurate</TableHead>
-                          <TableHead className="text-right">Aksi</TableHead>
+                          <TableHead className="w-[15%]">Fitur</TableHead>
+                          <TableHead className="w-[18%]">Paket</TableHead>
+                          {/* § ADR-0034 (2026-09-17) — "Durasi"+"Berlaku" (2
+                              kolom terpisah, Fase 130) DIGABUNG jadi 1: cuma
+                              tanggal AKHIR yang ditampilkan langsung (info
+                              paling actionable — "kapan expired"), tanggal
+                              mulai+durasi dipindah ke `title` attribute
+                              (hover) via `TruncateText` — tetap ada, tidak
+                              hilang, cuma tidak WAJIB selalu terlihat. */}
+                          <TableHead className="w-[14%]">Berlaku</TableHead>
+                          <TableHead className="w-[12%]">Status Langganan</TableHead>
+                          <TableHead className="w-[21%]">Koneksi Accurate</TableHead>
+                          <TableHead className="w-[60px] text-right">Aksi</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {group.subs.map((sub) => (
-                          <TableRow key={sub.subscriptionId}>
-                            <TableCell className="text-muted-foreground">{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TableCell>
-                            <TableCell className="font-medium text-foreground">{sub.planName}</TableCell>
-                            <TableCell className="text-muted-foreground">{sub.durationDays !== null ? formatDuration(sub.durationDays) : "-"}</TableCell>
-                            <TableCell className="text-muted-foreground">
-                              {sub.startAt || sub.endAt ? (
-                                <>
-                                  {sub.startAt ? formatDate(sub.startAt, companyTimezone) : "-"}
-                                  {" – "}
-                                  {sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}
-                                </>
-                              ) : (
-                                "-"
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <StatusBadge domain="subscription" status={sub.status} />
-                            </TableCell>
-                            <TableCell>
-                              {sub.connectionStatus === null ? (
-                                <Badge variant="default">Belum Terhubung</Badge>
-                              ) : (
-                                <span className="flex items-center gap-1.5">
-                                  <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
-                                  {sub.accurateDbAlias && <span className="text-xs text-muted-foreground">({sub.accurateDbAlias})</span>}
-                                </span>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {sub.connectionStatus !== null && (
-                                <div className="flex justify-end">
-                                  <DisconnectAccurateDialog
-                                    subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
-                                    onDisconnected={loadSubscriptions}
-                                  />
-                                </div>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        {group.subs.map((sub) => {
+                          const berlakuTitle = [
+                            sub.startAt ? `Mulai ${formatDate(sub.startAt, companyTimezone)}` : null,
+                            sub.durationDays !== null ? `Durasi ${formatDuration(sub.durationDays)}` : null,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ");
+                          return (
+                            <TableRow key={sub.subscriptionId}>
+                              <TableCell className="text-muted-foreground">
+                                <TruncateText>{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TruncateText>
+                              </TableCell>
+                              <TableCell className="font-medium text-foreground">
+                                <TruncateText>{sub.planName}</TruncateText>
+                              </TableCell>
+                              <TableCell className="text-muted-foreground">
+                                <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
+                              </TableCell>
+                              <TableCell>
+                                <StatusBadge domain="subscription" status={sub.status} />
+                              </TableCell>
+                              <TableCell>
+                                {sub.connectionStatus === null ? (
+                                  <Badge variant="default">Belum Terhubung</Badge>
+                                ) : (
+                                  <span className="flex items-center gap-1.5 truncate">
+                                    <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
+                                    {sub.accurateDbAlias && <span className="truncate text-xs text-muted-foreground">({sub.accurateDbAlias})</span>}
+                                  </span>
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {sub.connectionStatus !== null && (
+                                  <div className="flex justify-end">
+                                    <DisconnectAccurateDialog
+                                      subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
+                                      onDisconnected={loadSubscriptions}
+                                    />
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </AccordionContent>
@@ -226,19 +236,23 @@ export default function AdminUserDetailPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>File</TableHead>
-                  <TableHead>Fitur</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Baris</TableHead>
-                  <TableHead>Tanggal</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
+                  <TableHead className="w-[32%]">File</TableHead>
+                  <TableHead className="w-[18%]">Fitur</TableHead>
+                  <TableHead className="w-[14%]">Status</TableHead>
+                  <TableHead className="w-[10%]">Baris</TableHead>
+                  <TableHead className="w-[16%]">Tanggal</TableHead>
+                  <TableHead className="w-[60px] text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {batches.map((batch) => (
                   <TableRow key={batch.id}>
-                    <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
-                    <TableCell className="text-muted-foreground">{moduleLabel(batch.module)}</TableCell>
+                    <TableCell className="font-medium text-foreground">
+                      <TruncateText>{batch.fileName}</TruncateText>
+                    </TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <TruncateText>{moduleLabel(batch.module)}</TruncateText>
+                    </TableCell>
                     <TableCell>
                       <StatusBadge domain="import-batch" status={batch.status} />
                     </TableCell>

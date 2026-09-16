@@ -6,6 +6,7 @@ import { FileText, Download, CreditCard } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
@@ -60,19 +61,21 @@ export default function BillingPage() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Nomor</TableHead>
-                  <TableHead>Fitur</TableHead>
-                  <TableHead>Total</TableHead>
-                  <TableHead>Jatuh Tempo</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Aksi</TableHead>
+                  <TableHead className="w-[14%]">Nomor</TableHead>
+                  <TableHead className="w-[30%]">Fitur</TableHead>
+                  <TableHead className="w-[12%]">Total</TableHead>
+                  <TableHead className="w-[14%]">Jatuh Tempo</TableHead>
+                  <TableHead className="w-[10%]">Status</TableHead>
+                  <TableHead className="w-[220px] text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {invoices.map((inv) => (
                   <TableRow key={inv.id}>
                     <TableCell className="font-medium text-foreground">{inv.invoiceNumber}</TableCell>
-                    <TableCell className="text-muted-foreground">{groupInvoiceItemLabels(inv.items) || "-"}</TableCell>
+                    <TableCell className="text-muted-foreground">
+                      <TruncateText>{groupInvoiceItemLabels(inv.items) || "-"}</TruncateText>
+                    </TableCell>
                     <TableCell>{currencyFormatter.format(inv.total)}</TableCell>
                     <TableCell className="text-muted-foreground">{formatDate(inv.dueDate, companyTimezone)}</TableCell>
                     <TableCell>

@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 
 // § Fase 116, architecture-promo.md
@@ -215,10 +216,13 @@ export default function AdminPromosPage() {
       .map((p) => p.id),
   );
 
+  // § ADR-0034 (2026-09-17) — width eksplisit + "Title" (bebas, bisa
+  // panjang) dibungkus `TruncateText`.
   const columns = [
     columnHelper.display({
       id: "image",
       header: "Gambar",
+      meta: { width: "72px" },
       cell: ({ row }) =>
         row.original.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -230,9 +234,10 @@ export default function AdminPromosPage() {
     columnHelper.display({
       id: "title",
       header: "Title",
+      meta: { width: "28%" },
       cell: ({ row }) =>
         row.original.title ? (
-          <span className="font-medium text-foreground">{row.original.title}</span>
+          <TruncateText className="font-medium text-foreground">{row.original.title}</TruncateText>
         ) : (
           <span className="text-xs text-muted-foreground">(mode gambar-klik)</span>
         ),
@@ -240,11 +245,13 @@ export default function AdminPromosPage() {
     columnHelper.display({
       id: "status",
       header: "Status",
+      meta: { width: "14%" },
       cell: ({ row }) => <Badge variant={row.original.isActive ? "success" : "default"}>{row.original.isActive ? "Aktif" : "Nonaktif"}</Badge>,
     }),
     columnHelper.display({
       id: "visible",
       header: "Tampil di Slider",
+      meta: { width: "22%" },
       cell: ({ row }) =>
         row.original.isActive && visiblePromoIds.has(row.original.id) ? (
           <Badge variant="success">Tampil</Badge>
@@ -252,10 +259,11 @@ export default function AdminPromosPage() {
           <span className="text-xs text-muted-foreground">{row.original.isActive ? "Tidak tampil (>5 aktif)" : "-"}</span>
         ),
     }),
-    columnHelper.accessor("sortOrder", { header: "Urutan", cell: (ctx) => ctx.getValue() }),
+    columnHelper.accessor("sortOrder", { header: "Urutan", meta: { width: "12%" }, cell: (ctx) => ctx.getValue() }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "88px" },
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
           <PromoFormDialog promo={row.original} onSaved={load} />

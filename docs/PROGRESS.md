@@ -140,6 +140,7 @@
 | 130  | Tampilkan Expiry Aktual (Admin User-Detail + /subscribe) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-130-expiry-admin-customer.md` |
 | 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
 | 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Done | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
+| 133  | Lebar Kolom Tabel Tidak Terkontrol (Perbaikan Menyeluruh) | Done | `docs/decisions/adr-0034-lebar-kolom-tabel.md` | `docs/phases/phase-133-lebar-kolom-tabel.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3397,3 +3398,33 @@ ketiga surface (`facinstitute.id`, `app.`, `admin.`) sukses.
 Verifikasi fitur mendalam (tanggal expiry di `/subscribe`, invoice PDF
 Durasi/Berlaku, dst) diserahkan ke user langsung di production (Claude
 tidak punya kredensial login production, § pola standar sesi ini).
+
+## Update 2026-09-17 — Fase 133 Done: Lebar Kolom Tabel Diperbaiki Menyeluruh (54 File)
+
+Client komplain (via user): tabel di aplikasi (dicontohkan invoice) jadi
+lebar dan butuh scroll horizontal di laptop kecil. Audit menemukan root
+cause di komponen dasar `components/ui/table.tsx` — `whitespace-nowrap`
+hardcode, TIDAK ADA kontrol lebar kolom (`table-fixed`/width/truncate) di
+SATU PUN tempat di seluruh app (dikonfirmasi via grep, nol hasil). Bukan
+bug 1 halaman — bug arsitektur komponen dasar, berdampak ke SEMUA tabel.
+
+Fix (ADR-0034, baru): `table-fixed` jadi default `Table`, komponen baru
+`TruncateText` (truncate 1 baris + `title` attribute native, BUKAN Radix
+Tooltip — 0 pemakaian sebelumnya, tidak perlu infra baru), `DataTable`
+baca `meta.width` per kolom. Diterapkan ke SEMUA 54 file tabel yang
+teridentifikasi (bukan cuma invoice) — 9 halaman admin, 2 halaman
+customer utama, 1 halaman admin batch-detail (13 view dalam 1 file), dan
+39 halaman generik per-modul (13 modul × 3 file: upload/riwayat/detail-batch).
+Kolom "Durasi"+"Berlaku" admin user-detail (ditambah Fase 130) digabung
+jadi 1 kolom untuk mengurangi lebar sekalian.
+
+`bun run typecheck`/`lint` 0 error di seluruh 54 file. Security review
+di-skip (murni presentational, dicatat kenapa). Verifikasi visual
+customer (`/billing`, proporsi kolom rapi tanpa scroll di 1280px)
+berhasil; sisi admin tidak (kredensial dev tidak diketahui, bukan known
+quirk sebelumnya) — diganti code review + spot-check kode pasca-`sed`.
+Detail lengkap → `docs/phases/phase-133-lebar-kolom-tabel.md`,
+`docs/decisions/adr-0034-lebar-kolom-tabel.md`.
+
+Belum di-release ke `main` — masih di `develop`, menunggu keputusan
+batch-release user berikutnya (konsisten pola standar sesi ini).

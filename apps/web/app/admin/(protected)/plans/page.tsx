@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
@@ -240,33 +241,39 @@ export default function AdminPlansPage() {
   }
 
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
+  // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom + "Fitur"
+  // (join modul, bisa panjang) dibungkus `TruncateText`.
   const columns = [
     columnHelper.accessor("name", {
       header: "Nama",
-      cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
+      meta: { width: "18%" },
+      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
     }),
-    columnHelper.accessor("price", { header: "Harga", cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
-    columnHelper.accessor("durationDays", { header: "Durasi", cell: (ctx) => formatDuration(ctx.getValue()) }),
+    columnHelper.accessor("price", { header: "Harga", meta: { width: "13%" }, cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
+    columnHelper.accessor("durationDays", { header: "Durasi", meta: { width: "10%" }, cell: (ctx) => formatDuration(ctx.getValue()) }),
     columnHelper.display({
       id: "modules",
       header: "Fitur",
+      meta: { width: "24%" },
       cell: ({ row }) =>
         row.original.kind === "seat_addon" ? (
           <span className="text-muted-foreground">Slot User Tambahan</span>
         ) : (
-          <span className="text-muted-foreground">
+          <TruncateText className="text-muted-foreground">
             {row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}
-          </span>
+          </TruncateText>
         ),
     }),
     columnHelper.display({
       id: "status",
       header: "Status",
+      meta: { width: "10%" },
       cell: ({ row }) => <StatusBadge domain="plan" status={row.original.isActive ? "active" : "inactive"} />,
     }),
     columnHelper.display({
       id: "trialEligible",
       header: "Trial",
+      meta: { width: "9%" },
       cell: ({ row }) => (
         <span className={row.original.trialEligible ? "text-success" : "text-muted-foreground"}>
           {row.original.trialEligible ? "Aktif" : "Nonaktif"}
@@ -276,6 +283,7 @@ export default function AdminPlansPage() {
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "88px" },
       cell: ({ row }) => {
         const plan = row.original;
         return (

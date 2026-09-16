@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
 
@@ -98,9 +99,9 @@ function PurchaseInvoiceView({ batch, rows }: { batch: BatchDetail["batch"]; row
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nomor Faktur</TableHead>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-32">Nomor Faktur</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Transaksi Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -108,11 +109,11 @@ function PurchaseInvoiceView({ batch, rows }: { batch: BatchDetail["batch"]; row
         {sortedRows.map((row) => (
           <TableRow key={row.id}>
             <TableCell className="font-medium text-foreground">{valueOf(row, billNumberColumn) || "-"}</TableCell>
-            <TableCell>{row.rowNumber}</TableCell>
+            <TableCell className="w-20">{row.rowNumber}</TableCell>
             <TableCell>
               <RowStatusBadge status={row.status} />
             </TableCell>
-            <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -129,9 +130,9 @@ function SalesInvoiceView({ batch, rows }: { batch: BatchDetail["batch"]; rows: 
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nomor Faktur</TableHead>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-32">Nomor Faktur</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Transaksi Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -139,11 +140,11 @@ function SalesInvoiceView({ batch, rows }: { batch: BatchDetail["batch"]; rows: 
         {sortedRows.map((row) => (
           <TableRow key={row.id}>
             <TableCell className="font-medium text-foreground">{valueOf(row, poNumberColumn) || "-"}</TableCell>
-            <TableCell>{row.rowNumber}</TableCell>
+            <TableCell className="w-20">{row.rowNumber}</TableCell>
             <TableCell>
               <RowStatusBadge status={row.status} />
             </TableCell>
-            <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -158,8 +159,8 @@ function VendorPayableAccountView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Vendor Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -168,11 +169,11 @@ function VendorPayableAccountView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -188,8 +189,8 @@ function PurchasePaymentView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Pembayaran Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -198,11 +199,11 @@ function PurchasePaymentView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -222,9 +223,9 @@ function SalesReceiptView({ batch, rows }: { batch: BatchDetail["batch"]; rows: 
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Nomor Bukti</TableHead>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-32">Nomor Bukti</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Penerimaan Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -232,11 +233,11 @@ function SalesReceiptView({ batch, rows }: { batch: BatchDetail["batch"]; rows: 
         {sortedRows.map((row) => (
           <TableRow key={row.id}>
             <TableCell className="font-medium text-foreground">{valueOf(row, receiptNumberColumn) || "-"}</TableCell>
-            <TableCell>{row.rowNumber}</TableCell>
+            <TableCell className="w-20">{row.rowNumber}</TableCell>
             <TableCell>
               <RowStatusBadge status={row.status} />
             </TableCell>
-            <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+            <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
           </TableRow>
         ))}
       </TableBody>
@@ -250,8 +251,8 @@ function JournalVoucherView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Jurnal Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -260,11 +261,11 @@ function JournalVoucherView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -280,8 +281,8 @@ function OtherPaymentView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Other Payment Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -290,11 +291,11 @@ function OtherPaymentView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -315,8 +316,8 @@ function OtherDepositView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Other Deposit Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -325,11 +326,11 @@ function OtherDepositView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -342,8 +343,8 @@ function PurchaseOrderView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Purchase Order Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -352,11 +353,11 @@ function PurchaseOrderView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -369,8 +370,8 @@ function ReceiveItemView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Receive Item Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -379,11 +380,11 @@ function ReceiveItemView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -396,8 +397,8 @@ function PurchaseReturnView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Purchase Return Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -406,11 +407,11 @@ function PurchaseReturnView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -423,8 +424,8 @@ function SalesQuotationView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Sales Quotation Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -433,11 +434,11 @@ function SalesQuotationView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>
@@ -450,8 +451,8 @@ function SalesReturnView({ rows }: { rows: Row[] }) {
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>Baris</TableHead>
-          <TableHead>Status</TableHead>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
           <TableHead>ID Sales Return Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
@@ -460,11 +461,11 @@ function SalesReturnView({ rows }: { rows: Row[] }) {
           .sort((a, b) => a.rowNumber - b.rowNumber)
           .map((row) => (
             <TableRow key={row.id}>
-              <TableCell>{row.rowNumber}</TableCell>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
               <TableCell>
                 <RowStatusBadge status={row.status} />
               </TableCell>
-              <TableCell className="text-muted-foreground">{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
             </TableRow>
           ))}
       </TableBody>

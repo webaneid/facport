@@ -13,6 +13,7 @@ import { FormField } from "@/components/ui/form-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { Can } from "@/components/auth/can";
@@ -450,31 +451,49 @@ export default function AdminInvoicesPage() {
   }, [search]);
 
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
+  // § ADR-0034 (2026-09-17) — "Paket" (join item, tak terbatas) adalah
+  // kolom yang bikin tabel ini melebar tak terkendali (dikeluhkan client
+  // langsung). `table-fixed` (§ Table primitif) + width eksplisit tiap
+  // kolom + `TruncateText` di kolom teks-panjang — dialog "Detail
+  // Invoice" (`InvoiceDetailDialog` di bawah) tetap sumber kebenaran
+  // lengkap, truncate di sini murni ringkasan-sekilas.
   const columns = [
-    columnHelper.accessor("invoiceNumber", { header: "Nomor", cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span> }),
-    columnHelper.accessor("billToName", { header: "Ditagihkan Ke" }),
+    columnHelper.accessor("invoiceNumber", {
+      header: "Nomor",
+      meta: { width: "12%" },
+      cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
+    }),
+    columnHelper.accessor("billToName", { header: "Ditagihkan Ke", meta: { width: "15%" }, cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText> }),
     // § Fase 118 — kolom Data Usaha, supaya admin langsung tahu di layar
     // list tanpa buka dialog detail (§ ADR-0033).
     columnHelper.display({
       id: "dataUsaha",
       header: "Data Usaha",
-      cell: ({ row }) => <span className="text-muted-foreground">{row.original.dataUsahaName ?? "-"}</span>,
+      meta: { width: "13%" },
+      cell: ({ row }) => <TruncateText className="text-muted-foreground">{row.original.dataUsahaName ?? "-"}</TruncateText>,
     }),
     columnHelper.display({
       id: "items",
       header: "Paket",
-      cell: ({ row }) => <span className="text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</span>,
+      meta: { width: "24%" },
+      cell: ({ row }) => <TruncateText className="text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</TruncateText>,
     }),
-    columnHelper.accessor("total", { header: "Total", cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
-    columnHelper.accessor("dueDate", { header: "Jatuh Tempo", cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span> }),
+    columnHelper.accessor("total", { header: "Total", meta: { width: "10%" }, cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
+    columnHelper.accessor("dueDate", {
+      header: "Jatuh Tempo",
+      meta: { width: "11%" },
+      cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span>,
+    }),
     columnHelper.display({
       id: "status",
       header: "Status",
+      meta: { width: "8%" },
       cell: ({ row }) => <StatusBadge domain="invoice" status={row.original.status} />,
     }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",
+      meta: { width: "112px" },
       cell: ({ row }) => {
         const invoice = row.original;
         return (

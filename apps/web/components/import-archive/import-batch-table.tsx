@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
 import { MODULE_IMPORT_BASE_PATH } from "@/lib/module-import-routes";
@@ -79,13 +80,13 @@ export function ImportBatchTable({
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead>File</TableHead>
-          <TableHead>Fitur</TableHead>
-          <TableHead>Diupload oleh</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Baris</TableHead>
-          <TableHead>Tanggal</TableHead>
-          <TableHead className="text-right">Aksi</TableHead>
+          <TableHead className="w-[24%]">File</TableHead>
+          <TableHead className="w-[16%]">Fitur</TableHead>
+          <TableHead className="w-[16%]">Diupload oleh</TableHead>
+          <TableHead className="w-[10%]">Status</TableHead>
+          <TableHead className="w-[8%]">Baris</TableHead>
+          <TableHead className="w-[12%]">Tanggal</TableHead>
+          <TableHead className="w-[112px] text-right">Aksi</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -95,9 +96,15 @@ export function ImportBatchTable({
           const canCancel = CANCELLABLE_BATCH_STATUS.has(batch.status);
           return (
             <TableRow key={batch.id}>
-              <TableCell className="font-medium text-foreground">{batch.fileName}</TableCell>
-              <TableCell className="text-muted-foreground">{moduleLabel(batch.module)}</TableCell>
-              <TableCell className="text-muted-foreground">{batch.uploadedByYou ? "Anda" : (batch.uploadedByName ?? "-")}</TableCell>
+              <TableCell className="font-medium text-foreground">
+                <TruncateText>{batch.fileName}</TruncateText>
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                <TruncateText>{moduleLabel(batch.module)}</TruncateText>
+              </TableCell>
+              <TableCell className="text-muted-foreground">
+                <TruncateText>{batch.uploadedByYou ? "Anda" : (batch.uploadedByName ?? "-")}</TruncateText>
+              </TableCell>
               <TableCell>
                 <StatusBadge domain="import-batch" status={batch.status} />
               </TableCell>
