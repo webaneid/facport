@@ -3378,3 +3378,22 @@ tidak dipaksakan) — diverifikasi lewat code review. Detail lengkap →
 Part 3 notifikasi Fase 132) — 4 fase, semua di `develop`, BELUM
 di-release ke `main` (menunggu keputusan batch-release user, pola
 standar sesi ini).
+
+## Update 2026-09-16 — v2.5.0 Released & Deployed ke Production
+
+Batch release: Fase 128 (Other Deposit) + SOP checklist registrasi modul
++ Fase 129-132 (UI `/subscribe`, expiry visibility admin/customer/invoice,
+notifikasi expiry+email+banner) — 6 commit `develop` → `main` via PR #63.
+
+`release.yml` tag otomatis **v2.5.0** (minor, semua commit `feat:`),
+`deploy.yml` build+push image `api`/`web:v2.5.0` ke GHCR sukses (`deploy-to-server`
+gagal seperti biasa — SSH belum dikonfigurasi, expected). Deploy manual ke
+VPS via runbook **Full** (§ `architecture-deployment.md` — WAJIB karena
+migration `invoice_items.duration_days`, Fase 131, dan perubahan
+worker/job, Fase 132): pull → up (api/web/worker/minio/postgres) →
+`db:migrate` → semua container `Up`/`healthy`. Smoke check HTTP 200 di
+ketiga surface (`facinstitute.id`, `app.`, `admin.`) sukses.
+
+Verifikasi fitur mendalam (tanggal expiry di `/subscribe`, invoice PDF
+Durasi/Berlaku, dst) diserahkan ke user langsung di production (Claude
+tidak punya kredensial login production, § pola standar sesi ini).
