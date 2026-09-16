@@ -13,6 +13,13 @@
 // Produk Konverter/AutoProduksi SENGAJA belum py entri Varian apa pun —
 // JANGAN tebak nama modul/kategori sebelum fase build masing-masing
 // (hindari over-scope, § ADR-0033 "Eksplisit Di Luar Scope").
+//
+// § Nambah Varian (modul import) baru? Entri di sini CUMA 1 dari ~19
+// titik yang wajib disentuh — checklist LENGKAP + trik verifikasi ada
+// di `docs/architecture/architecture-accurate-integration.md` § "3b.
+// Checklist WAJIB — Titik Registrasi Modul Import Baru" (gap ini sudah
+// 2× kejadian karena checklist yang cuma dibaca, bukan dijalankan
+// verifikasinya).
 
 export const PRODUCT_LINES = [
   { key: "facport", label: "Facport" },

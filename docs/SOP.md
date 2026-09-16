@@ -25,6 +25,12 @@ muncul belakangan — nggak jelas dari perubahan mana asalnya.
   keputusan kecil yang diambil di tengah eksekusi (yang nggak cukup besar buat ADR
   tapi tetap perlu diingat).
 - Status fase di `docs/PROGRESS.md` diubah ke `In Progress`.
+- **Fase-nya nambah modul import Accurate baru?** WAJIB ikuti
+  `docs/architecture/architecture-accurate-integration.md` § "3b.
+  Checklist WAJIB — Titik Registrasi Modul Import Baru" SAMPAI SELESAI
+  (termasuk trik verifikasi `diff` di akhirnya) sebelum lanjut ke
+  langkah 3 — gap ini sudah 2× kejadian (2026-09-06, 2026-09-15/16)
+  karena checklist yang cuma di baca tidak dijalankan verifikasinya.
 
 ### 3. Type check + Lint
 ```bash
