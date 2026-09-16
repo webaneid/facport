@@ -139,7 +139,7 @@
 | 129  | /subscribe: Subtitle + Accordion Default-Open Per Kartu | Done | - | `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md` |
 | 130  | Tampilkan Expiry Aktual (Admin User-Detail + /subscribe) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-130-expiry-admin-customer.md` |
 | 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
-| 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Planned | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
+| 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Done | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1486,6 +1486,10 @@ bukan dilupakan. Semua trigger point sudah disiapkan (12 titik di
 `lib/notifications.ts`/`lib/order-payment.ts`/`workers/index.ts`) supaya
 gampang disambung ke `sendEmail()` (`lib/email.ts`, sudah ada) nanti,
 tapi belum ada satu pun panggilan email baru ditambahkan fase ini.
+
+> **Update 2026-09-17 (Fase 132)** — 4 dari 12 titik (trial/subscription
+> ending-soon & expired) SUDAH dapat email, lihat entri Fase 132 di bawah.
+> 8 titik LAIN (checkout/pembayaran/dst) TETAP pending.
 
 Typecheck 0 error (api+web), test suite `apps/api` 317 pass/0 fail (18
 baru), lint 0 error. Security review inline: 0 temuan Critical/High, 2
@@ -3343,3 +3347,34 @@ Verifikasi visual PDF berhasil; dialog admin diganti code review
 `docs/phases/phase-131-invoice-durasi-tanggal.md`.
 
 Lanjut Fase 132 (notifikasi expiry — teks spesifik + email + banner).
+
+## Update 2026-09-17 — Fase 132 Done: Notifikasi Expiry Diperkaya (Teks Spesifik + Email + Banner) — Part 3 Selesai
+
+Bagian terakhir (Part 3) dari permintaan besar user 2026-09-17. Infra
+notifikasi expiry SUDAH ADA sejak Fase 45 (lonceng + job harian) — fase
+ini melengkapi 3 gap: teks generik → sebut nama fitur+Data Usaha+tanggal
+exact; tidak ada email → 4 dari 12 tipe notifikasi sekarang dapat email
+(menutup SEBAGIAN item pending Fase 45 di atas); tidak ada banner →
+component baru `ExpiringSoonAlert` di dashboard + `/pilih-usaha`.
+
+Ditemukan & diperbaiki sekalian (di luar scope asli, kecil & langsung
+relevan): `invoice-pdf.tsx` hardcode timezone "Asia/Jakarta", tidak baca
+setting `company.timezone` — user eksplisit mengingatkan risiko timezone
+Indonesia di tengah eksekusi, langsung dicek dan ternyata memang ada gap
+pre-existing di file yang baru disentuh Fase 131. Diperbaiki pakai
+`getCompanyTimezone()`, tidak mengubah perilaku dev sekarang (setting
+belum diisi, fallback tetap sama).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1106 pass. Security
+review 0 temuan. Verifikasi: dashboard+`/pilih-usaha` dikonfirmasi
+render normal dengan data real (state "tidak ada yang expiring" benar);
+state "banner muncul" tidak ada data real yang pas untuk diuji visual
+(percobaan mutasi data sementara ditolak permission classifier sesi ini,
+tidak dipaksakan) — diverifikasi lewat code review. Detail lengkap →
+`docs/phases/phase-132-notifikasi-expiry-email-banner.md`.
+
+**Ini menutup SELURUH rangkaian permintaan user 2026-09-17** (Part 1 UI
+`/subscribe` Fase 129, Part 2 audit+fix expiry visibility Fase 130-131,
+Part 3 notifikasi Fase 132) — 4 fase, semua di `develop`, BELUM
+di-release ke `main` (menunggu keputusan batch-release user, pola
+standar sesi ini).

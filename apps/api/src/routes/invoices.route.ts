@@ -7,6 +7,7 @@ import { permissionPlugin, userHasPermission } from "../lib/permission";
 import { generateInvoicePdf } from "../lib/invoice-pdf";
 import { attachInvoiceItems, attachSubscriptionDates, groupIdenticalInvoiceItems } from "../lib/invoice-helpers";
 import { getProofImageAsPng } from "../lib/order-payment";
+import { getCompanyTimezone } from "../lib/company-timezone";
 import { logger } from "../lib/logger";
 
 // § Fase 104 (2026-09-11) — `settings.company.logo` SELALU disimpan
@@ -100,6 +101,11 @@ export const invoicesRoute = new Elysia()
       // § komentar `attachSubscriptionDates`), null kalau invoice belum
       // dibayar (subscription belum tercipta).
       const items = await attachSubscriptionDates(rawItems);
+      // § Fase 132 (ditemukan saat review timezone) — PDF sebelumnya
+      // hardcode "Asia/Jakarta" (§ komentar `formatTanggal`), tidak baca
+      // setting company.timezone SAMA SEKALI. Ambil sekali di sini,
+      // dipakai FORMAT semua tanggal PDF (bukan disimpan, § ADR-0028).
+      const timezone = await getCompanyTimezone();
       const company = await getCompanySettingsForPdf();
       let logoImage: Buffer | null = null;
       if (company.logoUrl) {
@@ -141,6 +147,7 @@ export const invoicesRoute = new Elysia()
       try {
         const pdfBuffer = await generateInvoicePdf({
           invoiceNumber: invoice.invoiceNumber,
+          timezone,
           createdAt: invoice.createdAt,
           dueDate: invoice.dueDate,
           billToName: invoice.billToName,

@@ -26,6 +26,10 @@ export type InvoicePdfItem = {
 
 export type InvoicePdfData = {
   invoiceNumber: string;
+  // § Fase 132 — timezone perusahaan (§ `lib/company-timezone.ts`),
+  // dipakai format SEMUA tanggal di PDF (`formatTanggal`) — WAJIB, bukan
+  // hardcode "Asia/Jakarta" lagi (§ komentar `formatTanggal`).
+  timezone: string;
   createdAt: Date;
   dueDate: Date;
   billToName: string;
@@ -157,11 +161,17 @@ function formatRupiah(amount: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
 }
 
-// § timezone company (Asia/Jakarta hardcode fallback) — PDF cuma perlu
-// TAMPILKAN tanggal, bukan simpan (aturan timestamptz UTC di DB tidak
-// berubah, § architecture-settings.md § "Aturan Timezone").
-function formatTanggal(date: Date): string {
-  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(date);
+// § Fase 132 (ditemukan saat review timezone 2026-09-17, diingatkan user)
+// — SEBELUMNYA hardcode "Asia/Jakarta", TIDAK baca `company.timezone`
+// (§ `lib/company-timezone.ts`, ADR-0028) — admin yang set timezone
+// perusahaan BEDA dari Asia/Jakarta bakal lihat tanggal invoice MELESET.
+// Sekarang terima `timezone` dari pemanggil (`InvoicePdfData.timezone`,
+// § `invoices.route.ts` — `getCompanyTimezone()`), fallback default HANYA
+// kalau pemanggil somehow tidak kirim (seharusnya tidak pernah terjadi,
+// field wajib di tipe). PDF cuma perlu TAMPILKAN tanggal, bukan simpan
+// (aturan timestamptz UTC di DB tidak berubah).
+function formatTanggal(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: timezone }).format(date);
 }
 
 // § Fase 131 — duplikasi SENGAJA dari `apps/web/lib/duration.ts`
@@ -196,8 +206,8 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
           <View style={styles.headerRight}>
             <Text style={styles.invoiceTitle}>INVOICE</Text>
             <Text style={styles.invoiceNumber}>{data.invoiceNumber}</Text>
-            <Text style={styles.invoiceDate}>Tanggal: {formatTanggal(data.createdAt)}</Text>
-            <Text style={styles.invoiceDate}>Jatuh Tempo: {formatTanggal(data.dueDate)}</Text>
+            <Text style={styles.invoiceDate}>Tanggal: {formatTanggal(data.createdAt, data.timezone)}</Text>
+            <Text style={styles.invoiceDate}>Jatuh Tempo: {formatTanggal(data.dueDate, data.timezone)}</Text>
           </View>
         </View>
 
@@ -243,7 +253,7 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             const durasiText = `Durasi: ${formatDurasiPdf(item.durationDays)}`;
             const berlakuText =
               item.subscriptionStartAt && item.subscriptionEndAt
-                ? `Berlaku: ${formatTanggal(item.subscriptionStartAt)} – ${formatTanggal(item.subscriptionEndAt)}`
+                ? `Berlaku: ${formatTanggal(item.subscriptionStartAt, data.timezone)} – ${formatTanggal(item.subscriptionEndAt, data.timezone)}`
                 : "Berlaku: menunggu pembayaran";
             return (
               // eslint-disable-next-line react/no-array-index-key -- baris invoice immutable/snapshot, tidak pernah reorder

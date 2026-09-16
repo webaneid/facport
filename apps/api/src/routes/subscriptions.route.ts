@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable } from "../db/schema";
+import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable, dataUsaha } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { createInvoiceAndOrder } from "../lib/invoice-order";
@@ -36,6 +36,15 @@ export const subscriptionsRoute = new Elysia()
       // kontrak itu.
       const filteredRows = query.dataUsahaId ? rows.filter((r) => r.subscription.dataUsahaId === query.dataUsahaId) : rows;
 
+      // § Fase 132 (diminta user 2026-09-17) — nama Data Usaha per baris,
+      // dipakai FE (dashboard + /pilih-usaha) tampilkan banner "fitur X di
+      // Data Usaha Y akan segera berakhir" tanpa fetch terpisah. Batch 1x
+      // (bukan N+1), pola sama `admin/user-subscriptions.route.ts`.
+      const dataUsahaIds = [...new Set(filteredRows.map((r) => r.subscription.dataUsahaId))];
+      const dataUsahaRows = dataUsahaIds.length ? await db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)) : [];
+      const dataUsahaNameById = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
+      const rowsWithDataUsahaName = filteredRows.map((r) => ({ ...r, dataUsahaName: dataUsahaNameById.get(r.subscription.dataUsahaId) ?? null }));
+
       // § Fase 43 — union modul yang PERNAH ditrial user ini, APA PUN
       // status subscription-nya sekarang (aktif/expired/habis kuota) —
       // dipakai frontend nentuin tombol "Coba Gratis" mana yang WAJIB
@@ -47,7 +56,7 @@ export const subscriptionsRoute = new Elysia()
         .where(and(eq(subscriptions.userId, user.id), eq(subscriptions.isTrial, true)));
       const everTrialedModules = [...new Set(everTrialedRows.flatMap((r) => r.modules))];
 
-      return { subscriptions: filteredRows, everTrialedModules };
+      return { subscriptions: rowsWithDataUsahaName, everTrialedModules };
     },
     { auth: true, query: t.Object({ dataUsahaId: t.Optional(t.String({ format: "uuid" })) }) },
   )
