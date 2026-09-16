@@ -433,6 +433,63 @@ awal dokumen ini.
 > di-trim juga, konsisten dengan `headers`. Detail →
 > `docs/phases/phase-102-fix-trim-header-excel.md`.
 
+## 3b. Checklist WAJIB — Titik Registrasi Modul Import Baru
+
+> **Kenapa ini ada**: gap yang SAMA ketemu 2× — pertama 2026-09-06 (3
+> modul, § `docs/lessons-learned.md` "Audit konsistensi 6 modul: shared
+> admin view TIDAK ikut update saat modul baru ditambah"), lagi
+> 2026-09-15/16 (5 modul Fase 120-124 kelewat, ketemu pas Fase 128).
+> Kedua kali root cause SAMA: checklist cuma hidup di prosa/memori,
+> tidak ada cara SISTEMATIS memverifikasi "semua titik sudah disentuh".
+> Daftar di bawah + trik verifikasi di paling akhir dirancang supaya
+> TIDAK bisa kelewat lagi — JALANKAN trik verifikasi itu SEBELUM
+> menganggap modul baru selesai (Langkah 3 SOP, sebelum security review).
+
+Modul import baru (`{module}` = snake_case, mis. `other_deposit`) WAJIB
+menyentuh SEMUA file berikut, bukan cuma route/worker/mapping/sidebar
+sendiri:
+
+**File BARU** (per modul):
+1. `apps/api/src/lib/import-mapping/{module}.mapping.ts` (+ `.test.ts`)
+2. `apps/api/src/lib/accurate-{module}.ts` (client `save.do`)
+3. `apps/api/src/routes/{module}-import.route.ts` (+ `.test.ts`)
+4. `apps/web/app/app/(protected)/{module}/import/page.tsx` (upload + cocokkan kolom)
+5. `apps/web/app/app/(protected)/{module}/import/[batchId]/page.tsx` (progress customer)
+6. `apps/web/app/app/(protected)/{module}/import/riwayat/page.tsx` (arsip per-modul)
+7. `apps/web/components/{module}/delete-import-dialog.tsx`
+8. `apps/web/components/{module}/edit-row-dialog.tsx` (kalau modul punya alur edit baris gagal)
+
+**File EXISTING yang WAJIB dapat 1 entri baru** (9 titik — lupa SATU
+pun = fitur modul itu setengah jalan, biasanya baru ketahuan pas
+customer/admin buka fitur yang kelewat itu):
+1. `apps/api/src/lib/accurate-scopes.ts` — `MODULE_ACCURATE_SCOPES[module]`
+2. `apps/api/src/lib/import-mapping/template-guide.ts` — `{module}TemplateGuide`
+3. `apps/api/src/lib/module-catalog.ts` — entri `MODULE_CATALOG` (productLine+category)
+4. `apps/api/src/routes/admin/plans.route.ts` — `t.Literal("{module}")` di union `modules`
+5. `apps/api/src/app.ts` — import + `.use({module}ImportRoute)`
+6. `apps/api/src/workers/index.ts` — dispatch case di job loop (+ `ensure*DataClassifications`/`process*Group` kalau modul pakai Kategori Keuangan/grouping)
+7. `apps/web/lib/landing-content.ts` — `LANDING_MODULE_ICON`/`LANDING_MODULE_TAGLINE`
+8. `apps/web/components/app-shell/sidebar.tsx` — 1 baris `NavItem` di grup Produk
+9. `apps/web/lib/module-import-routes.ts` — `MODULE_IMPORT_BASE_PATH[module]`
+10. `apps/web/components/import-archive/import-batch-table.tsx` — import `DeleteImportDialog as {Module}DeleteImportDialog` + 1 baris dispatch `{canDelete && batch.module === "{module}" && ...}`
+11. `apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx` — 1 fungsi `{Module}View` (read-only, mirror `VendorPayableAccountView` kalau modul tidak butuh grouping kolom khusus) + entri `MODULE_TITLE` + 1 baris dispatch
+
+Opsional tapi disarankan: root `CLAUDE.md` § Peta Dokumen (baris baru
+ke `architecture-{module}.md`).
+
+### Trik Verifikasi — WAJIB Dijalankan, Bukan Cuma Baca Daftar
+Diff 2 hasil grep modul BARU vs 1 modul LAMA yang SUDAH lengkap (pola
+paling mirip) — kalau hasilnya BUKAN cuma file route masing-masing yang
+beda, berarti ada titik yang kelewat:
+```bash
+grep -rln "old_module_key" apps/web apps/api/src --include="*.ts" --include="*.tsx" | grep -v ".test." | sort > /tmp/old.txt
+grep -rln "new_module_key" apps/web apps/api/src --include="*.ts" --include="*.tsx" | grep -v ".test." | sort > /tmp/new.txt
+diff /tmp/old.txt /tmp/new.txt
+# Hasil YANG BENAR: cuma 1 baris beda tiap sisi (nama file route
+# masing-masing modul) — kalau ada file yang MUNCUL di /tmp/old.txt
+# TAPI TIDAK ADA padanannya di /tmp/new.txt, itu titik yang kelewat.
+```
+
 ## 4. Rate Limiting Sisi Client
 ✅ **Angka pasti TERVERIFIKASI 2026-08-19**: **maksimal 8 request/detik DAN
 maksimal 8 request bersamaan (concurrent)** — dikonfirmasi dari

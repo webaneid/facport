@@ -60,7 +60,7 @@ async function insertInvoiceWithItems(userId: string, label: string) {
       dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     })
     .returning();
-  await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan!.id, moduleKey: "purchase_invoice", label, price: 100000 });
+  await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan!.id, moduleKey: "purchase_invoice", label, price: 100000, durationDays: plan!.durationDays });
   return invoice!;
 }
 

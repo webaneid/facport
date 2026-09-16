@@ -1,10 +1,11 @@
 import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { moduleLabel, type ModuleKey } from "@/lib/module-options";
-import { currencyFormatter } from "@/lib/utils";
+import { currencyFormatter, formatDate } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
 import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
 import type { ModuleGroup } from "@/lib/use-grouped-plans";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 export type Plan = {
   id: string;
@@ -16,6 +17,11 @@ export type Plan = {
   trialEligible: boolean;
   kind: "module" | "seat_addon";
 };
+
+// § Fase 130 (diminta user 2026-09-17) — tanggal subscription AKTUAL
+// (beda dari `activePlan.durationDays` yang cuma info KATALOG paket).
+// Undefined = belum ada subscription aktif utk modul ini sama sekali.
+export type SubscriptionInfo = { startAt: string | null; endAt: string | null };
 
 // § Fase 127 — isi panel accordion 1 Varian (dulu ISI KARTU SATU-SATUNYA
 // per modul di `/subscribe`, § subscribe-form.tsx versi lama baris
@@ -29,6 +35,7 @@ export function ModulePricingPanel({
   isSelected,
   isRealActive,
   isTrialActive,
+  subscriptionInfo,
   hasEverTrialed,
   showTrialButton,
   tryingPlanId,
@@ -41,6 +48,7 @@ export function ModulePricingPanel({
   isSelected: boolean;
   isRealActive: boolean;
   isTrialActive: boolean;
+  subscriptionInfo: SubscriptionInfo | undefined;
   hasEverTrialed: boolean;
   showTrialButton: boolean | undefined;
   tryingPlanId: string | null;
@@ -51,6 +59,7 @@ export function ModulePricingPanel({
   const moduleKey = group.moduleKey as ModuleKey;
   const Icon = LANDING_MODULE_ICON[moduleKey];
   const tagline = LANDING_MODULE_TAGLINE[moduleKey];
+  const companyTimezone = useCompanyTimezone();
 
   return (
     <div className="rounded-xl border border-border/60 bg-background p-4">
@@ -67,6 +76,13 @@ export function ModulePricingPanel({
         {isTrialActive && <Badge variant="warning">Sedang Trial</Badge>}
       </div>
       {tagline && <p className="mt-2 text-xs text-muted-foreground">{tagline}</p>}
+      {(isRealActive || isTrialActive) && subscriptionInfo && (subscriptionInfo.startAt || subscriptionInfo.endAt) && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {subscriptionInfo.startAt && `Mulai ${formatDate(subscriptionInfo.startAt, companyTimezone)}`}
+          {subscriptionInfo.startAt && subscriptionInfo.endAt && " — "}
+          {subscriptionInfo.endAt && `Berakhir ${formatDate(subscriptionInfo.endAt, companyTimezone)}`}
+        </p>
+      )}
 
       {activePlan && (
         <p className="mt-3 text-2xl font-semibold text-foreground">

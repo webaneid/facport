@@ -19,6 +19,8 @@ import { api } from "@/lib/api-client";
 import { ACTIVE_DATA_USAHA_COOKIE } from "@/lib/active-data-usaha-cookie";
 import { PilihUsahaHeader } from "./pilih-usaha-header";
 import { BannerSlider, BANNER_COLLAPSE_STORAGE_KEY } from "./banner-slider";
+import { ExpiringSoonAlert, type ExpiringSubscriptionRow } from "@/components/subscribe/expiring-soon-alert";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 // § Fase 110, architecture-user-tambahan.md — `isOwner: false` = Data
 // Usaha ini BUKAN milik user (dia numpang lewat seat User Tambahan aktif,
@@ -77,8 +79,14 @@ export function PilihUsahaForm({
   faviconUrl?: string;
 }) {
   const router = useRouter();
+  const companyTimezone = useCompanyTimezone();
   const [rows, setRows] = useState<DataUsahaRow[] | null>(null);
   const [promos, setPromos] = useState<PromoRow[] | null>(null);
+  // § Fase 132 (diminta user 2026-09-17) — union SEMUA Data Usaha (bukan
+  // 1 saja, beda dari dashboard yang sudah di-scope Data Usaha aktif) —
+  // halaman ini yang justru muncul SEBELUM user pilih Data Usaha mana,
+  // jadi banner di sini harus lintas Data Usaha.
+  const [expiringSubscriptions, setExpiringSubscriptions] = useState<ExpiringSubscriptionRow[]>([]);
   const [search, setSearch] = useState("");
   const [createOpen, setCreateOpen] = useState(false);
   const [bannerCollapsed, setBannerCollapsed] = useState(false);
@@ -92,11 +100,13 @@ export function PilihUsahaForm({
   // sebelahnya) — lihat pemakaian di bawah.
   useEffect(() => {
     async function load() {
-      const [dataUsahaRes, promosRes] = await Promise.all([api.me["data-usaha"].get(), api.promos.get()]);
+      const [dataUsahaRes, promosRes, subsRes] = await Promise.all([api.me["data-usaha"].get(), api.promos.get(), api.me.subscriptions.get()]);
       const list = (dataUsahaRes.data as unknown as { dataUsaha: DataUsahaRow[] } | undefined)?.dataUsaha ?? [];
       setRows(list);
       const promoList = (promosRes.data as unknown as { promos: PromoRow[] } | undefined)?.promos ?? [];
       setPromos(promoList);
+      const subsList = (subsRes.data as unknown as { subscriptions: ExpiringSubscriptionRow[] } | undefined)?.subscriptions ?? [];
+      setExpiringSubscriptions(subsList);
     }
     load();
     try {
@@ -168,6 +178,8 @@ export function PilihUsahaForm({
         {promos !== null && <BannerSlider promos={promos} collapsed={bannerCollapsed} onToggleCollapsed={toggleBannerCollapsed} />}
 
         <div className="flex min-w-0 flex-1 flex-col gap-4">
+          <ExpiringSoonAlert subscriptions={expiringSubscriptions} companyTimezone={companyTimezone} />
+
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
               <span className="h-6 w-1 rounded-full bg-primary-600" />
@@ -255,6 +267,7 @@ export function PilihUsahaForm({
       {/* § Mobile/tablet (< lg): layout list-row lama, dipertahankan APA
           ADANYA (diminta eksplisit user), cuma dibungkus header baru. */}
       <div className="mx-auto flex w-full max-w-md flex-1 flex-col gap-4 p-6 lg:hidden">
+        <ExpiringSoonAlert subscriptions={expiringSubscriptions} companyTimezone={companyTimezone} />
         {!rows ? (
           <div className="flex flex-col gap-2">
             <Skeleton className="h-14 w-full" />

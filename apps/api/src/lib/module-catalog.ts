@@ -13,6 +13,13 @@
 // Produk Konverter/AutoProduksi SENGAJA belum py entri Varian apa pun —
 // JANGAN tebak nama modul/kategori sebelum fase build masing-masing
 // (hindari over-scope, § ADR-0033 "Eksplisit Di Luar Scope").
+//
+// § Nambah Varian (modul import) baru? Entri di sini CUMA 1 dari ~19
+// titik yang wajib disentuh — checklist LENGKAP + trik verifikasi ada
+// di `docs/architecture/architecture-accurate-integration.md` § "3b.
+// Checklist WAJIB — Titik Registrasi Modul Import Baru" (gap ini sudah
+// 2× kejadian karena checklist yang cuma dibaca, bukan dijalankan
+// verifikasinya).
 
 export const PRODUCT_LINES = [
   { key: "facport", label: "Facport" },
@@ -48,6 +55,9 @@ export const MODULE_CATALOG = [
   { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Purchase" },
   { key: "vendor_payable_account", label: "Vendor Payable Account", productLine: "facport", category: "Purchase" },
   { key: "other_payment", label: "Other Payment (Cash/Bank Payment)", productLine: "facport", category: "Cash & Bank" },
+  // § Fase 128 — Other Deposit, kebalikan Other Payment (penerimaan,
+  // bukan pengeluaran), kategori sama "Cash & Bank".
+  { key: "other_deposit", label: "Other Deposit (Cash/Bank Receipt)", productLine: "facport", category: "Cash & Bank" },
   { key: "journal_voucher", label: "Journal Voucher", productLine: "facport", category: "General Ledger" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 

@@ -36,6 +36,7 @@ export const invoiceItems = pgTable("invoice_items", {
   moduleKey: varchar("module_key", { length: 50 }).notNull(), // denormalisasi dari plan.modules[0] saat invoice dibuat
   label: varchar("label", { length: 200 }).notNull(), // SNAPSHOT plan.name saat invoice dibuat
   price: integer("price").notNull(), // SNAPSHOT plan.price saat invoice dibuat — plan.price masa depan TIDAK mempengaruhi invoice lama
+  durationDays: integer("duration_days").notNull(), // § Fase 131 — SNAPSHOT plan.durationDays, pola sama label/price
 });
 ```
 
@@ -51,7 +52,43 @@ BOLEH ganti harga plan kapan saja (§ `architecture-subscription.md`) —
 invoice yang SUDAH diterbitkan harus tetap menampilkan harga yang
 BENAR-BENAR ditagihkan saat itu, bukan harga plan yang berlaku sekarang.
 Ini prinsip standar akuntansi (dokumen historis immutable), bukan
-preferensi implementasi.
+preferensi implementasi. **§ Fase 131 — `durationDays` ikut prinsip yang
+SAMA** (snapshot, bukan join live) — kalau admin ubah durasi plan
+belakangan, invoice lama tetap tunjukkan durasi yang BENAR-BENAR
+ditagihkan saat itu.
+
+## Durasi & Tanggal Berlaku di Invoice (Fase 131)
+Diminta user 2026-09-17 — invoice (PDF + dialog "Detail Invoice" admin)
+sebelumnya sama sekali tidak menampilkan durasi paket atau tanggal
+mulai/berakhir, cuma label+harga. Ada 2 jenis info beda perlakuan:
+
+- **Durasi paket (`durationDays`)** — SNAPSHOT di `invoiceItems` (lihat
+  skema di atas), sama alasan `label`/`price`. Selalu ada begitu invoice
+  dibuat, apa pun status pembayarannya.
+- **Tanggal AKTUAL mulai/berakhir (`startAt`/`endAt`)** — SENGAJA **TIDAK**
+  di-snapshot, di-**LIVE JOIN** ke `subscriptions` lewat
+  `subscriptions.invoiceItemId` (pointer BALIK yang sudah ada sejak Fase
+  15/ADR-0021, tidak perlu kolom baru) — helper `attachSubscriptionDates()`
+  (`lib/invoice-helpers.ts`). Alasan beda dari `durationDays`: tanggal ini
+  belum ADA sama sekali sampai subscription tercipta (invoice dibuat SAAT
+  checkout, subscription baru ada SETELAH admin confirm pembayaran, §
+  "Prinsip" di atas), DAN kalau di-snapshot, invoice tidak akan reflect
+  perpanjangan admin (`PATCH /admin/subscriptions/:id`) — padahal user
+  eksplisit minta "dipastikan expired date berfungsi ketika harus
+  diperpanjang". Invoice yang BELUM dibayar (subscription belum ada)
+  tampilkan "Berlaku: menunggu pembayaran", BUKAN tanggal kosong/error.
+- **Ditampilkan di**: PDF (`invoice-pdf.tsx`, baris kecil di bawah
+  "Produk · Modul · Sub-modul" tiap item — SATU generator ini dipakai
+  KEDUA sisi, customer via `GET /invoices/:id/pdf` dan admin lewat link
+  yang sama, jadi 1 perubahan menutup "invoice user maupun admin"
+  sekaligus) DAN dialog "Detail Invoice" admin (`admin/invoices/page.tsx`
+  — render RAW per-item, BUKAN lewat `groupIdenticalInvoiceItems` yang
+  cuma dipakai PDF utk gabung baris seat_addon kuantitas).
+- **`groupIdenticalInvoiceItems()`** (dipakai PDF saja) bawa
+  `subscriptionStartAt`/`subscriptionEndAt` lewat grouping, ambil nilai
+  baris PERTAMA di grup — aman karena N baris seat_addon dari 1 checkout
+  yang sama dikonfirmasi BERSAMAAN (§ admin/orders.route.ts), jadi
+  tanggalnya identik.
 
 ## Nomor Invoice — Format & Keunikan
 Format `INV/{YYYY}/{MM}/{urutan 4 digit, reset tiap bulan}` (mis.

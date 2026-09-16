@@ -6,6 +6,44 @@
 
 ---
 
+## 2026-09-16 — Gap registrasi modul KEJADIAN KE-2 (5 modul Fase 120-124 kelewat di 3 file) — checklist prosa TIDAK CUKUP, butuh verifikasi mekanis
+**Masalah:** Saat membangun modul Other Deposit (Fase 128), audit
+`grep '"other_payment"'` menemukan 5 modul Fase 120-124 (Purchase Order/
+Receive Item/Purchase Return/Sales Quotation/Sales Return) TIDAK PERNAH
+didaftarkan ke 3 file "daftar semua modul": `module-import-routes.ts`
+("Arsip Import" gabungan tidak bisa bikin link Detail), `import-batch-table.tsx`
+(tombol Delete tidak muncul sama sekali di "Arsip Import" gabungan
+untuk batch modul itu — BEDA dari 12 halaman Riwayat PER-MODUL yang
+sudah benar), dan admin `import-batches/[batchId]/page.tsx` (admin buka
+detail batch modul itu cuma lihat Ringkasan, TANPA tabel per-baris).
+
+**Root cause:** Ini KEJADIAN KE-2 — pola identik pernah ditemukan &
+"dicegah" 2026-09-06 (§ entri "Audit konsistensi 6 modul" di bawah),
+tapi pencegahannya CUMA 1 kalimat prosa di lessons-learned ("checklist
+tempat yang WAJIB disentuh... admin/import-batches/[batchId]/page.tsx")
+— TIDAK lengkap (cuma sebut 1 dari 3 file yang ternyata kelewat) DAN
+tidak ada cara MEKANIS memverifikasi "semua titik sudah disentuh" —
+jadi tetap kelewat lagi 5 modul kemudian, murni karena mengandalkan
+ingatan/baca-ulang prosa.
+
+**Fix:** Backfill 6 entri (5 modul lama + `other_deposit` baru) di
+ketiga file. Diverifikasi selesai LENGKAP via
+`diff <(grep -rl '"other_payment"' ...) <(grep -rl '"other_deposit"' ...)`
+— hasil akhir CUMA beda 1 baris (file route masing-masing modul),
+konfirmasi tidak ada titik lain yang kelewat.
+
+**Pencegahan (permanen, bukan cuma prosa lagi):** Checklist LENGKAP
+(19 titik, file baru + file existing yang wajib nambah 1 entri) + trik
+verifikasi `diff` di atas sekarang didokumentasikan di
+`docs/architecture/architecture-accurate-integration.md` § "3b.
+Checklist WAJIB — Titik Registrasi Modul Import Baru", dirujuk dari
+`docs/SOP.md` Langkah 2 (WAJIB dijalankan sebelum Langkah 3, bukan
+opsional) dan komentar `module-catalog.ts`. Kalau kejadian lagi kali
+ke-3, itu tandanya checklist di file itu sendiri yang perlu diperbaiki
+(ada titik baru yang belum masuk daftar), bukan sekadar "lupa lagi".
+
+---
+
 ## 2026-09-15 — Purchase Order (Fase 120): `branchName` didokumentasikan WAJIB di architecture doc, tapi tidak ikut masuk `requiredFields` kode
 **Masalah:** `architecture-purchase-order.md` § "Branch Wajib (Preseden
 Fase 90)" eksplisit menyatakan `branchName` HARUS divalidasi non-kosong

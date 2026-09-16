@@ -42,7 +42,13 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
         .select({
           id: subscriptions.id,
           status: subscriptions.status,
+          startAt: subscriptions.startAt,
           endAt: subscriptions.endAt,
+          // § Fase 130 (diminta user 2026-09-17) — admin sebelumnya cuma
+          // lihat `endAt`, tidak tahu durasi paketnya (Bulanan/Tahunan)
+          // atau kapan MULAI-nya — dua-duanya dibutuhkan biar "Detail
+          // User" benar-benar berguna buat support (§ komentar file ini).
+          durationDays: plans.durationDays,
           accurateConnectionId: subscriptions.accurateConnectionId,
           planName: plans.name,
           moduleKey: plans.modules,
@@ -68,7 +74,9 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           return {
             subscriptionId: r.id,
             status: r.status,
+            startAt: r.startAt,
             endAt: r.endAt,
+            durationDays: r.durationDays,
             moduleKey: r.moduleKey[0] ?? null,
             planName: r.planName,
             connected: connection?.status === "active",

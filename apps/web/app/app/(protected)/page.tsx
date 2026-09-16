@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatusBadge } from "@/lib/status-badges";
 import { ImportBatchTable, type UnifiedImportBatch } from "@/components/import-archive/import-batch-table";
+import { ExpiringSoonAlert } from "@/components/subscribe/expiring-soon-alert";
 import { formatDate, currencyFormatter, formatWorkTimeSaved } from "@/lib/utils";
 import { moduleLabel } from "@/lib/module-options";
 import { getPublicSettings } from "@/lib/get-public-settings";
@@ -20,6 +21,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
 type SubscriptionRow = {
   subscription: { id: string; status: string; endAt: string | null };
   plan: { name: string; modules: string[] };
+  dataUsahaName: string | null;
 };
 type SubscriptionsResponse = { subscriptions: SubscriptionRow[] };
 
@@ -107,6 +109,8 @@ export default async function DashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Dashboard" description="Ringkasan akun & aktivitas import kamu." />
+
+      <ExpiringSoonAlert subscriptions={subscriptions} companyTimezone={companyTimezone} />
 
       {unpaidInvoices.length > 0 && (
         <Card className="border-warning/40 bg-warning-bg">

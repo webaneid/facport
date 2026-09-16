@@ -3,7 +3,7 @@ import { desc, eq, or, ilike, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { invoices, orders, plans, user as userTable, dataUsaha } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
-import { attachInvoiceItems } from "../../lib/invoice-helpers";
+import { attachInvoiceItems, attachSubscriptionDates } from "../../lib/invoice-helpers";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
@@ -46,8 +46,21 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
       const dataUsahaRows = dataUsahaIds.length ? await db.select().from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)) : [];
       const dataUsahaNameById = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
       const withItems = await attachInvoiceItems(rows);
+      // § Fase 131 — tanggal AKTUAL mulai/berakhir per item (live join,
+      // dialog "Detail Invoice" render RAW per-item, § halaman FE — TIDAK
+      // lewat `groupIdenticalInvoiceItems`, itu cuma dipakai PDF). Batch
+      // 1 query lintas SEMUA invoice di list ini, bukan N+1 per invoice —
+      // flatten dulu, decorate, lalu kelompokkan balik per invoiceId.
+      const flatItemsWithDates = await attachSubscriptionDates(withItems.flatMap((inv) => inv.items));
+      const itemsByInvoiceId = new Map<string, typeof flatItemsWithDates>();
+      for (const item of flatItemsWithDates) {
+        const list = itemsByInvoiceId.get(item.invoiceId) ?? [];
+        list.push(item);
+        itemsByInvoiceId.set(item.invoiceId, list);
+      }
+      const withItemDates = withItems.map((inv) => ({ ...inv, items: itemsByInvoiceId.get(inv.id) ?? [] }));
       return {
-        invoices: withItems.map((inv) => {
+        invoices: withItemDates.map((inv) => {
           const order = orderByInvoiceId.get(inv.id);
           const dataUsahaId = order?.dataUsahaId ?? null;
           return {

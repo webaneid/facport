@@ -9,6 +9,12 @@
 > arsitektur (ADR-0029). Email untuk event yang SAMA (checkout, trial,
 > dst) **BELUM dibangun** — dicatat eksplisit sebagai item pending di
 > `docs/PROGRESS.md`, bukan terlupa.
+>
+> **Fase 132 (2026-09-17)** — 4 dari 12 tipe (`trial_ending_soon`,
+> `subscription_ending_soon`, `trial_expired`, `subscription_expired`)
+> SEKARANG dapat email juga, plus banner baru di dashboard/`/pilih-usaha`
+> — lihat § "Reminder H-Sekian" dan § "Banner Expiry" di bawah. 8 tipe
+> LAIN (checkout/pembayaran/dst) TETAP pending, sengaja di luar scope.
 
 ## Prinsip Umum
 Semua notifikasi keluar (email, WA) **WAJIB lewat queue** (§
@@ -127,21 +133,21 @@ dipakai **SAMA PERSIS** untuk customer maupun admin/staff — dibedakan oleh
 ### Katalog Tipe Notifikasi
 Satu sumber kebenaran: `apps/api/src/lib/notifications.ts` `NOTIFICATION_TYPES`.
 
-| Tipe | Trigger | Penerima | Link Frontend |
-|---|---|---|---|
-| `order_created` | Checkout sukses (`POST /subscriptions/checkout`) | Customer | `/billing` |
-| `payment_proof_submitted` | `PATCH /orders/:id/proof` (login MAUPUN publik) | Customer | `/billing` |
-| `payment_verified` | `POST /admin/orders/:id/confirm` | Customer | `/billing` |
-| `payment_rejected` | `POST /admin/orders/:id/reject` | Customer | `/billing` |
-| `trial_started` | `POST /subscriptions/trial` | Customer | `/subscribe` |
-| `trial_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-3/H-1 | Customer | `/subscribe` |
-| `trial_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=true` | Customer | `/subscribe` |
-| `subscription_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-7/H-3/H-1 | Customer | `/subscribe` |
-| `subscription_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=false` | Customer | `/subscribe` |
-| `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal, ATAU `openAccurateSession()` gagal saat import (⚠️ diperluas Fase 91 — dulu cuma job terjadwal) | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` |
-| `accurate_connection_disconnected_by_admin` | `POST /admin/subscriptions/:id/disconnect-accurate` (Fase 92) | Customer (pemilik koneksi) | `/accurate` |
-| `admin_payment_proof_submitted` | `PATCH /orders/:id/proof` | SEMUA user dengan permission `orders.manage` | `/admin/orders` |
-| `announcement` | Broadcast admin (`POST /admin/announcements`) | Sesuai target | Beda per surface |
+| Tipe | Trigger | Penerima | Link Frontend | Email? |
+|---|---|---|---|---|
+| `order_created` | Checkout sukses (`POST /subscriptions/checkout`) | Customer | `/billing` | ❌ pending |
+| `payment_proof_submitted` | `PATCH /orders/:id/proof` (login MAUPUN publik) | Customer | `/billing` | ❌ pending |
+| `payment_verified` | `POST /admin/orders/:id/confirm` | Customer | `/billing` | ❌ pending |
+| `payment_rejected` | `POST /admin/orders/:id/reject` | Customer | `/billing` | ❌ pending |
+| `trial_started` | `POST /subscriptions/trial` | Customer | `/subscribe` | ❌ pending |
+| `trial_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-3/H-1 | Customer | `/subscribe` | ✅ Fase 132 |
+| `trial_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=true` | Customer | `/subscribe` | ✅ Fase 132 |
+| `subscription_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-7/H-3/H-1 | Customer | `/subscribe` | ✅ Fase 132 |
+| `subscription_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=false` | Customer | `/subscribe` | ✅ Fase 132 |
+| `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal, ATAU `openAccurateSession()` gagal saat import (⚠️ diperluas Fase 91 — dulu cuma job terjadwal) | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` | ❌ pending |
+| `accurate_connection_disconnected_by_admin` | `POST /admin/subscriptions/:id/disconnect-accurate` (Fase 92) | Customer (pemilik koneksi) | `/accurate` | ❌ pending |
+| `admin_payment_proof_submitted` | `PATCH /orders/:id/proof` | SEMUA user dengan permission `orders.manage` | `/admin/orders` | ❌ pending |
+| `announcement` | Broadcast admin (`POST /admin/announcements`) | Sesuai target | Beda per surface | ❌ pending |
 
 Link resolusi tipe→halaman: `apps/web/lib/notification-routes.ts`
 (fungsi, bukan Record statis — beberapa tipe beda tujuan antara surface
@@ -154,6 +160,51 @@ H-3/H-1 (durasi lebih pendek). Logic murni (testable tanpa pg-boss) di
 `apps/api/src/lib/subscription-reminders.ts` `findApplicableReminderThreshold()`
 — kolom `subscriptions.lastReminderThresholdDays` cegah reminder dobel
 tiap job jalan (nilai threshold TERKETAT terakhir yang sudah dikirim).
+
+**§ Fase 132 (diminta user 2026-09-17)** — body notifikasi (bell DAN
+email) sekarang SPESIFIK, bukan generik: sebut nama fitur (`moduleLabel()`,
+resolve dari `plan.modules[0]`) + nama Data Usaha + tanggal exact berakhir
+(`formatNotificationDate()`, § timezone company — bukan `daysLeft` doang).
+Mis. *"Fitur Sales Invoice di Data Usaha PT Mitra Jaya akan berakhir 3
+hari lagi (12 September 2026) — perpanjang sekarang supaya tidak
+terputus."* Sama pola berlaku untuk `EXPIRE_SUBSCRIPTIONS` (notifikasi
+"sudah berakhir", tanpa hitung mundur karena sudah lewat).
+
+Email (4 tipe: `trial_ending_soon`/`subscription_ending_soon`/
+`trial_expired`/`subscription_expired`) di-enqueue via `boss.send(JOBS.SEND_EMAIL,
+{...})` PERSIS di titik yang sama, pola call-site IDENTIK
+`lib/auth.ts`/`me.route.ts`/`team.route.ts` (HTML inline sederhana via
+`escapeHtml(body)`, BUKAN React Email template — § "Kondisi SEKARANG"
+di atas, belum ada alasan cukup kuat pindah pola). Metadata
+(plan/Data Usaha/email user) di-batch-fetch HANYA untuk subscription yang
+LOLOS filter threshold di run itu (bukan semua subscription aktif),
+hindari over-fetch.
+
+### Banner Expiry — Dashboard & `/pilih-usaha` (Fase 132)
+Selain bell+email, ada 1 lapis lagi: banner PROAKTIF di 2 halaman yang
+paling sering dibuka customer (dashboard = tempat kerja utama,
+`/pilih-usaha` = gerbang SEBELUM masuk ke Data Usaha manapun). Berbeda
+dari notifikasi bell (butuh diklik buka dropdown), banner ini LANGSUNG
+terlihat begitu halaman dibuka.
+
+- **Sumber data**: `GET /me/subscriptions` (endpoint EXISTING, BUKAN
+  endpoint baru) — extend dengan `dataUsahaName` per baris (join
+  `dataUsaha`, batch 1x). Dashboard reuse fetch yang SUDAH ada (scope 1
+  Data Usaha aktif); `/pilih-usaha` tambah 1 fetch baru TANPA
+  `dataUsahaId` (union SEMUA Data Usaha user, sama pola `subscribe-form.tsx`).
+- **Komponen**: `apps/web/components/subscribe/expiring-soon-alert.tsx`
+  (`ExpiringSoonAlert`) — shared, presentational murni. Filter
+  `status === "active" && daysLeft ∈ [0,7]` (`EXPIRING_SOON_DAYS`
+  hardcode terpisah dari `SUBSCRIPTION_REMINDER_THRESHOLDS` backend — 2
+  app terpisah, nilainya SENGAJA disamakan konsepnya dengan threshold
+  TERJAUH job biar banner "mulai muncul" konsisten hari yang sama dengan
+  reminder bell/email pertama). Render `Alert` (`components/ui/alert.tsx`,
+  `variant="warning"`) — daftar "Modul di Data Usaha X — berakhir
+  tanggal Y", `null` (tidak render apa pun) kalau tidak ada yang expiring.
+- **TIDAK dismissible** — banner ini tampil terus selama masih dalam
+  window 7 hari (behavior SENGAJA beda dari notifikasi bell yang bisa
+  ditandai "sudah dibaca") — reminder yang butuh action (perpanjang),
+  bukan sekadar info sekali-lihat.
 
 ### Broadcast/Pengumuman Admin
 Permission dedicated `notifications.broadcast` (seed, otomatis ikut role

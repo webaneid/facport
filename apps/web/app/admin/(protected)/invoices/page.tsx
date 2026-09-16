@@ -18,6 +18,7 @@ import { StatusBadge } from "@/lib/status-badges";
 import { Can } from "@/components/auth/can";
 import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
+import { formatDuration } from "@/lib/duration";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { moduleLabel, moduleCategory, productLineLabel } from "@/lib/module-options";
 import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
@@ -26,7 +27,19 @@ const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:620
 
 // § Fase 118 — `productLine` (§ ADR-0033), dipakai bareng `moduleKey`
 // resolve "Produk · Modul · Sub-modul" di dialog Detail Invoice.
-type InvoiceItem = { id: string; label: string; moduleKey: string; productLine: string; price: number };
+// § Fase 131 — `durationDays` (snapshot) + `subscriptionStartAt`/`subscriptionEndAt`
+// (live join, null kalau invoice belum dibayar) untuk tampilkan durasi
+// paket + tanggal berlaku per item.
+type InvoiceItem = {
+  id: string;
+  label: string;
+  moduleKey: string;
+  productLine: string;
+  price: number;
+  durationDays: number;
+  subscriptionStartAt: string | null;
+  subscriptionEndAt: string | null;
+};
 type InvoiceRow = {
   id: string;
   invoiceNumber: string;
@@ -304,6 +317,7 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
 // "lihat detail invoice" dan "lihat bukti transfer" tidak tertukar
 // maknanya (2 aksi beda, 2 icon beda).
 function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
+  const companyTimezone = useCompanyTimezone();
   const [open, setOpen] = useState(false);
   const [proofUrl, setProofUrl] = useState<string | null>(null);
   const [loadingProof, setLoadingProof] = useState(false);
@@ -361,11 +375,21 @@ function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
                 const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
                 const subModule = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
                 const metaParts = [productLineLabel(item.productLine), category, subModule].filter((v): v is string => !!v);
+                // § Fase 131 — durasi SELALU ada (snapshot), tanggal
+                // AKTUAL cuma ada kalau subscription sudah tercipta
+                // (invoice sudah dibayar).
+                const berlakuText =
+                  item.subscriptionStartAt && item.subscriptionEndAt
+                    ? `Berlaku: ${formatDate(item.subscriptionStartAt, companyTimezone)} – ${formatDate(item.subscriptionEndAt, companyTimezone)}`
+                    : "Berlaku: menunggu pembayaran";
                 return (
                   <div key={item.id} className="flex items-center justify-between gap-3">
                     <div className="min-w-0">
                       <span className="text-foreground">{item.label}</span>
                       {metaParts.length > 0 && <p className="text-xs text-muted-foreground">{metaParts.join(" · ")}</p>}
+                      <p className="text-xs text-muted-foreground">
+                        Durasi: {formatDuration(item.durationDays)} · {berlakuText}
+                      </p>
                     </div>
                     <span className="shrink-0 text-muted-foreground">{currencyFormatter.format(item.price)}</span>
                   </div>

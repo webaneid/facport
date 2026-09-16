@@ -96,6 +96,11 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // disertakan dari awal (§ pelajaran Fase 98: jangan tambah field
   // Kategori Keuangan tanpa scope pendukungnya).
   other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  // § Fase 128 — dikonfirmasi dari `accurate-openapi.json` security
+  // requirement `/api/other-deposit/save.do` (`other_deposit_save`) dan
+  // `/list.do`/`/detail.do` (`other_deposit_view`) — scope terpisah dari
+  // `other_payment_*` walau struktur payload identik.
+  other_deposit: ["other_deposit_view", "other_deposit_save", "glaccount_view", "data_classification_view", "data_classification_save"],
   // § Fase 120, architecture-purchase-order.md — mirror Purchase Invoice
   // (auto-create vendor+item, § Fase 05/78): `vendor_view`/`vendor_save`
   // untuk findOrCreateVendor, `item_save` untuk findOrCreateItem (baseline

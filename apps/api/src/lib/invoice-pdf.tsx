@@ -10,10 +10,26 @@ import { moduleLabel, moduleCategory, productLineLabel } from "./module-catalog"
 // `"seat_addon"` (sentinel, § `invoice-order.ts`) BUKAN varian Facport
 // sungguhan — baris rendering SENGAJA skip anak-kalimat Modul/Sub-modul
 // untuk sentinel ini, cukup tampilkan Produk-nya.
-export type InvoicePdfItem = { label: string; price: number; moduleKey: string; productLine: string };
+// § Fase 131 (diminta user 2026-09-17) — `durationDays` SNAPSHOT (§
+// invoiceItems.durationDays), `subscriptionStartAt`/`subscriptionEndAt`
+// LIVE JOIN (null kalau invoice belum dibayar, subscription belum
+// tercipta — § `attachSubscriptionDates`, `invoices.route.ts`).
+export type InvoicePdfItem = {
+  label: string;
+  price: number;
+  moduleKey: string;
+  productLine: string;
+  durationDays: number;
+  subscriptionStartAt: Date | null;
+  subscriptionEndAt: Date | null;
+};
 
 export type InvoicePdfData = {
   invoiceNumber: string;
+  // § Fase 132 — timezone perusahaan (§ `lib/company-timezone.ts`),
+  // dipakai format SEMUA tanggal di PDF (`formatTanggal`) — WAJIB, bukan
+  // hardcode "Asia/Jakarta" lagi (§ komentar `formatTanggal`).
+  timezone: string;
   createdAt: Date;
   dueDate: Date;
   billToName: string;
@@ -145,11 +161,27 @@ function formatRupiah(amount: number): string {
   return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(amount);
 }
 
-// § timezone company (Asia/Jakarta hardcode fallback) — PDF cuma perlu
-// TAMPILKAN tanggal, bukan simpan (aturan timestamptz UTC di DB tidak
-// berubah, § architecture-settings.md § "Aturan Timezone").
-function formatTanggal(date: Date): string {
-  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: "Asia/Jakarta" }).format(date);
+// § Fase 132 (ditemukan saat review timezone 2026-09-17, diingatkan user)
+// — SEBELUMNYA hardcode "Asia/Jakarta", TIDAK baca `company.timezone`
+// (§ `lib/company-timezone.ts`, ADR-0028) — admin yang set timezone
+// perusahaan BEDA dari Asia/Jakarta bakal lihat tanggal invoice MELESET.
+// Sekarang terima `timezone` dari pemanggil (`InvoicePdfData.timezone`,
+// § `invoices.route.ts` — `getCompanyTimezone()`), fallback default HANYA
+// kalau pemanggil somehow tidak kirim (seharusnya tidak pernah terjadi,
+// field wajib di tipe). PDF cuma perlu TAMPILKAN tanggal, bukan simpan
+// (aturan timestamptz UTC di DB tidak berubah).
+function formatTanggal(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { day: "2-digit", month: "long", year: "numeric", timeZone: timezone }).format(date);
+}
+
+// § Fase 131 — duplikasi SENGAJA dari `apps/web/lib/duration.ts`
+// `formatDuration()` (1 Bulan=30 hari, 1 Tahun=360 hari, sama alasan
+// duplikasi `ORDER_STATUS_LABEL`/`INVOICE_STATUS_LABEL` di atas — apps/api
+// tidak bisa import apps/web). Update DUA-duanya kalau logic sumbernya berubah.
+function formatDurasiPdf(days: number): string {
+  if (days > 0 && days % 360 === 0) return `${days / 360} Tahun`;
+  if (days > 0 && days % 30 === 0) return `${days / 30} Bulan`;
+  return `${days} Hari`;
 }
 
 function InvoiceDocument({ data }: { data: InvoicePdfData }) {
@@ -174,8 +206,8 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
           <View style={styles.headerRight}>
             <Text style={styles.invoiceTitle}>INVOICE</Text>
             <Text style={styles.invoiceNumber}>{data.invoiceNumber}</Text>
-            <Text style={styles.invoiceDate}>Tanggal: {formatTanggal(data.createdAt)}</Text>
-            <Text style={styles.invoiceDate}>Jatuh Tempo: {formatTanggal(data.dueDate)}</Text>
+            <Text style={styles.invoiceDate}>Tanggal: {formatTanggal(data.createdAt, data.timezone)}</Text>
+            <Text style={styles.invoiceDate}>Jatuh Tempo: {formatTanggal(data.dueDate, data.timezone)}</Text>
           </View>
         </View>
 
@@ -214,12 +246,24 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
             const subModuleLabel = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
             const metaParts = [productLineLabel(item.productLine), category, subModuleLabel].filter((v): v is string => !!v);
+            // § Fase 131 — durasi SELALU ada (snapshot), tanggal AKTUAL
+            // cuma ada kalau subscription sudah tercipta (invoice sudah
+            // dibayar) — belum dibayar tampilkan "Menunggu pembayaran"
+            // apa adanya, bukan tanggal kosong yang membingungkan.
+            const durasiText = `Durasi: ${formatDurasiPdf(item.durationDays)}`;
+            const berlakuText =
+              item.subscriptionStartAt && item.subscriptionEndAt
+                ? `Berlaku: ${formatTanggal(item.subscriptionStartAt, data.timezone)} – ${formatTanggal(item.subscriptionEndAt, data.timezone)}`
+                : "Berlaku: menunggu pembayaran";
             return (
               // eslint-disable-next-line react/no-array-index-key -- baris invoice immutable/snapshot, tidak pernah reorder
               <View style={styles.tableRow} key={i}>
                 <View style={styles.tableCellLabel}>
                   <Text style={styles.tableCell}>{item.label}</Text>
                   {metaParts.length > 0 && <Text style={styles.tableCellMeta}>{metaParts.join(" · ")}</Text>}
+                  <Text style={styles.tableCellMeta}>
+                    {durasiText} · {berlakuText}
+                  </Text>
                 </View>
                 <Text style={[styles.tableCell, styles.tableCellPrice]}>{formatRupiah(item.price)}</Text>
               </View>

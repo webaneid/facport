@@ -135,6 +135,11 @@
 | 125  | Fix: Hapus Riwayat Import HANYA Pemilik Data Usaha (bukan Sekadar Subscription Sama) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-125-fix-delete-owner-only.md` |
 | 126  | Sidebar App: Grup Produk "Facport" + Flyout Kategori, Fix Popup Admin Tambah Paket | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-126-sidebar-produk-kategori-varian.md` |
 | 127  | Redesain /subscribe: Grup Produk → Kategori → Varian (Accordion) | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-127-redesign-subscribe-produk-kategori-varian.md` |
+| 128  | Modul Other Deposit (Penerimaan Bank/Kas) | Done | `docs/architecture/architecture-other-deposit.md` | `docs/phases/phase-128-modul-other-deposit.md` |
+| 129  | /subscribe: Subtitle + Accordion Default-Open Per Kartu | Done | - | `docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md` |
+| 130  | Tampilkan Expiry Aktual (Admin User-Detail + /subscribe) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-130-expiry-admin-customer.md` |
+| 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
+| 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Done | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -1481,6 +1486,10 @@ bukan dilupakan. Semua trigger point sudah disiapkan (12 titik di
 `lib/notifications.ts`/`lib/order-payment.ts`/`workers/index.ts`) supaya
 gampang disambung ke `sendEmail()` (`lib/email.ts`, sudah ada) nanti,
 tapi belum ada satu pun panggilan email baru ditambahkan fase ini.
+
+> **Update 2026-09-17 (Fase 132)** — 4 dari 12 titik (trial/subscription
+> ending-soon & expired) SUDAH dapat email, lihat entri Fase 132 di bawah.
+> 8 titik LAIN (checkout/pembayaran/dst) TETAP pending.
 
 Typecheck 0 error (api+web), test suite `apps/api` 317 pass/0 fail (18
 baru), lint 0 error. Security review inline: 0 temuan Critical/High, 2
@@ -3243,3 +3252,129 @@ diletakkan setelah grid Facport, TAPI cuma muncul kalau Data Usaha
 sudah punya minimal 1 fitur AKTIF YANG DIBAYAR (bukan trial) dari Produk
 manapun — sebelumnya tampil tanpa syarat subscription sama sekali.
 Murni gate presentasional, endpoint checkout tidak berubah.
+
+## Update 2026-09-16 — Fase 128 Done: Modul Other Deposit (Penerimaan Bank/Kas)
+
+Client kirim 5 sheet fitur baru (Other Deposit, Sales Order, Item
+Requisition, Item Transfer, Inventory Adjustment). Dicek dulu — **4/5
+sheet TERNYATA KOSONG TOTAL** (tab ada, 0 kolom/screenshot sampai level
+XML mentah), cuma "Othe Deposit" (typo client) yang siap. User setuju
+kerjakan yang siap dulu.
+
+**Other Deposit** = kebalikan Other Payment (penerimaan kas/bank di
+luar penjualan — setoran modal, pendapatan lain-lain — bukan
+pengeluaran), kategori "Cash & Bank". Struktur API diverifikasi ULANG
+ke `accurate-openapi.json` (bukan diasumsikan sama Other Payment tanpa
+cek) — ternyata memang identik byte-for-byte, termasuk gap yang sama
+(field `expenseName` wajib tapi tidak ada di sheet client → kolom baru
+"Expense Name", nama field API dipertahankan apa adanya).
+
+**Sekalian ditemukan & diperbaiki**: 5 modul Fase 120-124 (Purchase
+Order/Receive Item/Purchase Return/Sales Quotation/Sales Return) TIDAK
+PERNAH ditambahkan ke 3 file "daftar semua modul" (`module-import-routes.ts`,
+`import-batch-table.tsx` — Arsip Import gabungan tidak ada tombol
+Delete/link Detail utk batch modul itu, admin `[batchId]/page.tsx` —
+detail batch kosong tanpa tabel per-baris). Dibackfill sekalian untuk
+6 modul (5 lama + other_deposit baru), bukan ditunda.
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1105 pass (38 test
+baru). Security review 0 temuan. Detail lengkap →
+`docs/phases/phase-128-modul-other-deposit.md`.
+
+## Update 2026-09-17 — Fase 129 Done: /subscribe Subtitle + Accordion Default-Open Per Kartu
+
+Bagian 1 dari permintaan 3-bagian user (UI kecil, audit expiry, notifikasi
+expiry — 2 bagian terakhir belum dikerjakan). Subtitle "Pilih fitur yang
+ingin Anda gunakan" ditambah di bawah judul Produk. Accordion Varian
+di-restrukturisasi: dulu (Fase 127) 1 Accordion Root membungkus SELURUH
+halaman (exclusivity "1 Varian terbuka se-halaman"), sekarang tiap kartu
+Kategori (`CategoryCard`) punya Accordion Root SENDIRI dengan Varian
+pertama default terbuka — supaya semua kartu bisa menampilkan harga
+pertamanya SEKALIGUS (trigger konversi), exclusivity dipersempit jadi per
+kartu (bukan hilang total — klik Varian lain di kartu YANG SAMA tetap
+saling tutup).
+
+`bun run typecheck`/`lint` 0 error (murni presentational, tidak ada
+logic backend disentuh). Verifikasi visual browser berhasil. Security
+review 0 temuan. Detail lengkap →
+`docs/phases/phase-129-subscribe-subtitle-accordion-default-open.md`.
+
+## Update 2026-09-17 — Fase 130 Done: Tampilkan Expiry Aktual (Admin + Customer)
+
+Bagian 2.1 & 2.2 dari audit Part 2 (permintaan besar user soal
+subscription/expiry, 2026-09-17). `startAt`/`endAt` subscription sudah
+ada di DB sejak lama tapi tidak pernah ditampilkan ke admin (halaman
+detail user) maupun customer (`/subscribe`, cuma tampil info katalog
+plan). Fase ini murni surfacing — 0 endpoint/logic baru.
+
+Sekalian menutup audit "apakah 1 Data Usaha bisa punya >1 subscription
+aktif untuk modul yang sama" — jawaban: tidak, dicegah di 3 jalur
+pembuatan subscription (checkout/trial/admin), TIDAK ada unique
+constraint DB (diterima sebagai risiko rendah, didokumentasikan formal
+di `architecture-subscription.md`, bukan di-fix sekarang — di luar
+scope audit yang diminta).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1105 pass. Security
+review 0 temuan. Verifikasi browser berhasil sisi customer; sisi admin
+tidak (kredensial dev stale, diganti code review). Detail lengkap →
+`docs/phases/phase-130-expiry-admin-customer.md`.
+
+Lanjut Fase 131 (durasi & tanggal di invoice) dan Fase 132 (notifikasi
+expiry — teks spesifik + email + banner), sesuai rencana yang sudah
+disetujui.
+
+## Update 2026-09-17 — Fase 131 Done: Durasi & Tanggal di Invoice
+
+Bagian 2.3 dari audit Part 2. Invoice (PDF + dialog "Detail Invoice"
+admin) sebelumnya sama sekali tidak menampilkan durasi paket atau
+tanggal mulai/berakhir subscription. Migration baru
+`invoice_items.duration_days` (snapshot, backfill dari `plans` di
+migration yang sama) + fungsi baru `attachSubscriptionDates()` (live
+join ke `subscriptions` via `invoiceItemId`, sudah ada sejak Fase
+15/ADR-0021 — tidak perlu kolom baru untuk tanggal).
+
+PDF (`GET /invoices/:id/pdf`, 1 generator dipakai customer MAUPUN admin)
+sekarang render "Durasi: 1 Tahun · Berlaku: 14 September 2026 – 09
+September 2027" per item — diverifikasi langsung di browser, cocok
+dengan data subscription aktual. Dialog admin dapat treatment yang sama
+(tidak lewat PDF, render raw per-item).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1106 pass (1 baru).
+Security review 0 temuan (ownership sudah benar di kedua pemanggil,
+backfill migration aman karena `plans` tidak pernah hard-delete).
+Verifikasi visual PDF berhasil; dialog admin diganti code review
+(kredensial dev stale, sama limitation Fase 130). Detail lengkap →
+`docs/phases/phase-131-invoice-durasi-tanggal.md`.
+
+Lanjut Fase 132 (notifikasi expiry — teks spesifik + email + banner).
+
+## Update 2026-09-17 — Fase 132 Done: Notifikasi Expiry Diperkaya (Teks Spesifik + Email + Banner) — Part 3 Selesai
+
+Bagian terakhir (Part 3) dari permintaan besar user 2026-09-17. Infra
+notifikasi expiry SUDAH ADA sejak Fase 45 (lonceng + job harian) — fase
+ini melengkapi 3 gap: teks generik → sebut nama fitur+Data Usaha+tanggal
+exact; tidak ada email → 4 dari 12 tipe notifikasi sekarang dapat email
+(menutup SEBAGIAN item pending Fase 45 di atas); tidak ada banner →
+component baru `ExpiringSoonAlert` di dashboard + `/pilih-usaha`.
+
+Ditemukan & diperbaiki sekalian (di luar scope asli, kecil & langsung
+relevan): `invoice-pdf.tsx` hardcode timezone "Asia/Jakarta", tidak baca
+setting `company.timezone` — user eksplisit mengingatkan risiko timezone
+Indonesia di tengah eksekusi, langsung dicek dan ternyata memang ada gap
+pre-existing di file yang baru disentuh Fase 131. Diperbaiki pakai
+`getCompanyTimezone()`, tidak mengubah perilaku dev sekarang (setting
+belum diisi, fallback tetap sama).
+
+`bun run typecheck`/`lint` 0 error, `bun run test` 1106 pass. Security
+review 0 temuan. Verifikasi: dashboard+`/pilih-usaha` dikonfirmasi
+render normal dengan data real (state "tidak ada yang expiring" benar);
+state "banner muncul" tidak ada data real yang pas untuk diuji visual
+(percobaan mutasi data sementara ditolak permission classifier sesi ini,
+tidak dipaksakan) — diverifikasi lewat code review. Detail lengkap →
+`docs/phases/phase-132-notifikasi-expiry-email-banner.md`.
+
+**Ini menutup SELURUH rangkaian permintaan user 2026-09-17** (Part 1 UI
+`/subscribe` Fase 129, Part 2 audit+fix expiry visibility Fase 130-131,
+Part 3 notifikasi Fase 132) — 4 fase, semua di `develop`, BELUM
+di-release ke `main` (menunggu keputusan batch-release user, pola
+standar sesi ini).

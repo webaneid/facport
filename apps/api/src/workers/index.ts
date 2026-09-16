@@ -4,14 +4,16 @@ import { eq, and, or, lt, lte, inArray, notInArray, sql, desc } from "drizzle-or
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
-import { sendEmail } from "../lib/email";
+import { sendEmail, escapeHtml } from "../lib/email";
 import { db } from "../lib/db";
-import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings, announcements } from "../db/schema";
+import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings, announcements, plans, dataUsaha, user as userTable } from "../db/schema";
+import { moduleLabel } from "../lib/module-catalog";
+import { getCompanyTimezone } from "../lib/company-timezone";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { refreshAccessToken, isAccurateRecordNotFound } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
-import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES } from "../lib/notifications";
+import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
 import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
@@ -65,6 +67,14 @@ import {
   extractDataClassificationValues as extractOtherPaymentDataClassificationValues,
   type OtherPaymentGroup,
 } from "../lib/import-mapping/other-payment.mapping";
+import { saveOtherDeposit } from "../lib/accurate-other-deposit";
+import {
+  buildOtherDepositPayload,
+  groupOtherDepositRows,
+  // § Fase 128 — sama pola alias "OD" (nama collide `extractDataClassificationValues`).
+  extractDataClassificationValues as extractOtherDepositDataClassificationValues,
+  type OtherDepositGroup,
+} from "../lib/import-mapping/other-deposit.mapping";
 import { findOrCreateItem } from "../lib/accurate-item";
 import type { AccurateSessionContext } from "../lib/accurate-session";
 import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guard";
@@ -249,6 +259,24 @@ async function ensureOtherPaymentDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractOtherPaymentDataClassificationValues(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 128 — mirror `ensureOtherPaymentDataClassifications` PERSIS,
+// dibangun dari AWAL modul ini dibuat.
+async function ensureOtherDepositDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractOtherDepositDataClassificationValues(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1160,6 +1188,24 @@ export async function processOtherPaymentGroup(
   return { otherPaymentId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
+export type OtherDepositGroupResult = {
+  otherDepositId: number;
+  rowIds: string[];
+};
+
+export async function processOtherDepositGroup(
+  ctx: AccurateSessionContext,
+  group: OtherDepositGroup,
+  columnMapping: Record<string, string>,
+): Promise<OtherDepositGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  await ensureOtherDepositDataClassifications(ctx, rawRows, columnMapping);
+  const payload = buildOtherDepositPayload(rawRows, columnMapping);
+
+  const result = await saveOtherDeposit(ctx, payload);
+  return { otherDepositId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
 async function main() {
   await startQueue();
 
@@ -1184,23 +1230,61 @@ async function main() {
   await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
     // § Fase 45 — ikut ambil userId+isTrial (bukan cuma id) supaya bisa
     // bikin notifikasi "trial_expired"/"subscription_expired" yang tepat.
+    // § Fase 131 — ikut `planId`/`dataUsahaId` supaya body notifikasi bisa
+    // sebut NAMA fitur+Data Usaha (diminta user 2026-09-17), bukan generik.
     const expired = await db
       .update(subscriptions)
       .set({ status: "expired" })
       .where(and(eq(subscriptions.status, "active"), lt(subscriptions.endAt, new Date())))
-      .returning({ id: subscriptions.id, userId: subscriptions.userId, isTrial: subscriptions.isTrial });
-
-    for (const sub of expired) {
-      await createNotification({
-        userId: sub.userId,
-        type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_EXPIRED : NOTIFICATION_TYPES.SUBSCRIPTION_EXPIRED,
-        title: sub.isTrial ? "Trial sudah berakhir" : "Langganan sudah berakhir",
-        body: sub.isTrial
-          ? "Trial kamu sudah berakhir — upgrade ke paket berbayar untuk lanjut import."
-          : "Langganan kamu sudah berakhir — perpanjang supaya bisa lanjut import.",
-        entityType: "subscription",
-        entityId: sub.id,
+      .returning({
+        id: subscriptions.id,
+        userId: subscriptions.userId,
+        isTrial: subscriptions.isTrial,
+        planId: subscriptions.planId,
+        dataUsahaId: subscriptions.dataUsahaId,
       });
+
+    if (expired.length > 0) {
+      const planIds = [...new Set(expired.map((s) => s.planId))];
+      const dataUsahaIds = [...new Set(expired.map((s) => s.dataUsahaId))];
+      const userIds = [...new Set(expired.map((s) => s.userId))];
+      const [planRows, dataUsahaRows, userRows] = await Promise.all([
+        db.select({ id: plans.id, modules: plans.modules }).from(plans).where(inArray(plans.id, planIds)),
+        db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)),
+        db.select({ id: userTable.id, email: userTable.email }).from(userTable).where(inArray(userTable.id, userIds)),
+      ]);
+      const moduleByPlanId = new Map(planRows.map((p) => [p.id, p.modules[0] ?? null]));
+      const nameByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
+      const emailByUserId = new Map(userRows.map((u) => [u.id, u.email]));
+
+      for (const sub of expired) {
+        const moduleKey = moduleByPlanId.get(sub.planId);
+        const featureLabel = moduleKey ? moduleLabel(moduleKey) : "fitur ini";
+        const dataUsahaName = nameByDataUsahaId.get(sub.dataUsahaId) ?? "-";
+        const title = sub.isTrial ? "Trial sudah berakhir" : "Langganan sudah berakhir";
+        const body = sub.isTrial
+          ? `Trial ${featureLabel} di Data Usaha ${dataUsahaName} sudah berakhir — upgrade ke paket berbayar untuk lanjut import.`
+          : `Langganan ${featureLabel} di Data Usaha ${dataUsahaName} sudah berakhir — perpanjang supaya bisa lanjut import.`;
+
+        await createNotification({
+          userId: sub.userId,
+          type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_EXPIRED : NOTIFICATION_TYPES.SUBSCRIPTION_EXPIRED,
+          title,
+          body,
+          entityType: "subscription",
+          entityId: sub.id,
+        });
+
+        // § Fase 131 — menutup item pending Fase 45 (§ PROGRESS.md "Email
+        // notifikasi ... BELUM dibangun") UNTUK 4 tipe expiry saja (di luar
+        // scope: checkout/pembayaran/dst, TETAP pending). Pola call-site
+        // SAMA PERSIS `lib/auth.ts`/`me.route.ts`/`team.route.ts` — enqueue
+        // lewat job queue, JANGAN kirim sinkron.
+        const email = emailByUserId.get(sub.userId);
+        if (email) {
+          await boss.send(JOBS.SEND_EMAIL, { to: email, subject: title, html: `<p>${escapeHtml(body)}</p>` });
+        }
+      }
     }
 
     logger.info({ count: expired.length }, "Subscriptions expired");
@@ -1213,6 +1297,8 @@ async function main() {
   await boss.schedule(JOBS.NOTIFY_EXPIRING_SOON, "0 0 * * *");
   await boss.work(JOBS.NOTIFY_EXPIRING_SOON, async () => {
     const now = Date.now();
+    // § Fase 131 — ikut `planId`/`dataUsahaId`, sama alasan job
+    // EXPIRE_SUBSCRIPTIONS di atas.
     const active = await db
       .select({
         id: subscriptions.id,
@@ -1220,30 +1306,73 @@ async function main() {
         isTrial: subscriptions.isTrial,
         endAt: subscriptions.endAt,
         lastReminderThresholdDays: subscriptions.lastReminderThresholdDays,
+        planId: subscriptions.planId,
+        dataUsahaId: subscriptions.dataUsahaId,
       })
       .from(subscriptions)
       .where(eq(subscriptions.status, "active"));
 
-    let notified = 0;
+    // § filter dulu SIAPA yang perlu direminder run ini, baru batch-fetch
+    // metadata (plan/Data Usaha/email) CUMA untuk kandidat itu — mayoritas
+    // subscription aktif TIDAK kena threshold di hari tertentu, hindari
+    // over-fetch untuk semuanya.
+    const candidates: typeof active = [];
+    const daysLeftById = new Map<string, number>();
+    const thresholdById = new Map<string, number>();
     for (const sub of active) {
       if (!sub.endAt) continue;
       const daysLeft = (sub.endAt.getTime() - now) / (24 * 60 * 60 * 1000);
       const thresholds = sub.isTrial ? TRIAL_REMINDER_THRESHOLDS : SUBSCRIPTION_REMINDER_THRESHOLDS;
       const applicableThreshold = findApplicableReminderThreshold(daysLeft, thresholds, sub.lastReminderThresholdDays);
       if (applicableThreshold === null) continue;
+      candidates.push(sub);
+      daysLeftById.set(sub.id, daysLeft);
+      thresholdById.set(sub.id, applicableThreshold);
+    }
 
-      await createNotification({
-        userId: sub.userId,
-        type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_ENDING_SOON : NOTIFICATION_TYPES.SUBSCRIPTION_ENDING_SOON,
-        title: sub.isTrial ? "Trial akan berakhir" : "Langganan akan berakhir",
-        body: sub.isTrial
-          ? `Trial kamu akan berakhir ${Math.ceil(daysLeft)} hari lagi — upgrade sekarang supaya tidak terputus.`
-          : `Langganan kamu akan berakhir ${Math.ceil(daysLeft)} hari lagi — perpanjang sekarang supaya tidak terputus.`,
-        entityType: "subscription",
-        entityId: sub.id,
-      });
-      await db.update(subscriptions).set({ lastReminderThresholdDays: applicableThreshold }).where(eq(subscriptions.id, sub.id));
-      notified++;
+    let notified = 0;
+    if (candidates.length > 0) {
+      const planIds = [...new Set(candidates.map((s) => s.planId))];
+      const dataUsahaIds = [...new Set(candidates.map((s) => s.dataUsahaId))];
+      const userIds = [...new Set(candidates.map((s) => s.userId))];
+      const [planRows, dataUsahaRows, userRows, timezone] = await Promise.all([
+        db.select({ id: plans.id, modules: plans.modules }).from(plans).where(inArray(plans.id, planIds)),
+        db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)),
+        db.select({ id: userTable.id, email: userTable.email }).from(userTable).where(inArray(userTable.id, userIds)),
+        getCompanyTimezone(),
+      ]);
+      const moduleByPlanId = new Map(planRows.map((p) => [p.id, p.modules[0] ?? null]));
+      const nameByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
+      const emailByUserId = new Map(userRows.map((u) => [u.id, u.email]));
+
+      for (const sub of candidates) {
+        const daysLeft = daysLeftById.get(sub.id)!;
+        const applicableThreshold = thresholdById.get(sub.id)!;
+        const moduleKey = moduleByPlanId.get(sub.planId);
+        const featureLabel = moduleKey ? moduleLabel(moduleKey) : "fitur ini";
+        const dataUsahaName = nameByDataUsahaId.get(sub.dataUsahaId) ?? "-";
+        const tanggalBerakhir = formatNotificationDate(sub.endAt!, timezone);
+        const title = sub.isTrial ? "Trial akan berakhir" : "Langganan akan berakhir";
+        const body = sub.isTrial
+          ? `Trial ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — upgrade sekarang supaya tidak terputus.`
+          : `Langganan ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — perpanjang sekarang supaya tidak terputus.`;
+
+        await createNotification({
+          userId: sub.userId,
+          type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_ENDING_SOON : NOTIFICATION_TYPES.SUBSCRIPTION_ENDING_SOON,
+          title,
+          body,
+          entityType: "subscription",
+          entityId: sub.id,
+        });
+        await db.update(subscriptions).set({ lastReminderThresholdDays: applicableThreshold }).where(eq(subscriptions.id, sub.id));
+
+        const email = emailByUserId.get(sub.userId);
+        if (email) {
+          await boss.send(JOBS.SEND_EMAIL, { to: email, subject: title, html: `<p>${escapeHtml(body)}</p>` });
+        }
+        notified++;
+      }
     }
 
     logger.info({ notified }, "Notify expiring soon selesai");
@@ -1776,6 +1905,33 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.otherPaymentId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 128 — Other Deposit, mirror Other Payment PERSIS (grouping
+      // by "Trans No" sejak awal).
+    } else if (batch.module === "other_deposit") {
+      const groups = groupOtherDepositRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processOtherDepositGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.otherDepositId),
               errorMessage: null,
               processedAt: new Date(),
             })

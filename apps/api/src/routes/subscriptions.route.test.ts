@@ -433,8 +433,12 @@ describe("GET /me/subscriptions", () => {
 
     const res = await testApp.handle(new Request("http://localhost/me/subscriptions", { headers: { cookie } }));
     expect(res.status).toBe(200);
-    const body = (await res.json()) as { subscriptions: { plan: { name: string } }[] };
+    const body = (await res.json()) as { subscriptions: { plan: { name: string }; dataUsahaName: string | null }[] };
     expect(body.subscriptions.map((s) => s.plan.name).sort()).toEqual([`Me Subs Union Plan A ${runId}`, `Me Subs Union Plan B ${runId}`].sort());
+    // § Fase 132 — `dataUsahaName` dipakai FE (banner "akan segera
+    // berakhir") tanpa fetch terpisah, harus resolve ke nama BENAR (bukan
+    // null/campur antar Data Usaha).
+    expect(body.subscriptions.map((s) => s.dataUsahaName).sort()).toEqual(["Data Usaha A", "Data Usaha B"]);
   });
 
   // § Fase 113 — bug ditemukan: dashboard (`page.tsx`) belum kirim
