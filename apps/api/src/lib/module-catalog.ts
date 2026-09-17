@@ -59,6 +59,12 @@ export const MODULE_CATALOG = [
   // bukan pengeluaran), kategori sama "Cash & Bank".
   { key: "other_deposit", label: "Other Deposit (Cash/Bank Receipt)", productLine: "facport", category: "Cash & Bank" },
   { key: "journal_voucher", label: "Journal Voucher", productLine: "facport", category: "General Ledger" },
+  // § Fase 134-135 — modul PERTAMA kategori "Inventory" (disiapkan sejak
+  // Fase 126, sebelumnya 0 modul). 2 modul terpisah walau panggil API
+  // Accurate yang SAMA (`item-transfer/save.do`) — keputusan eksplisit
+  // user mengikuti 2 sheet Excel client apa adanya, § architecture-item-transfer.md.
+  { key: "item_transfer", label: "Item Transfer (Pindah Gudang)", productLine: "facport", category: "Inventory" },
+  { key: "item_requisition", label: "Item Requisition (Permintaan Barang)", productLine: "facport", category: "Inventory" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank

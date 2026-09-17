@@ -28,6 +28,9 @@ import { DeleteImportDialog as PurchaseReturnDeleteImportDialog } from "@/compon
 import { DeleteImportDialog as SalesQuotationDeleteImportDialog } from "@/components/sales-quotation/delete-import-dialog";
 import { DeleteImportDialog as SalesReturnDeleteImportDialog } from "@/components/sales-return/delete-import-dialog";
 import { DeleteImportDialog as OtherDepositDeleteImportDialog } from "@/components/other-deposit/delete-import-dialog";
+// § Fase 134-135 — Item Transfer & Item Requisition.
+import { DeleteImportDialog as ItemTransferDeleteImportDialog } from "@/components/item-transfer/delete-import-dialog";
+import { DeleteImportDialog as ItemRequisitionDeleteImportDialog } from "@/components/item-requisition/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -166,6 +169,12 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "sales_return" && (
                     <SalesReturnDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "item_transfer" && (
+                    <ItemTransferDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "item_requisition" && (
+                    <ItemRequisitionDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

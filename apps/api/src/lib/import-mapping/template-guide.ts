@@ -1080,3 +1080,67 @@ export const salesReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Expense CLS2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
   { column: "Expense CLS3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
 ];
+
+// § Fase 134, architecture-item-transfer.md — Item Transfer = Pindah
+// Gudang, panggil `/api/item-transfer/save.do`. TIDAK auto-create item
+// (itemNo dikirim apa adanya). "Item Requisition No"/"Note Penting"
+// TIDAK PUNYA field API sendiri — digabung ke "Keterangan" (§ mapping).
+export const itemTransferTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Item Transfer." },
+  { column: "No. Item Transfer", required: true, example: "IT-2026-0001", description: "Nomor transaksi — WAJIB DIISI, sekaligus kunci penggabungan baris jadi 1 Item Transfer (isi SAMA di beberapa baris untuk 1 transfer berisi banyak barang)." },
+  { column: "Tipe Transfer", required: true, example: "TRANSFER_OUT", description: "WAJIB diisi PERSIS salah satu: TRANSFER_IN atau TRANSFER_OUT." },
+  { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Difference Item Transfer Acc No", required: false, example: "", description: "Kode Akun (COA) untuk mencatat selisih nilai barang saat pemindahan, kalau ada." },
+  { column: "From Item Transfer No", required: false, example: "", description: "Nomor transaksi pemindahan barang ASAL (dipakai untuk alur Terima Barang), kalau ada." },
+  { column: "Save As Status", required: false, example: "", description: "APPROVED, DRAFT, NEXTUSER_TOAPPROVED, REJECTED, atau UNAPPROVED — kosongkan untuk status default." },
+  { column: "Gudang Asal", required: false, example: "", description: "Nama gudang sumber, harus PERSIS terdaftar di Accurate." },
+  { column: "Gudang Tujuan", required: false, example: "", description: "Nama gudang tujuan, harus PERSIS terdaftar di Accurate." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
+  { column: "Qty", required: true, example: "10", description: "Jumlah barang yang dipindahkan." },
+  { column: "Unit", required: true, example: "PCS", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini." },
+  { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Sales Order No", required: false, example: "", description: "Nomor Sales Order terkait baris ini, kalau ada." },
+  { column: "Item Requisition No", required: false, example: "", description: "Nomor referensi Permintaan Barang terkait — TIDAK PUNYA field khusus di Accurate, digabung otomatis ke \"Keterangan\" transaksi." },
+  { column: "Item Cls1", required: false, example: "", description: "Kategori Keuangan 1 untuk baris ini, harus PERSIS terdaftar di Accurate — dibuat otomatis kalau belum ada." },
+  { column: "Item Cls2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
+  { column: "Item Cls3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
+  { column: "Serial No", required: false, example: "", description: "Nomor seri barang (tracking barang bernomor seri) — WAJIB diisi bersama \"Serial Qty\" kalau dipakai." },
+  { column: "Serial Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\"." },
+  { column: "Serial ExpDate", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+  { column: "Note Penting", required: false, example: "", description: "Catatan penting internal — TIDAK PUNYA field khusus di Accurate, digabung otomatis ke \"Keterangan\" transaksi." },
+];
+
+// § Fase 135, architecture-item-requisition.md — kembaran
+// `itemTransferTemplateGuide` di atas (SAMA endpoint API), MINUS kolom
+// "Item Requisition No" (sheet ini tidak punya kolom itu).
+export const itemRequisitionTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Item Requisition." },
+  { column: "No. Item Transfer", required: true, example: "IR-2026-0001", description: "Nomor transaksi — WAJIB DIISI, sekaligus kunci penggabungan baris jadi 1 Item Requisition (isi SAMA di beberapa baris untuk 1 permintaan berisi banyak barang)." },
+  { column: "Tipe Transfer", required: true, example: "TRANSFER_OUT", description: "WAJIB diisi PERSIS salah satu: TRANSFER_IN atau TRANSFER_OUT." },
+  { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Difference Item Transfer Acc No", required: false, example: "", description: "Kode Akun (COA) untuk mencatat selisih nilai barang saat pemindahan, kalau ada." },
+  { column: "From Item Transfer No", required: false, example: "", description: "Nomor transaksi pemindahan barang ASAL (dipakai untuk alur Terima Barang), kalau ada." },
+  { column: "Save As Status", required: false, example: "", description: "APPROVED, DRAFT, NEXTUSER_TOAPPROVED, REJECTED, atau UNAPPROVED — kosongkan untuk status default." },
+  { column: "Gudang Asal", required: false, example: "", description: "Nama gudang sumber, harus PERSIS terdaftar di Accurate." },
+  { column: "Gudang Tujuan", required: false, example: "", description: "Nama gudang tujuan, harus PERSIS terdaftar di Accurate." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
+  { column: "Qty", required: true, example: "10", description: "Jumlah barang yang diminta." },
+  { column: "Unit", required: true, example: "PCS", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini." },
+  { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Sales Order No", required: false, example: "", description: "Nomor Sales Order terkait baris ini, kalau ada." },
+  { column: "Item Cls1", required: false, example: "", description: "Kategori Keuangan 1 untuk baris ini, harus PERSIS terdaftar di Accurate — dibuat otomatis kalau belum ada." },
+  { column: "Item Cls2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
+  { column: "Item Cls3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
+  { column: "Serial No", required: false, example: "", description: "Nomor seri barang (tracking barang bernomor seri) — WAJIB diisi bersama \"Serial Qty\" kalau dipakai." },
+  { column: "Serial Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\"." },
+  { column: "Serial ExpDate", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+  { column: "Note Penting", required: false, example: "", description: "Catatan penting internal — TIDAK PUNYA field khusus di Accurate, digabung otomatis ke \"Keterangan\" transaksi." },
+];

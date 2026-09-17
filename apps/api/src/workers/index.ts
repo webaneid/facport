@@ -170,6 +170,28 @@ import {
   returnTypeRowError as returnTypeRowErrorSR,
   type SalesReturnGroup,
 } from "../lib/import-mapping/sales-return.mapping";
+// § Fase 134-135, architecture-item-transfer.md — Item Transfer & Item
+// Requisition, 2 Facport module TERPISAH yang panggil endpoint Accurate
+// SAMA (`item-transfer/save.do`, § `saveItemTransfer` DI-SHARE literal,
+// beda dari semua pasangan modul lain di file ini). TIDAK auto-create
+// item. Grouping DEFAULT ADR-0011 by "No. Item Transfer" (`number`,
+// DIPAKSA REQUIRED). Validasi `itemTransferType` (mirror `returnTypeRowError`)
+// WAJIB lolos dari baris pertama grup SEBELUM payload dibangun.
+import { saveItemTransfer } from "../lib/accurate-item-transfer";
+import {
+  buildItemTransferPayload,
+  groupItemTransferRows,
+  itemTransferTypeRowError,
+  extractDataClassificationValues as extractDataClassificationValuesIT,
+  type ItemTransferGroup,
+} from "../lib/import-mapping/item-transfer.mapping";
+import {
+  buildItemRequisitionPayload,
+  groupItemRequisitionRows,
+  itemTransferTypeRowError as itemTransferTypeRowErrorIR,
+  extractDataClassificationValues as extractDataClassificationValuesIR,
+  type ItemRequisitionGroup,
+} from "../lib/import-mapping/item-requisition.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -375,6 +397,43 @@ async function ensureSalesReturnDataClassifications(
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesSR(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSR(rawRow, columnMapping)];
     for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 134-135 — mirror `ensureReceiveItemDataClassifications`, untuk
+// Item Transfer & Item Requisition (cuma 3 slot, Item Cls1-3, § mapping
+// file). 2 fungsi TERPISAH (bukan 1 dipakai bersama) konsisten pola
+// project ini, walau isinya identik — masing-masing panggil extractor
+// dari mapping file modulnya sendiri.
+async function ensureItemTransferDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesIT(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+async function ensureItemRequisitionDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesIR(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1206,6 +1265,64 @@ export async function processOtherDepositGroup(
   return { otherDepositId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
+// ============================================================
+// § Fase 134-135 — Item Transfer & Item Requisition: TIDAK auto-create
+// item (mirror Receive Item), grouping DEFAULT ADR-0011 by "No. Item
+// Transfer". Validasi `itemTransferType` (mirror `returnTypeRowError`
+// Purchase Return) WAJIB lolos dari baris pertama grup SEBELUM payload
+// dibangun. `saveItemTransfer` DI-SHARE literal antara KEDUA fungsi ini
+// (§ komentar import di atas — endpoint Accurate-nya SAMA).
+// ============================================================
+export type ItemTransferGroupResult = {
+  itemTransferId: number;
+  rowIds: string[];
+};
+
+export async function processItemTransferGroup(
+  ctx: AccurateSessionContext,
+  group: ItemTransferGroup,
+  columnMapping: Record<string, string>,
+): Promise<ItemTransferGroupResult> {
+  const headerRow = group.rows[0]!.rawData;
+  const typeErrors = itemTransferTypeRowError(headerRow, columnMapping);
+  if (typeErrors.length > 0) {
+    throw new Error(`Tipe Transfer tidak valid — harus TRANSFER_IN atau TRANSFER_OUT, kolom bermasalah: ${typeErrors.join(", ")}.`);
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildItemTransferPayload(rawRows, columnMapping);
+
+  await ensureItemTransferDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveItemTransfer(ctx, payload);
+  return { itemTransferId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+export type ItemRequisitionGroupResult = {
+  itemTransferId: number;
+  rowIds: string[];
+};
+
+export async function processItemRequisitionGroup(
+  ctx: AccurateSessionContext,
+  group: ItemRequisitionGroup,
+  columnMapping: Record<string, string>,
+): Promise<ItemRequisitionGroupResult> {
+  const headerRow = group.rows[0]!.rawData;
+  const typeErrors = itemTransferTypeRowErrorIR(headerRow, columnMapping);
+  if (typeErrors.length > 0) {
+    throw new Error(`Tipe Transfer tidak valid — harus TRANSFER_IN atau TRANSFER_OUT, kolom bermasalah: ${typeErrors.join(", ")}.`);
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildItemRequisitionPayload(rawRows, columnMapping);
+
+  await ensureItemRequisitionDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveItemTransfer(ctx, payload);
+  return { itemTransferId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
 async function main() {
   await startQueue();
 
@@ -1932,6 +2049,60 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.otherDepositId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 134-135 — Item Transfer & Item Requisition, grouping
+      // DEFAULT ADR-0011 by "No. Item Transfer" (`number`), create-only,
+      // TANPA auto-create item (§ komentar `processItemTransferGroup`/
+      // `processItemRequisitionGroup`).
+    } else if (batch.module === "item_transfer") {
+      const groups = groupItemTransferRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processItemTransferGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.itemTransferId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else if (batch.module === "item_requisition") {
+      const groups = groupItemRequisitionRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processItemRequisitionGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.itemTransferId),
               errorMessage: null,
               processedAt: new Date(),
             })

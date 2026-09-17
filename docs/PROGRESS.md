@@ -141,6 +141,8 @@
 | 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
 | 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Done | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 | 133  | Lebar Kolom Tabel Tidak Terkontrol (Perbaikan Menyeluruh) | Done | `docs/decisions/adr-0034-lebar-kolom-tabel.md` | `docs/phases/phase-133-lebar-kolom-tabel.md` |
+| 134  | Modul Item Transfer (Pindah Gudang) — kategori Inventory pertama | Done | `docs/architecture/architecture-item-transfer.md` | `docs/phases/phase-134-modul-item-transfer.md` |
+| 135  | Modul Item Requisition (Permintaan Barang) — kembaran Item Transfer | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-135-modul-item-requisition.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3428,3 +3430,22 @@ Detail lengkap → `docs/phases/phase-133-lebar-kolom-tabel.md`,
 
 Belum di-release ke `main` — masih di `develop`, menunggu keputusan
 batch-release user berikutnya (konsisten pola standar sesi ini).
+
+## Update 2026-09-16 — v2.5.1 Released & Deployed ke Production
+
+Fase 133 (perbaikan lebar kolom tabel) di-release: PR #64 (`develop` →
+`main`), `release.yml` tag otomatis **v2.5.1** (patch — commit `fix:`,
+bukan `feat:`, konsisten semantic-release). `deploy.yml` build+push image
+`api`/`web:v2.5.1` ke GHCR sukses (`deploy-to-server` gagal seperti
+biasa — SSH belum dikonfigurasi, expected).
+
+Deploy manual ke VPS via runbook **Minimal** (tanpa migration DB, tanpa
+ubah worker — murni UI): pull + up `api`+`web` saja, `worker`/`postgres`/
+`minio` tidak disentuh (tidak ada perubahannya). Kedua container `Healthy`
+dengan waktu restart baru saja. Smoke check HTTP 200 di ketiga surface
+(`facinstitute.id`, `app.`, `admin.`) sukses.
+
+Verifikasi visual mendalam tabel admin (`/invoices` dkk, yang jadi
+keluhan awal) diserahkan ke user langsung di production — Claude tidak
+punya kredensial admin di environment dev/lokal sepanjang sesi ini
+(bukan known quirk, password genuinely tidak diketahui).
