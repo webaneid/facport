@@ -1,3 +1,9 @@
+## 2.6.0 (2026-09-17)
+
+* Merge pull request #65 from webaneid/develop ([29ad6e7](https://github.com/webaneid/facport/commit/29ad6e7)), closes [#65](https://github.com/webaneid/facport/issues/65)
+* feat(inventory): modul Item Transfer & Item Requisition (Fase 134-135) ([a5276fe](https://github.com/webaneid/facport/commit/a5276fe))
+* docs: catat rilis v2.5.1 & deploy manual ke production ([381bccb](https://github.com/webaneid/facport/commit/381bccb))
+
 ## <small>2.5.1 (2026-09-16)</small>
 
 * Merge pull request #64 from webaneid/develop ([5b257f8](https://github.com/webaneid/facport/commit/5b257f8)), closes [#64](https://github.com/webaneid/facport/issues/64)
