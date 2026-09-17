@@ -138,6 +138,18 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // `sales_return_save` HANYA (tanpa `_view` terpisah, dikonfirmasi
   // OpenAPI security block).
   sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
+  // § Fase 134-135, architecture-item-transfer.md — dikonfirmasi dari
+  // `accurate-openapi.json` security requirement `/api/item-transfer/save.do`:
+  // HANYA `item_transfer_save` (tanpa `_view` terpisah, pola sama Purchase
+  // Order/Receive Item/Sales Quotation/Sales Return). `glaccount_view`
+  // untuk `differenceItemTransferAccountNo`. `data_classification_*`
+  // untuk Item Cls1-3 (Kategori Keuangan). TIDAK butuh vendor_*/customer_*
+  // — modul ini murni internal gudang↔gudang, tidak ada pihak ketiga.
+  // `item_requisition` entri TERPISAH (isi SAMA, § architecture-item-requisition.md
+  // "OAuth Scope" — bukan pointer/reference, supaya subscribe 1 modul
+  // saja tetap dapat scope yang pas untuk modul itu sendiri).
+  item_transfer: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  item_requisition: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

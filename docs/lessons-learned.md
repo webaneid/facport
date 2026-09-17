@@ -6,6 +6,33 @@
 
 ---
 
+## 2026-09-17 — 2 Facport module (Item Transfer & Item Requisition) sengaja panggil 1 fungsi HTTP Accurate yang sama — `accurateTransactionId` TIDAK unik lintas modul
+**Konteks:** Fase 134-135 membangun 2 modul Facport terpisah ("Item
+Transfer", "Item Requisition") yang, atas keputusan eksplisit user
+(mengikuti 2 sheet Excel client apa adanya), keduanya memanggil endpoint
+Accurate yang LITERAL SAMA (`/api/item-transfer/save.do`) lewat 1 fungsi
+`saveItemTransfer()` yang di-share (`lib/accurate-item-transfer.ts`) —
+satu-satunya pasangan modul di project ini yang sharing di level HTTP
+call, bukan cuma pola/struktur kode.
+
+**Temuan (dari security-auditor, Low — bukan bug, catatan desain):**
+`import_batch_rows.accurateTransactionId` yang disimpan untuk kedua
+modul adalah ID numerik record Item Transfer yang SAMA namespace-nya di
+Accurate — bukan kebocoran data (tetap terikat `batchId`→`subscriptionId`
+masing-masing), tapi kalau nanti ada fitur "cari transaksi ini di
+Accurate" yang query generik lintas-modul berdasarkan
+`accurateTransactionId` SAJA (tanpa `module`), 2 modul beda bisa
+menunjuk ke record yang sebenarnya sama-sama valid tapi konteksnya beda.
+
+**Pencegahan:** Kalau membangun fitur lookup/link-balik ke Accurate
+berdasarkan `accurateTransactionId`, JANGAN asumsikan ID itu unik lintas
+SEMUA modul Facport — selalu sertakan `module` (dan idealnya `batchId`)
+sebagai bagian kunci, khusus untuk pasangan `item_transfer`/
+`item_requisition` (satu-satunya kasus sharing HTTP-call literal di
+project ini per 2026-09-17).
+
+---
+
 ## 2026-09-16 — Gap registrasi modul KEJADIAN KE-2 (5 modul Fase 120-124 kelewat di 3 file) — checklist prosa TIDAK CUKUP, butuh verifikasi mekanis
 **Masalah:** Saat membangun modul Other Deposit (Fase 128), audit
 `grep '"other_payment"'` menemukan 5 modul Fase 120-124 (Purchase Order/

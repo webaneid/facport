@@ -50,6 +50,8 @@ import { receiveItemImportRoute } from "./routes/receive-item-import.route";
 import { purchaseReturnImportRoute } from "./routes/purchase-return-import.route";
 import { salesQuotationImportRoute } from "./routes/sales-quotation-import.route";
 import { salesReturnImportRoute } from "./routes/sales-return-import.route";
+import { itemTransferImportRoute } from "./routes/item-transfer-import.route";
+import { itemRequisitionImportRoute } from "./routes/item-requisition-import.route";
 import { teamRoute } from "./routes/team.route";
 import { invitesRoute } from "./routes/invites.route";
 import { transfersRoute } from "./routes/transfers.route";
@@ -232,6 +234,8 @@ export const app = new Elysia()
   .use(purchaseReturnImportRoute)
   .use(salesQuotationImportRoute)
   .use(salesReturnImportRoute)
+  .use(itemTransferImportRoute)
+  .use(itemRequisitionImportRoute)
   .use(teamRoute)
   .use(invitesRoute)
   .use(transfersRoute)

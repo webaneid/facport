@@ -34,6 +34,8 @@ import {
   FileSignature,
   RotateCcw,
   Coins,
+  ArrowLeftRight,
+  ClipboardList,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -119,6 +121,11 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul
         // baru (architecture-sales-return.md).
         { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
+        // § Fase 134-135 — Item Transfer & Item Requisition, modul
+        // PERTAMA kategori "Inventory" (architecture-item-transfer.md,
+        // architecture-item-requisition.md).
+        { href: "/item-transfer/import", label: "Import Item Transfer", icon: ArrowLeftRight, moduleKey: "item_transfer" },
+        { href: "/item-requisition/import", label: "Import Item Requisition", icon: ClipboardList, moduleKey: "item_requisition" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu). TANPA kategori (moduleKey kosong → cluster

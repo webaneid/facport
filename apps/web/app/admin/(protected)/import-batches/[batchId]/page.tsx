@@ -473,6 +473,63 @@ function SalesReturnView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 134-135 — Item Transfer & Item Requisition, sama endpoint
+// Accurate (`item-transfer/save.do`) jadi `accurateTransactionId`
+// keduanya ID Item Transfer di Accurate.
+function ItemTransferView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Item Transfer Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+function ItemRequisitionView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Item Transfer Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -487,6 +544,8 @@ const MODULE_TITLE: Record<string, string> = {
   purchase_return: "Hasil Import Purchase Return",
   sales_quotation: "Hasil Import Sales Quotation",
   sales_return: "Hasil Import Sales Return",
+  item_transfer: "Hasil Import Item Transfer",
+  item_requisition: "Hasil Import Item Requisition",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -560,6 +619,8 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "purchase_return" && <PurchaseReturnView rows={rows} />}
           {batch.module === "sales_quotation" && <SalesQuotationView rows={rows} />}
           {batch.module === "sales_return" && <SalesReturnView rows={rows} />}
+          {batch.module === "item_transfer" && <ItemTransferView rows={rows} />}
+          {batch.module === "item_requisition" && <ItemRequisitionView rows={rows} />}
         </CardContent>
       </Card>
     </div>

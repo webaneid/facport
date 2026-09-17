@@ -141,6 +141,8 @@
 | 131  | Durasi & Tanggal di Invoice (PDF + Dialog Admin) | Done | `docs/architecture/architecture-invoice.md` | `docs/phases/phase-131-invoice-durasi-tanggal.md` |
 | 132  | Notifikasi Expiry: Teks Spesifik + Email + Banner | Done | `docs/architecture/architecture-notifications.md` | `docs/phases/phase-132-notifikasi-expiry-email-banner.md` |
 | 133  | Lebar Kolom Tabel Tidak Terkontrol (Perbaikan Menyeluruh) | Done | `docs/decisions/adr-0034-lebar-kolom-tabel.md` | `docs/phases/phase-133-lebar-kolom-tabel.md` |
+| 134  | Modul Item Transfer (Pindah Gudang) — kategori Inventory pertama | Done | `docs/architecture/architecture-item-transfer.md` | `docs/phases/phase-134-modul-item-transfer.md` |
+| 135  | Modul Item Requisition (Permintaan Barang) — kembaran Item Transfer | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-135-modul-item-requisition.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
