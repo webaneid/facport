@@ -3449,3 +3449,28 @@ Verifikasi visual mendalam tabel admin (`/invoices` dkk, yang jadi
 keluhan awal) diserahkan ke user langsung di production — Claude tidak
 punya kredensial admin di environment dev/lokal sepanjang sesi ini
 (bukan known quirk, password genuinely tidak diketahui).
+
+## Update 2026-09-17 — v2.6.0 Released & Deployed ke Production
+
+Fase 134-135 (modul Item Transfer & Item Requisition, kategori
+"Inventory" pertama) di-release: PR #65 (`develop` → `main`), `release.yml`
+tag otomatis **v2.6.0** (minor — commit `feat:`, modul baru). `deploy.yml`
+build+push image `api`/`web:v2.6.0` ke GHCR sukses (`deploy-to-server`
+gagal seperti biasa — SSH belum dikonfigurasi, expected).
+
+Deploy manual ke VPS via runbook **Full** (`workers/index.ts` diubah
+langsung — dispatch + fungsi proses baru untuk kedua modul, WAJIB restart
+worker): pull semua image, up `api`+`web`+`worker`+`minio`+`postgres`,
+`db:migrate` dijalankan (no-op, rilis ini tidak bawa migration DB baru —
+cuma registrasi modul lewat kode, bukan skema). Ketiga container
+(`api`/`web`/`worker`) `Healthy`/`Up` dengan image baru. Smoke check
+ketiga surface (`api.` 200, `app.`/`admin.` 307 redirect ke `/login` —
+normal, belum login) sukses.
+
+Sesi yang sama juga menangani insiden support customer nyata
+(`untung.suroto@intertouch.com`) — akun lama dihapus total (atas
+persetujuan eksplisit user, root cause bukan bug tapi salah pilih Data
+Usaha aktif saat upload) dan dibuat ulang dari nol via endpoint signup
+resmi. Detail lengkap ada di memory sesi
+(`project_facport_v2_production_status.md`), bukan di sini (bukan
+perubahan kode).
