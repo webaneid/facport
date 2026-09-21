@@ -154,3 +154,10 @@ di Facport SEBELUM kirim ke Accurate.
 - Modul pendahulu (WAJIB dibangun duluan): `architecture-job-costing.md`
 - Preseden field undocumented-tapi-jalan: `architecture-purchase-order.md` § "Atribut Tambahan"
 - Preseden Branch Wajib: `architecture-purchase-payment.md` § "Fase 90"
+
+## Registri endpoint & scope (siap dipakai saat dibangun — Fase 142)
+Saat modul dibangun, daftarkan di `apps/api/src/lib/accurate-endpoint-registry.ts` (entry `roll_over`, kunci HARUS ada di `module-catalog.ts` varian facport):
+`POST roll-over/save.do` (spec: `roll_over_save`; `bulk-save.do` juga `roll_over_save`) + helper yang benar-benar dipanggil kode (mis. `POST item/save.do` bila
+auto-create item, `GET/POST data-classification/*` bila ada Kategori Keuangan). `roll_over_view` HANYA bila ada panggilan `roll-over/list|detail.do`. Setelah itu
+`bun run scopes:sync` (jika endpoint belum ada di snapshot) dan tes `accurate-scopes.test.ts` harus hijau. Pasang juga `checkSubscriptionScopes` di route import.
+Dependensi urutan: Job Costing (Fase 139) SUDAH selesai — Roll Over boleh dibangun.

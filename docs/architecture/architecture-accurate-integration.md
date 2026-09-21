@@ -480,7 +480,7 @@ sendiri:
 **File EXISTING yang WAJIB dapat 1 entri baru** (9 titik — lupa SATU
 pun = fitur modul itu setengah jalan, biasanya baru ketahuan pas
 customer/admin buka fitur yang kelewat itu):
-1. `apps/api/src/lib/accurate-scopes.ts` — `MODULE_ACCURATE_SCOPES[module]`
+1. `apps/api/src/lib/accurate-endpoint-registry.ts` — (SEJAK FASE 142) scope TIDAK lagi ditulis tangan di `accurate-scopes.ts`; cukup deklarasikan endpoint modul di registri ini (poin 12) dan scope diturunkan otomatis. `accurate-scopes.ts` hanya turunan, JANGAN diisi manual.
 2. `apps/api/src/lib/import-mapping/template-guide.ts` — `{module}TemplateGuide`
 3. `apps/api/src/lib/module-catalog.ts` — entri `MODULE_CATALOG` (productLine+category)
 4. `apps/api/src/routes/admin/plans.route.ts` — `t.Literal("{module}")` di union `modules`

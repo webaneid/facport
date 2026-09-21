@@ -387,3 +387,11 @@ validasi), bukan sekadar cek string kosong seperti modul lain.
 - Modul manufacture lain (sistem job-costing terpisah): `architecture-job-costing.md`, `architecture-roll-over.md`
 - Pola auto-create find-or-create: Fase 05 (`findOrCreateVendor`), Fase 78
 - Preseden Branch Wajib: `architecture-purchase-payment.md` § "Fase 90"
+
+## Registri endpoint & scope (siap dipakai saat dibangun — Fase 142)
+Saat modul dibangun, daftarkan entry `work_order` di `apps/api/src/lib/accurate-endpoint-registry.ts`: `POST work-order/save.do` (`work_order_save`), lookup PIC
+`GET wo-pic/list.do` (`wo_person_in_charge_view`) + `POST wo-pic/save.do` (`wo_person_in_charge_save`, bila auto-create PIC), lookup cabang `GET branch/list.do`
+(`branch_view`; `POST branch/save.do` = `branch_save` HANYA bila cabang boleh dibuat otomatis — keputusan desain, default TIDAK). `manufacture_order_save`
+HANYA bila kode memanggil `manufacture-order/save.do`. Scope diturunkan otomatis dari endpoint; jangan menulis scope manual. Jalankan `bun run scopes:sync`,
+tes `accurate-scopes.test.ts` hijau, dan pasang `checkSubscriptionScopes` di route import. Catatan: Work Order menambah scope BARU yang dulu belum
+dipakai modul mana pun — customer yang membeli modul ini akan melihat popup "Perbarui Izin" (gerbang koneksi Fase 144).

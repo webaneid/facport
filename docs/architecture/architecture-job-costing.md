@@ -46,7 +46,7 @@ Verifikasi langsung ke `account.accurate.id/developer/api-docs.do`
 KEDUA yang SAMA SEKALI TIDAK ADA di `accurate-openapi.json` lokal:
 
 **`POST /api/material-adjustment/save.do`** — "Membuat data Penambahan
-Bahan Baku baru" (scope `material_adjustment_view`/`material_adjustment_save`,
+Bahan Baku baru" (scope `material_adjustment_save` — spec resmi menetapkan `_save` untuk `POST material-adjustment/save.do`; `_view` hanya untuk endpoint baca yang TIDAK dipanggil modul ini,
 TERPISAH dari `job_order_*` DAN dari `item_adjustment_*` yang dipakai
 modul "Inventory Adjustment"). Field kuncinya:
 ```
@@ -207,9 +207,8 @@ nyata saat eksekusi.
   RM tidak lengkap. Perlu didesain saat eksekusi (retry, rollback
   manual, atau laporan partial-success ke user) — pola 2-transaksi-
   berurutan ini BARU, belum ada preseden di modul lain.
-- Scope OAuth `material_adjustment_view`/`material_adjustment_save`
-  perlu ditambahkan ke `MODULE_ACCURATE_SCOPES['job_costing']` saat
-  eksekusi (BARU, tidak ada di 4 modul lain fase ini).
+- Scope OAuth `material_adjustment_save` (SELESAI, Fase 139): dideklarasikan lewat registri endpoint
+  (`accurate-endpoint-registry.ts`, `POST material-adjustment/save.do`); `material_adjustment_view` TIDAK dibutuhkan.
 - Posisi kolom "Note" terakhir di header Excel (apakah `detailExpense[].expenseNotes`
   atau catatan level dokumen lain) perlu dikonfirmasi ulang lewat Excel
   asli (bukan cuma header CSV) saat eksekusi.

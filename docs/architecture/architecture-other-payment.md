@@ -216,7 +216,7 @@ other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "d
 File **existing** yang disentuh (juga `apps/api/src/app.ts` untuk
 registrasi route — TIDAK terdaftar di rencana awal, ketahuan saat
 eksekusi):
-1. `apps/api/src/lib/accurate-scopes.ts` — entry `other_payment`
+1. `apps/api/src/lib/accurate-endpoint-registry.ts` — entry `other_payment` (scope diturunkan otomatis, Fase 142)
 2. `apps/api/src/lib/import-mapping/template-guide.ts` — `otherPaymentTemplateGuide`
 3. `apps/api/src/workers/index.ts` — dispatch case `"other_payment"`
 4. `apps/api/src/routes/admin/plans.route.ts` — tambah `t.Literal("other_payment")`
