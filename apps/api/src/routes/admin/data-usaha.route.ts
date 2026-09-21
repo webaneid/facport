@@ -44,7 +44,8 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
       }
 
       await db.transaction(async (tx) => {
-        await tx.update(dataUsaha).set({ userId: body.toUserId, updatedAt: new Date() }).where(eq(dataUsaha.id, params.id));
+        // § Fase 143, ADR-0037 #6 — transfer memutus koneksi Accurate (sama seperti `executeOwnershipTransfer`).
+        await tx.update(dataUsaha).set({ userId: body.toUserId, accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, params.id));
         // § batalkan transfer self-service yang masih pending untuk Data
         // Usaha ini — mencegah link accept lama nyasar dianggap valid lagi
         // di masa depan kalau kepemilikan somehow balik lagi ke

@@ -17,7 +17,7 @@ import {
 } from "../db/schema";
 import { meRoute } from "./me.route";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../lib/manual-input-estimate";
-import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
+import { createTestAccurateConnection, createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
 // customer dihitung DI SINI (server), jadi angkanya harus benar: total
@@ -157,57 +157,30 @@ describe("GET & POST /me/data-usaha", () => {
     expect(body.dataUsaha.some((d) => d.id === dataUsahaId)).toBe(false);
   });
 
-  // § Fase 114 — REGRESSION TEST persis untuk bug yang dilaporkan production
-  // 2026-09-14: `connected` HARUS dihitung dari subscription+koneksi live,
-  // BUKAN dari kolom `data_usaha.accurate_connection_id` yang mati (cuma
-  // pernah ditulis backfill script one-time, TIDAK PERNAH oleh alur live
-  // sejak Fase 14/ADR-0020) — SEBELUM fix ini, Data Usaha di bawah akan
-  // salah lapor `connected:false` walau subscription-nya sudah terhubung
-  // penuh, karena kolom itu memang selalu NULL untuk Data Usaha yang
-  // dibuat lewat `createTestDataUsaha` (persis kondisi live, bukan lewat
-  // backfill script).
-  test("connected:true kalau subscription di Data Usaha ini punya koneksi Accurate AKTIF, MESKIPUN kolom data_usaha.accurate_connection_id NULL", async () => {
+  // § Fase 143, ADR-0037 — `connected` = Data Usaha menunjuk koneksi AKTIF milik akun yang dikenali
+  // (`data_usaha.accurate_connection_id`, pointer yang kini hidup lagi). Regresi Fase 114 (production 2026-09-14:
+  // gerbang lapor "Belum terhubung" untuk Data Usaha yang sebenarnya terhubung) terjadi karena pointer itu tidak
+  // ditulis — sekarang ditulis callback OAuth, dan dites di `accurate.route.test.ts`.
+  test("connected:true HANYA untuk Data Usaha yang menunjuk koneksi AKTIF berakun; expired/koneksi LAMA/tanpa koneksi = false", async () => {
     const userId = await signUp(`me-data-usaha-connected-${runId}@test.local`);
     const cookie = await signIn(`me-data-usaha-connected-${runId}@test.local`);
 
-    const dataUsahaConnectedId = await createTestDataUsaha(userId, `DU Connected ${runId}`);
-    const dataUsahaDisconnectedId = await createTestDataUsaha(userId, `DU Disconnected ${runId}`);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "555",
-        accurateDbAlias: "PT Connected Test",
-      })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan DU Connected ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: plan!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connection!.id,
-      dataUsahaId: dataUsahaConnectedId,
-    });
-
-    // § kolom lama TETAP NULL untuk keduanya — persis kondisi Data Usaha
-    // yang dibuat lewat alur live (bukan backfill script).
-    const [rowConnected] = await db.select({ v: dataUsaha.accurateConnectionId }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaConnectedId));
-    expect(rowConnected!.v).toBeNull();
+    const duConnected = await createTestDataUsaha(userId, `DU Connected ${runId}`);
+    const duNone = await createTestDataUsaha(userId, `DU None ${runId}`);
+    const duExpired = await createTestDataUsaha(userId, `DU Expired ${runId}`);
+    const duLegacy = await createTestDataUsaha(userId, `DU Legacy ${runId}`);
+    await createTestAccurateConnection(userId, { dataUsahaId: duConnected, accurateDbId: "555", accurateDbAlias: "PT Connected Test" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duExpired, status: "expired" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duLegacy, accurateUserId: null }); // koneksi LAMA (cutover)
 
     const res = await testApp.handle(new Request("http://localhost/me/data-usaha", { headers: { cookie } }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { dataUsaha: { id: string; connected: boolean }[] };
-    expect(body.dataUsaha.find((d) => d.id === dataUsahaConnectedId)?.connected).toBe(true);
-    expect(body.dataUsaha.find((d) => d.id === dataUsahaDisconnectedId)?.connected).toBe(false);
+    const connected = (id: string) => body.dataUsaha.find((d) => d.id === id)?.connected;
+    expect(connected(duConnected)).toBe(true);
+    expect(connected(duNone)).toBe(false);
+    expect(connected(duExpired)).toBe(false);
+    expect(connected(duLegacy)).toBe(false);
   });
 });
 

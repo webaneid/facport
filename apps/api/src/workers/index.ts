@@ -10,7 +10,9 @@ import { subscriptions, accurateConnections, importBatches, importBatchRows, aud
 import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
-import { refreshAccessToken, isAccurateRecordNotFound } from "../lib/accurate";
+import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
+import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
+import { resolveConnectionForSubscription } from "../lib/accurate-connection";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
 import { checkConnectionScopes } from "../lib/accurate-scope-check";
@@ -523,16 +525,9 @@ async function ensureJobCostingDataClassifications(
   }
 }
 
-// § Fase 14, ADR-0020 — koneksi Accurate SEKARANG milik user, reusable
-// lintas subscription (bukan 1:1 ke subscription lagi). Resolve 2 langkah:
-// subscription → accurateConnectionId → connection. `null` kalau
-// subscription belum pilih/hubungkan Data Usaha SAMA SEKALI.
-async function getConnectionForBatch(subscriptionId: string) {
-  const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
-  if (!subscription?.accurateConnectionId) return null;
-  const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, subscription.accurateConnectionId));
-  return connection ?? null;
-}
+// § Fase 143, ADR-0037 — koneksi + database untuk sebuah batch diturunkan lewat DATA USAHA subscription-nya
+// (`lib/accurate-connection.ts`), BUKAN lagi `subscriptions.accurateConnectionId` (dibekukan). `connection` null
+// = Data Usaha belum terhubung/diputus; `accurateDbId` null = database belum dipilih.
 
 // § Fase 91 (2026-09-10) — diekstrak dari job `REFRESH_ACCURATE_TOKEN`
 // di bawah, DIPAKAI JUGA saat import job gagal buka sesi
@@ -548,12 +543,22 @@ async function getConnectionForBatch(subscriptionId: string) {
 // berulang kali sebelum user sempat reconnect.
 async function markConnectionExpired(connection: typeof accurateConnections.$inferSelect): Promise<void> {
   if (connection.status === "expired") return;
-  await db.update(accurateConnections).set({ status: "expired", updatedAt: new Date() }).where(eq(accurateConnections.id, connection.id));
+  // § security review Fase 143 (Medium) — UPDATE BERSYARAT pada token yang dipakai worker: kalau customer sudah
+  // menghubungkan ulang selagi job jalan (token di baris sudah baru), jangan menimpa koneksi yang sehat jadi expired.
+  const updated = await db
+    .update(accurateConnections)
+    .set({ status: "expired", updatedAt: new Date() })
+    .where(and(eq(accurateConnections.id, connection.id), eq(accurateConnections.accessTokenEncrypted, connection.accessTokenEncrypted)))
+    .returning({ id: accurateConnections.id });
+  if (updated.length === 0) return;
+  // § Fase 143 — 1 koneksi = 1 akun Accurate, dipakai >=1 Data Usaha: sebut semua yang terdampak.
+  const affected = await db.select({ name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.accurateConnectionId, connection.id));
+  const names = affected.map((d) => d.name).join(", ");
   await createNotification({
     userId: connection.userId,
     type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_EXPIRED,
     title: "Koneksi Accurate terputus",
-    body: `Koneksi ke ${connection.accurateDbAlias ?? "Data Usaha Accurate"} kamu terputus — hubungkan ulang supaya import bisa lanjut.`,
+    body: `Koneksi ke akun Accurate kamu terputus${names ? ` (Data Usaha: ${names})` : ""} — hubungkan ulang supaya import bisa lanjut.`,
     entityType: "accurate_connection",
     entityId: connection.id,
   });
@@ -1821,7 +1826,8 @@ async function main() {
   // mendekati expired (<2 hari lagi), refresh proaktif.
   await boss.schedule(JOBS.REFRESH_ACCURATE_TOKEN, "0 2 * * *");
   await boss.work(JOBS.REFRESH_ACCURATE_TOKEN, async () => {
-    const soon = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+    const refreshWithinMs = 2 * 24 * 60 * 60 * 1000;
+    const soon = new Date(Date.now() + refreshWithinMs);
     const dueForRefresh = await db
       .select()
       .from(accurateConnections)
@@ -1829,24 +1835,27 @@ async function main() {
 
     for (const conn of dueForRefresh) {
       try {
-        const token = await refreshAccessToken(decrypt(conn.refreshTokenEncrypted));
-        await db
-          .update(accurateConnections)
-          .set({
-            accessTokenEncrypted: encrypt(token.access_token),
-            refreshTokenEncrypted: encrypt(token.refresh_token),
-            expiresAt: new Date(Date.now() + token.expires_in * 1000),
-            updatedAt: new Date(),
-          })
-          .where(eq(accurateConnections.id, conn.id));
-        logger.info({ connectionId: conn.id }, "Accurate token refreshed");
+        // § Fase 143, ADR-0036 #5 — refresh token dirotasi & sekali-pakai: lewati koneksi yang sedang dipakai batch
+        // (token diputar = access token worker langsung 401 di tengah batch); ambang 2 hari memberi kesempatan lagi besok.
+        if (await hasRunningBatch(conn.id)) {
+          logger.info({ connectionId: conn.id }, "Refresh Accurate token ditunda: ada batch import berjalan");
+          continue;
+        }
+        const outcome = await refreshConnectionToken(conn.id, refreshWithinMs);
+        if (outcome === "refreshed") logger.info({ connectionId: conn.id }, "Accurate token refreshed");
       } catch (err) {
-        // Refresh token juga sudah invalid/di-revoke user dari sisi Accurate
-        // — tandai expired + notifikasi (§ `markConnectionExpired`, Fase 45
-        // asal notifikasi ini, diekstrak jadi helper bersama Fase 91).
-        logger.error({ err, connectionId: conn.id }, "Accurate token refresh gagal, tandai expired");
-        Sentry.captureException(err);
-        await markConnectionExpired(conn);
+        if (err instanceof AccurateTokenError && err.isInvalidGrant) {
+          // Refresh token ditolak PERMANEN (dibatalkan otorisasi baru / dicabut di Accurate) — koneksi mati, tandai
+          // expired + notifikasi (§ `markConnectionExpired`, Fase 45 asal notifikasi ini, diekstrak jadi helper Fase 91).
+          logger.error({ err, connectionId: conn.id }, "Accurate refresh token ditolak (invalid_grant), tandai expired");
+          Sentry.captureException(err);
+          await markConnectionExpired(conn);
+        } else {
+          // Galat jaringan/timeout/5xx = SEMENTARA: JANGAN tandai expired (koneksi bisa masih sehat; refresh token
+          // baru mungkin belum terpakai). Dicoba lagi job berikutnya.
+          logger.error({ err, connectionId: conn.id }, "Accurate token refresh gagal sementara, dicoba lagi besok");
+          Sentry.captureException(err);
+        }
       }
     }
   });
@@ -1890,9 +1899,11 @@ async function main() {
       return;
     }
 
-    const connection = await getConnectionForBatch(batch.subscriptionId);
+    const resolved = await resolveConnectionForSubscription(batch.subscriptionId);
+    const connection = resolved?.connection ?? null;
+    const accurateDbId = resolved?.accurateDbId ?? null;
 
-    if (!connection || !connection.accurateDbId) {
+    if (!connection || !accurateDbId) {
       const errorMessage = "Koneksi Accurate belum dipilih atau tidak valid — hubungkan/pilih Data Usaha Accurate dulu sebelum import.";
       await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
       await failAllPendingRows(batch.id, errorMessage);
@@ -1914,18 +1925,18 @@ async function main() {
 
     let session;
     try {
-      session = await openAccurateSession(connection);
+      session = await openAccurateSession(connection, accurateDbId);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
       await failAllPendingRows(batch.id, `Gagal membuka sesi Data Usaha Accurate: ${detail}`);
       logger.error({ err, batchId }, "Import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
-      // § Fase 91 — gagal buka sesi HAMPIR SELALU berarti token/koneksi
-      // sudah tidak valid (revoked/expired) — tandai supaya halaman
-      // /accurate & tombol "Hubungkan Ulang" langsung akurat, bukan
-      // baru ketahuan lewat job refresh terjadwal besok.
-      await markConnectionExpired(connection);
+      // § Fase 91 — token yang ditolak Accurate (HTTP 401) = koneksi mati: tandai supaya halaman /accurate & tombol
+      // "Hubungkan Ulang" langsung akurat. § security review Fase 143 (Medium) — HANYA 401: galat jaringan/timeout/5xx
+      // atau penolakan logis (mis. trial database habis) BUKAN token mati; dulu semuanya memutus koneksi & menotifikasi
+      // semua Data Usaha pemakainya.
+      if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
       return;
     }
 
@@ -2501,20 +2512,22 @@ async function main() {
       return;
     }
 
-    const connection = await getConnectionForBatch(batch.subscriptionId);
+    const resolved = await resolveConnectionForSubscription(batch.subscriptionId);
+    const connection = resolved?.connection ?? null;
+    const accurateDbId = resolved?.accurateDbId ?? null;
 
-    if (!connection || !connection.accurateDbId) {
+    if (!connection || !accurateDbId) {
       logger.error({ batchId }, "Cancel import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
       return; // status batch TETAP "cancelling" — bukan ditandai gagal permanen, user bisa coba lagi
     }
 
     let session;
     try {
-      session = await openAccurateSession(connection);
+      session = await openAccurateSession(connection, accurateDbId);
     } catch (err) {
       logger.error({ err, batchId }, "Cancel import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
-      await markConnectionExpired(connection); // § Fase 91, lihat komentar definisi helper
+      if (isAccurateAuthFailure(err)) await markConnectionExpired(connection); // § Fase 91; hanya 401 (Fase 143, lihat import di atas)
       return;
     }
 

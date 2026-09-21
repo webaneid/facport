@@ -62,14 +62,18 @@ export async function linkGoogleSignupToPendingTransfer(userId: string, email: s
   }
 }
 
-// § Efek transfer HANYA `data_usaha.userId` — TIDAK PERNAH menulis ulang
+// § Fase 143, ADR-0036 #6 / ADR-0037 #6 — transfer JUGA memutus pointer koneksi Accurate Data Usaha
+// (`accurate_connection_id` → NULL): token itu milik akun Accurate pemilik LAMA, jangan diwarisi pemilik baru.
+// Database terakhir diketahui (`accurate_db_id`) dipertahankan; pemilik baru menghubungkan ulang dengan akunnya
+// sendiri. Koneksinya sendiri tidak dihapus (mungkin masih dipakai Data Usaha lain milik pemilik lama).
+// § Efek transfer pada data lain: HANYA `data_usaha.userId` — TIDAK PERNAH menulis ulang
 // `subscriptions.userId`/`invoices.userId` (riwayat pembelian historis
 // tetap milik pembeli asli, § ADR-0032/architecture-user-tambahan.md).
 // `member_seats` juga TIDAK berubah (dataUsahaId tetap sama, akses seat
 // tidak bergantung siapa pemiliknya).
 export async function executeOwnershipTransfer(transferId: string, dataUsahaId: string, toUserId: string): Promise<void> {
   await db.transaction(async (tx) => {
-    await tx.update(dataUsaha).set({ userId: toUserId, updatedAt: new Date() }).where(eq(dataUsaha.id, dataUsahaId));
+    await tx.update(dataUsaha).set({ userId: toUserId, accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, dataUsahaId));
     await tx
       .update(ownershipTransfers)
       .set({ status: "accepted", acceptedAt: new Date(), acceptedBy: toUserId, updatedAt: new Date() })

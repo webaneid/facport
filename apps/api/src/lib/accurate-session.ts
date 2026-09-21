@@ -14,11 +14,13 @@ export type AccurateSessionContext = {
 
 export async function openAccurateSession(
   connection: typeof accurateConnections.$inferSelect,
+  // § Fase 143, ADR-0037 — database dipilih per Data Usaha (`data_usaha.accurate_db_id`), BUKAN lagi di koneksi.
+  accurateDbId: string | null,
 ): Promise<AccurateSessionContext> {
-  if (!connection.accurateDbId) {
-    throw new Error("Koneksi Accurate belum punya accurateDbId — pilih Data Usaha dulu");
+  if (!accurateDbId) {
+    throw new Error("Data Usaha belum memilih database Accurate — pilih database dulu");
   }
   const accessToken = decrypt(connection.accessTokenEncrypted);
-  const { session, host } = await openDatabase(accessToken, Number(connection.accurateDbId));
+  const { session, host } = await openDatabase(accessToken, Number(accurateDbId));
   return { accessToken, session, host };
 }

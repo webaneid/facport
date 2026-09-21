@@ -5,15 +5,14 @@ import { accurateRoute } from "./accurate.route";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { plans, subscriptions, accurateConnections, memberSeats, dataUsaha, user as userTable } from "../db/schema";
-import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
+import { decrypt } from "../lib/encryption";
+import { createTestAccurateConnection, createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 import { ALL_ACCURATE_SCOPES, scopesForModules } from "../lib/accurate-scopes";
 import { createState } from "../lib/oauth-state";
 
-// § Fase 14, ADR-0020 — mirror struktur test sebelumnya, disesuaikan ke
-// API baru: `POST /accurate/connect` sekarang terima `{ subscriptionId }`
-// (bukan implisit dari "1 subscription aktif user"), plus test baru
-// `POST /accurate/reuse` (fitur BARU Fase 14 — pakai koneksi existing
-// tanpa OAuth ulang).
+// § Fase 143, ADR-0036/ADR-0037 — MODEL KONEKSI BARU: 1 koneksi = 1 akun Accurate (kunci `accurate_user_id`),
+// dipegang Data Usaha (pointer + database). Menggantikan tes model per-subscription/`reuse` (Fase 14-142).
+// `accurate_user_id` UNIK global → fixture `createTestAccurateConnection` membuat id acak per koneksi.
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(accurateRoute);
 
@@ -41,1069 +40,611 @@ async function signIn(email: string) {
   return res.headers.get("set-cookie") ?? "";
 }
 
-async function postConnect(cookie: string, subscriptionId: string, reconnect?: boolean) {
-  return testApp.handle(
-    new Request("http://localhost/accurate/connect", {
-      method: "POST",
-      headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriptionId, ...(reconnect !== undefined ? { reconnect } : {}) }),
-    }),
-  );
+async function newUser(tag: string) {
+  const email = `acc143-${tag}-${runId}@test.local`;
+  const userId = await signUp(email);
+  const cookie = await signIn(email);
+  return { userId, cookie, email };
+}
+
+async function newSubscription(userId: string, dataUsahaId: string, moduleKey: string, tag: string, status = "active") {
+  const [plan] = await db
+    .insert(plans)
+    .values({ name: `Plan 143 ${tag} ${runId}`, price: 1000, durationDays: 30, modules: [moduleKey] })
+    .returning();
+  const [subscription] = await db
+    .insert(subscriptions)
+    .values({ userId, planId: plan!.id, status, startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
+    .returning();
+  return { plan: plan!, subscription: subscription! };
+}
+
+function post(cookie: string, path: string, body: unknown) {
+  return testApp.handle(new Request(`http://localhost${path}`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+}
+function get(cookie: string, path: string) {
+  return testApp.handle(new Request(`http://localhost${path}`, { headers: { cookie } }));
+}
+
+// Isi kredensial Accurate sementara (dev .env bisa berisi kredensial asli / kosong) lalu pulihkan.
+async function withAccurateEnv<T>(fn: () => Promise<T>): Promise<T> {
+  const id = process.env.ACCURATE_CLIENT_ID;
+  const secret = process.env.ACCURATE_CLIENT_SECRET;
+  process.env.ACCURATE_CLIENT_ID = "test-client-id";
+  process.env.ACCURATE_CLIENT_SECRET = "test-client-secret";
+  try {
+    return await fn();
+  } finally {
+    if (id === undefined) delete process.env.ACCURATE_CLIENT_ID;
+    else process.env.ACCURATE_CLIENT_ID = id;
+    if (secret === undefined) delete process.env.ACCURATE_CLIENT_SECRET;
+    else process.env.ACCURATE_CLIENT_SECRET = secret;
+  }
+}
+
+type TokenReply = { access_token?: string; refresh_token?: string; expires_in?: number; token_type?: string; scope?: string; user?: { id?: number; email?: string } };
+// Mock fetch ke Accurate berdasarkan URL: token endpoint, db-list.do, open-db.do.
+async function withAccurateFetch<T>(
+  replies: { token?: TokenReply; databases?: { id: number; alias: string }[]; openDbOk?: boolean },
+  fn: () => Promise<T>,
+): Promise<T> {
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = String(input instanceof Request ? input.url : input);
+    if (url.includes("/oauth/token")) return new Response(JSON.stringify(replies.token ?? {}), { status: 200 });
+    if (url.includes("/db-list.do")) return new Response(JSON.stringify({ s: true, d: (replies.databases ?? []).map((d) => ({ ...d, trial: false, expired: false })) }), { status: 200 });
+    if (url.includes("/open-db.do")) {
+      return replies.openDbOk === false
+        ? new Response(JSON.stringify({ s: false, d: ["Gagal"] }), { status: 500 })
+        : new Response(JSON.stringify({ s: true, d: ["ok"], session: "s", host: "https://zeus.test", dataVersion: 1, licenseEnd: "01/01/2030" }), { status: 200 });
+    }
+    return original(input as never);
+  }) as unknown as typeof fetch;
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = original;
+  }
+}
+
+const goodToken = (userId: number, scope = ALL_ACCURATE_SCOPES.join(" ")): TokenReply => ({
+  access_token: "new-access",
+  refresh_token: "new-refresh",
+  expires_in: 1295999,
+  token_type: "bearer",
+  scope,
+  user: { id: userId, email: `akun-${userId}@accurate.test` },
+});
+
+// Callback KINI wajib membawa cookie sesi pemulai flow (§ security review Fase 143, HIGH: login CSRF/account-linking).
+async function callback(dataUsahaId: string, userId: string, cookie: string) {
+  const state = createState({ userId, dataUsahaId });
+  const res = await testApp.handle(new Request(`http://localhost/accurate/oauth/callback?code=abc&state=${state}`, { headers: { cookie } }));
+  return res.headers.get("location") ?? "";
 }
 
 describe("POST /accurate/connect", () => {
   test("401 kalau tidak login", async () => {
-    const res = await postConnect("", "00000000-0000-0000-0000-000000000000");
+    const res = await post("", "/accurate/connect", { dataUsahaId: "00000000-0000-0000-0000-000000000000" });
     expect(res.status).toBe(401);
   });
 
-  test("404 SUBSCRIPTION_NOT_FOUND kalau subscriptionId tidak ada/bukan milik user/tidak aktif", async () => {
-    const email = `acc-nosub-${runId}@test.local`;
-    await signUp(email);
-    const cookie = await signIn(email);
-
-    const res = await postConnect(cookie, "00000000-0000-0000-0000-000000000000");
+  test("404 DATA_USAHA_NOT_FOUND untuk Data Usaha milik user LAIN (tidak bisa menghubungkan perusahaan orang)", async () => {
+    const owner = await newUser("conn-idor-owner");
+    const intruder = await newUser("conn-idor-intruder");
+    const dataUsahaId = await createTestDataUsaha(owner.userId);
+    const res = await post(intruder.cookie, "/accurate/connect", { dataUsahaId });
     expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("SUBSCRIPTION_NOT_FOUND");
+    expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_NOT_FOUND");
   });
 
-  test("503 ACCURATE_NOT_CONFIGURED kalau ACCURATE_CLIENT_ID kosong (kondisi dev sekarang)", async () => {
-    const email = `acc-noclient-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Accurate ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
+  test("503 ACCURATE_NOT_CONFIGURED kalau ACCURATE_CLIENT_ID kosong", async () => {
+    const { userId, cookie } = await newUser("conn-503");
     const dataUsahaId = await createTestDataUsaha(userId);
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId,
-      })
-      .returning();
-
-    // § Fase 142 — dulu bergantung urutan tes (env kosong hanya kalau accurate.test.ts jalan lebih dulu);
-    // .env dev sekarang berisi kredensial asli, jadi kosongkan EKSPLISIT lalu pulihkan.
-    const originalClientId = process.env.ACCURATE_CLIENT_ID;
+    const original = process.env.ACCURATE_CLIENT_ID;
     delete process.env.ACCURATE_CLIENT_ID;
     try {
-      const res = await postConnect(cookie, subscription!.id);
+      const res = await post(cookie, "/accurate/connect", { dataUsahaId });
       expect(res.status).toBe(503);
-      const body = (await res.json()) as { code: string };
-      expect(body.code).toBe("ACCURATE_NOT_CONFIGURED");
+      expect(((await res.json()) as { code: string }).code).toBe("ACCURATE_NOT_CONFIGURED");
     } finally {
-      if (originalClientId !== undefined) process.env.ACCURATE_CLIENT_ID = originalClientId;
+      if (original !== undefined) process.env.ACCURATE_CLIENT_ID = original;
     }
   });
 
-  test("409 ALREADY_CONNECTED kalau subscription sudah punya accurateConnectionId", async () => {
-    const email = `acc-already-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-      })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Already ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
+  test("200 authorizeUrl meminta SEMUA scope katalog (ADR-0036 #2), walau Data Usaha hanya membeli 1 modul", async () => {
+    const { userId, cookie } = await newUser("conn-200");
     const dataUsahaId = await createTestDataUsaha(userId);
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        accurateConnectionId: connection!.id,
-        dataUsahaId,
-      })
-      .returning();
-
-    const res = await postConnect(cookie, subscription!.id);
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("ALREADY_CONNECTED");
-  });
-
-  // § Fase 91 (2026-09-10) — tombol "Hubungkan Ulang" BARU kirim
-  // `reconnect: true` supaya LEWATI guard 409 di atas — gap ditemukan
-  // & dicatat sejak Fase 01/04 ("tombol Hubungkan Ulang belum dibangun"),
-  // baru diperbaiki sekarang. Assertion SENGAJA tidak fiks ke 1 status
-  // code — kalau `ACCURATE_CLIENT_ID` env kosong (CI) hasilnya 503
-  // ACCURATE_NOT_CONFIGURED, kalau TERISI (dev lokal sesi ini, dipakai
-  // test call nyata Fase 90) hasilnya 200 authorizeUrl — yang penting
-  // DIBUKTIKAN: bukan lagi 409 (itu inti fix-nya), bukan nilai spesifik
-  // yang tergantung env developer.
-  test("reconnect:true LEWATI guard 409 ALREADY_CONNECTED (tombol \"Hubungkan Ulang\")", async () => {
-    const email = `acc-reconnect-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        status: "expired", // § koneksi bermasalah — kasus nyata tombol ini dipakai
-      })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Reconnect ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        accurateConnectionId: connection!.id,
-        dataUsahaId,
-      })
-      .returning();
-
-    const withoutFlag = await postConnect(cookie, subscription!.id);
-    expect(withoutFlag.status).toBe(409); // § perilaku LAMA tetap default kalau flag tidak dikirim
-
-    const withFlag = await postConnect(cookie, subscription!.id, true);
-    expect(withFlag.status).not.toBe(409); // § inti fix: guard 409 LEWAT kalau reconnect:true
-    if (withFlag.status === 503) {
-      const body = (await withFlag.json()) as { code: string };
-      expect(body.code).toBe("ACCURATE_NOT_CONFIGURED"); // § CI: ACCURATE_CLIENT_ID kosong
-    } else {
-      expect(withFlag.status).toBe(200); // § dev lokal dengan ACCURATE_CLIENT_ID terisi: authorizeUrl berhasil dibuat
-      const body = (await withFlag.json()) as { authorizeUrl?: string };
-      expect(body.authorizeUrl).toBeTruthy();
-      // § Fase 142, ADR-0036 #2 — otorisasi SELALU semua scope katalog (bukan scope modul plan ini saja).
-      const requested = new URL(body.authorizeUrl!).searchParams.get("scope")!.split(" ");
+    await newSubscription(userId, dataUsahaId, "receive_item", "conn-200");
+    await withAccurateEnv(async () => {
+      const res = await post(cookie, "/accurate/connect", { dataUsahaId });
+      expect(res.status).toBe(200);
+      const { authorizeUrl } = (await res.json()) as { authorizeUrl: string };
+      const requested = new URL(authorizeUrl).searchParams.get("scope")!.split(" ");
       expect(new Set(requested)).toEqual(new Set(ALL_ACCURATE_SCOPES));
-    }
+      expect(requested.length).toBeGreaterThan(scopesForModules(["receive_item"]).length);
+    });
+  });
+
+  test("409 ALREADY_CONNECTED kalau Data Usaha sudah punya koneksi; reconnect:true melewatinya", async () => {
+    const { userId, cookie } = await newUser("conn-409");
+    const dataUsahaId = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId });
+    await withAccurateEnv(async () => {
+      const blocked = await post(cookie, "/accurate/connect", { dataUsahaId });
+      expect(blocked.status).toBe(409);
+      expect(((await blocked.json()) as { code: string }).code).toBe("ALREADY_CONNECTED");
+      const allowed = await post(cookie, "/accurate/connect", { dataUsahaId, reconnect: true });
+      expect(allowed.status).toBe(200);
+    });
+  });
+
+  test("koneksi LAMA (tanpa accurate_user_id) tidak dihitung terhubung — cutover, connect tidak diblokir 409", async () => {
+    const { userId, cookie } = await newUser("conn-legacy");
+    const dataUsahaId = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId, accurateUserId: null });
+    await withAccurateEnv(async () => {
+      expect((await post(cookie, "/accurate/connect", { dataUsahaId })).status).toBe(200);
+    });
+  });
+
+  test("member seat TIDAK bisa connect (owner-only, regresi Fase 110)", async () => {
+    const primary = await newUser("conn-mem-primary");
+    const member = await newUser("conn-mem-member");
+    const dataUsahaId = await createTestDataUsaha(primary.userId);
+    const { subscription } = await newSubscription(primary.userId, dataUsahaId, "purchase_invoice", "conn-mem");
+    const seatId = await createTestSeat(primary.userId, dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: member.userId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const list = (await (await get(member.cookie, "/accurate/subscriptions")).json()) as { subscriptions: { subscriptionId: string }[] };
+    expect(list.subscriptions.some((s) => s.subscriptionId === subscription.id)).toBe(true); // baca-saja boleh
+    expect((await post(member.cookie, "/accurate/connect", { dataUsahaId })).status).toBe(404);
   });
 });
 
-// § Fase 91 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — `connected`
-// SEBELUM ini cuma cek "ada baris koneksi tersimpan", BUKAN status
-// koneksinya — koneksi yang sudah `expired` tetap dilaporkan
-// "Terhubung" ke frontend (halaman /accurate salah tampilkan badge
-// hijau). `connectionStatus` field BARU ditambah juga.
-describe("GET /accurate/subscriptions", () => {
-  test("connected:true HANYA kalau connection status \"active\" (BUKAN cuma ada baris)", async () => {
-    const email = `acc-subs-status-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
+describe("POST /accurate/reuse — DIHAPUS (Fase 143)", () => {
+  test("404: berbagi koneksi kini otomatis per akun Accurate, tidak ada endpoint reuse lagi", async () => {
+    const { cookie } = await newUser("reuse-gone");
+    const res = await post(cookie, "/accurate/reuse", { subscriptionId: "00000000-0000-0000-0000-000000000000", connectionId: "00000000-0000-0000-0000-000000000000" });
+    expect(res.status).toBe(404);
+  });
+});
 
-    const [activeConn] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "111",
-        accurateDbAlias: "PT Sehat",
-      })
-      .returning();
-    const [expiredConn] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "222",
-        accurateDbAlias: "PT Bermasalah",
-        status: "expired",
-      })
-      .returning();
+describe("GET /accurate/subscriptions (status diturunkan dari Data Usaha)", () => {
+  test("connected:true HANYA kalau koneksi Data Usaha berstatus active; database dari Data Usaha", async () => {
+    const { userId, cookie } = await newUser("subs-status");
+    const duHealthy = await createTestDataUsaha(userId, "Sehat");
+    const duBroken = await createTestDataUsaha(userId, "Bermasalah");
+    await createTestAccurateConnection(userId, { dataUsahaId: duHealthy, accurateDbId: "111", accurateDbAlias: "PT Sehat" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duBroken, accurateDbId: "222", accurateDbAlias: "PT Bermasalah", status: "expired" });
+    await newSubscription(userId, duHealthy, "purchase_invoice", "subs-h");
+    await newSubscription(userId, duBroken, "sales_invoice", "subs-b");
 
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [planHealthy] = await db
-      .insert(plans)
-      .values({ name: `Plan Subs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planHealthy!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: activeConn!.id,
-      dataUsahaId,
-    });
-
-    const [planBroken] = await db
-      .insert(plans)
-      .values({ name: `Plan Subs Broken ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planBroken!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: expiredConn!.id,
-      dataUsahaId,
-    });
-
-    const res = await testApp.handle(new Request("http://localhost/accurate/subscriptions", { headers: { cookie } }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as {
-      subscriptions: { planName: string; connected: boolean; connectionStatus: string | null; accurateDbAlias: string | null }[];
+    const body = (await (await get(cookie, "/accurate/subscriptions")).json()) as {
+      subscriptions: { planName: string; connected: boolean; connectionStatus: string | null; accurateDbAlias: string | null; accurateDbId: string | null }[];
     };
-    const healthy = body.subscriptions.find((s) => s.planName === `Plan Subs Healthy ${runId}`);
-    const broken = body.subscriptions.find((s) => s.planName === `Plan Subs Broken ${runId}`);
-    expect(healthy?.connected).toBe(true);
-    expect(healthy?.connectionStatus).toBe("active");
-    expect(broken?.connected).toBe(false); // § BUG LAMA: ini sebelumnya `true` cuma karena barisnya ada
-    expect(broken?.connectionStatus).toBe("expired");
-    expect(broken?.accurateDbAlias).toBe("PT Bermasalah"); // § alias tetap ditampilkan meski bermasalah, biar user tahu company mana
+    const healthy = body.subscriptions.find((s) => s.planName === `Plan 143 subs-h ${runId}`);
+    const broken = body.subscriptions.find((s) => s.planName === `Plan 143 subs-b ${runId}`);
+    expect(healthy).toMatchObject({ connected: true, connectionStatus: "active", accurateDbAlias: "PT Sehat", accurateDbId: "111" });
+    expect(broken).toMatchObject({ connected: false, connectionStatus: "expired", accurateDbAlias: "PT Bermasalah" });
   });
 
-  // § Fase 113 — bug ditemukan: halaman Koneksi Accurate & dashboard belum
-  // di-scope ke Data Usaha aktif, endpoint ini union lintas SEMUA Data
-  // Usaha milik user. `dataUsahaId` OPSIONAL (union kalau kosong, tetap
-  // dites di atas), tapi kalau diisi WAJIB mempersempit.
-  test("dataUsahaId (opsional) mempersempit ke 1 Data Usaha, TIDAK gabungan semua Data Usaha milik user yang sama", async () => {
-    const email = `acc-subs-multi-du-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
+  test("semua modul di 1 Data Usaha menampilkan koneksi & database yang SAMA", async () => {
+    const { userId, cookie } = await newUser("subs-shared");
+    const du = await createTestDataUsaha(userId);
+    const conn = await createTestAccurateConnection(userId, { dataUsahaId: du, accurateDbId: "5", accurateDbAlias: "PT Bersama" });
+    await newSubscription(userId, du, "purchase_invoice", "subs-s1");
+    await newSubscription(userId, du, "sales_invoice", "subs-s2");
+    const body = (await (await get(cookie, `/accurate/subscriptions?dataUsahaId=${du}`)).json()) as { subscriptions: { accurateConnectionId: string | null; accurateDbAlias: string | null }[] };
+    expect(body.subscriptions).toHaveLength(2);
+    for (const s of body.subscriptions) expect(s).toMatchObject({ accurateConnectionId: conn.id, accurateDbAlias: "PT Bersama" });
+  });
 
-    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
-    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan Subs DU-A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan Subs DU-B ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planA!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      dataUsahaId: dataUsahaA,
-    });
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planB!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      dataUsahaId: dataUsahaB,
-    });
+  test("koneksi LAMA (accurate_user_id NULL) dilaporkan belum terhubung (cutover)", async () => {
+    const { userId, cookie } = await newUser("subs-legacy");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du, accurateUserId: null });
+    await newSubscription(userId, du, "purchase_invoice", "subs-l");
+    const body = (await (await get(cookie, "/accurate/subscriptions")).json()) as { subscriptions: { connected: boolean; connectionStatus: string | null }[] };
+    expect(body.subscriptions[0]).toMatchObject({ connected: false, connectionStatus: null });
+  });
 
-    const res = await testApp.handle(new Request(`http://localhost/accurate/subscriptions?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { subscriptions: { planName: string }[] };
-    expect(body.subscriptions.map((s) => s.planName)).toEqual([`Plan Subs DU-A ${runId}`]);
+  test("missingScopes: null (scope belum diketahui), daftar (kurang), [] (lengkap)", async () => {
+    const { userId, cookie } = await newUser("subs-scopes");
+    const duUnknown = await createTestDataUsaha(userId, "U");
+    const duShort = await createTestDataUsaha(userId, "S");
+    const duFull = await createTestDataUsaha(userId, "F");
+    await createTestAccurateConnection(userId, { dataUsahaId: duUnknown, grantedScopes: null });
+    await createTestAccurateConnection(userId, { dataUsahaId: duShort, grantedScopes: scopesForModules(["purchase_invoice"]) });
+    await createTestAccurateConnection(userId, { dataUsahaId: duFull, grantedScopes: ALL_ACCURATE_SCOPES });
+    await newSubscription(userId, duUnknown, "sales_invoice", "sc-u");
+    await newSubscription(userId, duShort, "sales_invoice", "sc-s");
+    await newSubscription(userId, duFull, "sales_invoice", "sc-f");
+    const body = (await (await get(cookie, "/accurate/subscriptions")).json()) as { subscriptions: { planName: string; missingScopes: string[] | null }[] };
+    const by = (tag: string) => body.subscriptions.find((s) => s.planName === `Plan 143 ${tag} ${runId}`)!.missingScopes;
+    expect(by("sc-u")).toBeNull();
+    expect(by("sc-s")).toContain("sales_invoice_save");
+    expect(by("sc-f")).toEqual([]);
+  });
+
+  test("dataUsahaId mempersempit ke 1 Data Usaha", async () => {
+    const { userId, cookie } = await newUser("subs-narrow");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    await newSubscription(userId, duA, "purchase_invoice", "nr-a");
+    await newSubscription(userId, duB, "sales_invoice", "nr-b");
+    const body = (await (await get(cookie, `/accurate/subscriptions?dataUsahaId=${duA}`)).json()) as { subscriptions: { planName: string }[] };
+    expect(body.subscriptions.map((s) => s.planName)).toEqual([`Plan 143 nr-a ${runId}`]);
   });
 });
 
 describe("GET /accurate/connections", () => {
-  test("401 kalau tidak login", async () => {
-    const res = await testApp.handle(new Request(`http://localhost/accurate/connections?dataUsahaId=${crypto.randomUUID()}`));
-    expect(res.status).toBe(401);
+  test("401 kalau tidak login; 422 kalau dataUsahaId tidak dikirim", async () => {
+    expect((await get("", "/accurate/connections?dataUsahaId=00000000-0000-0000-0000-000000000000")).status).toBe(401);
+    const { cookie } = await newUser("cons-422");
+    expect((await get(cookie, "/accurate/connections")).status).toBe(422);
   });
 
-  test("422 kalau dataUsahaId tidak dikirim", async () => {
-    const email = `acc-conn-noparam-${runId}@test.local`;
-    await signUp(email);
-    const cookie = await signIn(email);
-    const res = await testApp.handle(new Request("http://localhost/accurate/connections", { headers: { cookie } }));
-    expect(res.status).toBe(422);
+  test("hanya koneksi milik Data Usaha yang diminta, dengan database dari Data Usaha", async () => {
+    const { userId, cookie } = await newUser("cons-ok");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    const connA = await createTestAccurateConnection(userId, { dataUsahaId: duA, accurateDbId: "1", accurateDbAlias: "PT A" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duB, accurateDbId: "2", accurateDbAlias: "PT B" });
+    const body = (await (await get(cookie, `/accurate/connections?dataUsahaId=${duA}`)).json()) as { connections: { id: string; accurateDbId: string | null; accurateDbAlias: string | null }[] };
+    expect(body.connections).toEqual([{ id: connA.id, accurateDbId: "1", accurateDbAlias: "PT A" }]);
   });
 
-  // § Fase 113 — koneksi tidak punya kolom `dataUsahaId` langsung, di-join
-  // lewat subscription yang memakainya. Test ini pastikan koneksi Data
-  // Usaha LAIN milik user yang sama tidak ikut nongol di dropdown "Pakai
-  // Koneksi yang Sudah Ada".
-  test("cuma balikin koneksi yang dipakai subscription di Data Usaha yang diminta", async () => {
-    const email = `acc-conn-multi-du-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connA] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "301",
-        accurateDbAlias: "PT Data Usaha A",
-      })
-      .returning();
-    const [connB] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "302",
-        accurateDbAlias: "PT Data Usaha B",
-      })
-      .returning();
-
-    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
-    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan Conn DU-A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan Conn DU-B ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planA!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connA!.id,
-      dataUsahaId: dataUsahaA,
-    });
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planB!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connB!.id,
-      dataUsahaId: dataUsahaB,
-    });
-
-    const res = await testApp.handle(new Request(`http://localhost/accurate/connections?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { connections: { accurateDbAlias: string | null }[] };
-    expect(body.connections.map((c) => c.accurateDbAlias)).toEqual(["PT Data Usaha A"]);
-  });
-
-  // § security review Fase 113 (Medium, DIPERBAIKI) — `accurateConnections.userId`
-  // dibekukan ke user yang OAuth pertama kali, TIDAK ikut berubah saat
-  // Data Usaha ditransfer. SEBELUM fix `hasAccessToDataUsaha`, mantan
-  // pemilik yang sudah kehilangan akses tapi masih ingat `dataUsahaId`
-  // bisa panggil endpoint ini langsung dan tetap dapat metadata koneksi
-  // (yang bisa jadi MASIH aktif dipakai pemilik baru).
-  test("404 kalau dataUsahaId sudah bukan milik/di-seat user ini lagi (mantan pemilik pasca-transfer)", async () => {
-    const formerOwnerEmail = `acc-conn-transferred-${runId}@test.local`;
-    const formerOwnerId = await signUp(formerOwnerEmail);
-    const cookie = await signIn(formerOwnerEmail);
-    const newOwnerId = await signUp(`acc-conn-newowner-${runId}@test.local`);
-
-    const [conn] = await db
-      .insert(accurateConnections)
-      .values({
-        userId: formerOwnerId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "401",
-        accurateDbAlias: "PT Sudah Ditransfer",
-      })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(formerOwnerId);
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Conn Transferred ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId: formerOwnerId,
-      planId: plan!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: conn!.id,
-      dataUsahaId,
-    });
-
-    // § simulasi hasil `executeOwnershipTransfer` — cuma `dataUsaha.userId` berubah.
-    await db.update(dataUsaha).set({ userId: newOwnerId }).where(eq(dataUsaha.id, dataUsahaId));
-
-    const res = await testApp.handle(new Request(`http://localhost/accurate/connections?dataUsahaId=${dataUsahaId}`, { headers: { cookie } }));
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("DATA_USAHA_NOT_FOUND");
-  });
-});
-
-describe("Fase 142 — otorisasi 1 pintu (semua scope) & simpan scope yang diberikan", () => {
-  async function seedSubscription(tag: string) {
-    const userId = await signUp(`acc-f142-${tag}-${runId}@test.local`);
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan F142 ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["receive_item"] })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId,
-      })
-      .returning();
-    return { userId, subscriptionId: subscription!.id, email: `acc-f142-${tag}-${runId}@test.local` };
-  }
-
-  test("/accurate/connect meminta SEMUA scope katalog walau plan-nya cuma 1 modul (ADR-0036 #2)", async () => {
-    const { subscriptionId, email } = await seedSubscription("connect");
-    const cookie = await signIn(email);
-    const originalClientId = process.env.ACCURATE_CLIENT_ID;
-    process.env.ACCURATE_CLIENT_ID = "test-client-id";
-    try {
-      const res = await postConnect(cookie, subscriptionId);
-      expect(res.status).toBe(200);
-      const body = (await res.json()) as { authorizeUrl: string };
-      const requested = new URL(body.authorizeUrl).searchParams.get("scope")!.split(" ");
-      expect(new Set(requested)).toEqual(new Set(ALL_ACCURATE_SCOPES));
-      expect(requested.length).toBeGreaterThan(scopesForModules(["receive_item"]).length); // bukan scope sempit modul
-    } finally {
-      if (originalClientId === undefined) delete process.env.ACCURATE_CLIENT_ID;
-      else process.env.ACCURATE_CLIENT_ID = originalClientId;
+  test("kosong untuk koneksi expired atau LAMA (tanpa accurate_user_id)", async () => {
+    const { userId, cookie } = await newUser("cons-empty");
+    const duExpired = await createTestDataUsaha(userId, "E");
+    const duLegacy = await createTestDataUsaha(userId, "L");
+    await createTestAccurateConnection(userId, { dataUsahaId: duExpired, status: "expired" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duLegacy, accurateUserId: null });
+    for (const du of [duExpired, duLegacy]) {
+      const body = (await (await get(cookie, `/accurate/connections?dataUsahaId=${du}`)).json()) as { connections: unknown[] };
+      expect(body.connections).toEqual([]);
     }
   });
 
-  test("callback OAuth menyimpan grantedScopes + identitas akun dari respons token", async () => {
-    const { userId, subscriptionId } = await seedSubscription("callback");
-    const originalClientId = process.env.ACCURATE_CLIENT_ID;
-    const originalClientSecret = process.env.ACCURATE_CLIENT_SECRET;
-    process.env.ACCURATE_CLIENT_ID = "test-client-id";
-    process.env.ACCURATE_CLIENT_SECRET = "test-client-secret";
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () =>
-      new Response(
-        JSON.stringify({
-          access_token: "at",
-          refresh_token: "rt",
-          expires_in: 1295999,
-          token_type: "bearer",
-          scope: "item_view receive_item_save data_classification_view",
-          user: { id: 60245, email: "akun@accurate.test", name: "Akun" },
-        }),
-        { status: 200 },
-      )) as unknown as typeof fetch;
-    try {
-      const state = createState(subscriptionId);
-      const res = await testApp.handle(new Request(`http://localhost/accurate/oauth/callback?code=abc&state=${state}`));
-      expect(res.status).toBeGreaterThanOrEqual(300);
-      expect(res.headers.get("location")).toContain("connected=true");
-      const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
-      const [conn] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, sub!.accurateConnectionId!));
-      expect(conn!.userId).toBe(userId);
-      expect(conn!.grantedScopes).toEqual(["data_classification_view", "item_view", "receive_item_save"]);
-      expect(conn!.accurateUserId).toBe("60245");
-      expect(conn!.accurateUserEmail).toBe("akun@accurate.test");
-    } finally {
-      globalThis.fetch = originalFetch;
-      if (originalClientId === undefined) delete process.env.ACCURATE_CLIENT_ID;
-      else process.env.ACCURATE_CLIENT_ID = originalClientId;
-      if (originalClientSecret === undefined) delete process.env.ACCURATE_CLIENT_SECRET;
-      else process.env.ACCURATE_CLIENT_SECRET = originalClientSecret;
-    }
+  test("404 kalau user tidak punya akses Data Usaha itu (mantan pemilik pasca-transfer)", async () => {
+    const owner = await newUser("cons-owner");
+    const other = await newUser("cons-other");
+    const du = await createTestDataUsaha(owner.userId);
+    await createTestAccurateConnection(owner.userId, { dataUsahaId: du });
+    expect((await get(other.cookie, `/accurate/connections?dataUsahaId=${du}`)).status).toBe(404);
   });
 });
 
-describe("GET /accurate/oauth/callback", () => {
-  test("redirect dengan error=invalid_state kalau state tidak ada/salah", async () => {
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/oauth/callback?code=abc&state=not-a-real-state", {
-        redirect: "manual",
+describe("GET /accurate/oauth/callback — upsert per akun Accurate", () => {
+  test("redirect error=invalid_state kalau state tidak ada/salah/dipakai ulang", async () => {
+    const res = await testApp.handle(new Request("http://localhost/accurate/oauth/callback?code=abc&state=bogus"));
+    expect(res.headers.get("location")).toContain("accurate_error=invalid_state");
+  });
+
+  test("berhasil: baris koneksi baru berisi akun+scope; Data Usaha menunjuk koneksi itu", async () => {
+    const { userId, cookie } = await newUser("cb-ok");
+    const du = await createTestDataUsaha(userId);
+    const accountId = Math.floor(Math.random() * 1e9);
+    const location = await withAccurateEnv(() =>
+      withAccurateFetch({ token: goodToken(accountId, "item_view receive_item_save") }, () => callback(du, userId, cookie)),
+    );
+    expect(location).toContain("accurate=connected");
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    const [conn] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, row!.accurateConnectionId!));
+    expect(conn).toMatchObject({ userId, accurateUserId: String(accountId), accurateUserEmail: `akun-${accountId}@accurate.test`, status: "active" });
+    expect(conn!.grantedScopes).toEqual(["item_view", "receive_item_save"]);
+    expect(decrypt(conn!.accessTokenEncrypted)).toBe("new-access");
+  });
+
+  test("akun SAMA dihubungkan ke 2 Data Usaha → tetap 1 baris koneksi, keduanya menunjuknya (tidak ada INSERT kedua)", async () => {
+    const { userId, cookie } = await newUser("cb-shared");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    const accountId = Math.floor(Math.random() * 1e9);
+    await withAccurateEnv(() =>
+      withAccurateFetch({ token: goodToken(accountId) }, async () => {
+        await callback(duA, userId, cookie);
+        await callback(duB, userId, cookie);
       }),
     );
-    expect(res.status).toBeGreaterThanOrEqual(300);
-    expect(res.status).toBeLessThan(400);
-    expect(res.headers.get("location")).toContain("error=invalid_state");
+    const conns = await db.select().from(accurateConnections).where(eq(accurateConnections.accurateUserId, String(accountId)));
+    expect(conns).toHaveLength(1);
+    const rows = await db.select().from(dataUsaha).where(eq(dataUsaha.userId, userId));
+    expect(new Set(rows.map((r) => r.accurateConnectionId))).toEqual(new Set([conns[0]!.id]));
+  });
+
+  test("otorisasi ulang akun yang sama memperbarui token & mengaktifkan kembali koneksi expired (in-place)", async () => {
+    const { userId, cookie } = await newUser("cb-reauth");
+    const du = await createTestDataUsaha(userId);
+    const accountId = String(Math.floor(Math.random() * 1e9));
+    const old = await createTestAccurateConnection(userId, { dataUsahaId: du, status: "expired", accurateUserId: accountId });
+    await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(accountId)) }, () => callback(du, userId, cookie)));
+    const [after] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, old.id));
+    expect(after!.status).toBe("active");
+    expect(decrypt(after!.accessTokenEncrypted)).toBe("new-access");
+    expect(await db.select().from(accurateConnections).where(eq(accurateConnections.accurateUserId, accountId))).toHaveLength(1);
+  });
+
+  test("akun Accurate milik pemilik Facport LAIN → ditolak (accurate_account_in_use), koneksi pemilik lama tidak tersentuh", async () => {
+    const a = await newUser("cb-own-a");
+    const b = await newUser("cb-own-b");
+    const duA = await createTestDataUsaha(a.userId);
+    const duB = await createTestDataUsaha(b.userId);
+    const accountId = String(Math.floor(Math.random() * 1e9));
+    const connA = await createTestAccurateConnection(a.userId, { dataUsahaId: duA, accurateUserId: accountId });
+    const location = await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(accountId)) }, () => callback(duB, b.userId, b.cookie)));
+    expect(location).toContain("accurate_error=accurate_account_in_use");
+    const [rowB] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duB));
+    expect(rowB!.accurateConnectionId).toBeNull();
+    const [after] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, connA.id));
+    expect(after!.userId).toBe(a.userId);
+    expect(decrypt(after!.accessTokenEncrypted)).toBe("test-access-token"); // token pemilik lama tidak ditimpa
+  });
+
+  test("respons token tanpa user.id → ditolak (missing_account), tidak ada baris yatim", async () => {
+    const { userId, cookie } = await newUser("cb-noid");
+    const du = await createTestDataUsaha(userId);
+    const token: TokenReply = { ...goodToken(1), user: undefined };
+    const location = await withAccurateEnv(() => withAccurateFetch({ token }, () => callback(du, userId, cookie)));
+    expect(location).toContain("accurate_error=missing_account");
+    expect(await db.select().from(accurateConnections).where(eq(accurateConnections.userId, userId))).toHaveLength(0);
+  });
+
+  test("Data Usaha ditransfer SETELAH OAuth dimulai → invalid_state (bukan menyambungkan Data Usaha orang lain)", async () => {
+    const original = await newUser("cb-xfer-old");
+    const next = await newUser("cb-xfer-new");
+    const du = await createTestDataUsaha(original.userId);
+    const state = createState({ userId: original.userId, dataUsahaId: du });
+    await db.update(dataUsaha).set({ userId: next.userId }).where(eq(dataUsaha.id, du));
+    const res = await withAccurateEnv(() =>
+      withAccurateFetch({ token: goodToken(Math.floor(Math.random() * 1e9)) }, () =>
+        testApp.handle(new Request(`http://localhost/accurate/oauth/callback?code=abc&state=${state}`, { headers: { cookie: original.cookie } })),
+      ),
+    );
+    expect(res.headers.get("location")).toContain("accurate_error=invalid_state");
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateConnectionId).toBeNull();
+  });
+
+  test("database tersimpan di Data Usaha DIPERTAHANKAN kalau ada di akun baru, DIKOSONGKAN kalau tidak ada", async () => {
+    const { userId, cookie } = await newUser("cb-db");
+    const duKeep = await createTestDataUsaha(userId, "Keep");
+    const duDrop = await createTestDataUsaha(userId, "Drop");
+    await db.update(dataUsaha).set({ accurateDbId: "777", accurateDbAlias: "PT Ada" }).where(eq(dataUsaha.id, duKeep));
+    await db.update(dataUsaha).set({ accurateDbId: "888", accurateDbAlias: "PT Hilang" }).where(eq(dataUsaha.id, duDrop));
+    const accountId = Math.floor(Math.random() * 1e9);
+    await withAccurateEnv(() =>
+      withAccurateFetch({ token: goodToken(accountId), databases: [{ id: 777, alias: "PT Ada" }] }, async () => {
+        await callback(duKeep, userId, cookie);
+        await callback(duDrop, userId, cookie);
+      }),
+    );
+    const [keep] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duKeep));
+    const [drop] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duDrop));
+    expect(keep).toMatchObject({ accurateDbId: "777", accurateDbAlias: "PT Ada" });
+    expect(drop).toMatchObject({ accurateDbId: null, accurateDbAlias: null });
+  });
+
+  // § security review Fase 143 (HIGH) — login CSRF / account-linking: penyerang menyodorkan authorizeUrl-nya ke korban.
+  test("HIGH: callback dibuka di sesi user LAIN (korban) → invalid_state, TIDAK menukar kode, TIDAK menyambungkan akun korban ke Data Usaha penyerang", async () => {
+    const attacker = await newUser("cb-csrf-attacker");
+    const victim = await newUser("cb-csrf-victim");
+    const duAttacker = await createTestDataUsaha(attacker.userId);
+    let exchanged = 0;
+    const original = globalThis.fetch;
+    const location = await withAccurateEnv(async () => {
+      globalThis.fetch = (async (input: string | URL | Request) => {
+        if (String(input instanceof Request ? input.url : input).includes("/oauth/token")) exchanged++;
+        return new Response(JSON.stringify(goodToken(Math.floor(Math.random() * 1e9))), { status: 200 });
+      }) as unknown as typeof fetch;
+      try {
+        return await callback(duAttacker, attacker.userId, victim.cookie); // state penyerang, browser KORBAN
+      } finally {
+        globalThis.fetch = original;
+      }
+    });
+    expect(location).toContain("accurate_error=invalid_state");
+    expect(exchanged).toBe(0); // kode TIDAK ditukar (penukaran mematikan token lama akun korban, Fase 141 E2)
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duAttacker));
+    expect(row!.accurateConnectionId).toBeNull();
+  });
+
+  test("HIGH: callback TANPA sesi login → invalid_state (state valid saja tidak cukup)", async () => {
+    const { userId } = await newUser("cb-nosession");
+    const du = await createTestDataUsaha(userId);
+    const location = await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Math.floor(Math.random() * 1e9)) }, () => callback(du, userId, "")));
+    expect(location).toContain("accurate_error=invalid_state");
+    expect(await db.select().from(accurateConnections).where(eq(accurateConnections.userId, userId))).toHaveLength(0);
+  });
+
+  test("Low: TOCTOU — kepemilikan berpindah setelah cek awal → pointer TIDAK dipasang untuk pemilik baru", async () => {
+    // Simulasi jendela sempit: Data Usaha ditransfer SETELAH state dibuat & sesi cocok tetapi sebelum UPDATE. Diuji lewat
+    // callback dengan sesi pemulai yang sudah BUKAN pemilik (ownsDataUsaha di awal callback menolak) — dan UPDATE punya guard userId.
+    const original = await newUser("cb-toctou-old");
+    const next = await newUser("cb-toctou-new");
+    const du = await createTestDataUsaha(original.userId);
+    await db.update(dataUsaha).set({ userId: next.userId }).where(eq(dataUsaha.id, du));
+    const location = await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Math.floor(Math.random() * 1e9)) }, () => callback(du, original.userId, original.cookie)));
+    expect(location).toContain("accurate_error=invalid_state");
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateConnectionId).toBeNull();
   });
 });
 
-// § Fase 14, ADR-0020 — fitur BARU: pakai koneksi Accurate yang SUDAH
-// ADA (Data Usaha yang sama dipakai modul lain) untuk subscription lain,
-// TANPA OAuth ulang. Ownership WAJIB dicek 2 arah (subscription DAN
-// connection sama-sama milik user yang request) — test khusus ownership
-// di bawah, pola sama seperti test ownership modul import lain.
-describe("POST /accurate/reuse", () => {
-  test("401 kalau tidak login", async () => {
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: "00000000-0000-0000-0000-000000000000", connectionId: "00000000-0000-0000-0000-000000000000" }),
-      }),
-    );
-    expect(res.status).toBe(401);
-  });
-
-  test("berhasil assign koneksi existing milik user ke subscription lain (tanpa OAuth ulang)", async () => {
-    const email = `acc-reuse-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "123",
-        accurateDbAlias: "PT Demo",
-      })
-      .returning();
-
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse A ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planA!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connection!.id,
-      dataUsahaId,
-    });
-
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse B ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const [subB] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: planB!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: subB!.id, connectionId: connection!.id }),
-      }),
-    );
-    expect(res.status).toBe(200);
-
-    const [updated] = await db.select().from(subscriptions).where(eq(subscriptions.id, subB!.id));
-    expect(updated!.accurateConnectionId).toBe(connection!.id);
-  });
-
-  test("404 CONNECTION_NOT_FOUND kalau connectionId bukan milik user yang request (tidak bisa pinjam koneksi user lain)", async () => {
-    const ownerEmail = `acc-reuse-owner-${runId}@test.local`;
-    const ownerId = await signUp(ownerEmail);
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId: ownerId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-      })
-      .returning();
-
-    const attackerEmail = `acc-reuse-attacker-${runId}@test.local`;
-    const attackerId = await signUp(attackerEmail);
-    const attackerCookie = await signIn(attackerEmail);
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse Attacker ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const attackerDataUsahaId = await createTestDataUsaha(attackerId);
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({
-        userId: attackerId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId: attackerDataUsahaId,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie: attackerCookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: sub!.id, connectionId: connection!.id }),
-      }),
-    );
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("CONNECTION_NOT_FOUND");
-  });
-
-  // § security review 2026-09-04 (Low) — connection "expired"/"revoked"
-  // TIDAK boleh bisa di-reuse (token-nya sudah tidak valid), walau masih
-  // milik user yang sama.
-  test("404 CONNECTION_NOT_FOUND kalau connection berstatus expired (bukan active)", async () => {
-    const email = `acc-reuse-expired-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        status: "expired",
-      })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse Expired ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: sub!.id, connectionId: connection!.id }),
-      }),
-    );
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("CONNECTION_NOT_FOUND");
-  });
-
-  // § Fase 114 — SEBELUM fix ini, `/accurate/reuse` TIDAK PUNYA cara
-  // bypass guard 409 sama sekali (beda dari `/accurate/connect` yang
-  // sudah punya `reconnect:true` sejak Fase 91) — akibatnya tombol
-  // "Hubungkan Ulang" TIDAK PERNAH bisa reuse koneksi lain, selalu
-  // dipaksa OAuth baru (temuan debugging production 2026-09-14, §
-  // lessons-learned.md — koneksi numpuk ke company yang sama).
-  test("409 ALREADY_CONNECTED tetap berlaku TANPA reconnect:true (regresi guard lama)", async () => {
-    const email = `acc-reuse-noreconnect-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connectionOld] = await db
-      .insert(accurateConnections)
-      .values({ userId, accessTokenEncrypted: "dummy", refreshTokenEncrypted: "dummy", expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) })
-      .returning();
-    const [connectionNew] = await db
-      .insert(accurateConnections)
-      .values({ userId, accessTokenEncrypted: "dummy", refreshTokenEncrypted: "dummy", expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse NoReconnect ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: plan!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        accurateConnectionId: connectionOld!.id,
-        dataUsahaId,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: sub!.id, connectionId: connectionNew!.id }),
-      }),
-    );
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("ALREADY_CONNECTED");
-  });
-
-  test("reconnect:true LEWATI guard 409, timpa accurateConnectionId lama dengan koneksi yang dipilih (tombol \"Pakai Koneksi yang Sudah Ada\" saat reconnect)", async () => {
-    const email = `acc-reuse-reconnect-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connectionOld] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        status: "expired",
-      })
-      .returning();
-    const [connectionHealthy] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "999",
-        accurateDbAlias: "PT Reuse Reconnect",
-      })
-      .returning();
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse Reconnect A ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan Reuse Reconnect B ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    // § modul LAIN di Data Usaha yang SAMA sudah reconnect duluan ke
-    // `connectionHealthy` — inilah yang bikin koneksi itu "reusable" untuk
-    // Data Usaha ini (§ guard `CONNECTION_DATA_USAHA_MISMATCH` baru).
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planB!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connectionHealthy!.id,
-      dataUsahaId,
-    });
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: planA!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        accurateConnectionId: connectionOld!.id,
-        dataUsahaId,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: sub!.id, connectionId: connectionHealthy!.id, reconnect: true }),
-      }),
-    );
-    expect(res.status).toBe(200);
-    const [updated] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub!.id));
-    expect(updated!.accurateConnectionId).toBe(connectionHealthy!.id);
-  });
-
-  // § security review Fase 114 (Medium, DIPERBAIKI) — `getOwnedConnection`
-  // cuma cek koneksi MILIK user (lintas SEMUA Data Usaha dia), TIDAK cek
-  // koneksi itu sebelumnya dipakai Data Usaha yang SAMA. User dengan >1
-  // Data Usaha (kasus SAH) bisa salah kirim `connectionId` milik Data
-  // Usaha LAIN — WAJIB ditolak, bukan cuma diandalkan filter UI.
-  test("400 CONNECTION_DATA_USAHA_MISMATCH kalau connectionId dipakai Data Usaha LAIN milik user yang sama (bukan Data Usaha subscription target)", async () => {
-    const email = `acc-reuse-mismatch-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connectionOtherDataUsaha] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "777",
-        accurateDbAlias: "PT Data Usaha Lain",
-      })
-      .returning();
-
-    const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
-    const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan Mismatch A ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan Mismatch B ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    // § connectionOtherDataUsaha dipakai Data Usaha B, BUKAN Data Usaha A.
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planB!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connectionOtherDataUsaha!.id,
-      dataUsahaId: dataUsahaB,
-    });
-    const [subA] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: planA!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId: dataUsahaA,
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: subA!.id, connectionId: connectionOtherDataUsaha!.id }),
-      }),
-    );
+describe("GET /accurate/databases", () => {
+  test("404 bukan pemilik; 400 NOT_CONNECTED kalau belum/tidak aktif", async () => {
+    const owner = await newUser("db-owner");
+    const intruder = await newUser("db-intruder");
+    const du = await createTestDataUsaha(owner.userId);
+    expect((await get(intruder.cookie, `/accurate/databases?dataUsahaId=${du}`)).status).toBe(404);
+    const res = await get(owner.cookie, `/accurate/databases?dataUsahaId=${du}`);
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("CONNECTION_DATA_USAHA_MISMATCH");
-
-    const [subARow] = await db.select().from(subscriptions).where(eq(subscriptions.id, subA!.id));
-    expect(subARow!.accurateConnectionId).toBeNull();
-  });
-});
-
-// § security review 2026-09-04 (Medium) — koneksi Accurate BISA dipakai
-// bersama beberapa subscription sejak Fase 14 (ADR-0020). Ganti
-// accurateDbId pada connection yang sudah "ke-set" diam-diam ikut
-// memindahkan tujuan import subscription LAIN yang share koneksi ini —
-// endpoint ini WAJIB tolak, bukan izinkan timpa diam-diam.
-describe("POST /accurate/reuse — cek scope (Fase 142)", () => {
-  async function setup(tag: string, grantedScopes: string[]) {
-    const email = `acc-reuse-scope-${tag}-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "123",
-        accurateDbAlias: "PT Demo",
-        grantedScopes,
-      })
-      .returning();
-    const dataUsahaId = await createTestDataUsaha(userId);
-    const [planA] = await db
-      .insert(plans)
-      .values({ name: `Plan RS A ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planA!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: connection!.id,
-      dataUsahaId,
-    });
-    const [planB] = await db
-      .insert(plans)
-      .values({ name: `Plan RS B ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const [subB] = await db
-      .insert(subscriptions)
-      .values({
-        userId,
-        planId: planB!.id,
-        status: "active",
-        startAt: new Date(),
-        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-        dataUsahaId,
-      })
-      .returning();
-    const reuse = () =>
-      testApp.handle(
-        new Request("http://localhost/accurate/reuse", {
-          method: "POST",
-          headers: { cookie, "Content-Type": "application/json" },
-          body: JSON.stringify({ subscriptionId: subB!.id, connectionId: connection!.id }),
-        }),
-      );
-    return { reuse, subBId: subB!.id };
-  }
-
-  test("409 ACCURATE_SCOPE_MISSING + daftar missing kalau koneksi (scope purchase_invoice) dipakai modul sales_invoice", async () => {
-    const { reuse, subBId } = await setup("kurang", scopesForModules(["purchase_invoice"]));
-    const res = await reuse();
-    expect(res.status).toBe(409);
-    const body = (await res.json()) as { code: string; missing: string[] };
-    expect(body.code).toBe("ACCURATE_SCOPE_MISSING");
-    expect(body.missing).toContain("sales_invoice_save");
-    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, subBId));
-    expect(sub!.accurateConnectionId).toBeNull(); // TIDAK ter-assign kalau scope kurang
+    expect(((await res.json()) as { code: string }).code).toBe("NOT_CONNECTED");
   });
 
-  test("200 kalau koneksi sudah punya SEMUA scope katalog", async () => {
-    const { reuse } = await setup("lengkap", ALL_ACCURATE_SCOPES);
-    expect((await reuse()).status).toBe(200);
+  test("daftar database akun, `used` menandai yang sudah dipakai Data Usaha LAIN pada koneksi yang sama", async () => {
+    const { userId, cookie } = await newUser("db-list");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    const conn = await createTestAccurateConnection(userId, { dataUsahaId: duA, accurateDbId: "10", accurateDbAlias: "PT 10" });
+    await db.update(dataUsaha).set({ accurateConnectionId: conn.id }).where(eq(dataUsaha.id, duB));
+    const res = await withAccurateFetch({ databases: [{ id: 10, alias: "PT 10" }, { id: 11, alias: "PT 11" }] }, () =>
+      get(cookie, `/accurate/databases?dataUsahaId=${duB}`),
+    );
+    const body = (await res.json()) as { databases: { id: number; used: boolean }[] };
+    expect(body.databases.find((d) => d.id === 10)?.used).toBe(true);
+    expect(body.databases.find((d) => d.id === 11)?.used).toBe(false);
   });
 });
 
 describe("POST /accurate/databases/select", () => {
-  test("400 DATABASE_ALREADY_SELECTED kalau connection sudah punya accurateDbId (cegah timpa diam-diam Data Usaha yang di-share subscription lain)", async () => {
-    const email = `acc-select-already-${runId}@test.local`;
-    const userId = await signUp(email);
-    const cookie = await signIn(email);
-
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbId: "111",
-        accurateDbAlias: "PT Sudah Dipilih",
-      })
-      .returning();
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/databases/select", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ connectionId: connection!.id, accurateDbId: 222, alias: "PT Lain" }),
-      }),
-    );
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("DATABASE_ALREADY_SELECTED");
+  test("berhasil: menyimpan database di DATA USAHA (bukan di koneksi)", async () => {
+    const { userId, cookie } = await newUser("sel-ok");
+    const du = await createTestDataUsaha(userId);
+    const conn = await createTestAccurateConnection(userId, { dataUsahaId: du });
+    const res = await withAccurateFetch({}, () => post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 42, alias: "PT Empat Dua" }));
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row).toMatchObject({ accurateDbId: "42", accurateDbAlias: "PT Empat Dua" });
+    const [c] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id));
+    expect(c!.accurateDbId).toBeNull(); // kolom legacy tidak ditulis lagi
   });
 
-  test("400 NOT_CONNECTED kalau connectionId tidak ada/bukan milik user", async () => {
-    const email = `acc-select-notconn-${runId}@test.local`;
-    await signUp(email);
-    const cookie = await signIn(email);
-
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/databases/select", {
-        method: "POST",
-        headers: { cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ connectionId: "00000000-0000-0000-0000-000000000000", accurateDbId: 222, alias: "PT Lain" }),
-      }),
-    );
+  test("400 DATABASE_ALREADY_SELECTED kalau Data Usaha sudah punya database (tidak bisa ganti diam-diam)", async () => {
+    const { userId, cookie } = await newUser("sel-already");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du, accurateDbId: "1", accurateDbAlias: "PT Satu" });
+    const res = await post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 2, alias: "PT Dua" });
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("NOT_CONNECTED");
+    expect(((await res.json()) as { code: string }).code).toBe("DATABASE_ALREADY_SELECTED");
+  });
+
+  test("409 DATABASE_ALREADY_USED kalau database itu sudah dipakai Data Usaha LAIN pada koneksi yang sama", async () => {
+    const { userId, cookie } = await newUser("sel-used");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    const conn = await createTestAccurateConnection(userId, { dataUsahaId: duA, accurateDbId: "9", accurateDbAlias: "PT 9" });
+    await db.update(dataUsaha).set({ accurateConnectionId: conn.id }).where(eq(dataUsaha.id, duB));
+    const res = await withAccurateFetch({}, () => post(cookie, "/accurate/databases/select", { dataUsahaId: duB, accurateDbId: 9, alias: "PT 9" }));
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("DATABASE_ALREADY_USED");
+    const [rowB] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duB));
+    expect(rowB!.accurateDbId).toBeNull();
+  });
+
+  test("502 kalau Accurate menolak membuka database; Data Usaha tidak berubah", async () => {
+    const { userId, cookie } = await newUser("sel-502");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du });
+    const res = await withAccurateFetch({ openDbOk: false }, () => post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 5, alias: "X" }));
+    expect(res.status).toBe(502);
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateDbId).toBeNull();
+  });
+
+  test("404 bukan pemilik; 400 NOT_CONNECTED kalau belum terhubung; 422 alias kepanjangan", async () => {
+    const owner = await newUser("sel-owner");
+    const intruder = await newUser("sel-intruder");
+    const du = await createTestDataUsaha(owner.userId);
+    expect((await post(intruder.cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 1, alias: "X" })).status).toBe(404);
+    const notConnected = await post(owner.cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 1, alias: "X" });
+    expect(notConnected.status).toBe(400);
+    expect(((await notConnected.json()) as { code: string }).code).toBe("NOT_CONNECTED");
+    expect((await post(owner.cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 1, alias: "x".repeat(256) })).status).toBe(422);
   });
 });
 
-// § Fase 110, architecture-user-tambahan.md "Temuan Kritis" #2 — regression
-// test PALING PENTING dari rewrite subscription-gate.ts: member (akses
-// lewat seat) TIDAK BOLEH bisa connect/reuse koneksi Accurate subscription
-// milik Data Usaha yang cuma dia numpang, walau subscription itu MUNCUL di
-// `getAccessibleSubscriptionsWithPlans` (dipakai endpoint lain, § GET
-// /accurate/subscriptions). Endpoint ini WAJIB pakai Owned, bukan Accessible.
-describe("Member TIDAK BISA connect/reuse Accurate (regression Fase 110)", () => {
-  test("404 SUBSCRIPTION_NOT_FOUND — member coba /accurate/connect ke subscription Data Usaha yang cuma dia numpang", async () => {
-    const primaryEmail = `acc-member-connect-primary-${runId}@test.local`;
-    const primaryId = await signUp(primaryEmail);
-    const dataUsahaId = await createTestDataUsaha(primaryId);
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Member Connect ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({ userId: primaryId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
-      .returning();
-
-    const memberEmail = `acc-member-connect-member-${runId}@test.local`;
-    const memberId = await signUp(memberEmail);
-    const memberCookie = await signIn(memberEmail);
-    const seatId = await createTestSeat(primaryId, dataUsahaId);
-    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
-
-    // § pastikan member BENAR dapat akses lewat jalur read-only lain
-    // (Accessible) — kontrolnya beneran soal MUTASI, bukan gagal fetch biasa.
-    const listRes = await testApp.handle(new Request("http://localhost/accurate/subscriptions", { headers: { cookie: memberCookie } }));
-    const listBody = (await listRes.json()) as { subscriptions: { subscriptionId: string }[] };
-    expect(listBody.subscriptions.some((s) => s.subscriptionId === subscription!.id)).toBe(true);
-
-    const res = await postConnect(memberCookie, subscription!.id);
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("SUBSCRIPTION_NOT_FOUND");
+describe("GET /accurate/accounts & POST /accurate/attach — pakai koneksi akun yang ada tanpa OAuth ulang", () => {
+  test("accounts: hanya koneksi AKTIF berakun milik user; koneksi lama/expired/milik orang lain tidak muncul", async () => {
+    const me = await newUser("acct-me");
+    const other = await newUser("acct-other");
+    const good = await createTestAccurateConnection(me.userId);
+    await createTestAccurateConnection(me.userId, { status: "expired" });
+    await createTestAccurateConnection(me.userId, { accurateUserId: null });
+    await createTestAccurateConnection(other.userId);
+    const body = (await (await get(me.cookie, "/accurate/accounts")).json()) as { accounts: { id: string; accountEmail: string | null }[] };
+    expect(body.accounts.map((a) => a.id)).toEqual([good.id]);
+    expect((await get("", "/accurate/accounts")).status).toBe(401);
   });
 
-  test("404 SUBSCRIPTION_NOT_FOUND — member coba /accurate/reuse ke subscription Data Usaha yang cuma dia numpang", async () => {
-    const primaryEmail = `acc-member-reuse-primary-${runId}@test.local`;
-    const primaryId = await signUp(primaryEmail);
-    const dataUsahaId = await createTestDataUsaha(primaryId);
-    const [connection] = await db
-      .insert(accurateConnections)
-      .values({ userId: primaryId, accessTokenEncrypted: "dummy", refreshTokenEncrypted: "dummy", expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000) })
-      .returning();
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Plan Member Reuse ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    const [subscription] = await db
-      .insert(subscriptions)
-      .values({ userId: primaryId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
-      .returning();
+  test("attach: Data Usaha B menunjuk koneksi yang SAMA dengan A (tanpa baris baru), lalu memilih database sendiri", async () => {
+    const { userId, cookie } = await newUser("att-ok");
+    const duA = await createTestDataUsaha(userId, "A");
+    const duB = await createTestDataUsaha(userId, "B");
+    const conn = await createTestAccurateConnection(userId, { dataUsahaId: duA, accurateDbId: "1", accurateDbAlias: "PT 1" });
+    const before = await db.select().from(accurateConnections).where(eq(accurateConnections.userId, userId));
+    const res = await post(cookie, "/accurate/attach", { dataUsahaId: duB, connectionId: conn.id });
+    expect(res.status).toBe(200);
+    expect(await db.select().from(accurateConnections).where(eq(accurateConnections.userId, userId))).toHaveLength(before.length);
+    const [rowB] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duB));
+    expect(rowB!.accurateConnectionId).toBe(conn.id);
+    const sel = await withAccurateFetch({}, () => post(cookie, "/accurate/databases/select", { dataUsahaId: duB, accurateDbId: 2, alias: "PT 2" }));
+    expect(sel.status).toBe(200);
+    // database yang sudah dipakai A ditolak untuk B
+    const dup = await withAccurateFetch({}, () => post(cookie, "/accurate/databases/select", { dataUsahaId: duB, accurateDbId: 1, alias: "PT 1" }));
+    expect([400, 409]).toContain(dup.status); // B sudah punya database → ALREADY_SELECTED (400); DB milik A tetap dilindungi indeks unik
+  });
 
-    const memberEmail = `acc-member-reuse-member-${runId}@test.local`;
-    const memberId = await signUp(memberEmail);
-    const memberCookie = await signIn(memberEmail);
-    const seatId = await createTestSeat(primaryId, dataUsahaId);
-    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+  test("attach: 404 untuk Data Usaha bukan milik user; 404 CONNECTION_NOT_FOUND untuk koneksi orang lain/expired/LAMA", async () => {
+    const me = await newUser("att-guard-me");
+    const other = await newUser("att-guard-other");
+    const du = await createTestDataUsaha(me.userId);
+    const otherDu = await createTestDataUsaha(other.userId);
+    const others = await createTestAccurateConnection(other.userId);
+    const expired = await createTestAccurateConnection(me.userId, { status: "expired" });
+    const legacy = await createTestAccurateConnection(me.userId, { accurateUserId: null });
+    expect((await post(me.cookie, "/accurate/attach", { dataUsahaId: otherDu, connectionId: others.id })).status).toBe(404);
+    for (const conn of [others, expired, legacy]) {
+      const res = await post(me.cookie, "/accurate/attach", { dataUsahaId: du, connectionId: conn.id });
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as { code: string }).code).toBe("CONNECTION_NOT_FOUND");
+    }
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateConnectionId).toBeNull();
+  });
 
-    const res = await testApp.handle(
-      new Request("http://localhost/accurate/reuse", {
-        method: "POST",
-        headers: { cookie: memberCookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ subscriptionId: subscription!.id, connectionId: connection!.id }),
-      }),
-    );
-    expect(res.status).toBe(404);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("SUBSCRIPTION_NOT_FOUND");
+  test("attach: 409 ALREADY_CONNECTED kalau Data Usaha sudah punya koneksi; reconnect:true menggantinya", async () => {
+    const { userId, cookie } = await newUser("att-409");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du });
+    const other = await createTestAccurateConnection(userId);
+    expect((await post(cookie, "/accurate/attach", { dataUsahaId: du, connectionId: other.id })).status).toBe(409);
+    expect((await post(cookie, "/accurate/attach", { dataUsahaId: du, connectionId: other.id, reconnect: true })).status).toBe(200);
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateConnectionId).toBe(other.id);
+  });
+
+  test("attach: database tersimpan yang TIDAK ada di akun itu dikosongkan; yang ada dipertahankan", async () => {
+    const { userId, cookie } = await newUser("att-db");
+    const duKeep = await createTestDataUsaha(userId, "Keep");
+    const duDrop = await createTestDataUsaha(userId, "Drop");
+    await db.update(dataUsaha).set({ accurateDbId: "777", accurateDbAlias: "PT Ada" }).where(eq(dataUsaha.id, duKeep));
+    await db.update(dataUsaha).set({ accurateDbId: "888", accurateDbAlias: "PT Hilang" }).where(eq(dataUsaha.id, duDrop));
+    const conn = await createTestAccurateConnection(userId);
+    await withAccurateFetch({ databases: [{ id: 777, alias: "PT Ada" }] }, async () => {
+      await post(cookie, "/accurate/attach", { dataUsahaId: duKeep, connectionId: conn.id });
+      await post(cookie, "/accurate/attach", { dataUsahaId: duDrop, connectionId: conn.id });
+    });
+    const [keep] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duKeep));
+    const [drop] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duDrop));
+    expect(keep).toMatchObject({ accurateDbId: "777" });
+    expect(drop).toMatchObject({ accurateDbId: null, accurateDbAlias: null });
+  });
+});
+
+describe("validasi input (security review Fase 143)", () => {
+  test("databases/select menolak accurateDbId pecahan/nol/negatif (422)", async () => {
+    const { userId, cookie } = await newUser("val-int");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du });
+    for (const bad of [1.5, 0, -3]) {
+      expect((await post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: bad, alias: "X" })).status).toBe(422);
+    }
+  });
+
+  test("callback menolak query kepanjangan (422)", async () => {
+    const res = await testApp.handle(new Request(`http://localhost/accurate/oauth/callback?code=${"a".repeat(600)}&state=x`));
+    expect(res.status).toBe(422);
   });
 });

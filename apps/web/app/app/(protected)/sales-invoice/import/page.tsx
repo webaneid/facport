@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/page.tsx`
 // (customerNo↔vendorNo, PO Number↔Bill No).
@@ -246,6 +247,7 @@ export default function SalesInvoiceImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Faktur Penjualan dari Excel</h1>
         <p className="text-sm text-muted-foreground">

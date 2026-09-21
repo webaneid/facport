@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-sales-quotation.md, Fase 123 — dokumen PALING AWAL
 // rantai penjualan (proposal/penawaran harga). Customer/Item auto-create
@@ -194,6 +195,7 @@ export default function SalesQuotationImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Sales Quotation</h1>
         <p className="text-sm text-muted-foreground">

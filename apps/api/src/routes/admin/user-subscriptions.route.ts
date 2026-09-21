@@ -49,7 +49,8 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           // atau kapan MULAI-nya — dua-duanya dibutuhkan biar "Detail
           // User" benar-benar berguna buat support (§ komentar file ini).
           durationDays: plans.durationDays,
-          accurateConnectionId: subscriptions.accurateConnectionId,
+          duConnectionId: dataUsaha.accurateConnectionId,
+          duDbAlias: dataUsaha.accurateDbAlias,
           planName: plans.name,
           moduleKey: plans.modules,
           dataUsahaId: dataUsaha.id,
@@ -61,7 +62,8 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
         .where(eq(subscriptions.userId, params.id))
         .orderBy(desc(subscriptions.createdAt));
 
-      const connectionIds = rows.map((r) => r.accurateConnectionId).filter((id): id is string => id !== null);
+      // § Fase 143, ADR-0037 — status koneksi diturunkan dari DATA USAHA subscription ini (bukan pointer subscription).
+      const connectionIds = [...new Set(rows.map((r) => r.duConnectionId).filter((id): id is string => id !== null))];
       const connections = connectionIds.length
         ? await db.select().from(accurateConnections).where(inArray(accurateConnections.id, connectionIds))
         : [];
@@ -70,7 +72,8 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
       return {
         user: { id: targetUser.id, name: targetUser.name, email: targetUser.email },
         subscriptions: rows.map((r) => {
-          const connection = r.accurateConnectionId ? connectionById.get(r.accurateConnectionId) : undefined;
+          const found = r.duConnectionId ? connectionById.get(r.duConnectionId) : undefined;
+          const connection = found?.accurateUserId ? found : undefined; // koneksi lama (tanpa identitas akun) = belum terhubung
           return {
             subscriptionId: r.id,
             status: r.status,
@@ -81,7 +84,7 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
             planName: r.planName,
             connected: connection?.status === "active",
             connectionStatus: connection?.status ?? null,
-            accurateDbAlias: connection?.accurateDbAlias ?? null,
+            accurateDbAlias: r.duDbAlias,
             dataUsahaId: r.dataUsahaId,
             dataUsahaName: r.dataUsahaName,
           };

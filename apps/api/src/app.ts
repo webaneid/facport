@@ -86,6 +86,10 @@ export const app = new Elysia()
   // transfer kepemilikan Data Usaha (`GET/POST /transfers/:token`), sama
   // alasan rate limit `/invites` di atas.
   .use(rateLimitPlugin({ pathPrefix: "/transfers", windowMs: 60_000, max: 20 }))
+  // § security review Fase 143 (Medium) — /accurate/* memanggil Accurate (db-list, open-db, tukar kode) per request dari
+  // user terautentikasi; tanpa batas, bisa menghabiskan kuota Accurate / menggantung. Longgar (halaman koneksi memuat
+  // beberapa endpoint sekaligus), tapi menutup abuse berulang.
+  .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 60 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";

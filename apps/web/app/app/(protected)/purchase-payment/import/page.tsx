@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-purchase-payment.md — aplikasi pembayaran ke Faktur
 // Pembelian yang SUDAH ADA di Accurate (vendor & faktur WAJIB sudah
@@ -135,6 +136,7 @@ export default function PurchasePaymentImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Purchase Payment</h1>
         <p className="text-sm text-muted-foreground">

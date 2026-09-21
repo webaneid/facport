@@ -12,6 +12,8 @@ declare module "bun:test" {
   interface Matchers<T> {
     toBeInTheDocument(): void;
     toHaveAttribute(attr: string, value?: string): void;
+    toHaveTextContent(text: string | RegExp): void;
+    toBeDisabled(): void;
   }
 }
 

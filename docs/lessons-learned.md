@@ -3994,8 +3994,19 @@ spec; `/accurate/connect` selalu meminta semua scope; `granted_scopes` disimpan 
 `insufficient_scope` dikenali. Model koneksi 1-per-akun + migrasi customer → Fase 143-145 (BELUM selesai;
 koneksi lama yang mati baru pulih setelah customer otorisasi ulang).
 
+**Fix bagian 2 (Fase 143, ADR-0036/0037, cutover langsung):** koneksi 1 per AKUN Accurate (`accurate_user_id` unik) dipegang
+Data Usaha (`data_usaha.accurate_connection_id/accurate_db_id`); callback OAuth = upsert atomik, akun milik owner lain
+ditolak; `reuse` dihapus; refresh aman-rotasi (`FOR UPDATE`, hanya `invalid_grant` → expired, lewati batch berjalan);
+transfer memutus koneksi. Utang Low di bawah (token bocor di pesan galat) DITUTUP: `AccurateTokenError` tanpa body mentah.
+Koneksi lama TIDAK dibaca lagi — customer hubungkan ulang sekali (rilis 143+144 satu paket).
+Audit keamanan Fase 143 menemukan celah HIGH baru di alur OAuth: `state` acak TIDAK mengikat flow ke browser (login CSRF /
+account-linking) — callback kini wajib berada di sesi login pemulai flow, dicek SEBELUM tukar kode (penukaran kode mematikan
+token lama). E2E juga menemukan celah rancangan: tanpa `reuse`, Data Usaha kedua dari akun yang sama terpaksa OAuth ulang dan
+mematikan token yang dipakai import Data Usaha lain → `attach`/`accounts`. Pelajaran: (1) setiap callback OAuth tanpa sesi harus
+punya pengikat ke pemulai flow; (2) "tandai koneksi mati" hanya untuk kegagalan autentikasi (401), bukan galat sementara.
+
 **Technical debt (Low, dicatat dari security review Fase 142):**
-- `exchangeCodeForToken`/`refreshAccessToken` (`lib/accurate.ts`) memasukkan `res.text()` ke pesan galat;
+- [DITUTUP Fase 143] `exchangeCodeForToken`/`refreshAccessToken` (`lib/accurate.ts`) memasukkan `res.text()` ke pesan galat;
   Accurate mengembalikan nilai token/kode yang ditolak di `error_description` ("Invalid refresh token: <nilai>").
   Nilainya sudah tidak valid (invalid_grant), tapi masuk log Pino & Sentry — samarkan di Fase 143.
 - Tes `POST /accurate/connect` 503 dulu bergantung urutan (env `ACCURATE_CLIENT_ID` kosong hanya kalau
@@ -4006,4 +4017,19 @@ koneksi lama yang mati baru pulih setelah customer otorisasi ulang).
 **Pencegahan:** modul/endpoint baru WAJIB didaftarkan di `accurate-endpoint-registry.ts` (tes pemindai sumber
 gagal kalau tidak); dilarang membuat alur otorisasi baru; jangan asumsikan perilaku OAuth pihak ketiga —
 buktikan dengan percobaan sebelum merancang model koneksi (Fase 141 mengoreksi rencana "per Data Usaha").
+
+## 2026-09-22 — Callback OAuth terikat sesi menuntut redirect URI lewat proxy di dev; `mock.module` bun bocor antar file
+
+**Konteks (Fase 144):** perbaikan audit Fase 143 (callback OAuth WAJIB satu sesi dengan pemulai flow) aman di production (cookie
+`.facport.com`), tapi di DEV browser memanggil API lewat proxy web sehingga cookie sesi milik `app.localhost` tidak ikut ke
+`localhost:3001` → callback selalu `invalid_state`. **Fix:** `ACCURATE_REDIRECT_URI` dev = `http://app.localhost:6209/api-proxy/accurate/oauth/callback`
+(didaftarkan juga di portal developer Accurate). Terdeteksi dari membaca `apps/web/CLAUDE.md`, BUKAN dari tes — tes API memakai
+`app.handle()` dengan cookie sintetis dan tidak akan pernah menangkap ini.
+
+**Pelajaran tes:** `mock.module` di bun bersifat GLOBAL per proses; dua file tes yang me-mock spesifier yang sama (`next/navigation`)
+saling menimpa dan hasilnya bergantung urutan file (lolos sendirian, gagal digabung). Bungkus dependensi yang di-mock dalam modul
+tipis berspesifier unik (`lib/use-accurate-gate-navigation.ts`) dan mock modul itu.
+
+**Pelajaran UI:** status koneksi harus dihitung per DATA USAHA (bukan per subscription) dan sampai ke UI lewat SATU endpoint
+(`/accurate/gate`); `/accurate/subscriptions` tidak punya baris untuk Data Usaha baru tanpa langganan sehingga tidak bisa jadi dasar gerbang.
 

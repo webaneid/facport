@@ -14,6 +14,7 @@ import { TruncateText } from "@/components/ui/truncate-text";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-accurate-integration.md § 3, § phase-02 doc — upload
 // Excel Purchase Invoice → cocokkan kolom → konfirmasi. § Fase 06,
@@ -249,6 +250,7 @@ export default function PurchaseInvoiceImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Faktur Pembelian dari Excel</h1>
         <p className="text-sm text-muted-foreground">

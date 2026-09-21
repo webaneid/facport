@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-sales-order.md, Fase 137 — kelanjutan LANGSUNG Sales
 // Quotation (client konfirmasi penawaran jadi pesanan resmi).
@@ -137,6 +138,7 @@ export default function SalesOrderImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Sales Order</h1>
         <p className="text-sm text-muted-foreground">

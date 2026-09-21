@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { plans, subscriptions, auditLogs, accurateConnections, memberSeats } from "../../db/schema";
+import { plans, subscriptions, auditLogs, dataUsaha, memberSeats } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
@@ -185,23 +185,25 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         set.status = 404;
         return { code: "SUBSCRIPTION_NOT_FOUND" };
       }
-      if (!existing.accurateConnectionId) {
+      // § Fase 143, ADR-0037 — koneksi dipegang DATA USAHA: memutus di sini berlaku untuk SEMUA subscription di Data
+      // Usaha yang sama. Baris `accurate_connections` TIDAK dihapus (bisa dipakai Data Usaha lain milik akun itu).
+      const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, existing.dataUsahaId));
+      if (!du?.accurateConnectionId) {
         set.status = 400;
         return { code: "NOT_CONNECTED" };
       }
-
-      const [connection] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, existing.accurateConnectionId));
       const [plan] = await db.select().from(plans).where(eq(plans.id, existing.planId));
 
-      await db.update(subscriptions).set({ accurateConnectionId: null }).where(eq(subscriptions.id, params.id));
+      await db.update(dataUsaha).set({ accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, du.id));
 
       await db.insert(auditLogs).values({
         entityType: "subscription",
         entityId: params.id,
         action: "disconnect_accurate",
         changes: {
-          previousConnectionId: existing.accurateConnectionId,
-          previousAccurateDbAlias: connection?.accurateDbAlias ?? null,
+          dataUsahaId: du.id,
+          previousConnectionId: du.accurateConnectionId,
+          previousAccurateDbAlias: du.accurateDbAlias ?? null,
         },
         actorId: user.id,
       });
@@ -210,7 +212,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         userId: existing.userId,
         type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN,
         title: "Koneksi Accurate diputuskan admin",
-        body: `Koneksi Accurate untuk fitur ${plan?.name ?? "langganan kamu"}${connection?.accurateDbAlias ? ` (${connection.accurateDbAlias})` : ""} diputuskan oleh admin — hubungkan ulang untuk lanjut import.`,
+        body: `Koneksi Accurate untuk Data Usaha ${du.name}${du.accurateDbAlias ? ` (${du.accurateDbAlias})` : ""} (fitur ${plan?.name ?? "langganan kamu"}) diputuskan oleh admin — hubungkan ulang untuk lanjut import.`,
         entityType: "subscription",
         entityId: params.id,
       });

@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, uuid, varchar, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { accurateConnections } from "./accurate.schema";
 
@@ -22,10 +23,23 @@ export const dataUsaha = pgTable("data_usaha", {
   name: varchar("name", { length: 200 }).notNull(),
   // nama bebas user, mis. "PT Maju Jaya" — TIDAK harus sama dengan
   // `accurateDbAlias` (yang baru terisi begitu benar-benar connect).
-  accurateConnectionId: uuid("accurate_connection_id").unique().references(() => accurateConnections.id),
-  // NULLABLE — diisi begitu Data Usaha ini terhubung ke Accurate (kapan
-  // pun terjadi). UNIQUE — 1 Data Usaha lokal = maksimal 1 koneksi
-  // Accurate PERMANEN, tidak pernah ganti-ganti diam-diam (§ Keputusan #6).
+  // § Fase 143, ADR-0037 — pointer ke KONEKSI AKUN Accurate yang DIBAGI: banyak Data Usaha milik akun Accurate
+  // yang sama menunjuk baris yang sama (UNIQUE dilepas). NULL = belum terhubung / diputus (transfer
+  // kepemilikan, admin). Koneksi lama (accurate_user_id NULL) TIDAK pernah ditunjuk (cutover).
+  accurateConnectionId: uuid("accurate_connection_id").references(() => accurateConnections.id),
+  // § Fase 143 — database Accurate yang dipakai Data Usaha ini (dulu di `accurate_connections.accurateDbId`,
+  // yang salah tempat: 1 koneksi = 1 akun bisa punya banyak database). Backfill migrasi 0028 mengisi "database
+  // terakhir diketahui" dari koneksi lama TANPA pointer koneksi — UI wajib minta konfirmasi saat hubungkan ulang.
+  accurateDbId: varchar("accurate_db_id", { length: 100 }),
+  accurateDbAlias: varchar("accurate_db_alias", { length: 255 }),
+  // § Fase 144 — kapan pemilik memilih/MENGONFIRMASI database ini. NULL = "database terakhir diketahui" hasil backfill 0028
+  // (belum diverifikasi manusia) → gerbang koneksi meminta konfirmasi (`confirm_database`). Diisi `databases/select` & `confirm`.
+  accurateDbConfirmedAt: timestamp("accurate_db_confirmed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  // 1 database Accurate ↔ 1 Data Usaha (ADR-0036 #1, ADR-0037 #3). Parsial: baris yang belum/tidak terhubung bebas.
+  uniqueIndex("data_usaha_connection_db_uidx")
+    .on(t.accurateConnectionId, t.accurateDbId)
+    .where(sql`${t.accurateConnectionId} IS NOT NULL AND ${t.accurateDbId} IS NOT NULL`),
+]);

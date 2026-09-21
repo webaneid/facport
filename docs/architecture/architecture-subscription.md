@@ -288,7 +288,12 @@ sisa hari trialnya.
   kecil — beberapa baris ekstra trial gratis — bukan celah keamanan/data
   breach), didokumentasikan di sini alih-alih ditutup sekarang.
 
-## Koneksi Accurate — Reusable Lintas Subscription (Fase 14, ADR-0020)
+## Koneksi Accurate — Reusable Lintas Subscription (Fase 14, ADR-0020) — **DIGANTIKAN Fase 143 (ADR-0037)**
+> **⚠️ Bagian di bawah ini histori.** Sejak Fase 143 koneksi Accurate 1 per AKUN Accurate dan dipegang **Data Usaha**
+> (`data_usaha.accurate_connection_id` + `accurate_db_id`), BUKAN `subscriptions.accurateConnectionId` (dibekukan);
+> endpoint `POST /accurate/reuse` dihapus (berbagi otomatis per akun). Aturan berlaku sekarang →
+> `architecture-accurate-integration.md` § 1 "Aturan Bisnis — 1 Koneksi per AKUN Accurate".
+
 > Supersede poin 3 ADR-0009. `accurate_connections` SEKARANG berelasi ke
 > `users` (bukan ke `subscriptions` lagi, dan BUKAN unique — 1 user boleh
 > punya banyak connection, 1 per Data Usaha berbeda). `subscriptions.accurateConnectionId`

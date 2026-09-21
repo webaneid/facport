@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-item-transfer.md, Fase 134 — Pindah Gudang, panggil API
 // yang SAMA dengan modul kembaran "Item Requisition". TIDAK auto-create
@@ -119,6 +120,7 @@ export default function ItemTransferImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Item Transfer</h1>
         <p className="text-sm text-muted-foreground">

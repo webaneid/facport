@@ -133,3 +133,51 @@ body {
   color: var(--admin-ink);
   font-family: var(--font-sans);
 }
+
+/* § Fase 144, docs/architecture/architecture-accurate-connect-gate.md — varian "glass" untuk Dialog (popup gerbang koneksi
+   Accurate). Kaca-transparan: latar dashboard tetap samar di belakang kartu. Fallback WAJIB: browser tanpa backdrop-filter
+   dan pengguna `prefers-reduced-transparency` mendapat kartu hampir-opak (tetap terbaca); animasi masuk dimatikan pada
+   `prefers-reduced-motion`. Warna tepi/aksen memakai token primary yang sama dengan tombol. */
+.glass-overlay {
+  background: rgba(16, 24, 40, 0.28);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+.glass-card {
+  background: rgba(255, 255, 255, 0.62);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 30px 80px rgba(16, 24, 40, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.85);
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass-overlay { background: rgba(16, 24, 40, 0.5); }
+  .glass-card { background: rgba(255, 255, 255, 0.96); }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .glass-overlay { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(16, 24, 40, 0.5); }
+  .glass-card { -webkit-backdrop-filter: none; backdrop-filter: none; background: rgba(255, 255, 255, 0.98); }
+}
+@keyframes glass-in {
+  from { opacity: 0; transform: translate(-50%, -48%) scale(0.98); }
+  to { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .glass-card { animation: glass-in 0.22s ease-out; }
+}
+/* Mobile: kartu jadi sheet penuh lebar menempel di bawah layar. */
+@media (max-width: 639px) {
+  .glass-card {
+    top: auto !important;
+    bottom: 0;
+    left: 0 !important;
+    max-width: 100% !important;
+    width: 100%;
+    transform: none !important;
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    animation: none;
+  }
+}

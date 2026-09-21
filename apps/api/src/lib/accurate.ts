@@ -26,6 +26,15 @@ export class AccurateApiError extends Error {
 // § Fase 141 E6 (TERBUKTI, akun DEV) — scope OAuth kurang → HTTP 403 dengan body XML (BUKAN envelope
 // {s,d}): `<InsufficientScopeException><error>insufficient_scope</error>...<scope>nama</scope>`.
 // Dulu jatuh ke galat generik "non-JSON"/"HTTP 403" tanpa tahu scope apa yang kurang.
+/**
+ * Kegagalan yang berarti TOKEN mati/ditolak (HTTP 401) — satu-satunya alasan menandai koneksi `expired`. Galat jaringan,
+ * timeout, 5xx, atau penolakan logis (mis. "Masa ujicoba database sudah berakhir", `s:false` dengan HTTP 500) BUKAN
+ * berarti koneksi mati dan tidak boleh memutus koneksi + menotifikasi semua Data Usaha yang memakainya.
+ */
+export function isAccurateAuthFailure(err: unknown): boolean {
+  return err instanceof AccurateApiError && err.httpStatus === 401;
+}
+
 export class AccurateScopeError extends AccurateApiError {
   constructor(public missingScope: string | null) {
     super(
@@ -154,6 +163,43 @@ function basicAuthHeader(): string {
   return `Basic ${Buffer.from(`${env.ACCURATE_CLIENT_ID}:${env.ACCURATE_CLIENT_SECRET}`).toString("base64")}`;
 }
 
+const TOKEN_TIMEOUT_MS = 15_000;
+// § security review Fase 143 (Medium) — panggilan account API (db-list/open-db) di jalur request & worker tanpa batas waktu
+// bisa menggantung; galat timeout = SEMENTARA (bukan token mati, lihat isAccurateAuthFailure).
+const ACCOUNT_API_TIMEOUT_MS = 15_000;
+
+/**
+ * § Fase 143, ADR-0036 #5 — galat endpoint token BERTIPE. `code` = field `error` OAuth (mis. `invalid_grant`).
+ * Pesan SENGAJA tidak memuat body mentah: Accurate menaruh nilai token/kode yang ditolak di `error_description`
+ * ("Invalid refresh token: <nilai>"), yang tadinya ikut masuk log Pino & Sentry.
+ */
+export class AccurateTokenError extends Error {
+  constructor(
+    public operation: "exchange" | "refresh",
+    public httpStatus: number,
+    public code: string | null,
+  ) {
+    super(`Accurate token ${operation} gagal: HTTP ${httpStatus}${code ? ` (${code})` : ""}`);
+    this.name = "AccurateTokenError";
+  }
+
+  /** Refresh token ditolak PERMANEN (kedaluwarsa / sudah dipakai / dibatalkan otorisasi baru). Koneksi mati. */
+  get isInvalidGrant(): boolean {
+    return this.code === "invalid_grant";
+  }
+}
+
+async function accurateTokenError(operation: "exchange" | "refresh", res: Response): Promise<AccurateTokenError> {
+  let code: string | null = null;
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error === "string" && /^[a-z_]{1,50}$/.test(body.error)) code = body.error;
+  } catch {
+    // body non-JSON: code tetap null
+  }
+  return new AccurateTokenError(operation, res.status, code);
+}
+
 export async function exchangeCodeForToken(code: string): Promise<AccurateTokenResponse> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -166,10 +212,9 @@ export async function exchangeCodeForToken(code: string): Promise<AccurateTokenR
       code,
       redirect_uri: env.ACCURATE_REDIRECT_URI,
     }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    throw new Error(`Accurate token exchange gagal: ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok) throw await accurateTokenError("exchange", res);
   return res.json() as Promise<AccurateTokenResponse>;
 }
 
@@ -181,10 +226,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<Accurate
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    throw new Error(`Accurate token refresh gagal: ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok) throw await accurateTokenError("refresh", res);
   return res.json() as Promise<AccurateTokenResponse>;
 }
 
@@ -202,6 +246,7 @@ export type AccurateDatabase = {
 export async function listDatabases(accessToken: string): Promise<AccurateDatabase[]> {
   const res = await fetch(`${ACCOUNT_API_BASE}/db-list.do`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(ACCOUNT_API_TIMEOUT_MS),
   });
   return parseAccurateEnvelope<AccurateDatabase[]>(res);
 }
@@ -225,6 +270,7 @@ export type AccurateSession = {
 export async function openDatabase(accessToken: string, dbId: number): Promise<AccurateSession> {
   const res = await fetch(`${ACCOUNT_API_BASE}/open-db.do?${new URLSearchParams({ id: String(dbId) })}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(ACCOUNT_API_TIMEOUT_MS),
   });
   const body = (await res.json()) as { s: boolean; d?: unknown } & Partial<AccurateSession>;
   if (!res.ok || body.s === false || !body.session || !body.host) {

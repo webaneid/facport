@@ -7,7 +7,8 @@ import { logger } from "./logger";
 import { decrypt } from "./encryption";
 import { getApprovedScopes } from "./accurate";
 import { scopesForModules } from "./accurate-scopes";
-import { accurateConnections, subscriptions } from "../db/schema";
+import { accurateConnections } from "../db/schema";
+import { resolveConnectionForSubscription } from "./accurate-connection";
 
 type Connection = typeof accurateConnections.$inferSelect;
 
@@ -43,13 +44,9 @@ export async function checkConnectionScopes(connection: Connection, moduleKeys: 
   return missing.length === 0 ? { ok: true } : { ok: false, missing };
 }
 
-/** Cek untuk subscription: koneksi yang SEKARANG dipakai subscription itu. Belum terhubung → ok (bukan urusan scope). */
+/** Cek untuk subscription: koneksi milik Data Usaha-nya (ADR-0037). Belum terhubung → ok (bukan urusan scope). */
 export async function checkSubscriptionScopes(subscriptionId: string, moduleKey: string): Promise<ScopeCheck> {
-  const [row] = await db
-    .select({ connection: accurateConnections })
-    .from(subscriptions)
-    .innerJoin(accurateConnections, eq(accurateConnections.id, subscriptions.accurateConnectionId))
-    .where(eq(subscriptions.id, subscriptionId));
-  if (!row) return { ok: true };
-  return checkConnectionScopes(row.connection, [moduleKey]);
+  const resolved = await resolveConnectionForSubscription(subscriptionId);
+  if (!resolved?.connection) return { ok: true };
+  return checkConnectionScopes(resolved.connection, [moduleKey]);
 }

@@ -11,6 +11,8 @@ import { api } from "@/lib/api-client";
 // nama" seperti `cancel-import-dialog.tsx`) — disengaja: risikonya lebih
 // rendah & gampang dipulihkan (customer tinggal "Hubungkan Ulang", § Fase
 // 91), beda dari Batal Import yang menghapus data permanen di Accurate.
+// § Fase 144 (ADR-0037) — koneksi dipegang DATA USAHA: memutus dari baris subscription mana pun memutus SEMUA fitur di Data
+// Usaha itu (salinan di bawah harus jujur soal ini).
 type DisconnectableSubscription = { subscriptionId: string; planName: string; accurateDbAlias: string | null };
 
 export function DisconnectAccurateDialog({
@@ -31,7 +33,7 @@ export function DisconnectAccurateDialog({
       toast.error("Gagal memutuskan koneksi — coba lagi.");
       return;
     }
-    toast.success(`Koneksi Accurate untuk "${subscription.planName}" diputuskan — user akan diberi tahu untuk menghubungkan ulang.`);
+    toast.success(`Koneksi Accurate Data Usaha tempat "${subscription.planName}" berada diputuskan — user akan diberi tahu untuk menghubungkan ulang.`);
     setOpen(false);
     onDisconnected();
   }
@@ -51,14 +53,16 @@ export function DisconnectAccurateDialog({
         <DialogTitle>Putuskan Koneksi Accurate</DialogTitle>
         <div className="mt-3 flex flex-col gap-3 text-sm">
           <p className="text-muted-foreground">
-            Ini akan memutuskan koneksi Accurate untuk fitur <strong className="text-foreground">{subscription.planName}</strong>
+            Ini akan memutuskan koneksi Accurate untuk <strong className="text-foreground">seluruh Data Usaha</strong> tempat fitur{" "}
+            <strong className="text-foreground">{subscription.planName}</strong> berada
             {subscription.accurateDbAlias && (
               <>
                 {" "}
-                (Data Usaha: <strong className="text-foreground">{subscription.accurateDbAlias}</strong>)
+                (database: <strong className="text-foreground">{subscription.accurateDbAlias}</strong>)
               </>
             )}
-            . User tidak akan bisa import lagi sampai menghubungkan ulang sendiri dari halaman koneksi mereka.
+            , jadi SEMUA fitur di Data Usaha itu ikut terputus. User tidak akan bisa import lagi sampai menghubungkan ulang sendiri dari popup
+            koneksi di dashboard mereka.
           </p>
           <p className="text-muted-foreground">User akan diberi notifikasi otomatis supaya tahu harus menghubungkan ulang.</p>
           <Button onClick={handleConfirm} disabled={submitting} className="self-end bg-destructive hover:bg-destructive/90">

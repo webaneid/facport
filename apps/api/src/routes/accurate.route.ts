@@ -1,13 +1,16 @@
 import { Elysia, t } from "elysia";
-import { eq, and, inArray } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { accurateConnections, subscriptions } from "../db/schema";
+import { accurateConnections, dataUsaha, importBatches, importBatchRows, subscriptions } from "../db/schema";
+import { auth } from "../lib/auth";
 import { permissionPlugin } from "../lib/permission";
-import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
-import { hasAccessToDataUsaha } from "../lib/data-usaha";
+import { getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
+import { hasAccessToDataUsaha, ownsDataUsaha } from "../lib/data-usaha";
 import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase, parseGrantedScopes } from "../lib/accurate";
 import { ALL_ACCURATE_SCOPES } from "../lib/accurate-scopes";
-import { checkConnectionScopes } from "../lib/accurate-scope-check";
+import { missingScopes } from "../lib/accurate-scope-check";
+import { resolveConnectionForDataUsaha } from "../lib/accurate-connection";
+import { computeAccurateGate } from "../lib/accurate-gate";
 import { createState, consumeState } from "../lib/oauth-state";
 import { encrypt, decrypt } from "../lib/encryption";
 import { env } from "../lib/env";
@@ -19,94 +22,92 @@ function getAppOrigin(): string {
   return env.APP_ORIGIN_PROD || "http://app.localhost:6209";
 }
 
-// § security review 2026-09-04 (Low) — WAJIB filter `status: "active"`
-// juga, bukan cuma ownership. Tanpa ini, connectionId lama yang sudah
-// "expired"/"revoked" tetap bisa di-reuse/dipakai pilih Data Usaha
-// (assign sukses di DB), baru gagal belakangan pas worker pakai token-nya
-// yang sudah tidak valid — gap validasi state, bukan celah lintas-user.
-async function getOwnedConnection(userId: string, connectionId: string) {
-  const [connection] = await db
-    .select()
-    .from(accurateConnections)
-    .where(
-      and(eq(accurateConnections.id, connectionId), eq(accurateConnections.userId, userId), eq(accurateConnections.status, "active")),
-    );
-  return connection ?? null;
+// § Fase 143, ADR-0036/ADR-0037 — MODEL KONEKSI BARU. 1 koneksi = 1 AKUN Accurate (kunci `accurate_user_id`,
+// unik global), dibagi semua Data Usaha milik akun itu; Data Usaha menyimpan pointer koneksi + database yang dipilih
+// (`data_usaha.accurate_connection_id/accurate_db_id`). Terbukti Fase 141 E2: otorisasi baru untuk akun yang sama
+// mematikan token lama, jadi TIDAK PERNAH ada baris kedua untuk akun yang sama — callback = upsert. Endpoint `reuse`
+// (Fase 14) dihapus: berbagi terjadi otomatis lewat akun yang sama. Semua endpoint di sini owner-only per Data Usaha
+// kecuali yang read-only (Accessible: member seat boleh lihat status).
+
+// § Cek pemilik + koneksi AKTIF milik Data Usaha. `null` → pemanggil balas kode error yang sesuai.
+async function getOwnedActiveConnection(userId: string, dataUsahaId: string) {
+  if (!(await ownsDataUsaha(userId, dataUsahaId))) return { error: "DATA_USAHA_NOT_FOUND" as const };
+  const resolved = await resolveConnectionForDataUsaha(dataUsahaId);
+  if (!resolved?.connection || resolved.connection.status !== "active") return { error: "NOT_CONNECTED" as const };
+  return { resolved, connection: resolved.connection };
 }
 
-// § Fase 14, ADR-0020 — koneksi SEKARANG milik user (bukan 1:1 ke
-// subscription lagi), reusable lintas subscription/modul yang Data
-// Usaha-nya sama. Route ini dirombak total dari versi sebelum Fase 14
-// (yang asumsi 1 user = 1 subscription aktif = 1 koneksi tunggal).
+// Arahkan Data Usaha ke koneksi akun (dipakai callback OAuth DAN `attach`). Database yang sudah tersimpan di Data Usaha
+// (hasil backfill / koneksi sebelumnya) DIPERTAHANKAN hanya kalau ada di akun ini (`db-list.do`), kalau tidak DIKOSONGKAN
+// supaya user memilih ulang (bukan import diam-diam gagal/salah tujuan). UPDATE menyertakan `userId` pemilik: kepemilikan
+// bisa berpindah (transfer) di sela pemeriksaan awal & sini (§ security review Fase 143, Low) — `false` = tidak ada baris
+// yang diubah (bukan pemilik lagi).
+async function pointDataUsahaToConnection(dataUsahaId: string, ownerId: string, connectionId: string, accessToken: string): Promise<boolean> {
+  const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+  let keepDb = !!du?.accurateDbId;
+  if (du?.accurateDbId) {
+    try {
+      const databases = await listDatabases(accessToken);
+      keepDb = databases.some((d) => String(d.id) === du.accurateDbId);
+    } catch (err) {
+      logger.warn({ err }, "Gagal verifikasi database tersimpan di akun Accurate, dipertahankan apa adanya");
+    }
+  }
+  const updated = await db
+    .update(dataUsaha)
+    .set({ accurateConnectionId: connectionId, ...(keepDb ? {} : { accurateDbId: null, accurateDbAlias: null, accurateDbConfirmedAt: null }), updatedAt: new Date() })
+    .where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, ownerId)))
+    .returning({ id: dataUsaha.id });
+  return updated.length > 0;
+}
+
 export const accurateRoute = new Elysia()
   .use(permissionPlugin)
-  // § ganti GET /accurate/status lama (1 status tunggal) — sekarang 1
-  // baris per subscription/modul aktif user, masing-masing status
-  // koneksinya sendiri. Dipakai halaman /accurate render daftar per modul.
+  // Status koneksi per subscription/modul aktif (bentuk respons dipertahankan dari model lama supaya web tetap
+  // jalan), tapi DITURUNKAN dari Data Usaha subscription itu: semua modul di 1 Data Usaha menampilkan koneksi &
+  // database yang sama. `missingScopes`: null = scope koneksi belum diketahui (baris lama); [] = lengkap.
   .get(
     "/accurate/subscriptions",
     async ({ user, query }) => {
-      // § Fase 110 — Accessible (bukan Owned): read-only, member BOLEH lihat
-      // status koneksi modul yang dia numpang pakai (bukan cuma pemilik).
+      // § Fase 110 — Accessible (bukan Owned): read-only, member BOLEH lihat status koneksi.
       const allActiveSubs = await getAccessibleSubscriptionsWithPlans(user.id);
-      // § Fase 113 — `dataUsahaId` OPSIONAL, sama alasan `GET /me/subscriptions`
-      // (subscriptions.route.ts): cuma narrowing dari union yang sudah
-      // access-controlled, dibiarkan opsional untuk jaga kompatibilitas
-      // pemanggil yang mungkin masih butuh union (saat ini tidak ada, tapi
-      // konsisten dengan endpoint kembarannya).
       const activeSubs = query.dataUsahaId ? allActiveSubs.filter((s) => s.subscription.dataUsahaId === query.dataUsahaId) : allActiveSubs;
-      const connectionIds = activeSubs
-        .map((s) => s.subscription.accurateConnectionId)
-        .filter((id): id is string => id !== null);
-      const connections = connectionIds.length
-        ? await db.select().from(accurateConnections).where(inArray(accurateConnections.id, connectionIds))
+      const dataUsahaIds = [...new Set(activeSubs.map((s) => s.subscription.dataUsahaId))];
+      const rows = dataUsahaIds.length
+        ? await db
+            .select({ du: dataUsaha, connection: accurateConnections })
+            .from(dataUsaha)
+            .leftJoin(accurateConnections, eq(accurateConnections.id, dataUsaha.accurateConnectionId))
+            .where(inArray(dataUsaha.id, dataUsahaIds))
         : [];
-      const connectionById = new Map(connections.map((c) => [c.id, c]));
+      const byDataUsaha = new Map(rows.map((r) => [r.du.id, r]));
 
       return {
         subscriptions: activeSubs.map(({ subscription, plan }) => {
-          const connection = subscription.accurateConnectionId ? connectionById.get(subscription.accurateConnectionId) : undefined;
+          const row = byDataUsaha.get(subscription.dataUsahaId);
+          // Cutover (ADR-0037 #1): koneksi tanpa identitas akun = koneksi LAMA → dianggap belum terhubung.
+          const connection = row?.connection && row.connection.accurateUserId ? row.connection : null;
           return {
             subscriptionId: subscription.id,
             moduleKey: plan.modules[0] ?? null,
             planName: plan.name,
-            // § Fase 91 (2026-09-10, BUG DITEMUKAN & DIPERBAIKI) — SEBELUM
-            // ini `connected` cuma cek "ada baris koneksi", BUKAN cek
-            // statusnya — koneksi yang sudah ditandai `expired` (§
-            // `markConnectionExpired`, workers/index.ts) tetap dilaporkan
-            // "Terhubung" ke frontend, padahal tokennya sudah mati.
-            // `connectionStatus` BARU ditambah supaya frontend bisa
-            // bedakan "sehat" vs "ada tapi bermasalah" vs "belum ada
-            // sama sekali", bukan cuma boolean biner.
+            // § Fase 91 — `connected` HANYA kalau status "active"; `connectionStatus` membedakan "sehat" /
+            // "ada tapi bermasalah" / "belum ada".
             connected: connection?.status === "active",
             connectionStatus: connection?.status ?? null,
-            accurateConnectionId: subscription.accurateConnectionId,
-            accurateDbId: connection?.accurateDbId ?? null,
-            accurateDbAlias: connection?.accurateDbAlias ?? null,
+            accurateConnectionId: connection?.id ?? null,
+            accurateDbId: row?.du.accurateDbId ?? null,
+            accurateDbAlias: row?.du.accurateDbAlias ?? null,
+            missingScopes: connection?.grantedScopes ? missingScopes(connection.grantedScopes, plan.modules) : null,
           };
         }),
       };
     },
     { auth: true, query: t.Object({ dataUsahaId: t.Optional(t.String({ format: "uuid" })) }) },
   )
-  // § daftar koneksi EXISTING milik user — sumber dropdown "pakai koneksi
-  // yang sudah ada" di halaman /accurate. `dataUsahaId` WAJIB (Fase 113,
-  // beda dari `/accurate/subscriptions` di atas) — cuma 1 pemanggil
-  // (halaman itu sendiri, sedang diperbaiki bareng fase ini), dan tujuan
-  // endpoint ini MEMANG "koneksi yang bisa dipakai untuk Data Usaha X"
-  // (reuse), jadi tidak masuk akal punya mode "tanpa Data Usaha".
-  // Koneksi tidak punya kolom `dataUsahaId` langsung — di-join lewat
-  // `subscriptions.accurateConnectionId` (tiap koneksi pasti sudah
-  // ter-assign ke minimal 1 subscription sejak dibuat, lihat callback
-  // OAuth di bawah). `Map` dedupe karena 1 koneksi bisa dipakai >1
-  // subscription pada Data Usaha yang sama (reuse berulang).
-  // § security review Fase 113 (Medium, DIPERBAIKI) — `accurateConnections.userId`
-  // DIBEKUKAN ke user yang OAuth pertama kali, TIDAK ikut berubah saat
-  // kepemilikan Data Usaha ditransfer. `hasAccessToDataUsaha` WAJIB dicek
-  // dulu, sama alasan `GET /me/stats`/`GET /me/import-batches`
-  // (me.route.ts) — mantan pemilik yang sudah kehilangan akses TIDAK
-  // boleh tetap lihat metadata koneksi (bisa jadi company Accurate yang
-  // MASIH aktif dipakai pemilik baru).
+  // Koneksi milik Data Usaha yang diminta (0 atau 1 elemen; bentuk daftar dipertahankan untuk web). Baca-saja:
+  // `hasAccessToDataUsaha` (pemilik SEKARANG atau member seat aktif) WAJIB dulu — `accurate_connections.userId`
+  // dibekukan ke user yang OAuth pertama (§ security review Fase 113), bukan bukti akses sekarang.
   .get(
     "/accurate/connections",
     async ({ user, query, set }) => {
@@ -114,55 +115,33 @@ export const accurateRoute = new Elysia()
         set.status = 404;
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
-      const rows = await db
-        .select({ connection: accurateConnections })
-        .from(accurateConnections)
-        .innerJoin(subscriptions, eq(subscriptions.accurateConnectionId, accurateConnections.id))
-        .where(
-          and(
-            eq(accurateConnections.userId, user.id),
-            eq(accurateConnections.status, "active"),
-            eq(subscriptions.dataUsahaId, query.dataUsahaId),
-          ),
-        );
-      const connectionById = new Map(rows.map((r) => [r.connection.id, r.connection]));
-      return {
-        connections: [...connectionById.values()].map((c) => ({ id: c.id, accurateDbId: c.accurateDbId, accurateDbAlias: c.accurateDbAlias })),
-      };
+      const resolved = await resolveConnectionForDataUsaha(query.dataUsahaId);
+      const connection = resolved?.connection;
+      if (!resolved || !connection || connection.status !== "active") return { connections: [] };
+      return { connections: [{ id: connection.id, accurateDbId: resolved.accurateDbId, accurateDbAlias: resolved.accurateDbAlias }] };
     },
     { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
   )
+  // Memulai OAuth untuk 1 Data Usaha. Owner-only.
   .post(
     "/accurate/connect",
     async ({ user, body, set }) => {
-      // § Fase 110 — WAJIB Owned (bukan Accessible): ini MENGUBAH konfigurasi
-      // integrasi (bikin/timpa koneksi Accurate) — member (akses lewat seat)
-      // TIDAK BOLEH pernah lolos di sini, cuma pemilik Data Usaha yang boleh.
-      const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
-      const target = activeSubs.find((s) => s.subscription.id === body.subscriptionId);
-      if (!target) {
+      const dataUsahaId = body.dataUsahaId;
+      if (!(await ownsDataUsaha(user.id, dataUsahaId))) {
         set.status = 404;
-        return { code: "SUBSCRIPTION_NOT_FOUND" };
+        return { code: "DATA_USAHA_NOT_FOUND" };
       }
-      // § Fase 91 (2026-09-10) — gap ditemukan/dicatat sejak Fase 01/04
-      // ("tombol Hubungkan Ulang BELUM dibangun"): endpoint ini dulu
-      // SELALU tolak 409 kalau subscription sudah punya `accurateConnectionId`,
-      // padahal koneksi itu bisa saja SUDAH MATI (revoked di sisi
-      // Accurate, § `markConnectionExpired`) — user tidak punya cara
-      // self-service memperbaikinya dari UI. `body.reconnect: true`
-      // (dikirim tombol "Hubungkan Ulang" BARU di halaman /accurate)
-      // melewati guard ini secara EKSPLISIT — callback OAuth di bawah
-      // SUDAH aman menimpa `accurateConnectionId` lama dengan koneksi
-      // baru (unconditional overwrite, tidak berubah).
-      if (target.subscription.accurateConnectionId && !body.reconnect) {
+
+      // § Fase 91 — `reconnect: true` (tombol "Hubungkan Ulang") melewati guard ini secara EKSPLISIT.
+      const current = await resolveConnectionForDataUsaha(dataUsahaId);
+      if (current?.connection && !body.reconnect) {
         set.status = 409;
         return { code: "ALREADY_CONNECTED" };
       }
 
-      const state = createState(target.subscription.id);
-      // § Fase 142, ADR-0036 #2 — SELALU minta SEMUA scope katalog, BUKAN scope modul ini saja.
-      // Terbukti (Fase 141 E2): otorisasi baru untuk akun Accurate yang sama mematikan token lama dan
-      // MENGGANTI seluruh scope — otorisasi "sempit" per modul membuat modul lain kehilangan izin.
+      const state = createState({ userId: user.id, dataUsahaId });
+      // § Fase 142, ADR-0036 #2 — SELALU minta SEMUA scope katalog: otorisasi baru untuk akun yang sama mematikan
+      // token lama dan MENGGANTI seluruh scope (Fase 141 E2), jadi tidak boleh ada otorisasi "sempit" per modul.
       try {
         return { authorizeUrl: getAuthorizeUrl(state, ALL_ACCURATE_SCOPES) };
       } catch (err) {
@@ -171,187 +150,284 @@ export const accurateRoute = new Elysia()
         return { code: "ACCURATE_NOT_CONFIGURED" };
       }
     },
-    { auth: true, body: t.Object({ subscriptionId: t.String({ format: "uuid" }), reconnect: t.Optional(t.Boolean()) }) },
+    {
+      auth: true,
+      body: t.Object({ dataUsahaId: t.String({ format: "uuid" }), reconnect: t.Optional(t.Boolean()) }),
+    },
   )
+  // Callback OAuth (tanpa sesi login — redirect dari Accurate). UPSERT berkunci `accurate_user_id` (respons token
+  // `user.id`): akun yang sama → perbarui baris yang sama (token lama sudah mati di sisi Accurate); akun milik
+  // pemilik Facport LAIN → ditolak (kalau tidak, otorisasi B diam-diam mematikan koneksi A).
   .get(
     "/accurate/oauth/callback",
-    async ({ query, redirect }) => {
+    async ({ query, redirect, request }) => {
       const appOrigin = getAppOrigin();
 
       if (query.error) {
-        return redirect(`${appOrigin}/accurate?error=${encodeURIComponent(query.error)}`);
+        return redirect(`${appOrigin}/?accurate_error=${encodeURIComponent(query.error)}`);
       }
 
-      const subscriptionId = query.state ? consumeState(query.state) : null;
-      if (!subscriptionId || !query.code) {
-        return redirect(`${appOrigin}/accurate?error=invalid_state`);
+      const context = query.state ? consumeState(query.state) : null;
+      if (!context || !query.code) {
+        return redirect(`${appOrigin}/?accurate_error=invalid_state`);
+      }
+
+      // § security review Fase 143 (HIGH, login CSRF/account-linking) — `state` acak saja tidak mengikat flow ke BROWSER
+      // yang memulainya: penyerang bisa menyodorkan `authorizeUrl`-nya ke korban, dan akun Accurate korban akan
+      // tersambung ke Data Usaha penyerang. Callback WAJIB berada di sesi login yang SAMA dengan pemulai flow
+      // (cookie sesi ikut terkirim pada navigasi top-level dari Accurate; production: cross-subdomain, dev: host `localhost`).
+      // Diperiksa SEBELUM tukar kode: penukaran kode sendiri mematikan token lama akun itu (Fase 141 E2).
+      const session = await auth.api.getSession({ headers: request.headers });
+      if (!session || session.user.id !== context.userId) {
+        logger.warn({ hasSession: !!session }, "Accurate OAuth callback: sesi tidak cocok dengan pemulai flow");
+        return redirect(`${appOrigin}/?accurate_error=invalid_state`);
       }
 
       try {
-        const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
-        if (!subscription) return redirect(`${appOrigin}/accurate?error=invalid_state`);
+        // Kepemilikan Data Usaha bisa berubah sejak OAuth dimulai (transfer) — cek ulang di sini.
+        if (!(await ownsDataUsaha(context.userId, context.dataUsahaId))) {
+          return redirect(`${appOrigin}/?accurate_error=invalid_state`);
+        }
 
         const token = await exchangeCodeForToken(query.code);
-        // § Fase 14 — bikin connection baru milik USER (bukan subscription
-        // lagi), baru assign ke subscription yang menginisiasi OAuth ini.
+        const accurateUserId = token.user?.id != null ? String(token.user.id) : null;
+        if (!accurateUserId) {
+          // Tanpa identitas akun koneksi tak bisa dikunci per akun — jangan membuat baris yatim.
+          logger.error("Accurate OAuth callback: respons token tanpa user.id");
+          return redirect(`${appOrigin}/?accurate_error=missing_account`);
+        }
+
+        const values = {
+          accessTokenEncrypted: encrypt(token.access_token),
+          refreshTokenEncrypted: encrypt(token.refresh_token),
+          expiresAt: new Date(Date.now() + token.expires_in * 1000),
+          status: "active",
+          grantedScopes: parseGrantedScopes(token.scope),
+          accurateUserEmail: token.user?.email ?? null,
+          updatedAt: new Date(),
+        };
+        // Atomik: INSERT baru, atau UPDATE HANYA kalau baris itu milik user yang sama (`setWhere`). Akun milik
+        // user lain → tidak ada baris yang dikembalikan → ditolak.
         const [connection] = await db
           .insert(accurateConnections)
-          .values({
-            userId: subscription.userId,
-            accessTokenEncrypted: encrypt(token.access_token),
-            refreshTokenEncrypted: encrypt(token.refresh_token),
-            expiresAt: new Date(Date.now() + token.expires_in * 1000),
-            // § Fase 142 — simpan apa yang BENAR-BENAR diberikan Accurate + identitas akunnya
-            // (respons token; dulu dibuang). NULL kalau respons tidak memuatnya.
-            grantedScopes: parseGrantedScopes(token.scope),
-            accurateUserId: token.user?.id != null ? String(token.user.id) : null,
-            accurateUserEmail: token.user?.email ?? null,
+          .values({ userId: context.userId, accurateUserId, ...values })
+          .onConflictDoUpdate({
+            target: accurateConnections.accurateUserId,
+            targetWhere: sql`${accurateConnections.accurateUserId} IS NOT NULL`,
+            set: { ...values, connectedAt: new Date() },
+            setWhere: eq(accurateConnections.userId, context.userId),
           })
           .returning();
-        await db.update(subscriptions).set({ accurateConnectionId: connection!.id }).where(eq(subscriptions.id, subscriptionId));
-        return redirect(`${appOrigin}/accurate?connected=true`);
+        if (!connection) {
+          logger.warn({ dataUsahaId: context.dataUsahaId }, "Accurate OAuth callback: akun Accurate sudah dipakai pemilik Facport lain");
+          return redirect(`${appOrigin}/?accurate_error=accurate_account_in_use`);
+        }
+
+        if (!(await pointDataUsahaToConnection(context.dataUsahaId, context.userId, connection.id, token.access_token))) {
+          return redirect(`${appOrigin}/?accurate_error=invalid_state`);
+        }
+        return redirect(`${appOrigin}/?accurate=connected`);
       } catch (err) {
         logger.error({ err }, "Accurate OAuth callback gagal");
-        return redirect(`${appOrigin}/accurate?error=exchange_failed`);
+        return redirect(`${appOrigin}/?accurate_error=exchange_failed`);
       }
     },
-    { query: t.Object({ code: t.Optional(t.String()), state: t.Optional(t.String()), error: t.Optional(t.String()) }) },
+    { query: t.Object({ code: t.Optional(t.String({ maxLength: 512 })), state: t.Optional(t.String({ maxLength: 128 })), error: t.Optional(t.String({ maxLength: 128 })) }) },
   )
-  // § Fase 14, ADR-0020 — INTI perubahan: pakai koneksi yang SUDAH ADA
-  // (Data Usaha yang sama dipakai modul lain) untuk subscription/modul
-  // ini, TANPA OAuth ulang sama sekali. Ownership dicek DUA arah:
-  // subscription target milik user ini, DAN connection yang di-reuse
-  // juga milik user ini (bukan bisa pinjam koneksi user lain).
-  .post(
-    "/accurate/reuse",
-    async ({ user, body, set }) => {
-      // § Fase 110 — WAJIB Owned, sama alasan `/connect` di atas.
-      const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
-      const target = activeSubs.find((s) => s.subscription.id === body.subscriptionId);
-      if (!target) {
+  // § Fase 144 — mesin status koneksi per Data Usaha (popup gerbang, banner, kartu dashboard, halaman /accurate).
+  // Accessible: pemilik ATAU member seat aktif; field sensitif (email akun, daftar akun) hanya untuk pemilik.
+  .get(
+    "/accurate/gate",
+    async ({ user, query, set }) => {
+      const gate = await computeAccurateGate(user.id, query.dataUsahaId);
+      if (!gate) {
         set.status = 404;
-        return { code: "SUBSCRIPTION_NOT_FOUND" };
+        return { code: "DATA_USAHA_NOT_FOUND" };
       }
-      // § Fase 114 — `reconnect: true` (dikirim tombol "Pakai Koneksi yang
-      // Sudah Ada" di kartu status sehat/rusak, § accurate-connections-form.tsx)
-      // melewati guard ini secara EKSPLISIT — pola PERSIS `/accurate/connect`
-      // di atas (§ Fase 91). SEBELUM ini, reuse cuma bisa dipakai first-connect
-      // (belum pernah punya `accurateConnectionId` sama sekali) — reconnect
-      // SELALU dipaksa OAuth baru walau company-nya sama, bikin koneksi
-      // numpuk (temuan debugging production 2026-09-14, 2 customer nyata
-      // sampai 5-17 koneksi terpisah ke company yang SAMA — § lessons-learned.md).
-      if (target.subscription.accurateConnectionId && !body.reconnect) {
+      return gate;
+    },
+    { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
+  )
+  // Pemilik mengonfirmasi bahwa database yang tersimpan (hasil backfill/koneksi lama) memang benar.
+  .post(
+    "/accurate/databases/confirm",
+    async ({ user, body, set }) => {
+      const owned = await getOwnedActiveConnection(user.id, body.dataUsahaId);
+      if ("error" in owned) {
+        set.status = owned.error === "DATA_USAHA_NOT_FOUND" ? 404 : 400;
+        return { code: owned.error };
+      }
+      if (!owned.resolved.accurateDbId) {
+        set.status = 400;
+        return { code: "DATABASE_NOT_SELECTED" };
+      }
+      await db.update(dataUsaha).set({ accurateDbConfirmedAt: new Date(), updatedAt: new Date() }).where(eq(dataUsaha.id, body.dataUsahaId));
+      return { confirmed: true };
+    },
+    { auth: true, body: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
+  )
+  // "Pilih yang Lain": kosongkan database supaya bisa dipilih ulang — HANYA bila Data Usaha belum punya riwayat import sukses
+  // (ADR-0037 #5: riwayat terikat ke database itu; mengganti diam-diam = data perusahaan A tampak milik B).
+  .post(
+    "/accurate/databases/reset",
+    async ({ user, body, set }) => {
+      if (!(await ownsDataUsaha(user.id, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const [history] = await db
+        .select({ id: importBatchRows.id })
+        .from(importBatchRows)
+        .innerJoin(importBatches, eq(importBatches.id, importBatchRows.batchId))
+        .innerJoin(subscriptions, eq(subscriptions.id, importBatches.subscriptionId))
+        .where(and(eq(subscriptions.dataUsahaId, body.dataUsahaId), eq(importBatchRows.status, "success")))
+        .limit(1);
+      if (history) {
         set.status = 409;
-        return { code: "ALREADY_CONNECTED" };
+        return { code: "DATABASE_HAS_IMPORT_HISTORY" };
       }
-
-      const connection = await getOwnedConnection(user.id, body.connectionId);
+      await db
+        .update(dataUsaha)
+        .set({ accurateDbId: null, accurateDbAlias: null, accurateDbConfirmedAt: null, updatedAt: new Date() })
+        .where(eq(dataUsaha.id, body.dataUsahaId));
+      return { reset: true };
+    },
+    { auth: true, body: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
+  )
+  // Akun Accurate yang SUDAH terhubung milik user ini (untuk memilih "pakai akun yang sama" pada Data Usaha lain). Owner-only:
+  // email akun Accurate hanya dilihat pemilik koneksinya.
+  .get(
+    "/accurate/accounts",
+    async ({ user }) => {
+      const rows = await db
+        .select()
+        .from(accurateConnections)
+        .where(and(eq(accurateConnections.userId, user.id), eq(accurateConnections.status, "active"), isNotNull(accurateConnections.accurateUserId)));
+      return { accounts: rows.map((c) => ({ id: c.id, accountEmail: c.accurateUserEmail })) };
+    },
+    { auth: true },
+  )
+  // Pakai koneksi akun yang SUDAH ada untuk Data Usaha ini TANPA OAuth ulang. Penting: OAuth ulang untuk akun yang sama
+  // mematikan token lama seketika (Fase 141 E2) — import Data Usaha lain yang sedang berjalan bisa 401 di tengah batch.
+  // Berbeda dari `reuse` lama (Fase 14): koneksi harus milik user ini, aktif, dan berakun (bukan koneksi LAMA).
+  .post(
+    "/accurate/attach",
+    async ({ user, body, set }) => {
+      if (!(await ownsDataUsaha(user.id, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const [connection] = await db
+        .select()
+        .from(accurateConnections)
+        .where(
+          and(
+            eq(accurateConnections.id, body.connectionId),
+            eq(accurateConnections.userId, user.id),
+            eq(accurateConnections.status, "active"),
+            isNotNull(accurateConnections.accurateUserId),
+          ),
+        );
       if (!connection) {
         set.status = 404;
         return { code: "CONNECTION_NOT_FOUND" };
       }
-
-      // § security review Fase 114 (Medium, DIPERBAIKI) — `getOwnedConnection`
-      // di atas cuma cek koneksi ini MILIK user (lintas SEMUA Data Usaha
-      // dia), TIDAK cek koneksi ini sebelumnya dipakai untuk Data Usaha
-      // yang SAMA dengan `target.subscription.dataUsahaId`. User yang py
-      // >1 Data Usaha (kasus SAH, § lessons-learned.md 2026-09-14) bisa
-      // salah kirim `connectionId` milik Data Usaha LAIN — tidak ketahuan
-      // sebagai IDOR (masih 1 user yang sama), tapi bisa bikin data
-      // import kekirim ke company Accurate yang SALAH, persis kelas bug
-      // yang baru saja diperbaiki manual di production hari ini. UI
-      // (`GET /accurate/connections?dataUsahaId=X`, § Fase 113) sudah
-      // filter benar, tapi backend WAJIB validasi ulang, bukan andalkan
-      // filter UI saja (defense-in-depth, § architecture-security.md).
-      const [reusableForThisDataUsaha] = await db
-        .select({ id: subscriptions.id })
-        .from(subscriptions)
-        .where(and(eq(subscriptions.accurateConnectionId, connection.id), eq(subscriptions.dataUsahaId, target.subscription.dataUsahaId)));
-      if (!reusableForThisDataUsaha) {
-        set.status = 400;
-        return { code: "CONNECTION_DATA_USAHA_MISMATCH" };
-      }
-
-      // § Fase 142 — koneksi yang di-reuse WAJIB sudah punya scope modul ini (dulu tidak dicek: reuse
-      // sukses, import baru gagal 403 belakangan). Scope tidak diketahui (baris lama, token mati) → lolos.
-      const scopeCheck = await checkConnectionScopes(connection, target.plan.modules);
-      if (!scopeCheck.ok) {
+      const current = await resolveConnectionForDataUsaha(body.dataUsahaId);
+      if (current?.connection && !body.reconnect) {
         set.status = 409;
-        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
+        return { code: "ALREADY_CONNECTED" };
       }
-
-      await db.update(subscriptions).set({ accurateConnectionId: connection.id }).where(eq(subscriptions.id, target.subscription.id));
-      return { subscriptionId: target.subscription.id, accurateConnectionId: connection.id };
+      if (!(await pointDataUsahaToConnection(body.dataUsahaId, user.id, connection.id, decrypt(connection.accessTokenEncrypted)))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      return { dataUsahaId: body.dataUsahaId, accurateConnectionId: connection.id };
     },
     {
       auth: true,
-      body: t.Object({
-        subscriptionId: t.String({ format: "uuid" }),
-        connectionId: t.String({ format: "uuid" }),
-        reconnect: t.Optional(t.Boolean()),
-      }),
+      body: t.Object({ dataUsahaId: t.String({ format: "uuid" }), connectionId: t.String({ format: "uuid" }), reconnect: t.Optional(t.Boolean()) }),
     },
   )
+  // Daftar database Accurate milik akun yang terhubung ke Data Usaha ini; `used` = sudah dipakai Data Usaha LAIN
+  // (1 database ↔ 1 Data Usaha).
   .get(
     "/accurate/databases",
     async ({ user, query, set }) => {
-      const connection = await getOwnedConnection(user.id, query.connectionId);
-      if (!connection) {
-        set.status = 400;
-        return { code: "NOT_CONNECTED" };
+      const owned = await getOwnedActiveConnection(user.id, query.dataUsahaId);
+      if ("error" in owned) {
+        set.status = owned.error === "DATA_USAHA_NOT_FOUND" ? 404 : 400;
+        return { code: owned.error };
       }
       try {
-        const accessToken = decrypt(connection.accessTokenEncrypted);
-        const databases = await listDatabases(accessToken);
-        return { databases };
+        const databases = await listDatabases(decrypt(owned.connection.accessTokenEncrypted));
+        const usedRows = await db
+          .select({ accurateDbId: dataUsaha.accurateDbId })
+          .from(dataUsaha)
+          .where(and(eq(dataUsaha.accurateConnectionId, owned.connection.id), ne(dataUsaha.id, query.dataUsahaId)));
+        const used = new Set(usedRows.map((r) => r.accurateDbId).filter((id): id is string => id !== null));
+        return { databases: databases.map((d) => ({ ...d, used: used.has(String(d.id)) })) };
       } catch (err) {
         set.status = 502;
         logger.error({ err }, "Gagal ambil daftar Data Usaha Accurate");
         return { code: "ACCURATE_REQUEST_FAILED" };
       }
     },
-    { auth: true, query: t.Object({ connectionId: t.String({ format: "uuid" }) }) },
+    { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/accurate/databases/select",
     async ({ user, body, set }) => {
-      const connection = await getOwnedConnection(user.id, body.connectionId);
-      if (!connection) {
-        set.status = 400;
-        return { code: "NOT_CONNECTED" };
+      const owned = await getOwnedActiveConnection(user.id, body.dataUsahaId);
+      if ("error" in owned) {
+        set.status = owned.error === "DATA_USAHA_NOT_FOUND" ? 404 : 400;
+        return { code: owned.error };
       }
-      // § Fase 14, security review 2026-09-04 (Medium) — koneksi ini
-      // SEKARANG bisa dipakai BARENG oleh beberapa subscription
-      // (ADR-0020). Kalau accurateDbId sudah pernah diisi, endpoint ini
-      // BUKAN tempatnya ganti — diam-diam ganti Data Usaha di sini akan
-      // ikut memindahkan tujuan import SEMUA subscription lain yang
-      // share koneksi ini tanpa mereka sadar. Ganti Data Usaha WAJIB
-      // lewat koneksi baru (connect ulang), bukan endpoint select ini.
-      if (connection.accurateDbId) {
+      // Riwayat import Data Usaha ini terikat ke database tersebut — ganti diam-diam = data perusahaan A masuk ke B.
+      // (Callback OAuth sudah mengosongkan database yang tidak ada di akun baru, jadi kasus "salah tersimpan" tidak buntu.)
+      if (owned.resolved.accurateDbId) {
         set.status = 400;
         return { code: "DATABASE_ALREADY_SELECTED" };
       }
+      // 1 database ↔ 1 Data Usaha: cek awal (pesan jelas); indeks unik `data_usaha_connection_db_uidx` jaga balapan.
+      const [clash] = await db
+        .select({ id: dataUsaha.id })
+        .from(dataUsaha)
+        .where(
+          and(
+            eq(dataUsaha.accurateConnectionId, owned.connection.id),
+            eq(dataUsaha.accurateDbId, String(body.accurateDbId)),
+            ne(dataUsaha.id, body.dataUsahaId),
+          ),
+        );
+      if (clash) {
+        set.status = 409;
+        return { code: "DATABASE_ALREADY_USED" };
+      }
       try {
-        const accessToken = decrypt(connection.accessTokenEncrypted);
-        await openDatabase(accessToken, body.accurateDbId); // validasi id benar-benar bisa dibuka
-        await db
-          .update(accurateConnections)
-          .set({ accurateDbId: String(body.accurateDbId), accurateDbAlias: body.alias, updatedAt: new Date() })
-          .where(eq(accurateConnections.id, connection.id));
-        return { accurateDbId: body.accurateDbId, accurateDbAlias: body.alias };
+        await openDatabase(decrypt(owned.connection.accessTokenEncrypted), body.accurateDbId); // validasi id benar-benar bisa dibuka
       } catch (err) {
         set.status = 502;
         logger.error({ err }, "Gagal buka Data Usaha Accurate");
         return { code: "ACCURATE_REQUEST_FAILED" };
       }
+      try {
+        await db
+          .update(dataUsaha)
+          .set({ accurateDbId: String(body.accurateDbId), accurateDbAlias: body.alias, accurateDbConfirmedAt: new Date(), updatedAt: new Date() })
+          .where(eq(dataUsaha.id, body.dataUsahaId));
+      } catch (err) {
+        if (String((err as { cause?: { constraint?: string } })?.cause?.constraint ?? err).includes("data_usaha_connection_db_uidx")) {
+          set.status = 409;
+          return { code: "DATABASE_ALREADY_USED" };
+        }
+        throw err;
+      }
+      return { accurateDbId: body.accurateDbId, accurateDbAlias: body.alias };
     },
-    // `alias` dikirim client (sudah ada di tangan dari GET /accurate/databases
-    // sebelumnya) — hindari panggilan Accurate API kedua cuma buat lookup nama.
-    // maxLength 255 — konsisten batas kolom `accurateDbAlias` varchar(255)
-    // (security review 2026-09-04, Low — cegah error DB mentah kalau
-    // client kirim alias kepanjangan).
+    // `alias` dikirim client (sudah ada dari GET /accurate/databases) — hindari panggilan Accurate kedua.
+    // maxLength 255 — konsisten batas kolom `accurate_db_alias` varchar(255).
     {
       auth: true,
-      body: t.Object({ connectionId: t.String({ format: "uuid" }), accurateDbId: t.Number(), alias: t.String({ maxLength: 255 }) }),
+      body: t.Object({ dataUsahaId: t.String({ format: "uuid" }), accurateDbId: t.Integer({ minimum: 1 }), alias: t.String({ maxLength: 255 }) }),
     },
   );

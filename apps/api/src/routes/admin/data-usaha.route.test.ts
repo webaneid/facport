@@ -3,9 +3,9 @@ import { Elysia } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, dataUsaha, auditLogs, ownershipTransfers } from "../../db/schema";
+import { user as userTable, roles, userRoles, dataUsaha, auditLogs, ownershipTransfers, accurateConnections } from "../../db/schema";
 import { adminDataUsahaRoute } from "./data-usaha.route";
-import { createTestDataUsaha } from "../../lib/test-fixtures";
+import { createTestAccurateConnection, createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
 // Usaha DIBANTU ADMIN, langsung eksekusi tanpa accept-flow.
@@ -141,5 +141,27 @@ describe("POST /admin/data-usaha/:id/transfer-ownership", () => {
       .from(ownershipTransfers)
       .where(and(eq(ownershipTransfers.dataUsahaId, dataUsahaId), eq(ownershipTransfers.status, "pending")));
     expect(pendingRows.length).toBe(0);
+  });
+
+  // § Fase 143, ADR-0036 #6 / ADR-0037 #6 — token Accurate milik akun pemilik LAMA tidak boleh diwarisi pemilik baru.
+  test("200 — transfer MEMUTUS pointer koneksi Accurate (database terakhir dipertahankan; baris koneksi milik pemilik lama tidak dihapus)", async () => {
+    const adminCookie = await makeAdminCookie();
+    const ownerId = await signUp(`admin-du-xfer-conn-owner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Admin Xfer Conn ${runId}`);
+    const conn = await createTestAccurateConnection(ownerId, { dataUsahaId, accurateDbId: "321", accurateDbAlias: "PT Lama" });
+    const toUserId = await signUp(`admin-du-xfer-conn-target-${runId}@test.local`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/admin/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: adminCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(du).toMatchObject({ userId: toUserId, accurateConnectionId: null, accurateDbId: "321", accurateDbAlias: "PT Lama" });
+    const [stillThere] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id));
+    expect(stillThere?.userId).toBe(ownerId);
   });
 });

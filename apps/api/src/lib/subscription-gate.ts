@@ -113,9 +113,8 @@ export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).
       // § Fase 14 — moduleKey dicari lintas SEMUA subscription aktif
       // (union), bukan cuma 1 baris terbaru. `matching.subscription` yang
       // dikembalikan adalah baris SPESIFIK yang cover moduleKey ini —
-      // route pemanggil pakai ini buat resolve `accurateConnectionId`
-      // modul yang bersangkutan (tiap sub-modul bisa beda koneksi
-      // Accurate, § architecture-accurate-integration.md § 1).
+      // route pemanggil pakai ini (`subscription.id`) buat cek scope koneksi lewat DATA USAHA-nya
+      // (§ Fase 143, ADR-0037: koneksi Accurate 1 per akun, dipegang Data Usaha — BUKAN lagi per sub-modul).
       // § Fase 140, ADR-0035 — SEBELUMNYA `.find()` mengambil subscription
       // TERBARU lintas semua Data Usaha (tanpa tahu Data Usaha aktif) →
       // upload bisa mendarat di perusahaan yang salah. Sekarang disaring

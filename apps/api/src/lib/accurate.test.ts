@@ -7,8 +7,10 @@ import {
   parseAccurateSaveEnvelope,
   AccurateApiError,
   AccurateScopeError,
+  AccurateTokenError,
   isAccurateRecordNotFound,
   getApprovedScopes,
+  isAccurateAuthFailure,
   parseAccurateEnvelope,
   parseGrantedScopes,
   parseInsufficientScope,
@@ -232,5 +234,70 @@ describe("getApprovedScopes", () => {
     expect(lastRequest!.url).toContain("/api/approved-scope.do");
     expect((lastRequest!.init.headers as Record<string, string>).Authorization).toBe("Bearer at-1");
     expect(lastRequest!.init.signal).toBeDefined();
+  });
+});
+
+// § Fase 143 — galat endpoint token BERTIPE; pesan tidak boleh memuat body mentah (Accurate menaruh nilai token
+// yang ditolak di error_description → sebelumnya bocor ke log Pino & Sentry).
+describe("AccurateTokenError (exchange & refresh)", () => {
+  const leaky = JSON.stringify({ error: "invalid_grant", error_description: "Invalid refresh token: 97d41938-390f-42a9-9860-c2cbb039e4e4" });
+
+  test("refresh ditolak → AccurateTokenError{invalid_grant}, pesan TANPA nilai token", async () => {
+    globalThis.fetch = (async () => new Response(leaky, { status: 400 })) as unknown as typeof fetch;
+    const err = await refreshAccessToken("old-refresh").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AccurateTokenError);
+    expect(err).toMatchObject({ operation: "refresh", httpStatus: 400, code: "invalid_grant", isInvalidGrant: true });
+    expect((err as Error).message).toBe("Accurate token refresh gagal: HTTP 400 (invalid_grant)");
+    expect((err as Error).message).not.toContain("97d41938");
+  });
+
+  test("exchange ditolak → AccurateTokenError operation=exchange", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "invalid_request" }), { status: 400 })) as unknown as typeof fetch;
+    const err = await exchangeCodeForToken("bad-code").catch((e: unknown) => e);
+    expect(err).toMatchObject({ operation: "exchange", httpStatus: 400, code: "invalid_request", isInvalidGrant: false });
+  });
+
+  test("body non-JSON / 5xx → code null, bukan invalid_grant", async () => {
+    globalThis.fetch = (async () => new Response("<html>Bad Gateway</html>", { status: 502 })) as unknown as typeof fetch;
+    const err = await refreshAccessToken("rt").catch((e: unknown) => e);
+    expect(err).toMatchObject({ httpStatus: 502, code: null, isInvalidGrant: false });
+    expect((err as Error).message).toBe("Accurate token refresh gagal: HTTP 502");
+  });
+
+  test("nilai `error` yang aneh (bukan huruf kecil/underscore) tidak disalin ke kode/pesan", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "Invalid token: SECRET-VALUE-123" }), { status: 400 })) as unknown as typeof fetch;
+    const err = await refreshAccessToken("rt").catch((e: unknown) => e);
+    expect((err as AccurateTokenError).code).toBeNull();
+    expect((err as Error).message).not.toContain("SECRET");
+  });
+});
+
+// § security review Fase 143 (Medium) — HANYA 401 = token mati; galat lain jangan memutus koneksi.
+describe("isAccurateAuthFailure", () => {
+  test("true hanya untuk AccurateApiError HTTP 401", () => {
+    expect(isAccurateAuthFailure(new AccurateApiError("x", 401))).toBe(true);
+    expect(isAccurateAuthFailure(new AccurateApiError("Masa ujicoba database sudah berakhir", 500))).toBe(false);
+    expect(isAccurateAuthFailure(new AccurateApiError("x", 503))).toBe(false);
+    expect(isAccurateAuthFailure(new AccurateScopeError("sales_invoice_view"))).toBe(false); // 403 = kurang izin, bukan token mati
+    expect(isAccurateAuthFailure(new TypeError("fetch failed"))).toBe(false);
+    expect(isAccurateAuthFailure(new DOMException("timeout", "TimeoutError"))).toBe(false);
+  });
+
+  test("openDatabase dengan 401 → AccurateApiError 401 (jadi terdeteksi sebagai token mati)", async () => {
+    globalThis.fetch = (async () => new Response(JSON.stringify({ error: "invalid_token", error_description: "Invalid access token: SECRET" }), { status: 401 })) as unknown as typeof fetch;
+    const err = await openDatabase("dead", 1).catch((e: unknown) => e);
+    expect(isAccurateAuthFailure(err)).toBe(true);
+    expect((err as Error).message).not.toContain("SECRET");
+  });
+
+  test("openDatabase & listDatabases memasang batas waktu (signal)", async () => {
+    const signals: (AbortSignal | undefined)[] = [];
+    globalThis.fetch = (async (_url: string, init: RequestInit) => {
+      signals.push(init.signal ?? undefined);
+      return new Response(JSON.stringify({ s: true, d: [], session: "s", host: "https://h", dataVersion: 1, licenseEnd: "x" }), { status: 200 });
+    }) as unknown as typeof fetch;
+    await listDatabases("t");
+    await openDatabase("t", 1);
+    expect(signals.every((s) => s !== undefined)).toBe(true);
   });
 });

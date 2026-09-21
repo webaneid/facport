@@ -1,0 +1,1 @@
+ALTER TABLE "data_usaha" ADD COLUMN "accurate_db_confirmed_at" timestamp with time zone;

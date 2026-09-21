@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { user as userTable, dataUsaha, ownershipTransfers } from "../db/schema";
+import { user as userTable, dataUsaha, ownershipTransfers, accurateConnections } from "../db/schema";
 import { generateTransferToken, linkGoogleSignupToPendingTransfer } from "./ownership-transfer";
-import { createTestDataUsaha } from "./test-fixtures";
+import { createTestAccurateConnection, createTestDataUsaha } from "./test-fixtures";
 
 // § Fase 111 — jalur Google OAuth auto-complete transfer kepemilikan
 // (`databaseHooks.user.create.after` di `lib/auth.ts` memanggil fungsi
@@ -73,5 +73,24 @@ describe("linkGoogleSignupToPendingTransfer", () => {
 
     const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
     expect(du!.userId).toBe(otherOwnerId);
+  });
+});
+
+// § Fase 143, ADR-0037 #6 — jalur self-service (executeOwnershipTransfer) juga memutus koneksi Accurate.
+describe("executeOwnershipTransfer — koneksi Accurate", () => {
+  test("mengosongkan pointer koneksi Data Usaha, mempertahankan database terakhir, koneksi pemilik lama tidak dihapus", async () => {
+    const fromUserId = await makeUser(`xfer-conn-from-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(fromUserId, `DU Xfer Conn ${runId}`);
+    const conn = await createTestAccurateConnection(fromUserId, { dataUsahaId, accurateDbId: "55", accurateDbAlias: "PT Lima Lima" });
+    const toEmail = `xfer-conn-to-${runId}@test.local`;
+    await makePendingTransfer(fromUserId, dataUsahaId, toEmail);
+
+    const newUserId = await makeUser(toEmail);
+    await linkGoogleSignupToPendingTransfer(newUserId, toEmail);
+
+    const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(du).toMatchObject({ userId: newUserId, accurateConnectionId: null, accurateDbId: "55", accurateDbAlias: "PT Lima Lima" });
+    const [stillThere] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id));
+    expect(stillThere?.userId).toBe(fromUserId);
   });
 });

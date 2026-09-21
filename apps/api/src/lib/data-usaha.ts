@@ -1,4 +1,4 @@
-import { and, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, eq, inArray, or } from "drizzle-orm";
 import { db } from "./db";
 import { dataUsaha, memberSeats } from "../db/schema";
 
@@ -22,7 +22,9 @@ export async function getOrCreateDefaultDataUsaha(userId: string): Promise<strin
   const [existing] = await db
     .select()
     .from(dataUsaha)
-    .where(and(eq(dataUsaha.userId, userId), eq(dataUsaha.name, DEFAULT_DATA_USAHA_NAME), isNull(dataUsaha.accurateConnectionId)));
+    // § Fase 143 — TANPA filter `isNull(accurateConnectionId)` lagi: pointer koneksi kini HIDUP (dulu mati, jadi filter itu
+    // selalu cocok). Dengan filter, Data Usaha Utama yang sudah terhubung tidak ketemu → duplikat dibuat tiap panggilan admin.
+    .where(and(eq(dataUsaha.userId, userId), eq(dataUsaha.name, DEFAULT_DATA_USAHA_NAME)));
   if (existing) return existing.id;
 
   const [created] = await db.insert(dataUsaha).values({ userId, name: DEFAULT_DATA_USAHA_NAME }).returning();
