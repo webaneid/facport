@@ -1,8 +1,8 @@
 # Fase 141 — Bukti Perilaku Otorisasi Accurate + Rencana Gerbang Otorisasi Tunggal
 
-**Status:** In Progress (percobaan E0–E8 selesai 2026-09-22 → ADR-0036 Accepted; tersisa P1–P3 production, user-run)
+**Status:** Done (percobaan E0–E8 + pemeriksaan production P1–P3 selesai 2026-09-22 → ADR-0036 Accepted)
 **Mulai:** 2026-09-22
-**Selesai:** —
+**Selesai:** 2026-09-22
 
 ## Tujuan
 Sebelum mengubah model koneksi, BUKTIKAN perilaku Accurate yang tidak
@@ -225,3 +225,40 @@ ringkas TANPA token) di bagian "Hasil" dokumen ini.
   mengandalkan perilaku ini.
 - Temuan sampingan: spec resmi adalah sumber yang bisa sedikit menyimpang dari
   runtime → mesin scope harus punya jalur toleransi (403 runtime = sumber kebenaran).
+
+## Hasil Pemeriksaan Production P1–P3 (read-only, user-run, 2026-09-22)
+
+**P2 — inventaris**
+- 59 koneksi milik 9 user: `active` 46, `expired` 6, `revoked` 7. Status `active` di
+  DB TIDAK bisa dipercaya sebagai "token hidup": tidak ada yang menandai koneksi yang
+  ditimpa otorisasi baru (E2).
+- 5 dari 9 user punya >1 koneksi; 3 user memegang 49 dari 59 (22, 16, 11 koneksi)
+  dengan hanya 3, 2, 4 database Accurate berbeda → rata-rata ~5–8 koneksi per database.
+- 24 Data Usaha, hanya 8 yang terhubung (16 belum/lewati dulu).
+- 29 subscription aktif punya koneksi; **20 (69%) koneksinya sudah tertimpa** koneksi
+  lebih baru milik user yang sama (kandidat token mati). Perkiraan kasar: dihitung per
+  `user_id`, bukan per akun Accurate (belum tersimpan), jadi bisa berlebih bila 1 owner
+  memakai >1 akun Accurate.
+
+**P1 — bukti 401 di data nyata**
+- 5 batch (semua `purchase_invoice`, semua `failed`) dibuat SETELAH koneksinya
+  tertimpa. Terpisah, 5 batch `failed` (10 baris) berpesan galat 401/`invalid_token`.
+  Jumlahnya sama persis dan sama-sama hanya `failed`; konsisten dengan E2. (Belum
+  dibuktikan sebagai himpunan yang identik — tidak di-join; tidak diperlukan untuk
+  keputusan.)
+- Hanya 5 batch gagal walau 20 subscription tertimpa: kebanyakan koneksi mati itu
+  belum dipakai import sejak tertimpa. Bom waktu, bukan insiden yang sudah meledak.
+
+**P3 — Batal Import**
+- 0 baris `cancelled`, 0 galat scope. Fitur belum pernah dipakai di production →
+  E8 tidak bisa dikonfirmasi/dibantah dari data nyata; tetap "tidak terkonfirmasi",
+  dan `purchase_invoice_delete` dimasukkan ke katalog scope demi aman (ADR-0036).
+
+**Implikasi migrasi (Fase 145)**
+- Skala kecil (9 user, 59 koneksi): migrasi manual-terpandu layak; tidak perlu
+  otomatisasi rumit.
+- Untuk tiap user, hanya koneksi TERBARU per akun Accurate yang mungkin hidup;
+  sisanya mati. Skrip kesehatan (read-only, `approved-scope.do` tiap koneksi
+  terbaru) menentukan siapa yang perlu "hubungkan ulang". Memanggil endpoint baca
+  dengan token customer adalah keputusan terpisah yang perlu persetujuan sebelum dijalankan.
+- `accurate_connections.status='active'` tidak boleh dijadikan dasar "sehat".
