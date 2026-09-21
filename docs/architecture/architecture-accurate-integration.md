@@ -117,7 +117,7 @@ tidak pernah lewat browser"). Implicit grant TIDAK dipakai.
 User (di app.facport.com, dalam konteks subscription tertentu) klik
 "Hubungkan Accurate Online"
       ↓
-apps/api generate state token unik → simpan sementara (state → subscriptionId)
+apps/api generate state token unik → simpan sementara (state → {userId, dataUsahaId}; Fase 143)
       ↓
 Redirect browser ke:
 https://account.accurate.id/oauth/authorize
@@ -142,7 +142,7 @@ POST https://account.accurate.id/oauth/token
       ↓
 Response: { access_token, refresh_token, expires_in, token_type: "bearer" }
       ↓
-Simpan access_token + refresh_token TERENKRIPSI, relasikan ke subscriptionId
+Simpan access_token + refresh_token TERENKRIPSI (upsert per akun Accurate), arahkan Data Usaha (`data_usaha.accurate_connection_id`)
 dari state → redirect browser ke app.facport.com (halaman "koneksi berhasil")
 ```
 **Kode `code` dari Accurate cuma dikirim sebagai query param biasa** (bukan
@@ -271,7 +271,7 @@ dan itu HARUS di server (`apps/api`), tidak pernah di frontend. Route ini:
 - `/accurate/connect` SELALU meminta `ALL_ACCURATE_SCOPES` (gabungan semua modul).
 - Scope yang benar-benar diberikan disimpan di `accurate_connections.granted_scopes` (dari respons
   token) dan diverifikasi oleh SATU fungsi `missingScopes`/`checkConnectionScopes`
-  (`lib/accurate-scope-check.ts`): `/accurate/reuse`, konfirmasi/retry import (409
+  (`lib/accurate-scope-check.ts`): `/accurate/attach`, konfirmasi/retry import (409
   `ACCURATE_SCOPE_MISSING`), dan awal worker.
 - Scope kurang saat runtime → HTTP 403 body XML `insufficient_scope` → `AccurateScopeError`
   (bukan `markConnectionExpired`: koneksi hidup, hanya kurang izin).
