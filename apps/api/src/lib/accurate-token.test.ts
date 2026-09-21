@@ -88,11 +88,11 @@ describe("refreshConnectionToken", () => {
   test("invalid_grant → AccurateTokenError.isInvalidGrant; pesan TIDAK memuat nilai token dari body; baris tidak berubah", async () => {
     const userId = await makeUser("grant");
     const conn = await createTestAccurateConnection(userId, { expiresAt: new Date(Date.now() + DAY) });
-    mockToken(() => new Response(JSON.stringify({ error: "invalid_grant", error_description: "Invalid refresh token: 5262edd3-77d4-4c0e-ae99-c386dceeb0bc" }), { status: 400 }));
+    mockToken(() => new Response(JSON.stringify({ error: "invalid_grant", error_description: "Invalid refresh token: NOT-A-REAL-TOKEN-VALUE" }), { status: 400 }));
     const err = await refreshConnectionToken(conn.id, 2 * DAY).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(AccurateTokenError);
     expect((err as AccurateTokenError).isInvalidGrant).toBe(true);
-    expect((err as AccurateTokenError).message).not.toContain("5262edd3");
+    expect((err as AccurateTokenError).message).not.toContain("NOT-A-REAL-TOKEN-VALUE");
     const [after] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id));
     expect(decrypt(after!.refreshTokenEncrypted)).toBe("test-refresh-token");
     expect(after!.status).toBe("active"); // fungsi ini TIDAK menandai expired — itu keputusan pemanggil

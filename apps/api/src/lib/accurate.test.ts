@@ -240,7 +240,7 @@ describe("getApprovedScopes", () => {
 // § Fase 143 — galat endpoint token BERTIPE; pesan tidak boleh memuat body mentah (Accurate menaruh nilai token
 // yang ditolak di error_description → sebelumnya bocor ke log Pino & Sentry).
 describe("AccurateTokenError (exchange & refresh)", () => {
-  const leaky = JSON.stringify({ error: "invalid_grant", error_description: "Invalid refresh token: 97d41938-390f-42a9-9860-c2cbb039e4e4" });
+  const leaky = JSON.stringify({ error: "invalid_grant", error_description: "Invalid refresh token: NOT-A-REAL-TOKEN-VALUE" });
 
   test("refresh ditolak → AccurateTokenError{invalid_grant}, pesan TANPA nilai token", async () => {
     globalThis.fetch = (async () => new Response(leaky, { status: 400 })) as unknown as typeof fetch;
@@ -248,7 +248,7 @@ describe("AccurateTokenError (exchange & refresh)", () => {
     expect(err).toBeInstanceOf(AccurateTokenError);
     expect(err).toMatchObject({ operation: "refresh", httpStatus: 400, code: "invalid_grant", isInvalidGrant: true });
     expect((err as Error).message).toBe("Accurate token refresh gagal: HTTP 400 (invalid_grant)");
-    expect((err as Error).message).not.toContain("97d41938");
+    expect((err as Error).message).not.toContain("NOT-A-REAL-TOKEN-VALUE");
   });
 
   test("exchange ditolak → AccurateTokenError operation=exchange", async () => {
