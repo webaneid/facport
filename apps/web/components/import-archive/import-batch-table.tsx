@@ -26,11 +26,15 @@ import { DeleteImportDialog as PurchaseOrderDeleteImportDialog } from "@/compone
 import { DeleteImportDialog as ReceiveItemDeleteImportDialog } from "@/components/receive-item/delete-import-dialog";
 import { DeleteImportDialog as PurchaseReturnDeleteImportDialog } from "@/components/purchase-return/delete-import-dialog";
 import { DeleteImportDialog as SalesQuotationDeleteImportDialog } from "@/components/sales-quotation/delete-import-dialog";
+import { DeleteImportDialog as SalesOrderDeleteImportDialog } from "@/components/sales-order/delete-import-dialog";
 import { DeleteImportDialog as SalesReturnDeleteImportDialog } from "@/components/sales-return/delete-import-dialog";
 import { DeleteImportDialog as OtherDepositDeleteImportDialog } from "@/components/other-deposit/delete-import-dialog";
 // § Fase 134-135 — Item Transfer & Item Requisition.
 import { DeleteImportDialog as ItemTransferDeleteImportDialog } from "@/components/item-transfer/delete-import-dialog";
 import { DeleteImportDialog as ItemRequisitionDeleteImportDialog } from "@/components/item-requisition/delete-import-dialog";
+// § Fase 138.
+import { DeleteImportDialog as InventoryAdjustmentDeleteImportDialog } from "@/components/inventory-adjustment/delete-import-dialog";
+import { DeleteImportDialog as JobCostingDeleteImportDialog } from "@/components/job-costing/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -167,6 +171,9 @@ export function ImportBatchTable({
                   {canDelete && batch.module === "sales_quotation" && (
                     <SalesQuotationDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
+                  {canDelete && batch.module === "sales_order" && (
+                    <SalesOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
                   {canDelete && batch.module === "sales_return" && (
                     <SalesReturnDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
@@ -175,6 +182,12 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "item_requisition" && (
                     <ItemRequisitionDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "inventory_adjustment" && (
+                    <InventoryAdjustmentDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "job_costing" && (
+                    <JobCostingDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

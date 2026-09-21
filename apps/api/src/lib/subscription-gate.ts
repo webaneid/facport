@@ -3,6 +3,7 @@ import { eq, and, or, inArray, desc } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
 import { subscriptions, plans, dataUsaha, memberSeats } from "../db/schema";
+import { hasAccessToDataUsaha } from "./data-usaha";
 
 // § architecture-subscription.md § "Gating Akses Modul" — LAPISAN TERPISAH
 // dari RBAC permission (lib/permission.ts). Permission jawab "role kamu
@@ -94,9 +95,17 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
   // konsisten begitu lewat endAt, pola dari sebelum Fase 14, tidak berubah.
 }
 
+// § Fase 140, ADR-0035 — Data Usaha aktif dikirim web lewat header ini
+// (cookie `active_data_usaha_id` host-only di app.*, tidak pernah sampai
+// ke api.*). Header BUKAN otorisasi: selalu divalidasi terhadap
+// kepemilikan/seat di DB.
+export const DATA_USAHA_HEADER = "x-data-usaha-id";
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).macro({
   moduleAccess: (moduleKey: string) => ({
-    async resolve({ status, request: { headers } }) {
+    async resolve({ status, request }) {
+      const { headers } = request;
       const session = await auth.api.getSession({ headers });
       if (!session) return status(401);
 
@@ -107,7 +116,26 @@ export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).
       // route pemanggil pakai ini buat resolve `accurateConnectionId`
       // modul yang bersangkutan (tiap sub-modul bisa beda koneksi
       // Accurate, § architecture-accurate-integration.md § 1).
-      const matching = activeSubs.find((s) => s.plan.modules.includes(moduleKey));
+      // § Fase 140, ADR-0035 — SEBELUMNYA `.find()` mengambil subscription
+      // TERBARU lintas semua Data Usaha (tanpa tahu Data Usaha aktif) →
+      // upload bisa mendarat di perusahaan yang salah. Sekarang disaring
+      // per Data Usaha; kalau ambigu tanpa header → fail closed (409).
+      const requested = headers.get(DATA_USAHA_HEADER)?.trim().toLowerCase();
+      // Unduh template Excel = `<a href>` biasa (tidak bisa bawa header), isinya
+      // STATIS per modul dan tidak menyentuh data tenant — jangan ditolak 409
+      // untuk user multi-Data-Usaha (tetap wajib berlangganan modulnya).
+      const isStaticTemplateDownload =
+        request.method === "GET" && new URL(request.url).pathname.endsWith("/import/template");
+      let candidates = activeSubs.filter((s) => s.plan.modules.includes(moduleKey));
+      if (requested) {
+        if (!UUID_RE.test(requested) || !(await hasAccessToDataUsaha(session.user.id, requested))) {
+          return status(403, { code: "DATA_USAHA_FORBIDDEN" });
+        }
+        candidates = candidates.filter((s) => s.subscription.dataUsahaId === requested);
+      } else if (!isStaticTemplateDownload && new Set(candidates.map((s) => s.subscription.dataUsahaId)).size > 1) {
+        return status(409, { code: "DATA_USAHA_REQUIRED" });
+      }
+      const matching = candidates[0];
       // § 1 kode error (gabung SUBSCRIPTION_INACTIVE + MODULE_NOT_IN_PLAN
       // lama) — beda-in "tidak ada subscription" vs "ada tapi bukan modul
       // ini" sudah tidak relevan begitu 1 user bisa punya banyak

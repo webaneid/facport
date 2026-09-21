@@ -3941,3 +3941,39 @@ dulu, telat ~28 rilis) bersamaan lompatan manual ke `v2.0.0`. Lihat entri
 ---
 
 <!-- Tambahkan entri baru di atas, urut dari terbaru ke terlama -->
+
+---
+
+## 2026-09-21 — Gerbang modul memilih subscription TERBARU lintas Data Usaha: upload bisa mendarat di perusahaan yang salah
+**Masalah:** Customer (2 Data Usaha, modul Purchase Invoice di keduanya) lapor
+import gagal "open-db.do gagal: HTTP 401". Gejala 401 hanya pemicu. Diagnosis
+production (SQL read-only dijalankan user): `subscriptionGatePlugin.moduleAccess`
+memakai `activeSubs.find(...)` pada subscription SEMUA Data Usaha, terurut
+`createdAt DESC` — subscription Data Usaha yang lebih baru SELALU menang, apa
+pun Data Usaha yang dipilih di sidebar. "Data Usaha aktif" (cookie
+`active_data_usaha_id`) hanya dibaca web; cookie host-only di `app.*` tidak
+pernah sampai ke `api.*`. Kalau koneksi Accurate subscription yang salah itu
+sehat, data perusahaan A terposting DIAM-DIAM ke database Accurate perusahaan B.
+
+**Root cause:** konteks Data Usaha aktif (Fase 109) dibangun sebagai preferensi
+tampilan di web, tapi tidak pernah dipasang ke gerbang otorisasi server. Fase
+107/109/113 men-scope checkout, dashboard, arsip, dan koneksi, namun gerbang
+`moduleAccess` (satu titik untuk SEMUA endpoint import) terlewat.
+
+**Koreksi kesimpulan lama:** insiden 2026-09-17 (semua upload Purchase Invoice
+customer yang sama mendarat di "Database 2") sempat disimpulkan "salah pilih
+Data Usaha oleh customer" — kemungkinan besar itu bug yang sama, bukan salah
+customer.
+
+**Fix (Fase 140, ADR-0035):** web kirim `X-Data-Usaha-Id`; gerbang validasi
+kepemilikan/seat, saring subscription per Data Usaha, fail-closed
+`409 DATA_USAHA_REQUIRED` kalau ambigu tanpa header. Detail →
+`docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md`.
+
+**Pencegahan:** (1) setiap konsep "konteks aktif" yang mempengaruhi ke MANA
+data ditulis WAJIB sampai ke server sebagai input tervalidasi, bukan cuma
+cookie/UI; (2) saat menemukan gejala di lapisan integrasi (401 dari Accurate),
+telusuri dulu subscription/koneksi mana yang sebenarnya dipakai batch (join
+`import_batches → subscriptions → accurate_connections`) sebelum menduga token;
+(3) kesimpulan "salah pemakaian oleh user" harus dibuktikan lewat kode gerbang,
+bukan hanya lewat data.

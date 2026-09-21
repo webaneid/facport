@@ -143,6 +143,11 @@
 | 133  | Lebar Kolom Tabel Tidak Terkontrol (Perbaikan Menyeluruh) | Done | `docs/decisions/adr-0034-lebar-kolom-tabel.md` | `docs/phases/phase-133-lebar-kolom-tabel.md` |
 | 134  | Modul Item Transfer (Pindah Gudang) — kategori Inventory pertama | Done | `docs/architecture/architecture-item-transfer.md` | `docs/phases/phase-134-modul-item-transfer.md` |
 | 135  | Modul Item Requisition (Permintaan Barang) — kembaran Item Transfer | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-135-modul-item-requisition.md` |
+| 136  | Arsitektur 5 Sub-Modul Baru: Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order | Planned | `docs/architecture/architecture-sales-order.md`, `architecture-inventory-adjustment.md`, `architecture-job-costing.md`, `architecture-roll-over.md`, `architecture-work-order.md` | `docs/phases/phase-136-arsitektur-5-submodul-inventory-manufacture.md` |
+| 137  | Modul Sales Order (Pesanan Penjualan) — kelanjutan Sales Quotation | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-137-modul-sales-order.md` |
+| 138  | Modul Inventory Adjustment (Penyesuaian Persediaan) | Done | `docs/architecture/architecture-inventory-adjustment.md` | `docs/phases/phase-138-modul-inventory-adjustment.md` |
+| 139  | Modul Job Costing (Pekerjaan Pesanan) — 2 endpoint berurutan, kategori Manufacture pertama | Done | `docs/architecture/architecture-job-costing.md` | `docs/phases/phase-139-modul-job-costing.md` |
+| 140  | Konteks Data Usaha Aktif di Gerbang Modul (fix upload masuk perusahaan yang salah) | Done | `docs/decisions/adr-0035-konteks-data-usaha-aktif-di-server.md` | `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3449,3 +3454,431 @@ Verifikasi visual mendalam tabel admin (`/invoices` dkk, yang jadi
 keluhan awal) diserahkan ke user langsung di production — Claude tidak
 punya kredensial admin di environment dev/lokal sepanjang sesi ini
 (bukan known quirk, password genuinely tidak diketahui).
+
+## Update 2026-09-17 — v2.6.0 Released & Deployed ke Production
+
+Fase 134-135 (modul Item Transfer & Item Requisition, kategori
+"Inventory" pertama) di-release: PR #65 (`develop` → `main`), `release.yml`
+tag otomatis **v2.6.0** (minor — commit `feat:`, modul baru). `deploy.yml`
+build+push image `api`/`web:v2.6.0` ke GHCR sukses (`deploy-to-server`
+gagal seperti biasa — SSH belum dikonfigurasi, expected).
+
+Deploy manual ke VPS via runbook **Full** (`workers/index.ts` diubah
+langsung — dispatch + fungsi proses baru untuk kedua modul, WAJIB restart
+worker): pull semua image, up `api`+`web`+`worker`+`minio`+`postgres`,
+`db:migrate` dijalankan (no-op, rilis ini tidak bawa migration DB baru —
+cuma registrasi modul lewat kode, bukan skema). Ketiga container
+(`api`/`web`/`worker`) `Healthy`/`Up` dengan image baru. Smoke check
+ketiga surface (`api.` 200, `app.`/`admin.` 307 redirect ke `/login` —
+normal, belum login) sukses.
+
+Sesi yang sama juga menangani insiden support customer nyata
+(`untung.suroto@intertouch.com`) — akun lama dihapus total (atas
+persetujuan eksplisit user, root cause bukan bug tapi salah pilih Data
+Usaha aktif saat upload) dan dibuat ulang dari nol via endpoint signup
+resmi. Detail lengkap ada di memory sesi
+(`project_facport_v2_production_status.md`), bukan di sini (bukan
+perubahan kode).
+
+## Update 2026-09-21 — Fase 136 Planned: Arsitektur 5 Sub-Modul Baru (Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order)
+
+Client siapkan panduan Excel baru (`docs/referencehtml/facport/developmen-15-september-2026.xlsx`,
+**gitignored** — 16 sheet total, 69 gambar screenshot UI Accurate).
+Permintaan awal user: Other Deposit, Sales Order, Inventory Adjustment,
+Job Costing, Roll Over — **Other Deposit DIGANTI Work Order** (instruksi
+eksplisit user) karena Other Deposit SUDAH dibangun (Fase 128, live
+v2.5.0). Riset silang tiap kolom Excel client terhadap spec resmi
+Accurate (`accurate-openapi.json`, endpoint `sales-order`,
+`item-adjustment`, `job-order`, `roll-over`, `work-order` + `wo-pic`)
+menghasilkan 5 architecture doc lengkap.
+
+**Job Costing/Roll Over/Work Order adalah modul PERTAMA kategori
+"Manufacture"** (0% built sebelumnya, § `architecture-product-lines.md`).
+Accurate ternyata punya 2 sistem produksi PARALEL: Job Order (job-costing,
+tanpa BOM) dan Work Order (berbasis BOM) — dua rantai TERPISAH TOTAL,
+bukan variasi 1 sistem. Roll Over WAJIB referensi `jobOrderNumber` dari
+Job Costing yang sudah ada (dependensi urutan build: Job Costing dulu,
+baru Roll Over).
+
+Temuan kunci per modul:
+- **Sales Order** paling sederhana — mirror struktural HAMPIR 1:1 Sales
+  Quotation, tidak ada cross-API, tidak ada ambiguitas berarti.
+- **Inventory Adjustment** — kolom "Atribut Tambahan" (charField dst)
+  client TIDAK punya bukti visual (screenshot cuma tutupi tab "Item
+  Detail"+"Serial", bukan "Additional Info") — butuh test call nyata +
+  klarifikasi client sebelum eksekusi.
+- **Job Costing** — quirk penting: `warehouseName` &
+  `detailSerialNumber[]` di `detailItem[]` TIDAK ada di spec resmi
+  OpenAPI tapi ADA di screenshot UI client — kemungkinan besar
+  undocumented-tapi-jalan (preseden sama seperti charField Purchase
+  Order dulu), WAJIB test call nyata sebelum bangun mapping-nya.
+- **Roll Over** — field `rollOverType` (`ACCOUNT`/`ITEM`) menentukan
+  baris Excel masuk `detailItem[]` atau `detailExpense[]`, nilai literal
+  kolom "Tipe Penyesuaian" belum diketahui.
+- **Work Order** — PALING KOMPLEKS: 4 array nested berbeda
+  (`detailMaterial`/`detailExpense`/`detailProcess`/`detailExtraFinishGood`),
+  `branchId` (integer) REQUIRED bukan `branchName` seperti SEMUA modul
+  lain (butuh lookup endpoint tambahan), butuh cross-API BENERAN
+  (`wo-pic/list.do`+`save.do` untuk resolve nama PIC → `personInChargeId`
+  integer, pola `findOrCreate` baru), dan ambiguitas belum terpecahkan
+  antara kolom Excel "Work Order Type" vs "Save As Status Type" (2
+  field API atau 1?).
+
+Fase ini MURNI dokumentasi — 0 kode diubah, eksekusi tiap modul jadi
+fase terpisah nanti (pola "satu-satu" konsisten Fase 33-35/120-124).
+Status "Planned", menunggu konfirmasi user atas ambiguitas/keputusan
+terbuka (§ masing-masing architecture doc dan
+`docs/phases/phase-136-arsitektur-5-submodul-inventory-manufacture.md`
+§ "Known Limitations") sebelum ditutup "Done".
+
+## Update 2026-09-21 — Fase 136: 2 Klarifikasi Work Order Diterima dari Client
+
+Ambiguitas "Work Order Type" vs "Save As Status Type" (§ di atas)
+terjawab langsung dari client: **1) `workOrderType`** SAJA yang dipakai
+sebagai field API — nilainya ditentukan sumber referensi form Accurate
+("Kode Produk"→`PRODUCT`, "Nomor Formula"→`BILL_OF_MATERIAL`, "Nomor
+Rencana Produksi"→`MANUFACTURE_ORDER`). **2) "Save As Status Type"**
+ternyata field APPROVAL terpisah (auto-approve transaksi kalau diisi
+`APPROVED`) — dicek ulang ke `accurate-openapi.json`: field ini TIDAK
+ada di skema `work-order/save.do` dan TIDAK ada endpoint
+`/api/approval/*` sama sekali di spec lokal. Client memutuskan: kolom
+ini **DITUNDA jadi opsional** (tidak wajib diisi customer, tidak
+di-mapping ke API apa pun sekarang) — bukan blocker untuk lanjut
+eksekusi Work Order nanti.
+
+2 dari 3 ambiguitas Work Order sudah clear. Sisa 1 (scope OAuth
+`wo-pic/*`) + ambiguitas modul lain (Atribut Tambahan
+Inventory Adjustment/Job Costing/Roll Over, `warehouseName`/serial Job
+Costing) masih menunggu — user eksplisit minta SEMUA ambiguitas clear
+dulu sebelum mulai coding modul manapun (§ "Keputusan Kecil" phase
+doc).
+
+## Update 2026-09-21 — Fase 136: Riset `branchId` Work Order Selesai
+
+User minta riset khusus untuk 1 sisa ambiguitas Work Order:
+`branchId` (integer) REQUIRED, bukan `branchName` seperti SEMUA modul
+lain. Ditemukan jalur resolusi LENGKAP di `accurate-openapi.json`:
+`GET /api/branch/list.do` (search by `keywords`, pola sama persis
+vendor/item/customer/wo-pic) + `POST /api/branch/save.do`, dengan
+scope resmi `branch_view`/`branch_save` (ADA eksplisit di 222 daftar
+scope, bukan dugaan seperti `wo-pic/*`).
+
+Rekomendasi implementasi 2 tahap: (1) coba kirim `branchName` polos
+dulu ke `work-order/save.do` via 1x test call nyata — preseden fase
+ini SUDAH 2x ketemu field "REQUIRED secara spec" yang ternyata tetap
+fleksibel di praktik (`charField`, `warehouseName` Job Costing), jadi
+mungkin Accurate tetap resolve nama cabang otomatis meski skema minta
+integer; (2) kalau ditolak, baru `resolveBranchId()` via
+`branch/list.do`. Keputusan desain baru: **branch TIDAK di-auto-create**
+kalau tidak ketemu (beda kebijakan dari `findOrCreateVendor`/`Item`/
+`WoPic`) — cabang data struktural, salah ketik harus fail jelas bukan
+bikin cabang baru diam-diam.
+
+Ini melengkapi SEMUA 3 ambiguitas awal Work Order (tinggal 1 hal
+verifikasi test call saat eksekusi, bukan lagi "tidak tahu caranya").
+Detail lengkap → `docs/architecture/architecture-work-order.md` §
+"RESET: branchId".
+
+## Update 2026-09-21 — Fase 136: Cek Ulang Kelengkapan Kolom (Other Deposit + 4 Modul Baru) & Revisi Penilaian Risiko
+
+User minta cek ulang menyeluruh: apakah SEMUA kolom yang diminta
+client (Other Deposit + Sales Order + Inventory Adjustment + Job
+Costing + Roll Over) sudah ter-akomodir dan siap eksekusi. Hasil:
+
+1. **Other Deposit (sudah live, Fase 128)** — dicek ulang tiap kolom
+   sheet "Othe Deposit" vs `other-deposit.mapping.ts` + 5 screenshot
+   panduan (belum pernah dicek sebelumnya sesi ini) — **100% cocok, 0
+   gap**. Satu-satunya penyesuaian ("Expense Name" ditambah di luar
+   sheet asli) sudah terdokumentasi dari awal.
+2. **Sales Order/Inventory Adjustment/Job Costing/Roll Over** — cross-
+   check header Excel vs tabel "Field Mapping" tiap architecture doc:
+   **44/44, 18/18, 22/22, 20/20 kolom ter-akomodir**, tidak ada kolom
+   yang tidak punya padanan field API.
+3. **Revisi penilaian risiko** (setelah user tanya "harus akses API
+   atau bisa riset dulu?"): riset ulang `docs/lessons-learned.md`
+   menemukan preseden penting — mekanisme "Atribut Tambahan"
+   (`charField`/`numericField`/`dateField`) SUDAH dikonfirmasi resmi
+   Accurate Support (tiket #357901) "konsisten lintas jenis transaksi"
+   sejak Fase 64/71/73, dan Purchase Order (Fase 119) sudah menerima
+   level keyakinan itu untuk LANGSUNG lanjut coding (bukan menahan
+   demi test call). Inventory Adjustment, Job Costing, Roll Over
+   sebelumnya ditandai "belum diverifikasi" secara TIDAK KONSISTEN
+   dengan preseden ini — **direvisi ke level keyakinan yang sama**
+   (§ masing-masing architecture doc). Juga ditemukan: nilai literal
+   enum ("Tipe Adj", "Tipe Penyesuaian") BUKAN pertanyaan API sama
+   sekali, murni butuh contoh data Excel riil dari client.
+
+**Sisa 1 gap yang GENUININE butuh verifikasi eksternal** (bukan bisa
+diselesaikan dari riset dokumen lokal saja): `warehouseName`/
+`detailSerialNumber[]` di Job Costing (`job-order/save.do`) — TIDAK
+ada di spec resmi DAN belum pernah ditanyakan ke Accurate Support
+secara spesifik (beda dari charField yang SUDAH ada surat resmi).
+Rekomendasi: boleh tetap di-coding berdasar bukti screenshot UI kuat,
+diverifikasi saat retest client pertama — kalau ditolak, ajukan tiket
+Accurate Support baru (pola sukses sama seperti #357901).
+
+Dengan revisi ini, status kesiapan eksekusi per modul: **Sales Order
+100% siap tanpa gap**; **Inventory Adjustment, Roll Over** siap coding
+dengan bukti kuat; **Work Order** siap dengan 1 sisa item scope OAuth
+`wo-pic/*`; **Job Costing** — lihat update berikutnya, ternyata ada
+temuan besar.
+
+## Update 2026-09-21 — Fase 136: TEMUAN BESAR Job Costing — Warehouse/Serial Butuh Endpoint KEDUA (`material-adjustment`)
+
+User pushback tepat sasaran: "warehouse itu kan gudang, masa nggak
+ada di API?" + dugaan "pasti API yang berbeda". Riset lanjutan
+(verifikasi LANGSUNG ke portal developer Accurate live via browser,
+`account.accurate.id/developer/api-docs.do`, BUKAN cuma file JSON
+snapshot lokal) MEMBUKTIKAN dugaan user benar: portal live
+mengonfirmasi `job-order/save.do` PERSIS SAMA dengan spec lokal (tidak
+ada `warehouseName`/serial) — TAPI ketemu endpoint KEDUA yang SAMA
+SEKALI TIDAK ADA di `accurate-openapi.json` lokal:
+**`POST /api/material-adjustment/save.do`** ("Penambahan Bahan Baku",
+scope `material_adjustment_view`/`material_adjustment_save`, field
+`jobOrderNumber` REQUIRED + `detailItem[].warehouseName` +
+`detailItem[].detailSerialNumber[]` RESMI ada, plus enum
+`materialAdjustmentType` = `ITEM_PICK`/`ITEM_RETURN`).
+
+**Kesimpulan arsitektur baru**: Job Costing BUKAN 1 transaksi API,
+tapi **2 panggilan berurutan per grup Excel** — `job-order/save.do`
+(bikin shell + expense) DULU, baru `material-adjustment/save.do`
+(realisasi RM dengan gudang+serial, referensi `jobOrderNumber` dari
+langkah pertama). Ini pola BARU untuk Facport (2 transaksi
+Accurate berantai dalam 1 grup import, bukan cuma find-or-create
+master data) — perlu desain penanganan kegagalan parsial (job order
+sukses, material adjustment gagal) saat eksekusi nanti.
+
+**Bonus temuan** (di luar scope Job Costing, dicatat untuk nanti):
+`/api/manufacture-order/save.do` ("Rencana Produksi") ADA sebagai
+resource terpisah — namanya cocok PERSIS dengan penjelasan client
+soal `workOrderType=MANUFACTURE_ORDER` di Work Order, relevansinya
+belum dieksplor tuntas.
+
+**Pelajaran metodologi penting**: `accurate-openapi.json` lokal
+TERBUKTI tidak lengkap bukan cuma untuk field yang hilang dari endpoint
+yang sudah dikenal (kasus charField lama), tapi juga untuk **endpoint
+yang sama sekali tidak diketahui ada**. Verifikasi portal developer
+LIVE via browser (bukan cuma grep file JSON) sekarang jadi metode
+andalan untuk riset modul manufacturing yang tersisa (Work Order —
+`wo-pic`, `branch`; Material Slip/Finished Good Slip — fase depan).
+
+Detail lengkap → `docs/architecture/architecture-job-costing.md` §
+"RESOLVED: 2 Endpoint", `docs/architecture/architecture-work-order.md`
+§ "Koreksi 2026-09-21".
+
+## Update 2026-09-21 — Fase 136: Verifikasi Menyeluruh Semua 5 Modul vs Portal Developer LIVE (Selesai Sebelum Eksekusi)
+
+User minta cek ulang TOTAL: "jangan eksekusi sampai kamu benar-benar
+yakin sudah sesuai dokumentasi API yang akurat". Karena
+`accurate-openapi.json` lokal sudah 2x terbukti tidak lengkap sesi ini,
+verifikasi dilakukan field-per-field LANGSUNG ke portal developer
+Accurate live (browser, akun client) untuk kelima endpoint + `wo-pic`
++ `branch`.
+
+**Hasil**: Sales Order (100% cocok, 0 gap), Inventory Adjustment (100%
+cocok, 0 gap), Roll Over (100% cocok + 1 field tambahan
+`allocationAmount` ditemukan, tidak dipakai client + bonus label enum
+UI "Akun"/"Barang" untuk `rollOverType` ketemu tanpa perlu tanya
+client), Work Order (100% cocok + **scope `wo-pic` yang sebelumnya
+"masih terbuka" SEKARANG RESOLVED PENUH**: scope resminya
+`wo_person_in_charge_view`/`_save`/`_delete`, TERPISAH dari
+`work_order_*` — dugaan "kemungkinan terbundel" TERBUKTI SALAH; 1
+koreksi kecil `detailExtraFinishGood[].portion`/`.quantity` ternyata
+REQUIRED bukan opsional). Job Costing sudah direvisi total di update
+sebelumnya (2 endpoint), tidak ada temuan baru di pass ini.
+
+**SEMUA ketidakpastian level dokumentasi API untuk Fase 136 sudah
+tuntas.** Sisa item terbuka murni: (a) pertanyaan nilai literal enum
+ke client (data Excel riil, bukan isu API), (b) 1 test call runtime ke
+akun Accurate client (`branchId` Work Order — pertanyaan perilaku
+server, bukan dokumentasi), (c) keputusan desain kecil (semantik
+`materialAdjustmentAccountNo`, penanganan kegagalan parsial 2-endpoint
+Job Costing). Status fase tetap "Planned" — menunggu jawaban client
+atas sisa pertanyaan data sebelum Langkah 2 (Eksekusi) dimulai, sesuai
+keputusan eksplisit user sebelumnya.
+
+## Update 2026-09-21 — Fase 137 Done: Modul Sales Order
+
+User mengotorisasi eksekusi berurutan 3 modul (Sales Order → Inventory
+Adjustment → Job Costing) tanpa perlu konfirmasi tiap fase, ASALKAN
+ikut SOP ketat dan field mapping sesuai dokumentasi API yang sudah
+diverifikasi (tidak boleh improvisasi). Sales Order dibangun mirror
+~1:1 Sales Quotation (Fase 123) — kelanjutan langsung di rantai
+penjualan, auto-create Customer+Item, grouping DEFAULT ADR-0011. 2
+field tambahan vs Sales Quotation: `poNumber` (referensi PO customer)
+dan `salesmanListNumber[]` (ARRAY hasil split koma, BEDA dari Sales
+Quotation yang cuma wrap 1 nilai).
+
+Semua 19 titik registrasi modul baru (§ checklist
+`architecture-accurate-integration.md` 3b) tersentuh dan diverifikasi
+via trik diff — 0 gap. Typecheck 0 error (diverifikasi ULANG independen
+oleh sesi utama, bukan cuma klaim fork). Test suite API penuh 1233
+pass/0 fail (54 test baru). Security review via subagent
+`security-auditor` (dipanggil sesi utama — fork sendiri tidak boleh
+spawn subagent lain, jadi dijalankan setelah fork selesai): **0
+Critical/High/Medium, 1 Low** (validasi MIME upload cuma cek
+`Content-Type` header, pola PRE-EXISTING di SEMUA modul import lain,
+bukan regresi baru — tidak perlu entri lessons-learned terpisah). Test
+data dev DB dibersihkan.
+
+Belum ada test call nyata ke akun Accurate client — field mapping
+sudah 100% cocok dokumentasi API (§ Fase 136), tapi belum pernah ada
+transaksi asli berhasil masuk. Detail lengkap →
+`docs/phases/phase-137-modul-sales-order.md`. Lanjut Fase 138
+(Inventory Adjustment).
+
+## Update 2026-09-21 — Fase 138 Done: Modul Inventory Adjustment
+
+Modul kedua dari 3 modul yang dieksekusi berurutan. Mirror pola **Item
+Transfer** (BUKAN Sales Order) — TIDAK auto-create item (Excel client
+tidak punya kolom "Item Name", dan secara bisnis penyesuaian stok cuma
+masuk akal untuk barang yang sudah di-track sebagai inventory), TIDAK
+ada Kategori Keuangan (cuma Atribut Tambahan charField/numericField/
+dateField, tidak butuh scope `data_classification_*`). Grouping "No.
+Item Adjustment" OPSIONAL (beda dari Item Transfer yang dipaksa wajib).
+
+**Keputusan desain terpenting**: dictionary istilah Indonesia untuk
+kolom "Tipe Adj" (`itemAdjustmentType`) — Tambah/Masuk→`ADJUSTMENT_IN`,
+Kurang/Keluar→`ADJUSTMENT_OUT`, Stok/Stok Opname→`ADJUSTMENT_STOCK`
+(case-insensitive, enum literal juga tetap diterima). Baris dengan
+istilah tidak dikenal GAGAL dengan pesan jelas, bukan default diam-diam.
+**Dictionary ini BELUM diverifikasi ke data Excel client asli** — risiko
+utama yang tersisa dari fase ini, konsisten Known Limitations
+`architecture-inventory-adjustment.md`. `unitCost` (REQUIRED oleh spec
+API) default `0` kalau kolom "Unit Price" kosong.
+
+Semua 19 titik registrasi tersentuh, trik verifikasi diff — 0 gap
+(10/10 file cocok persis Item Transfer, cuma nama file route beda).
+Typecheck 0 error (diverifikasi independen). Test suite API penuh
+**1275 pass/0 fail** (42 test baru: 26 unit mapping + 16 integrasi
+route). Test data dev DB dibersihkan via `bun run db:cleanup-test-data`.
+
+Security review via subagent `security-auditor` (dipanggil sesi utama
+setelah fork selesai): **0 Critical/High, 1 Medium, 2 Low**. Medium:
+mekanisme reject dictionary "Tipe Adj" sudah BENAR (0 fallback diam-diam,
+dikonfirmasi via 3 titik validasi + unit test), tapi risiko *false
+positive match* kalau istilah client kebetulan cocok dictionary tapi
+beda makna bisnis — tetap WAJIB retest Excel asli (bukan temuan baru,
+penguat Known Limitations yang sudah ada). 2 Low: UX minor (whitespace
+normalization, validasi tipe baru di worker bukan saat confirm — pola
+sama Item Transfer, bukan regresi) — auditor eksplisit: tidak perlu
+perbaikan kode sekarang. Belum ada test call nyata ke akun Accurate
+client. Detail lengkap →
+`docs/phases/phase-138-modul-inventory-adjustment.md`. Lanjut Fase 139
+(Job Costing).
+
+**Catatan proses**: eksekusi Fase 138 sempat terinterupsi rate-limit
+sesi di tengah jalan (10 dari 11 titik registrasi existing BELUM
+tersentuh saat itu, walau `git status` sempat terlihat seolah "modified"
+karena residu Fase 137 — klaim status HARUS diverifikasi ulang, bukan
+diasumsikan dari `git status` semata). Setelah sesi reset, agent
+dilanjutkan dari titik terakhir dan menyelesaikan sisa pekerjaan dengan
+benar (diverifikasi ulang, bukan asumsi).
+
+## Update 2026-09-21 — Fase 139 Done: Modul Job Costing (Modul Ketiga/Terakhir, Paling Kompleks)
+
+Modul KETIGA/terakhir dari 3 modul yang dieksekusi berurutan atas
+otorisasi eksplisit user — dan PALING KOMPLEKS: BUKAN 1 transaksi API,
+tapi **2 panggilan berurutan** (`job-order/save.do` lalu
+`material-adjustment/save.do`, § `architecture-job-costing.md` "RESOLVED:
+2 Endpoint", endpoint kedua ditemukan via verifikasi portal developer
+live yang tidak ada di snapshot JSON lokal). Modul PERTAMA kategori
+"Manufacture" (0% sebelumnya, disiapkan sejak Fase 126).
+
+**Percobaan eksekusi ke-1 dan ke-2 (fork) gagal 0 tool call** (sama pola
+kegagalan Sales Order sebelumnya) — sesi ketiga dieksekusi LANGSUNG oleh
+sesi utama (bukan fork) untuk memastikan pekerjaan benar-benar terjadi,
+diverifikasi tool-by-tool (Read file referensi dulu, baru tulis kode).
+
+**Orkestrasi 2-endpoint**: fungsi baru `processJobCostingGroup`
+(workers/index.ts) — panggil `saveJobOrder` DULU (header + `detailExpense[]`
+dari kolom Expense No/Name/Amount), lalu `saveMaterialAdjustment` pakai
+`jobOrderNumber` = **`number` dari RESPONS panggilan pertama** (bukan
+nilai Excel "No. Job Order" mentah — penting karena Accurate generate
+nomor otomatis kalau kolom itu kosong). Kegagalan PARSIAL (Job Order
+sukses, Material Adjustment gagal): TIDAK ada rollback, pesan error
+WAJIB menyebutkan nomor Job Order yang sudah terlanjur dibuat di
+Accurate — mengalir lewat mekanisme error-reporting per-baris yang
+sudah ada, tidak perlu kolom DB baru.
+
+**Keputusan desain terpenting**: `materialAdjustmentAccountNo` (REQUIRED
+endpoint kedua) REUSE nilai "Job Account No" yang sama dengan
+`jobAccountNo` — **ASUMSI belum dikonfirmasi client**, RISIKO UTAMA
+yang tersisa (Excel client cuma punya 1 kolom akun, API secara konsep
+minta 2 akun terpisah). TIDAK auto-create bahan baku — ditemukan
+SAAT eksekusi bahwa Excel client Job Costing TIDAK punya kolom "RM Item
+Name" (SAMA situasi Inventory Adjustment Fase 138, BEDA dari dugaan
+awal instruksi yang menduga mirror Item Transfer yang auto-create) —
+keputusan dikoreksi sendiri saat implementasi, dicatat di phase doc.
+
+Semua 19 titik registrasi tersentuh, trik verifikasi diff — 0 gap.
+Typecheck 0 error (diverifikasi independen). Test suite API penuh
+**1313 pass/0 fail** (38 test baru: 17 unit mapping + 21 integrasi
+route). Test data dev DB dibersihkan.
+
+Security review via subagent `security-auditor`: **0 Critical, 1 HIGH,
+2 Medium, 2 Low**.
+
+**HIGH — retry pasca-kegagalan-parsial bisa bikin Job Order DUPLIKAT
+di Accurate**: implementasi awal cuma "melaporkan" kegagalan parsial
+ke user (pesan error sebut nomor Job Order orphan), TAPI kalau baris
+itu di-retry, `processJobCostingGroup` memanggil `saveJobOrder` LAGI
+dari nol — karena `number` opsional (Accurate generate otomatis kalau
+kosong), tiap retry bikin Job Order BARU, orphan lama tidak pernah
+dipakai ulang, bisa menumpuk terus. **DIPERBAIKI SEKARANG** (sesuai
+SOP, Critical/High tidak ditunda): `processJobCostingGroup` sekarang
+cek `accurateTransactionId` baris-baris grup DULU — kalau job order
+grup itu SUDAH pernah berhasil dibuat (attempt sebelumnya), SKIP
+`saveJobOrder`, reuse nomornya langsung untuk `saveMaterialAdjustment`.
+Nomor disimpan ke `accurateTransactionId` SEGERA setelah `saveJobOrder`
+sukses (reuse kolom existing, tidak perlu migration DB baru).
+Diverifikasi ulang independen setelah fix: `bun run typecheck` 0 error,
+`bun test` 1313 pass/0 fail — 0 regresi.
+
+2 Medium: (1) `materialAdjustmentAccountNo` reuse "Job Account No" —
+sama asumsi yang sudah tercatat, ditegaskan ulang auditor sebagai risiko
+data (bukan akses) yang perlu retest client; (2) komentar dokumentasi
+di `job-costing.mapping.ts` yang salah soal auto-create item — SUDAH
+diperbaiki sekalian. 2 Low: scope `item_save` disiapkan tapi belum
+dipakai (sengaja), error Accurate diteruskan apa adanya ke user (pola
+project-wide, aman).
+
+Belum ada test call nyata ke akun Accurate client (termasuk verifikasi
+retry-safety fix di atas — baru lolos unit test/typecheck, belum
+integrasi Accurate sungguhan). Detail lengkap →
+`docs/phases/phase-139-modul-job-costing.md`.
+
+**INI MENUTUP SELURUH RANGKAIAN 3 MODUL** (Sales Order → Inventory
+Adjustment → Job Costing) yang dieksekusi berurutan atas otorisasi
+eksplisit user 2026-09-21, LENGKAP dengan security review tiap modul
+(via subagent `security-auditor`, dijalankan sesi utama setelah tiap
+fork selesai — total 1 HIGH ditemukan & diperbaiki di Job Costing, 0
+temuan lain yang butuh perbaikan kode) — SEMUA di `develop`, BELUM
+di-release ke `main` (menunggu keputusan batch-release user, pola
+standar sesi ini), DAN belum di-commit sama sekali (instruksi eksplisit:
+jangan commit sampai diarahkan).
+
+## Update 2026-09-21 — Fase 140 Done: Konteks Data Usaha Aktif di Gerbang Modul
+
+Keluhan Pak Untung (import gagal "open-db.do HTTP 401") didiagnosis lewat
+SQL read-only di production: gejala 401 hanya pemicu, akar masalahnya
+`moduleAccess` memilih subscription TERBARU lintas semua Data Usaha — semua
+upload Purchase Invoice-nya masuk INTERTOUCH MALAYSIA walau dia memilih PT
+MAGINET. Berbahaya: kalau koneksi sehat, data terposting ke perusahaan yang
+salah. Diperbaiki via header `X-Data-Usaha-Id` (ADR-0035): validasi kepemilikan/
+seat, saring per Data Usaha, fail-closed 409 kalau ambigu.
+
+Typecheck 0 error, lint bersih, API 1327 pass/0 fail (+14 test), web 57 pass;
+6 dari 8 test regresi inti gagal pada kode lama (mutation check). Security
+review: 0 Critical/High, 1 Medium (multi-tab) + 6 Low — semua yang relevan
+diperbaiki langsung kecuali `allowedHeaders` CORS eksplisit (saran hardening).
+Detail → `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md`,
+`docs/lessons-learned.md` 2026-09-21.
+
+**Belum di-deploy.** Terbuka (di luar fase ini): (1) duplikasi koneksi Accurate
+(15 koneksi/2 perusahaan, 1 OAuth baru per modul) — fase terpisah; (2)
+audit read-only batch lama yang salah Data Usaha untuk customer lain;
+(3) catatan auditor: `accurateConnections.userId` diisi pembeli awal
+(dibekukan) — setelah transfer kepemilikan, pemilik lama masih bisa memakai
+endpoint database/select koneksi itu (pola Fase 113, cek terpisah).
+Sampai deploy, Pak Untung JANGAN retry/hubungkan ulang.

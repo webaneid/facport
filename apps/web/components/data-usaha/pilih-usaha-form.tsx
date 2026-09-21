@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { ACTIVE_DATA_USAHA_COOKIE } from "@/lib/active-data-usaha-cookie";
+import { markActiveDataUsahaSeen } from "@/lib/api-client";
 import { PilihUsahaHeader } from "./pilih-usaha-header";
 import { BannerSlider, BANNER_COLLAPSE_STORAGE_KEY } from "./banner-slider";
 import { ExpiringSoonAlert, type ExpiringSubscriptionRow } from "@/components/subscribe/expiring-soon-alert";
@@ -59,6 +60,7 @@ function avatarColor(seed: string) {
 function setActiveDataUsahaCookie(id: string) {
   const maxAge = 60 * 60 * 24 * 365;
   document.cookie = `${ACTIVE_DATA_USAHA_COOKIE}=${id}; path=/; max-age=${maxAge}; samesite=lax`;
+  markActiveDataUsahaSeen();
 }
 
 // § diminta user 2026-09-11 — redesain gerbang "Pilih Data Usaha" mengikuti

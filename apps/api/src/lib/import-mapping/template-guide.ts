@@ -1017,6 +1017,59 @@ export const salesQuotationTemplateGuide: TemplateFieldGuide[] = [
   { column: "Expense: Finance Category 10", required: false, example: "", description: "Kategori Keuangan 10, sama catatan di atas." },
 ];
 
+// § Fase 137, architecture-sales-order.md — kelanjutan LANGSUNG Sales
+// Quotation (client konfirmasi penawaran jadi pesanan resmi), auto-create
+// Customer+Item (mirror Sales Quotation/Sales Invoice). Field BARU vs
+// Sales Quotation: "PO Number" dan "Sales List No" (ARRAY beneran,
+// dipisah koma). Nama kolom PERSIS sesuai sheet client asli (BUKAN gaya
+// generik seperti Sales Quotation lama).
+export const salesOrderTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "15/09/2026", description: "Tanggal transaksi Sales Order." },
+  { column: "Trans No", required: false, example: "", description: "Nomor transaksi INTERNAL Accurate — opsional, sekaligus kunci penggabungan baris kalau diisi (isi SAMA di beberapa baris untuk 1 sales order berisi banyak barang). Kosongkan untuk auto-number, tiap baris jadi sales order sendiri-sendiri." },
+  { column: "Cust No", required: true, example: "C.0001", description: "Nomor/kode customer PERSIS seperti di Accurate — dibuatkan otomatis kalau belum ada." },
+  { column: "Pay Term Name", required: false, example: "", description: "Nama syarat pembayaran, harus PERSIS terdaftar di Accurate." },
+  { column: "To Address", required: false, example: "", description: "Alamat pengiriman/tujuan." },
+  { column: "Description", required: false, example: "", description: "Keterangan/catatan untuk transaksi ini." },
+  { column: "PO Number", required: false, example: "", description: "Nomor referensi Purchase Order dari customer (BUKAN field yang ada di Sales Quotation)." },
+  { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Cash Discount", required: false, example: "", description: "Diskon tunai nominal." },
+  { column: "Cash Disc Percent", required: false, example: "", description: "Diskon tunai persen." },
+  { column: "Currency Code", required: false, example: "", description: "Kode mata uang, kosongkan untuk mata uang dasar perusahaan." },
+  { column: "Rate", required: false, example: "", description: "Kurs mata uang asing ke mata uang dasar." },
+  { column: "FOB Name", required: false, example: "", description: "Free On Board — titik serah tanggung jawab pengiriman." },
+  { column: "Shipment Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal pengiriman." },
+  { column: "Shipment Name", required: false, example: "", description: "Nama jasa pengiriman/ekspedisi." },
+  { column: "Include Tax", required: false, format: BOOLEAN_FORMAT, example: "", description: "Harga sudah termasuk pajak atau belum." },
+  { column: "Taxable", required: false, format: BOOLEAN_FORMAT, example: "", description: "Transaksi ini kena pajak atau tidak." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti di Accurate — dibuatkan otomatis kalau belum ada." },
+  { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
+  { column: "Item Price", required: true, example: "50000", description: "Harga satuan barang." },
+  { column: "Qty", required: true, example: "5", description: "Jumlah barang yang dipesan." },
+  { column: "Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Note", required: false, example: "", description: "Catatan untuk baris barang ini." },
+  { column: "Sales Quot No", required: false, example: "", description: "Nomor Sales Quotation terkait baris barang ini, kalau ada (referensi saja, tidak divalidasi)." },
+  { column: "Item Cash Discount", required: false, example: "", description: "Diskon nominal untuk baris barang ini." },
+  { column: "Item Disc Percent", required: false, example: "", description: "Diskon persen untuk baris barang ini." },
+  { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Sales List No (separate with comma)", required: false, example: "", description: "Daftar kode tenaga penjual untuk baris ini — BOLEH lebih dari 1, pisahkan dengan koma (contoh: SLS-01,SLS-02)." },
+  { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "", description: "Baris ini kena PPN atau tidak." },
+  { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "", description: "Baris ini kena PPnBM atau tidak." },
+  { column: "PPh", required: false, format: BOOLEAN_FORMAT, example: "", description: "Baris ini kena PPh atau tidak." },
+  { column: "Item CLS1", required: false, example: "", description: "Kategori Keuangan 1 untuk baris ini, harus PERSIS terdaftar di Accurate — dibuat otomatis kalau belum ada." },
+  { column: "Item CLS2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
+  { column: "Item CLS3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
+  { column: "Expense Acc No", required: false, example: "", description: "Kode Akun (COA) beban tambahan level dokumen — WAJIB diisi bersama \"Expense Amount\"." },
+  { column: "Expense Name", required: false, example: "", description: "Nama/keterangan beban tambahan." },
+  { column: "Expense Amount", required: false, example: "", description: "Nominal beban tambahan — WAJIB diisi bersama \"Expense Acc No\"." },
+  { column: "Expense Note", required: false, example: "", description: "Catatan beban tambahan." },
+  { column: "Expense Sales Quot No", required: false, example: "", description: "Nomor Sales Quotation terkait baris beban ini, kalau ada." },
+  { column: "Expense Dept", required: false, example: "", description: "Nama departemen untuk baris beban ini." },
+  { column: "Expense CLS1", required: false, example: "", description: "Kategori Keuangan 1 untuk baris beban ini." },
+  { column: "Expense CLS2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
+  { column: "Expense CLS3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
+];
+
 // § Fase 124, architecture-sales-return.md — retur terhadap transaksi
 // yang sudah ada (Sales Invoice/Delivery Order/tanpa acuan). TIDAK
 // auto-create customer/item.
@@ -1143,4 +1196,80 @@ export const itemRequisitionTemplateGuide: TemplateFieldGuide[] = [
   { column: "Serial Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\"." },
   { column: "Serial ExpDate", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
   { column: "Note Penting", required: false, example: "", description: "Catatan penting internal — TIDAK PUNYA field khusus di Accurate, digabung otomatis ke \"Keterangan\" transaksi." },
+];
+
+// § Fase 138, architecture-inventory-adjustment.md. TIDAK auto-create
+// item (mirror Item Transfer) — "Item No" WAJIB sudah terdaftar di
+// Accurate. "Tipe Adj" nilai literal client BELUM diverifikasi, contoh
+// yang ditulis pakai istilah Indonesia dari dictionary
+// (`ITEM_ADJUSTMENT_TYPE_DICTIONARY`, § inventory-adjustment.mapping.ts).
+export const inventoryAdjustmentTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Inventory Adjustment." },
+  { column: "No. Item Adjustment", required: false, example: "IA-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 Item Adjustment (isi SAMA di beberapa baris untuk 1 penyesuaian berisi banyak barang). Kosongkan untuk penomoran otomatis Accurate." },
+  { column: "Adj Account No", required: false, example: "", description: "Kode akun (COA) penyesuaian persediaan — kosongkan untuk pakai default preferensi Accurate." },
+  { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Cabang", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Qty", required: true, example: "10", description: "Jumlah barang yang disesuaikan." },
+  { column: "Unit", required: false, example: "PCS", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Unit Price", required: false, example: "", description: "Nilai biaya persediaan per satuan — relevan kalau Tipe Adj menambah kuantitas, kosongkan kalau tidak (default 0)." },
+  { column: "Gudang", required: false, example: "", description: "Nama gudang tempat barang disesuaikan, harus PERSIS terdaftar di Accurate." },
+  { column: "Tipe Adj", required: true, example: "Tambah", description: "WAJIB diisi salah satu: Tambah/Masuk (barang masuk), Kurang/Keluar (barang keluar), atau Stok/Stok Opname/Penyesuaian Stok (penyesuaian langsung ke jumlah stok)." },
+  { column: "Note Penting", required: false, example: "", description: "Catatan tambahan untuk baris barang ini." },
+  { column: "Serial No", required: false, example: "", description: "Nomor seri barang (tracking barang bernomor seri) — WAJIB diisi bersama \"Serial Qty\" kalau dipakai." },
+  { column: "Serial Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\"." },
+  { column: "Serial ExpDate", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+  { column: "Atribut Tambahan 1", required: false, example: "", description: "Atribut Tambahan karakter 1 (charField1) — field custom Accurate, isi sesuai konfigurasi perusahaan." },
+  { column: "Atribut Tambahan 2", required: false, example: "", description: "Atribut Tambahan karakter 2." },
+  { column: "Atribut Tambahan 3", required: false, example: "", description: "Atribut Tambahan karakter 3." },
+  { column: "Atribut Tambahan 4", required: false, example: "", description: "Atribut Tambahan karakter 4." },
+  { column: "Atribut Tambahan 5", required: false, example: "", description: "Atribut Tambahan karakter 5." },
+  { column: "Atribut Tambahan 6", required: false, example: "", description: "Atribut Tambahan karakter 6." },
+  { column: "Atribut Tambahan 7", required: false, example: "", description: "Atribut Tambahan karakter 7." },
+  { column: "Atribut Tambahan 8", required: false, example: "", description: "Atribut Tambahan karakter 8." },
+  { column: "Atribut Tambahan 9", required: false, example: "", description: "Atribut Tambahan karakter 9." },
+  { column: "Atribut Tambahan 10", required: false, example: "", description: "Atribut Tambahan karakter 10." },
+  { column: "Atribut Number 1", required: false, example: "", description: "Atribut Tambahan angka 1 (numericField1)." },
+  { column: "Atribut Number 2", required: false, example: "", description: "Atribut Tambahan angka 2." },
+  { column: "Atribut Number 3", required: false, example: "", description: "Atribut Tambahan angka 3." },
+  { column: "Atribut Number 4", required: false, example: "", description: "Atribut Tambahan angka 4." },
+  { column: "Atribut Number 5", required: false, example: "", description: "Atribut Tambahan angka 5." },
+  { column: "Atribut Number 6", required: false, example: "", description: "Atribut Tambahan angka 6." },
+  { column: "Atribut Number 7", required: false, example: "", description: "Atribut Tambahan angka 7." },
+  { column: "Atribut Number 8", required: false, example: "", description: "Atribut Tambahan angka 8." },
+  { column: "Atribut Number 9", required: false, example: "", description: "Atribut Tambahan angka 9." },
+  { column: "Atribut Number 10", required: false, example: "", description: "Atribut Tambahan angka 10." },
+  { column: "Atribut Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut Tambahan tanggal 1 (dateField1)." },
+  { column: "Atribut Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut Tambahan tanggal 2 (dateField2)." },
+];
+
+// § Fase 139, architecture-job-costing.md. Modul PERTAMA kategori
+// "Manufacture". 2 PANGGILAN API berurutan (job-order/save.do lalu
+// material-adjustment/save.do) — TIDAK terlihat dari sisi Excel client
+// (1 template, 1 upload), murni detail implementasi backend. TIDAK
+// auto-create item (Excel tidak punya kolom "RM Item Name").
+export const jobCostingTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Job Costing." },
+  { column: "No. Job Order", required: false, example: "JO-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 Job Order (isi SAMA di beberapa baris untuk 1 pekerjaan berisi banyak bahan baku/biaya). Kosongkan untuk penomoran otomatis Accurate." },
+  { column: "Job Account No", required: true, example: "", description: "Kode akun (COA) pekerjaan — DIPAKAI ULANG juga sebagai akun penyesuaian bahan baku (materialAdjustmentAccountNo), § Known Limitations." },
+  { column: "Difference Account No", required: false, example: "", description: "Kode akun (COA) selisih biaya pekerjaan." },
+  { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Nama Cabang", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "RM_Item No", required: true, example: "BRG-001", description: "Kode bahan baku PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "RM_Qty", required: true, example: "10", description: "Jumlah bahan baku yang dipakai." },
+  { column: "RM_Unit", required: false, example: "PCS", description: "Satuan bahan baku, harus PERSIS terdaftar di Accurate." },
+  { column: "SN - Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\"." },
+  { column: "Serial No", required: false, example: "", description: "Nomor seri bahan baku (tracking barang bernomor seri) — WAJIB diisi bersama \"SN - Qty\" kalau dipakai." },
+  { column: "SN - Exp Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+  { column: "Project No", required: false, example: "", description: "Nomor proyek untuk pencatatan cost/profit center." },
+  { column: "Dept Name", required: false, example: "", description: "Nama departemen untuk pencatatan cost/profit center." },
+  { column: "Warehouse", required: false, example: "", description: "Nama gudang tempat bahan baku diambil, harus PERSIS terdaftar di Accurate." },
+  { column: "RM_CLS1", required: false, example: "", description: "Kategori Keuangan 1 untuk bahan baku ini — dibuat otomatis kalau belum ada." },
+  { column: "RM_CLS2", required: false, example: "", description: "Kategori Keuangan 2." },
+  { column: "RM_CLS3", required: false, example: "", description: "Kategori Keuangan 3." },
+  { column: "Note Penting", required: false, example: "", description: "Catatan tambahan untuk baris bahan baku ini." },
+  { column: "Expense No", required: false, example: "", description: "Kode akun (COA) biaya tambahan untuk pekerjaan ini, kalau ada." },
+  { column: "Expense Name", required: false, example: "", description: "Nama biaya tambahan." },
+  { column: "Expense Amount", required: false, example: "", description: "Nilai biaya tambahan." },
+  { column: "Note", required: false, example: "", description: "Catatan untuk baris biaya tambahan ini." },
 ];

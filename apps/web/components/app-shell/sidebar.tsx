@@ -36,6 +36,9 @@ import {
   Coins,
   ArrowLeftRight,
   ClipboardList,
+  ClipboardCheck,
+  Boxes,
+  Factory,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -118,6 +121,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
         // (architecture-sales-quotation.md).
         { href: "/sales-quotation/import", label: "Import Sales Quotation", icon: FileSignature, moduleKey: "sales_quotation" },
+        // § Fase 137 — Sales Order, kelanjutan Sales Quotation
+        // (architecture-sales-order.md).
+        { href: "/sales-order/import", label: "Import Sales Order", icon: ClipboardCheck, moduleKey: "sales_order" },
         // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul
         // baru (architecture-sales-return.md).
         { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
@@ -126,6 +132,10 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // architecture-item-requisition.md).
         { href: "/item-transfer/import", label: "Import Item Transfer", icon: ArrowLeftRight, moduleKey: "item_transfer" },
         { href: "/item-requisition/import", label: "Import Item Requisition", icon: ClipboardList, moduleKey: "item_requisition" },
+        // § Fase 138 (architecture-inventory-adjustment.md).
+        { href: "/inventory-adjustment/import", label: "Import Inventory Adjustment", icon: Boxes, moduleKey: "inventory_adjustment" },
+        // § Fase 139 — modul PERTAMA kategori "Manufacture" (architecture-job-costing.md).
+        { href: "/job-costing/import", label: "Import Job Costing", icon: Factory, moduleKey: "job_costing" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu). TANPA kategori (moduleKey kosong → cluster
