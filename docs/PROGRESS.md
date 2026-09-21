@@ -148,6 +148,7 @@
 | 138  | Modul Inventory Adjustment (Penyesuaian Persediaan) | Done | `docs/architecture/architecture-inventory-adjustment.md` | `docs/phases/phase-138-modul-inventory-adjustment.md` |
 | 139  | Modul Job Costing (Pekerjaan Pesanan) — 2 endpoint berurutan, kategori Manufacture pertama | Done | `docs/architecture/architecture-job-costing.md` | `docs/phases/phase-139-modul-job-costing.md` |
 | 140  | Konteks Data Usaha Aktif di Gerbang Modul (fix upload masuk perusahaan yang salah) | Done | `docs/decisions/adr-0035-konteks-data-usaha-aktif-di-server.md` | `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md` |
+| 141  | Bukti Perilaku Otorisasi Accurate + Rencana Gerbang Otorisasi Tunggal (koneksi 1-per-akun-Accurate, mesin scope) | In Progress | `docs/decisions/adr-0036-koneksi-accurate-per-akun-dan-mesin-scope.md` | `docs/phases/phase-141-bukti-otorisasi-accurate-dan-rencana-gerbang-tunggal.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
