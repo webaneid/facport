@@ -134,6 +134,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Integrasi Accurate Online — OAuth & infra bersama SEMUA modul | `docs/architecture/architecture-accurate-integration.md` |
 | Scope OAuth Accurate (registri endpoint, `granted_scopes`, cek scope) | `docs/architecture/architecture-accurate-scope-engine.md` |
 | Gerbang koneksi Accurate (popup glass di dashboard, status per Data Usaha, narasi) | `docs/architecture/architecture-accurate-connect-gate.md` |
+| Cutover koneksi Accurate ke production (carry-over, pengumuman, runbook, rollback) | `docs/architecture/architecture-accurate-cutover.md` |
 | Modul Faktur Pembelian (Purchase Invoice) | `docs/architecture/architecture-purchase-invoice.md` |
 | Modul Faktur Penjualan (Sales Invoice) | `docs/architecture/architecture-sales-invoice.md` |
 | Modul Akun Hutang Pemasok (Vendor, Data Master) | `docs/architecture/architecture-vendor-payable-account.md` |
