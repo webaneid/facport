@@ -1,3 +1,16 @@
+## 2.7.0 (2026-09-21)
+
+* Merge pull request #68 from webaneid/develop ([887c0b1](https://github.com/webaneid/facport/commit/887c0b1)), closes [#68](https://github.com/webaneid/facport/issues/68)
+* fix(admin): putuskan koneksi Accurate per Data Usaha, bukan per subscription (Fase 144) ([fb9e808](https://github.com/webaneid/facport/commit/fb9e808))
+* fix(test): ganti nilai token nyata di tes galat token dengan penanda palsu ([ae02130](https://github.com/webaneid/facport/commit/ae02130))
+* feat(accurate): koneksi 1-per-akun dipegang Data Usaha + gerbang koneksi popup (Fase 143-144) ([32c68e4](https://github.com/webaneid/facport/commit/32c68e4))
+* feat(accurate): mesin scope — registri endpoint, granted_scopes, otorisasi semua scope (Fase 142) ([0be3bc6](https://github.com/webaneid/facport/commit/0be3bc6)), closes [#2](https://github.com/webaneid/facport/issues/2)
+* feat(accurate): putus total ke koneksi lama saat cutover (migrasi 0030, Fase 145) ([d94e7be](https://github.com/webaneid/facport/commit/d94e7be))
+* docs(accurate): bukti otorisasi OAuth & ADR-0036 koneksi per akun (Fase 141) ([0f0a552](https://github.com/webaneid/facport/commit/0f0a552))
+* docs(accurate): catat verifikasi end-to-end UI gerbang koneksi (Fase 144) ([384b3c3](https://github.com/webaneid/facport/commit/384b3c3))
+* docs(accurate): hasil pemeriksaan production P1-P3, tutup Fase 141 ([604de32](https://github.com/webaneid/facport/commit/604de32))
+* docs(accurate): rencana Fase 145 — cutover koneksi Accurate ke production ([719294d](https://github.com/webaneid/facport/commit/719294d))
+
 ## <small>2.6.1 (2026-09-21)</small>
 
 * feat(sales,inventory,manufacture): modul Sales Order, Inventory Adjustment & Job Costing (Fase 137-1 ([d1384dc](https://github.com/webaneid/facport/commit/d1384dc))
