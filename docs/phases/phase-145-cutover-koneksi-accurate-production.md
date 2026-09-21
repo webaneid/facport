@@ -4,6 +4,10 @@
 **Mulai:** —
 **Selesai:** —
 
+> **AMANDEMEN 2026-09-22:** user memutuskan PUTUS TOTAL (tanpa carry-over/pengumuman T-3). Task T1–T3 (skrip carry-over & notify) **DIBATALKAN**;
+> digantikan migrasi `0030_putus_total_koneksi_lama` + guard job refresh + `migrated` dari pointer lama (selesai, lihat ADR-0037 #11). Sisa fase:
+> runbook (T5 disederhanakan), pra-cek/backup, deploy, verifikasi, pengumuman pasca, kontrak (T11).
+
 ## Tujuan
 Merilis Fase 143+144 ke production TANPA memutus customer yang koneksinya masih hidup: koneksi lama yang hidup dipindahkan ke
 model baru (carry-over baca-saja), yang mati diarahkan sekali lewat popup, customer diberi tahu lebih dulu, dan ada rollback
@@ -12,9 +16,9 @@ yang jelas. Rancangan lengkap (strategi, skrip, runbook, SQL pack, rollback, nar
 
 ## Scope (task)
 Bagian A — kode & dokumen (dikerjakan di `develop`, tanpa rilis):
-- [ ] T1 `planCarryOver` (fungsi murni: keputusan `carry_over`/`skip_dead`/`skip_owner_mismatch`/`skip_account_conflict`/`skip_db_conflict`/`skip_db_ambiguous`/`skip_error`) + tes unit menyeluruh
-- [ ] T2 `db:carry-over-accurate` (dry-run default, `--apply`, transaksi per koneksi, panggilan Accurate baca-saja lewat rate limiter, keluaran tanpa token & email disamarkan) + tes integrasi dengan mock Accurate & DB
-- [ ] T3 `db:notify-accurate-cutover` (`--phase pre|post`, dry-run default, in-app + email, idempotent per user+fase) + tes
+- [~] DIBATALKAN T1 `planCarryOver` (fungsi murni: keputusan `carry_over`/`skip_dead`/`skip_owner_mismatch`/`skip_account_conflict`/`skip_db_conflict`/`skip_db_ambiguous`/`skip_error`) + tes unit menyeluruh
+- [~] DIBATALKAN T2 `db:carry-over-accurate` (dry-run default, `--apply`, transaksi per koneksi, panggilan Accurate baca-saja lewat rate limiter, keluaran tanpa token & email disamarkan) + tes integrasi dengan mock Accurate & DB
+- [~] DIBATALKAN T3 `db:notify-accurate-cutover` (`--phase pre|post`, dry-run default, in-app + email, idempotent per user+fase) + tes
 - [ ] T4 SQL pack verifikasi pasca-deploy (perintah `docker exec ... psql -c "..."` siap tempel, satu per pesan) di dokumen runbook
 - [ ] T5 Runbook T-3 → T0 → T+7 final (perintah persis, urutan, pra-cek, kriteria lanjut/berhenti) + jalur `db:migrate` manual bila gagal
 - [ ] T6 Uji gladi di DB dev dengan data hasil-meniru production (koneksi hidup/mati/multi-Data-Usaha/transfer) — carry-over dry-run & apply, lalu gerbang UI benar

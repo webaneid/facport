@@ -40,6 +40,14 @@ tanpa memanggil Accurate dengan token customer.
     bisa menyodorkan `authorizeUrl`-nya ke korban dan menyambungkan akun Accurate korban ke Data Usaha penyerang. Diperiksa
     SEBELUM tukar kode. Worker menandai koneksi `expired` HANYA untuk HTTP 401 (bukan jaringan/5xx/penolakan logis).
 
+11. **AMANDEMEN 2026-09-22 (keputusan user): PUTUS TOTAL, tanpa carry-over dan tanpa backfill database.** Pemetaan lama (subscription → koneksi
+    → database) adalah sumber kekacauan Data Usaha (kasus Pak Untung) dan database hasil backfill 0028 terbukti tidak bisa dipercaya, jadi:
+    migrasi `0030_putus_total_koneksi_lama` mengosongkan pointer & database semua Data Usaha yang belum menunjuk koneksi model baru
+    (termasuk hasil backfill 0028) dan mencabut (`revoked`) semua koneksi lama; job refresh harian hanya memproses koneksi berakun.
+    Semua customer menghubungkan ulang dan memilih database dari nol. Ini **menggantikan** #7 (backfill sebagai petunjuk) dan alternatif
+    "carry-over" di bawah. Narasi popup `migrated` diturunkan dari pointer lama di `subscriptions` (bukan dari database tersimpan).
+    Dipilih karena dini hari, tidak ada koneksi/upload berjalan, dan customer hanya 9.
+
 ## Consequences
 - Customer yang koneksinya masih hidup ikut terputus saat rilis → 143 dirilis BERSAMA UI 144 dan setelah customer
   diberi tahu; sebelum itu tetap di `develop`.

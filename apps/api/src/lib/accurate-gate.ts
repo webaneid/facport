@@ -2,7 +2,7 @@
 // (gerbang), banner, kartu dashboard, halaman /accurate dan penghalang halaman import. Jangan bikin turunan status lain di tempat lain.
 import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "./db";
-import { accurateConnections, dataUsaha } from "../db/schema";
+import { accurateConnections, dataUsaha, subscriptions } from "../db/schema";
 import { getAccessibleSubscriptionsWithPlans } from "./subscription-gate";
 import { hasAccessToDataUsaha, ownsDataUsaha } from "./data-usaha";
 import { resolveConnectionForDataUsaha } from "./accurate-connection";
@@ -15,7 +15,7 @@ export type GateState = "ok" | "not_connected" | "reconnect" | "update_permissio
 
 export type AccurateGate = {
   state: GateState;
-  /** true = "database terakhir diketahui" hasil backfill migrasi (belum dikonfirmasi) & belum terhubung: koneksi lama sebelum cutover. */
+  /** true = Data Usaha ini dulu terhubung lewat model LAMA (subscription menunjuk koneksi lama) & belum terhubung lagi: narasi "hubungkan ulang sekali". */
   migrated: boolean;
   isOwner: boolean;
   /** false = Data Usaha ini hanya memakai produk yang tidak butuh Accurate (Konverter/AutoProduksi) → tidak ada gerbang. */
@@ -82,7 +82,15 @@ export async function computeAccurateGate(userId: string, dataUsahaId: string): 
 
   // 1. belum terhubung (atau hanya koneksi lama sebelum cutover)
   if (!connection) {
-    return withAccounts({ ...base, state: "not_connected", migrated: !!resolved.accurateDbId && !du?.accurateDbConfirmedAt });
+    // "migrated" = pernah terhubung lewat model LAMA (pointer lama di subscription; kolom itu dibekukan tapi belum dihapus). Diturunkan
+    // dari sana, BUKAN dari database tersimpan: migrasi 0030 (putus total) mengosongkan database hasil backfill karena pemetaan lama
+    // tidak dipercaya lagi — customer memilih database dari nol.
+    const [legacy] = await db
+      .select({ id: subscriptions.id })
+      .from(subscriptions)
+      .where(and(eq(subscriptions.dataUsahaId, dataUsahaId), isNotNull(subscriptions.accurateConnectionId)))
+      .limit(1);
+    return withAccounts({ ...base, state: "not_connected", migrated: !!legacy });
   }
   // 2. koneksi ada tapi mati
   if (connection.status !== "active") {

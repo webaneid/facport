@@ -71,12 +71,20 @@ describe("GET /accurate/gate — mesin status", () => {
     expect(await gateOf(cookie, du)).toMatchObject({ state: "ok", requiresAccurate: false });
   });
 
-  test("not_connected varian `migrated`: database terakhir hasil backfill belum dikonfirmasi & tanpa koneksi", async () => {
+  test("not_connected varian `migrated`: Data Usaha yang dulu terhubung lewat model LAMA (pointer lama di subscription) & belum terhubung lagi", async () => {
     const { userId, cookie } = await newUser("migrated");
     const du = await createTestDataUsaha(userId);
-    await db.update(dataUsaha).set({ accurateDbId: "9", accurateDbAlias: "PT Lama" }).where(eq(dataUsaha.id, du));
-    await subscribe(userId, du, "purchase_invoice", "mig");
-    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: true, lastKnownDbAlias: "PT Lama" });
+    const legacy = await createTestAccurateConnection(userId, { accurateUserId: null, status: "revoked" });
+    const sub = await subscribe(userId, du, "purchase_invoice", "mig");
+    await db.update(subscriptions).set({ accurateConnectionId: legacy.id }).where(eq(subscriptions.id, sub.id));
+    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: true, lastKnownDbAlias: null });
+  });
+
+  test("Data Usaha baru tanpa riwayat koneksi lama → migrated false (narasi 'Hubungkan Sekarang')", async () => {
+    const { userId, cookie } = await newUser("notmigrated");
+    const du = await createTestDataUsaha(userId);
+    await subscribe(userId, du, "purchase_invoice", "nomig");
+    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: false });
   });
 
   test("terputus SETELAH dikonfirmasi (admin/transfer) → not_connected TANPA migrated, tetap menyebut database terakhir", async () => {

@@ -1,5 +1,12 @@
 # Architecture — Cutover Koneksi Accurate ke Production (Fase 145)
 
+> **⚠️ AMANDEMEN 2026-09-22 (keputusan user): PUTUS TOTAL.** Bagian "Strategi: Carry-over", "Skrip", dan sebagian runbook di bawah
+> **DIBATALKAN**. Diganti: migrasi `0030_putus_total_koneksi_lama` (kosongkan pointer/database, cabut koneksi lama; ADR-0037 #11) +
+> job refresh hanya untuk koneksi berakun. Semua customer hubungkan ulang & pilih database dari nol (popup Fase 144). Runbook menjadi:
+> pra-cek (batch berjalan = 0, backup) → rilis → deploy Full → `db:migrate` (0027–0030) → verifikasi (SQL pack + uji browser) →
+> pengumuman pasca (in-app via admin "Pengumuman", email bila `RESEND_API_KEY` terisi). Tidak ada pengumuman T-3 (dijalankan dini hari saat
+> sepi). Bagian C (kontrak: hapus kolom/baris legacy) tetap rilis terpisah ≥ T+7. Dokumen asli dipertahankan sebagai catatan alternatif yang ditolak.
+
 > Rencana rilis Fase 143 (model koneksi 1-per-akun, ADR-0037) + 144 (gerbang popup) ke production, dengan customer nyata.
 > Prinsip: **customer yang koneksinya MASIH HIDUP tidak boleh terputus**; yang sudah mati diarahkan sekali, dengan pemberitahuan
 > lebih dulu. Semua tindakan terhadap data/token customer dijalankan **user sendiri** lewat SSH (aturan tetap proyek), Claude menyiapkan

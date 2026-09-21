@@ -1,6 +1,6 @@
 import "../lib/env"; // WAJIB paling awal
 
-import { eq, and, or, lt, lte, inArray, notInArray, sql, desc } from "drizzle-orm";
+import { eq, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
@@ -1831,7 +1831,9 @@ async function main() {
     const dueForRefresh = await db
       .select()
       .from(accurateConnections)
-      .where(and(eq(accurateConnections.status, "active"), lte(accurateConnections.expiresAt, soon)));
+      // § Fase 145 — hanya koneksi model BARU (berakun): koneksi lama (accurate_user_id NULL) sudah dicabut saat cutover dan tidak boleh
+      // diputar tokennya / memicu notifikasi "terputus" ketika token lamanya mati karena customer menghubungkan ulang.
+      .where(and(eq(accurateConnections.status, "active"), isNotNull(accurateConnections.accurateUserId), lte(accurateConnections.expiresAt, soon)));
 
     for (const conn of dueForRefresh) {
       try {
