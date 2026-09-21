@@ -1,177 +1,56 @@
-// § architecture-accurate-integration.md § "Scope Sesuai Paket Langganan".
-// ✅ SEMUA scope di bawah VERIFIED 2026-08-19 terhadap daftar scope resmi
-// LENGKAP (222 scope) yang diambil dari OpenAPI spec publik Accurate
-// (https://account.accurate.id/open-api/json.do, TIDAK login-gated —
-// lihat architecture-accurate-integration.md § "Dokumentasi Resmi") —
-// bukan tebakan.
-// § Fase 14, ADR-0019 — key diganti dari grup top-level
-// (pembelian/penjualan/dst) ke SUB-MODUL (persis 5 yang dijual client:
-// purchase_invoice, sales_invoice, sales_receipt, purchase_payment,
-// journal_voucher). `purchase_order`/`receive_item` (dulu ikut bundel
-// "pembelian") DIHAPUS dari sini — bukan salah satu dari 5 sub-modul
-// yang dijual sekarang, scope-nya balik lagi kalau/pas sub-modul itu
-// benar-benar dibangun (pola sama seperti sebelumnya: scope disiapkan
-// SAAT modul itu jadi giliran, bukan mendahului).
-export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
-  // § Fase 75 — `data_classification_view`/`_save` ditambah untuk
-  // auto-create Kategori Keuangan (Atribut Tambahan item/expense-level,
-  // `findOrCreateDataClassification`, mirror Fase 68 Sales Invoice) —
-  // koneksi existing SEBELUM penambahan ini wajib re-authorize ulang.
-  // § Fase 78 (2026-09-09) — BUG DITEMUKAN & DIPERBAIKI: `vendor_view`/
-  // `vendor_save` DIKEMBALIKAN ke sini. ADR-0026 (commit `1bc9256`)
-  // memindahkan KEDUA scope ini SEPENUHNYA ke `vendor_payable_account`
-  // dengan asumsi cuma dipakai fitur "Import Akun Hutang Pemasok"
-  // (`vendor-payable-account-import.route.ts`) — TAPI `findOrCreateVendor`
-  // (Fase 05, dipanggil UNCONDITIONAL di `processPurchaseInvoiceGroup`
-  // untuk cek/bikin vendor SETIAP kali import Faktur Pembelian, fitur
-  // INTI Purchase Invoice yang TIDAK ADA hubungannya dengan fitur Akun
-  // Hutang Pemasok) JUGA butuh scope ini (`vendor/list.do` buat cek
-  // existing, `vendor/save.do` buat auto-create). Akibat ADR-0026:
-  // SEMUA subscriber Purchase Invoice yang TIDAK JUGA subscribe Akun
-  // Hutang Pemasok gagal 403 di baris PERTAMA setiap grup, sejak commit
-  // itu di-deploy — baru ketahuan sekarang lewat retest client
-  // (`docs/lessons-learned.md` 2026-09-09). Scope INI TETAP juga ada di
-  // `vendor_payable_account` di bawah (2 modul sama-sama butuh, alasan
-  // pakai beda) — BUKAN dipindah lagi, supaya keduanya jalan independen.
-  purchase_invoice: [
-    "purchase_invoice_view",
-    "purchase_invoice_save",
-    // § Fase 05 — auto-create item saat import Faktur Pembelian.
-    "item_save",
-    "data_classification_view",
-    "data_classification_save",
-    // § Fase 78 — auto-create/lookup vendor (`findOrCreateVendor`),
-    // lihat komentar di atas.
-    "vendor_view",
-    "vendor_save",
-  ],
-  // § ADR-0026 — dulu dibundel gratis ke `purchase_invoice` (Fase 04),
-  // sekarang sub-modul SENDIRI yang dijual terpisah (fitur "Import Akun
-  // Hutang Pemasok" — endpoint bulk-update terpisah, BEDA dari
-  // auto-create vendor di dalam import Purchase Invoice sendiri, § Fase
-  // 78 di atas). Koneksi Accurate yang connect SEBELUM perubahan ini
-  // WAJIB "Hubungkan Ulang" untuk dapat scope ini kalau baru sekarang
-  // subscribe.
-  vendor_payable_account: ["vendor_view", "vendor_save"],
-  // § Fase 13 — SEHARUSNYA sudah ditambah saat itu (customer_view/save
-  // dipakai `findOrCreateCustomer`, accurate-customer.ts), baru lengkap
-  // sekarang di Fase 14 saat file ini dirombak total. Koneksi Accurate
-  // existing yang connect SEBELUM scope ini ditambah TETAP perlu
-  // re-authorize manual utk dapat scope baru — pola sama seperti Fase 04.
-  // § Fase 68 — `data_classification_view`/`_save` ditambah untuk
-  // auto-create Kategori Keuangan (Atribut Tambahan item-level,
-  // `findOrCreateDataClassification`) — koneksi existing SEBELUM
-  // penambahan ini juga wajib re-authorize ulang.
-  sales_invoice: [
-    "sales_invoice_view",
-    "sales_invoice_save",
-    "customer_view",
-    "customer_save",
-    "item_save",
-    "data_classification_view",
-    "data_classification_save",
-  ],
-  // § Fase 86 (2026-09-10) — `tax_view` ditambah untuk riset/validasi
-  // "Tax ID" (lookup ke `/api/tax/detail.do` SEBELUM kirim payload
-  // Sales Receipt, pola sama seperti `findOrCreateVendor`/`findOrCreateItem`).
-  // Project masih tahap building, belum ada customer produksi yang
-  // connect modul ini — jadi biaya "re-authorize" TIDAK relevan sekarang,
-  // aman disiapkan lebih dulu sebelum fitur Tax ID benar-benar dieksekusi.
-  sales_receipt: ["sales_receipt_view", "sales_receipt_save", "tax_view"],
-  // § Fase 89 (2026-09-10) — `tax_view` ditambah untuk validasi "PPh ID"
-  // (reuse `accurate-tax.ts` dari Sales Receipt Fase 86, lookup ke
-  // `/api/tax/list.do` SEBELUM kirim payload Purchase Payment). Project
-  // masih tahap building, belum ada customer produksi — aman ditambah
-  // langsung (§ pelajaran sesi ini soal `tax_view` Sales Receipt).
-  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view", "tax_view"],
-  // § Fase 98 (2026-09-10) — `data_classification_view`/`_save` ditambah
-  // untuk auto-create Kategori Keuangan (`attribut1`-`attribut10`, §
-  // Fase 95, `findOrCreateDataClassification`) — GAP ditemukan: field
-  // ini ditambahkan Fase 95 TANPA scope-nya, akibatnya Accurate menolak
-  // ("Kategori Keuangan X tidak ditemukan atau sudah dihapus") begitu
-  // user isi kolom itu. Koneksi Accurate yang connect SEBELUM
-  // penambahan ini WAJIB "Hubungkan Ulang" untuk dapat scope baru.
-  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  // § Fase 96 (2026-09-10) — `data_classification_view`/`_save` LANGSUNG
-  // disertakan dari awal (§ pelajaran Fase 98: jangan tambah field
-  // Kategori Keuangan tanpa scope pendukungnya).
-  other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  // § Fase 128 — dikonfirmasi dari `accurate-openapi.json` security
-  // requirement `/api/other-deposit/save.do` (`other_deposit_save`) dan
-  // `/list.do`/`/detail.do` (`other_deposit_view`) — scope terpisah dari
-  // `other_payment_*` walau struktur payload identik.
-  other_deposit: ["other_deposit_view", "other_deposit_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  // § Fase 120, architecture-purchase-order.md — mirror Purchase Invoice
-  // (auto-create vendor+item, § Fase 05/78): `vendor_view`/`vendor_save`
-  // untuk findOrCreateVendor, `item_save` untuk findOrCreateItem (baseline
-  // `item_view` selalu ada, § scopesForModules), `data_classification_*`
-  // untuk Kategori Keuangan (dataClassificationNName).
-  // § dikonfirmasi dari `accurate-openapi.json` security requirement
-  // `/api/purchase-order/save.do` — HANYA `purchase_order_save` (TIDAK
-  // ada `purchase_order_view` terpisah, beda dari modul lain yang
-  // security block-nya minta scope _view juga untuk save.do).
-  purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
-  // § Fase 121, architecture-receive-item.md — TIDAK auto-create
-  // vendor/item (dokumen LANJUTAN, vendorNo/itemNo dikirim apa adanya,
-  // mirror Purchase Payment) — jadi TIDAK butuh vendor_view/vendor_save/
-  // item_save (baseline `item_view` selalu ada, § scopesForModules).
-  // `data_classification_view`/`_save` tetap untuk Kategori Keuangan
-  // item-level (dataClassificationNName). `receive_item_save` HANYA
-  // (tanpa `_view` terpisah), dikonfirmasi OpenAPI security block —
-  // sama pola Purchase Order.
-  receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
-  // § Fase 122, architecture-purchase-return.md — TIDAK auto-create
-  // vendor/item (dokumen LANJUTAN, mirror Receive Item). `_view` HANYA
-  // dari baseline `item_view` (§ scopesForModules). `purchase_return_save`
-  // HANYA (tanpa `_view` terpisah, dikonfirmasi OpenAPI security block).
-  purchase_return: ["purchase_return_save", "data_classification_view", "data_classification_save"],
-  // § Fase 123, architecture-sales-quotation.md — mirror Sales Invoice
-  // (auto-create customer+item): `customer_view`/`customer_save` untuk
-  // findOrCreateCustomer, `item_save` untuk findOrCreateItem (baseline
-  // `item_view` selalu ada), `data_classification_*` untuk Kategori
-  // Keuangan. `sales_quotation_save` HANYA (tanpa `_view` terpisah,
-  // dikonfirmasi OpenAPI security block).
-  sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
-  // § Fase 137, architecture-sales-order.md — mirror Sales Quotation
-  // PERSIS (auto-create customer+item, sama kebutuhan scope).
-  sales_order: ["sales_order_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
-  // § Fase 124, architecture-sales-return.md — TIDAK auto-create
-  // customer/item (dokumen LANJUTAN, mirror Purchase Return). `_view`
-  // HANYA dari baseline `item_view` (§ scopesForModules).
-  // `sales_return_save` HANYA (tanpa `_view` terpisah, dikonfirmasi
-  // OpenAPI security block).
-  sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
-  // § Fase 134-135, architecture-item-transfer.md — dikonfirmasi dari
-  // `accurate-openapi.json` security requirement `/api/item-transfer/save.do`:
-  // HANYA `item_transfer_save` (tanpa `_view` terpisah, pola sama Purchase
-  // Order/Receive Item/Sales Quotation/Sales Return). `glaccount_view`
-  // untuk `differenceItemTransferAccountNo`. `data_classification_*`
-  // untuk Item Cls1-3 (Kategori Keuangan). TIDAK butuh vendor_*/customer_*
-  // — modul ini murni internal gudang↔gudang, tidak ada pihak ketiga.
-  // `item_requisition` entri TERPISAH (isi SAMA, § architecture-item-requisition.md
-  // "OAuth Scope" — bukan pointer/reference, supaya subscribe 1 modul
-  // saja tetap dapat scope yang pas untuk modul itu sendiri).
-  item_transfer: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  item_requisition: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  // § Fase 138 — Inventory Adjustment. TIDAK butuh `item_save` (TIDAK
-  // auto-create item, § inventory-adjustment.mapping.ts) MAUPUN
-  // `data_classification_*` (modul ini TIDAK pakai Kategori Keuangan,
-  // cuma "Atribut Tambahan" charField/numericField/dateField yang tidak
-  // butuh scope terpisah — bukan master data seperti dataClassification).
-  // `glaccount_view` untuk resolve `adjustmentAccountNo`.
-  inventory_adjustment: ["item_adjustment_save", "glaccount_view"],
-  // § Fase 139 — Job Costing, 2 endpoint (job-order + material-adjustment,
-  // scope TERPISAH untuk masing-masing). `item_save` untuk RM (walau
-  // saat ini TIDAK auto-create, § accurate-job-costing.ts — scope
-  // disiapkan kalau nanti dipakai). Kategori Keuangan RM_CLS1-3 butuh
-  // data_classification_*.
-  job_costing: ["job_order_save", "material_adjustment_save", "item_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-};
+// § architecture-accurate-scope-engine.md, ADR-0036 #4 — scope OAuth per modul DITURUNKAN dari
+// registri endpoint (`accurate-endpoint-registry.ts`) + snapshot spec resmi Accurate
+// (`accurate-scope-snapshot.json`, dibuat `bun run scopes:sync` dari
+// https://account.accurate.id/open-api/json.do — publik, tidak login-gated). BUKAN tulis tangan
+// lagi: dua bug production (Fase 78 vendor_*, Fase 98 data_classification_*) terjadi karena
+// scope ditulis tangan terpisah dari kode yang memanggil endpoint-nya.
+//
+// § Fase 14, ADR-0019 — key = SUB-MODUL (key `module-catalog.ts`, varian Produk "facport").
+// API publik (`MODULE_ACCURATE_SCOPES`, `scopesForModules`) tidak berubah bentuk.
+import snapshot from "./accurate-scope-snapshot.json";
+import { ACCURATE_ENDPOINT_REGISTRY, BASELINE_ENDPOINTS } from "./accurate-endpoint-registry";
+
+const SNAPSHOT = snapshot as Record<string, string[]>;
+
+/** Scope yang dibutuhkan satu endpoint ("METHOD resource/aksi.do") menurut snapshot spec. */
+export function scopesForEndpoint(endpoint: string): string[] {
+  const scopes = SNAPSHOT[endpoint];
+  if (!scopes) {
+    throw new Error(
+      `Endpoint Accurate "${endpoint}" tidak ada di accurate-scope-snapshot.json — cek ejaan/method, ` +
+        `atau jalankan \`bun run scopes:sync\` kalau endpoint-nya memang baru.`,
+    );
+  }
+  return scopes;
+}
+
+function deriveScopes(moduleKey: string): string[] {
+  const entry = ACCURATE_ENDPOINT_REGISTRY[moduleKey];
+  if (!entry) throw new Error(`Modul "${moduleKey}" tidak ada di accurate-endpoint-registry.ts`);
+  const scopes = new Set<string>();
+  for (const endpoint of entry.endpoints) for (const s of scopesForEndpoint(endpoint)) scopes.add(s);
+  for (const extra of entry.extraScopes ?? []) scopes.add(extra.scope);
+  return [...scopes];
+}
+
+// Scope tambahan per modul, TANPA baseline (baseline ditambahkan di scopesForModules, seperti dulu).
+export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = Object.fromEntries(
+  Object.keys(ACCURATE_ENDPOINT_REGISTRY).map((key) => [key, deriveScopes(key)]),
+);
+
+export const BASELINE_SCOPES: string[] = [...new Set(BASELINE_ENDPOINTS.flatMap(scopesForEndpoint))];
 
 export function scopesForModules(modules: string[]): string[] {
-  const scopes = new Set<string>(["item_view"]); // baseline — data referensi item hampir selalu dibutuhkan
+  const scopes = new Set<string>(BASELINE_SCOPES);
   for (const mod of modules) {
     for (const scope of MODULE_ACCURATE_SCOPES[mod] ?? []) scopes.add(scope);
   }
   return [...scopes];
 }
+
+/**
+ * Gabungan SEMUA scope katalog (baseline + semua modul). Model 1-otorisasi (ADR-0036 #2):
+ * otorisasi Accurate SELALU meminta ini, karena otorisasi baru mematikan token lama dan
+ * mengganti seluruh scope (terbukti Fase 141 E2) — jadi tidak boleh ada otorisasi "sempit".
+ */
+export const ALL_ACCURATE_SCOPES: string[] = scopesForModules(Object.keys(MODULE_ACCURATE_SCOPES));

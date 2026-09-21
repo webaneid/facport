@@ -6,20 +6,30 @@ import { randomBytes } from "crypto";
 // tabel/Redis — dicatat di sini, bukan blocker sekarang.
 const TTL_MS = 10 * 60 * 1000; // 10 menit
 
-type StateEntry = { subscriptionId: string; expiresAt: number };
+// § Fase 143, ADR-0037 — state membawa siapa yang memulai (`userId`) dan Data Usaha MANA yang dihubungkan
+// (`dataUsahaId`), bukan lagi `subscriptionId`. Callback OAuth tidak punya sesi login (redirect dari Accurate),
+// jadi `userId` dari sini dipakai untuk memverifikasi kepemilikan Data Usaha saat callback.
+export type OAuthStateContext = { userId: string; dataUsahaId: string };
+type StateEntry = OAuthStateContext & { expiresAt: number };
 const store = new Map<string, StateEntry>();
 
-export function createState(subscriptionId: string): string {
+// § security review Fase 143 (Medium) — batasi state aktif per user supaya `POST /accurate/connect` yang dipanggil
+// berulang tidak menumbuhkan Map tanpa batas (TTL 10 menit saja tidak cukup). Yang tertua dibuang duluan.
+const MAX_ACTIVE_STATES_PER_USER = 5;
+
+export function createState(context: OAuthStateContext): string {
   const state = randomBytes(24).toString("base64url");
-  store.set(state, { subscriptionId, expiresAt: Date.now() + TTL_MS });
+  const mine = [...store].filter(([, entry]) => entry.userId === context.userId);
+  for (const [key] of mine.slice(0, Math.max(0, mine.length - (MAX_ACTIVE_STATES_PER_USER - 1)))) store.delete(key);
+  store.set(state, { ...context, expiresAt: Date.now() + TTL_MS });
   return state;
 }
 
-export function consumeState(state: string): string | null {
+export function consumeState(state: string): OAuthStateContext | null {
   const entry = store.get(state);
   store.delete(state); // sekali pakai — tolak replay
   if (!entry || entry.expiresAt < Date.now()) return null;
-  return entry.subscriptionId;
+  return { userId: entry.userId, dataUsahaId: entry.dataUsahaId };
 }
 
 // § Low finding security review Fase 01 — state yang digenerate tapi TIDAK

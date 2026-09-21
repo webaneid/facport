@@ -190,6 +190,34 @@
       "when": 1789593289895,
       "tag": "0026_smart_johnny_storm",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790019754183,
+      "tag": "0027_sloppy_killraven",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1790020989326,
+      "tag": "0028_burly_silver_sable",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790023700524,
+      "tag": "0029_loving_chat",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1790027805319,
+      "tag": "0030_putus_total_koneksi_lama",
+      "breakpoints": true
     }
   ]
 }

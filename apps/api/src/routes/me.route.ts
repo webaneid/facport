@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, and, or, inArray, count, desc } from "drizzle-orm";
+import { eq, and, or, inArray, isNotNull, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
@@ -55,18 +55,10 @@ export const meRoute = new Elysia()
   // numpang di gerbang ini, walau `subscription-gate.ts` sudah kasih dia
   // akses (gap ditemukan saat desain halaman `/invite/[token]`, sebelum
   // sempat jadi bug production).
-  // § Fase 114 — `connected` DIHITUNG LIVE dari
-  // `subscriptions`→`accurateConnections` (JOIN, cek ada yang
-  // `status:"active"`), BUKAN baca `dataUsaha.accurateConnectionId` lagi.
-  // Kolom itu kolom MATI sejak Fase 14/ADR-0020 (pointer koneksi
-  // sebenarnya pindah ke `subscriptions.accurateConnectionId`) — cuma
-  // pernah ditulis script backfill one-time, TIDAK PERNAH oleh alur live,
-  // jadi SELALU `null` untuk Data Usaha yang dibuat setelah backfill
-  // walau sudah terhubung penuh (bug nyata, ditemukan debugging production
-  // 2026-09-14, § lessons-learned.md — "PT. MAGINET INDONESIA" customer
-  // py 5 subscription aktif terhubung tapi gerbang ini lapor "Belum
-  // terhubung Accurate"). Kolom lama dibiarkan ada di schema (dead,
-  // cleanup migration terpisah kalau mau), TIDAK dibaca lagi di sini.
+  // § Fase 143, ADR-0037 — `connected` = Data Usaha ini menunjuk koneksi Accurate AKTIF milik akun yang dikenali
+  // (`data_usaha.accurate_connection_id`, pointer yang KINI dipakai lagi; sempat mati Fase 14-142 — bug Fase 114
+  // "PT. MAGINET terhubung tapi gerbang lapor belum" terjadi karena pointer itu tidak ditulis). Koneksi lama
+  // (accurate_user_id NULL, sebelum cutover) TIDAK dihitung.
   .get(
     "/me/data-usaha",
     async ({ user }) => {
@@ -92,11 +84,11 @@ export const meRoute = new Elysia()
         ? new Set(
             (
               await db
-                .selectDistinct({ dataUsahaId: subscriptions.dataUsahaId })
-                .from(subscriptions)
-                .innerJoin(accurateConnections, eq(accurateConnections.id, subscriptions.accurateConnectionId))
-                .where(and(inArray(subscriptions.dataUsahaId, dataUsahaIds), eq(accurateConnections.status, "active")))
-            ).map((r) => r.dataUsahaId),
+                .select({ id: dataUsaha.id })
+                .from(dataUsaha)
+                .innerJoin(accurateConnections, eq(accurateConnections.id, dataUsaha.accurateConnectionId))
+                .where(and(inArray(dataUsaha.id, dataUsahaIds), eq(accurateConnections.status, "active"), isNotNull(accurateConnections.accurateUserId)))
+            ).map((r) => r.id),
           )
         : new Set<string>();
 

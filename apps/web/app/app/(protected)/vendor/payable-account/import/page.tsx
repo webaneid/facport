@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-accurate-integration.md § "Vendor (Data Master)" — update
 // Akun Hutang (COA) per Pemasok, TERVERIFIKASI beneran dipakai Accurate
@@ -95,6 +96,7 @@ export default function VendorPayableAccountImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Akun Hutang Pemasok</h1>
         <p className="text-sm text-muted-foreground">

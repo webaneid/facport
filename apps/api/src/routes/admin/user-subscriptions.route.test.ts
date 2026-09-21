@@ -3,9 +3,9 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, accurateConnections } from "../../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions } from "../../db/schema";
 import { adminUserSubscriptionsRoute } from "./user-subscriptions.route";
-import { createTestDataUsaha } from "../../lib/test-fixtures";
+import { createTestAccurateConnection, createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 92 (2026-09-10) — mirror pola `admin/import-batches.route.test.ts`.
 const runId = Date.now();
@@ -61,88 +61,48 @@ describe("GET /admin/users/:id/subscriptions", () => {
   // BUKAN cuma "ada baris koneksi" — dites di sini juga (bukan cuma di
   // endpoint versi customer) supaya admin lihat gambaran SEAKURAT yang
   // dilihat customer.
-  test("200 — tampilkan connected:true HANYA untuk koneksi status active, connectionStatus akurat", async () => {
+  test("200 — status koneksi ada di daftar `dataUsaha` (per Data Usaha, bukan per subscription): active=terhubung; expired/koneksi LAMA=tidak", async () => {
     const adminCookie = await makeAdminCookie();
     const customerEmail = `usersubs-customer-${runId}-${Math.random().toString(36).slice(2, 8)}@test.local`;
     const userId = await signUp(customerEmail);
     const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
     await db.insert(userRoles).values({ userId, roleId: customerRole!.id }).onConflictDoNothing();
 
-    const [healthyConn] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbAlias: "PT Sehat",
-      })
-      .returning();
-    const [brokenConn] = await db
-      .insert(accurateConnections)
-      .values({
-        userId,
-        accessTokenEncrypted: "dummy",
-        refreshTokenEncrypted: "dummy",
-        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-        accurateDbAlias: "PT Bermasalah",
-        status: "expired",
-      })
-      .returning();
+    const duHealthy = await createTestDataUsaha(userId, `UserSubs DU Sehat ${runId}`);
+    const duBroken = await createTestDataUsaha(userId, `UserSubs DU Rusak ${runId}`);
+    const duLegacy = await createTestDataUsaha(userId, `UserSubs DU Lama ${runId}`);
+    const duEmpty = await createTestDataUsaha(userId, `UserSubs DU Kosong ${runId}`); // tanpa subscription: tetap tampil
+    await createTestAccurateConnection(userId, { dataUsahaId: duHealthy, accurateDbId: "1", accurateDbAlias: "PT Sehat", accurateUserEmail: "akun@accurate.test" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duBroken, accurateDbId: "2", accurateDbAlias: "PT Bermasalah", status: "expired" });
+    await createTestAccurateConnection(userId, { dataUsahaId: duLegacy, accurateUserId: null, accurateDbAlias: "PT Lama" }); // koneksi LAMA (cutover)
 
-    const dataUsahaId = await createTestDataUsaha(userId, `UserSubs DU ${runId}`);
-    const [planHealthy] = await db
-      .insert(plans)
-      .values({ name: `UserSubs Healthy ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planHealthy!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: healthyConn!.id,
-      dataUsahaId,
-    });
-
-    const [planBroken] = await db
-      .insert(plans)
-      .values({ name: `UserSubs Broken ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
-      .returning();
-    await db.insert(subscriptions).values({
-      userId,
-      planId: planBroken!.id,
-      status: "active",
-      startAt: new Date(),
-      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      accurateConnectionId: brokenConn!.id,
-      dataUsahaId,
-    });
+    const make = async (name: string, module: string, dataUsahaId: string) => {
+      const [plan] = await db.insert(plans).values({ name, price: 1000, durationDays: 30, modules: [module] }).returning();
+      await db.insert(subscriptions).values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId });
+    };
+    await make(`UserSubs Healthy A ${runId}`, "purchase_invoice", duHealthy);
+    await make(`UserSubs Healthy B ${runId}`, "sales_invoice", duHealthy); // 2 fitur, 1 Data Usaha, 1 status koneksi
+    await make(`UserSubs Broken ${runId}`, "sales_order", duBroken);
+    await make(`UserSubs Legacy ${runId}`, "sales_receipt", duLegacy);
 
     const res = await testApp.handle(new Request(`http://localhost/admin/users/${userId}/subscriptions`, { headers: { cookie: adminCookie } }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as {
-      subscriptions: {
-        planName: string;
-        connected: boolean;
-        connectionStatus: string | null;
-        accurateDbAlias: string | null;
-        dataUsahaId: string;
-        dataUsahaName: string;
-      }[];
+      dataUsaha: { id: string; name: string; isOwner: boolean; connected: boolean; connectionStatus: string | null; accountEmail: string | null; accurateDbAlias: string | null }[];
+      subscriptions: Record<string, unknown>[];
     };
-    const healthy = body.subscriptions.find((s) => s.planName === `UserSubs Healthy ${runId}`);
-    const broken = body.subscriptions.find((s) => s.planName === `UserSubs Broken ${runId}`);
-    expect(healthy?.connected).toBe(true);
-    expect(healthy?.connectionStatus).toBe("active");
-    expect(broken?.connected).toBe(false);
-    expect(broken?.connectionStatus).toBe("expired");
-    expect(broken?.accurateDbAlias).toBe("PT Bermasalah");
+    const du = (id: string) => body.dataUsaha.find((d) => d.id === id)!;
+    expect(du(duHealthy)).toMatchObject({ isOwner: true, connected: true, connectionStatus: "active", accountEmail: "akun@accurate.test", accurateDbAlias: "PT Sehat" });
+    expect(du(duBroken)).toMatchObject({ connected: false, connectionStatus: "expired", accurateDbAlias: "PT Bermasalah" });
+    expect(du(duLegacy)).toMatchObject({ connected: false, connectionStatus: null });
+    expect(du(duEmpty)).toMatchObject({ connected: false, connectionStatus: null });
 
-    // § diminta user 2026-09-12 — admin sekarang WAJIB bisa tahu Data
-    // Usaha mana yang punya subscription ini (dulu tidak ikut di-join).
-    expect(healthy?.dataUsahaId).toBe(dataUsahaId);
-    expect(healthy?.dataUsahaName).toBe(`UserSubs DU ${runId}`);
-    expect(broken?.dataUsahaId).toBe(dataUsahaId);
+    // baris subscription TIDAK membawa kolom koneksi lagi; tetap membawa Data Usaha-nya
+    expect(body.subscriptions.length).toBe(4);
+    for (const s of body.subscriptions) {
+      expect(s).not.toHaveProperty("connected");
+      expect(s).not.toHaveProperty("connectionStatus");
+      expect(s).toHaveProperty("dataUsahaId");
+    }
   });
 });

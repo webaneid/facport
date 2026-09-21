@@ -4,6 +4,8 @@ import { AppShell } from "@/components/app-shell/app-shell";
 import { getPublicSettings } from "@/lib/get-public-settings";
 import { CustomerCareWidget } from "@/components/customer-care/customer-care-widget";
 import { getActiveDataUsahaIdCookie } from "@/lib/active-data-usaha";
+import { AccurateGateProvider } from "@/components/accurate/accurate-gate-provider";
+import type { AccurateGate } from "@/lib/accurate-gate-copy";
 
 // § Medium finding security review Fase 01 (pola sama dengan
 // app/admin/(protected)/layout.tsx) — proxy.ts cuma cek keberadaan session
@@ -65,6 +67,14 @@ export default async function AppProtectedLayout({ children }: { children: React
   // filter modul (`subscriptionModules` di atas) sama sekali.
   const modulePlanNames = Object.fromEntries(activeSubscriptions.flatMap((s) => s.plan.modules.map((m) => [m, s.plan.name])));
 
+  // § Fase 144, architecture-accurate-connect-gate.md — status koneksi Accurate Data Usaha aktif (mesin status tunggal). Gagal
+  // fetch = `null` (gerbang tidak tampil; jangan blokir dashboard karena galat sementara).
+  const gateRes = await fetch(`${apiUrl}/accurate/gate?dataUsahaId=${encodeURIComponent(activeDataUsaha.id)}`, {
+    headers: { cookie },
+    cache: "no-store",
+  });
+  const accurateGate = gateRes.ok ? ((await gateRes.json()) as AccurateGate) : null;
+
   return (
     <AppShell
       surface="app"
@@ -84,7 +94,9 @@ export default async function AppProtectedLayout({ children }: { children: React
       isDataUsahaOwner={activeDataUsaha.isOwner}
       user={{ name: me.name, email: me.email }}
     >
-      {children}
+      <AccurateGateProvider gate={accurateGate} dataUsahaId={activeDataUsaha.id} dataUsahaName={activeDataUsaha.name}>
+        {children}
+      </AccurateGateProvider>
       <CustomerCareWidget />
     </AppShell>
   );

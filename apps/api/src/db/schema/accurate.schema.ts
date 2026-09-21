@@ -1,4 +1,5 @@
-import { pgTable, uuid, varchar, text, timestamp } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
+import { pgTable, uuid, varchar, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 
 // § architecture-accurate-integration.md § 1 — Authorization Code Grant
@@ -17,9 +18,23 @@ export const accurateConnections = pgTable("accurate_connections", {
   accessTokenEncrypted: text("access_token_encrypted").notNull(),
   refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  // § Fase 143, ADR-0037 — LEGACY: database dipilih sekarang di `data_usaha.accurate_db_id`. Tidak ditulis lagi;
+  // dibaca hanya oleh backfill migrasi 0028 dan dihapus di Fase 145.
   accurateDbId: varchar("accurate_db_id", { length: 100 }),
-  accurateDbAlias: varchar("accurate_db_alias", { length: 255 }), // nama Data Usaha, buat ditampilkan di UI status koneksi
+  accurateDbAlias: varchar("accurate_db_alias", { length: 255 }),
   status: varchar("status", { length: 20 }).notNull().default("active"), // "active" | "expired" | "revoked"
+  // § Fase 142, architecture-accurate-scope-engine.md — dari respons token (`scope`, spasi-terpisah,
+  // dipecah) / `approved-scope.do`. NULL = "belum diketahui" (baris pra-Fase 142) — JANGAN diperlakukan
+  // sebagai "tidak ada scope"; `missingScopes()` mengisinya malas lewat approved-scope.do.
+  grantedScopes: text("granted_scopes").array(),
+  // § Fase 142 — identitas AKUN Accurate (respons token `user.id`/`user.email`). Belum unik di fase ini;
+  // Fase 143 (ADR-0036 #1) menjadikannya kunci koneksi 1-per-akun. Nullable untuk baris lama.
+  accurateUserId: varchar("accurate_user_id", { length: 100 }),
+  accurateUserEmail: varchar("accurate_user_email", { length: 255 }),
   connectedAt: timestamp("connected_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
-});
+}, (t) => [
+  // § Fase 143, ADR-0036 #1/ADR-0037 #3 — 1 akun Accurate = 1 baris = 1 pemilik Facport. Parsial: baris lama
+  // (accurate_user_id NULL, sebelum Fase 142) tidak dikenai.
+  uniqueIndex("accurate_connections_accurate_user_uidx").on(t.accurateUserId).where(sql`${t.accurateUserId} IS NOT NULL`),
+]);

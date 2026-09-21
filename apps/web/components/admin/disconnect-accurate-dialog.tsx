@@ -11,13 +11,15 @@ import { api } from "@/lib/api-client";
 // nama" seperti `cancel-import-dialog.tsx`) — disengaja: risikonya lebih
 // rendah & gampang dipulihkan (customer tinggal "Hubungkan Ulang", § Fase
 // 91), beda dari Batal Import yang menghapus data permanen di Accurate.
-type DisconnectableSubscription = { subscriptionId: string; planName: string; accurateDbAlias: string | null };
+// § Fase 144 (ADR-0037) — koneksi dipegang DATA USAHA: tombol ini SATU per Data Usaha (bukan per fitur/subscription) dan memutus
+// semua fitur di dalamnya (salinan di bawah harus jujur soal ini).
+type DisconnectableDataUsaha = { id: string; name: string; accurateDbAlias: string | null };
 
 export function DisconnectAccurateDialog({
-  subscription,
+  dataUsaha,
   onDisconnected,
 }: {
-  subscription: DisconnectableSubscription;
+  dataUsaha: DisconnectableDataUsaha;
   onDisconnected: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -25,13 +27,13 @@ export function DisconnectAccurateDialog({
 
   async function handleConfirm() {
     setSubmitting(true);
-    const res = await api.admin.subscriptions({ id: subscription.subscriptionId })["disconnect-accurate"].post();
+    const res = await api.admin["data-usaha"]({ id: dataUsaha.id })["disconnect-accurate"].post();
     setSubmitting(false);
     if (res.error) {
       toast.error("Gagal memutuskan koneksi — coba lagi.");
       return;
     }
-    toast.success(`Koneksi Accurate untuk "${subscription.planName}" diputuskan — user akan diberi tahu untuk menghubungkan ulang.`);
+    toast.success(`Koneksi Accurate Data Usaha "${dataUsaha.name}" diputuskan — pemilik akan diberi tahu untuk menghubungkan ulang.`);
     setOpen(false);
     onDisconnected();
   }
@@ -42,7 +44,7 @@ export function DisconnectAccurateDialog({
         type="button"
         onClick={() => setOpen(true)}
         title="Putuskan Koneksi"
-        aria-label={`Putuskan koneksi Accurate untuk ${subscription.planName}`}
+        aria-label={`Putuskan koneksi Accurate Data Usaha ${dataUsaha.name}`}
         className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
       >
         <Unlink className="h-4 w-4" />
@@ -51,14 +53,15 @@ export function DisconnectAccurateDialog({
         <DialogTitle>Putuskan Koneksi Accurate</DialogTitle>
         <div className="mt-3 flex flex-col gap-3 text-sm">
           <p className="text-muted-foreground">
-            Ini akan memutuskan koneksi Accurate untuk fitur <strong className="text-foreground">{subscription.planName}</strong>
-            {subscription.accurateDbAlias && (
+            Ini akan memutuskan koneksi Accurate untuk Data Usaha <strong className="text-foreground">{dataUsaha.name}</strong>
+            {dataUsaha.accurateDbAlias && (
               <>
                 {" "}
-                (Data Usaha: <strong className="text-foreground">{subscription.accurateDbAlias}</strong>)
+                (database: <strong className="text-foreground">{dataUsaha.accurateDbAlias}</strong>)
               </>
             )}
-            . User tidak akan bisa import lagi sampai menghubungkan ulang sendiri dari halaman koneksi mereka.
+            . <strong className="text-foreground">Semua fitur</strong> di Data Usaha ini ikut terputus, dan pemilik tidak bisa import lagi
+            sampai menghubungkan ulang sendiri dari popup koneksi di dashboard mereka.
           </p>
           <p className="text-muted-foreground">User akan diberi notifikasi otomatis supaya tahu harus menghubungkan ulang.</p>
           <Button onClick={handleConfirm} disabled={submitting} className="self-end bg-destructive hover:bg-destructive/90">

@@ -79,33 +79,38 @@ mobile/client-side). Facport pakai **Authorization Code Grant** — sesuai
 prinsip ADR-0009 ("pilih code grant kalau tersedia, lebih aman karena token
 tidak pernah lewat browser"). Implicit grant TIDAK dipakai.
 
-### Aturan Bisnis — 1 Subscription (Sub-Modul) = 1 Akun Accurate, Koneksi Reusable Lintas Subscription
-> **⚠️ Direvisi Fase 14, ADR-0020** (supersede poin 3 ADR-0009 di bawah
-> ini — dibiarkan tercatat sebagai histori keputusan, BUKAN dihapus,
-> tapi TIDAK berlaku lagi apa adanya). Detail rasional lengkap →
-> `docs/decisions/adr-0020-accurate-connection-reusable-lintas-subscription.md`,
-> `docs/architecture/architecture-subscription.md` § "Koneksi Accurate —
-> Reusable Lintas Subscription".
+### Aturan Bisnis — 1 Koneksi per AKUN Accurate, Dipegang Data Usaha (Fase 143, ADR-0036/ADR-0037)
+> **Menggantikan** ADR-0009 poin 3 dan ADR-0020 (koneksi per subscription/modul, endpoint `reuse`). Alasan (TERBUKTI
+> Fase 141, bukan asumsi): untuk 1 akun Accurate × 1 aplikasi hanya SATU otorisasi yang hidup — otorisasi baru
+> mematikan access+refresh token lama dan mengganti seluruh scope. Model lama (koneksi baru per subscription) membuat
+> koneksi modul lain mati diam-diam (akar 401; 20 dari 29 subscription aktif production tertimpa).
 
-**Satu subscription (= 1 sub-modul sejak Fase 14) cuma bisa terhubung ke
-SATU Data Usaha Accurate** — aturan dasarnya TIDAK berubah, konsisten
-dengan cara Accurate sendiri bekerja (1 Data Usaha = 1 company/database).
-Yang BERUBAH: kalau customer punya BEBERAPA subscription (beli SI+PI
-sekaligus, mis.) untuk **Data Usaha yang SAMA**, dia TIDAK WAJIB re-OAuth
-per subscription — koneksi (`accurate_connections`) SEKARANG milik
-**user** (bukan 1:1 ke 1 subscription lagi), bisa dipakai ulang lintas
-subscription. Alasan bisnis: Accurate men-charge per "aplikasi
-terkoneksi" — connect berkali-kali ke company yang sama akan dianggap
-Accurate sebagai beberapa aplikasi terpisah, customer di-charge lebih
-dari seharusnya.
-- User yang kelola company Accurate BERBEDA per modul TETAP bisa —
-  connect Data Usaha baru per company, cuma sekarang PILIHAN
-  (`accurateConnectionId` per subscription), bukan dipaksa skema.
-- `accurate_connections` di-relasikan ke `users` (bukan ke `subscriptions`
-  lagi), TANPA unique constraint — 1 user boleh punya banyak connection
-  (1 per Data Usaha berbeda yang pernah dia hubungkan).
-  `subscriptions.accurateConnectionId` (nullable FK) yang jadi pointer
-  "subscription/modul ini pakai koneksi yang mana".
+- **`accurate_connections` = 1 baris per akun Accurate**, kunci `accurate_user_id` (dari respons token `user.id`, indeks
+  unik parsial). 1 akun = 1 pemilik Facport: akun yang sudah dipakai owner lain DITOLAK di callback
+  (`accurate_account_in_use`) — kalau tidak, otorisasi B mematikan koneksi A.
+- **Data Usaha memegang koneksi**: `data_usaha.accurate_connection_id` (pointer ke koneksi akun, dibagi banyak Data
+  Usaha) + `data_usaha.accurate_db_id/alias` (database Accurate yang dipakai; 1 database ↔ 1 Data Usaha, indeks unik
+  `(accurate_connection_id, accurate_db_id)`). Subscription/batch menemukan koneksinya LEWAT Data Usaha
+  (`lib/accurate-connection.ts` `resolveConnectionForSubscription` — SATU-SATUNYA resolver).
+- **Otorisasi SATU pintu**: `POST /accurate/connect {dataUsahaId}` (owner-only) selalu meminta SEMUA scope katalog
+  (`ALL_ACCURATE_SCOPES`, § "Scope" di bawah). Callback = upsert atomik (`ON CONFLICT (accurate_user_id) ... WHERE
+  userId sama`): akun sama → perbarui baris yang sama, TIDAK PERNAH INSERT kedua. `subscriptions.accurate_connection_id`
+  dibekukan; `accurate_connections.accurate_db_id/alias` legacy (tidak ditulis; dihapus Fase 145).
+- **Cutover langsung**: koneksi lama (`accurate_user_id` NULL) tidak dibaca lagi; customer "hubungkan ulang" sekali.
+- **Database tidak bisa diganti** setelah dipilih (`DATABASE_ALREADY_SELECTED`): riwayat import terikat ke database itu.
+  Callback mengosongkan database tersimpan yang TIDAK ada di akun baru (`db-list.do`), supaya pilih ulang.
+- **Transfer kepemilikan Data Usaha memutus koneksi** (pointer → NULL; database terakhir dipertahankan): token itu milik
+  akun Accurate pemilik lama. Berlaku jalur user, Google auto-complete, dan admin.
+- **Data Usaha kedua dari akun yang sama** tidak OAuth ulang: `GET /accurate/accounts` (akun milik user) +
+  `POST /accurate/attach {dataUsahaId, connectionId}` menunjuk koneksi yang ada (OAuth ulang mematikan token yang sedang dipakai
+  import Data Usaha lain). Database dipilih terpisah per Data Usaha (`DATABASE_ALREADY_USED` bila sudah dipakai Data Usaha lain).
+- **Callback terikat ke sesi login** pemulai flow (cookie sesi ikut pada navigasi top-level dari Accurate; production
+  cross-subdomain, dev host `localhost`) — diperiksa sebelum tukar kode. State OAuth dibatasi 5 aktif per user; `/accurate/*`
+  dikenai rate limit; `openDatabase`/`listDatabases` ber-timeout 15 dtk; worker menandai `expired` hanya untuk HTTP 401.
+- **Refresh token aman-rotasi** (`lib/accurate-token.ts`): refresh token sekali-pakai (Fase 141 E4) → kunci baris
+  `FOR UPDATE`, baca ulang `expiresAt`, simpan token baru di transaksi yang sama. HANYA `invalid_grant` menandai
+  `expired`; galat jaringan/5xx dicoba lagi besok. Job harian melewati koneksi yang sedang dipakai batch
+  `processing/cancelling`. Pesan galat token TIDAK memuat body mentah Accurate (memuat nilai token yang ditolak).
 
 ### Alur (Terverifikasi — Authorization Code Grant)
 ```
@@ -244,17 +249,32 @@ dan itu HARUS di server (`apps/api`), tidak pernah di frontend. Route ini:
    standar OAuth) cocok dengan yang disimpan sebelum initiate, tolak kalau
    tidak ketemu/sudah dipakai.
 2. Tukar `code` → token (POST ke `/oauth/token` di atas).
-3. Simpan token terenkripsi, relasikan ke `subscriptionId` dari state.
+3. Simpan token terenkripsi, relasikan ke Data Usaha dari state (Fase 143: upsert per akun Accurate).
+
+> **Callback terikat sesi login (Fase 143, audit HIGH).** Callback memeriksa cookie sesi === pemulai flow SEBELUM tukar kode.
+> Production: cookie `Domain=.facport.com` ikut terkirim ke `api.*` pada navigasi top-level dari Accurate. **DEV**: browser
+> memanggil API lewat proxy web (`/api-proxy`, cookie milik `app.localhost`), jadi `ACCURATE_REDIRECT_URI` dev harus
+> `http://app.localhost:6209/api-proxy/accurate/oauth/callback` (dan didaftarkan di portal developer Accurate, di samping URI
+> langsung `http://localhost:3001/...` yang tetap boleh untuk uji skrip tanpa sesi). Dengan URI langsung ke `localhost:3001`,
+> callback ditolak `invalid_state` karena tidak ada cookie sesi.
 4. `redirect()` browser ke halaman app.facport.com yang sesuai (BUKAN
    return JSON — user-nya browser, bukan API client).
 
-### Scope Sesuai Paket Langganan
-Scope yang diminta (`item_view`, `item_save`, `item_category_delete`, dst —
-granular per resource+aksi) **WAJIB disesuaikan dengan modul yang termasuk
-di paket (`plans.modules`) milik subscription tersebut** (§
-`architecture-subscription.md`) — jangan minta scope lebih luas dari yang
-sebenarnya dibutuhkan modul yang di-subscribe user (prinsip least privilege,
-juga mengurangi permukaan kalau token bocor).
+### Scope — Diturunkan dari Registri Endpoint, Selalu SEMUA Scope Katalog (Fase 142, ADR-0036)
+> **Menggantikan** aturan lama "minta scope sesuai `plans.modules` saja". Terbukti Fase 141
+> (E2/E3): otorisasi baru untuk akun Accurate yang sama MEMATIKAN token lama dan MENGGANTI
+> seluruh scope, jadi otorisasi "sempit" per modul membuat modul lain kehilangan izin.
+- Endpoint yang dipanggil tiap modul dideklarasikan di SATU tempat:
+  `apps/api/src/lib/accurate-endpoint-registry.ts`. Scope DITURUNKAN dari sana lewat
+  `accurate-scope-snapshot.json` (dibuat `bun run scopes:sync` dari spec publik Accurate),
+  BUKAN ditulis tangan. Detail: `architecture-accurate-scope-engine.md`.
+- `/accurate/connect` SELALU meminta `ALL_ACCURATE_SCOPES` (gabungan semua modul).
+- Scope yang benar-benar diberikan disimpan di `accurate_connections.granted_scopes` (dari respons
+  token) dan diverifikasi oleh SATU fungsi `missingScopes`/`checkConnectionScopes`
+  (`lib/accurate-scope-check.ts`): `/accurate/reuse`, konfirmasi/retry import (409
+  `ACCURATE_SCOPE_MISSING`), dan awal worker.
+- Scope kurang saat runtime → HTTP 403 body XML `insufficient_scope` → `AccurateScopeError`
+  (bukan `markConnectionExpired`: koneksi hidup, hanya kurang izin).
 
 ### Sesi Data Usaha (Company Database) — Langkah TAMBAHAN, Baru Ditemukan
 > ⚠️ **BARU KETEMU 2026-08-19** — belum ada di draf sebelumnya.
@@ -332,11 +352,9 @@ juga mengurangi permukaan kalau token bocor).
 ### Skema DB
 ```ts
 // apps/api/src/db/schema.ts
-// § Fase 14, ADR-0020 — userId ganti subscriptionId, TANPA unique (1 user
-// boleh punya banyak connection, 1 per Data Usaha berbeda). Pointer
-// "subscription/modul mana pakai koneksi ini" sekarang di
-// `subscriptions.accurateConnectionId` (§ architecture-subscription.md),
-// BUKAN lagi di tabel ini.
+// § Fase 143, ADR-0037 — 1 baris = 1 AKUN Accurate (indeks unik parsial pada accurate_user_id). Pointer koneksi &
+// database ada di `data_usaha` (accurate_connection_id, accurate_db_id/alias). Kolom accurate_db_id/alias di bawah
+// LEGACY (tidak ditulis lagi; hapus Fase 145). Kolom skema di bawah lebih tua; sumber kebenaran: db/schema/accurate.schema.ts.
 export const accurateConnections = pgTable("accurate_connections", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").references(() => users.id).notNull(), // TIDAK unique — reusable lintas subscription
@@ -473,6 +491,9 @@ customer/admin buka fitur yang kelewat itu):
 9. `apps/web/lib/module-import-routes.ts` — `MODULE_IMPORT_BASE_PATH[module]`
 10. `apps/web/components/import-archive/import-batch-table.tsx` — import `DeleteImportDialog as {Module}DeleteImportDialog` + 1 baris dispatch `{canDelete && batch.module === "{module}" && ...}`
 11. `apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx` — 1 fungsi `{Module}View` (read-only, mirror `VendorPayableAccountView` kalau modul tidak butuh grouping kolom khusus) + entri `MODULE_TITLE` + 1 baris dispatch
+
+12. `apps/api/src/lib/accurate-endpoint-registry.ts` — **deklarasikan SEMUA endpoint Accurate yang dipanggil modul** (termasuk helper `findOrCreate*`: vendor/customer/item/data-classification/tax) sebagai `"METHOD resource/aksi.do"`. Scope diturunkan otomatis; endpoint yang belum ada di `accurate-scope-snapshot.json` → jalankan `bun run scopes:sync`. `bun test src/lib/accurate-scopes.test.ts` HARUS hijau: pemindai sumber di sana GAGAL kalau ada literal `/accurate/api/*.do` di kode yang belum terdaftar (kelas bug Fase 78/98). DILARANG membuat alur otorisasi/reconnect baru — otorisasi tetap SATU pintu (`/accurate/connect`, semua scope).
+13. Route import modul baru: pasang `checkSubscriptionScopes(subscription.id, "{module}")` sebelum `checkTrialRowBudget` di handler confirm DAN retry (pola sama 18 route yang ada; tes `*-import.route.test.ts` memverifikasi).
 
 Opsional tapi disarankan: root `CLAUDE.md` § Peta Dokumen (baris baru
 ke `architecture-{module}.md`).

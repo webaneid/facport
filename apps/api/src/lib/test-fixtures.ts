@@ -1,5 +1,7 @@
+import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { dataUsaha, plans, subscriptions, memberSeats } from "../db/schema";
+import { encrypt } from "./encryption";
+import { accurateConnections, dataUsaha, plans, subscriptions, memberSeats } from "../db/schema";
 
 // § Fase 108, architecture-user-tambahan.md § Fase B1 — `subscriptions.dataUsahaId`
 // NOT NULL sejak Fase 107, jadi SETIAP test yang insert baris `subscriptions`
@@ -36,4 +38,49 @@ export async function createTestSeat(primaryUserId: string, dataUsahaId: string)
     .returning();
   const [seat] = await db.insert(memberSeats).values({ primaryUserId, dataUsahaId, seatSubscriptionId: sub!.id }).returning();
   return seat!.id;
+}
+
+// § Fase 143, ADR-0037 — koneksi Accurate model baru (1 per AKUN, `accurate_user_id` UNIK global — makanya id
+// dibuat acak per panggilan). Kalau `dataUsahaId` diberikan, Data Usaha itu langsung menunjuk koneksi ini
+// (plus database `accurateDbId` bila diisi) — pola PERSIS hasil callback OAuth + pilih database.
+export async function createTestAccurateConnection(
+  userId: string,
+  opts: {
+    dataUsahaId?: string;
+    accurateDbId?: string;
+    accurateDbAlias?: string;
+    status?: string;
+    grantedScopes?: string[] | null;
+    accurateUserId?: string | null;
+    accurateUserEmail?: string | null;
+    /** Default true: database yang dipasang lewat fixture dianggap sudah dipilih/dikonfirmasi pemilik (alur normal). */
+    dbConfirmed?: boolean;
+    expiresAt?: Date;
+  } = {},
+) {
+  const [connection] = await db
+    .insert(accurateConnections)
+    .values({
+      userId,
+      accessTokenEncrypted: encrypt("test-access-token"),
+      refreshTokenEncrypted: encrypt("test-refresh-token"),
+      expiresAt: opts.expiresAt ?? new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+      status: opts.status ?? "active",
+      grantedScopes: opts.grantedScopes === undefined ? null : opts.grantedScopes,
+      accurateUserId: opts.accurateUserId === undefined ? `test-acc-${crypto.randomUUID()}` : opts.accurateUserId,
+      accurateUserEmail: opts.accurateUserEmail ?? null,
+    })
+    .returning();
+  if (opts.dataUsahaId) {
+    await db
+      .update(dataUsaha)
+      .set({
+        accurateConnectionId: connection!.id,
+        accurateDbId: opts.accurateDbId ?? null,
+        accurateDbAlias: opts.accurateDbAlias ?? null,
+        accurateDbConfirmedAt: opts.accurateDbId && opts.dbConfirmed !== false ? new Date() : null,
+      })
+      .where(eq(dataUsaha.id, opts.dataUsahaId));
+  }
+  return connection!;
 }

@@ -13,6 +13,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-other-payment.md — pembayaran bank/kas untuk beban
 // LANGSUNG (listrik, gaji, dll), TANPA faktur/vendor. Baris dengan
@@ -140,6 +141,7 @@ export default function OtherPaymentImportPage() {
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
+      <AccurateRequiredNotice />
       <div>
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Other Payment</h1>
         <p className="text-sm text-muted-foreground">

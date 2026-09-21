@@ -3,9 +3,9 @@ import { Elysia } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, dataUsaha, auditLogs, ownershipTransfers } from "../../db/schema";
+import { user as userTable, roles, userRoles, dataUsaha, auditLogs, ownershipTransfers, accurateConnections, plans, subscriptions, notifications } from "../../db/schema";
 import { adminDataUsahaRoute } from "./data-usaha.route";
-import { createTestDataUsaha } from "../../lib/test-fixtures";
+import { createTestAccurateConnection, createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
 // Usaha DIBANTU ADMIN, langsung eksekusi tanpa accept-flow.
@@ -141,5 +141,96 @@ describe("POST /admin/data-usaha/:id/transfer-ownership", () => {
       .from(ownershipTransfers)
       .where(and(eq(ownershipTransfers.dataUsahaId, dataUsahaId), eq(ownershipTransfers.status, "pending")));
     expect(pendingRows.length).toBe(0);
+  });
+
+  // § Fase 143, ADR-0036 #6 / ADR-0037 #6 — token Accurate milik akun pemilik LAMA tidak boleh diwarisi pemilik baru.
+  test("200 — transfer MEMUTUS pointer koneksi Accurate (database terakhir dipertahankan; baris koneksi milik pemilik lama tidak dihapus)", async () => {
+    const adminCookie = await makeAdminCookie();
+    const ownerId = await signUp(`admin-du-xfer-conn-owner-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId, `DU Admin Xfer Conn ${runId}`);
+    const conn = await createTestAccurateConnection(ownerId, { dataUsahaId, accurateDbId: "321", accurateDbAlias: "PT Lama" });
+    const toUserId = await signUp(`admin-du-xfer-conn-target-${runId}@test.local`);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/admin/data-usaha/${dataUsahaId}/transfer-ownership`, {
+        method: "POST",
+        headers: { cookie: adminCookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ toUserId }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(du).toMatchObject({ userId: toUserId, accurateConnectionId: null, accurateDbId: "321", accurateDbAlias: "PT Lama" });
+    const [stillThere] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id));
+    expect(stillThere?.userId).toBe(ownerId);
+  });
+});
+
+// § Fase 144 — "Putuskan Koneksi" admin di level DATA USAHA (menggantikan endpoint per-subscription). Koneksi dipegang Data Usaha
+// (ADR-0037): satu aksi memutus SEMUA fitur di dalamnya.
+describe("POST /admin/data-usaha/:id/disconnect-accurate", () => {
+  const post = (cookie: string, id: string) =>
+    testApp.handle(new Request(`http://localhost/admin/data-usaha/${id}/disconnect-accurate`, { method: "POST", headers: cookie ? { cookie } : {} }));
+
+  test("401 tanpa login; 403 untuk customer biasa", async () => {
+    expect((await post("", "00000000-0000-0000-0000-000000000000")).status).toBe(401);
+    const email = `admin-du-disc-cust-${runId}@test.local`;
+    await signUp(email);
+    expect((await post(await signIn(email), "00000000-0000-0000-0000-000000000000")).status).toBe(403);
+  });
+
+  test("404 DATA_USAHA_NOT_FOUND; 400 NOT_CONNECTED bila belum punya koneksi", async () => {
+    const adminCookie = await makeAdminCookie();
+    const missing = await post(adminCookie, "00000000-0000-0000-0000-000000000000");
+    expect(missing.status).toBe(404);
+    expect(((await missing.json()) as { code: string }).code).toBe("DATA_USAHA_NOT_FOUND");
+
+    const ownerId = await signUp(`admin-du-disc-nc-${runId}@test.local`);
+    const du = await createTestDataUsaha(ownerId);
+    const res = await post(adminCookie, du);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("NOT_CONNECTED");
+  });
+
+  test("200 — memutus koneksi Data Usaha (database terakhir dipertahankan, baris koneksi TIDAK dihapus), audit log level data_usaha, notifikasi ke PEMILIK", async () => {
+    const adminCookie = await makeAdminCookie();
+    const ownerId = await signUp(`admin-du-disc-ok-${runId}@test.local`);
+    const du = await createTestDataUsaha(ownerId, `DU Putus ${runId}`);
+    const conn = await createTestAccurateConnection(ownerId, { dataUsahaId: du, accurateDbId: "77", accurateDbAlias: "PT Demo Putus" });
+
+    const res = await post(adminCookie, du);
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row).toMatchObject({ accurateConnectionId: null, accurateDbId: "77", accurateDbAlias: "PT Demo Putus" });
+    expect((await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn.id))).length).toBe(1);
+
+    const [audit] = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "data_usaha"), eq(auditLogs.entityId, du), eq(auditLogs.action, "disconnect_accurate")));
+    expect(audit).toBeTruthy();
+    expect((audit!.changes as { previousConnectionId?: string }).previousConnectionId).toBe(conn.id);
+
+    const notifs = await db.select().from(notifications).where(eq(notifications.userId, ownerId));
+    const n = notifs.find((x) => x.type === "accurate_connection_disconnected_by_admin");
+    expect(n?.body).toContain(`DU Putus ${runId}`);
+  });
+
+  test("Data Usaha dengan BEBERAPA fitur: satu aksi memutus semuanya (tidak ada koneksi per fitur)", async () => {
+    const adminCookie = await makeAdminCookie();
+    const ownerId = await signUp(`admin-du-disc-multi-${runId}@test.local`);
+    const du = await createTestDataUsaha(ownerId);
+    await createTestAccurateConnection(ownerId, { dataUsahaId: du, accurateDbId: "1", accurateDbAlias: "PT Satu" });
+    for (const [i, moduleKey] of ["purchase_invoice", "sales_invoice", "sales_order"].entries()) {
+      const [plan] = await db.insert(plans).values({ name: `Plan Putus ${i} ${runId}`, price: 1, durationDays: 30, modules: [moduleKey] }).returning();
+      await db.insert(subscriptions).values({ userId: ownerId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 86_400_000), dataUsahaId: du });
+    }
+    expect((await post(adminCookie, du)).status).toBe(200);
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateConnectionId).toBeNull(); // satu pointer di Data Usaha — semua fitur ikut
+    expect((await post(adminCookie, du)).status).toBe(400); // sudah terputus
+  });
+
+  test("endpoint lama per-subscription sudah tidak ada", async () => {
+    const res = await testApp.handle(new Request("http://localhost/admin/subscriptions/00000000-0000-0000-0000-000000000000/disconnect-accurate", { method: "POST" }));
+    expect(res.status).toBe(404);
   });
 });

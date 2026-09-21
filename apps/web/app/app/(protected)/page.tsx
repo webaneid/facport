@@ -14,6 +14,7 @@ import { formatDate, currencyFormatter, formatWorkTimeSaved } from "@/lib/utils"
 import { moduleLabel } from "@/lib/module-options";
 import { getPublicSettings } from "@/lib/get-public-settings";
 import { DEFAULT_COMPANY_TIMEZONE } from "@/lib/timezone";
+import { AccurateStatusCard } from "@/components/accurate/accurate-gate-provider";
 import { getActiveDataUsahaIdCookie } from "@/lib/active-data-usaha";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -24,16 +25,6 @@ type SubscriptionRow = {
   dataUsahaName: string | null;
 };
 type SubscriptionsResponse = { subscriptions: SubscriptionRow[] };
-
-type AccurateSubscriptionRow = {
-  subscriptionId: string;
-  moduleKey: string | null;
-  planName: string;
-  connected: boolean;
-  accurateDbId: string | null;
-  accurateDbAlias: string | null;
-};
-type AccurateSubscriptionsResponse = { subscriptions: AccurateSubscriptionRow[] };
 
 // § Fase 17 — reminder invoice belum dibayar. `orderId` sudah ikut
 // diekspos `GET /me/invoices` sejak Fase 16 (link "Bayar Sekarang").
@@ -82,9 +73,8 @@ export default async function DashboardPage() {
   // (backend tetap validasi format UUID, jadi bukan celah, murni
   // robustness).
   const encodedDataUsahaId = encodeURIComponent(dataUsahaId);
-  const [subscriptionsInfo, accurateSubscriptionsInfo, invoicesInfo, meStats, recentImportBatches, dataUsahaListInfo] = await Promise.all([
+  const [subscriptionsInfo, invoicesInfo, meStats, recentImportBatches, dataUsahaListInfo] = await Promise.all([
     fetchJson<SubscriptionsResponse>(`/me/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
-    fetchJson<AccurateSubscriptionsResponse>(`/accurate/subscriptions?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<InvoicesResponse>("/me/invoices", cookie),
     fetchJson<MeStats>(`/me/stats?dataUsahaId=${encodedDataUsahaId}`, cookie),
     fetchJson<{ batches: UnifiedImportBatch[]; total: number }>(`/me/import-batches?limit=5&dataUsahaId=${encodedDataUsahaId}`, cookie),
@@ -93,7 +83,6 @@ export default async function DashboardPage() {
     fetchJson<{ dataUsaha: { id: string; isOwner: boolean }[] }>("/me/data-usaha", cookie),
   ]);
   const isDataUsahaOwner = dataUsahaListInfo?.dataUsaha.find((d) => d.id === dataUsahaId)?.isOwner ?? false;
-  const accurateSubscriptions = accurateSubscriptionsInfo?.subscriptions ?? [];
   const unpaidInvoices = (invoicesInfo?.invoices ?? []).filter((inv) => inv.status === "unpaid");
 
   // § Fase 14, ADR-0019 — `/me/subscriptions` (JAMAK) cuma balikin baris
@@ -185,33 +174,8 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <Link2 className="h-4 w-4 text-primary-600" />
-              <CardTitle>Koneksi Accurate</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent className="flex flex-col gap-3">
-            {accurateSubscriptions.length === 0 ? (
-              <EmptyState icon={Link2} title="Belum punya langganan aktif" className="py-4" />
-            ) : accurateSubscriptions.every((row) => row.connected) ? (
-              <Badge variant="success">✓ Semua fitur terhubung</Badge>
-            ) : (
-              <>
-                {accurateSubscriptions.map((row) => (
-                  <div key={row.subscriptionId} className="flex items-center justify-between text-sm">
-                    <span className="text-foreground">{row.planName}</span>
-                    {row.connected ? <Badge variant="success">✓ Terhubung</Badge> : <Badge variant="warning">Belum terhubung</Badge>}
-                  </div>
-                ))}
-                <Link href="/accurate" className={buttonVariants("default")}>
-                  Hubungkan Sekarang
-                </Link>
-              </>
-            )}
-          </CardContent>
-        </Card>
+        {/* § Fase 144 — status koneksi Accurate SATU per Data Usaha (mesin status yang sama dengan popup gerbang). */}
+        <AccurateStatusCard />
       </div>
 
       <Card>

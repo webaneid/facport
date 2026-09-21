@@ -25,6 +25,10 @@
 > buatan — sekaligus membuat model akses user tambahan jauh lebih intuitif
 > ("akses ke Data Usaha PT Maju" alih-alih "akses ke subscription id abc-123").
 
+> **Pembaruan Fase 143 (ADR-0037):** "1 Data Usaha = maksimal 1 koneksi Accurate PERMANEN" (Keputusan Desain #6) direvisi:
+> koneksi kini 1 per AKUN Accurate dan DIBAGI beberapa Data Usaha (masing-masing memilih database sendiri, 1 database ↔ 1
+> Data Usaha); transfer kepemilikan memutus koneksi. Detail → `architecture-accurate-integration.md` § 1.
+
 ## Latar Belakang & Kebutuhan Bisnis
 
 Facport saat ini: 1 user = login bebas dari device mana pun tanpa batas

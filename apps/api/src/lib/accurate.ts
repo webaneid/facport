@@ -23,11 +23,49 @@ export class AccurateApiError extends Error {
   }
 }
 
-export async function parseAccurateEnvelope<T>(res: Response): Promise<T> {
-  let body: AccurateEnvelope<T> | undefined;
+// § Fase 141 E6 (TERBUKTI, akun DEV) — scope OAuth kurang → HTTP 403 dengan body XML (BUKAN envelope
+// {s,d}): `<InsufficientScopeException><error>insufficient_scope</error>...<scope>nama</scope>`.
+// Dulu jatuh ke galat generik "non-JSON"/"HTTP 403" tanpa tahu scope apa yang kurang.
+/**
+ * Kegagalan yang berarti TOKEN mati/ditolak (HTTP 401) — satu-satunya alasan menandai koneksi `expired`. Galat jaringan,
+ * timeout, 5xx, atau penolakan logis (mis. "Masa ujicoba database sudah berakhir", `s:false` dengan HTTP 500) BUKAN
+ * berarti koneksi mati dan tidak boleh memutus koneksi + menotifikasi semua Data Usaha yang memakainya.
+ */
+export function isAccurateAuthFailure(err: unknown): boolean {
+  return err instanceof AccurateApiError && err.httpStatus === 401;
+}
+
+export class AccurateScopeError extends AccurateApiError {
+  constructor(public missingScope: string | null) {
+    super(
+      `Izin Accurate kurang${missingScope ? `: scope "${missingScope}" belum diberikan` : ""} — perbarui izin (hubungkan ulang Accurate) lalu coba lagi.`,
+      403,
+    );
+    this.name = "AccurateScopeError";
+  }
+}
+
+/** Kenali body 403 `insufficient_scope`. Mengembalikan `undefined` kalau BUKAN galat scope; `null` scope = tak terbaca. */
+export function parseInsufficientScope(status: number, raw: string): { scope: string | null } | undefined {
+  if (status !== 403 || !raw.includes("insufficient_scope")) return undefined;
+  return { scope: /<scope>([^<]+)<\/scope>/.exec(raw)?.[1]?.trim() ?? null };
+}
+
+// Baca body SEKALI sebagai teks (supaya body XML galat scope tidak hilang saat JSON.parse gagal).
+async function readEnvelopeBody<T>(res: Response): Promise<T | undefined> {
+  const raw = await res.text();
+  const insufficient = parseInsufficientScope(res.status, raw);
+  if (insufficient) throw new AccurateScopeError(insufficient.scope);
   try {
-    body = (await res.json()) as AccurateEnvelope<T>;
+    return JSON.parse(raw) as T;
   } catch {
+    return undefined;
+  }
+}
+
+export async function parseAccurateEnvelope<T>(res: Response): Promise<T> {
+  const body = await readEnvelopeBody<AccurateEnvelope<T>>(res);
+  if (!body) {
     if (!res.ok) throw new AccurateApiError(`Accurate API gagal: HTTP ${res.status}`, res.status);
     throw new AccurateApiError("Accurate API mengembalikan body non-JSON", res.status);
   }
@@ -61,13 +99,11 @@ export function isAccurateRecordNotFound(err: unknown): boolean {
 // 2026-08-19 (§ lessons-learned.md). JANGAN pakai `parseAccurateEnvelope`
 // biasa untuk endpoint save/mutasi — pakai ini.
 export async function parseAccurateSaveEnvelope<T>(res: Response): Promise<T> {
-  let body: { s: boolean; d?: unknown; r?: T } | undefined;
-  try {
-    body = (await res.json()) as { s: boolean; d?: unknown; r?: T };
-  } catch {
+  const body = await readEnvelopeBody<{ s: boolean; d?: unknown; r?: T }>(res);
+  if (!body) {
     throw new AccurateApiError(`Accurate API mengembalikan body non-JSON (HTTP ${res.status})`, res.status);
   }
-  if (!body || !res.ok || body.s === false) {
+  if (!res.ok || body.s === false) {
     const detail = Array.isArray(body?.d) ? body.d.join("; ") : String(body?.d ?? "");
     throw new AccurateApiError(detail || `Accurate API gagal: HTTP ${res.status}`, res.status);
   }
@@ -82,7 +118,29 @@ export type AccurateTokenResponse = {
   refresh_token: string;
   expires_in: number; // detik
   token_type: string;
+  // § Fase 141 E1 — respons token memuat scope yang BENAR-BENAR diberikan (spasi-terpisah) dan
+  // identitas akun Accurate. Dulu dibuang. Opsional di tipe supaya token lama/tes tetap valid.
+  scope?: string;
+  user?: { id?: number; email?: string | null; name?: string | null };
 };
+
+/** Pecah string `scope` respons token; `null` kalau respons tidak memuatnya (jangan diartikan "kosong"). */
+export function parseGrantedScopes(scope: string | undefined): string[] | null {
+  if (!scope || !scope.trim()) return null;
+  return [...new Set(scope.trim().split(/\s+/))].sort();
+}
+
+/** Scope yang diberikan ke access token ini menurut Accurate (`approved-scope.do`, § Fase 141 E1). */
+export async function getApprovedScopes(accessToken: string): Promise<string[]> {
+  // Dipanggil di jalur REQUEST (confirm import, /accurate/reuse) untuk mengisi grantedScopes secara malas —
+  // WAJIB ada batas waktu supaya Accurate yang lambat tidak menggantung request pelanggan (galat → scope
+  // dianggap "tidak diketahui", lihat resolveGrantedScopes).
+  const res = await fetch(`${ACCOUNT_API_BASE}/approved-scope.do`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(5_000),
+  });
+  return parseAccurateEnvelope<string[]>(res);
+}
 
 export function getAuthorizeUrl(state: string, scopes: string[]): string {
   if (!env.ACCURATE_CLIENT_ID) {
@@ -105,6 +163,43 @@ function basicAuthHeader(): string {
   return `Basic ${Buffer.from(`${env.ACCURATE_CLIENT_ID}:${env.ACCURATE_CLIENT_SECRET}`).toString("base64")}`;
 }
 
+const TOKEN_TIMEOUT_MS = 15_000;
+// § security review Fase 143 (Medium) — panggilan account API (db-list/open-db) di jalur request & worker tanpa batas waktu
+// bisa menggantung; galat timeout = SEMENTARA (bukan token mati, lihat isAccurateAuthFailure).
+const ACCOUNT_API_TIMEOUT_MS = 15_000;
+
+/**
+ * § Fase 143, ADR-0036 #5 — galat endpoint token BERTIPE. `code` = field `error` OAuth (mis. `invalid_grant`).
+ * Pesan SENGAJA tidak memuat body mentah: Accurate menaruh nilai token/kode yang ditolak di `error_description`
+ * ("Invalid refresh token: <nilai>"), yang tadinya ikut masuk log Pino & Sentry.
+ */
+export class AccurateTokenError extends Error {
+  constructor(
+    public operation: "exchange" | "refresh",
+    public httpStatus: number,
+    public code: string | null,
+  ) {
+    super(`Accurate token ${operation} gagal: HTTP ${httpStatus}${code ? ` (${code})` : ""}`);
+    this.name = "AccurateTokenError";
+  }
+
+  /** Refresh token ditolak PERMANEN (kedaluwarsa / sudah dipakai / dibatalkan otorisasi baru). Koneksi mati. */
+  get isInvalidGrant(): boolean {
+    return this.code === "invalid_grant";
+  }
+}
+
+async function accurateTokenError(operation: "exchange" | "refresh", res: Response): Promise<AccurateTokenError> {
+  let code: string | null = null;
+  try {
+    const body = (await res.json()) as { error?: unknown };
+    if (typeof body.error === "string" && /^[a-z_]{1,50}$/.test(body.error)) code = body.error;
+  } catch {
+    // body non-JSON: code tetap null
+  }
+  return new AccurateTokenError(operation, res.status, code);
+}
+
 export async function exchangeCodeForToken(code: string): Promise<AccurateTokenResponse> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
@@ -117,10 +212,9 @@ export async function exchangeCodeForToken(code: string): Promise<AccurateTokenR
       code,
       redirect_uri: env.ACCURATE_REDIRECT_URI,
     }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    throw new Error(`Accurate token exchange gagal: ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok) throw await accurateTokenError("exchange", res);
   return res.json() as Promise<AccurateTokenResponse>;
 }
 
@@ -132,10 +226,9 @@ export async function refreshAccessToken(refreshToken: string): Promise<Accurate
       "Content-Type": "application/x-www-form-urlencoded",
     },
     body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken }),
+    signal: AbortSignal.timeout(TOKEN_TIMEOUT_MS),
   });
-  if (!res.ok) {
-    throw new Error(`Accurate token refresh gagal: ${res.status} ${await res.text()}`);
-  }
+  if (!res.ok) throw await accurateTokenError("refresh", res);
   return res.json() as Promise<AccurateTokenResponse>;
 }
 
@@ -153,6 +246,7 @@ export type AccurateDatabase = {
 export async function listDatabases(accessToken: string): Promise<AccurateDatabase[]> {
   const res = await fetch(`${ACCOUNT_API_BASE}/db-list.do`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(ACCOUNT_API_TIMEOUT_MS),
   });
   return parseAccurateEnvelope<AccurateDatabase[]>(res);
 }
@@ -176,6 +270,7 @@ export type AccurateSession = {
 export async function openDatabase(accessToken: string, dbId: number): Promise<AccurateSession> {
   const res = await fetch(`${ACCOUNT_API_BASE}/open-db.do?${new URLSearchParams({ id: String(dbId) })}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(ACCOUNT_API_TIMEOUT_MS),
   });
   const body = (await res.json()) as { s: boolean; d?: unknown } & Partial<AccurateSession>;
   if (!res.ok || body.s === false || !body.session || !body.host) {

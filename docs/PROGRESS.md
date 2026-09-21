@@ -148,6 +148,11 @@
 | 138  | Modul Inventory Adjustment (Penyesuaian Persediaan) | Done | `docs/architecture/architecture-inventory-adjustment.md` | `docs/phases/phase-138-modul-inventory-adjustment.md` |
 | 139  | Modul Job Costing (Pekerjaan Pesanan) — 2 endpoint berurutan, kategori Manufacture pertama | Done | `docs/architecture/architecture-job-costing.md` | `docs/phases/phase-139-modul-job-costing.md` |
 | 140  | Konteks Data Usaha Aktif di Gerbang Modul (fix upload masuk perusahaan yang salah) | Done | `docs/decisions/adr-0035-konteks-data-usaha-aktif-di-server.md` | `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md` |
+| 141  | Bukti Perilaku Otorisasi Accurate + Rencana Gerbang Otorisasi Tunggal (koneksi 1-per-akun-Accurate, mesin scope) | Done | `docs/decisions/adr-0036-koneksi-accurate-per-akun-dan-mesin-scope.md` | `docs/phases/phase-141-bukti-otorisasi-accurate-dan-rencana-gerbang-tunggal.md` |
+| 142  | Mesin Scope Accurate (registri endpoint → scope turunan, simpan `granted_scopes`, `missingScopes`, tes CI) | Done | `docs/architecture/architecture-accurate-scope-engine.md` | `docs/phases/phase-142-mesin-scope-accurate.md` |
+| 143  | Model Koneksi Accurate 1-per-Akun dipegang Data Usaha (cutover langsung), refresh aman-rotasi, transfer memutus koneksi | Done | `docs/decisions/adr-0037-cutover-koneksi-per-akun-dipegang-data-usaha.md` | `docs/phases/phase-143-model-koneksi-accurate-per-akun.md` |
+| 144  | Gerbang Koneksi Accurate: popup glass di dashboard, mesin status per Data Usaha, halaman koneksi baru | Done | `docs/architecture/architecture-accurate-connect-gate.md` | `docs/phases/phase-144-gerbang-koneksi-accurate-ui.md` |
+| 145  | Cutover Koneksi Accurate ke Production: carry-over koneksi hidup, pemberitahuan customer, runbook, kontrak | Planned | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

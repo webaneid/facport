@@ -1,0 +1,6 @@
+# § Fase 145 — dua temuan gitleaks (generic-api-key) di commit 32c68e4 adalah POSITIF PALSU: nilai UUID di tes galat token adalah
+# refresh token akun DEV Accurate yang SUDAH TIDAK BERLAKU (ditolak invalid_grant sejak dirotasi/otorisasi ulang; hasil percobaan Fase 141).
+# Nilai sudah diganti dengan penanda palsu di commit berikutnya; commit lama tetap ada di riwayat (tidak menulis ulang riwayat bersama),
+# jadi dua fingerprint ini diabaikan secara sempit — JANGAN memperluas daftar ini untuk temuan lain.
+32c68e46005a23b012d9b7e5074feb4abe9bfc53:apps/api/src/lib/accurate-token.test.ts:generic-api-key:91
+32c68e46005a23b012d9b7e5074feb4abe9bfc53:apps/api/src/lib/accurate.test.ts:generic-api-key:243

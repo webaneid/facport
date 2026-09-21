@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
+import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
 import { otherPaymentMapping } from "../lib/import-mapping/other-payment.mapping";
@@ -160,6 +161,13 @@ export const otherPaymentImportRoute = new Elysia()
       }
 
       // § Fase 43 — trial dibatasi jumlah baris berhasil-import.
+      // § Fase 142 — koneksi Accurate WAJIB sudah punya scope modul ini (pesan jelas SEBELUM job dijadwalkan).
+      const scopeCheck = await checkSubscriptionScopes(subscription.id, "other_payment");
+      if (!scopeCheck.ok) {
+        set.status = 409;
+        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
+      }
+
       const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
       if (!budgetCheck.ok) {
         set.status = 400;
@@ -217,6 +225,13 @@ export const otherPaymentImportRoute = new Elysia()
         .select({ pendingCount: count() })
         .from(importBatchRows)
         .where(and(eq(importBatchRows.batchId, batch.id), inArray(importBatchRows.status, ["pending", "failed"])));
+      // § Fase 142 — koneksi Accurate WAJIB sudah punya scope modul ini (pesan jelas SEBELUM job dijadwalkan).
+      const scopeCheck = await checkSubscriptionScopes(subscription.id, "other_payment");
+      if (!scopeCheck.ok) {
+        set.status = 409;
+        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
+      }
+
       const budgetCheck = await checkTrialRowBudget(subscription.id, pendingRowCount?.pendingCount ?? 0);
       if (!budgetCheck.ok) {
         set.status = 400;

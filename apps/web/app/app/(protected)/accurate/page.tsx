@@ -1,15 +1,13 @@
-import { redirect } from "next/navigation";
-import { AccurateConnectionsForm } from "@/components/accurate/accurate-connections-form";
-import { getActiveDataUsahaIdCookie } from "@/lib/active-data-usaha";
+import { PageHeader } from "@/components/ui/page-header";
+import { AccurateStatusCard } from "@/components/accurate/accurate-gate-provider";
 
-// § Fase 113 — Server Component tipis, pola SAMA `team/page.tsx`: baca
-// `dataUsahaId` aktif dari cookie (sudah divalidasi `(protected)/layout.tsx`),
-// teruskan ke Client Component sebagai prop. SEBELUM ini halaman langsung
-// Client Component yang fetch tanpa scoping Data Usaha sama sekali (bug —
-// lihat `docs/phases/phase-113-scoping-data-usaha-dashboard.md`).
-export default async function AccuratePage() {
-  const dataUsahaId = await getActiveDataUsahaIdCookie();
-  if (!dataUsahaId) redirect("/pilih-usaha");
-
-  return <AccurateConnectionsForm dataUsahaId={dataUsahaId} />;
+// § Fase 144, architecture-accurate-connect-gate.md — halaman koneksi = SATU kartu per Data Usaha (bukan per modul/subscription
+// lagi). Status & aksi datang dari konteks gerbang yang dipasang `(protected)/layout.tsx`; tombol membuka popup yang sama.
+export default function AccuratePage() {
+  return (
+    <div className="mx-auto flex max-w-2xl flex-col gap-6">
+      <PageHeader title="Koneksi Accurate Online" description="Hubungkan Data Usaha ini ke akun Accurate Online Anda." />
+      <AccurateStatusCard detailed />
+    </div>
+  );
 }

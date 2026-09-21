@@ -1,0 +1,970 @@
+{
+ "DELETE account-budget-target/delete.do": [
+  "account_budget_target_delete"
+ ],
+ "DELETE bank-transfer/delete.do": [
+  "bank_transfer_delete"
+ ],
+ "DELETE bill-of-material/delete.do": [
+  "bill_of_material_delete"
+ ],
+ "DELETE bom-process-category/delete.do": [
+  "bom_process_category_delete"
+ ],
+ "DELETE branch/delete.do": [
+  "branch_delete"
+ ],
+ "DELETE customer-category/delete.do": [
+  "customer_category_delete"
+ ],
+ "DELETE customer-claim/delete.do": [
+  "customer_claim_delete"
+ ],
+ "DELETE customer/delete.do": [
+  "customer_delete"
+ ],
+ "DELETE data-classification/delete.do": [
+  "data_classification_delete"
+ ],
+ "DELETE delivery-order/delete.do": [
+  "delivery_order_delete"
+ ],
+ "DELETE department/delete.do": [
+  "department_delete"
+ ],
+ "DELETE employee/delete.do": [
+  "employee_delete"
+ ],
+ "DELETE exchange-invoice/delete.do": [
+  "exchange_invoice_delete"
+ ],
+ "DELETE expense/delete.do": [
+  "expense_accrual_delete"
+ ],
+ "DELETE finished-good-slip/delete.do": [
+  "finished_good_slip_delete"
+ ],
+ "DELETE fixed-asset/delete.do": [
+  "fixed_asset_delete"
+ ],
+ "DELETE fob/delete.do": [
+  "fob_delete"
+ ],
+ "DELETE freeonboard/delete.do": [
+  "freeonboard_save"
+ ],
+ "DELETE glaccount/delete.do": [
+  "glaccount_delete"
+ ],
+ "DELETE item-adjustment/delete.do": [
+  "item_adjustment_delete"
+ ],
+ "DELETE item-brand/delete.do": [
+  "item_brand_delete"
+ ],
+ "DELETE item-category/delete.do": [
+  "item_category_delete"
+ ],
+ "DELETE item-transfer/delete.do": [
+  "item_transfer_delete"
+ ],
+ "DELETE item/delete.do": [
+  "item_delete"
+ ],
+ "DELETE job-order/delete.do": [
+  "job_order_delete"
+ ],
+ "DELETE journal-voucher/delete.do": [
+  "journal_voucher_delete"
+ ],
+ "DELETE manufacture-order/delete.do": [
+  "manufacture_order_delete"
+ ],
+ "DELETE material-adjustment/delete.do": [
+  "material_adjustment_delete"
+ ],
+ "DELETE material-slip/delete.do": [
+  "material_slip_delete"
+ ],
+ "DELETE other-deposit/delete.do": [
+  "other_deposit_delete"
+ ],
+ "DELETE other-payment/delete.do": [
+  "other_payment_delete"
+ ],
+ "DELETE payment-term/delete.do": [
+  "payment_term_delete"
+ ],
+ "DELETE process-stages/delete.do": [
+  "process_stages_delete"
+ ],
+ "DELETE project/delete.do": [
+  "project_delete"
+ ],
+ "DELETE purchase-invoice/delete.do": [
+  "purchase_invoice_delete"
+ ],
+ "DELETE purchase-order/delete.do": [
+  "purchase_order_delete"
+ ],
+ "DELETE purchase-payment/delete.do": [
+  "purchase_payment_delete"
+ ],
+ "DELETE purchase-requisition/delete.do": [
+  "purchase_requisition_delete"
+ ],
+ "DELETE purchase-return/delete.do": [
+  "purchase_return_delete"
+ ],
+ "DELETE receive-item/delete.do": [
+  "receive_item_delete"
+ ],
+ "DELETE roll-over/delete.do": [
+  "roll_over_delete"
+ ],
+ "DELETE sales-invoice/delete.do": [
+  "sales_invoice_save"
+ ],
+ "DELETE sales-order/delete.do": [
+  "sales_order_delete"
+ ],
+ "DELETE sales-quotation/delete.do": [
+  "sales_quotation_delete"
+ ],
+ "DELETE sales-receipt/delete.do": [
+  "sales_receipt_delete"
+ ],
+ "DELETE sales-return/delete.do": [
+  "sales_return_delete"
+ ],
+ "DELETE sellingprice-adjustment/delete.do": [
+  "sellingprice_adjustment_save"
+ ],
+ "DELETE shipment/delete.do": [
+  "shipment_delete"
+ ],
+ "DELETE standard-product-cost/delete.do": [
+  "standard_product_cost_delete"
+ ],
+ "DELETE stock-opname-order/delete.do": [
+  "stock_opname_order_delete"
+ ],
+ "DELETE stock-opname-result/delete.do": [
+  "stock_opname_result_delete"
+ ],
+ "DELETE tax/delete.do": [
+  "tax_delete"
+ ],
+ "DELETE unit/delete.do": [
+  "unit_delete"
+ ],
+ "DELETE vendor-category/delete.do": [
+  "vendor_category_delete"
+ ],
+ "DELETE vendor-claim/delete.do": [
+  "vendor_claim_delete"
+ ],
+ "DELETE vendor-price/delete.do": [
+  "vendor_price_delete"
+ ],
+ "DELETE vendor/delete.do": [
+  "vendor_delete"
+ ],
+ "DELETE warehouse/delete.do": [
+  "warehouse_delete"
+ ],
+ "DELETE wo-pic/delete.do": [
+  "wo_person_in_charge_delete"
+ ],
+ "DELETE work-order/delete.do": [
+  "work_order_delete"
+ ],
+ "GET access-privilege/detail.do": [
+  "access_privilege_view"
+ ],
+ "GET access-privilege/list.do": [
+  "access_privilege_view"
+ ],
+ "GET account-budget-target/detail.do": [
+  "account_budget_target_view"
+ ],
+ "GET account-budget-target/list.do": [
+  "account_budget_target_view"
+ ],
+ "GET auto-number/list.do": [
+  "auto_number_view"
+ ],
+ "GET bank-transfer/detail.do": [
+  "bank_transfer_view"
+ ],
+ "GET bank-transfer/list.do": [
+  "bank_transfer_view"
+ ],
+ "GET bill-of-material/detail.do": [
+  "bill_of_material_view"
+ ],
+ "GET bill-of-material/list.do": [
+  "bill_of_material_view"
+ ],
+ "GET bom-process-category/list.do": [
+  "bom_process_category_view"
+ ],
+ "GET branch/detail.do": [
+  "branch_view"
+ ],
+ "GET branch/list.do": [
+  "branch_view"
+ ],
+ "GET currency/detail.do": [
+  "currency_view"
+ ],
+ "GET currency/exchange-rate.do": [
+  "currency_view"
+ ],
+ "GET currency/fiscal-rate.do": [
+  "currency_view"
+ ],
+ "GET currency/list.do": [
+  "currency_view"
+ ],
+ "GET customer-category/detail.do": [
+  "customer_category_view"
+ ],
+ "GET customer-category/list.do": [
+  "customer_category_view"
+ ],
+ "GET customer-claim/detail.do": [
+  "customer_claim_view"
+ ],
+ "GET customer-claim/list.do": [
+  "customer_claim_view"
+ ],
+ "GET customer/detail.do": [
+  "customer_view"
+ ],
+ "GET customer/list.do": [
+  "customer_view"
+ ],
+ "GET data-classification/list.do": [
+  "data_classification_view"
+ ],
+ "GET delivery-order/detail.do": [
+  "delivery_order_view"
+ ],
+ "GET delivery-order/list.do": [
+  "delivery_order_view"
+ ],
+ "GET department/detail.do": [
+  "department_view"
+ ],
+ "GET department/list.do": [
+  "department_view"
+ ],
+ "GET employee/detail.do": [
+  "employee_view"
+ ],
+ "GET employee/list.do": [
+  "employee_view"
+ ],
+ "GET exchange-invoice/detail.do": [
+  "exchange_invoice_view"
+ ],
+ "GET exchange-invoice/list.do": [
+  "exchange_invoice_view"
+ ],
+ "GET expense/detail.do": [
+  "expense_accrual_view"
+ ],
+ "GET expense/list.do": [
+  "expense_accrual_view"
+ ],
+ "GET finished-good-slip/detail.do": [
+  "finished_good_slip_view"
+ ],
+ "GET finished-good-slip/list.do": [
+  "finished_good_slip_view"
+ ],
+ "GET fixed-asset/detail.do": [
+  "fixed_asset_view"
+ ],
+ "GET fixed-asset/list.do": [
+  "fixed_asset_view"
+ ],
+ "GET fob/detail.do": [
+  "fob_view"
+ ],
+ "GET fob/list.do": [
+  "fob_view"
+ ],
+ "GET freeonboard/detail.do": [
+  "freeonboard_view"
+ ],
+ "GET freeonboard/list.do": [
+  "freeonboard_view"
+ ],
+ "GET glaccount/detail.do": [
+  "glaccount_view"
+ ],
+ "GET glaccount/get-balance.do": [
+  "glaccount_view"
+ ],
+ "GET glaccount/get-bs-account-amount.do": [
+  "glaccount_view"
+ ],
+ "GET glaccount/get-pl-account-amount.do": [
+  "glaccount_view"
+ ],
+ "GET glaccount/list.do": [
+  "glaccount_view"
+ ],
+ "GET item-adjustment/detail.do": [
+  "item_adjustment_view"
+ ],
+ "GET item-adjustment/list.do": [
+  "item_adjustment_view"
+ ],
+ "GET item-brand/detail.do": [
+  "item_brand_view"
+ ],
+ "GET item-brand/list.do": [
+  "item_brand_view"
+ ],
+ "GET item-category/detail.do": [
+  "item_category_view"
+ ],
+ "GET item-category/list.do": [
+  "item_category_view"
+ ],
+ "GET item-transfer/detail.do": [
+  "item_transfer_view"
+ ],
+ "GET item-transfer/list.do": [
+  "item_transfer_view"
+ ],
+ "GET item/detail.do": [
+  "item_view"
+ ],
+ "GET item/get-nearest-cost.do": [
+  "purchase_invoice_save"
+ ],
+ "GET item/get-selling-price.do": [
+  "item_view"
+ ],
+ "GET item/get-stock.do": [
+  "item_view"
+ ],
+ "GET item/list-stock.do": [
+  "item_view"
+ ],
+ "GET item/list.do": [
+  "item_view"
+ ],
+ "GET item/search-by-item-or-sn.do": [
+  "item_view"
+ ],
+ "GET item/search-by-no-upc.do": [
+  "item_view"
+ ],
+ "GET item/stock-mutation-history.do": [
+  "stock_mutation_history_view"
+ ],
+ "GET item/vendor-price.do": [
+  "item_view"
+ ],
+ "GET job-order/detail.do": [
+  "job_order_view"
+ ],
+ "GET job-order/list.do": [
+  "job_order_view"
+ ],
+ "GET journal-voucher/detail.do": [
+  "journal_voucher_view"
+ ],
+ "GET journal-voucher/list.do": [
+  "journal_voucher_view"
+ ],
+ "GET manufacture-order/detail.do": [
+  "manufacture_order_view"
+ ],
+ "GET manufacture-order/list.do": [
+  "manufacture_order_view"
+ ],
+ "GET material-adjustment/detail.do": [
+  "material_adjustment_view"
+ ],
+ "GET material-adjustment/list.do": [
+  "material_adjustment_view"
+ ],
+ "GET material-slip/detail.do": [
+  "material_slip_view"
+ ],
+ "GET material-slip/list.do": [
+  "material_slip_view"
+ ],
+ "GET other-deposit/detail.do": [
+  "other_deposit_view"
+ ],
+ "GET other-deposit/list.do": [
+  "other_deposit_view"
+ ],
+ "GET other-payment/detail.do": [
+  "other_payment_view"
+ ],
+ "GET other-payment/list.do": [
+  "other_payment_view"
+ ],
+ "GET payment-term/detail.do": [
+  "payment_term_view"
+ ],
+ "GET payment-term/list.do": [
+  "payment_term_view"
+ ],
+ "GET price-category/detail.do": [
+  "price_category_view"
+ ],
+ "GET price-category/list.do": [
+  "price_category_view"
+ ],
+ "GET process-stages/detail.do": [
+  "process_stages_view"
+ ],
+ "GET process-stages/list.do": [
+  "process_stages_view"
+ ],
+ "GET project/detail.do": [
+  "project_view"
+ ],
+ "GET project/list.do": [
+  "project_view"
+ ],
+ "GET purchase-invoice/detail.do": [
+  "purchase_invoice_view"
+ ],
+ "GET purchase-invoice/list.do": [
+  "purchase_invoice_view"
+ ],
+ "GET purchase-order/detail.do": [
+  "purchase_order_view"
+ ],
+ "GET purchase-order/list.do": [
+  "purchase_order_view"
+ ],
+ "GET purchase-payment/detail.do": [
+  "purchase_payment_view"
+ ],
+ "GET purchase-payment/list.do": [
+  "purchase_payment_view"
+ ],
+ "GET purchase-requisition/detail.do": [
+  "purchase_requisition_view"
+ ],
+ "GET purchase-requisition/list.do": [
+  "purchase_requisition_view"
+ ],
+ "GET purchase-return/detail.do": [
+  "purchase_return_view"
+ ],
+ "GET purchase-return/list.do": [
+  "purchase_return_view"
+ ],
+ "GET receive-item/detail.do": [
+  "receive_item_view"
+ ],
+ "GET receive-item/list.do": [
+  "receive_item_view"
+ ],
+ "GET report/serial-number-mutation.do": [
+  "stock_mutation_history_view"
+ ],
+ "GET report/serial-number-per-warehouse.do": [
+  "stock_mutation_history_view"
+ ],
+ "GET report/stock-mutation-summary.do": [
+  "stock_mutation_history_view"
+ ],
+ "GET report/work-order-detail.do": [
+  "work_order_view"
+ ],
+ "GET roll-over/detail.do": [
+  "roll_over_view"
+ ],
+ "GET roll-over/list.do": [
+  "roll_over_view"
+ ],
+ "GET sales-checkin/detail.do": [
+  "sales_checkin_view"
+ ],
+ "GET sales-checkin/list.do": [
+  "sales_checkin_view"
+ ],
+ "GET sales-invoice/detail-invoice.do": [
+  "sales_invoice_view"
+ ],
+ "GET sales-invoice/detail.do": [
+  "sales_invoice_view"
+ ],
+ "GET sales-invoice/list.do": [
+  "sales_invoice_view"
+ ],
+ "GET sales-order/detail.do": [
+  "sales_order_view"
+ ],
+ "GET sales-order/list.do": [
+  "sales_order_view"
+ ],
+ "GET sales-quotation/detail.do": [
+  "sales_quotation_view"
+ ],
+ "GET sales-quotation/list.do": [
+  "sales_quotation_view"
+ ],
+ "GET sales-receipt/detail.do": [
+  "sales_receipt_view"
+ ],
+ "GET sales-receipt/list.do": [
+  "sales_receipt_view"
+ ],
+ "GET sales-return/detail.do": [
+  "sales_return_view"
+ ],
+ "GET sales-return/list.do": [
+  "sales_return_view"
+ ],
+ "GET salesman-commission/detail.do": [
+  "salesman_commission_view"
+ ],
+ "GET salesman-commission/list.do": [
+  "salesman_commission_view"
+ ],
+ "GET sellingprice-adjustment/detail.do": [
+  "sellingprice_adjustment_view"
+ ],
+ "GET sellingprice-adjustment/list.do": [
+  "sellingprice_adjustment_view"
+ ],
+ "GET shipment/detail.do": [
+  "shipment_view"
+ ],
+ "GET shipment/list.do": [
+  "shipment_view"
+ ],
+ "GET standard-product-cost/detail.do": [
+  "standard_product_cost_view"
+ ],
+ "GET standard-product-cost/list.do": [
+  "standard_product_cost_view"
+ ],
+ "GET stock-opname-order/detail.do": [
+  "stock_opname_order_view"
+ ],
+ "GET stock-opname-order/list.do": [
+  "stock_opname_order_view"
+ ],
+ "GET stock-opname-result/detail.do": [
+  "stock_opname_result_view"
+ ],
+ "GET stock-opname-result/list.do": [
+  "stock_opname_result_view"
+ ],
+ "GET tax/detail.do": [
+  "tax_view"
+ ],
+ "GET tax/list.do": [
+  "tax_view"
+ ],
+ "GET unit/detail.do": [
+  "unit_view"
+ ],
+ "GET unit/list.do": [
+  "unit_view"
+ ],
+ "GET vendor-category/detail.do": [
+  "vendor_category_view"
+ ],
+ "GET vendor-category/list.do": [
+  "vendor_category_view"
+ ],
+ "GET vendor-claim/detail.do": [
+  "vendor_claim_view"
+ ],
+ "GET vendor-claim/list.do": [
+  "vendor_claim_view"
+ ],
+ "GET vendor-price/detail.do": [
+  "vendor_price_view"
+ ],
+ "GET vendor-price/list.do": [
+  "vendor_price_view"
+ ],
+ "GET vendor/detail.do": [
+  "vendor_view"
+ ],
+ "GET vendor/list.do": [
+  "vendor_view"
+ ],
+ "GET warehouse/detail.do": [
+  "warehouse_view"
+ ],
+ "GET warehouse/list.do": [
+  "warehouse_view"
+ ],
+ "GET wo-pic/list.do": [
+  "wo_person_in_charge_view"
+ ],
+ "GET work-order/detail.do": [
+  "work_order_view"
+ ],
+ "GET work-order/list.do": [
+  "work_order_view"
+ ],
+ "POST account-budget-target/save.do": [
+  "account_budget_target_save"
+ ],
+ "POST bank-transfer/bulk-save.do": [
+  "bank_transfer_save"
+ ],
+ "POST bank-transfer/save.do": [
+  "bank_transfer_save"
+ ],
+ "POST bill-of-material/save.do": [
+  "bill_of_material_save"
+ ],
+ "POST branch/bulk-save.do": [
+  "branch_save"
+ ],
+ "POST branch/save.do": [
+  "branch_save"
+ ],
+ "POST currency/bulk-save.do": [
+  "currency_save"
+ ],
+ "POST currency/save.do": [
+  "currency_save"
+ ],
+ "POST customer-category/bulk-save.do": [
+  "customer_category_save"
+ ],
+ "POST customer-category/save.do": [
+  "customer_category_save"
+ ],
+ "POST customer-claim/bulk-save.do": [
+  "customer_claim_save"
+ ],
+ "POST customer-claim/save.do": [
+  "customer_claim_save"
+ ],
+ "POST customer/bulk-save.do": [
+  "customer_save"
+ ],
+ "POST customer/save.do": [
+  "customer_save"
+ ],
+ "POST data-classification/bulk-save.do": [
+  "data_classification_save"
+ ],
+ "POST data-classification/save.do": [
+  "data_classification_save"
+ ],
+ "POST delivery-order/bulk-save.do": [
+  "delivery_order_save"
+ ],
+ "POST delivery-order/save.do": [
+  "delivery_order_save"
+ ],
+ "POST department/bulk-save.do": [
+  "department_save"
+ ],
+ "POST department/save.do": [
+  "department_save"
+ ],
+ "POST employee/save.do": [
+  "employee_save"
+ ],
+ "POST exchange-invoice/bulk-save.do": [
+  "exchange_invoice_save"
+ ],
+ "POST exchange-invoice/save.do": [
+  "exchange_invoice_save"
+ ],
+ "POST expense/bulk-save.do": [
+  "expense_accrual_save"
+ ],
+ "POST expense/save.do": [
+  "expense_accrual_save"
+ ],
+ "POST finished-good-slip/bulk-save.do": [
+  "finished_good_slip_save"
+ ],
+ "POST finished-good-slip/save.do": [
+  "finished_good_slip_save"
+ ],
+ "POST fob/bulk-save.do": [
+  "fob_save"
+ ],
+ "POST fob/save.do": [
+  "fob_save"
+ ],
+ "POST freeonboard/bulk-save.do": [
+  "freeonboard_save"
+ ],
+ "POST freeonboard/save.do": [
+  "freeonboard_save"
+ ],
+ "POST glaccount/bulk-save.do": [
+  "glaccount_save"
+ ],
+ "POST glaccount/save.do": [
+  "glaccount_save"
+ ],
+ "POST item-adjustment/bulk-save.do": [
+  "item_adjustment_save"
+ ],
+ "POST item-adjustment/save-target-quantity.do": [
+  "item_adjustment_save"
+ ],
+ "POST item-adjustment/save.do": [
+  "item_adjustment_save"
+ ],
+ "POST item-brand/save.do": [
+  "item_brand_save"
+ ],
+ "POST item-category/bulk-save.do": [
+  "item_category_save"
+ ],
+ "POST item-category/save.do": [
+  "item_category_save"
+ ],
+ "POST item-transfer/bulk-save.do": [
+  "item_transfer_save"
+ ],
+ "POST item-transfer/save.do": [
+  "item_transfer_save"
+ ],
+ "POST item/bulk-save.do": [
+  "item_save"
+ ],
+ "POST item/save.do": [
+  "item_save"
+ ],
+ "POST job-order/bulk-save.do": [
+  "job_order_save"
+ ],
+ "POST job-order/save.do": [
+  "job_order_save"
+ ],
+ "POST journal-voucher/bulk-save.do": [
+  "journal_voucher_save"
+ ],
+ "POST journal-voucher/save.do": [
+  "journal_voucher_save"
+ ],
+ "POST manufacture-order/save.do": [
+  "manufacture_order_save"
+ ],
+ "POST material-adjustment/bulk-save.do": [
+  "material_adjustment_save"
+ ],
+ "POST material-adjustment/save.do": [
+  "material_adjustment_save"
+ ],
+ "POST material-slip/bulk-save.do": [
+  "material_slip_save"
+ ],
+ "POST material-slip/save.do": [
+  "material_slip_save"
+ ],
+ "POST other-deposit/bulk-save.do": [
+  "other_deposit_save"
+ ],
+ "POST other-deposit/save.do": [
+  "other_deposit_save"
+ ],
+ "POST other-payment/bulk-save.do": [
+  "other_payment_save"
+ ],
+ "POST other-payment/save.do": [
+  "other_payment_save"
+ ],
+ "POST payment-term/bulk-save.do": [
+  "payment_term_save"
+ ],
+ "POST payment-term/save.do": [
+  "payment_term_save"
+ ],
+ "POST pos/customer/save.do": [
+  "customer_save"
+ ],
+ "POST pos/item/save.do": [
+  "item_save"
+ ],
+ "POST pos/transaction/save.do": [
+  "sales_invoice_save",
+  "sales_receipt_save",
+  "sales_return_save"
+ ],
+ "POST price-category/save.do": [
+  "price_category_save"
+ ],
+ "POST process-stages/save.do": [
+  "process_stages_save"
+ ],
+ "POST project/bulk-save.do": [
+  "project_save"
+ ],
+ "POST project/save.do": [
+  "project_save"
+ ],
+ "POST purchase-invoice/bulk-save.do": [
+  "purchase_invoice_save"
+ ],
+ "POST purchase-invoice/create-down-payment.do": [
+  "purchase_invoice_save"
+ ],
+ "POST purchase-invoice/save.do": [
+  "purchase_invoice_save"
+ ],
+ "POST purchase-order/bulk-save.do": [
+  "purchase_order_save"
+ ],
+ "POST purchase-order/manual-close-order.do": [
+  "purchase_order_save"
+ ],
+ "POST purchase-order/save.do": [
+  "purchase_order_save"
+ ],
+ "POST purchase-payment/bulk-save.do": [
+  "purchase_payment_save"
+ ],
+ "POST purchase-payment/save.do": [
+  "purchase_payment_save"
+ ],
+ "POST purchase-requisition/bulk-save.do": [
+  "purchase_requisition_save"
+ ],
+ "POST purchase-requisition/save.do": [
+  "purchase_requisition_save"
+ ],
+ "POST purchase-return/bulk-save.do": [
+  "purchase_return_save"
+ ],
+ "POST purchase-return/save.do": [
+  "purchase_return_save"
+ ],
+ "POST receive-item/bulk-save.do": [
+  "receive_item_save"
+ ],
+ "POST receive-item/save.do": [
+  "receive_item_save"
+ ],
+ "POST roll-over/bulk-save.do": [
+  "roll_over_save"
+ ],
+ "POST roll-over/save.do": [
+  "roll_over_save"
+ ],
+ "POST sales-invoice/bulk-save.do": [
+  "sales_invoice_save"
+ ],
+ "POST sales-invoice/create-down-payment.do": [
+  "sales_invoice_save"
+ ],
+ "POST sales-invoice/save.do": [
+  "sales_invoice_save"
+ ],
+ "POST sales-order/bulk-save.do": [
+  "sales_order_save"
+ ],
+ "POST sales-order/manual-close-order.do": [
+  "sales_order_save"
+ ],
+ "POST sales-order/save.do": [
+  "sales_order_save"
+ ],
+ "POST sales-quotation/bulk-save.do": [
+  "sales_quotation_save"
+ ],
+ "POST sales-quotation/save.do": [
+  "sales_quotation_save"
+ ],
+ "POST sales-receipt/bulk-save.do": [
+  "sales_receipt_save"
+ ],
+ "POST sales-receipt/save.do": [
+  "sales_receipt_save"
+ ],
+ "POST sales-return/bulk-save.do": [
+  "sales_return_save"
+ ],
+ "POST sales-return/save.do": [
+  "sales_return_save"
+ ],
+ "POST sellingprice-adjustment/save.do": [
+  "sellingprice_adjustment_save"
+ ],
+ "POST shipment/bulk-save.do": [
+  "shipment_save"
+ ],
+ "POST shipment/save.do": [
+  "shipment_save"
+ ],
+ "POST standard-product-cost/save.do": [
+  "standard_product_cost_save"
+ ],
+ "POST stock-opname-order/bulk-save.do": [
+  "stock_opname_order_save"
+ ],
+ "POST stock-opname-order/save.do": [
+  "stock_opname_order_save"
+ ],
+ "POST stock-opname-result/bulk-save.do": [
+  "stock_opname_result_save"
+ ],
+ "POST stock-opname-result/save.do": [
+  "stock_opname_result_save"
+ ],
+ "POST tax/bulk-save.do": [
+  "tax_save"
+ ],
+ "POST tax/save.do": [
+  "tax_save"
+ ],
+ "POST unit/bulk-save.do": [
+  "unit_save"
+ ],
+ "POST unit/save.do": [
+  "unit_save"
+ ],
+ "POST vendor-category/bulk-save.do": [
+  "vendor_category_save"
+ ],
+ "POST vendor-category/save.do": [
+  "vendor_category_save"
+ ],
+ "POST vendor-claim/bulk-save.do": [
+  "vendor_claim_save"
+ ],
+ "POST vendor-claim/save.do": [
+  "vendor_claim_save"
+ ],
+ "POST vendor-price/bulk-save.do": [
+  "vendor_price_save"
+ ],
+ "POST vendor-price/save.do": [
+  "vendor_price_save"
+ ],
+ "POST vendor/bulk-save.do": [
+  "vendor_save"
+ ],
+ "POST vendor/save.do": [
+  "vendor_save"
+ ],
+ "POST warehouse/save.do": [
+  "warehouse_save"
+ ],
+ "POST wo-pic/save.do": [
+  "wo_person_in_charge_save"
+ ],
+ "POST work-order/save.do": [
+  "work_order_save"
+ ]
+}
