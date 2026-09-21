@@ -3,6 +3,7 @@ import { eq, and } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { dataUsaha, user as userTable, auditLogs, ownershipTransfers } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
+import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 
 // § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
 // Usaha DIBANTU ADMIN: LANGSUNG eksekusi tanpa accept-flow token (admin
@@ -24,6 +25,46 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
       return { dataUsaha: rows };
     },
     { permission: "users.manage", query: t.Object({ userId: t.String({ minLength: 1 }) }) },
+  )
+  // § Fase 144 — "Putuskan Koneksi" oleh admin di level DATA USAHA (koneksi Accurate dipegang Data Usaha, ADR-0037): SATU aksi
+  // memutus SEMUA fitur di Data Usaha itu. Menggantikan `POST /admin/subscriptions/:id/disconnect-accurate` (per subscription;
+  // menyesatkan karena semua subscription di Data Usaha yang sama ikut terputus). Baris `accurate_connections` TIDAK dihapus
+  // (bisa dipakai Data Usaha lain milik akun yang sama); pemilik diberi notifikasi. Permission sama dengan endpoint lama.
+  .post(
+    "/:id/disconnect-accurate",
+    async ({ params, user, set }) => {
+      const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, params.id));
+      if (!du) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      if (!du.accurateConnectionId) {
+        set.status = 400;
+        return { code: "NOT_CONNECTED" };
+      }
+
+      await db.update(dataUsaha).set({ accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, du.id));
+
+      await db.insert(auditLogs).values({
+        entityType: "data_usaha",
+        entityId: du.id,
+        action: "disconnect_accurate",
+        changes: { previousConnectionId: du.accurateConnectionId, previousAccurateDbAlias: du.accurateDbAlias ?? null },
+        actorId: user.id,
+      });
+
+      await createNotification({
+        userId: du.userId,
+        type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN,
+        title: "Koneksi Accurate diputuskan admin",
+        body: `Koneksi Accurate untuk Data Usaha ${du.name}${du.accurateDbAlias ? ` (${du.accurateDbAlias})` : ""} diputuskan oleh admin — hubungkan ulang untuk lanjut import.`,
+        entityType: "data_usaha",
+        entityId: du.id,
+      });
+
+      return { dataUsahaId: du.id, disconnected: true };
+    },
+    { permission: "subscriptions.manage", params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
   .post(
     "/:id/transfer-ownership",

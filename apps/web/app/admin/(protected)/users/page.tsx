@@ -51,9 +51,6 @@ type SubscriptionHistoryItem = {
   endAt: string | null;
   moduleKey: string | null;
   planName: string;
-  connected: boolean;
-  connectionStatus: string | null;
-  accurateDbAlias: string | null;
   dataUsahaId: string;
   dataUsahaName: string;
 };

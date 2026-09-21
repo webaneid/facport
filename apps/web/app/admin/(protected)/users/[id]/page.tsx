@@ -47,11 +47,18 @@ type SubscriptionRow = {
   durationDays: number | null;
   moduleKey: string | null;
   planName: string;
-  connected: boolean;
-  connectionStatus: string | null;
-  accurateDbAlias: string | null;
   dataUsahaId: string;
   dataUsahaName: string;
+};
+// § Fase 144 — status koneksi Accurate per DATA USAHA (ADR-0037), bukan per subscription.
+type DataUsahaRow = {
+  id: string;
+  name: string;
+  isOwner: boolean;
+  connected: boolean;
+  connectionStatus: string | null;
+  accountEmail: string | null;
+  accurateDbAlias: string | null;
 };
 
 export default function AdminUserDetailPage() {
@@ -59,11 +66,16 @@ export default function AdminUserDetailPage() {
   const params = useParams<{ id: string }>();
   const [detail, setDetail] = useState<Detail | null>(null);
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[] | null>(null);
+  const [dataUsahaList, setDataUsahaList] = useState<DataUsahaRow[]>([]);
   const [notFound, setNotFound] = useState(false);
 
   const loadSubscriptions = useCallback(async () => {
     const res = await api.admin.users({ id: params.id }).subscriptions.get();
-    if (res.data) setSubscriptions((res.data as { subscriptions: SubscriptionRow[] }).subscriptions);
+    if (res.data) {
+      const data = res.data as unknown as { subscriptions: SubscriptionRow[]; dataUsaha: DataUsahaRow[] };
+      setSubscriptions(data.subscriptions);
+      setDataUsahaList(data.dataUsaha);
+    }
   }, [params.id]);
 
   useEffect(() => {
@@ -96,19 +108,17 @@ export default function AdminUserDetailPage() {
   // sebelumnya flat list tanpa konteks ini (endpoint dibuat Fase 92,
   // SEBELUM Data Usaha jadi entity Fase 107). Urutan grup ikut urutan
   // kemunculan pertama subscription-nya (backend sudah `orderBy(desc(createdAt))`).
-  const dataUsahaGroups: { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionRow[] }[] = [];
-  if (subscriptions) {
-    const byId = new Map<string, { dataUsahaId: string; dataUsahaName: string; subs: SubscriptionRow[] }>();
-    for (const sub of subscriptions) {
-      let group = byId.get(sub.dataUsahaId);
-      if (!group) {
-        group = { dataUsahaId: sub.dataUsahaId, dataUsahaName: sub.dataUsahaName, subs: [] };
-        byId.set(sub.dataUsahaId, group);
-        dataUsahaGroups.push(group);
-      }
-      group.subs.push(sub);
-    }
-  }
+  // § Fase 144 — grup mengikuti daftar Data Usaha dari API (termasuk Data Usaha TANPA langganan), tiap grup membawa status koneksinya
+  // sendiri + subscription-nya. Urutan: Data Usaha yang punya subscription paling baru dulu (API urut createdAt desc), sisanya menyusul.
+  const subsByDataUsaha = new Map<string, SubscriptionRow[]>();
+  for (const sub of subscriptions ?? []) subsByDataUsaha.set(sub.dataUsahaId, [...(subsByDataUsaha.get(sub.dataUsahaId) ?? []), sub]);
+  const orderIndex = new Map<string, number>();
+  (subscriptions ?? []).forEach((sub, i) => {
+    if (!orderIndex.has(sub.dataUsahaId)) orderIndex.set(sub.dataUsahaId, i);
+  });
+  const dataUsahaGroups = [...dataUsahaList]
+    .sort((a, b) => (orderIndex.get(a.id) ?? Number.MAX_SAFE_INTEGER) - (orderIndex.get(b.id) ?? Number.MAX_SAFE_INTEGER))
+    .map((du) => ({ du, subs: subsByDataUsaha.get(du.id) ?? [] }));
 
   return (
     <div className="flex flex-col gap-6">
@@ -137,25 +147,45 @@ export default function AdminUserDetailPage() {
         <CardContent>
           {subscriptions === null ? (
             <Skeleton className="h-24 w-full" />
-          ) : subscriptions.length === 0 ? (
-            <EmptyState icon={Link2} title="Belum punya langganan" />
+          ) : dataUsahaGroups.length === 0 ? (
+            <EmptyState icon={Link2} title="Belum punya Data Usaha atau langganan" />
           ) : (
-            <Accordion type="multiple" defaultValue={dataUsahaGroups.map((g) => g.dataUsahaId)}>
+            <Accordion type="multiple" defaultValue={dataUsahaGroups.map((g) => g.du.id)}>
               {dataUsahaGroups.map((group) => (
-                <AccordionItem key={group.dataUsahaId} value={group.dataUsahaId}>
+                <AccordionItem key={group.du.id} value={group.du.id}>
                   <AccordionTrigger>
                     <span className="flex items-center gap-2">
                       <Building2 className="h-4 w-4 text-muted-foreground" />
-                      {group.dataUsahaName}
+                      {group.du.name}
                       <span className="text-xs font-normal text-muted-foreground">({group.subs.length} fitur)</span>
                     </span>
                   </AccordionTrigger>
                   <AccordionContent>
+                    {/* § Fase 144 — koneksi Accurate SATU per Data Usaha: ringkasan + SATU tombol "Putuskan" (memutus semua fitur di bawah). */}
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2 text-sm">
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-foreground">Koneksi Accurate</span>
+                        {group.du.connectionStatus === null ? (
+                          <Badge variant="default">Belum Terhubung</Badge>
+                        ) : (
+                          <StatusBadge domain="accurate-connection" status={group.du.connectionStatus} />
+                        )}
+                        {group.du.accurateDbAlias && <span className="text-xs text-muted-foreground">Database: {group.du.accurateDbAlias}</span>}
+                        {group.du.accountEmail && <span className="text-xs text-muted-foreground">Akun: {group.du.accountEmail}</span>}
+                        {!group.du.isOwner && <span className="text-xs text-muted-foreground">(bukan milik user ini)</span>}
+                      </span>
+                      {group.du.connectionStatus !== null && (
+                        <DisconnectAccurateDialog
+                          dataUsaha={{ id: group.du.id, name: group.du.name, accurateDbAlias: group.du.accurateDbAlias }}
+                          onDisconnected={loadSubscriptions}
+                        />
+                      )}
+                    </div>
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="w-[15%]">Fitur</TableHead>
-                          <TableHead className="w-[18%]">Paket</TableHead>
+                          <TableHead className="w-[26%]">Fitur</TableHead>
+                          <TableHead className="w-[28%]">Paket</TableHead>
                           {/* § ADR-0034 (2026-09-17) — "Durasi"+"Berlaku" (2
                               kolom terpisah, Fase 130) DIGABUNG jadi 1: cuma
                               tanggal AKHIR yang ditampilkan langsung (info
@@ -163,10 +193,8 @@ export default function AdminUserDetailPage() {
                               mulai+durasi dipindah ke `title` attribute
                               (hover) via `TruncateText` — tetap ada, tidak
                               hilang, cuma tidak WAJIB selalu terlihat. */}
-                          <TableHead className="w-[14%]">Berlaku</TableHead>
-                          <TableHead className="w-[12%]">Status Langganan</TableHead>
-                          <TableHead className="w-[21%]">Koneksi Accurate</TableHead>
-                          <TableHead className="w-[60px] text-right">Aksi</TableHead>
+                          <TableHead className="w-[24%]">Berlaku</TableHead>
+                          <TableHead className="w-[22%]">Status Langganan</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -190,26 +218,6 @@ export default function AdminUserDetailPage() {
                               </TableCell>
                               <TableCell>
                                 <StatusBadge domain="subscription" status={sub.status} />
-                              </TableCell>
-                              <TableCell>
-                                {sub.connectionStatus === null ? (
-                                  <Badge variant="default">Belum Terhubung</Badge>
-                                ) : (
-                                  <span className="flex items-center gap-1.5 truncate">
-                                    <StatusBadge domain="accurate-connection" status={sub.connectionStatus} />
-                                    {sub.accurateDbAlias && <span className="truncate text-xs text-muted-foreground">({sub.accurateDbAlias})</span>}
-                                  </span>
-                                )}
-                              </TableCell>
-                              <TableCell>
-                                {sub.connectionStatus !== null && (
-                                  <div className="flex justify-end">
-                                    <DisconnectAccurateDialog
-                                      subscription={{ subscriptionId: sub.subscriptionId, planName: sub.planName, accurateDbAlias: sub.accurateDbAlias }}
-                                      onDisconnected={loadSubscriptions}
-                                    />
-                                  </div>
-                                )}
                               </TableCell>
                             </TableRow>
                           );

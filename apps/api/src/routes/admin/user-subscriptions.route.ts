@@ -49,8 +49,6 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           // atau kapan MULAI-nya — dua-duanya dibutuhkan biar "Detail
           // User" benar-benar berguna buat support (§ komentar file ini).
           durationDays: plans.durationDays,
-          duConnectionId: dataUsaha.accurateConnectionId,
-          duDbAlias: dataUsaha.accurateDbAlias,
           planName: plans.name,
           moduleKey: plans.modules,
           dataUsahaId: dataUsaha.id,
@@ -62,33 +60,45 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
         .where(eq(subscriptions.userId, params.id))
         .orderBy(desc(subscriptions.createdAt));
 
-      // § Fase 143, ADR-0037 — status koneksi diturunkan dari DATA USAHA subscription ini (bukan pointer subscription).
-      const connectionIds = [...new Set(rows.map((r) => r.duConnectionId).filter((id): id is string => id !== null))];
-      const connections = connectionIds.length
-        ? await db.select().from(accurateConnections).where(inArray(accurateConnections.id, connectionIds))
+      // § Fase 144 — status koneksi Accurate adalah milik DATA USAHA (ADR-0037), BUKAN subscription: dikembalikan sebagai daftar
+      // `dataUsaha` (semua Data Usaha yang dimiliki user ATAU memuat subscription-nya) dengan status koneksi + akun + database.
+      // Baris subscription TIDAK lagi membawa kolom koneksi (dulu diulang di tiap baris & tombol putus per baris = menyesatkan).
+      const owned = await db.select({ id: dataUsaha.id }).from(dataUsaha).where(eq(dataUsaha.userId, params.id));
+      const dataUsahaIds = [...new Set([...rows.map((r) => r.dataUsahaId), ...owned.map((d) => d.id)])];
+      const duRows = dataUsahaIds.length
+        ? await db
+            .select({ du: dataUsaha, connection: accurateConnections })
+            .from(dataUsaha)
+            .leftJoin(accurateConnections, eq(accurateConnections.id, dataUsaha.accurateConnectionId))
+            .where(inArray(dataUsaha.id, dataUsahaIds))
         : [];
-      const connectionById = new Map(connections.map((c) => [c.id, c]));
 
       return {
         user: { id: targetUser.id, name: targetUser.name, email: targetUser.email },
-        subscriptions: rows.map((r) => {
-          const found = r.duConnectionId ? connectionById.get(r.duConnectionId) : undefined;
-          const connection = found?.accurateUserId ? found : undefined; // koneksi lama (tanpa identitas akun) = belum terhubung
+        dataUsaha: duRows.map(({ du, connection: found }) => {
+          // Koneksi LAMA (tanpa identitas akun, sebelum cutover) dianggap belum terhubung.
+          const connection = found?.accurateUserId ? found : null;
           return {
-            subscriptionId: r.id,
-            status: r.status,
-            startAt: r.startAt,
-            endAt: r.endAt,
-            durationDays: r.durationDays,
-            moduleKey: r.moduleKey[0] ?? null,
-            planName: r.planName,
+            id: du.id,
+            name: du.name,
+            isOwner: du.userId === params.id,
             connected: connection?.status === "active",
             connectionStatus: connection?.status ?? null,
-            accurateDbAlias: r.duDbAlias,
-            dataUsahaId: r.dataUsahaId,
-            dataUsahaName: r.dataUsahaName,
+            accountEmail: connection?.accurateUserEmail ?? null,
+            accurateDbAlias: du.accurateDbAlias,
           };
         }),
+        subscriptions: rows.map((r) => ({
+          subscriptionId: r.id,
+          status: r.status,
+          startAt: r.startAt,
+          endAt: r.endAt,
+          durationDays: r.durationDays,
+          moduleKey: r.moduleKey[0] ?? null,
+          planName: r.planName,
+          dataUsahaId: r.dataUsahaId,
+          dataUsahaName: r.dataUsahaName,
+        })),
       };
     },
     { permission: "users.view", params: t.Object({ id: t.String() }) },

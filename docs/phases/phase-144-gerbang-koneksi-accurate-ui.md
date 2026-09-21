@@ -44,6 +44,13 @@ Pengumuman/email ke customer, skrip health-check token, carry-over koneksi hidup
 - **Tes komponen me-mock modul pembungkus `lib/use-accurate-gate-navigation.ts`, bukan `next/navigation`**: `mock.module` bun bersifat global per proses dan tes auth/* me-mock `next/navigation` dengan bentuk lain (saling menimpa, tes jadi bergantung urutan file).
 - **Dev: `ACCURATE_REDIRECT_URI` harus lewat proxy web** (`http://app.localhost:6209/api-proxy/accurate/oauth/callback`) karena callback terikat sesi login (Fase 143) dan cookie dev milik `app.localhost` — URI itu juga harus didaftarkan di portal developer Accurate. Didokumentasikan di `.env.example` dan `architecture-accurate-integration.md` § Redirect URI.
 
+- **Koreksi admin "Putuskan Koneksi" (2026-09-22, temuan user):** T9 awal hanya mengubah backend & salinan dialog; UI detail user admin masih
+  menampilkan kolom koneksi + tombol "Putuskan" PER BARIS subscription (3 fitur = 3 tombol untuk 1 koneksi) dan endpoint dikunci ke
+  subscription. Diperbaiki: `POST /admin/data-usaha/:id/disconnect-accurate` (menggantikan `POST /admin/subscriptions/:id/disconnect-accurate`,
+  dihapus), `GET /admin/users/:id/subscriptions` kini mengembalikan daftar `dataUsaha` (status koneksi + akun + database per Data Usaha,
+  termasuk Data Usaha tanpa langganan) dan baris subscription TANPA kolom koneksi; halaman detail user = ringkasan koneksi + SATU tombol
+  per Data Usaha. Belum diverifikasi visual di browser admin (tes API + typecheck + lint saja).
+
 ## Known Limitations
 - **Verifikasi end-to-end lewat UI SELESAI (2026-09-22, akun DEV, aplikasi facport local, Retail Demo):** login → buat Data Usaha → popup "Hubungkan Sekarang" → Accurate (kali ini TANPA layar persetujuan; scope sama sudah pernah disetujui) → callback lewat proxy terikat sesi → dashboard `?accurate=connected` dengan popup di langkah pilih database → "Simpan & Lanjut" → kartu "Terhubung ke Retail Demo" → popup menutup, kartu dashboard "✓ Terhubung · Database: Retail Demo". Redirect URI lewat proxy (`http://app.localhost:6209/api-proxy/accurate/oauth/callback`) sudah didaftarkan di portal developer Accurate (di samping URI langsung) dan `apps/api/.env` dev diarahkan ke sana.
 - **Tampilan mobile (sheet) belum dilihat langsung:** ekstensi Chrome tidak mengubah viewport; CSS `.glass-card` mobile hanya ditinjau dari kode. Desktop terverifikasi (popup `not_connected` & `reconnect`, "Nanti", banner, kartu dashboard, halaman `/accurate`, penghalang import).

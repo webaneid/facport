@@ -144,7 +144,7 @@ menghubungkan Accurate sebelum import bisa dikirim."
   pembuka `return (` tiap halaman). Bentuknya penghalang informatif (kartu + tombol pembuka popup); pengiriman ke Accurate TIDAK
   dinonaktifkan di UI — server sudah menggagalkan batch dengan pesan jelas (Fase 142/143) dan mengubahnya berarti menyentuh 17 form
   serta puluhan tes route import.
-- Admin (`admin/(protected)/users/[id]/page.tsx`, `disconnect-accurate-dialog.tsx`) — status & salinan tombol mengikuti level Data Usaha.
+- Admin (`admin/(protected)/users/[id]/page.tsx`, `disconnect-accurate-dialog.tsx`) — status koneksi & tombol "Putuskan Koneksi" SATU per Data Usaha (bukan per subscription): `POST /admin/data-usaha/:id/disconnect-accurate` memutus semua fitur di dalamnya; daftar `dataUsaha` datang dari `GET /admin/users/:id/subscriptions`.
 - Notifikasi (`lib/notification-routes.ts`) — tautan "Koneksi Accurate terputus" mengarah ke dashboard (popup `reconnect`).
 
 ## Pengujian
