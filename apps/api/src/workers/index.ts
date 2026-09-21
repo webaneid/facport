@@ -13,6 +13,7 @@ import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT
 import { refreshAccessToken, isAccurateRecordNotFound } from "../lib/accurate";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
+import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
@@ -1896,6 +1897,18 @@ async function main() {
       await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
       await failAllPendingRows(batch.id, errorMessage);
       logger.error({ batchId }, "Import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
+      return;
+    }
+
+    // § Fase 142, architecture-accurate-scope-engine.md — scope koneksi diperiksa SEBELUM buka sesi/proses
+    // baris, supaya yang tampil pesan jelas (bukan 403 per baris). BUKAN `markConnectionExpired`: koneksi
+    // masih hidup, hanya kurang izin — perbaikannya "perbarui izin", bukan koneksi baru yang mati.
+    const scopeCheck = await checkConnectionScopes(connection, [batch.module]);
+    if (!scopeCheck.ok) {
+      const errorMessage = `Izin Accurate kurang: scope ${scopeCheck.missing.map((m) => `"${m}"`).join(", ")} belum diberikan — perbarui izin (hubungkan ulang Accurate) lalu coba lagi.`;
+      await db.update(importBatches).set({ status: "failed", completedAt: new Date() }).where(eq(importBatches.id, batch.id));
+      await failAllPendingRows(batch.id, errorMessage);
+      logger.error({ batchId, module: batch.module, missing: scopeCheck.missing }, "Import gagal: scope koneksi Accurate kurang");
       return;
     }
 

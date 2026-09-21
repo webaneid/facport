@@ -6,6 +6,8 @@ import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { plans, subscriptions, accurateConnections, memberSeats, dataUsaha, user as userTable } from "../db/schema";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
+import { ALL_ACCURATE_SCOPES, scopesForModules } from "../lib/accurate-scopes";
+import { createState } from "../lib/oauth-state";
 
 // § Fase 14, ADR-0020 — mirror struktur test sebelumnya, disesuaikan ke
 // API baru: `POST /accurate/connect` sekarang terima `{ subscriptionId }`
@@ -88,10 +90,18 @@ describe("POST /accurate/connect", () => {
       })
       .returning();
 
-    const res = await postConnect(cookie, subscription!.id);
-    expect(res.status).toBe(503);
-    const body = (await res.json()) as { code: string };
-    expect(body.code).toBe("ACCURATE_NOT_CONFIGURED");
+    // § Fase 142 — dulu bergantung urutan tes (env kosong hanya kalau accurate.test.ts jalan lebih dulu);
+    // .env dev sekarang berisi kredensial asli, jadi kosongkan EKSPLISIT lalu pulihkan.
+    const originalClientId = process.env.ACCURATE_CLIENT_ID;
+    delete process.env.ACCURATE_CLIENT_ID;
+    try {
+      const res = await postConnect(cookie, subscription!.id);
+      expect(res.status).toBe(503);
+      const body = (await res.json()) as { code: string };
+      expect(body.code).toBe("ACCURATE_NOT_CONFIGURED");
+    } finally {
+      if (originalClientId !== undefined) process.env.ACCURATE_CLIENT_ID = originalClientId;
+    }
   });
 
   test("409 ALREADY_CONNECTED kalau subscription sudah punya accurateConnectionId", async () => {
@@ -186,6 +196,9 @@ describe("POST /accurate/connect", () => {
       expect(withFlag.status).toBe(200); // § dev lokal dengan ACCURATE_CLIENT_ID terisi: authorizeUrl berhasil dibuat
       const body = (await withFlag.json()) as { authorizeUrl?: string };
       expect(body.authorizeUrl).toBeTruthy();
+      // § Fase 142, ADR-0036 #2 — otorisasi SELALU semua scope katalog (bukan scope modul plan ini saja).
+      const requested = new URL(body.authorizeUrl!).searchParams.get("scope")!.split(" ");
+      expect(new Set(requested)).toEqual(new Set(ALL_ACCURATE_SCOPES));
     }
   });
 });
@@ -437,6 +450,86 @@ describe("GET /accurate/connections", () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as { code: string };
     expect(body.code).toBe("DATA_USAHA_NOT_FOUND");
+  });
+});
+
+describe("Fase 142 — otorisasi 1 pintu (semua scope) & simpan scope yang diberikan", () => {
+  async function seedSubscription(tag: string) {
+    const userId = await signUp(`acc-f142-${tag}-${runId}@test.local`);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan F142 ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["receive_item"] })
+      .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
+    const [subscription] = await db
+      .insert(subscriptions)
+      .values({
+        userId,
+        planId: plan!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
+      })
+      .returning();
+    return { userId, subscriptionId: subscription!.id, email: `acc-f142-${tag}-${runId}@test.local` };
+  }
+
+  test("/accurate/connect meminta SEMUA scope katalog walau plan-nya cuma 1 modul (ADR-0036 #2)", async () => {
+    const { subscriptionId, email } = await seedSubscription("connect");
+    const cookie = await signIn(email);
+    const originalClientId = process.env.ACCURATE_CLIENT_ID;
+    process.env.ACCURATE_CLIENT_ID = "test-client-id";
+    try {
+      const res = await postConnect(cookie, subscriptionId);
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { authorizeUrl: string };
+      const requested = new URL(body.authorizeUrl).searchParams.get("scope")!.split(" ");
+      expect(new Set(requested)).toEqual(new Set(ALL_ACCURATE_SCOPES));
+      expect(requested.length).toBeGreaterThan(scopesForModules(["receive_item"]).length); // bukan scope sempit modul
+    } finally {
+      if (originalClientId === undefined) delete process.env.ACCURATE_CLIENT_ID;
+      else process.env.ACCURATE_CLIENT_ID = originalClientId;
+    }
+  });
+
+  test("callback OAuth menyimpan grantedScopes + identitas akun dari respons token", async () => {
+    const { userId, subscriptionId } = await seedSubscription("callback");
+    const originalClientId = process.env.ACCURATE_CLIENT_ID;
+    const originalClientSecret = process.env.ACCURATE_CLIENT_SECRET;
+    process.env.ACCURATE_CLIENT_ID = "test-client-id";
+    process.env.ACCURATE_CLIENT_SECRET = "test-client-secret";
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          access_token: "at",
+          refresh_token: "rt",
+          expires_in: 1295999,
+          token_type: "bearer",
+          scope: "item_view receive_item_save data_classification_view",
+          user: { id: 60245, email: "akun@accurate.test", name: "Akun" },
+        }),
+        { status: 200 },
+      )) as unknown as typeof fetch;
+    try {
+      const state = createState(subscriptionId);
+      const res = await testApp.handle(new Request(`http://localhost/accurate/oauth/callback?code=abc&state=${state}`));
+      expect(res.status).toBeGreaterThanOrEqual(300);
+      expect(res.headers.get("location")).toContain("connected=true");
+      const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
+      const [conn] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, sub!.accurateConnectionId!));
+      expect(conn!.userId).toBe(userId);
+      expect(conn!.grantedScopes).toEqual(["data_classification_view", "item_view", "receive_item_save"]);
+      expect(conn!.accurateUserId).toBe("60245");
+      expect(conn!.accurateUserEmail).toBe("akun@accurate.test");
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalClientId === undefined) delete process.env.ACCURATE_CLIENT_ID;
+      else process.env.ACCURATE_CLIENT_ID = originalClientId;
+      if (originalClientSecret === undefined) delete process.env.ACCURATE_CLIENT_SECRET;
+      else process.env.ACCURATE_CLIENT_SECRET = originalClientSecret;
+    }
   });
 });
 
@@ -819,6 +912,80 @@ describe("POST /accurate/reuse", () => {
 // accurateDbId pada connection yang sudah "ke-set" diam-diam ikut
 // memindahkan tujuan import subscription LAIN yang share koneksi ini —
 // endpoint ini WAJIB tolak, bukan izinkan timpa diam-diam.
+describe("POST /accurate/reuse — cek scope (Fase 142)", () => {
+  async function setup(tag: string, grantedScopes: string[]) {
+    const email = `acc-reuse-scope-${tag}-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const [connection] = await db
+      .insert(accurateConnections)
+      .values({
+        userId,
+        accessTokenEncrypted: "dummy",
+        refreshTokenEncrypted: "dummy",
+        expiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        accurateDbId: "123",
+        accurateDbAlias: "PT Demo",
+        grantedScopes,
+      })
+      .returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
+    const [planA] = await db
+      .insert(plans)
+      .values({ name: `Plan RS A ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    await db.insert(subscriptions).values({
+      userId,
+      planId: planA!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      accurateConnectionId: connection!.id,
+      dataUsahaId,
+    });
+    const [planB] = await db
+      .insert(plans)
+      .values({ name: `Plan RS B ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["sales_invoice"] })
+      .returning();
+    const [subB] = await db
+      .insert(subscriptions)
+      .values({
+        userId,
+        planId: planB!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId,
+      })
+      .returning();
+    const reuse = () =>
+      testApp.handle(
+        new Request("http://localhost/accurate/reuse", {
+          method: "POST",
+          headers: { cookie, "Content-Type": "application/json" },
+          body: JSON.stringify({ subscriptionId: subB!.id, connectionId: connection!.id }),
+        }),
+      );
+    return { reuse, subBId: subB!.id };
+  }
+
+  test("409 ACCURATE_SCOPE_MISSING + daftar missing kalau koneksi (scope purchase_invoice) dipakai modul sales_invoice", async () => {
+    const { reuse, subBId } = await setup("kurang", scopesForModules(["purchase_invoice"]));
+    const res = await reuse();
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string; missing: string[] };
+    expect(body.code).toBe("ACCURATE_SCOPE_MISSING");
+    expect(body.missing).toContain("sales_invoice_save");
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.id, subBId));
+    expect(sub!.accurateConnectionId).toBeNull(); // TIDAK ter-assign kalau scope kurang
+  });
+
+  test("200 kalau koneksi sudah punya SEMUA scope katalog", async () => {
+    const { reuse } = await setup("lengkap", ALL_ACCURATE_SCOPES);
+    expect((await reuse()).status).toBe(200);
+  });
+});
+
 describe("POST /accurate/databases/select", () => {
   test("400 DATABASE_ALREADY_SELECTED kalau connection sudah punya accurateDbId (cegah timpa diam-diam Data Usaha yang di-share subscription lain)", async () => {
     const email = `acc-select-already-${runId}@test.local`;

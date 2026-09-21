@@ -23,11 +23,40 @@ export class AccurateApiError extends Error {
   }
 }
 
-export async function parseAccurateEnvelope<T>(res: Response): Promise<T> {
-  let body: AccurateEnvelope<T> | undefined;
+// § Fase 141 E6 (TERBUKTI, akun DEV) — scope OAuth kurang → HTTP 403 dengan body XML (BUKAN envelope
+// {s,d}): `<InsufficientScopeException><error>insufficient_scope</error>...<scope>nama</scope>`.
+// Dulu jatuh ke galat generik "non-JSON"/"HTTP 403" tanpa tahu scope apa yang kurang.
+export class AccurateScopeError extends AccurateApiError {
+  constructor(public missingScope: string | null) {
+    super(
+      `Izin Accurate kurang${missingScope ? `: scope "${missingScope}" belum diberikan` : ""} — perbarui izin (hubungkan ulang Accurate) lalu coba lagi.`,
+      403,
+    );
+    this.name = "AccurateScopeError";
+  }
+}
+
+/** Kenali body 403 `insufficient_scope`. Mengembalikan `undefined` kalau BUKAN galat scope; `null` scope = tak terbaca. */
+export function parseInsufficientScope(status: number, raw: string): { scope: string | null } | undefined {
+  if (status !== 403 || !raw.includes("insufficient_scope")) return undefined;
+  return { scope: /<scope>([^<]+)<\/scope>/.exec(raw)?.[1]?.trim() ?? null };
+}
+
+// Baca body SEKALI sebagai teks (supaya body XML galat scope tidak hilang saat JSON.parse gagal).
+async function readEnvelopeBody<T>(res: Response): Promise<T | undefined> {
+  const raw = await res.text();
+  const insufficient = parseInsufficientScope(res.status, raw);
+  if (insufficient) throw new AccurateScopeError(insufficient.scope);
   try {
-    body = (await res.json()) as AccurateEnvelope<T>;
+    return JSON.parse(raw) as T;
   } catch {
+    return undefined;
+  }
+}
+
+export async function parseAccurateEnvelope<T>(res: Response): Promise<T> {
+  const body = await readEnvelopeBody<AccurateEnvelope<T>>(res);
+  if (!body) {
     if (!res.ok) throw new AccurateApiError(`Accurate API gagal: HTTP ${res.status}`, res.status);
     throw new AccurateApiError("Accurate API mengembalikan body non-JSON", res.status);
   }
@@ -61,13 +90,11 @@ export function isAccurateRecordNotFound(err: unknown): boolean {
 // 2026-08-19 (§ lessons-learned.md). JANGAN pakai `parseAccurateEnvelope`
 // biasa untuk endpoint save/mutasi — pakai ini.
 export async function parseAccurateSaveEnvelope<T>(res: Response): Promise<T> {
-  let body: { s: boolean; d?: unknown; r?: T } | undefined;
-  try {
-    body = (await res.json()) as { s: boolean; d?: unknown; r?: T };
-  } catch {
+  const body = await readEnvelopeBody<{ s: boolean; d?: unknown; r?: T }>(res);
+  if (!body) {
     throw new AccurateApiError(`Accurate API mengembalikan body non-JSON (HTTP ${res.status})`, res.status);
   }
-  if (!body || !res.ok || body.s === false) {
+  if (!res.ok || body.s === false) {
     const detail = Array.isArray(body?.d) ? body.d.join("; ") : String(body?.d ?? "");
     throw new AccurateApiError(detail || `Accurate API gagal: HTTP ${res.status}`, res.status);
   }
@@ -82,7 +109,29 @@ export type AccurateTokenResponse = {
   refresh_token: string;
   expires_in: number; // detik
   token_type: string;
+  // § Fase 141 E1 — respons token memuat scope yang BENAR-BENAR diberikan (spasi-terpisah) dan
+  // identitas akun Accurate. Dulu dibuang. Opsional di tipe supaya token lama/tes tetap valid.
+  scope?: string;
+  user?: { id?: number; email?: string | null; name?: string | null };
 };
+
+/** Pecah string `scope` respons token; `null` kalau respons tidak memuatnya (jangan diartikan "kosong"). */
+export function parseGrantedScopes(scope: string | undefined): string[] | null {
+  if (!scope || !scope.trim()) return null;
+  return [...new Set(scope.trim().split(/\s+/))].sort();
+}
+
+/** Scope yang diberikan ke access token ini menurut Accurate (`approved-scope.do`, § Fase 141 E1). */
+export async function getApprovedScopes(accessToken: string): Promise<string[]> {
+  // Dipanggil di jalur REQUEST (confirm import, /accurate/reuse) untuk mengisi grantedScopes secara malas —
+  // WAJIB ada batas waktu supaya Accurate yang lambat tidak menggantung request pelanggan (galat → scope
+  // dianggap "tidak diketahui", lihat resolveGrantedScopes).
+  const res = await fetch(`${ACCOUNT_API_BASE}/approved-scope.do`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(5_000),
+  });
+  return parseAccurateEnvelope<string[]>(res);
+}
 
 export function getAuthorizeUrl(state: string, scopes: string[]): string {
   if (!env.ACCURATE_CLIENT_ID) {

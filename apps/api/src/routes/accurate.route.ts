@@ -5,8 +5,9 @@ import { accurateConnections, subscriptions } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { hasAccessToDataUsaha } from "../lib/data-usaha";
-import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase } from "../lib/accurate";
-import { scopesForModules } from "../lib/accurate-scopes";
+import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase, parseGrantedScopes } from "../lib/accurate";
+import { ALL_ACCURATE_SCOPES } from "../lib/accurate-scopes";
+import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createState, consumeState } from "../lib/oauth-state";
 import { encrypt, decrypt } from "../lib/encryption";
 import { env } from "../lib/env";
@@ -159,10 +160,11 @@ export const accurateRoute = new Elysia()
       }
 
       const state = createState(target.subscription.id);
-      const scopes = scopesForModules(target.plan.modules);
-
+      // § Fase 142, ADR-0036 #2 — SELALU minta SEMUA scope katalog, BUKAN scope modul ini saja.
+      // Terbukti (Fase 141 E2): otorisasi baru untuk akun Accurate yang sama mematikan token lama dan
+      // MENGGANTI seluruh scope — otorisasi "sempit" per modul membuat modul lain kehilangan izin.
       try {
-        return { authorizeUrl: getAuthorizeUrl(state, scopes) };
+        return { authorizeUrl: getAuthorizeUrl(state, ALL_ACCURATE_SCOPES) };
       } catch (err) {
         set.status = 503;
         logger.error({ err }, "Accurate client belum dikonfigurasi");
@@ -199,6 +201,11 @@ export const accurateRoute = new Elysia()
             accessTokenEncrypted: encrypt(token.access_token),
             refreshTokenEncrypted: encrypt(token.refresh_token),
             expiresAt: new Date(Date.now() + token.expires_in * 1000),
+            // § Fase 142 — simpan apa yang BENAR-BENAR diberikan Accurate + identitas akunnya
+            // (respons token; dulu dibuang). NULL kalau respons tidak memuatnya.
+            grantedScopes: parseGrantedScopes(token.scope),
+            accurateUserId: token.user?.id != null ? String(token.user.id) : null,
+            accurateUserEmail: token.user?.email ?? null,
           })
           .returning();
         await db.update(subscriptions).set({ accurateConnectionId: connection!.id }).where(eq(subscriptions.id, subscriptionId));
@@ -263,6 +270,14 @@ export const accurateRoute = new Elysia()
       if (!reusableForThisDataUsaha) {
         set.status = 400;
         return { code: "CONNECTION_DATA_USAHA_MISMATCH" };
+      }
+
+      // § Fase 142 — koneksi yang di-reuse WAJIB sudah punya scope modul ini (dulu tidak dicek: reuse
+      // sukses, import baru gagal 403 belakangan). Scope tidak diketahui (baris lama, token mati) → lolos.
+      const scopeCheck = await checkConnectionScopes(connection, target.plan.modules);
+      if (!scopeCheck.ok) {
+        set.status = 409;
+        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
       }
 
       await db.update(subscriptions).set({ accurateConnectionId: connection.id }).where(eq(subscriptions.id, target.subscription.id));

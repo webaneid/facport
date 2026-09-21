@@ -6,7 +6,12 @@ import {
   openDatabase,
   parseAccurateSaveEnvelope,
   AccurateApiError,
+  AccurateScopeError,
   isAccurateRecordNotFound,
+  getApprovedScopes,
+  parseAccurateEnvelope,
+  parseGrantedScopes,
+  parseInsufficientScope,
 } from "./accurate";
 
 // § Known Limitations phase-01 — TIDAK bisa full end-to-end tanpa akun
@@ -172,5 +177,60 @@ describe("isAccurateRecordNotFound", () => {
   test("false untuk error yang BUKAN AccurateApiError (mis. error jaringan biasa)", () => {
     expect(isAccurateRecordNotFound(new Error("tidak tepat"))).toBe(false);
     expect(isAccurateRecordNotFound("tidak tepat")).toBe(false);
+  });
+});
+
+// § Fase 142 / Fase 141 E6 — galat scope OAuth: 403 body XML (bukan envelope {s,d}).
+describe("galat scope Accurate (403 insufficient_scope)", () => {
+  const xml =
+    "<InsufficientScopeException><error>insufficient_scope</error><error_description>Insufficient scope for this resource</error_description><scope>sales_invoice_view</scope></InsufficientScopeException>";
+
+  test("parseInsufficientScope membaca nama scope dari XML 403", () => {
+    expect(parseInsufficientScope(403, xml)).toEqual({ scope: "sales_invoice_view" });
+  });
+
+  test("bukan galat scope kalau status bukan 403 atau body tanpa insufficient_scope", () => {
+    expect(parseInsufficientScope(500, xml)).toBeUndefined();
+    expect(parseInsufficientScope(403, '{"s":false,"d":["x"]}')).toBeUndefined();
+  });
+
+  test("parseAccurateEnvelope melempar AccurateScopeError (bukan galat 'non-JSON') untuk 403 XML", async () => {
+    const res = new Response(xml, { status: 403 });
+    const err = await parseAccurateEnvelope(res).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AccurateScopeError);
+    expect((err as AccurateScopeError).missingScope).toBe("sales_invoice_view");
+    expect((err as AccurateScopeError).httpStatus).toBe(403);
+    expect((err as AccurateScopeError).message).toContain("sales_invoice_view");
+  });
+
+  test("parseAccurateSaveEnvelope juga mengenali galat scope", async () => {
+    const err = await parseAccurateSaveEnvelope(new Response(xml, { status: 403 })).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AccurateScopeError);
+  });
+
+  test("envelope JSON biasa tetap berfungsi (regresi: body dibaca sebagai teks lalu di-parse)", async () => {
+    expect(await parseAccurateEnvelope<string[]>(new Response('{"s":true,"d":["a"]}'))).toEqual(["a"]);
+    await expect(parseAccurateEnvelope(new Response('{"s":false,"d":["gagal"]}'))).rejects.toThrow("gagal");
+  });
+});
+
+describe("parseGrantedScopes", () => {
+  test("memecah string scope respons token, unik & terurut", () => {
+    expect(parseGrantedScopes("item_view  vendor_view item_view")).toEqual(["item_view", "vendor_view"]);
+  });
+
+  test("null (bukan []) kalau respons token tidak memuat scope", () => {
+    expect(parseGrantedScopes(undefined)).toBeNull();
+    expect(parseGrantedScopes("  ")).toBeNull();
+  });
+});
+
+describe("getApprovedScopes", () => {
+  test("GET approved-scope.do dengan Bearer + batas waktu (dipakai di jalur request)", async () => {
+    mockFetchOk({ s: true, d: ["item_view", "vendor_view"] });
+    expect(await getApprovedScopes("at-1")).toEqual(["item_view", "vendor_view"]);
+    expect(lastRequest!.url).toContain("/api/approved-scope.do");
+    expect((lastRequest!.init.headers as Record<string, string>).Authorization).toBe("Bearer at-1");
+    expect(lastRequest!.init.signal).toBeDefined();
   });
 });

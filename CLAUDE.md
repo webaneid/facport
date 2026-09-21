@@ -132,6 +132,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Payment gateway (Ipaymu/Xendit)        | `docs/architecture/architecture-payment.md` |
 | Alur transaksi end-to-end (invoice→payment→subscription), titik masuk & "mesin" shared | `docs/architecture/architecture-transaction-flow.md` |
 | Integrasi Accurate Online — OAuth & infra bersama SEMUA modul | `docs/architecture/architecture-accurate-integration.md` |
+| Scope OAuth Accurate (registri endpoint, `granted_scopes`, cek scope) | `docs/architecture/architecture-accurate-scope-engine.md` |
 | Modul Faktur Pembelian (Purchase Invoice) | `docs/architecture/architecture-purchase-invoice.md` |
 | Modul Faktur Penjualan (Sales Invoice) | `docs/architecture/architecture-sales-invoice.md` |
 | Modul Akun Hutang Pemasok (Vendor, Data Master) | `docs/architecture/architecture-vendor-payable-account.md` |

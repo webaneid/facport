@@ -1,0 +1,96 @@
+// § architecture-accurate-scope-engine.md, ADR-0036 #4/#7 — SATU-SATUNYA tempat modul
+// mendeklarasikan endpoint Accurate yang dipanggil. Scope OAuth DITURUNKAN dari sini
+// (lewat `accurate-scope-snapshot.json`, bukan ditulis tangan) — supaya "fungsi/field baru,
+// scope lupa" tidak terulang (Fase 78: vendor_*, Fase 98: data_classification_*).
+//
+// Format endpoint: "METHOD resource/aksi.do" (tanpa awalan /accurate/api/), METHOD sesuai
+// yang dipakai kode (list/detail = GET, save = POST, delete = DELETE).
+//
+// ATURAN modul baru: deklarasikan SEMUA endpoint yang dipanggil kodenya (termasuk helper
+// findOrCreate*), lalu `bun run scopes:sync` bila endpoint belum ada di snapshot. Tes
+// `accurate-scopes.test.ts` memindai sumber dan gagal kalau ada endpoint yang belum terdaftar.
+
+export type ScopeReason = { scope: string; reason: string };
+
+export type ModuleEndpoints = {
+  endpoints: string[];
+  // Scope yang perlu tapi tak terlihat sebagai endpoint langsung. WAJIB beralasan.
+  extraScopes?: ScopeReason[];
+};
+
+// Baseline: data referensi item hampir selalu dibutuhkan (dulu `item_view` di scopesForModules).
+export const BASELINE_ENDPOINTS = ["GET item/list.do"];
+
+// Helper bersama (findOrCreate*) — dipakai modul yang memanggilnya.
+const ITEM = ["POST item/save.do"]; // + GET item/list.do lewat baseline
+const CLASSIFICATION = ["GET data-classification/list.do", "POST data-classification/save.do"]; // Kategori Keuangan (attribut/RM_CLS)
+const VENDOR = ["GET vendor/list.do", "POST vendor/save.do"];
+const CUSTOMER = ["GET customer/list.do", "POST customer/save.do"];
+const TAX = ["GET tax/list.do"];
+
+// Warisan katalog tulis-tangan (sebelum Fase 142): scope ini dipesan sejak fase-fase lama walau
+// belum ada endpoint yang memanggilnya. DIPERTAHANKAN (tes regresi melarang scope hilang diam-diam);
+// tinjau apakah bisa dibuang saat model koneksi 1-otorisasi (Fase 143).
+const legacy = (scope: string): ScopeReason => ({ scope, reason: "warisan katalog tulis-tangan pra-Fase 142; belum ada endpoint yang memanggil" });
+const GLACCOUNT_VIEW: ScopeReason = {
+  scope: "glaccount_view",
+  reason: "resolve akun (accountNo) — belum ada panggilan glaccount/*.do di kode; dipesan sejak Fase 05+",
+};
+
+export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
+  // § Fase 78 — vendor_* WAJIB di sini (findOrCreateVendor dipanggil UNCONDITIONAL tiap import).
+  purchase_invoice: {
+    endpoints: [
+      "POST purchase-invoice/save.do",
+      "GET purchase-invoice/detail.do", // append ke faktur existing (Fase 08)
+      "DELETE purchase-invoice/delete.do", // Batal Import (Fase 09) — spec: purchase_invoice_delete
+      ...ITEM,
+      ...CLASSIFICATION,
+      ...VENDOR,
+    ],
+  },
+  vendor_payable_account: { endpoints: [...VENDOR] },
+  sales_invoice: {
+    endpoints: [
+      "POST sales-invoice/save.do",
+      "GET sales-invoice/detail.do",
+      "DELETE sales-invoice/delete.do", // spec: sales_invoice_save (bukan _delete)
+      ...CUSTOMER,
+      ...ITEM,
+      ...CLASSIFICATION,
+    ],
+  },
+  sales_receipt: { endpoints: ["POST sales-receipt/save.do", ...TAX], extraScopes: [legacy("sales_receipt_view")] },
+  purchase_payment: {
+    endpoints: ["POST purchase-payment/save.do", ...TAX],
+    extraScopes: [legacy("purchase_payment_view"), GLACCOUNT_VIEW],
+  },
+  // § Fase 98 — data_classification_* WAJIB (attribut1..10 → findOrCreateDataClassification).
+  journal_voucher: {
+    endpoints: ["POST journal-voucher/save.do", ...CLASSIFICATION],
+    extraScopes: [legacy("journal_voucher_view"), GLACCOUNT_VIEW],
+  },
+  other_payment: {
+    endpoints: ["POST other-payment/save.do", ...CLASSIFICATION],
+    extraScopes: [legacy("other_payment_view"), GLACCOUNT_VIEW],
+  },
+  other_deposit: {
+    endpoints: ["POST other-deposit/save.do", ...CLASSIFICATION],
+    extraScopes: [legacy("other_deposit_view"), GLACCOUNT_VIEW],
+  },
+  purchase_order: { endpoints: ["POST purchase-order/save.do", ...VENDOR, ...ITEM, ...CLASSIFICATION] },
+  receive_item: { endpoints: ["POST receive-item/save.do", ...CLASSIFICATION] },
+  purchase_return: { endpoints: ["POST purchase-return/save.do", ...CLASSIFICATION] },
+  sales_quotation: { endpoints: ["POST sales-quotation/save.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
+  sales_order: { endpoints: ["POST sales-order/save.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
+  sales_return: { endpoints: ["POST sales-return/save.do", ...CLASSIFICATION] },
+  // Item Transfer & Item Requisition: 1 endpoint Accurate yang sama (Fase 134-135).
+  item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION], extraScopes: [GLACCOUNT_VIEW] },
+  item_requisition: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION], extraScopes: [GLACCOUNT_VIEW] },
+  inventory_adjustment: { endpoints: ["POST item-adjustment/save.do"], extraScopes: [GLACCOUNT_VIEW] },
+  // § Fase 139 — 2 endpoint berurutan. RM item_save: scope disiapkan walau belum auto-create.
+  job_costing: {
+    endpoints: ["POST job-order/save.do", "POST material-adjustment/save.do", ...ITEM, ...CLASSIFICATION],
+    extraScopes: [GLACCOUNT_VIEW],
+  },
+};

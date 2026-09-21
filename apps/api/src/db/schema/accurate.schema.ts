@@ -20,6 +20,14 @@ export const accurateConnections = pgTable("accurate_connections", {
   accurateDbId: varchar("accurate_db_id", { length: 100 }),
   accurateDbAlias: varchar("accurate_db_alias", { length: 255 }), // nama Data Usaha, buat ditampilkan di UI status koneksi
   status: varchar("status", { length: 20 }).notNull().default("active"), // "active" | "expired" | "revoked"
+  // § Fase 142, architecture-accurate-scope-engine.md — dari respons token (`scope`, spasi-terpisah,
+  // dipecah) / `approved-scope.do`. NULL = "belum diketahui" (baris pra-Fase 142) — JANGAN diperlakukan
+  // sebagai "tidak ada scope"; `missingScopes()` mengisinya malas lewat approved-scope.do.
+  grantedScopes: text("granted_scopes").array(),
+  // § Fase 142 — identitas AKUN Accurate (respons token `user.id`/`user.email`). Belum unik di fase ini;
+  // Fase 143 (ADR-0036 #1) menjadikannya kunci koneksi 1-per-akun. Nullable untuk baris lama.
+  accurateUserId: varchar("accurate_user_id", { length: 100 }),
+  accurateUserEmail: varchar("accurate_user_email", { length: 255 }),
   connectedAt: timestamp("connected_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

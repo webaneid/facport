@@ -1,5 +1,9 @@
 import { describe, test, expect } from "bun:test";
-import { MODULE_ACCURATE_SCOPES, scopesForModules } from "./accurate-scopes";
+import { readdirSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { ALL_ACCURATE_SCOPES, MODULE_ACCURATE_SCOPES, scopesForEndpoint, scopesForModules } from "./accurate-scopes";
+import { ACCURATE_ENDPOINT_REGISTRY, BASELINE_ENDPOINTS } from "./accurate-endpoint-registry";
+import snapshot from "./accurate-scope-snapshot.json";
 import { MODULE_CATALOG } from "./module-catalog";
 
 // § Fase 78 (2026-09-09) — BUG ditemukan lewat retest client (import
@@ -61,5 +65,116 @@ describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117)", () => {
     for (const key of Object.keys(MODULE_ACCURATE_SCOPES)) {
       expect(facportKeys.has(key)).toBe(true);
     }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// § Fase 142 — mesin scope (architecture-accurate-scope-engine.md). Pengaman CI.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Daftar TULIS-TANGAN lama (pra-Fase 142), dibekukan sebagai fixture regresi: scope turunan
+// registri BOLEH menambah, TIDAK BOLEH menghilangkan scope yang sudah diminta production.
+const LEGACY_SCOPES: Record<string, string[]> = {
+  purchase_invoice: ["purchase_invoice_view", "purchase_invoice_save", "item_save", "data_classification_view", "data_classification_save", "vendor_view", "vendor_save"],
+  vendor_payable_account: ["vendor_view", "vendor_save"],
+  sales_invoice: ["sales_invoice_view", "sales_invoice_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  sales_receipt: ["sales_receipt_view", "sales_receipt_save", "tax_view"],
+  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view", "tax_view"],
+  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  other_deposit: ["other_deposit_view", "other_deposit_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
+  receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
+  purchase_return: ["purchase_return_save", "data_classification_view", "data_classification_save"],
+  sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  sales_order: ["sales_order_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
+  item_transfer: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  item_requisition: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  inventory_adjustment: ["item_adjustment_save", "glaccount_view"],
+  job_costing: ["job_order_save", "material_adjustment_save", "item_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+};
+
+describe("mesin scope — regresi terhadap daftar tulis-tangan lama", () => {
+  test("registri mencakup persis modul yang sama dengan daftar lama", () => {
+    expect(Object.keys(ACCURATE_ENDPOINT_REGISTRY).sort()).toEqual(Object.keys(LEGACY_SCOPES).sort());
+  });
+
+  for (const [moduleKey, legacy] of Object.entries(LEGACY_SCOPES)) {
+    test(`${moduleKey}: scope turunan ⊇ daftar lama`, () => {
+      const derived = new Set(MODULE_ACCURATE_SCOPES[moduleKey]);
+      for (const scope of legacy) expect(derived.has(scope)).toBe(true);
+    });
+  }
+
+  test("scopesForModules tetap menyertakan baseline item_view", () => {
+    expect(scopesForModules(["receive_item"])).toContain("item_view");
+  });
+
+  // § Fase 141 E8 — spec mencatat purchase_invoice_delete untuk DELETE purchase-invoice/delete.do
+  // (runtime belum menegakkan, tapi dimasukkan demi aman kalau Accurate mengetatkan).
+  test("purchase_invoice meminta purchase_invoice_delete (Batal Import)", () => {
+    expect(MODULE_ACCURATE_SCOPES.purchase_invoice).toContain("purchase_invoice_delete");
+  });
+
+  test("ALL_ACCURATE_SCOPES = gabungan semua modul + baseline, tanpa duplikat", () => {
+    expect(new Set(ALL_ACCURATE_SCOPES).size).toBe(ALL_ACCURATE_SCOPES.length);
+    for (const scopes of Object.values(MODULE_ACCURATE_SCOPES)) {
+      for (const scope of scopes) expect(ALL_ACCURATE_SCOPES).toContain(scope);
+    }
+    expect(ALL_ACCURATE_SCOPES).toContain("item_view");
+  });
+});
+
+describe("mesin scope — registri vs snapshot spec", () => {
+  const allScopesInSnapshot = new Set(Object.values(snapshot as Record<string, string[]>).flat());
+
+  test("setiap endpoint registri ada di snapshot", () => {
+    const all = [...BASELINE_ENDPOINTS, ...Object.values(ACCURATE_ENDPOINT_REGISTRY).flatMap((m) => m.endpoints)];
+    for (const endpoint of all) expect(() => scopesForEndpoint(endpoint)).not.toThrow();
+  });
+
+  test("setiap scope turunan & extraScopes adalah scope valid menurut spec resmi", () => {
+    for (const scope of ALL_ACCURATE_SCOPES) expect(allScopesInSnapshot.has(scope)).toBe(true);
+  });
+
+  test("setiap extraScopes punya alasan tertulis", () => {
+    for (const entry of Object.values(ACCURATE_ENDPOINT_REGISTRY)) {
+      for (const extra of entry.extraScopes ?? []) expect(extra.reason.trim().length).toBeGreaterThan(10);
+    }
+  });
+
+  test("scopesForEndpoint melempar galat jelas untuk endpoint yang tidak ada", () => {
+    expect(() => scopesForEndpoint("POST tidak-ada/save.do")).toThrow(/scopes:sync/);
+  });
+});
+
+// Pemindai sumber: kelas bug Fase 78/98 — endpoint dipanggil, scope tidak diminta. Setiap literal
+// `/accurate/api/<resource>/<aksi>.do` di kode non-tes HARUS terdaftar di ≥1 modul registri.
+describe("mesin scope — semua endpoint yang dipanggil kode terdaftar di registri", () => {
+  const srcRoot = join(import.meta.dir, "..");
+  const dirs = ["lib", "routes", "workers"].map((d) => join(srcRoot, d));
+
+  function listFiles(dir: string): string[] {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) return listFiles(full);
+      return /\.tsx?$/.test(e.name) && !/\.test\.tsx?$/.test(e.name) ? [full] : [];
+    });
+  }
+
+  const registered = new Set(
+    [...BASELINE_ENDPOINTS, ...Object.values(ACCURATE_ENDPOINT_REGISTRY).flatMap((m) => m.endpoints)].map((e) => e.replace(/^[A-Z]+ /, "")),
+  );
+
+  test("tidak ada endpoint /accurate/api/*.do di kode yang belum terdaftar", () => {
+    const found = new Map<string, string>();
+    for (const file of dirs.flatMap(listFiles)) {
+      const text = readFileSync(file, "utf8");
+      for (const m of text.matchAll(/\/accurate\/api\/([a-z-]+\/[a-z-]+\.do)/g)) found.set(m[1]!, file);
+    }
+    expect(found.size).toBeGreaterThan(20); // pemindai benar-benar menemukan sesuatu
+    const missing = [...found].filter(([endpoint]) => !registered.has(endpoint)).map(([e, f]) => `${e} (${f})`);
+    expect(missing).toEqual([]);
   });
 });

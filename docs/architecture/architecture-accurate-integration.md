@@ -248,13 +248,21 @@ dan itu HARUS di server (`apps/api`), tidak pernah di frontend. Route ini:
 4. `redirect()` browser ke halaman app.facport.com yang sesuai (BUKAN
    return JSON — user-nya browser, bukan API client).
 
-### Scope Sesuai Paket Langganan
-Scope yang diminta (`item_view`, `item_save`, `item_category_delete`, dst —
-granular per resource+aksi) **WAJIB disesuaikan dengan modul yang termasuk
-di paket (`plans.modules`) milik subscription tersebut** (§
-`architecture-subscription.md`) — jangan minta scope lebih luas dari yang
-sebenarnya dibutuhkan modul yang di-subscribe user (prinsip least privilege,
-juga mengurangi permukaan kalau token bocor).
+### Scope — Diturunkan dari Registri Endpoint, Selalu SEMUA Scope Katalog (Fase 142, ADR-0036)
+> **Menggantikan** aturan lama "minta scope sesuai `plans.modules` saja". Terbukti Fase 141
+> (E2/E3): otorisasi baru untuk akun Accurate yang sama MEMATIKAN token lama dan MENGGANTI
+> seluruh scope, jadi otorisasi "sempit" per modul membuat modul lain kehilangan izin.
+- Endpoint yang dipanggil tiap modul dideklarasikan di SATU tempat:
+  `apps/api/src/lib/accurate-endpoint-registry.ts`. Scope DITURUNKAN dari sana lewat
+  `accurate-scope-snapshot.json` (dibuat `bun run scopes:sync` dari spec publik Accurate),
+  BUKAN ditulis tangan. Detail: `architecture-accurate-scope-engine.md`.
+- `/accurate/connect` SELALU meminta `ALL_ACCURATE_SCOPES` (gabungan semua modul).
+- Scope yang benar-benar diberikan disimpan di `accurate_connections.granted_scopes` (dari respons
+  token) dan diverifikasi oleh SATU fungsi `missingScopes`/`checkConnectionScopes`
+  (`lib/accurate-scope-check.ts`): `/accurate/reuse`, konfirmasi/retry import (409
+  `ACCURATE_SCOPE_MISSING`), dan awal worker.
+- Scope kurang saat runtime → HTTP 403 body XML `insufficient_scope` → `AccurateScopeError`
+  (bukan `markConnectionExpired`: koneksi hidup, hanya kurang izin).
 
 ### Sesi Data Usaha (Company Database) — Langkah TAMBAHAN, Baru Ditemukan
 > ⚠️ **BARU KETEMU 2026-08-19** — belum ada di draf sebelumnya.
@@ -473,6 +481,9 @@ customer/admin buka fitur yang kelewat itu):
 9. `apps/web/lib/module-import-routes.ts` — `MODULE_IMPORT_BASE_PATH[module]`
 10. `apps/web/components/import-archive/import-batch-table.tsx` — import `DeleteImportDialog as {Module}DeleteImportDialog` + 1 baris dispatch `{canDelete && batch.module === "{module}" && ...}`
 11. `apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx` — 1 fungsi `{Module}View` (read-only, mirror `VendorPayableAccountView` kalau modul tidak butuh grouping kolom khusus) + entri `MODULE_TITLE` + 1 baris dispatch
+
+12. `apps/api/src/lib/accurate-endpoint-registry.ts` — **deklarasikan SEMUA endpoint Accurate yang dipanggil modul** (termasuk helper `findOrCreate*`: vendor/customer/item/data-classification/tax) sebagai `"METHOD resource/aksi.do"`. Scope diturunkan otomatis; endpoint yang belum ada di `accurate-scope-snapshot.json` → jalankan `bun run scopes:sync`. `bun test src/lib/accurate-scopes.test.ts` HARUS hijau: pemindai sumber di sana GAGAL kalau ada literal `/accurate/api/*.do` di kode yang belum terdaftar (kelas bug Fase 78/98). DILARANG membuat alur otorisasi/reconnect baru — otorisasi tetap SATU pintu (`/accurate/connect`, semua scope).
+13. Route import modul baru: pasang `checkSubscriptionScopes(subscription.id, "{module}")` sebelum `checkTrialRowBudget` di handler confirm DAN retry (pola sama 18 route yang ada; tes `*-import.route.test.ts` memverifikasi).
 
 Opsional tapi disarankan: root `CLAUDE.md` § Peta Dokumen (baris baru
 ke `architecture-{module}.md`).
