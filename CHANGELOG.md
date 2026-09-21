@@ -1,3 +1,11 @@
+## <small>2.6.1 (2026-09-21)</small>
+
+* feat(sales,inventory,manufacture): modul Sales Order, Inventory Adjustment & Job Costing (Fase 137-1 ([d1384dc](https://github.com/webaneid/facport/commit/d1384dc))
+* Merge pull request #67 from webaneid/release/fase-137-140 ([bf8c9fd](https://github.com/webaneid/facport/commit/bf8c9fd)), closes [#67](https://github.com/webaneid/facport/issues/67)
+* fix(gate): gerbang modul pilih subscription sesuai Data Usaha aktif (Fase 140) ([b4ac893](https://github.com/webaneid/facport/commit/b4ac893))
+* chore: gitignore file .env.deploy hasil generate runbook deploy manual ([71e1c2b](https://github.com/webaneid/facport/commit/71e1c2b))
+* docs: catat rilis v2.6.0 & deploy manual ke production ([0399cf1](https://github.com/webaneid/facport/commit/0399cf1))
+
 ## 2.6.0 (2026-09-17)
 
 * Merge pull request #65 from webaneid/develop ([29ad6e7](https://github.com/webaneid/facport/commit/29ad6e7)), closes [#65](https://github.com/webaneid/facport/issues/65)
