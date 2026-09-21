@@ -155,6 +155,19 @@ import {
   extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesSQ,
   type SalesQuotationGroup,
 } from "../lib/import-mapping/sales-quotation.mapping";
+// § Fase 137 — Sales Order, kelanjutan LANGSUNG Sales Quotation, mirror
+// pola auto-create customer+item PERSIS (architecture-sales-order.md).
+import { saveSalesOrder } from "../lib/accurate-sales-order";
+import {
+  buildSalesOrderPayload,
+  groupSalesOrderRows,
+  validateGroupCustomerConsistency as validateGroupCustomerConsistencyForSO,
+  extractCustomerCreateFields as extractCustomerCreateFieldsSO,
+  extractItemCreateFields as extractItemCreateFieldsSO,
+  extractDataClassificationValues as extractDataClassificationValuesSO,
+  extractExpenseDataClassificationValues as extractExpenseDataClassificationValuesSO,
+  type SalesOrderGroup,
+} from "../lib/import-mapping/sales-order.mapping";
 // § Fase 124 — Sales Return, dokumen LANJUTAN (TIDAK auto-create
 // customer/item, mirror Purchase Return) TAPI grouping DEFAULT
 // ADR-0011 (opsional by "number"). Validasi `returnType` (4 nilai:
@@ -192,6 +205,36 @@ import {
   extractDataClassificationValues as extractDataClassificationValuesIR,
   type ItemRequisitionGroup,
 } from "../lib/import-mapping/item-requisition.mapping";
+// § Fase 138 — Inventory Adjustment. TIDAK auto-create item (mirror Item
+// Transfer), TIDAK ADA Kategori Keuangan (cuma Atribut Tambahan
+// charField/numericField/dateField, dikirim langsung tanpa lookup
+// terpisah). Grouping DEFAULT ADR-0011 by "No. Item Adjustment"
+// (`number`, OPSIONAL — beda dari Item Transfer). Validasi
+// `itemAdjustmentType` (dictionary Indonesia) WAJIB lolos dari SETIAP
+// baris (bukan cuma baris pertama grup, karena tiap baris = 1 barang
+// dengan tipe adjustment sendiri-sendiri).
+import { saveInventoryAdjustment } from "../lib/accurate-inventory-adjustment";
+import {
+  buildInventoryAdjustmentPayload,
+  groupInventoryAdjustmentRows,
+  itemAdjustmentTypeRowError,
+  type InventoryAdjustmentGroup,
+} from "../lib/import-mapping/inventory-adjustment.mapping";
+
+// § Fase 139 — Job Costing: 2 PANGGILAN API BERURUTAN per grup
+// (`job-order/save.do` lalu `material-adjustment/save.do`, § komentar
+// `processJobCostingGroup` di bawah). TIDAK auto-create item (SAMA
+// alasan Inventory Adjustment — Excel client TIDAK punya kolom "RM Item
+// Name", `findOrCreateItem` mewajibkan nama). Grouping DEFAULT ADR-0011
+// by "No. Job Order" (opsional).
+import { saveJobOrder, saveMaterialAdjustment } from "../lib/accurate-job-costing";
+import {
+  buildJobOrderPayload,
+  buildMaterialAdjustmentDetailItems,
+  extractDataClassificationValues as extractDataClassificationValuesJC,
+  groupJobCostingRows,
+  type JobCostingGroup,
+} from "../lib/import-mapping/job-costing.mapping";
 
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
@@ -386,6 +429,25 @@ async function ensureSalesQuotationDataClassifications(
   }
 }
 
+// § Fase 137 — mirror `ensureSalesQuotationDataClassifications`, untuk
+// Sales Order (item-level DAN expense-level).
+async function ensureSalesOrderDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    const values = [...extractDataClassificationValuesSO(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSO(rawRow, columnMapping)];
+    for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
 // § Fase 124 — mirror `ensurePurchaseReturnDataClassifications`, untuk
 // Sales Return (item-level DAN expense-level).
 async function ensureSalesReturnDataClassifications(
@@ -434,6 +496,24 @@ async function ensureItemRequisitionDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractDataClassificationValuesIR(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 139 — Job Costing, RM_CLS1-3 (Kategori Keuangan level RM,
+// mirror Item Transfer 3-slot).
+async function ensureJobCostingDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesJC(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1116,6 +1196,48 @@ export async function processSalesQuotationGroup(
 }
 
 // ============================================================
+// § Fase 137 — Sales Order, kelanjutan LANGSUNG Sales Quotation, mirror
+// PERSIS pola di atas (auto-create customer+item, grouping DEFAULT
+// ADR-0011, TIDAK ada "Batal Import" — bukan transaksi akuntansi).
+// ============================================================
+export type SalesOrderGroupResult = {
+  orderId: number;
+  rowIds: string[];
+};
+
+export async function processSalesOrderGroup(
+  ctx: AccurateSessionContext,
+  group: SalesOrderGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesOrderGroupResult> {
+  const mismatchError = validateGroupCustomerConsistencyForSO(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildSalesOrderPayload(rawRows, columnMapping);
+
+  const customerNo = String(payload.customerNo ?? "");
+  if (customerNo) {
+    await findOrCreateCustomer(ctx, customerNo, extractCustomerCreateFieldsSO(rawRows[0]!, columnMapping));
+  }
+
+  const seenItemNo = new Set<string>();
+  for (const rawRow of rawRows) {
+    const itemNoColumn = Object.entries(columnMapping).find(([, field]) => field === "itemNo")?.[0];
+    const detailItem = itemNoColumn ? rawRow[itemNoColumn] : undefined;
+    const itemNo = detailItem !== undefined && detailItem !== null && detailItem !== "" ? String(detailItem) : null;
+    if (!itemNo || seenItemNo.has(itemNo)) continue;
+    seenItemNo.add(itemNo);
+    await findOrCreateItem(ctx, itemNo, extractItemCreateFieldsSO(rawRow, columnMapping));
+  }
+
+  await ensureSalesOrderDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveSalesOrder(ctx, payload);
+  return { orderId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 124 — Sales Return: TIDAK auto-create customer/item (mirror
 // Purchase Return), grouping DEFAULT ADR-0011 (opsional by "number"),
 // dan validasi `returnType` (§ `returnTypeRowErrorSR`) WAJIB lolos dari
@@ -1321,6 +1443,121 @@ export async function processItemRequisitionGroup(
 
   const result = await saveItemTransfer(ctx, payload);
   return { itemTransferId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 138 — Inventory Adjustment: TIDAK auto-create item (mirror
+// Item Transfer), TIDAK ADA Kategori Keuangan (§ komentar import di
+// atas). Grouping DEFAULT ADR-0011 by "No. Item Adjustment" (opsional).
+// Validasi `itemAdjustmentType` WAJIB lolos di SETIAP baris (bukan cuma
+// baris pertama grup — beda dari `itemTransferType` yang 1 nilai per
+// dokumen, di sini tiap baris/barang punya tipe adjustment sendiri).
+// ============================================================
+export type InventoryAdjustmentGroupResult = {
+  adjustmentId: number;
+  rowIds: string[];
+};
+
+export async function processInventoryAdjustmentGroup(
+  ctx: AccurateSessionContext,
+  group: InventoryAdjustmentGroup,
+  columnMapping: Record<string, string>,
+): Promise<InventoryAdjustmentGroupResult> {
+  for (const row of group.rows) {
+    const typeErrors = itemAdjustmentTypeRowError(row.rawData, columnMapping);
+    if (typeErrors.length > 0) {
+      throw new Error(
+        `Tipe Adj tidak dikenali di baris ${row.id} — harus salah satu: Tambah/Masuk, Kurang/Keluar, atau Stok/Stok Opname.`,
+      );
+    }
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildInventoryAdjustmentPayload(rawRows, columnMapping);
+
+  const result = await saveInventoryAdjustment(ctx, payload);
+  return { adjustmentId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 139 — Job Costing: BUKAN 1 transaksi, 2 PANGGILAN BERURUTAN.
+// (1) `job-order/save.do` — shell + detailExpense[]. (2)
+// `material-adjustment/save.do` — realisasi RM, `jobOrderNumber` =
+// `number` dari RESPONS panggilan (1) (BUKAN nilai Excel "No. Job
+// Order" mentah — Accurate generate nomor otomatis kalau kolom itu
+// kosong). `materialAdjustmentAccountNo` REUSE nilai "Job Account No"
+// yang sama dengan `jobAccountNo` — ASUMSI belum dikonfirmasi client
+// (§ architecture-job-costing.md Known Limitations).
+//
+// Kegagalan PARSIAL (job-order sukses, material-adjustment gagal):
+// TIDAK ada rollback (Accurate tidak punya API rollback lintas
+// transaksi) — error yang dilempar WAJIB menyebutkan nomor Job Order
+// yang SUDAH terlanjur dibuat, supaya user tahu ada dokumen "orphan"
+// di Accurate yang perlu dicek/dihapus manual.
+// ============================================================
+export type JobCostingGroupResult = {
+  jobOrderNumber: string;
+  materialAdjustmentId: number;
+  rowIds: string[];
+};
+
+// § Fase 139 fix (security-auditor HIGH, 2026-09-21) — RETRY-SAFE: kalau
+// `saveJobOrder` sukses tapi `saveMaterialAdjustment` gagal di attempt
+// SEBELUMNYA, retry berikutnya TIDAK BOLEH bikin Job Order baru lagi
+// (Job Order Accurate "orphan" akan menumpuk tiap kali user retry). Nomor
+// Job Order yang sudah berhasil dibuat disimpan ke `accurateTransactionId`
+// SEGERA setelah `saveJobOrder` sukses (bukan nunggu seluruh grup
+// selesai) — retry membaca nilai ini dulu, skip `saveJobOrder` kalau ADA.
+export async function processJobCostingGroup(
+  ctx: AccurateSessionContext,
+  group: JobCostingGroup,
+  columnMapping: Record<string, string>,
+): Promise<JobCostingGroupResult> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  const rowIds = group.rows.map((r) => r.id);
+
+  const existingRows = await db
+    .select({ accurateTransactionId: importBatchRows.accurateTransactionId })
+    .from(importBatchRows)
+    .where(inArray(importBatchRows.id, rowIds));
+  const existingJobOrderNumber = existingRows.find((r) => r.accurateTransactionId)?.accurateTransactionId ?? null;
+
+  await ensureJobCostingDataClassifications(ctx, rawRows, columnMapping);
+
+  const jobOrderPayload = buildJobOrderPayload(rawRows, columnMapping);
+  const jobAccountNo = jobOrderPayload.jobAccountNo as string | undefined;
+
+  let jobOrderNumber: string;
+  if (existingJobOrderNumber) {
+    jobOrderNumber = existingJobOrderNumber;
+  } else {
+    const jobOrderResult = await saveJobOrder(ctx, jobOrderPayload);
+    jobOrderNumber = jobOrderResult.number;
+    await db
+      .update(importBatchRows)
+      .set({ accurateTransactionId: jobOrderNumber })
+      .where(inArray(importBatchRows.id, rowIds));
+  }
+
+  const detailItem = buildMaterialAdjustmentDetailItems(rawRows, columnMapping);
+  const materialAdjustmentPayload: Record<string, unknown> = {
+    jobOrderNumber,
+    materialAdjustmentAccountNo: jobAccountNo ?? "",
+    materialAdjustmentType: "ITEM_PICK",
+    transDate: jobOrderPayload.transDate,
+    branchName: jobOrderPayload.branchName,
+    detailItem,
+  };
+
+  try {
+    const materialAdjustmentResult = await saveMaterialAdjustment(ctx, materialAdjustmentPayload);
+    return { jobOrderNumber, materialAdjustmentId: materialAdjustmentResult.id, rowIds };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Job Order ${jobOrderNumber} berhasil dibuat, tapi realisasi bahan baku gagal: ${message}. Job Order sudah ada di Accurate, cek manual atau hapus kalau perlu.`,
+    );
+  }
 }
 
 async function main() {
@@ -1926,6 +2163,34 @@ async function main() {
       // § Fase 124 — Sales Return, grouping DEFAULT ADR-0011 (opsional
       // by "number"), TANPA auto-create customer/item (§ komentar
       // `processSalesReturnGroup`).
+      // § Fase 137 — Sales Order, grouping DEFAULT ADR-0011 (opsional
+      // by "number"), auto-create customer+item (§ komentar
+      // `processSalesOrderGroup`).
+    } else if (batch.module === "sales_order") {
+      const groups = groupSalesOrderRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processSalesOrderGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.orderId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
     } else if (batch.module === "sales_return") {
       const groups = groupSalesReturnRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
@@ -2103,6 +2368,61 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.itemTransferId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 138 — Inventory Adjustment, grouping DEFAULT ADR-0011 by
+      // "No. Item Adjustment" (opsional), create-only, TANPA auto-create
+      // item (§ komentar `processInventoryAdjustmentGroup`).
+    } else if (batch.module === "inventory_adjustment") {
+      const groups = groupInventoryAdjustmentRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processInventoryAdjustmentGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.adjustmentId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 139 — Job Costing, 2 panggilan API berurutan per grup
+      // (§ komentar `processJobCostingGroup`).
+    } else if (batch.module === "job_costing") {
+      const groups = groupJobCostingRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processJobCostingGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: result.jobOrderNumber,
               errorMessage: null,
               processedAt: new Date(),
             })

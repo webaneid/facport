@@ -48,6 +48,8 @@ const planBody = t.Object({
       t.Literal("purchase_return"),
       // § Fase 123 — modul baru, SKU sendiri sejak awal.
       t.Literal("sales_quotation"),
+      // § Fase 137 — modul baru, SKU sendiri sejak awal.
+      t.Literal("sales_order"),
       // § Fase 124 — modul baru, SKU sendiri sejak awal.
       t.Literal("sales_return"),
       // § Fase 128 — modul baru, SKU sendiri sejak awal.
@@ -55,6 +57,9 @@ const planBody = t.Object({
       // § Fase 134-135 — modul baru, kategori "Inventory" pertama, SKU sendiri sejak awal.
       t.Literal("item_transfer"),
       t.Literal("item_requisition"),
+      // § Fase 138 — modul baru, SKU sendiri sejak awal.
+      t.Literal("inventory_adjustment"),
+      t.Literal("job_costing"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

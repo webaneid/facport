@@ -22,7 +22,10 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   receive_item: "/receive-item/import",
   purchase_return: "/purchase-return/import",
   sales_quotation: "/sales-quotation/import",
+  sales_order: "/sales-order/import",
   sales_return: "/sales-return/import",
   item_transfer: "/item-transfer/import",
   item_requisition: "/item-requisition/import",
+  inventory_adjustment: "/inventory-adjustment/import",
+  job_costing: "/job-costing/import",
 };

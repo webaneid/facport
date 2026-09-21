@@ -47,6 +47,8 @@ export const MODULE_CATALOG = [
   { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Sales" },
   { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Sales" },
   { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Sales" },
+  // § Fase 137 — Sales Order, kelanjutan Sales Quotation.
+  { key: "sales_order", label: "Sales Order", productLine: "facport", category: "Sales" },
   { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
   { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
   { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
@@ -65,6 +67,11 @@ export const MODULE_CATALOG = [
   // user mengikuti 2 sheet Excel client apa adanya, § architecture-item-transfer.md.
   { key: "item_transfer", label: "Item Transfer (Pindah Gudang)", productLine: "facport", category: "Inventory" },
   { key: "item_requisition", label: "Item Requisition (Permintaan Barang)", productLine: "facport", category: "Inventory" },
+  // § Fase 138 — architecture-inventory-adjustment.md.
+  { key: "inventory_adjustment", label: "Inventory Adjustment (Penyesuaian Persediaan)", productLine: "facport", category: "Inventory" },
+  // § Fase 139 — modul PERTAMA kategori "Manufacture" (disiapkan sejak
+  // Fase 126, sebelumnya 0 modul). architecture-job-costing.md.
+  { key: "job_costing", label: "Job Costing (Pekerjaan Pesanan)", productLine: "facport", category: "Manufacture" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank

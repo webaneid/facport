@@ -132,6 +132,9 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // Keuangan. `sales_quotation_save` HANYA (tanpa `_view` terpisah,
   // dikonfirmasi OpenAPI security block).
   sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
+  // § Fase 137, architecture-sales-order.md — mirror Sales Quotation
+  // PERSIS (auto-create customer+item, sama kebutuhan scope).
+  sales_order: ["sales_order_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
   // § Fase 124, architecture-sales-return.md — TIDAK auto-create
   // customer/item (dokumen LANJUTAN, mirror Purchase Return). `_view`
   // HANYA dari baseline `item_view` (§ scopesForModules).
@@ -150,6 +153,19 @@ export const MODULE_ACCURATE_SCOPES: Record<string, string[]> = {
   // saja tetap dapat scope yang pas untuk modul itu sendiri).
   item_transfer: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
   item_requisition: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  // § Fase 138 — Inventory Adjustment. TIDAK butuh `item_save` (TIDAK
+  // auto-create item, § inventory-adjustment.mapping.ts) MAUPUN
+  // `data_classification_*` (modul ini TIDAK pakai Kategori Keuangan,
+  // cuma "Atribut Tambahan" charField/numericField/dateField yang tidak
+  // butuh scope terpisah — bukan master data seperti dataClassification).
+  // `glaccount_view` untuk resolve `adjustmentAccountNo`.
+  inventory_adjustment: ["item_adjustment_save", "glaccount_view"],
+  // § Fase 139 — Job Costing, 2 endpoint (job-order + material-adjustment,
+  // scope TERPISAH untuk masing-masing). `item_save` untuk RM (walau
+  // saat ini TIDAK auto-create, § accurate-job-costing.ts — scope
+  // disiapkan kalau nanti dipakai). Kategori Keuangan RM_CLS1-3 butuh
+  // data_classification_*.
+  job_costing: ["job_order_save", "material_adjustment_save", "item_save", "glaccount_view", "data_classification_view", "data_classification_save"],
 };
 
 export function scopesForModules(modules: string[]): string[] {

@@ -446,6 +446,35 @@ function SalesQuotationView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 137 — Sales Order, mirror PERSIS SalesQuotationView (row-view
+// sederhana, tidak ada grouping kolom khusus).
+function SalesOrderView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Sales Order Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function SalesReturnView({ rows }: { rows: Row[] }) {
   return (
     <Table>
@@ -530,6 +559,65 @@ function ItemRequisitionView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 138 — Inventory Adjustment, mirror `ItemTransferView` (read-only,
+// tanpa grouping kolom khusus, § architecture-inventory-adjustment.md).
+function InventoryAdjustmentView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Item Adjustment Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+// § Fase 139 — Job Costing, mirror `InventoryAdjustmentView` (read-only,
+// tanpa grouping kolom khusus — 2 panggilan API-nya murni detail backend,
+// tidak terlihat di tampilan admin ini, § architecture-job-costing.md).
+function JobCostingView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Job Order Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -543,9 +631,12 @@ const MODULE_TITLE: Record<string, string> = {
   receive_item: "Hasil Import Receive Item",
   purchase_return: "Hasil Import Purchase Return",
   sales_quotation: "Hasil Import Sales Quotation",
+  sales_order: "Hasil Import Sales Order",
   sales_return: "Hasil Import Sales Return",
   item_transfer: "Hasil Import Item Transfer",
   item_requisition: "Hasil Import Item Requisition",
+  inventory_adjustment: "Hasil Import Inventory Adjustment",
+  job_costing: "Hasil Import Job Costing",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -618,9 +709,12 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "receive_item" && <ReceiveItemView rows={rows} />}
           {batch.module === "purchase_return" && <PurchaseReturnView rows={rows} />}
           {batch.module === "sales_quotation" && <SalesQuotationView rows={rows} />}
+          {batch.module === "sales_order" && <SalesOrderView rows={rows} />}
           {batch.module === "sales_return" && <SalesReturnView rows={rows} />}
           {batch.module === "item_transfer" && <ItemTransferView rows={rows} />}
           {batch.module === "item_requisition" && <ItemRequisitionView rows={rows} />}
+          {batch.module === "inventory_adjustment" && <InventoryAdjustmentView rows={rows} />}
+          {batch.module === "job_costing" && <JobCostingView rows={rows} />}
         </CardContent>
       </Card>
     </div>
