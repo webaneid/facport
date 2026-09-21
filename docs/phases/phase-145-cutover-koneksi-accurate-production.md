@@ -1,7 +1,7 @@
 # Fase 145 — Cutover Koneksi Accurate ke Production (Carry-over, Pemberitahuan, Runbook, Kontrak)
 
-**Status:** Planned
-**Mulai:** —
+**Status:** In Progress (cutover dirilis sebagai v2.7.0 pada 2026-09-22; tersisa verifikasi browser, pengumuman pasca, pemantauan, dan kontrak)
+**Mulai:** 2026-09-22
 **Selesai:** —
 
 > **AMANDEMEN 2026-09-22:** user memutuskan PUTUS TOTAL (tanpa carry-over/pengumuman T-3). Task T1–T3 (skrip carry-over & notify) **DIBATALKAN**;
@@ -40,6 +40,10 @@ Bagian C — kontrak (rilis TERPISAH, ≥ T+7, perlu "rilis" eksplisit + backup)
 Zero-downtime migration; UI admin baru; otomatisasi customer multi-akun-Accurate.
 
 ## Keputusan Kecil (isi saat eksekusi)
+- **2026-09-22 — dirilis `v2.7.0`** (PR #68). Runbook Full: backup `postgres_2026-09-21_2210.sql.gz` (MinIO dilewati: `mc` tidak terpasang di server, masalah lama) → pra-cek batch berjalan = 0 → pull → up → `db:migrate` (0027–0030, sukses) → verifikasi: koneksi lama belum dicabut = 0, Data Usaha masih menunjuk koneksi = 0 → `web/api/worker` semua `:v2.7.0`, health ok.
+- **CI menolak rilis pertama** (gitleaks): dua nilai UUID di tes galat token adalah refresh token DEV yang sudah tidak berlaku; diganti penanda palsu dan dua fingerprint commit lama diabaikan secara sempit di `.gitleaksignore` (riwayat bersama tidak ditulis ulang).
+- Rilis sebelumnya `v2.6.1` (3 modul + fix Fase 140) dilepas lewat branch `release/fase-137-140` agar cutover tidak ikut lebih awal.
+
 
 ## Known Limitations
 
