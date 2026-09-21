@@ -3991,7 +3991,7 @@ token" (Fase 91) TIDAK terbukti.
 
 **Fix bagian 1 (Fase 142, ADR-0036 #2/#4):** registri endpoint tunggal → scope diturunkan dari snapshot
 spec; `/accurate/connect` selalu meminta semua scope; `granted_scopes` disimpan & diverifikasi; galat 403
-`insufficient_scope` dikenali. Model koneksi 1-per-akun + migrasi customer → Fase 143-145 (BELUM selesai;
+`insufficient_scope` dikenali. Model koneksi 1-per-akun + migrasi customer → Fase 143-145 (SELESAI, dirilis v2.7.0 2026-09-22; catatan asli saat Fase 142:
 koneksi lama yang mati baru pulih setelah customer otorisasi ulang).
 
 **Fix bagian 2 (Fase 143, ADR-0036/0037, cutover langsung):** koneksi 1 per AKUN Accurate (`accurate_user_id` unik) dipegang

@@ -152,7 +152,7 @@
 | 142  | Mesin Scope Accurate (registri endpoint → scope turunan, simpan `granted_scopes`, `missingScopes`, tes CI) | Done | `docs/architecture/architecture-accurate-scope-engine.md` | `docs/phases/phase-142-mesin-scope-accurate.md` |
 | 143  | Model Koneksi Accurate 1-per-Akun dipegang Data Usaha (cutover langsung), refresh aman-rotasi, transfer memutus koneksi | Done | `docs/decisions/adr-0037-cutover-koneksi-per-akun-dipegang-data-usaha.md` | `docs/phases/phase-143-model-koneksi-accurate-per-akun.md` |
 | 144  | Gerbang Koneksi Accurate: popup glass di dashboard, mesin status per Data Usaha, halaman koneksi baru | Done | `docs/architecture/architecture-accurate-connect-gate.md` | `docs/phases/phase-144-gerbang-koneksi-accurate-ui.md` |
-| 145  | Cutover Koneksi Accurate ke Production: carry-over koneksi hidup, pemberitahuan customer, runbook, kontrak | In Progress | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
+| 145  | Cutover Koneksi Accurate ke Production: putus total (migrasi 0030), dirilis v2.7.0; tersisa uji browser, pengumuman, pemantauan, kontrak | In Progress | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

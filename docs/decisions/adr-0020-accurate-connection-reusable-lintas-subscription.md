@@ -1,6 +1,6 @@
 # ADR-0020: Koneksi Accurate Lepas dari 1:1-ke-Subscription, Jadi Reusable per User
 
-**Status:** Accepted
+**Status:** Accepted — **sebagian DIGANTIKAN oleh ADR-0037 (Fase 143, 2026-09-22)**: koneksi kini 1 per AKUN Accurate dan dipegang Data Usaha (bukan pointer per subscription); endpoint `reuse` dihapus. Alasan bisnis di bawah (jangan connect berulang ke company yang sama) tetap berlaku.
 **Tanggal:** 2026-09-04
 **Supersedes:** Poin 3 ADR-0009 ("1 subscription = 1 akun Accurate,
 `accurate_connections` unique ke `subscriptions.id`")

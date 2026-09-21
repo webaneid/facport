@@ -39,7 +39,7 @@ Tambahan: `ALL_ACCURATE_SCOPES` (gabungan katalog, untuk model 1-otorisasi ADR-0
 
 ### 2. Simpan — apa yang benar-benar diberikan
 Migration Drizzle: `accurate_connections` + `granted_scopes text[]` (nullable),
-`accurate_user_id varchar` (nullable, TIDAK unik di fase ini), `accurate_user_email`
+`accurate_user_id varchar` (nullable; UNIK parsial sejak Fase 143), `accurate_user_email`
 (nullable). Callback OAuth mengisi dari respons token. Baris lama = NULL ("belum
 diketahui") → diisi malas lewat `approved-scope.do` saat pertama diperiksa; TIDAK pernah
 memblokir hanya karena NULL.
@@ -62,11 +62,11 @@ worker menandai baris/batch dengan pesan jelas, bukan `expired`.
 4. Regresi: scope turunan tiap modul ⊇ daftar tulis-tangan lama (disimpan sebagai fixture
    tes) — perubahan boleh MENAMBAH, tidak boleh menghilangkan diam-diam.
 
-## Yang SENGAJA tidak dikerjakan di fase ini
-- Model koneksi 1-per-akun, upsert callback, unik `accurate_user_id`, pointer Data Usaha
-  → Fase 143. UI "Perbarui izin" → Fase 144. Migrasi customer → Fase 145.
-- Refresh token aman rotasi (kunci per koneksi, bedakan `invalid_grant` vs galat sementara)
-  → Fase 143 (ADR-0036 Decision #5).
+## Yang sengaja tidak dikerjakan di Fase 142 — SUDAH DIKERJAKAN sesudahnya
+- Model koneksi 1-per-akun, upsert callback, unik `accurate_user_id`, pointer Data Usaha → **Fase 143** (ADR-0037).
+- UI "Perbarui izin" → **Fase 144** (`update_permissions` di mesin status gerbang, `architecture-accurate-connect-gate.md`).
+- Migrasi customer → **Fase 145**, dengan keputusan PUTUS TOTAL (tanpa carry-over; ADR-0037 #11, rilis `v2.7.0`).
+- Refresh token aman rotasi (ADR-0036 #5) → **Fase 143** (`lib/accurate-token.ts`).
 
 ## Checklist modul baru (masuk § 3b `architecture-accurate-integration.md`)
 Deklarasikan endpoint di registri; jalankan `sync-accurate-scopes` bila endpoint baru belum
