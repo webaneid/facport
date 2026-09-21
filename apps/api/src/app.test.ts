@@ -317,3 +317,24 @@ describe("Lupa Password — request-password-reset → reset-password", () => {
     expect(res.status).toBe(200);
   });
 });
+
+// § Fase 140, ADR-0035 — web (app.*) memanggil API (api.*) lintas origin dengan
+// header custom `X-Data-Usaha-Id`; kalau preflight tidak mengizinkannya, SEMUA
+// request modul dari browser production gagal. Dikunci sebagai test supaya
+// perubahan konfigurasi CORS di masa depan tidak diam-diam memutus fitur ini.
+describe("CORS preflight — header X-Data-Usaha-Id (Fase 140)", () => {
+  test("OPTIONS dengan Access-Control-Request-Headers x-data-usaha-id → diizinkan", async () => {
+    const res = await app.handle(
+      new Request("http://localhost/sales-order/import/upload", {
+        method: "OPTIONS",
+        headers: {
+          origin: "http://app.localhost:6209",
+          "access-control-request-method": "POST",
+          "access-control-request-headers": "x-data-usaha-id",
+        },
+      }),
+    );
+    expect(res.status).toBeLessThan(300);
+    expect((res.headers.get("access-control-allow-headers") ?? "").toLowerCase()).toContain("x-data-usaha-id");
+  });
+});

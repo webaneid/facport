@@ -19,7 +19,10 @@ const runId = Date.now();
 const testApp = new Elysia()
   .mount(auth.handler)
   .use(subscriptionGatePlugin)
-  .get("/gate-test", () => ({ ok: true }), { moduleAccess: "purchase_invoice" });
+  .get("/gate-test", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
+  .get("/gate-which", ({ subscription }) => ({ dataUsahaId: subscription.dataUsahaId }), { moduleAccess: "purchase_invoice" })
+  .get("/gate-mod/import/template", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
+  .post("/gate-mod/import/upload", () => ({ ok: true }), { moduleAccess: "purchase_invoice" });
 
 async function signUp(email: string) {
   const res = await testApp.handle(
@@ -296,5 +299,212 @@ describe("getOwnedSubscriptionsWithPlans vs getAccessibleSubscriptionsWithPlans"
 
     const [refreshedSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub!.id));
     expect(refreshedSub!.userId).toBe(originalOwnerId); // riwayat pembelian TIDAK ditulis ulang
+  });
+});
+
+// § Fase 140, ADR-0035 — REGRESI insiden production 2026-09-21: user punya
+// modul yang SAMA di 2 Data Usaha; gerbang dulu selalu ambil subscription
+// TERBARU (perusahaan yang salah), tidak tahu Data Usaha aktif.
+describe("moduleAccess — konteks Data Usaha aktif (header X-Data-Usaha-Id)", () => {
+  async function subInDataUsaha(userId: string, dataUsahaId: string, planId: string, createdAt: Date) {
+    await db.insert(subscriptions).values({
+      userId,
+      planId,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId,
+      createdAt,
+    });
+  }
+
+  async function setupTwoDataUsaha(tag: string) {
+    const email = `gate-du-${tag}-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan DU ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const older = await createTestDataUsaha(userId, "Perusahaan Lama");
+    const newer = await createTestDataUsaha(userId, "Perusahaan Baru");
+    await subInDataUsaha(userId, older, plan!.id, new Date(Date.now() - 24 * 60 * 60 * 1000));
+    await subInDataUsaha(userId, newer, plan!.id, new Date());
+    return { userId, cookie, older, newer };
+  }
+
+  const get = (path: string, cookie: string, dataUsahaId?: string) =>
+    testApp.handle(
+      new Request(`http://localhost${path}`, {
+        headers: dataUsahaId ? { cookie, "x-data-usaha-id": dataUsahaId } : { cookie },
+      }),
+    );
+
+  test("header memilih Data Usaha LAMA → subscription Data Usaha lama (BUKAN yang terbaru)", async () => {
+    const { cookie, older } = await setupTwoDataUsaha("pilih-lama");
+    const res = await get("/gate-which", cookie, older);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { dataUsahaId: string }).dataUsahaId).toBe(older);
+  });
+
+  test("header memilih Data Usaha BARU → subscription Data Usaha baru", async () => {
+    const { cookie, newer } = await setupTwoDataUsaha("pilih-baru");
+    const res = await get("/gate-which", cookie, newer);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { dataUsahaId: string }).dataUsahaId).toBe(newer);
+  });
+
+  test("tanpa header + modul ada di 2 Data Usaha → 409 DATA_USAHA_REQUIRED (fail closed, tidak menebak)", async () => {
+    const { cookie } = await setupTwoDataUsaha("ambigu");
+    const res = await get("/gate-which", cookie);
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_REQUIRED");
+  });
+
+  test("tanpa header + modul cuma di 1 Data Usaha → tetap 200 (klien lama / user 1 Data Usaha aman)", async () => {
+    const email = `gate-du-single-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan DU single ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const du = await createTestDataUsaha(userId);
+    await subInDataUsaha(userId, du, plan!.id, new Date());
+    const res = await get("/gate-which", cookie);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { dataUsahaId: string }).dataUsahaId).toBe(du);
+  });
+
+  test("header Data Usaha MILIK ORANG LAIN → 403 DATA_USAHA_FORBIDDEN", async () => {
+    const { cookie } = await setupTwoDataUsaha("milik-sendiri");
+    const otherUserId = await signUp(`gate-du-other-${runId}@test.local`);
+    const foreign = await createTestDataUsaha(otherUserId, "Punya Orang Lain");
+    const res = await get("/gate-which", cookie, foreign);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_FORBIDDEN");
+  });
+
+  test("header bukan UUID valid → 403 DATA_USAHA_FORBIDDEN (bukan 500)", async () => {
+    const { cookie } = await setupTwoDataUsaha("bukan-uuid");
+    const res = await get("/gate-which", cookie, "bukan-uuid'; DROP TABLE users;--");
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_FORBIDDEN");
+  });
+
+  test("header Data Usaha milik sendiri TAPI modul tidak dilanggan di sana → 403 MODULE_NOT_SUBSCRIBED", async () => {
+    const { userId, cookie } = await setupTwoDataUsaha("tanpa-modul");
+    const kosong = await createTestDataUsaha(userId, "Tanpa Langganan");
+    const res = await get("/gate-which", cookie, kosong);
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("MODULE_NOT_SUBSCRIBED");
+  });
+
+  test("member seat: header Data Usaha tempat dia numpang → 200; Data Usaha lain milik pemilik yang sama (bukan seat-nya) → 403", async () => {
+    const ownerId = await signUp(`gate-du-owner-${runId}@test.local`);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan DU seat ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const duSeat = await createTestDataUsaha(ownerId, "Tempat Numpang");
+    const duLain = await createTestDataUsaha(ownerId, "Bukan Tempat Numpang");
+    await subInDataUsaha(ownerId, duSeat, plan!.id, new Date());
+    await subInDataUsaha(ownerId, duLain, plan!.id, new Date());
+
+    const memberEmail = `gate-du-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, await createTestSeat(ownerId, duSeat)));
+
+    const ok = await get("/gate-which", memberCookie, duSeat);
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { dataUsahaId: string }).dataUsahaId).toBe(duSeat);
+
+    const denied = await get("/gate-which", memberCookie, duLain);
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as { code: string }).code).toBe("DATA_USAHA_FORBIDDEN");
+  });
+});
+
+// § Fase 140 (temuan security review) — tambahan.
+describe("moduleAccess — kasus tepi Data Usaha aktif", () => {
+  async function twoDU(tag: string) {
+    const email = `gate-edge-${tag}-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Edge ${tag} ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const a = await createTestDataUsaha(userId, "A");
+    const b = await createTestDataUsaha(userId, "B");
+    for (const du of [a, b]) {
+      await db.insert(subscriptions).values({
+        userId,
+        planId: plan!.id,
+        status: "active",
+        startAt: new Date(),
+        endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        dataUsahaId: du,
+      });
+    }
+    return { userId, cookie, a, b, planId: plan!.id };
+  }
+
+  test("unduh template (GET .../import/template) TIDAK ditolak 409 untuk user multi-Data-Usaha", async () => {
+    const { cookie } = await twoDU("template");
+    const res = await testApp.handle(new Request("http://localhost/gate-mod/import/template", { headers: { cookie } }));
+    expect(res.status).toBe(200);
+  });
+
+  test("template hanya dikecualikan untuk GET; POST upload tanpa header tetap 409", async () => {
+    const { cookie } = await twoDU("upload-post");
+    const res = await testApp.handle(new Request("http://localhost/gate-mod/import/upload", { method: "POST", headers: { cookie } }));
+    expect(res.status).toBe(409);
+  });
+
+  test("template tetap butuh langganan modul (bukan bypass): user tanpa langganan → 403", async () => {
+    const email = `gate-edge-tpl-nosub-${runId}@test.local`;
+    await signUp(email);
+    const cookie = await signIn(email);
+    const res = await testApp.handle(new Request("http://localhost/gate-mod/import/template", { headers: { cookie } }));
+    expect(res.status).toBe(403);
+  });
+
+  test("UUID huruf BESAR di header dinormalisasi → 200 ke Data Usaha yang benar (bukan 403 MODULE_NOT_SUBSCRIBED)", async () => {
+    const { cookie, a } = await twoDU("uppercase");
+    const res = await testApp.handle(
+      new Request("http://localhost/gate-which", { headers: { cookie, "x-data-usaha-id": a.toUpperCase() } }),
+    );
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { dataUsahaId: string }).dataUsahaId).toBe(a);
+  });
+
+  test("seat berstatus BUKAN active (available/revoked) + header ke Data Usaha itu → 403 DATA_USAHA_FORBIDDEN", async () => {
+    const ownerId = await signUp(`gate-edge-seat-owner-${runId}@test.local`);
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Plan Edge seat ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const du = await createTestDataUsaha(ownerId, "Seat Bukan Aktif");
+    await db.insert(subscriptions).values({
+      userId: ownerId,
+      planId: plan!.id,
+      status: "active",
+      startAt: new Date(),
+      endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      dataUsahaId: du,
+    });
+    const memberEmail = `gate-edge-seat-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(ownerId, du);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "revoked" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request("http://localhost/gate-which", { headers: { cookie: memberCookie, "x-data-usaha-id": du } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_FORBIDDEN");
   });
 });

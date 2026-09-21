@@ -147,6 +147,7 @@
 | 137  | Modul Sales Order (Pesanan Penjualan) — kelanjutan Sales Quotation | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-137-modul-sales-order.md` |
 | 138  | Modul Inventory Adjustment (Penyesuaian Persediaan) | Done | `docs/architecture/architecture-inventory-adjustment.md` | `docs/phases/phase-138-modul-inventory-adjustment.md` |
 | 139  | Modul Job Costing (Pekerjaan Pesanan) — 2 endpoint berurutan, kategori Manufacture pertama | Done | `docs/architecture/architecture-job-costing.md` | `docs/phases/phase-139-modul-job-costing.md` |
+| 140  | Konteks Data Usaha Aktif di Gerbang Modul (fix upload masuk perusahaan yang salah) | Done | `docs/decisions/adr-0035-konteks-data-usaha-aktif-di-server.md` | `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
@@ -3856,3 +3857,28 @@ temuan lain yang butuh perbaikan kode) — SEMUA di `develop`, BELUM
 di-release ke `main` (menunggu keputusan batch-release user, pola
 standar sesi ini), DAN belum di-commit sama sekali (instruksi eksplisit:
 jangan commit sampai diarahkan).
+
+## Update 2026-09-21 — Fase 140 Done: Konteks Data Usaha Aktif di Gerbang Modul
+
+Keluhan Pak Untung (import gagal "open-db.do HTTP 401") didiagnosis lewat
+SQL read-only di production: gejala 401 hanya pemicu, akar masalahnya
+`moduleAccess` memilih subscription TERBARU lintas semua Data Usaha — semua
+upload Purchase Invoice-nya masuk INTERTOUCH MALAYSIA walau dia memilih PT
+MAGINET. Berbahaya: kalau koneksi sehat, data terposting ke perusahaan yang
+salah. Diperbaiki via header `X-Data-Usaha-Id` (ADR-0035): validasi kepemilikan/
+seat, saring per Data Usaha, fail-closed 409 kalau ambigu.
+
+Typecheck 0 error, lint bersih, API 1327 pass/0 fail (+14 test), web 57 pass;
+6 dari 8 test regresi inti gagal pada kode lama (mutation check). Security
+review: 0 Critical/High, 1 Medium (multi-tab) + 6 Low — semua yang relevan
+diperbaiki langsung kecuali `allowedHeaders` CORS eksplisit (saran hardening).
+Detail → `docs/phases/phase-140-konteks-data-usaha-aktif-di-gerbang-modul.md`,
+`docs/lessons-learned.md` 2026-09-21.
+
+**Belum di-deploy.** Terbuka (di luar fase ini): (1) duplikasi koneksi Accurate
+(15 koneksi/2 perusahaan, 1 OAuth baru per modul) — fase terpisah; (2)
+audit read-only batch lama yang salah Data Usaha untuk customer lain;
+(3) catatan auditor: `accurateConnections.userId` diisi pembeli awal
+(dibekukan) — setelah transfer kepemilikan, pemilik lama masih bisa memakai
+endpoint database/select koneksi itu (pola Fase 113, cek terpisah).
+Sampai deploy, Pak Untung JANGAN retry/hubungkan ulang.
