@@ -12,6 +12,8 @@ node_modules/
 !.env.production.example
 !.env.staging.example
 !apps/*/.env.example
+.env.deploy
+.env.deploy-staging
 
 # Build output
 dist/
