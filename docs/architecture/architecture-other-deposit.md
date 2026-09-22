@@ -1,5 +1,7 @@
 # Architecture — Modul Other Deposit (Penerimaan Bank/Kas)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > **Status: ✅ DIEKSEKUSI (Fase 128, 2026-09-16)** — riset field
 > diverifikasi ULANG dari `docs/referencehtml/accurate-openapi.json`
 > (bukan diasumsikan dari Other Payment), DAN sheet "Othe Deposit"

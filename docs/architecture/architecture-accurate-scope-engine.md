@@ -71,3 +71,7 @@ worker menandai baris/batch dengan pesan jelas, bukan `expired`.
 ## Checklist modul baru (masuk § 3b `architecture-accurate-integration.md`)
 Deklarasikan endpoint di registri; jalankan `sync-accurate-scopes` bila endpoint baru belum
 ada di snapshot; tes CI harus hijau. DILARANG membuat alur otorisasi/reconnect baru.
+
+
+## Perubahan 2026-09-22 — `glaccount_view` dibuang
+Diminta 8 modul (warisan katalog lama) tetapi tidak ada kode yang memanggil `glaccount/*.do`; dibuang dari registri dan fixture regresi tes. Efek: pelanggan melihat satu izin lebih sedikit; karena ini mengubah scope yang diminta, pelanggan lama akan diminta "Perbarui Izin" sekali saat rilis berikutnya (bersamaan dengan scope baru Work Order/Roll Over). Kalau nanti butuh lookup akun, daftarkan `GET glaccount/list.do` di modul terkait.

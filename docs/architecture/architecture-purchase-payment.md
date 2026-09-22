@@ -1,5 +1,7 @@
 # Architecture — Modul Purchase Payment (Pembayaran Pembelian)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > **Status: ✅ DIEKSEKUSI (Fase 33, Done 2026-09-05)** — semua
 > endpoint/field di bawah diverifikasi langsung dari
 > `docs/referencehtml/accurate-openapi.json`, OpenAPI spec resmi

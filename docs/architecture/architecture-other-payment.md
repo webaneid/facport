@@ -1,5 +1,7 @@
 # Architecture — Modul Other Payment (Pembayaran Bank/Kas)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > **Status: ✅ DIEKSEKUSI (Fase 96, 2026-09-10)** — riset field
 > diverifikasi dari `docs/referencehtml/accurate-openapi.json` (spec
 > resmi Accurate, versi 1.5806.4763) DAN 4 screenshot UI Accurate ASLI

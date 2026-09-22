@@ -1,5 +1,7 @@
 # Architecture — Job Costing (Pekerjaan Pesanan / Job Order)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > Fase 136 (Planned — arsitektur SAJA, implementasi belum dikerjakan).
 > Modul PERTAMA dari kategori "Manufacture" (0% built sebelumnya, §
 > `architecture-product-lines.md`). Sumber kebutuhan: panduan client

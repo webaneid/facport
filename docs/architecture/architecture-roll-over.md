@@ -1,5 +1,7 @@
 # Architecture — Roll Over (Penyelesaian Pesanan)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > Fase 136 (arsitektur) → **diimplementasikan Fase 146 (2026-09-22, di `develop`, belum dirilis)**. Rincian keputusan eksekusi: `docs/phases/phase-146-modul-roll-over.md`.
 > Modul ke-2 kategori "Manufacture", kembaran/kelanjutan Job Costing
 > (`architecture-job-costing.md`). Sumber kebutuhan: panduan client

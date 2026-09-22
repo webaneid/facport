@@ -1,5 +1,7 @@
 # Architecture — Item Transfer (Pindah Gudang)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > Fase 134. Modul ke-14 dari katalog Accurate, kategori **"Inventory"**
 > (kategori PERTAMA yang terisi — disiapkan strukturnya sejak Fase 126,
 > sebelumnya 0 modul). Sumber: panduan client

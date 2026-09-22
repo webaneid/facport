@@ -74,25 +74,26 @@ describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117)", () => {
 
 // Daftar TULIS-TANGAN lama (pra-Fase 142), dibekukan sebagai fixture regresi: scope turunan
 // registri BOLEH menambah, TIDAK BOLEH menghilangkan scope yang sudah diminta production.
+// § `glaccount_view` sengaja DIHAPUS dari fixture (2026-09-22): tidak pernah dipakai kode, dibuang dari registri.
 const LEGACY_SCOPES: Record<string, string[]> = {
   purchase_invoice: ["purchase_invoice_view", "purchase_invoice_save", "item_save", "data_classification_view", "data_classification_save", "vendor_view", "vendor_save"],
   vendor_payable_account: ["vendor_view", "vendor_save"],
   sales_invoice: ["sales_invoice_view", "sales_invoice_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
   sales_receipt: ["sales_receipt_view", "sales_receipt_save", "tax_view"],
-  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "glaccount_view", "tax_view"],
-  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  other_payment: ["other_payment_view", "other_payment_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  other_deposit: ["other_deposit_view", "other_deposit_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  purchase_payment: ["purchase_payment_view", "purchase_payment_save", "tax_view"],
+  journal_voucher: ["journal_voucher_view", "journal_voucher_save", "data_classification_view", "data_classification_save"],
+  other_payment: ["other_payment_view", "other_payment_save", "data_classification_view", "data_classification_save"],
+  other_deposit: ["other_deposit_view", "other_deposit_save", "data_classification_view", "data_classification_save"],
   purchase_order: ["purchase_order_save", "vendor_view", "vendor_save", "item_save", "data_classification_view", "data_classification_save"],
   receive_item: ["receive_item_save", "data_classification_view", "data_classification_save"],
   purchase_return: ["purchase_return_save", "data_classification_view", "data_classification_save"],
   sales_quotation: ["sales_quotation_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
   sales_order: ["sales_order_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
   sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
-  item_transfer: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  item_requisition: ["item_transfer_save", "glaccount_view", "data_classification_view", "data_classification_save"],
-  inventory_adjustment: ["item_adjustment_save", "glaccount_view"],
-  job_costing: ["job_order_save", "material_adjustment_save", "item_save", "glaccount_view", "data_classification_view", "data_classification_save"],
+  item_transfer: ["item_transfer_save", "data_classification_view", "data_classification_save"],
+  item_requisition: ["item_transfer_save", "data_classification_view", "data_classification_save"],
+  inventory_adjustment: ["item_adjustment_save"],
+  job_costing: ["job_order_save", "material_adjustment_save", "item_save", "data_classification_view", "data_classification_save"],
 };
 
 describe("mesin scope — regresi terhadap daftar tulis-tangan lama", () => {
