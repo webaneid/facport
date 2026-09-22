@@ -1,6 +1,6 @@
 # Fase 136 — Arsitektur 5 Sub-Modul Baru (Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order)
 
-**Status:** Planned
+**Status:** Done (dokumen arsitektur 5 sub-modul). Eksekusi: Sales Order (Fase 137), Inventory Adjustment (138), Job Costing (139) SELESAI & rilis v2.6.1; Roll Over (Fase 146) dan Work Order (Fase 147) SELESAI dibangun 2026-09-22, ada di `develop` dan BELUM dirilis
 **Mulai:** 2026-09-21
 **Selesai:** —
 

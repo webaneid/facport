@@ -39,6 +39,8 @@ import {
   ClipboardCheck,
   Boxes,
   Factory,
+  CheckCheck,
+  Cog,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -136,6 +138,10 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/inventory-adjustment/import", label: "Import Inventory Adjustment", icon: Boxes, moduleKey: "inventory_adjustment" },
         // § Fase 139 — modul PERTAMA kategori "Manufacture" (architecture-job-costing.md).
         { href: "/job-costing/import", label: "Import Job Costing", icon: Factory, moduleKey: "job_costing" },
+        // § Fase 146 — penutup Job Costing (architecture-roll-over.md).
+        { href: "/roll-over/import", label: "Import Roll Over", icon: CheckCheck, moduleKey: "roll_over" },
+        // § Fase 147 — produksi berbasis BOM (architecture-work-order.md).
+        { href: "/work-order/import", label: "Import Work Order", icon: Cog, moduleKey: "work_order" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu). TANPA kategori (moduleKey kosong → cluster

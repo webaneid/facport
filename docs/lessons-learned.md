@@ -3991,7 +3991,7 @@ token" (Fase 91) TIDAK terbukti.
 
 **Fix bagian 1 (Fase 142, ADR-0036 #2/#4):** registri endpoint tunggal → scope diturunkan dari snapshot
 spec; `/accurate/connect` selalu meminta semua scope; `granted_scopes` disimpan & diverifikasi; galat 403
-`insufficient_scope` dikenali. Model koneksi 1-per-akun + migrasi customer → Fase 143-145 (BELUM selesai;
+`insufficient_scope` dikenali. Model koneksi 1-per-akun + migrasi customer → Fase 143-145 (SELESAI, dirilis v2.7.0 2026-09-22; catatan asli saat Fase 142:
 koneksi lama yang mati baru pulih setelah customer otorisasi ulang).
 
 **Fix bagian 2 (Fase 143, ADR-0036/0037, cutover langsung):** koneksi 1 per AKUN Accurate (`accurate_user_id` unik) dipegang
@@ -4033,3 +4033,10 @@ tipis berspesifier unik (`lib/use-accurate-gate-navigation.ts`) dan mock modul i
 **Pelajaran UI:** status koneksi harus dihitung per DATA USAHA (bukan per subscription) dan sampai ke UI lewat SATU endpoint
 (`/accurate/gate`); `/accurate/subscriptions` tidak punya baris untuk Data Usaha baru tanpa langganan sehingga tidak bisa jadi dasar gerbang.
 
+
+## 2026-09-22 — `parseExcelBuffer` salah menamai header Excel yang berulang (ditemukan saat Fase 147 Work Order)
+**Gejala/risiko:** `headers` (daftar untuk UI "Cocokkan Kolom") diambil dari `sheet_to_json({header:1})` yang mengembalikan nama apa adanya, sedangkan key tiap baris
+dari `sheet_to_json` biasa menamai kemunculan ke-2 dst `X_1`, `X_2`. Untuk file dengan nama kolom berulang, mapping memakai nama yang sama berulang dan nilai kolom
+ke-2+ tidak pernah terbaca (hilang diam-diam). Belum pernah muncul karena tak ada modul lain yang headernya berulang; Excel client Work Order berulang antar-section.
+**Fix:** `headers` diberi penamaan dedupe yang SAMA dengan key baris (`lib/excel.ts`, +tes). **Pelajaran:** kalau format Excel client punya kolom bernama sama di section
+berbeda, jangan pakai posisi kolom — pakai nama hasil dedupe, dan uji putaran template → parse → mapping (tes di `work-order.mapping.test.ts`).

@@ -143,7 +143,7 @@
 | 133  | Lebar Kolom Tabel Tidak Terkontrol (Perbaikan Menyeluruh) | Done | `docs/decisions/adr-0034-lebar-kolom-tabel.md` | `docs/phases/phase-133-lebar-kolom-tabel.md` |
 | 134  | Modul Item Transfer (Pindah Gudang) — kategori Inventory pertama | Done | `docs/architecture/architecture-item-transfer.md` | `docs/phases/phase-134-modul-item-transfer.md` |
 | 135  | Modul Item Requisition (Permintaan Barang) — kembaran Item Transfer | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-135-modul-item-requisition.md` |
-| 136  | Arsitektur 5 Sub-Modul Baru: Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order | Planned | `docs/architecture/architecture-sales-order.md`, `architecture-inventory-adjustment.md`, `architecture-job-costing.md`, `architecture-roll-over.md`, `architecture-work-order.md` | `docs/phases/phase-136-arsitektur-5-submodul-inventory-manufacture.md` |
+| 136  | Arsitektur 5 Sub-Modul Baru: Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order | Done (dokumen); 5 dari 5 sub-modul DIEKSEKUSI (137-139 rilis v2.6.1; Roll Over Fase 146 & Work Order Fase 147 di `develop`, belum dirilis) | `docs/architecture/architecture-sales-order.md`, `architecture-inventory-adjustment.md`, `architecture-job-costing.md`, `architecture-roll-over.md`, `architecture-work-order.md` | `docs/phases/phase-136-arsitektur-5-submodul-inventory-manufacture.md` |
 | 137  | Modul Sales Order (Pesanan Penjualan) — kelanjutan Sales Quotation | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-137-modul-sales-order.md` |
 | 138  | Modul Inventory Adjustment (Penyesuaian Persediaan) | Done | `docs/architecture/architecture-inventory-adjustment.md` | `docs/phases/phase-138-modul-inventory-adjustment.md` |
 | 139  | Modul Job Costing (Pekerjaan Pesanan) — 2 endpoint berurutan, kategori Manufacture pertama | Done | `docs/architecture/architecture-job-costing.md` | `docs/phases/phase-139-modul-job-costing.md` |
@@ -152,7 +152,9 @@
 | 142  | Mesin Scope Accurate (registri endpoint → scope turunan, simpan `granted_scopes`, `missingScopes`, tes CI) | Done | `docs/architecture/architecture-accurate-scope-engine.md` | `docs/phases/phase-142-mesin-scope-accurate.md` |
 | 143  | Model Koneksi Accurate 1-per-Akun dipegang Data Usaha (cutover langsung), refresh aman-rotasi, transfer memutus koneksi | Done | `docs/decisions/adr-0037-cutover-koneksi-per-akun-dipegang-data-usaha.md` | `docs/phases/phase-143-model-koneksi-accurate-per-akun.md` |
 | 144  | Gerbang Koneksi Accurate: popup glass di dashboard, mesin status per Data Usaha, halaman koneksi baru | Done | `docs/architecture/architecture-accurate-connect-gate.md` | `docs/phases/phase-144-gerbang-koneksi-accurate-ui.md` |
-| 145  | Cutover Koneksi Accurate ke Production: carry-over koneksi hidup, pemberitahuan customer, runbook, kontrak | Planned | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
+| 145  | Cutover Koneksi Accurate ke Production: putus total (migrasi 0030), dirilis v2.7.0; tersisa uji browser, pengumuman, pemantauan, kontrak | In Progress | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
+| 146  | Modul Roll Over (Penyelesaian Pesanan) — penutup Job Costing, kategori Manufacture | Done | `docs/architecture/architecture-roll-over.md` | `docs/phases/phase-146-modul-roll-over.md` |
+| 147  | Modul Work Order (Perintah Kerja) — produksi berbasis BOM, 4 array, lookup cabang & PIC | Done | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-147-modul-work-order.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

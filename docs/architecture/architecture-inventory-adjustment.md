@@ -1,5 +1,7 @@
 # Architecture — Inventory Adjustment (Penyesuaian Persediaan)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > Fase 136 (Planned — arsitektur SAJA, implementasi belum dikerjakan).
 > Modul ke-3 dari kategori "Inventory" (setelah Item Requisition, Item
 > Transfer — Fase 134-135). Sumber kebutuhan: panduan client
@@ -75,10 +77,10 @@ scope Excel yang diminta).
    cuma butuh `itemNo` (barang) dan `adjustmentAccountNo` (akun GL) yang
    BIASANYA sudah ada di data master. Pola paling dekat: Item Transfer/
    Item Requisition (`findOrCreateItem` kalau perlu, TIDAK ada
-   vendor/customer). Scope OAuth kandidat: `item_adjustment_save`,
-   `item_save` (kalau mau auto-create item baru), `glaccount_view`
-   (lookup akun penyesuaian, mirror `item_transfer`),
-   `data_classification_view`+`data_classification_save`.
+   vendor/customer). Scope OAuth FINAL (sesuai kode, Fase 138 + registri Fase 142): **`item_adjustment_save`** saja (`POST item-adjustment/save.do`); `glaccount_view`
+   dipertahankan sebagai warisan katalog lama walau TIDAK ada panggilan `glaccount/*.do`. TIDAK butuh `item_save` (tidak auto-create item) dan TIDAK
+   butuh `data_classification_view/save` (tidak ada Kategori Keuangan di modul ini; "Atribut Tambahan" dikirim langsung sebagai
+   charField/numericField/dateField). Daftar "kandidat" di draf awal dokumen ini sudah TIDAK berlaku.
 2. **Grouping multi-baris** — SAMA pola modul lain: `No. Item
    Adjustment` (kalau diisi) jadi kunci, kosong = 1 baris = 1 dokumen
    sendiri.

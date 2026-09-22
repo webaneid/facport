@@ -1,5 +1,7 @@
 # Architecture — Modul Other Deposit (Penerimaan Bank/Kas)
 
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
 > **Status: ✅ DIEKSEKUSI (Fase 128, 2026-09-16)** — riset field
 > diverifikasi ULANG dari `docs/referencehtml/accurate-openapi.json`
 > (bukan diasumsikan dari Other Payment), DAN sheet "Othe Deposit"
@@ -103,7 +105,7 @@ File **BARU**:
 - `apps/web/components/other-deposit/edit-row-dialog.tsx`
 
 File **existing** disentuh:
-1. `apps/api/src/lib/accurate-scopes.ts` — entry `other_deposit`
+1. `apps/api/src/lib/accurate-endpoint-registry.ts` — entry `other_deposit` (scope diturunkan otomatis, Fase 142)
 2. `apps/api/src/lib/import-mapping/template-guide.ts` — `otherDepositTemplateGuide`
 3. `apps/api/src/lib/module-catalog.ts` — entry katalog (kategori "Cash & Bank")
 4. `apps/api/src/workers/index.ts` — dispatch case `"other_deposit"`
@@ -120,3 +122,8 @@ File **existing** disentuh:
 - Spec resmi: `docs/referencehtml/accurate-openapi.json`
 - Precedent lengkap (gap, keputusan desain, worker pattern): `architecture-other-payment.md`
 - Rencana/eksekusi fase ini: `docs/phases/phase-128-modul-other-deposit.md`
+
+## Scope OAuth (final, sesuai kode & registri Fase 142)
+`other_deposit_save` + `other_deposit_view` (warisan katalog; kode hanya memanggil `POST other-deposit/save.do`), `data_classification_view` +
+`data_classification_save` (auto-create Kategori Keuangan lewat `findOrCreateDataClassification`, dipakai kolom atribut), dan `glaccount_view`
+(warisan katalog, tidak ada panggilan `glaccount/*.do`). Sumber kebenaran: `apps/api/src/lib/accurate-endpoint-registry.ts` entry `other_deposit`.

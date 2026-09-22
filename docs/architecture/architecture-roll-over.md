@@ -1,6 +1,8 @@
 # Architecture — Roll Over (Penyelesaian Pesanan)
 
-> Fase 136 (Planned — arsitektur SAJA, implementasi belum dikerjakan).
+> **Catatan 2026-09-22:** scope `glaccount_view` yang disebut di dokumen ini SUDAH DIBUANG dari registri (`accurate-endpoint-registry.ts`) — tidak ada kode yang memanggil `glaccount/*.do`. Sumber kebenaran scope modul ini = registri, bukan teks historis di bawah.
+
+> Fase 136 (arsitektur) → **diimplementasikan Fase 146 (2026-09-22, di `develop`, belum dirilis)**. Rincian keputusan eksekusi: `docs/phases/phase-146-modul-roll-over.md`.
 > Modul ke-2 kategori "Manufacture", kembaran/kelanjutan Job Costing
 > (`architecture-job-costing.md`). Sumber kebutuhan: panduan client
 > (`docs/referencehtml/facport/developmen-15-september-2026.xlsx`,
@@ -83,7 +85,7 @@ akan pakai `rollOverType=ITEM` di praktiknya, tapi API tetap mewajibkan
 `detailExpense` array (boleh `[]` kosong, konsisten pola array kosong
 diterima di modul lain).
 
-## Keputusan Desain (Rencana)
+## Keputusan Desain
 1. **Tidak ada auto-create Vendor/Customer** — tidak ada field
    vendor/customer sama sekali di endpoint ini. Auto-create yang relevan
    cuma `item_save` untuk Finished Good baru. Scope OAuth kandidat:
@@ -154,3 +156,10 @@ di Facport SEBELUM kirim ke Accurate.
 - Modul pendahulu (WAJIB dibangun duluan): `architecture-job-costing.md`
 - Preseden field undocumented-tapi-jalan: `architecture-purchase-order.md` § "Atribut Tambahan"
 - Preseden Branch Wajib: `architecture-purchase-payment.md` § "Fase 90"
+
+## Registri endpoint & scope (sudah terpasang di `accurate-endpoint-registry.ts`, Fase 146)
+Saat modul dibangun, daftarkan di `apps/api/src/lib/accurate-endpoint-registry.ts` (entry `roll_over`, kunci HARUS ada di `module-catalog.ts` varian facport):
+`POST roll-over/save.do` (spec: `roll_over_save`; `bulk-save.do` juga `roll_over_save`) + helper yang benar-benar dipanggil kode (mis. `POST item/save.do` bila
+auto-create item, `GET/POST data-classification/*` bila ada Kategori Keuangan). `roll_over_view` HANYA bila ada panggilan `roll-over/list|detail.do`. Setelah itu
+`bun run scopes:sync` (jika endpoint belum ada di snapshot) dan tes `accurate-scopes.test.ts` harus hijau. Pasang juga `checkSubscriptionScopes` di route import.
+Dependensi urutan: Job Costing (Fase 139) SUDAH selesai — Roll Over boleh dibangun.

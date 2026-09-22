@@ -84,7 +84,12 @@ ringkas TANPA token) di bagian "Hasil" dokumen ini.
    `architecture-accurate-integration.md` (deklarasi endpoint di 1 tempat, CI
    hijau, DILARANG membuat alur otorisasi/reconnect baru).
 
-## Fase Lanjutan (urutan yang disarankan)
+## Fase Lanjutan (urutan yang disarankan) — REALISASI BERBEDA dari saran ini
+> Yang benar-benar terjadi: **142** mesin scope (sesuai saran); **143** model koneksi **per AKUN Accurate** dipegang Data Usaha (bukan
+> "per Data Usaha" — dikoreksi bukti E2, ADR-0037); **144** UI gerbang popup + status per Data Usaha (lebih luas dari "frontend saja");
+> **145** cutover ke production dengan keputusan **PUTUS TOTAL** (tanpa skrip cek kesehatan/carry-over; ADR-0037 #11), dirilis `v2.7.0`.
+> Daftar asli di bawah dipertahankan sebagai catatan rencana awal.
+
 - **142 — Mesin scope (independen dari model koneksi, risiko rendah, nilai
   langsung):** snapshot + skrip sinkron, registri endpoint, tes CI, simpan
   `grantedScopes`/identitas akun, cek di `/accurate/reuse` & sebelum import,
