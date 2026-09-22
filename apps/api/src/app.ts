@@ -57,6 +57,8 @@ import { inventoryAdjustmentImportRoute } from "./routes/inventory-adjustment-im
 import { jobCostingImportRoute } from "./routes/job-costing-import.route";
 import { rollOverImportRoute } from "./routes/roll-over-import.route";
 import { workOrderImportRoute } from "./routes/work-order-import.route";
+import { materialSlipImportRoute } from "./routes/material-slip-import.route";
+import { finishedGoodSlipImportRoute } from "./routes/finished-good-slip-import.route";
 import { teamRoute } from "./routes/team.route";
 import { invitesRoute } from "./routes/invites.route";
 import { transfersRoute } from "./routes/transfers.route";
@@ -250,6 +252,8 @@ export const app = new Elysia()
   .use(jobCostingImportRoute)
   .use(rollOverImportRoute)
   .use(workOrderImportRoute)
+  .use(materialSlipImportRoute)
+  .use(finishedGoodSlipImportRoute)
   .use(teamRoute)
   .use(invitesRoute)
   .use(transfersRoute)

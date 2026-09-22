@@ -62,6 +62,8 @@ const planBody = t.Object({
       t.Literal("job_costing"),
       t.Literal("roll_over"),
       t.Literal("work_order"),
+      t.Literal("material_slip"),
+      t.Literal("finished_good_slip"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

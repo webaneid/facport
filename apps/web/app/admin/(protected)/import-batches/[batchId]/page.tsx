@@ -674,6 +674,62 @@ function WorkOrderView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 148 — Material Slip, mirror `MaterialSlipView`/`InventoryAdjustmentView` (read-only, tanpa grouping kolom khusus, § architecture-material-slip.md).
+function MaterialSlipView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Material Slip Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+// § Fase 149 — Finished Good Slip, mirror `FinishedGoodSlipView`/`InventoryAdjustmentView` (read-only, tanpa grouping kolom khusus, § architecture-finished-good-slip.md).
+function FinishedGoodSlipView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Finished Good Slip Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -695,6 +751,8 @@ const MODULE_TITLE: Record<string, string> = {
   job_costing: "Hasil Import Job Costing",
   roll_over: "Hasil Import Roll Over",
   work_order: "Hasil Import Work Order",
+  material_slip: "Hasil Import Material Slip",
+  finished_good_slip: "Hasil Import Finished Good Slip",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -775,6 +833,8 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "job_costing" && <JobCostingView rows={rows} />}
           {batch.module === "roll_over" && <RollOverView rows={rows} />}
           {batch.module === "work_order" && <WorkOrderView rows={rows} />}
+          {batch.module === "material_slip" && <MaterialSlipView rows={rows} />}
+          {batch.module === "finished_good_slip" && <FinishedGoodSlipView rows={rows} />}
         </CardContent>
       </Card>
     </div>

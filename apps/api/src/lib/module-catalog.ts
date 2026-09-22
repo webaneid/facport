@@ -76,6 +76,10 @@ export const MODULE_CATALOG = [
   { key: "roll_over", label: "Roll Over (Penyelesaian Pesanan)", productLine: "facport", category: "Manufacture" },
   // Fase 147 — produksi berbasis BOM (architecture-work-order.md).
   { key: "work_order", label: "Work Order (Perintah Kerja)", productLine: "facport", category: "Manufacture" },
+  // Fase 148 — realisasi bahan baku dari Work Order (architecture-material-slip.md).
+  { key: "material_slip", label: "Material Slip (Pengambilan Bahan Baku)", productLine: "facport", category: "Manufacture" },
+  // Fase 149 — realisasi barang jadi dari Work Order (architecture-finished-good-slip.md).
+  { key: "finished_good_slip", label: "Finished Good Slip (Penyelesaian Barang Jadi)", productLine: "facport", category: "Manufacture" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank

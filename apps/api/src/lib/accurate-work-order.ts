@@ -29,10 +29,11 @@ export async function saveWorkOrder(
 }
 
 // `list.do` dengan `filter.keywords` (CONTAIN) + `fields=id,name` — pencocokan NAMA PERSIS (tanpa peduli huruf besar/kecil) dilakukan di
-// sini supaya "Jakarta" tidak salah cocok ke "Jakarta Barat".
-async function findByExactName(
+// sini supaya "Jakarta" tidak salah cocok ke "Jakarta Barat". § EXPORTED — dipakai ulang `accurate-finished-good-slip.ts` (Fase 149)
+// untuk lookup gudang (`resource: "warehouse"`), HINDARI duplikasi logic pencocokan nama (§ architecture-finished-good-slip.md).
+export async function findByExactName(
   ctx: AccurateSessionContext,
-  resource: "branch" | "wo-pic",
+  resource: "branch" | "wo-pic" | "warehouse",
   name: string,
 ): Promise<{ id: number; name: string } | undefined> {
   return withAccurateRateLimit(async () => {

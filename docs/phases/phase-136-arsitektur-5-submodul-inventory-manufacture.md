@@ -1,6 +1,6 @@
 # Fase 136 — Arsitektur 5 Sub-Modul Baru (Sales Order, Inventory Adjustment, Job Costing, Roll Over, Work Order)
 
-**Status:** Done (dokumen arsitektur 5 sub-modul). Eksekusi: Sales Order (Fase 137), Inventory Adjustment (138), Job Costing (139) SELESAI & rilis v2.6.1; Roll Over (Fase 146) dan Work Order (Fase 147) SELESAI dibangun 2026-09-22, ada di `develop` dan BELUM dirilis
+**Status:** Done (dokumen arsitektur 5 sub-modul). Eksekusi: Sales Order (Fase 137), Inventory Adjustment (138), Job Costing (139) SELESAI & rilis v2.6.1; Roll Over (146) dan Work Order (147) SELESAI dibangun & DIRILIS (v2.8.0). Material Slip (148) dan Finished Good Slip (149) — 2 sub-modul TAMBAHAN di luar 5 rencana awal, melengkapi rantai Work Order→Material Slip→Finished Good Slip — SELESAI DIBANGUN 2026-09-22, ada di `develop`, BELUM dirilis. Total 7 dari 7 sub-modul Manufacture/Inventory rencana selesai dibangun.
 **Mulai:** 2026-09-21
 **Selesai:** —
 

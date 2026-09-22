@@ -143,6 +143,10 @@ untuk task kecil, itu justru lebih mahal token.
 | Modul Jurnal Umum (Journal Voucher) | `docs/architecture/architecture-journal-voucher.md` |
 | Modul Other Payment (Pembayaran Bank/Kas) | `docs/architecture/architecture-other-payment.md` |
 | Modul Other Deposit (Penerimaan Bank/Kas) | `docs/architecture/architecture-other-deposit.md` |
+| Modul Roll Over (Penyelesaian Pesanan) | `docs/architecture/architecture-roll-over.md` |
+| Modul Work Order (Perintah Kerja) | `docs/architecture/architecture-work-order.md` |
+| Modul Material Slip (Pengambilan Bahan Baku) | `docs/architecture/architecture-material-slip.md` |
+| Modul Finished Good Slip (Penyelesaian Barang Jadi) | `docs/architecture/architecture-finished-good-slip.md` |
 | Modul Purchase Order (Pesanan Pembelian) | `docs/architecture/architecture-purchase-order.md` |
 | Modul Receive Item (Penerimaan Barang) | `docs/architecture/architecture-receive-item.md` |
 | Modul Purchase Return (Retur Pembelian) | `docs/architecture/architecture-purchase-return.md` |

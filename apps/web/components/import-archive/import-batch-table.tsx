@@ -37,6 +37,8 @@ import { DeleteImportDialog as InventoryAdjustmentDeleteImportDialog } from "@/c
 import { DeleteImportDialog as JobCostingDeleteImportDialog } from "@/components/job-costing/delete-import-dialog";
 import { DeleteImportDialog as RollOverDeleteImportDialog } from "@/components/roll-over/delete-import-dialog";
 import { DeleteImportDialog as WorkOrderDeleteImportDialog } from "@/components/work-order/delete-import-dialog";
+import { DeleteImportDialog as MaterialSlipDeleteImportDialog } from "@/components/material-slip/delete-import-dialog";
+import { DeleteImportDialog as FinishedGoodSlipDeleteImportDialog } from "@/components/finished-good-slip/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -196,6 +198,12 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "work_order" && (
                     <WorkOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "material_slip" && (
+                    <MaterialSlipDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "finished_good_slip" && (
+                    <FinishedGoodSlipDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

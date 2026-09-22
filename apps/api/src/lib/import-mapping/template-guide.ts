@@ -1377,3 +1377,57 @@ export const workOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "CLS2", required: false, example: "", description: `${WO_FG}Kategori Keuangan slot 2.` },
   { column: "CLS3", required: false, example: "", description: `${WO_FG}Kategori Keuangan slot 3.` },
 ];
+
+// § Fase 148 — Material Slip. Header kolom mengikuti PERSIS sheet client: "Qty" muncul 2x (barang & serial, SENGAJA
+// dipertahankan sama seperti Work Order Fase 147) — `parseExcelBuffer` mendedupe kemunculan ke-2 jadi "Qty_1" saat upload.
+export const materialSlipTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Branch Name", required: false, example: "Jakarta", description: "Nama cabang — opsional, TIDAK di-lookup ID (beda dari Work Order/Finished Good Slip)." },
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "02/02/2026", description: "Tanggal Material Slip." },
+  { column: "Trans No", required: false, example: "MS-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 dokumen (isi SAMA di semua baris dokumen yang sama, termasuk baris lanjutan nomor seri). Kosongkan untuk penomoran otomatis." },
+  { column: "Material Slip Type", required: true, example: "ITEM_PICK", description: "WAJIB diisi: Pengambilan (ITEM_PICK) atau Pengembalian (ITEM_RETURN) bahan baku. Cukup diisi di baris pertama dokumen." },
+  { column: "Work Order No", required: true, example: "WO-001", description: "Nomor Work Order (dari modul Work Order) yang diambil bahan bakunya — harus SUDAH ADA di Accurate. Cukup diisi di baris pertama dokumen." },
+  { column: "Description", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Item No", required: true, example: "10001", description: "Kode bahan baku PERSIS seperti di Accurate — TIDAK dibuatkan otomatis kalau belum ada. WAJIB kecuali baris ini hanya lanjutan nomor seri barang di atasnya (baris kosong pada kolom Qty)." },
+  { column: "Item Name", required: false, example: "", description: "Nama/keterangan bahan baku." },
+  { column: "Qty", required: false, example: "10", description: "Jumlah bahan baku. Kosongkan pada baris lanjutan nomor seri (lihat Serial No)." },
+  { column: "Unit Name", required: false, example: "PCS", description: "Satuan bahan baku, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Note", required: false, example: "", description: "Catatan bahan baku." },
+  { column: "Project No", required: false, example: "", description: "Nomor proyek (harus sudah ada di Accurate)." },
+  { column: "Dept Name", required: false, example: "", description: "Nama departemen (harus sudah ada di Accurate)." },
+  { column: "Warehouse Name", required: false, example: "GD. JAKARTA", description: "Nama gudang — opsional, TIDAK di-lookup ID." },
+  { column: "CLS1", required: false, example: "", description: "Kategori Keuangan slot 1 — dibuatkan otomatis kalau belum ada." },
+  { column: "CLS2", required: false, example: "", description: "Kategori Keuangan slot 2." },
+  { column: "CLS3", required: false, example: "", description: "Kategori Keuangan slot 3." },
+  { column: "CLS4", required: false, example: "", description: "Kategori Keuangan slot 4." },
+  { column: "CLS5", required: false, example: "", description: "Kategori Keuangan slot 5." },
+  { column: "Serial No", required: false, example: "XX1", description: "Nomor seri bahan baku. Boleh diisi di baris item ITU SENDIRI, atau di baris TAMBAHAN sesudahnya (Trans No & Item No sama, kolom Qty barang dikosongkan) kalau 1 barang punya banyak nomor seri." },
+  { column: "Qty", required: false, example: "10", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" KEDUA — nama sama persis dengan kolom Qty barang di atas, dibedakan otomatis saat upload)." },
+  { column: "Expired Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+];
+
+// § Fase 149 — Finished Good Slip. Header kolom mengikuti PERSIS sheet client: "Qty" muncul 2x (barang & serial, SENGAJA
+// dipertahankan sama seperti Work Order Fase 147) — `parseExcelBuffer` mendedupe kemunculan ke-2 jadi "Qty_1" saat upload.
+export const finishedGoodSlipTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti di Accurate — WAJIB DIISI (di-lookup ID, harus sudah ada)." },
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "03/11/2025", description: "Tanggal Finished Good Slip." },
+  { column: "Trans No", required: false, example: "FGS-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 dokumen (isi SAMA di semua baris dokumen yang sama, termasuk baris lanjutan nomor seri). Kosongkan untuk penomoran otomatis." },
+  { column: "Work Order No", required: true, example: "6682", description: "Nomor Work Order (dari modul Work Order) yang diselesaikan — harus SUDAH ADA di Accurate. Cukup diisi di baris pertama dokumen." },
+  { column: "Description", required: false, example: "Production Result", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Item No", required: true, example: "3300500719", description: "Kode barang jadi PERSIS seperti di Accurate — TIDAK dibuatkan otomatis kalau belum ada. WAJIB kecuali baris ini hanya lanjutan nomor seri barang di atasnya." },
+  { column: "Item Name", required: false, example: "", description: "Nama/keterangan barang jadi." },
+  { column: "Qty", required: true, example: "101", description: "Jumlah barang jadi yang diselesaikan. WAJIB diisi bersama Item No dan Portion." },
+  { column: "Portion", required: true, example: "100", description: "Porsi penyelesaian dalam persen (0-100) dari total perintah kerja. WAJIB diisi bersama Item No dan Qty." },
+  { column: "Unit Name", required: false, example: "CTN", description: "Satuan barang jadi, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Note", required: false, example: "", description: "Catatan barang jadi." },
+  { column: "Project No", required: false, example: "", description: "Nomor proyek (harus sudah ada di Accurate)." },
+  { column: "Dept Name", required: false, example: "", description: "Nama departemen (harus sudah ada di Accurate)." },
+  { column: "Warehouse Name", required: true, example: "WH FG", description: "Nama gudang PERSIS seperti di Accurate — WAJIB DIISI (di-lookup ID, harus sudah ada)." },
+  { column: "CLS1", required: false, example: "", description: "Kategori Keuangan slot 1 — dibuatkan otomatis kalau belum ada." },
+  { column: "CLS2", required: false, example: "", description: "Kategori Keuangan slot 2." },
+  { column: "CLS3", required: false, example: "", description: "Kategori Keuangan slot 3." },
+  { column: "CLS4", required: false, example: "", description: "Kategori Keuangan slot 4." },
+  { column: "CLS5", required: false, example: "", description: "Kategori Keuangan slot 5." },
+  { column: "Serial No", required: false, example: "28/10/2025", description: "Nomor seri barang jadi (client biasa memakai tanggal produksi sebagai kode lot). Boleh diisi di baris item ITU SENDIRI, atau di baris TAMBAHAN sesudahnya (Trans No & Item No sama, kolom Qty/Portion dikosongkan) kalau 1 barang punya banyak nomor seri." },
+  { column: "Qty", required: false, example: "15", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" KEDUA — nama sama persis dengan kolom Qty barang di atas, dibedakan otomatis saat upload)." },
+  { column: "Expired Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+];
