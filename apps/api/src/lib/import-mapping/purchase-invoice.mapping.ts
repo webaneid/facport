@@ -37,6 +37,7 @@ export const purchaseInvoiceMapping = {
     description: "description",
     currencyCode: "currencyCode",
     rate: "rate",
+    fiscalRate: "fiscalRate", // § Kurs Pajak/Fiskal — dipakai kalau transaksi beda mata uang dari mata uang dasar perusahaan (ADA di format Excel lama client v7/v8, sebelumnya belum dipetakan di sini)
     paymentTermName: "paymentTermName",
     taxable: "taxable",
     inclusiveTax: "inclusiveTax",
@@ -202,6 +203,7 @@ export const purchaseInvoiceMapping = {
     Note: "description",
     "Currency Code": "currencyCode",
     Rate: "rate",
+    "Fiscal Rate": "fiscalRate",
     "Pay Term": "paymentTermName",
     Taxable: "taxable",
     "Inclusive Tax": "inclusiveTax",

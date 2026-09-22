@@ -4055,3 +4055,24 @@ yang dimaksud, membuat baris lanjutan itu justru jadi barang baru yang salah. Fi
 diisi, termasuk placeholder `""` untuk slot yang ingin dikosongkan. **Pelajaran:** tes route BARU ditambah yang benar-benar UNDUH template lalu
 parse+validasi+group ulang (bukan cuma cek f`ile Content-Type`) — kalau tidak, gap ini baru ketahuan manual saat user buka file, seperti kejadian
 ini. Untuk modul manufacture apa pun ke depan (pola grouping non-trivial), WAJIB tes route level ini, tidak cukup tes unit mapping saja.
+
+## 2026-09-22 — "Fiscal Rate" (Kurs Pajak) tidak pernah dipetakan di Sales Invoice/Purchase Invoice sejak modul dibangun
+**Gejala:** client minta tambah kolom "Rate Pajak" di Excel Sales Invoice & Purchase Invoice. Riset awal (spec OpenAPI + portal
+developer live) menyimpulkan TIDAK ADA field persentase pajak per transaksi di API manapun — benar, tapi itu BUKAN yang client
+maksud. Setelah client diminta kirim format Excel LAMA yang pernah mereka pakai (`format_sales_inv_v7.xlsx`,
+`FACPORT_TEMPLATE_Purchase_Inv_v8.xlsx`, sheet "Penjelasan Kolom"), ketahuan: mereka maksud kolom **"Fiscal Rate"** ("Nilai
+Tukar/Kurs Pajak" — nilai tukar mata uang KHUSUS untuk pencatatan pajak, beda dari "Rate" biasa untuk pembukuan, field resmi
+`fiscalRate` di `sales-invoice/save.do` & `purchase-invoice/save.do`) — field itu ADA di format lama mereka DAN di API resmi,
+cuma TIDAK PERNAH dipetakan di `sales-invoice.mapping.ts`/`purchase-invoice.mapping.ts` sejak modul-modul itu dibangun (Fase
+02/05/06/13) — gap lama yang baru ketahuan sekarang. Modul lain yang dibangun LEBIH BELAKANGAN (Purchase Return, Sales Return)
+sudah benar memetakannya, cuma 2 modul PALING LAMA ini yang kelewat.
+
+**Fix:** `fiscalRate` ditambahkan ke `fieldToAccuratePath`/`defaultColumnMap` kedua modul (kolom "Fiscal Rate", opsional,
+sejajar "Rate"), plus `template-guide.ts` dan tes.
+
+**Pelajaran:** ketika client bilang "dulu ada, sekarang kok tidak" untuk field yang TIDAK terbukti ada di spec API resmi
+(riset pertama benar menyimpulkan tidak ada FIELD SEPERTI ITU), JANGAN berhenti di "berarti tidak mungkin" — minta CONTOH
+NYATA (format Excel lama/screenshot data riil) untuk mengecek apakah client sebenarnya memaksud nama field yang BERBEDA dari
+yang dibayangkan pertama kali ("Rate Pajak" ternyata = "Fiscal Rate", bukan persentase tarif pajak). Bandingkan juga ke modul
+SIBLING yang sudah dibangun (kalau modul lain sudah benar, modul yang komplain client kemungkinan cuma kelewat, bukan memang
+API tidak mendukung) — cara cepat konfirmasi gap nyata vs limitasi API sungguhan.
