@@ -36,17 +36,26 @@ function getInitials(name: string, email: string) {
 // 3-kolom) — kiri (breadcrumbs) dan kanan (search+bell+avatar) TIDAK
 // simetris lebarnya, jadi flexbox "di antara" tidak akan pas di tengah
 // literal seperti diminta ("pas di tengah2").
+// § diminta user 2026-09-22 — surface "app" (dashboard pelanggan) tampilkan nama DATA USAHA AKTIF di sebelah
+// avatar (bukan nama user) supaya pelanggan yang punya beberapa Data Usaha selalu tahu Data Usaha mana yang
+// sedang dibuka — pola visual disalin dari `pilih-usaha-header.tsx` (teks di sebelah avatar, disembunyikan di
+// mobile). Info profil TIDAK hilang, cuma tidak lagi tampil inline — tetap ada persis sama di `DropdownMenuContent`
+// begitu avatar diklik. `activeDataUsahaName` SENGAJA `undefined` di surface "admin" (staff tidak terikat 1 Data
+// Usaha, § app-shell.tsx) — kalau kosong, render avatar polos seperti sebelumnya, 0 perubahan visual di admin.
+// Ini BUKAN switcher baru — mekanisme GANTI Data Usaha tetap di rail bawah Sidebar (§ Fase 109, sengaja begitu).
 export function Topbar({
   surface,
   user,
   headerLogoUrl,
   headerLogoLinkUrl,
+  activeDataUsahaName,
   onMenuClick,
 }: {
   surface: Surface;
   user: { name: string; email: string };
   headerLogoUrl?: string;
   headerLogoLinkUrl?: string;
+  activeDataUsahaName?: string;
   onMenuClick: () => void;
 }) {
   const router = useRouter();
@@ -92,7 +101,15 @@ export function Topbar({
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 rounded-full outline-none">
+              <button className="flex items-center gap-2.5 rounded-full outline-none">
+                {activeDataUsahaName && (
+                  <span className="hidden text-right sm:block">
+                    <span className="block max-w-[14rem] truncate text-sm font-medium leading-tight text-admin-ink">
+                      {activeDataUsahaName}
+                    </span>
+                    <span className="block text-xs leading-tight text-admin-muted">Data Usaha Aktif</span>
+                  </span>
+                )}
                 <Avatar>
                   <AvatarFallback>{getInitials(user.name, user.email)}</AvatarFallback>
                 </Avatar>

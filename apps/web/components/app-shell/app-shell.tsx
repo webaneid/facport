@@ -82,6 +82,7 @@ export function AppShell({
                 user={user}
                 headerLogoUrl={headerLogoUrl}
                 headerLogoLinkUrl={headerLogoLinkUrl}
+                activeDataUsahaName={activeDataUsahaName}
                 onMenuClick={() => setMobileNavOpen(true)}
               />
               <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
