@@ -31,6 +31,14 @@ muncul belakangan — nggak jelas dari perubahan mana asalnya.
   (termasuk trik verifikasi `diff` di akhirnya) sebelum lanjut ke
   langkah 3 — gap ini sudah 2× kejadian (2026-09-06, 2026-09-15/16)
   karena checklist yang cuma di baca tidak dijalankan verifikasinya.
+- **Modul/fitur baru memanggil endpoint Accurate baru?** Karena koneksi Accurate
+  SATU pintu (semua scope dalam 1 otorisasi), daftarkan SETIAP endpoint
+  (`"METHOD resource/aksi.do"`, termasuk helper `findOrCreate*`/lookup) di
+  `apps/api/src/lib/accurate-endpoint-registry.ts` — scope diturunkan otomatis,
+  jangan menulis scope manual. Kalau endpoint belum ada di snapshot →
+  `bun run scopes:sync`. Tes `accurate-scopes.test.ts` gagal bila ada literal
+  `/accurate/api/*.do` di kode yang belum terdaftar. Scope baru berarti pelanggan
+  lama akan melihat popup "Perbarui Izin" saat rilis — sebut itu di catatan rilis.
 
 ### 3. Type check + Lint
 ```bash
