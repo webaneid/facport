@@ -35,7 +35,7 @@ description, id, number, typeAutoNumber: opsional (header)
 
 detailItem[] (REQUIRED, "Detail barang yang akan diambil untuk pengambilan bahan baku"):
   itemNo: string REQUIRED — "Nomor/Kode barang yang digunakan untuk transaksi detail terkait"
-  quantity, itemUnitName, detailName, detailNotes, projectNo, id: opsional
+  quantity, itemUnitName, detailName, detailNotes, projectNo, departmentName, id: opsional
   warehouseId (Long), warehouseName (string): KEDUANYA OPSIONAL
   workOrderMaterialId (Long): opsional — id baris bahan baku Work Order terkait (TIDAK dipetakan, § Keputusan Desain)
   dataClassification1Name..10Name: opsional (Kategori Keuangan)
@@ -79,7 +79,7 @@ Unit Name, Item Note, Project No, Dept Name, Warehouse Name, Work Order Material
 | Unit Name | detailItem[].itemUnitName | |
 | Item Note | detailItem[].detailNotes | |
 | Project No | detailItem[].projectNo | |
-| Dept Name | **TIDAK ADA di spec `detailItem`** | § lihat "Known Limitations" — kolom Excel ada, field API tidak ada |
+| Dept Name | detailItem[].departmentName | koreksi 2026-09-22: sebelumnya salah ditulis "tidak ada di spec" — SUDAH dicek ulang live, field ini ADA |
 | Warehouse Name | detailItem[].warehouseName | OPSIONAL, TIDAK perlu lookup ID (§ Quirk) |
 | Work Order Material ID | **TIDAK dipetakan** | § Keputusan Desain — id internal Accurate, bukan sesuatu yang user Excel tahu |
 | CLS1-5 | detailItem[].dataClassification1-5Name | HANYA 5 slot dipakai Excel client (dari 10 yang didukung API) |
@@ -105,14 +105,15 @@ perbaikan baru di parser.
 5. **Hanya 5 slot Kategori Keuangan** (CLS1-5, bukan 10) — Excel client eksplisit cuma sediakan 5 kolom CLS di sheet ini.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **Kolom Excel "Dept Name" TIDAK ada field API yang cocok** di `detailItem[]` `material-slip/save.do` (beda dari Roll
-  Over/Work Order yang punya `departmentName`) — dikonfirmasi TIDAK ADA baik di spec lokal maupun portal live. Opsi: (a)
-  kolom dibiarkan tidak terpetakan (Facport tidak kirim apa-apa), atau (b) tanya client apakah field ini penting — kalau
-  penting, tidak ada tempat menaruhnya di API resmi. **Rekomendasi: (a)**, catat di template guide bahwa kolom ini
-  informasional saja/tidak diproses.
 - **`materialSlipType` dictionary** belum diverifikasi ke isi Excel riil (sheet masih header saja) — sama seperti Roll
   Over/Work Order, perlu dicocokkan saat eksekusi kalau client sudah isi data contoh.
 - **`workOrderMaterialId`** — lihat Keputusan Desain #3, perlu konfirmasi client kalau ternyata dipakai.
+
+> **Koreksi 2026-09-22** (verifikasi ulang atas permintaan user): draft pertama dokumen ini salah menulis "Dept Name
+> TIDAK ada field API yang cocok" — ternyata SALAH BACA saat scroll portal (baris `departmentName` terlewat di antara
+> `dataClassification9Name` dan `detailName`). Sudah dicek ulang langsung di portal live: `detailItem[n].departmentName`
+> ADA (String, opsional, "Nama record departemen untuk pencatatan cost/profit center") — dipetakan normal di tabel di
+> atas, TIDAK ada lagi yang hilang.
 
 ## Referensi
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/material-slip/save.do`
