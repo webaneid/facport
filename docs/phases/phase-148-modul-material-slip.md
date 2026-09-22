@@ -39,8 +39,13 @@ belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
 - [ ] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- `materialSlipType` dictionary belum diverifikasi ke isi Excel riil client (sheet masih header saja saat riset).
-- Kolom Excel "Dept Name" tidak ada field API yang cocok — direncanakan TIDAK dipetakan (§ architecture doc).
+- **BLOCKED — menunggu data riil client** (2026-09-22): file contoh yang dikirim masih 1 baris uji tanpa Item No/Qty/Tipe. Eksekusi fase ini DITUNDA
+  sampai client kirim Excel Material Slip yang benar-benar terisi (keputusan user 2026-09-22: "kita tidak eksekusi sampai dapat semua kolom").
+- `materialSlipType` dictionary belum diverifikasi ke isi Excel riil client.
+- ~~Kolom Excel "Dept Name" tidak ada field API yang cocok~~ — KOREKSI 2026-09-22: field `departmentName` TERNYATA ADA, sebelumnya salah baca portal
+  (§ architecture doc). Dipetakan normal.
+- **Curiga pola grouping serial multi-baris** (mirror temuan Finished Good Slip, § architecture doc) — perlu dicek begitu data riil tersedia, JANGAN
+  asumsikan 1 baris = 1 serial.
 - Belum diuji ke Accurate sungguhan.
 
 ## Ringkasan Hasil (isi pas fase Done)

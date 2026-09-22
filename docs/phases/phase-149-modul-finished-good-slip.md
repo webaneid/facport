@@ -41,7 +41,11 @@ helper lookup yang sama (`findByExactName`). Kategori "Manufacture".
 - [ ] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- Skala `portion` (0-100 vs 0-1) belum dikonfirmasi — asumsi persen (0-100), mirror Roll Over/Work Order.
+- ~~Skala portion belum dikonfirmasi~~ — RESOLVED 2026-09-22: data riil client (536 baris/252 dokumen, semua Portion=100) mengonfirmasi persen (0-100).
+- **Grouping multi-baris-per-serial** (temuan data riil 2026-09-22, § architecture doc "Data Riil Client") — 1 barang jadi bisa punya banyak nomor seri
+  yang ditulis di baris Excel TERPISAH (bukan 1 baris = 1 serial). T1 WAJIB mendesain grouping 2-level ini, bukan pola sederhana Roll Over.
 - Belum diuji ke Accurate sungguhan, termasuk rantai Work Order → Finished Good Slip yang benar-benar terhubung.
+- Menunggu client kirim contoh Excel Material Slip yang sudah terisi data (bukan cuma header) sebelum Fase 148/149 dieksekusi bersamaan
+  (keputusan user 2026-09-22).
 
 ## Ringkasan Hasil (isi pas fase Done)

@@ -104,12 +104,55 @@ minta yang API tidak punya" (§ `feedback_facport_scope_and_check_existing_first
 5. **Hanya 5 slot Kategori Keuangan** (CLS1-5) — sama seperti Material Slip.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **Belum diuji ke Accurate sungguhan** — payload dari spec + portal, sheet client masih header saja (belum ada data
-  isi). Uji dengan Work Order + Finished Good Slip yang benar-benar berantai (Work Order dibuat dulu, baru Finished
-  Good Slip mereferensikan `workOrderNumber`-nya) WAJIB sebelum rilis.
-- **Portion dalam skala apa** (0-100 atau 0-1) belum dikonfirmasi — mirror ambiguitas `detailExtraFinishGood.portion` di
-  Work Order (§ `architecture-work-order.md`, belum ada contoh angka nyata). Asumsi sementara: persen (0-100), konsisten
-  Roll Over/Work Order.
+- **Belum diuji ke Accurate sungguhan** — payload dari spec + portal + data riil client (§ di bawah), TAPI belum pernah
+  dikirim ke API Accurate yang sesungguhnya. Uji dengan Work Order + Finished Good Slip yang benar-benar berantai
+  (Work Order dibuat dulu, baru Finished Good Slip mereferensikan `workOrderNumber`-nya) WAJIB sebelum rilis.
+- ~~Portion dalam skala apa~~ — **RESOLVED** oleh data riil client (§ di bawah): persen (0-100), bukan asumsi lagi.
+- **Grouping multi-baris-per-serial** (§ di bawah) — desain SUDAH ditentukan dari data riil, TAPI implementasinya lebih
+  rumit dari pola Roll Over/Work Order yang ada (bukan sekadar "1 baris = 1 entri"), perlu tes unit khusus mengcover
+  penggabungan lintas-baris ini sebelum dianggap selesai.
+
+## ✅ Data Riil Client (2026-09-22) — Konfirmasi & 1 Temuan Struktural Baru
+File `finished-good-slip-temp-v1_Uploud SN.xlsx` (sheet "Sheet2", 536 baris = 252 dokumen "Trans No") berisi data
+produksi RIIL client (bukan contoh buatan) — mengonfirmasi beberapa hal dan mengungkap 1 pola baru yang PERLU
+KEPUTUSAN DESAIN sebelum eksekusi:
+
+1. **`portion` TERKONFIRMASI skala persen (0-100)** — seluruh 252 dokumen memakai nilai **`100`** (bukan `1`), karena
+   tiap dokumen di data ini menyelesaikan HANYA 1 barang jadi (tidak ada split porsi ke beberapa output). Ini
+   menjawab pertanyaan skala di § "Known Limitations" versi sebelumnya — TIDAK perlu tebak-tebakan lagi.
+2. **⚠️ POLA BARU: 1 barang jadi bisa punya BEBERAPA nomor seri, ditulis di BEBERAPA BARIS Excel terpisah** (bukan 1
+   baris = 1 serial seperti asumsi awal / pola Roll Over). Contoh nyata (Trans No `18320`):
+   ```
+   Baris 1: Item No=3300500719, Qty=101, Portion=100, Unit=CTN, Warehouse=WH FG   (SN kosong)
+   Baris 2: Item No=3300500719 (diulang), Qty/Portion/Unit/Warehouse KOSONG, Serial No="28/10/2025", Qty=15, Exp=22/10/2026
+   Baris 3: Item No=3300500719 (diulang), Qty/Portion/Unit/Warehouse KOSONG, Serial No="29/10/2025", Qty=1500, Exp=23/10/2026
+   ```
+   241 dari 252 dokumen (96%) punya struktur ini (2-15 baris per dokumen) — BUKAN kasus tepi, ini pola UTAMA dipakai
+   client. Sinyal baris "item" vs baris "lanjutan serial": baris item punya kolom **Qty barang** (H) terisi; baris
+   lanjutan punya kolom itu KOSONG tapi **Serial No** (T) terisi. **Keputusan desain WAJIB sebelum coding**: grouping
+   tidak cukup "1 baris = 1 detailItem" (pola Roll Over) — perlu 2 level: (a) grup by "Trans No" seperti biasa, (b)
+   DALAM grup itu, gabungkan baris-baris berurutan yang Item No-nya sama jadi SATU `detailItem`, kumpulkan SEMUA baris
+   "lanjutan serial" (Qty barang kosong + Serial No terisi) jadi banyak entri `detailSerialNumber[]` milik item
+   TERAKHIR yang punya Qty terisi. Data ini TIDAK PERNAH punya >1 Item No berbeda dalam 1 Trans No (0 dari 252), jadi
+   praktiknya per dokumen = 1 `detailItem` + N `detailSerialNumber`, TAPI desain kode harus tetap benar kalau nanti ada
+   dokumen dengan >1 barang (spec API mendukungnya).
+3. **Nomor seri berupa STRING TANGGAL** (`"28/10/2025"`) — bukan bug, kemungkinan konvensi lot number client (tanggal
+   produksi dijadikan kode lot). Dikirim apa adanya sebagai string ke `serialNumberNo`, TIDAK diparse sebagai tanggal.
+4. **Cabang & gudang nyata**: `branchName` selalu `"Kantor Pusat"`, `warehouseName` selalu `"WH FG"` — SATU nilai
+   konsisten di semua 252 dokumen (data client belum menunjukkan variasi multi-cabang/gudang, tapi `resolveBranchId`/
+   `resolveWarehouseId` harus tetap general, bukan hardcode).
+5. **CLS1-5, Project No, Dept Name TIDAK PERNAH terisi** di data ini — field-nya tetap didukung (opsional), cuma
+   belum ada contoh nyata pemakaiannya.
+6. **`Work Order No` (kolom D) terverifikasi nyata ter-link** ke Trans No modul Work Order (sheet "spk" di file yang
+   sama, kolom B — nilai `"6682"`, `"6683"`, dst cocok persis). `Work Order Type` di data riil `spk` memakai LITERAL
+   ENUM `"PRODUCT"` langsung (bukan istilah Indonesia "Kode Produk") — `resolveWorkOrderType` (Fase 147) SUDAH benar
+   menangani ini (cek enum literal dulu sebelum dictionary), tidak perlu ubah apa pun di Work Order.
+7. **1 sheet terpisah ("Sheet3", 252 baris) mencatat kegagalan Accurate**: pesan **"Tanggal Penyelesaian barang lebih
+   kecil dari perintah kerja"** — validasi bisnis Accurate sendiri (`transDate` Finished Good Slip lebih awal dari
+   tanggal Work Order-nya) untuk SET Trans No yang BERBEDA dari 252 dokumen "baik" di atas (0 tumpang tindih). Ini
+   BUKAN sesuatu yang perlu divalidasi di Facport — Accurate yang menolak, pesannya sudah jelas dan akan tampil apa
+   adanya ke user (mirror pola error-passthrough modul lain). Dicatat sebagai kelas error yang REALISTIS ditemui tim
+   penguji, bukan bug.
 
 ## Referensi
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/finished-good-slip/save.do`

@@ -105,8 +105,18 @@ perbaikan baru di parser.
 5. **Hanya 5 slot Kategori Keuangan** (CLS1-5, bukan 10) — Excel client eksplisit cuma sediakan 5 kolom CLS di sheet ini.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **`materialSlipType` dictionary** belum diverifikasi ke isi Excel riil (sheet masih header saja) — sama seperti Roll
-  Over/Work Order, perlu dicocokkan saat eksekusi kalau client sudah isi data contoh.
+- **`materialSlipType` dictionary MASIH belum bisa diverifikasi** — file contoh yang dikirim client 2026-09-22
+  (`material-slip-temp-v1 (1).xlsx`) HANYA berisi 1 baris uji (Branch Name/Trans Date/Trans No saja: "Jakarta",
+  02/02/2026, "WO-001") — kolom Item No/Qty/Material Slip Type/Warehouse/Serial SEMUA masih kosong. Berbeda dari
+  Finished Good Slip (§ `architecture-finished-good-slip.md`) yang contohnya SUDAH data produksi riil 536 baris —
+  Material Slip masih menunggu client isi data sungguhan sebelum eksekusi bisa dimulai (per keputusan user
+  2026-09-22: "kita tidak eksekusi sampai dapat semua kolom").
+- **Kemungkinan pola grouping serial multi-baris** — Finished Good Slip (modul serupa dalam rantai Manufacture yang
+  sama) TERNYATA punya pola 1 barang jadi dengan BEBERAPA nomor seri ditulis di BEBERAPA BARIS Excel terpisah (§
+  "Data Riil Client" di `architecture-finished-good-slip.md`), bukan 1 baris = 1 serial. Material Slip juga punya
+  kolom Serial Number (U/V/W) dengan struktur sheet yang MIRIP (Detail Item lalu Serial Number di kolom akhir) — WAJIB
+  diperlakukan curiga bakal punya pola sama sampai terbukti dari data riil, JANGAN asumsikan "1 baris = 1 serial" tanpa
+  cek ulang begitu client kirim data terisi.
 - **`workOrderMaterialId`** — lihat Keputusan Desain #3, perlu konfirmasi client kalau ternyata dipakai.
 
 > **Koreksi 2026-09-22** (verifikasi ulang atas permintaan user): draft pertama dokumen ini salah menulis "Dept Name
