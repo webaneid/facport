@@ -72,6 +72,8 @@ export const MODULE_CATALOG = [
   // § Fase 139 — modul PERTAMA kategori "Manufacture" (disiapkan sejak
   // Fase 126, sebelumnya 0 modul). architecture-job-costing.md.
   { key: "job_costing", label: "Job Costing (Pekerjaan Pesanan)", productLine: "facport", category: "Manufacture" },
+  // Fase 146 — penutup Job Costing (architecture-roll-over.md).
+  { key: "roll_over", label: "Roll Over (Penyelesaian Pesanan)", productLine: "facport", category: "Manufacture" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank

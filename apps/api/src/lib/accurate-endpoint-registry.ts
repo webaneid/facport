@@ -88,6 +88,9 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION], extraScopes: [GLACCOUNT_VIEW] },
   item_requisition: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION], extraScopes: [GLACCOUNT_VIEW] },
   inventory_adjustment: { endpoints: ["POST item-adjustment/save.do"], extraScopes: [GLACCOUNT_VIEW] },
+  // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
+  // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
+  roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },
   // § Fase 139 — 2 endpoint berurutan. RM item_save: scope disiapkan walau belum auto-create.
   job_costing: {
     endpoints: ["POST job-order/save.do", "POST material-adjustment/save.do", ...ITEM, ...CLASSIFICATION],

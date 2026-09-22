@@ -96,8 +96,10 @@ const LEGACY_SCOPES: Record<string, string[]> = {
 };
 
 describe("mesin scope — regresi terhadap daftar tulis-tangan lama", () => {
-  test("registri mencakup persis modul yang sama dengan daftar lama", () => {
-    expect(Object.keys(ACCURATE_ENDPOINT_REGISTRY).sort()).toEqual(Object.keys(LEGACY_SCOPES).sort());
+  // § ⊇ (bukan ==): modul baru pasca-Fase 142 (mis. roll_over) hanya ada di registri, tidak punya daftar lama.
+  test("registri mencakup semua modul di daftar lama", () => {
+    const registered = new Set(Object.keys(ACCURATE_ENDPOINT_REGISTRY));
+    for (const moduleKey of Object.keys(LEGACY_SCOPES)) expect(registered.has(moduleKey)).toBe(true);
   });
 
   for (const [moduleKey, legacy] of Object.entries(LEGACY_SCOPES)) {

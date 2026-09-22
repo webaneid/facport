@@ -60,6 +60,7 @@ const planBody = t.Object({
       // § Fase 138 — modul baru, SKU sendiri sejak awal.
       t.Literal("inventory_adjustment"),
       t.Literal("job_costing"),
+      t.Literal("roll_over"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

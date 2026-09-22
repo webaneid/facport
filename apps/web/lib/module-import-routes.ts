@@ -28,4 +28,5 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   item_requisition: "/item-requisition/import",
   inventory_adjustment: "/inventory-adjustment/import",
   job_costing: "/job-costing/import",
+  roll_over: "/roll-over/import",
 };

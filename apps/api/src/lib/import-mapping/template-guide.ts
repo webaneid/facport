@@ -1273,3 +1273,33 @@ export const jobCostingTemplateGuide: TemplateFieldGuide[] = [
   { column: "Expense Amount", required: false, example: "", description: "Nilai biaya tambahan." },
   { column: "Note", required: false, example: "", description: "Catatan untuk baris biaya tambahan ini." },
 ];
+
+// § Fase 146, architecture-roll-over.md. Penutup Job Costing. `Tipe Penyesuaian` menentukan array yang dipakai per DOKUMEN: Barang → baris jadi
+// Finished Good; Akun → baris jadi alokasi biaya ke akun (kolom "Expense ..." perluasan Facport, bukan dari Excel client). TIDAK auto-create item.
+export const rollOverTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Roll Over." },
+  { column: "No Trans", required: false, example: "RO-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 Roll Over (isi SAMA di beberapa baris untuk 1 dokumen berisi banyak barang jadi). Kosongkan untuk penomoran otomatis Accurate." },
+  { column: "Job Order No", required: true, example: "JO-2026-0001", description: "Nomor Job Order (dari Job Costing) yang diselesaikan — harus SUDAH ADA di Accurate. Satu Roll Over hanya untuk satu Job Order." },
+  { column: "Tipe Penyesuaian", required: true, example: "Barang", description: "WAJIB diisi: Barang (biaya jadi barang jadi/Finished Good) atau Akun (biaya dialokasikan ke akun). Semua baris dalam 1 No Trans harus bertipe sama." },
+  { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
+  { column: "Nama Cabang", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
+  { column: "FG_Item No", required: false, example: "FG-001", description: "Kode barang jadi PERSIS seperti terdaftar di Accurate (WAJIB kalau Tipe = Barang) — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "FG_Qty", required: false, example: "10", description: "Jumlah barang jadi (WAJIB kalau Tipe = Barang)." },
+  { column: "FG_Unit", required: false, example: "PCS", description: "Satuan barang jadi, harus PERSIS terdaftar di Accurate." },
+  { column: "SN - Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini — WAJIB diisi bersama \"Serial No\" kalau dipakai." },
+  { column: "Serial No", required: false, example: "", description: "Nomor seri barang jadi (tracking barang bernomor seri)." },
+  { column: "SN - Exp Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+  { column: "Project No", required: false, example: "", description: "Nomor proyek (untuk baris Barang)." },
+  { column: "Dept Name", required: false, example: "", description: "Nama departemen, harus PERSIS terdaftar di Accurate." },
+  { column: "Portion", required: false, example: "100", description: "Persentase alokasi biaya (angka, mis. 100 untuk 100%)." },
+  { column: "Warehouse", required: false, example: "", description: "Nama gudang penerima barang jadi, harus PERSIS terdaftar di Accurate." },
+  { column: "Expense Acc No", required: false, example: "", description: "Khusus Tipe = Akun: kode akun (COA) tujuan alokasi biaya (WAJIB untuk Tipe Akun)." },
+  { column: "Expense Amount", required: false, example: "", description: "Khusus Tipe = Akun: nominal biaya yang dialokasikan (WAJIB untuk Tipe Akun)." },
+  { column: "Expense Name", required: false, example: "", description: "Khusus Tipe = Akun: nama biaya." },
+  { column: "Expense Note", required: false, example: "", description: "Khusus Tipe = Akun: catatan biaya." },
+  ...Array.from({ length: 10 }, (_, i) => ({ column: `Atribut Tambahan ${i + 1}`, required: false, example: "", description: `Atribut Tambahan karakter ${i + 1} (charField${i + 1}) — field custom Accurate, untuk baris Barang.` })),
+  ...Array.from({ length: 10 }, (_, i) => ({ column: `Atribut Number ${i + 1}`, required: false, example: "", description: `Atribut Tambahan angka ${i + 1} (numericField${i + 1}), untuk baris Barang.` })),
+  { column: "Atribut Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut Tambahan tanggal 1 (dateField1), untuk baris Barang." },
+  { column: "Atribut Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut Tambahan tanggal 2 (dateField2), untuk baris Barang." },
+  ...Array.from({ length: 10 }, (_, i) => ({ column: `Financial Category ${i + 1}`, required: false, example: "", description: `Kategori Keuangan ${i + 1} — dibuatkan otomatis di Accurate kalau belum ada.` })),
+];

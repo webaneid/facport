@@ -239,6 +239,18 @@ import {
   type JobCostingGroup,
 } from "../lib/import-mapping/job-costing.mapping";
 
+// § Fase 146 — Roll Over (penutup Job Costing), 1 panggilan `roll-over/save.do`, grouping DEFAULT ADR-0011 by "No Trans" (opsional),
+// TIDAK auto-create item/akun (§ architecture-roll-over.md). Kategori Keuangan 10 slot di-auto-create (`ensureRollOverDataClassifications`).
+import { saveRollOver } from "../lib/accurate-roll-over";
+import {
+  buildRollOverPayload,
+  extractDataClassificationValues as extractDataClassificationValuesRO,
+  groupRollOverRows,
+  rollOverRowError,
+  validateGroupConsistency as validateRollOverGroupConsistency,
+  type RollOverGroup,
+} from "../lib/import-mapping/roll-over.mapping";
+
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
 // item-level yang TERISI di baris-baris ini, SEBELUM `saveSalesInvoice`
@@ -499,6 +511,23 @@ async function ensureItemRequisitionDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractDataClassificationValuesIR(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 146 — Roll Over, Kategori Keuangan 10 slot (dipakai detailItem[] maupun detailExpense[]).
+async function ensureRollOverDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesRO(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1486,6 +1515,48 @@ export async function processInventoryAdjustmentGroup(
 }
 
 // ============================================================
+// § Fase 146 — Roll Over: 1 panggilan `roll-over/save.do` per grup. Validasi SEBELUM kirim: tiap baris lolos `rollOverRowError` (tipe dikenali +
+// field wajib per tipe), header grup konsisten (tipe & Job Order sama), Cabang/Tanggal/Job Order terisi di baris pertama.
+// ============================================================
+export type RollOverGroupResult = {
+  rollOverId: number;
+  rowIds: string[];
+};
+
+export async function processRollOverGroup(
+  ctx: AccurateSessionContext,
+  group: RollOverGroup,
+  columnMapping: Record<string, string>,
+): Promise<RollOverGroupResult> {
+  for (const row of group.rows) {
+    const errors = rollOverRowError(row.rawData, columnMapping);
+    if (errors.includes("rollOverType")) {
+      throw new Error(`Tipe Penyesuaian tidak dikenali di baris ${row.id} — harus Barang atau Akun.`);
+    }
+    if (errors.length > 0) {
+      throw new Error(`Kolom wajib kosong di baris ${row.id}: ${errors.join(", ")} (sesuai Tipe Penyesuaian).`);
+    }
+  }
+  const consistencyError = validateRollOverGroupConsistency(group, columnMapping);
+  if (consistencyError) throw new Error(consistencyError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildRollOverPayload(rawRows, columnMapping);
+  for (const [key, label] of [
+    ["transDate", "Tanggal"],
+    ["jobOrderNumber", "Job Order No"],
+    ["branchName", "Nama Cabang"],
+  ] as const) {
+    if (payload[key] === undefined || payload[key] === "") throw new Error(`Kolom ${label} wajib diisi untuk Roll Over.`);
+  }
+
+  await ensureRollOverDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveRollOver(ctx, payload);
+  return { rollOverId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 139 — Job Costing: BUKAN 1 transaksi, 2 PANGGILAN BERURUTAN.
 // (1) `job-order/save.do` — shell + detailExpense[]. (2)
 // `material-adjustment/save.do` — realisasi RM, `jobOrderNumber` =
@@ -2449,6 +2520,31 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: result.jobOrderNumber,
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else if (batch.module === "roll_over") {
+      const groups = groupRollOverRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processRollOverGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.rollOverId),
               errorMessage: null,
               processedAt: new Date(),
             })

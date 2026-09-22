@@ -618,6 +618,34 @@ function JobCostingView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 146 — Roll Over, mirror `RollOverView`/`InventoryAdjustmentView` (read-only, tanpa grouping kolom khusus, § architecture-roll-over.md).
+function RollOverView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Roll Over Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -637,6 +665,7 @@ const MODULE_TITLE: Record<string, string> = {
   item_requisition: "Hasil Import Item Requisition",
   inventory_adjustment: "Hasil Import Inventory Adjustment",
   job_costing: "Hasil Import Job Costing",
+  roll_over: "Hasil Import Roll Over",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -715,6 +744,7 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "item_requisition" && <ItemRequisitionView rows={rows} />}
           {batch.module === "inventory_adjustment" && <InventoryAdjustmentView rows={rows} />}
           {batch.module === "job_costing" && <JobCostingView rows={rows} />}
+          {batch.module === "roll_over" && <RollOverView rows={rows} />}
         </CardContent>
       </Card>
     </div>
