@@ -91,6 +91,10 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
   // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
   roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },
+  // § Fase 147 — Work Order: save + lookup cabang (`branchId` REQUIRED, tidak auto-create) + PIC (find-or-create). Tanpa item_save (tidak auto-create item).
+  work_order: {
+    endpoints: ["POST work-order/save.do", "GET branch/list.do", "GET wo-pic/list.do", "POST wo-pic/save.do", ...CLASSIFICATION],
+  },
   // § Fase 139 — 2 endpoint berurutan. RM item_save: scope disiapkan walau belum auto-create.
   job_costing: {
     endpoints: ["POST job-order/save.do", "POST material-adjustment/save.do", ...ITEM, ...CLASSIFICATION],

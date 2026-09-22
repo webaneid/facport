@@ -1,6 +1,6 @@
 # Architecture — Work Order (Perintah Kerja)
 
-> Fase 136 (Planned — arsitektur SAJA, implementasi belum dikerjakan).
+> Fase 136 (arsitektur) → **diimplementasikan Fase 147 (2026-09-22, di `develop`, belum dirilis)**. Keputusan eksekusi (bentuk Excel per-baris-lebar, header duplikat, tanpa auto-create item, `branchId` via lookup): `docs/phases/phase-147-modul-work-order.md`.
 > Modul kategori "Manufacture", sistem produksi BOM (Bill of Material) —
 > TERPISAH TOTAL dari Job Costing/Roll Over (metode job-costing tanpa
 > BOM, § `architecture-job-costing.md`). Menggantikan slot "Other
@@ -279,7 +279,7 @@ berbeda) untuk membedakan baris masuk section mana — TIDAK bisa
 mengandalkan nama kolom Excel (karena namanya SAMA persis di beberapa
 section), harus pakai **posisi kolom absolut**.
 
-## Keputusan Desain (Rencana)
+## Keputusan Desain (lihat phase-147 untuk perubahan saat eksekusi)
 1. **Cross-API: `findOrCreateWoPic(name)`** — helper baru, pola
    IDENTIK `findOrCreateVendor`/`findOrCreateItem` tapi target
    `/api/wo-pic/list.do` (cari by nama) + `/api/wo-pic/save.do` (cuma
@@ -299,7 +299,7 @@ section), harus pakai **posisi kolom absolut**.
    kalau tidak ketemu (beda kebijakan dari item/vendor/wo-pic) — fail
    dengan pesan jelas, karena cabang adalah data struktural yang wajar
    ditolak kalau salah ketik/belum ada, bukan dibuat otomatis.
-3. **Auto-create Item** — Produk Utama, Raw Material, Extra Finish
+3. **~~Auto-create Item~~ (DIBATALKAN saat eksekusi Fase 147 — produk utama tanpa kolom nama; item dikirim apa adanya)** — rencana awal: auto-create Item — Produk Utama, Raw Material, Extra Finish
    Good semuanya referensi `itemNo` — pola `findOrCreateItem` dipakai
    di ke-3 konteks ini sekaligus (multi-role item dalam 1 dokumen,
    belum ada preseden modul lain yang punya 3 "peran" item berbeda
@@ -388,7 +388,7 @@ validasi), bukan sekadar cek string kosong seperti modul lain.
 - Pola auto-create find-or-create: Fase 05 (`findOrCreateVendor`), Fase 78
 - Preseden Branch Wajib: `architecture-purchase-payment.md` § "Fase 90"
 
-## Registri endpoint & scope (siap dipakai saat dibangun — Fase 142)
+## Registri endpoint & scope (sudah terpasang di `accurate-endpoint-registry.ts`, Fase 147; scope turunan: `work_order_save`, `branch_view`, `wo_person_in_charge_view/save`, `data_classification_view/save` + baseline `item_view`)
 Saat modul dibangun, daftarkan entry `work_order` di `apps/api/src/lib/accurate-endpoint-registry.ts`: `POST work-order/save.do` (`work_order_save`), lookup PIC
 `GET wo-pic/list.do` (`wo_person_in_charge_view`) + `POST wo-pic/save.do` (`wo_person_in_charge_save`, bila auto-create PIC), lookup cabang `GET branch/list.do`
 (`branch_view`; `POST branch/save.do` = `branch_save` HANYA bila cabang boleh dibuat otomatis — keputusan desain, default TIDAK). `manufacture_order_save`

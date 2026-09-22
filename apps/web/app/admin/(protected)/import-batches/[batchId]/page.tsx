@@ -646,6 +646,34 @@ function RollOverView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 147 — Work Order, mirror `WorkOrderView`/`InventoryAdjustmentView` (read-only, tanpa grouping kolom khusus, § architecture-work-order.md).
+function WorkOrderView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Work Order Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 const MODULE_TITLE: Record<string, string> = {
   purchase_invoice: "Hasil Import Faktur Pembelian",
   sales_invoice: "Hasil Import Faktur Penjualan",
@@ -666,6 +694,7 @@ const MODULE_TITLE: Record<string, string> = {
   inventory_adjustment: "Hasil Import Inventory Adjustment",
   job_costing: "Hasil Import Job Costing",
   roll_over: "Hasil Import Roll Over",
+  work_order: "Hasil Import Work Order",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -745,6 +774,7 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "inventory_adjustment" && <InventoryAdjustmentView rows={rows} />}
           {batch.module === "job_costing" && <JobCostingView rows={rows} />}
           {batch.module === "roll_over" && <RollOverView rows={rows} />}
+          {batch.module === "work_order" && <WorkOrderView rows={rows} />}
         </CardContent>
       </Card>
     </div>

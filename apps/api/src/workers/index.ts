@@ -251,6 +251,20 @@ import {
   type RollOverGroup,
 } from "../lib/import-mapping/roll-over.mapping";
 
+// § Fase 147 — Work Order (produksi berbasis BOM): 1 panggilan `work-order/save.do` setelah lookup cabang (`branchId`) & PIC
+// (`personInChargeId`), grouping DEFAULT ADR-0011 by "Trans No" (opsional), TIDAK auto-create item/akun (§ architecture-work-order.md).
+import { findOrCreateWoPic, resolveBranchId, saveWorkOrder } from "../lib/accurate-work-order";
+import {
+  buildWorkOrderPayload,
+  extractDataClassificationValues as extractDataClassificationValuesWO,
+  extractPersonInCharge,
+  groupWorkOrderRows,
+  validateGroupConsistency as validateWorkOrderGroupConsistency,
+  workOrderHeaderMissing,
+  workOrderRowError,
+  type WorkOrderGroup,
+} from "../lib/import-mapping/work-order.mapping";
+
 // § Fase 68 — auto-create Kategori Keuangan (`/api/data-classification`,
 // § accurate-data-classification.ts) untuk tiap nilai Atribut Tambahan
 // item-level yang TERISI di baris-baris ini, SEBELUM `saveSalesInvoice`
@@ -528,6 +542,23 @@ async function ensureRollOverDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractDataClassificationValuesRO(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 147 — Work Order, CLS1-3 dari SEMUA section (bahan baku, biaya produksi, produk sampingan).
+async function ensureWorkOrderDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesWO(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1557,6 +1588,51 @@ export async function processRollOverGroup(
 }
 
 // ============================================================
+// § Fase 147 — Work Order: 1 panggilan `work-order/save.do` per grup. Validasi SEBELUM kirim/lookup: tiap baris lolos `workOrderRowError`
+// (tipe dikenali, section lengkap, angka numerik), header grup konsisten, header WAJIB terisi di baris pertama. Lalu resolve `branchId`
+// (lookup, TIDAK auto-create) dan `personInChargeId` (angka murni = ID langsung; selain itu find-or-create by nama).
+// ============================================================
+export type WorkOrderGroupResult = {
+  workOrderId: number;
+  rowIds: string[];
+};
+
+export async function processWorkOrderGroup(
+  ctx: AccurateSessionContext,
+  group: WorkOrderGroup,
+  columnMapping: Record<string, string>,
+): Promise<WorkOrderGroupResult> {
+  for (const row of group.rows) {
+    const errors = workOrderRowError(row.rawData, columnMapping);
+    if (errors.includes("workOrderType")) {
+      throw new Error(`Work Order Type tidak dikenali di baris ${row.id} — harus Kode Produk, Nomor Formula, atau Nomor Rencana Produksi.`);
+    }
+    if (errors.length > 0) {
+      throw new Error(`Kolom wajib kosong atau tidak valid di baris ${row.id}: ${errors.join(", ")}.`);
+    }
+  }
+  const consistencyError = validateWorkOrderGroupConsistency(group, columnMapping);
+  if (consistencyError) throw new Error(consistencyError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const headerMissing = workOrderHeaderMissing(rawRows[0] ?? {}, columnMapping);
+  if (headerMissing.length > 0) {
+    throw new Error(`Kolom header wajib diisi di baris pertama Work Order: ${headerMissing.join(", ")}.`);
+  }
+
+  const payload = buildWorkOrderPayload(rawRows, columnMapping);
+  payload.branchId = await resolveBranchId(ctx, String(payload.branchName));
+
+  const pic = extractPersonInCharge(rawRows[0] ?? {}, columnMapping);
+  if (pic !== null) payload.personInChargeId = /^\d+$/.test(pic) ? Number(pic) : await findOrCreateWoPic(ctx, pic);
+
+  await ensureWorkOrderDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveWorkOrder(ctx, payload);
+  return { workOrderId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
 // § Fase 139 — Job Costing: BUKAN 1 transaksi, 2 PANGGILAN BERURUTAN.
 // (1) `job-order/save.do` — shell + detailExpense[]. (2)
 // `material-adjustment/save.do` — realisasi RM, `jobOrderNumber` =
@@ -2545,6 +2621,31 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.rollOverId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else if (batch.module === "work_order") {
+      const groups = groupWorkOrderRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processWorkOrderGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.workOrderId),
               errorMessage: null,
               processedAt: new Date(),
             })

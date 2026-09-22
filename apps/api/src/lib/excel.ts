@@ -14,7 +14,20 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   const sheet = workbook.Sheets[sheetName]!;
 
   const headerRow = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })[0] ?? [];
-  const headers = headerRow.map((h) => String(h ?? "").trim()).filter(Boolean);
+  // § Fase 147 — header DUPLIKAT (Excel client Work Order mengulang "Project No"/"Process Category Name"/"CLS1" di beberapa section):
+  // `sheet_to_json` (dipakai `rawRows` di bawah) menamai kemunculan ke-2 dst "X_1", "X_2", sedangkan `header: 1` mengembalikan "X" apa
+  // adanya. Tanpa penyamaan, daftar `headers` (UI "Cocokkan Kolom") berisi nama sama berulang dan TIDAK ada key baris yang cocok untuk
+  // kemunculan ke-2+ (nilainya hilang diam-diam). Di sini `headers` diberi penamaan dedupe yang SAMA dengan key baris.
+  const usedHeaders = new Set<string>();
+  const headers = headerRow
+    .map((h) => String(h ?? "").trim())
+    .filter(Boolean)
+    .map((name) => {
+      let candidate = name;
+      for (let counter = 1; usedHeaders.has(candidate); counter++) candidate = `${name}_${counter}`;
+      usedHeaders.add(candidate);
+      return candidate;
+    });
 
   // § BUG DITEMUKAN 2026-09-11 (client retest Purchase Payment, error
   // Accurate "Nilai Pembayaran tidak mencukupi") — `sheet_to_json` pakai

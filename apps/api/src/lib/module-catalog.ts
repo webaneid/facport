@@ -74,6 +74,8 @@ export const MODULE_CATALOG = [
   { key: "job_costing", label: "Job Costing (Pekerjaan Pesanan)", productLine: "facport", category: "Manufacture" },
   // Fase 146 — penutup Job Costing (architecture-roll-over.md).
   { key: "roll_over", label: "Roll Over (Penyelesaian Pesanan)", productLine: "facport", category: "Manufacture" },
+  // Fase 147 — produksi berbasis BOM (architecture-work-order.md).
+  { key: "work_order", label: "Work Order (Perintah Kerja)", productLine: "facport", category: "Manufacture" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank

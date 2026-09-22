@@ -42,3 +42,19 @@ describe("parseExcelBuffer — header dengan spasi nyempil (bug fix)", () => {
     ]);
   });
 });
+
+// § Fase 147 — Excel client Work Order mengulang nama kolom antar-section.
+describe("parseExcelBuffer — header duplikat", () => {
+  test("kemunculan ke-2+ diberi akhiran _1, _2 dan `headers` cocok dengan key baris", () => {
+    const sheet = XLSX.utils.aoa_to_sheet([
+      ["Project No", "Qty", "Project No", "Project No"],
+      ["P-A", 1, "P-B", "P-C"],
+    ]);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, sheet, "Sheet1");
+    const parsed = parseExcelBuffer(XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer);
+    expect(parsed.headers).toEqual(["Project No", "Qty", "Project No_1", "Project No_2"]);
+    for (const header of parsed.headers) expect(parsed.rows[0]).toHaveProperty(header);
+    expect(parsed.rows[0]).toMatchObject({ "Project No": "P-A", "Project No_1": "P-B", "Project No_2": "P-C" });
+  });
+});

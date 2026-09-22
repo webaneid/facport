@@ -36,6 +36,7 @@ import { DeleteImportDialog as ItemRequisitionDeleteImportDialog } from "@/compo
 import { DeleteImportDialog as InventoryAdjustmentDeleteImportDialog } from "@/components/inventory-adjustment/delete-import-dialog";
 import { DeleteImportDialog as JobCostingDeleteImportDialog } from "@/components/job-costing/delete-import-dialog";
 import { DeleteImportDialog as RollOverDeleteImportDialog } from "@/components/roll-over/delete-import-dialog";
+import { DeleteImportDialog as WorkOrderDeleteImportDialog } from "@/components/work-order/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -192,6 +193,9 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "roll_over" && (
                     <RollOverDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "work_order" && (
+                    <WorkOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

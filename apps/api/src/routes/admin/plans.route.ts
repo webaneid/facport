@@ -61,6 +61,7 @@ const planBody = t.Object({
       t.Literal("inventory_adjustment"),
       t.Literal("job_costing"),
       t.Literal("roll_over"),
+      t.Literal("work_order"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, PackageCheck, Undo2, FileSignature, RotateCcw, Coins, ArrowLeftRight, ClipboardList, ClipboardCheck, Boxes, Factory, CheckCheck, type LucideIcon } from "lucide-react";
+import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, PackageCheck, Undo2, FileSignature, RotateCcw, Coins, ArrowLeftRight, ClipboardList, ClipboardCheck, Boxes, Factory, CheckCheck, Cog, type LucideIcon } from "lucide-react";
 import type { ModuleKey } from "./module-options";
 
 // § Fase 47 — icon per modul di kartu Fitur landing page. REUSE PERSIS
@@ -29,6 +29,8 @@ export const LANDING_MODULE_ICON: Record<ModuleKey, LucideIcon> = {
   job_costing: Factory,
   // § Fase 146 — penutup Job Costing.
   roll_over: CheckCheck,
+  // § Fase 147 — produksi berbasis BOM.
+  work_order: Cog,
 };
 
 // § 1 baris tagline singkat per modul — konten MARKETING murni (bukan
@@ -54,5 +56,6 @@ export const LANDING_MODULE_TAGLINE: Record<ModuleKey, string> = {
   item_requisition: "Catat permintaan barang antar gudang ke Accurate dari Excel, sesuai format Permintaan Barang yang kamu pakai sehari-hari.",
   inventory_adjustment: "Catat penyesuaian stok (stok opname, barang rusak/hilang) ke Accurate dari Excel, lengkap dengan nomor seri per barang.",
   job_costing: "Catat pekerjaan pesanan (Job Order) dan realisasi pemakaian bahan baku ke Accurate dari Excel, lengkap dengan gudang dan nomor seri.",
+  work_order: "Buat perintah kerja produksi berbasis formula (BOM) lengkap dengan bahan baku, biaya, proses, dan produk sampingan, langsung dari Excel ke Accurate.",
   roll_over: "Selesaikan pesanan produksi: ubah biaya Job Order jadi barang jadi atau alokasi biaya ke akun, langsung dari Excel ke Accurate.",
 };
