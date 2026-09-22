@@ -1,3 +1,11 @@
+## 2.10.0 (2026-09-22)
+
+* Merge pull request #71 from webaneid/develop ([0905d7d](https://github.com/webaneid/facport/commit/0905d7d)), closes [#71](https://github.com/webaneid/facport/issues/71)
+* fix(invoice): tambahkan kolom Fiscal Rate (Kurs Pajak) di Sales Invoice & Purchase Invoice ([a2bf805](https://github.com/webaneid/facport/commit/a2bf805))
+* fix(ui): rapikan tabel Invoice admin - kolom Nomor/Total tidak lagi menimpa kolom sebelah ([776e29b](https://github.com/webaneid/facport/commit/776e29b))
+* refactor(ui): pindahkan menu Tagihan dari Sidebar ke dropdown avatar Topbar ([a2529a5](https://github.com/webaneid/facport/commit/a2529a5))
+* feat(ui): tampilkan nama Data Usaha aktif di Topbar dashboard pelanggan ([1bdac5f](https://github.com/webaneid/facport/commit/1bdac5f))
+
 ## 2.9.0 (2026-09-22)
 
 * Merge pull request #70 from webaneid/develop ([f04f004](https://github.com/webaneid/facport/commit/f04f004)), closes [#70](https://github.com/webaneid/facport/issues/70)
