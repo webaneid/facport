@@ -155,8 +155,8 @@
 | 145  | Cutover Koneksi Accurate ke Production: putus total (migrasi 0030), dirilis v2.7.0; tersisa uji browser, pengumuman, pemantauan, kontrak | In Progress | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
 | 146  | Modul Roll Over (Penyelesaian Pesanan) — penutup Job Costing, kategori Manufacture | Done | `docs/architecture/architecture-roll-over.md` | `docs/phases/phase-146-modul-roll-over.md` |
 | 147  | Modul Work Order (Perintah Kerja) — produksi berbasis BOM, 4 array, lookup cabang & PIC | Done | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-147-modul-work-order.md` |
-| 148  | Modul Material Slip (Pengambilan Bahan Baku) — realisasi bahan baku dari Work Order | Planned | `docs/architecture/architecture-material-slip.md` | `docs/phases/phase-148-modul-material-slip.md` |
-| 149  | Modul Finished Good Slip (Penyelesaian Barang Jadi) — realisasi FG dari Work Order, lookup cabang+gudang | Planned | `docs/architecture/architecture-finished-good-slip.md` | `docs/phases/phase-149-modul-finished-good-slip.md` |
+| 148  | Modul Material Slip (Pengambilan Bahan Baku) — realisasi bahan baku dari Work Order | Done | `docs/architecture/architecture-material-slip.md` | `docs/phases/phase-148-modul-material-slip.md` |
+| 149  | Modul Finished Good Slip (Penyelesaian Barang Jadi) — realisasi FG dari Work Order, lookup cabang+gudang | Done | `docs/architecture/architecture-finished-good-slip.md` | `docs/phases/phase-149-modul-finished-good-slip.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

@@ -41,6 +41,8 @@ import {
   Factory,
   CheckCheck,
   Cog,
+  PackageOpen,
+  PackageSearch,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -142,6 +144,10 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/roll-over/import", label: "Import Roll Over", icon: CheckCheck, moduleKey: "roll_over" },
         // § Fase 147 — produksi berbasis BOM (architecture-work-order.md).
         { href: "/work-order/import", label: "Import Work Order", icon: Cog, moduleKey: "work_order" },
+        // § Fase 148 — realisasi bahan baku dari Work Order (architecture-material-slip.md).
+        { href: "/material-slip/import", label: "Import Material Slip", icon: PackageOpen, moduleKey: "material_slip" },
+        // § Fase 149 — realisasi barang jadi dari Work Order (architecture-finished-good-slip.md).
+        { href: "/finished-good-slip/import", label: "Import Finished Good Slip", icon: PackageSearch, moduleKey: "finished_good_slip" },
         // § diminta user 2026-09-06 — arsip GABUNGAN lintas semua modul,
         // TANPA moduleKey (selalu tampil, tidak digerbang subscription
         // modul tertentu). TANPA kategori (moduleKey kosong → cluster

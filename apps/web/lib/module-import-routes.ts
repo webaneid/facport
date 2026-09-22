@@ -30,4 +30,6 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   job_costing: "/job-costing/import",
   roll_over: "/roll-over/import",
   work_order: "/work-order/import",
+  material_slip: "/material-slip/import",
+  finished_good_slip: "/finished-good-slip/import",
 };

@@ -251,6 +251,32 @@ import {
   type RollOverGroup,
 } from "../lib/import-mapping/roll-over.mapping";
 
+// § Fase 149 — Finished Good Slip (realisasi barang jadi dari Work Order): 1 panggilan `finished-good-slip/save.do` setelah
+// resolve `branchId` DAN `detailItem[].warehouseId` (KEDUANYA REQUIRED — beda dari Material Slip). Grouping 2-level sama
+// (§ manufacture-slip-shared.ts) — data riil client: 1 barang, banyak baris serial lanjutan (pola dominan).
+import { resolveWarehouseId, saveFinishedGoodSlip } from "../lib/accurate-finished-good-slip";
+import {
+  buildFinishedGoodSlipPayload,
+  extractDataClassificationValues as extractDataClassificationValuesFGS,
+  finishedGoodSlipHeaderMissing,
+  finishedGoodSlipRowError,
+  groupFinishedGoodSlipRows,
+  type FinishedGoodSlipGroup,
+} from "../lib/import-mapping/finished-good-slip.mapping";
+
+// § Fase 148 — Material Slip (realisasi bahan baku dari Work Order): 1 panggilan `material-slip/save.do`, grouping 2-level
+// (§ manufacture-slip-shared.ts, dari data riil client 2026-09-22 — 1 dokumen bisa punya BEBERAPA barang, 1 barang bisa
+// punya BEBERAPA nomor seri di baris terpisah). TIDAK ada lookup cabang/gudang (§ architecture-material-slip.md "Quirk").
+import { saveMaterialSlip } from "../lib/accurate-material-slip";
+import {
+  buildMaterialSlipPayload,
+  extractDataClassificationValues as extractDataClassificationValuesMS,
+  groupMaterialSlipRows,
+  materialSlipHeaderMissing,
+  materialSlipRowError,
+  type MaterialSlipGroup,
+} from "../lib/import-mapping/material-slip.mapping";
+
 // § Fase 147 — Work Order (produksi berbasis BOM): 1 panggilan `work-order/save.do` setelah lookup cabang (`branchId`) & PIC
 // (`personInChargeId`), grouping DEFAULT ADR-0011 by "Trans No" (opsional), TIDAK auto-create item/akun (§ architecture-work-order.md).
 import { findOrCreateWoPic, resolveBranchId, saveWorkOrder } from "../lib/accurate-work-order";
@@ -542,6 +568,40 @@ async function ensureRollOverDataClassifications(
   const seen = new Set<string>();
   for (const rawRow of rawRows) {
     for (const { index, name } of extractDataClassificationValuesRO(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 149 — Finished Good Slip, CLS1-5.
+async function ensureFinishedGoodSlipDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesFGS(rawRow, columnMapping)) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 148 — Material Slip, CLS1-5.
+async function ensureMaterialSlipDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesMS(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1585,6 +1645,95 @@ export async function processRollOverGroup(
 
   const result = await saveRollOver(ctx, payload);
   return { rollOverId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 149 — Finished Good Slip: 1 panggilan `finished-good-slip/save.do` per grup. Validasi SEBELUM kirim/lookup: tiap
+// baris ITEM lolos `finishedGoodSlipRowError` (itemNo/quantity/portion wajib bersamaan), header dokumen (tanggal/cabang/
+// Work Order No) lengkap di baris pertama. Lalu resolve `branchId` (lookup, TIDAK auto-create) dan PER BARANG
+// `detailItem[].warehouseId` (lookup, TIDAK auto-create) — beda dari Work Order yang cuma resolve 1 branchId di header.
+// ============================================================
+export type FinishedGoodSlipGroupResult = {
+  finishedGoodSlipId: number;
+  rowIds: string[];
+};
+
+export async function processFinishedGoodSlipGroup(
+  ctx: AccurateSessionContext,
+  group: FinishedGoodSlipGroup,
+  columnMapping: Record<string, string>,
+): Promise<FinishedGoodSlipGroupResult> {
+  const rowIds = group.rows.map((r) => r.id);
+  for (const item of group.items) {
+    const errors = finishedGoodSlipRowError(item.itemRow.rawData, columnMapping);
+    if (errors.length > 0) {
+      throw new Error(`Kolom wajib kosong di baris ${item.itemRow.id}: ${errors.join(", ")} (Item No, Qty, dan Portion wajib diisi bersamaan).`);
+    }
+  }
+  const headerMissing = finishedGoodSlipHeaderMissing(group.rows[0]?.rawData ?? {}, columnMapping);
+  if (headerMissing.length > 0) {
+    throw new Error(`Kolom header wajib diisi di baris pertama Finished Good Slip: ${headerMissing.join(", ")}.`);
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  await ensureFinishedGoodSlipDataClassifications(ctx, rawRows, columnMapping);
+
+  const payload = buildFinishedGoodSlipPayload(group, columnMapping);
+  payload.branchId = await resolveBranchId(ctx, String(payload.branchName));
+
+  const detailItem = payload.detailItem as Record<string, unknown>[];
+  const warehouseIdCache = new Map<string, number>();
+  for (const detail of detailItem) {
+    const warehouseName = detail.warehouseName as string | undefined;
+    if (!warehouseName) continue;
+    let warehouseId = warehouseIdCache.get(warehouseName);
+    if (warehouseId === undefined) {
+      warehouseId = await resolveWarehouseId(ctx, warehouseName);
+      warehouseIdCache.set(warehouseName, warehouseId);
+    }
+    detail.warehouseId = warehouseId;
+  }
+
+  const result = await saveFinishedGoodSlip(ctx, payload);
+  return { finishedGoodSlipId: result.id, rowIds };
+}
+
+// ============================================================
+// § Fase 148 — Material Slip: 1 panggilan `material-slip/save.do` per grup. Validasi SEBELUM kirim: tiap baris ITEM
+// (bukan lanjutan serial) lolos `materialSlipRowError` (tipe dikenali bila kolomnya terisi, itemNo wajib), header
+// dokumen (tanggal, Work Order No, tipe) lengkap di baris pertama.
+// ============================================================
+export type MaterialSlipGroupResult = {
+  materialSlipId: number;
+  rowIds: string[];
+};
+
+export async function processMaterialSlipGroup(
+  ctx: AccurateSessionContext,
+  group: MaterialSlipGroup,
+  columnMapping: Record<string, string>,
+): Promise<MaterialSlipGroupResult> {
+  const rowIds = group.rows.map((r) => r.id);
+  for (const item of group.items) {
+    const errors = materialSlipRowError(item.itemRow.rawData, columnMapping);
+    if (errors.includes("materialSlipType")) {
+      throw new Error(`Material Slip Type tidak dikenali di baris ${item.itemRow.id} — harus Pengambilan atau Pengembalian.`);
+    }
+    if (errors.length > 0) {
+      throw new Error(`Kolom wajib kosong di baris ${item.itemRow.id}: ${errors.join(", ")}.`);
+    }
+  }
+  const headerMissing = materialSlipHeaderMissing(group.rows[0]?.rawData ?? {}, columnMapping);
+  if (headerMissing.length > 0) {
+    throw new Error(`Kolom header wajib diisi di baris pertama Material Slip: ${headerMissing.join(", ")}.`);
+  }
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  await ensureMaterialSlipDataClassifications(ctx, rawRows, columnMapping);
+
+  const payload = buildMaterialSlipPayload(group, columnMapping);
+  const result = await saveMaterialSlip(ctx, payload);
+  return { materialSlipId: result.id, rowIds };
 }
 
 // ============================================================
@@ -2646,6 +2795,56 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.workOrderId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else if (batch.module === "material_slip") {
+      const groups = groupMaterialSlipRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processMaterialSlipGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.materialSlipId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+    } else if (batch.module === "finished_good_slip") {
+      const groups = groupFinishedGoodSlipRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processFinishedGoodSlipGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.finishedGoodSlipId),
               errorMessage: null,
               processedAt: new Date(),
             })

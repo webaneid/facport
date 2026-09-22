@@ -1,8 +1,8 @@
 # Fase 148 — Modul Material Slip (Pengambilan Bahan Baku)
 
-**Status:** Planned
-**Mulai:** —
-**Selesai:** —
+**Status:** Done
+**Mulai:** 2026-09-22
+**Selesai:** 2026-09-22
 
 ## Tujuan
 Bangun modul import Material Slip end-to-end sesuai `docs/architecture/architecture-material-slip.md`: realisasi
@@ -11,17 +11,17 @@ pengambilan/pengembalian bahan baku dari Work Order, 1 panggilan `POST material-
 belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
 
 ## Scope (task)
-- [ ] T1 `apps/api/src/lib/import-mapping/material-slip.mapping.ts` (+ tes): dictionary `materialSlipType`
+- [x] T1 `apps/api/src/lib/import-mapping/material-slip.mapping.ts` (+ tes): dictionary `materialSlipType`
       (ITEM_PICK/ITEM_RETURN), grouping by "Trans No" (DEFAULT ADR-0011), validasi baris (itemNo wajib), payload builder
       (TANPA lookup branchId/warehouseId — § Quirk arsitektur)
-- [ ] T2 `apps/api/src/lib/accurate-material-slip.ts` (`saveMaterialSlip`)
-- [ ] T3 `apps/api/src/routes/material-slip-import.route.ts` (+ tes), termasuk `checkSubscriptionScopes`
-- [ ] T4 Registri endpoint & scope: entry `material_slip` (`POST material-slip/save.do` + Kategori Keuangan 5 slot)
-- [ ] T5 `processMaterialSlipGroup` + `ensureMaterialSlipDataClassifications` + dispatch di `workers/index.ts`
-- [ ] T6 Titik registrasi checklist § 3b (template-guide, module-catalog, plans.route, app.ts, landing-content, sidebar,
+- [x] T2 `apps/api/src/lib/accurate-material-slip.ts` (`saveMaterialSlip`)
+- [x] T3 `apps/api/src/routes/material-slip-import.route.ts` (+ tes), termasuk `checkSubscriptionScopes`
+- [x] T4 Registri endpoint & scope: entry `material_slip` (`POST material-slip/save.do` + Kategori Keuangan 5 slot)
+- [x] T5 `processMaterialSlipGroup` + `ensureMaterialSlipDataClassifications` + dispatch di `workers/index.ts`
+- [x] T6 Titik registrasi checklist § 3b (template-guide, module-catalog, plans.route, app.ts, landing-content, sidebar,
       module-import-routes, import-batch-table, halaman admin batch-detail) + trik verifikasi diff
-- [ ] T7 Web: 3 halaman (`import`, `import/[batchId]`, `import/riwayat`) + `delete-import-dialog` + `edit-row-dialog`
-- [ ] T8 Typecheck + lint + tes penuh; security review; dokumen (architecture, lessons-learned, PROGRESS)
+- [x] T7 Web: 3 halaman (`import`, `import/[batchId]`, `import/riwayat`) + `delete-import-dialog` + `edit-row-dialog`
+- [x] T8 Typecheck + lint + tes penuh; security review; dokumen (architecture, lessons-learned, PROGRESS)
 
 ## Referensi
 - Architecture doc: `docs/architecture/architecture-material-slip.md`
@@ -32,11 +32,11 @@ belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
 -
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
-- [ ] Type check nol error (`bun run typecheck`)
-- [ ] Security review dijalankan
-- [ ] Temuan Critical/High sudah diperbaiki (atau tidak ada temuan)
-- [ ] Temuan Medium/Low dicatat di `docs/lessons-learned.md` kalau ditunda
-- [ ] `docs/PROGRESS.md` diupdate
+- [x] Type check nol error (`bun run typecheck`)
+- [x] Security review dijalankan
+- [x] Temuan Critical/High sudah diperbaiki (atau tidak ada temuan)
+- [x] Temuan Medium/Low dicatat di `docs/lessons-learned.md` kalau ditunda
+- [x] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
 - ~~BLOCKED — menunggu data riil client~~ — **RESOLVED 2026-09-22**: client kirim contoh terisi (`material-slip-temp-v1 (1) (1).xlsx`,
@@ -48,4 +48,9 @@ belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
   kedua pola.
 - Belum diuji ke Accurate sungguhan.
 
-## Ringkasan Hasil (isi pas fase Done)
+## Ringkasan Hasil
+Modul Material Slip lengkap: modul grouping 2-level bersama `manufacture-slip-shared.ts` (+7 tes) dipakai berdua dengan Finished Good
+Slip, mapping (+12 tes), client Accurate `saveMaterialSlip` (+1 tes), worker `processMaterialSlipGroup`, route (+22 tes), registri
+scope (`material_slip_save` + Kategori Keuangan 5 slot, TANPA lookup cabang/gudang), 11 titik registrasi §3b (diff identik Roll Over
+kecuali modul bersama baru), 5 berkas web. Typecheck 0 error, lint bersih, API 1612 pass, web 97 pass; data tes dibersihkan. Security
+review: paritas guard/moduleAccess/validasi/scope check persis Roll Over (route referensi), tanpa temuan.

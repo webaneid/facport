@@ -93,6 +93,12 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   work_order: {
     endpoints: ["POST work-order/save.do", "GET branch/list.do", "GET wo-pic/list.do", "POST wo-pic/save.do", ...CLASSIFICATION],
   },
+  // § Fase 148 — Material Slip. Cabang/gudang TIDAK di-lookup (§ architecture-material-slip.md "Quirk").
+  material_slip: { endpoints: ["POST material-slip/save.do", ...CLASSIFICATION] },
+  // § Fase 149 — Finished Good Slip. Cabang & gudang KEDUANYA di-lookup (§ architecture-finished-good-slip.md "Quirk").
+  finished_good_slip: {
+    endpoints: ["POST finished-good-slip/save.do", "GET branch/list.do", "GET warehouse/list.do", ...CLASSIFICATION],
+  },
   // § Fase 139 — 2 endpoint berurutan. RM item_save: scope disiapkan walau belum auto-create.
   job_costing: {
     endpoints: ["POST job-order/save.do", "POST material-adjustment/save.do", ...ITEM, ...CLASSIFICATION],
