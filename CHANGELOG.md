@@ -1,3 +1,15 @@
+## 2.8.0 (2026-09-22)
+
+* Merge pull request #69 from webaneid/develop ([e0af4e3](https://github.com/webaneid/facport/commit/e0af4e3)), closes [#69](https://github.com/webaneid/facport/issues/69)
+* docs: catat rilis v2.7.0 (cutover koneksi Accurate) dan status Fase 145 ([a0661f9](https://github.com/webaneid/facport/commit/a0661f9))
+* docs: perbarui sisa rujukan alur OAuth lama di dokumen integrasi Accurate ([5cd2e8c](https://github.com/webaneid/facport/commit/5cd2e8c))
+* docs: sinkronkan scope modul dengan kode (registri Fase 142) dan status 5 sub-modul Fase 136 ([a89c20e](https://github.com/webaneid/facport/commit/a89c20e))
+* docs: sinkronkan status Fase 141-145 dan rujukan yang basi setelah rilis v2.7.0 ([5500a34](https://github.com/webaneid/facport/commit/5500a34))
+* docs(sop): pengingat registrasi endpoint Accurate di langkah eksekusi ([f6badfb](https://github.com/webaneid/facport/commit/f6badfb))
+* chore(scope): buang scope glaccount_view yang tidak pernah dipakai kode ([7c11dd1](https://github.com/webaneid/facport/commit/7c11dd1))
+* feat(roll-over): modul import Roll Over (Fase 146) ([cdbbed1](https://github.com/webaneid/facport/commit/cdbbed1))
+* feat(work-order): modul import Work Order + perbaikan header duplikat Excel (Fase 147) ([d217e24](https://github.com/webaneid/facport/commit/d217e24))
+
 ## 2.7.0 (2026-09-21)
 
 * Merge pull request #68 from webaneid/develop ([887c0b1](https://github.com/webaneid/facport/commit/887c0b1)), closes [#68](https://github.com/webaneid/facport/issues/68)
