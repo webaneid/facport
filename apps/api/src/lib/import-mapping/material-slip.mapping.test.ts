@@ -8,6 +8,8 @@ import {
   materialSlipRowError,
   resolveMaterialSlipType,
 } from "./material-slip.mapping";
+import { generateTemplateBuffer, parseExcelBuffer } from "../excel";
+import { materialSlipTemplateGuide } from "./template-guide";
 
 // § Fase 148, architecture-material-slip.md — Material Slip: grouping 2-level, materialSlipType enum literal (contoh riil client 2026-09-22).
 const map = materialSlipMapping.defaultColumnMap;
@@ -99,5 +101,38 @@ describe("materialSlipMapping", () => {
   });
   test("semua field defaultColumnMap valid di fieldToAccuratePath", () => {
     for (const field of Object.values(map)) expect(materialSlipMapping.fieldToAccuratePath).toHaveProperty(field);
+  });
+});
+
+describe("template unduhan — putaran template → parse → grouping (mirror route sesungguhnya)", () => {
+  test("3 baris contoh (1 dokumen, 2 barang, barang ke-2 punya baris lanjutan serial) lolos tanpa galat", () => {
+    const buffer = generateTemplateBuffer(materialSlipTemplateGuide, [
+      [
+        { column: "Branch Name", value: "Jakarta" },
+        { column: "Trans Date", value: "02/02/2026" },
+        { column: "Trans No", value: "MS-2026-0001" },
+        { column: "Material Slip Type", value: "ITEM_PICK" },
+        { column: "Work Order No", value: "WO-001" },
+        { column: "Item No", value: "10002" },
+        { column: "Qty", value: "10" },
+        { column: "Unit Name", value: "PCS" },
+        { column: "Warehouse Name", value: "GD. JAKARTA" },
+        { column: "Serial No", value: "XX2" },
+        { column: "Qty", value: "10" },
+      ],
+      [
+        { column: "Trans No", value: "MS-2026-0001" },
+        { column: "Item No", value: "10002" },
+        { column: "Serial No", value: "XX3" },
+        { column: "Qty", value: "" }, // kemunculan ke-1 "Qty" (item) dikosongkan — baris ini HANYA lanjutan serial
+        { column: "Qty", value: "5" }, // kemunculan ke-2 "Qty" (serial)
+      ],
+    ]);
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.rows).toHaveLength(3);
+
+    const columnMapping = Object.fromEntries(parsed.headers.filter((h) => materialSlipMapping.defaultColumnMap[h]).map((h) => [h, materialSlipMapping.defaultColumnMap[h]!]));
+    const rows = parsed.rows.map((r, i) => ({ id: String(i), rawData: r }));
+    for (const row of rows) expect(materialSlipRowError(row.rawData, columnMapping)).toEqual([]);
   });
 });

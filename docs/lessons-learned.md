@@ -4040,3 +4040,18 @@ dari `sheet_to_json` biasa menamai kemunculan ke-2 dst `X_1`, `X_2`. Untuk file 
 ke-2+ tidak pernah terbaca (hilang diam-diam). Belum pernah muncul karena tak ada modul lain yang headernya berulang; Excel client Work Order berulang antar-section.
 **Fix:** `headers` diberi penamaan dedupe yang SAMA dengan key baris (`lib/excel.ts`, +tes). **Pelajaran:** kalau format Excel client punya kolom bernama sama di section
 berbeda, jangan pakai posisi kolom — pakai nama hasil dedupe, dan uji putaran template → parse → mapping (tes di `work-order.mapping.test.ts`).
+
+## 2026-09-22 — Template unduhan modul multi-baris cuma 1 baris contoh; kolom berulang tertulis nama internal salah (ditemukan lewat pertanyaan user "sudah ada contoh isinya di laman?")
+**Gejala 1:** `generateTemplateBuffer` cuma tulis 1 baris contoh (dari `f.example`) — untuk Material Slip/Finished Good Slip (Fase 148/149) yang pola
+utamanya JUSTRU "1 dokumen banyak barang" / "1 barang banyak baris serial", 1 baris contoh sama sekali tidak memperagakan pola itu; tester yang
+unduh template hanya lihat contoh sesederhana modul lain. **Gejala 2:** kolom kedua "Qty" di `template-guide.ts` ditulis literal `column: "Qty_1"`
+— itu nama HASIL DEDUPE internal parser (`parseExcelBuffer`), BUKAN yang seharusnya ditulis di template unduhan (harus "Qty" lagi, PERSIS sama
+seperti Work Order Fase 147 yang sudah benar mempertahankan nama berulang apa adanya). **Fix:** `generateTemplateBuffer` digeneralisasi terima
+`extraExampleRows` (array baris tambahan, key `{column, value}[]` BUKAN array posisi — aman terhadap kolom berulang, kemunculan ke-n suatu nama
+kolom di override mengisi kemunculan ke-n kolom itu di template FIFO); kedua route sekarang kirim baris contoh multi-dokumen yang memperagakan
+pola sesungguhnya. `Qty_1` diganti balik ke `Qty`. **Bug turunan yang ketahuan saat menulis contoh itu**: baris "lanjutan serial" di kedua route
+awalnya hanya kirim 1 override untuk "Qty" (bukan 2) — FIFO otomatis mengisi kemunculan PERTAMA (qty barang), bukan kemunculan KEDUA (qty serial)
+yang dimaksud, membuat baris lanjutan itu justru jadi barang baru yang salah. Fix: override kolom berulang WAJIB sejumlah kemunculan yang ingin
+diisi, termasuk placeholder `""` untuk slot yang ingin dikosongkan. **Pelajaran:** tes route BARU ditambah yang benar-benar UNDUH template lalu
+parse+validasi+group ulang (bukan cuma cek f`ile Content-Type`) — kalau tidak, gap ini baru ketahuan manual saat user buka file, seperti kejadian
+ini. Untuk modul manufacture apa pun ke depan (pola grouping non-trivial), WAJIB tes route level ini, tidak cukup tes unit mapping saja.

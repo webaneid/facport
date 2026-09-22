@@ -50,6 +50,11 @@ helper lookup yang sama (`findByExactName`). Kategori "Manufacture".
   satu-baris (tidak tahu konteks grup). Diperbaiki jadi continuation-row-aware (baris tanpa quantity/portion TAPI ada Serial No = sah).
 - ~~Menunggu contoh Excel Material Slip terisi~~ — RESOLVED 2026-09-22, client sudah kirim (§ `architecture-material-slip.md` "Data Riil Client").
 
+- **Ditemukan setelah "Done" awal, lewat pertanyaan user "sudah ada contoh isinya di laman?"**: template unduhan cuma 1 baris contoh (tidak
+  memperagakan pola grouping multi-baris), dan kolom kedua "Qty" salah tertulis "Qty_1" (nama internal dedupe, bukan yang seharusnya user lihat).
+  `generateTemplateBuffer` digeneralisasi (`extraExampleRows`), template sekarang punya contoh multi-baris; ditambah tes route yang benar-benar
+  unduh+parse+validasi ulang template. Dicatat detail di `docs/lessons-learned.md` 2026-09-22.
+
 ## Ringkasan Hasil
 Modul Finished Good Slip lengkap: mapping (+10 tes, memakai data produksi RIIL client), client Accurate `saveFinishedGoodSlip` +
 `resolveWarehouseId` (generalisasi `findByExactName` dari Work Order, +3 tes), worker `processFinishedGoodSlipGroup` (lookup cabang

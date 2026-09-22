@@ -48,6 +48,11 @@ belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
   kedua pola.
 - Belum diuji ke Accurate sungguhan.
 
+- **Ditemukan setelah "Done" awal, lewat pertanyaan user "sudah ada contoh isinya di laman?"**: template unduhan cuma 1 baris contoh (tidak
+  memperagakan pola grouping multi-baris), dan kolom kedua "Qty" salah tertulis "Qty_1" (nama internal dedupe, bukan yang seharusnya user lihat).
+  `generateTemplateBuffer` digeneralisasi (`extraExampleRows`), template sekarang punya contoh multi-baris; ditambah tes route yang benar-benar
+  unduh+parse+validasi ulang template. Dicatat detail di `docs/lessons-learned.md` 2026-09-22.
+
 ## Ringkasan Hasil
 Modul Material Slip lengkap: modul grouping 2-level bersama `manufacture-slip-shared.ts` (+7 tes) dipakai berdua dengan Finished Good
 Slip, mapping (+12 tes), client Accurate `saveMaterialSlip` (+1 tes), worker `processMaterialSlipGroup`, route (+22 tes), registri

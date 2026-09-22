@@ -42,7 +42,19 @@ export const finishedGoodSlipImportRoute = new Elysia()
   .get(
     "/finished-good-slip/import/template",
     () => {
-      const buffer = generateTemplateBuffer(finishedGoodSlipTemplateGuide);
+      // § contoh multi-baris (BUKAN cuma 1 baris) — pola DOMINAN data riil client: 1 barang bisa punya BEBERAPA
+      // nomor seri di baris LANJUTAN terpisah (baris 2: Trans No & Item No SAMA dengan baris 1, tapi Qty/Portion/
+      // Warehouse dikosongkan, cuma Serial No/Qty/Expired Date yang terisi).
+      const buffer = generateTemplateBuffer(finishedGoodSlipTemplateGuide, [
+        [
+          { column: "Trans No", value: "FGS-2026-0001" },
+          { column: "Item No", value: "3300500719" },
+          { column: "Serial No", value: "29/10/2025" },
+          { column: "Qty", value: "" }, // kemunculan ke-1 "Qty" (item) dikosongkan — baris ini HANYA lanjutan serial
+          { column: "Qty", value: "1500" }, // kemunculan ke-2 "Qty" (serial)
+          { column: "Expired Date", value: "23/10/2026" },
+        ],
+      ]);
       return new Response(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

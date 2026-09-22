@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import * as XLSX from "xlsx";
-import { parseExcelBuffer } from "./excel";
+import { generateTemplateBuffer, parseExcelBuffer, type TemplateFieldGuide } from "./excel";
 
 function bufferFromRows(rows: unknown[][]): Buffer {
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -56,5 +56,50 @@ describe("parseExcelBuffer — header duplikat", () => {
     expect(parsed.headers).toEqual(["Project No", "Qty", "Project No_1", "Project No_2"]);
     for (const header of parsed.headers) expect(parsed.rows[0]).toHaveProperty(header);
     expect(parsed.rows[0]).toMatchObject({ "Project No": "P-A", "Project No_1": "P-B", "Project No_2": "P-C" });
+  });
+});
+
+// § Fase 148/149 — `generateTemplateBuffer` dengan baris contoh TAMBAHAN (Material Slip/Finished Good Slip: 1 dokumen
+// bisa punya banyak barang/baris lanjutan serial, tidak cukup diperagakan 1 baris contoh saja).
+describe("generateTemplateBuffer — baris contoh tambahan (extraExampleRows)", () => {
+  const fields: TemplateFieldGuide[] = [
+    { column: "Trans No", required: false, example: "T-1", description: "" },
+    { column: "Item No", required: true, example: "A", description: "" },
+    { column: "Qty", required: false, example: "1", description: "" },
+    { column: "Serial No", required: false, example: "", description: "" },
+    { column: "Qty", required: false, example: "", description: "" }, // § kolom BERULANG, sama seperti kasus nyata
+  ];
+
+  test("tanpa extraExampleRows → perilaku lama, cuma 1 baris contoh (backward compatible)", () => {
+    const parsed = parseExcelBuffer(generateTemplateBuffer(fields));
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]).toMatchObject({ "Trans No": "T-1", "Item No": "A", Qty: "1" });
+  });
+
+  test("dengan extraExampleRows → baris tambahan ikut muncul, kolom yang tidak disebut dikosongkan", () => {
+    const buffer = generateTemplateBuffer(fields, [
+      [
+        { column: "Trans No", value: "T-1" },
+        { column: "Item No", value: "B" },
+        { column: "Serial No", value: "S1" },
+        { column: "Qty", value: 5 }, // § kemunculan PERTAMA "Qty" (Qty barang)
+      ],
+    ]);
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.rows).toHaveLength(2);
+    expect(parsed.rows[1]).toMatchObject({ "Trans No": "T-1", "Item No": "B", "Serial No": "S1", Qty: 5 });
+    expect(parsed.rows[1]!["Qty_1"]).toBe(""); // § kemunculan KEDUA "Qty" tidak disebut → kosong, bukan ikut ke-isi salah
+  });
+
+  test("kolom BERULANG di overrides diisi berurutan (FIFO) ke kemunculan ke-1, ke-2, dst — TIDAK menimpa satu sama lain", () => {
+    const buffer = generateTemplateBuffer(fields, [
+      [
+        { column: "Item No", value: "C" },
+        { column: "Qty", value: 10 }, // kemunculan ke-1 "Qty"
+        { column: "Qty", value: 99 }, // kemunculan ke-2 "Qty"
+      ],
+    ]);
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.rows[1]).toMatchObject({ "Item No": "C", Qty: 10, Qty_1: 99 });
   });
 });

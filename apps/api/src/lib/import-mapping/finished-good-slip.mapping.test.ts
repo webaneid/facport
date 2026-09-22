@@ -7,6 +7,8 @@ import {
   finishedGoodSlipRowError,
   groupFinishedGoodSlipRows,
 } from "./finished-good-slip.mapping";
+import { generateTemplateBuffer, parseExcelBuffer } from "../excel";
+import { finishedGoodSlipTemplateGuide } from "./template-guide";
 
 // § Fase 149, architecture-finished-good-slip.md — data riil client 2026-09-22 (Trans No 18320): 1 barang, 2 baris serial lanjutan.
 const map = finishedGoodSlipMapping.defaultColumnMap;
@@ -90,5 +92,32 @@ describe("finishedGoodSlipRowError — baris lanjutan serial (dipanggil berdiri 
   });
   test("quantity terisi tapi portion kosong (typo user, BUKAN baris lanjutan) → tetap galat portion", () => {
     expect(finishedGoodSlipRowError({ "Item No": "A", Qty: 10 }, finishedGoodSlipMapping.defaultColumnMap)).toEqual(["portion"]);
+  });
+});
+
+describe("template unduhan — putaran template → parse → grouping (mirror route sesungguhnya)", () => {
+  test("2 baris contoh (1 barang, baris ke-2 lanjutan serial) lolos tanpa galat", () => {
+    const buffer = generateTemplateBuffer(finishedGoodSlipTemplateGuide, [
+      [
+        { column: "Trans No", value: "FGS-2026-0001" },
+        { column: "Item No", value: "3300500719" },
+        { column: "Serial No", value: "29/10/2025" },
+        { column: "Qty", value: "" }, // kemunculan ke-1 "Qty" (item) dikosongkan — baris ini HANYA lanjutan serial
+        { column: "Qty", value: "1500" }, // kemunculan ke-2 "Qty" (serial)
+        { column: "Expired Date", value: "23/10/2026" },
+      ],
+    ]);
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.rows).toHaveLength(2);
+
+    const columnMapping = Object.fromEntries(parsed.headers.filter((h) => finishedGoodSlipMapping.defaultColumnMap[h]).map((h) => [h, finishedGoodSlipMapping.defaultColumnMap[h]!]));
+    const rows = parsed.rows.map((r, i) => ({ id: String(i), rawData: r }));
+    for (const row of rows) expect(finishedGoodSlipRowError(row.rawData, columnMapping)).toEqual([]);
+
+    const groups = groupFinishedGoodSlipRows(rows, columnMapping);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.items).toHaveLength(1);
+    const payload = buildFinishedGoodSlipPayload(groups[0]!, columnMapping);
+    expect((payload.detailItem as Record<string, unknown>[])[0]!.detailSerialNumber).toHaveLength(2);
   });
 });

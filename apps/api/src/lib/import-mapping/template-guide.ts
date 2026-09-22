@@ -1378,7 +1378,8 @@ export const workOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "CLS3", required: false, example: "", description: `${WO_FG}Kategori Keuangan slot 3.` },
 ];
 
-// § Fase 148 — Material Slip. "Qty" muncul 2x (barang & serial) — parser dedupe kemunculan ke-2 jadi "Qty_1" (Fase 147).
+// § Fase 148 — Material Slip. Header kolom mengikuti PERSIS sheet client: "Qty" muncul 2x (barang & serial, SENGAJA
+// dipertahankan sama seperti Work Order Fase 147) — `parseExcelBuffer` mendedupe kemunculan ke-2 jadi "Qty_1" saat upload.
 export const materialSlipTemplateGuide: TemplateFieldGuide[] = [
   { column: "Branch Name", required: false, example: "Jakarta", description: "Nama cabang — opsional, TIDAK di-lookup ID (beda dari Work Order/Finished Good Slip)." },
   { column: "Trans Date", required: true, format: DATE_FORMAT, example: "02/02/2026", description: "Tanggal Material Slip." },
@@ -1400,11 +1401,12 @@ export const materialSlipTemplateGuide: TemplateFieldGuide[] = [
   { column: "CLS4", required: false, example: "", description: "Kategori Keuangan slot 4." },
   { column: "CLS5", required: false, example: "", description: "Kategori Keuangan slot 5." },
   { column: "Serial No", required: false, example: "XX1", description: "Nomor seri bahan baku. Boleh diisi di baris item ITU SENDIRI, atau di baris TAMBAHAN sesudahnya (Trans No & Item No sama, kolom Qty barang dikosongkan) kalau 1 barang punya banyak nomor seri." },
-  { column: "Qty_1", required: false, example: "10", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" kedua)." },
+  { column: "Qty", required: false, example: "10", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" KEDUA — nama sama persis dengan kolom Qty barang di atas, dibedakan otomatis saat upload)." },
   { column: "Expired Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
 ];
 
-// § Fase 149 — Finished Good Slip. "Qty" muncul 2x (barang & serial) — parser dedupe kemunculan ke-2 jadi "Qty_1" (Fase 147).
+// § Fase 149 — Finished Good Slip. Header kolom mengikuti PERSIS sheet client: "Qty" muncul 2x (barang & serial, SENGAJA
+// dipertahankan sama seperti Work Order Fase 147) — `parseExcelBuffer` mendedupe kemunculan ke-2 jadi "Qty_1" saat upload.
 export const finishedGoodSlipTemplateGuide: TemplateFieldGuide[] = [
   { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti di Accurate — WAJIB DIISI (di-lookup ID, harus sudah ada)." },
   { column: "Trans Date", required: true, format: DATE_FORMAT, example: "03/11/2025", description: "Tanggal Finished Good Slip." },
@@ -1426,6 +1428,6 @@ export const finishedGoodSlipTemplateGuide: TemplateFieldGuide[] = [
   { column: "CLS4", required: false, example: "", description: "Kategori Keuangan slot 4." },
   { column: "CLS5", required: false, example: "", description: "Kategori Keuangan slot 5." },
   { column: "Serial No", required: false, example: "28/10/2025", description: "Nomor seri barang jadi (client biasa memakai tanggal produksi sebagai kode lot). Boleh diisi di baris item ITU SENDIRI, atau di baris TAMBAHAN sesudahnya (Trans No & Item No sama, kolom Qty/Portion dikosongkan) kalau 1 barang punya banyak nomor seri." },
-  { column: "Qty_1", required: false, example: "15", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" kedua)." },
+  { column: "Qty", required: false, example: "15", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" KEDUA — nama sama persis dengan kolom Qty barang di atas, dibedakan otomatis saat upload)." },
   { column: "Expired Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
 ];

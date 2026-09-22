@@ -42,7 +42,31 @@ export const materialSlipImportRoute = new Elysia()
   .get(
     "/material-slip/import/template",
     () => {
-      const buffer = generateTemplateBuffer(materialSlipTemplateGuide);
+      // § contoh multi-baris (BUKAN cuma 1 baris) — pola inti modul ini: 1 dokumen boleh punya BEBERAPA barang
+      // (baris 2, Item No beda tapi Trans No sama, mirror data riil client) DAN 1 barang boleh punya BEBERAPA nomor
+      // seri di baris lanjutan (baris 3, Item No SAMA dengan baris 2 tapi Qty/Warehouse dikosongkan).
+      const buffer = generateTemplateBuffer(materialSlipTemplateGuide, [
+        [
+          { column: "Branch Name", value: "Jakarta" },
+          { column: "Trans Date", value: "02/02/2026" },
+          { column: "Trans No", value: "MS-2026-0001" },
+          { column: "Material Slip Type", value: "ITEM_PICK" },
+          { column: "Work Order No", value: "WO-001" },
+          { column: "Item No", value: "10002" },
+          { column: "Qty", value: "10" },
+          { column: "Unit Name", value: "PCS" },
+          { column: "Warehouse Name", value: "GD. JAKARTA" },
+          { column: "Serial No", value: "XX2" },
+          { column: "Qty", value: "10" },
+        ],
+        [
+          { column: "Trans No", value: "MS-2026-0001" },
+          { column: "Item No", value: "10002" },
+          { column: "Serial No", value: "XX3" },
+          { column: "Qty", value: "" }, // kemunculan ke-1 "Qty" (item) dikosongkan — baris ini HANYA lanjutan serial
+          { column: "Qty", value: "5" }, // kemunculan ke-2 "Qty" (serial)
+        ],
+      ]);
       return new Response(new Uint8Array(buffer), {
         headers: {
           "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

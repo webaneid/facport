@@ -5,7 +5,8 @@ import { auth } from "../lib/auth";
 import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
 import { finishedGoodSlipImportRoute } from "./finished-good-slip-import.route";
-import { generateTemplateBuffer } from "../lib/excel";
+import { generateTemplateBuffer, parseExcelBuffer } from "../lib/excel";
+import { finishedGoodSlipMapping, finishedGoodSlipRowError, groupFinishedGoodSlipRows, buildFinishedGoodSlipPayload } from "../lib/import-mapping/finished-good-slip.mapping";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Fase 149 — mirror `material-slip-import.route.test.ts`/grouping 2-level (§ manufacture-slip-shared.ts). Beda: TIDAK ada
@@ -96,6 +97,26 @@ describe("GET /finished-good-slip/import/template", () => {
 
     const res = await testApp.handle(new Request("http://localhost/finished-good-slip/import/template", { headers: { cookie } }));
     expect(res.status).toBe(403);
+  });
+
+  test("200 → file .xlsx berisi contoh 1 barang + 1 baris lanjutan serial yang valid saat di-parse ulang", async () => {
+    const owner = await createProvisionedUser(`fgs-template-${runId}@test.local`);
+    const res = await testApp.handle(new Request("http://localhost/finished-good-slip/import/template", { headers: { cookie: owner.cookie } }));
+    expect(res.status).toBe(200);
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const { headers, rows } = parseExcelBuffer(buffer);
+    expect(rows).toHaveLength(2); // 1 contoh dasar + 1 baris lanjutan serial
+
+    const mapping = Object.fromEntries(headers.filter((h) => finishedGoodSlipMapping.defaultColumnMap[h]).map((h) => [h, finishedGoodSlipMapping.defaultColumnMap[h]!]));
+    const importRows = rows.map((r, i) => ({ id: String(i), rawData: r }));
+    for (const row of importRows) expect(finishedGoodSlipRowError(row.rawData, mapping)).toEqual([]);
+
+    const groups = groupFinishedGoodSlipRows(importRows, mapping);
+    expect(groups).toHaveLength(1);
+    expect(groups[0]!.items).toHaveLength(1); // baris lanjutan MENYATU ke barang yang sama, bukan barang baru
+    const payload = buildFinishedGoodSlipPayload(groups[0]!, mapping);
+    expect((payload.detailItem as Record<string, unknown>[])[0]!.detailSerialNumber).toHaveLength(2);
   });
 });
 

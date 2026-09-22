@@ -62,17 +62,35 @@ export type TemplateFieldGuide = {
   description: string;
 };
 
+// § Fase 148/149 — baris contoh TAMBAHAN (selain baris pertama dari `f.example`), dipakai modul yang polanya BUKAN
+// "1 baris = 1 dokumen" (Material Slip/Finished Good Slip: 1 dokumen bisa punya banyak barang & banyak baris lanjutan
+// serial — tanpa contoh multi-baris, user tidak akan tahu cara isi pola itu cuma dari teks Petunjuk). Ditulis sebagai
+// `{column, value}[]` (BUKAN array posisi mentah) supaya aman terhadap kolom BERULANG (mis. "Qty" muncul 2x, § Header
+// Duplikat) — kemunculan ke-n suatu nama kolom di `overrides` mengisi kemunculan ke-n kolom itu di `fields`, sisanya
+// (kolom yang tidak disebut) dikosongkan.
+export type TemplateExampleOverride = { column: string; value: string | number };
+
+function buildExampleRow(fields: TemplateFieldGuide[], overrides: TemplateExampleOverride[]): (string | number)[] {
+  const queues = new Map<string, (string | number)[]>();
+  for (const o of overrides) {
+    const queue = queues.get(o.column) ?? [];
+    queue.push(o.value);
+    queues.set(o.column, queue);
+  }
+  return fields.map((f) => queues.get(f.column)?.shift() ?? "");
+}
+
 // Sheet "Template" WAJIB tetap index-0 workbook — parseExcelBuffer() ambil
 // workbook.SheetNames[0] sebagai sheet DATA saat user upload balik. Sheet
 // "Petunjuk Pengisian" ditambah SETELAHNYA supaya tidak ganggu parsing itu.
-// Baris ke-2 sheet "Template" diisi CONTOH (bukan kosong) — user WAJIB
-// hapus baris itu sebelum isi data sendiri, diingatkan eksplisit di sheet
-// Petunjuk (§ user request 2026-08-27: template lama cuma header polos,
-// tidak ada panduan cara isi/standar format sama sekali).
-export function generateTemplateBuffer(fields: TemplateFieldGuide[]): Buffer {
+// Baris ke-2 (dan seterusnya, kalau `extraExampleRows` diisi) sheet "Template" diisi CONTOH (bukan kosong) — user
+// WAJIB hapus baris itu sebelum isi data sendiri, diingatkan eksplisit di sheet Petunjuk (§ user request 2026-08-27:
+// template lama cuma header polos, tidak ada panduan cara isi/standar format sama sekali).
+export function generateTemplateBuffer(fields: TemplateFieldGuide[], extraExampleRows: TemplateExampleOverride[][] = []): Buffer {
   const columns = fields.map((f) => f.column);
+  const exampleRows = [fields.map((f) => f.example), ...extraExampleRows.map((overrides) => buildExampleRow(fields, overrides))];
 
-  const templateSheet = XLSX.utils.aoa_to_sheet([columns, fields.map((f) => f.example)]);
+  const templateSheet = XLSX.utils.aoa_to_sheet([columns, ...exampleRows]);
   templateSheet["!cols"] = columns.map(() => ({ wch: 20 }));
 
   const guideRows: (string | number)[][] = [
@@ -82,7 +100,7 @@ export function generateTemplateBuffer(fields: TemplateFieldGuide[]): Buffer {
     ...fields.map((f, i) => [i + 1, f.column, f.required ? "Wajib" : "Opsional", f.format ?? "-", f.example, f.description]),
     [],
     ["Catatan penting:"],
-    ['1. Baris ke-2 di sheet "Template" adalah CONTOH pengisian — HAPUS baris itu sebelum upload data Anda sendiri.'],
+    ['1. Baris CONTOH pengisian di sheet "Template" (baris ke-2 dan seterusnya, sebelum baris kosong) — HAPUS SEMUA baris itu sebelum upload data Anda sendiri.'],
     ['2. Kolom bertanda "Wajib" harus diisi untuk setiap baris, kolom "Opsional" boleh dikosongkan.'],
     ["3. Format tanggal HARUS DD/MM/YYYY (contoh: 19/08/2026) — format lain (mis. 2026-08-19) akan ditolak Accurate."],
     ["4. Nomor Vendor, Nomor Barang, dan nama-nama lain (satuan, gudang, termin) harus PERSIS SAMA seperti yang terdaftar di Accurate Online (besar-kecil huruf tidak masalah, tapi ejaan harus sama)."],
