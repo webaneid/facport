@@ -39,13 +39,13 @@ belum dirilis saat dokumen ini dibuat). Kategori "Manufacture".
 - [ ] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- **BLOCKED — menunggu data riil client** (2026-09-22): file contoh yang dikirim masih 1 baris uji tanpa Item No/Qty/Tipe. Eksekusi fase ini DITUNDA
-  sampai client kirim Excel Material Slip yang benar-benar terisi (keputusan user 2026-09-22: "kita tidak eksekusi sampai dapat semua kolom").
-- `materialSlipType` dictionary belum diverifikasi ke isi Excel riil client.
+- ~~BLOCKED — menunggu data riil client~~ — **RESOLVED 2026-09-22**: client kirim contoh terisi (`material-slip-temp-v1 (1) (1).xlsx`,
+  2 baris, 1 dokumen 2 barang) — mengonfirmasi `materialSlipType` enum literal (`"ITEM_PICK"`) dan grouping multi-item per dokumen.
 - ~~Kolom Excel "Dept Name" tidak ada field API yang cocok~~ — KOREKSI 2026-09-22: field `departmentName` TERNYATA ADA, sebelumnya salah baca portal
   (§ architecture doc). Dipetakan normal.
-- **Curiga pola grouping serial multi-baris** (mirror temuan Finished Good Slip, § architecture doc) — perlu dicek begitu data riil tersedia, JANGAN
-  asumsikan 1 baris = 1 serial.
+- **Pola grouping serial multi-baris** (mirror Finished Good Slip) — BELUM ada contoh nyata untuk Material Slip spesifik (contoh client cuma 2 baris
+  manual, bukan ekspor bervolume), tapi kode dirancang generik (grouping 2-level, § architecture doc "Keputusan Desain (lanjutan)") supaya aman untuk
+  kedua pola.
 - Belum diuji ke Accurate sungguhan.
 
 ## Ringkasan Hasil (isi pas fase Done)

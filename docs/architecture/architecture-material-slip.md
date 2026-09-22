@@ -105,18 +105,13 @@ perbaikan baru di parser.
 5. **Hanya 5 slot Kategori Keuangan** (CLS1-5, bukan 10) — Excel client eksplisit cuma sediakan 5 kolom CLS di sheet ini.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **`materialSlipType` dictionary MASIH belum bisa diverifikasi** — file contoh yang dikirim client 2026-09-22
-  (`material-slip-temp-v1 (1).xlsx`) HANYA berisi 1 baris uji (Branch Name/Trans Date/Trans No saja: "Jakarta",
-  02/02/2026, "WO-001") — kolom Item No/Qty/Material Slip Type/Warehouse/Serial SEMUA masih kosong. Berbeda dari
-  Finished Good Slip (§ `architecture-finished-good-slip.md`) yang contohnya SUDAH data produksi riil 536 baris —
-  Material Slip masih menunggu client isi data sungguhan sebelum eksekusi bisa dimulai (per keputusan user
-  2026-09-22: "kita tidak eksekusi sampai dapat semua kolom").
-- **Kemungkinan pola grouping serial multi-baris** — Finished Good Slip (modul serupa dalam rantai Manufacture yang
-  sama) TERNYATA punya pola 1 barang jadi dengan BEBERAPA nomor seri ditulis di BEBERAPA BARIS Excel terpisah (§
-  "Data Riil Client" di `architecture-finished-good-slip.md`), bukan 1 baris = 1 serial. Material Slip juga punya
-  kolom Serial Number (U/V/W) dengan struktur sheet yang MIRIP (Detail Item lalu Serial Number di kolom akhir) — WAJIB
-  diperlakukan curiga bakal punya pola sama sampai terbukti dari data riil, JANGAN asumsikan "1 baris = 1 serial" tanpa
-  cek ulang begitu client kirim data terisi.
+- ~~`materialSlipType` dictionary belum bisa diverifikasi~~ — **RESOLVED 2026-09-22**, § "Data Riil Client" di bawah:
+  contoh terisi dari client mengonfirmasi nilai enum LITERAL `"ITEM_PICK"` langsung (mirror `"PRODUCT"` Work Order),
+  bukan istilah Indonesia dictionary.
+- **Belum ada bukti pola grouping serial multi-baris** (mirip Finished Good Slip) untuk Material Slip spesifik — contoh
+  client baru 2 baris (dibuat manual, bukan ekspor produksi bervolume seperti Finished Good Slip 536 baris), jadi
+  belum ada baris "1 barang, banyak serial di baris terpisah". Kode dirancang generik supaya aman untuk kedua pola
+  (§ Keputusan Desain #4 baru) — tapi kalau nanti client kirim data bervolume lebih besar dan pola beda, cek ulang.
 - **`workOrderMaterialId`** — lihat Keputusan Desain #3, perlu konfirmasi client kalau ternyata dipakai.
 
 > **Koreksi 2026-09-22** (verifikasi ulang atas permintaan user): draft pertama dokumen ini salah menulis "Dept Name
@@ -124,6 +119,25 @@ perbaikan baru di parser.
 > `dataClassification9Name` dan `detailName`). Sudah dicek ulang langsung di portal live: `detailItem[n].departmentName`
 > ADA (String, opsional, "Nama record departemen untuk pencatatan cost/profit center") — dipetakan normal di tabel di
 > atas, TIDAK ada lagi yang hilang.
+
+## ✅ Data Riil Client (2026-09-22) — Contoh Terisi
+File `material-slip-temp-v1 (1) (1).xlsx` (2 baris, dibuat manual client sebagai contoh — BUKAN ekspor produksi
+bervolume seperti Finished Good Slip): 1 dokumen (`Trans No="MS-001"`) berisi **2 barang berbeda** (`Item No` 10001 &
+10002, masing-masing qty 10, unit PCS), masing-masing dengan 1 nomor seri di baris yang sama (`XX1`/`XX2`, exp
+22/09/2027). Field lain: `Branch Name="Jakarta"`, `Material Slip Type="ITEM_PICK"` (enum literal, BUKAN istilah
+Indonesia — `resolveMaterialSlipType` cek literal dulu sebelum dictionary, sudah benar by design), `Work Order
+No="WO-001"`, `Warehouse Name="GD. JAKARTA"` (teks bebas, TIDAK di-lookup, konsisten § Quirk). `Item Note`, `Project
+No`, `Dept Name`, `CLS1-5`, `Work Order Material ID` semua kosong di contoh ini (opsional, belum ada contoh
+pemakaian). Ini MENGKONFIRMASI grouping multi-item per "Trans No" adalah kasus nyata yang dipakai client (beda dari
+Finished Good Slip yang di data riilnya 0% multi-item) — desain grouping HARUS mendukung >1 `detailItem` per dokumen.
+
+## Keputusan Desain (lanjutan)
+4. **Grouping 2-level, SAMA seperti Finished Good Slip** (§ `architecture-finished-good-slip.md` "Data Riil Client")
+   — dalam 1 grup "Trans No": baris dengan `Qty` barang (kolom I) terisi = detailItem BARU; baris tanpa `Qty` barang
+   tapi ada `Serial No` = entri `detailSerialNumber[]` TAMBAHAN milik detailItem TERAKHIR. Ini SATU implementasi
+   grouping yang dipakai BERSAMA oleh Material Slip dan Finished Good Slip (beda dari Roll Over/Work Order yang
+   masing-masing 1 detailItem per baris) — pertimbangkan helper `groupDetailItemsWithContinuationRows` di modul
+   `import-mapping` bersama (mis. `lib/import-mapping/manufacture-slip-shared.ts`) supaya tidak duplikasi logic.
 
 ## Referensi
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/material-slip/save.do`

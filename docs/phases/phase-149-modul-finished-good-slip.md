@@ -45,7 +45,6 @@ helper lookup yang sama (`findByExactName`). Kategori "Manufacture".
 - **Grouping multi-baris-per-serial** (temuan data riil 2026-09-22, § architecture doc "Data Riil Client") — 1 barang jadi bisa punya banyak nomor seri
   yang ditulis di baris Excel TERPISAH (bukan 1 baris = 1 serial). T1 WAJIB mendesain grouping 2-level ini, bukan pola sederhana Roll Over.
 - Belum diuji ke Accurate sungguhan, termasuk rantai Work Order → Finished Good Slip yang benar-benar terhubung.
-- Menunggu client kirim contoh Excel Material Slip yang sudah terisi data (bukan cuma header) sebelum Fase 148/149 dieksekusi bersamaan
-  (keputusan user 2026-09-22).
+- ~~Menunggu contoh Excel Material Slip terisi~~ — RESOLVED 2026-09-22, client sudah kirim (§ `architecture-material-slip.md` "Data Riil Client").
 
 ## Ringkasan Hasil (isi pas fase Done)
