@@ -17,7 +17,6 @@ import {
   UserCog,
   Package,
   Settings,
-  Receipt,
   CreditCard,
   FileText,
   Megaphone,
@@ -73,8 +72,12 @@ export type Surface = "app" | "admin";
 export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; permission?: string };
 // § Fase 110 — `ownerOnly: true` = grup ini disembunyikan TOTAL kalau
 // `isDataUsahaOwner === false` (user cuma member/seat, bukan pemilik Data
-// Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Tagihan/
-// Berlangganan/Kelola Tim) BUKAN wilayah member.
+// Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Berlangganan/
+// Kelola Tim) BUKAN wilayah member. "Tagihan" DIPINDAH ke dropdown avatar
+// Topbar (§ topbar.tsx, 2026-09-22) — `invoices.userId = session.user.id`,
+// riwayat PER-USER bukan per-Data-Usaha (§ `routes/invoices.route.ts`),
+// jadi TIDAK cocok digerbang `ownerOnly` — member pun berhak lihat
+// invoice pribadinya sendiri, terlepas dia owner Data Usaha aktif atau bukan.
 // § Fase 117, ADR-0033 — `productLine?` OPSIONAL, belum dipakai render
 // apa pun (clustering per Produk SENGAJA ditunda — belum ada item nav
 // Konverter/AutoProduksi nyata untuk divalidasi terhadapnya). Ditambah
@@ -161,7 +164,6 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       // § Fase 15/17 — TANPA moduleKey (selalu tampil untuk customer login).
       items: [
         { href: "/accurate", label: "Koneksi Accurate", icon: Link2 },
-        { href: "/billing", label: "Tagihan", icon: Receipt },
         { href: "/subscribe", label: "Berlangganan", icon: Package },
         // § Fase 110, architecture-user-tambahan.md — "Kelola Tim" (User
         // Tambahan). Grup INI SELURUHNYA disembunyikan untuk member

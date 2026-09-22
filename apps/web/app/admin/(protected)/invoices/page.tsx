@@ -457,32 +457,46 @@ export default function AdminInvoicesPage() {
   // kolom + `TruncateText` di kolom teks-panjang — dialog "Detail
   // Invoice" (`InvoiceDetailDialog` di bawah) tetap sumber kebenaran
   // lengkap, truncate di sini murni ringkasan-sekilas.
+  // § diminta user 2026-09-22 — 2 fix tampilan: (1) "Nomor" & "Total"
+  // SEBELUMNYA render teks polos (bukan `TruncateText`) — `TableCell`
+  // primitif pakai `whitespace-nowrap` TANPA `overflow-hidden` (§
+  // table.tsx), jadi teks yang lebih panjang dari `meta.width` (mis.
+  // "INV/2026/09/0021") VISUAL BLEED ke kolom sebelah alih-alih terpotong
+  // — semua kolom lain SUDAH pakai `TruncateText` (`overflow-hidden` via
+  // class `truncate`) makanya aman, cuma 2 kolom ini yang kelewat. (2)
+  // "Data Usaha" & "Paket" DIGABUNG jadi 1 kolom (2 baris: nama Data Usaha
+  // di atas, daftar paket kecil di bawah) — sisa lebar dipakai melebarkan
+  // "Nomor"/"Total" (jaring pengaman TAMBAHAN di atas `TruncateText`).
+  // Urutan default TETAP dari backend (`ORDER BY invoices.createdAt DESC`,
+  // § `routes/admin/invoices.route.ts`) — invoice terbaru dulu — `DataTable`
+  // TIDAK set `initialState.sorting` apa pun, jadi urutan itu tidak
+  // ditimpa sampai user klik header kolom sendiri.
   const columns = [
     columnHelper.accessor("invoiceNumber", {
       header: "Nomor",
-      meta: { width: "12%" },
-      cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
+      meta: { width: "17%" },
+      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
     }),
     columnHelper.accessor("billToName", { header: "Ditagihkan Ke", meta: { width: "15%" }, cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText> }),
-    // § Fase 118 — kolom Data Usaha, supaya admin langsung tahu di layar
-    // list tanpa buka dialog detail (§ ADR-0033).
+    // § Fase 118 — Data Usaha, supaya admin langsung tahu di layar list
+    // tanpa buka dialog detail (§ ADR-0033). Digabung 1 kolom dengan
+    // "Paket" (2026-09-22, § komentar di atas).
     columnHelper.display({
-      id: "dataUsaha",
-      header: "Data Usaha",
-      meta: { width: "13%" },
-      cell: ({ row }) => <TruncateText className="text-muted-foreground">{row.original.dataUsahaName ?? "-"}</TruncateText>,
+      id: "dataUsahaAndPlan",
+      header: "Data Usaha / Paket",
+      meta: { width: "28%" },
+      cell: ({ row }) => (
+        <div className="flex flex-col gap-0.5">
+          <TruncateText className="text-foreground">{row.original.dataUsahaName ?? "-"}</TruncateText>
+          <TruncateText className="text-xs text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</TruncateText>
+        </div>
+      ),
     }),
-    columnHelper.display({
-      id: "items",
-      header: "Paket",
-      meta: { width: "24%" },
-      cell: ({ row }) => <TruncateText className="text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</TruncateText>,
-    }),
-    columnHelper.accessor("total", { header: "Total", meta: { width: "10%" }, cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
+    columnHelper.accessor("total", { header: "Total", meta: { width: "14%" }, cell: (ctx) => <TruncateText>{currencyFormatter.format(ctx.getValue())}</TruncateText> }),
     columnHelper.accessor("dueDate", {
       header: "Jatuh Tempo",
       meta: { width: "11%" },
-      cell: (ctx) => <span className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</span>,
+      cell: (ctx) => <TruncateText className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</TruncateText>,
     }),
     columnHelper.display({
       id: "status",

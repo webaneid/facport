@@ -20,6 +20,16 @@ import {
 // `[rawRow]` — tapi INTENT tiap test (normalisasi tanggal, exclude kolom
 // kosong/tidak dikenal) TIDAK berubah sama sekali.
 describe("buildPurchaseInvoicePayload", () => {
+  // § field 2026-09-22 — "Fiscal Rate" (Kurs Pajak) ADA di format Excel lama client (v7 Sales Invoice/v8 Purchase Invoice) DAN
+  // di API resmi Accurate (`fiscalRate`, root), sebelumnya belum dipetakan di sini — client bertanya "Rate Pajak" kok tidak ada.
+  test("fiscalRate (Kurs Pajak) masuk ke root payload, sejajar dengan rate (kurs mata uang biasa)", () => {
+    const rawRow = { "Vendor No": "X.001", Rate: 1, "Fiscal Rate": 15500 };
+    const columnMapping = { "Vendor No": "vendorNo", Rate: "rate", "Fiscal Rate": "fiscalRate" };
+    const payload = buildPurchaseInvoicePayload([rawRow], columnMapping);
+    expect(payload.rate).toBe(1);
+    expect(payload.fiscalRate).toBe(15500);
+  });
+
   test("field header masuk ke root payload, field item masuk ke detailItem[0]", () => {
     const rawRow = {
       "Vendor No": "V.00001",

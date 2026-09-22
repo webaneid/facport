@@ -103,6 +103,15 @@ siapa pun yang sudah mapping PO Number tanpa Trans No). Tipe
 literal) — lihat `groupSalesInvoiceRows` di `sales-invoice.mapping.ts`
 untuk prioritas per-baris lengkap.
 
+## Kolom Excel & UI — Fix "Fiscal Rate" (Kurs Pajak) hilang, 2026-09-22
+Client tanya "Rate Pajak kok tidak ada?" (dikira minta field persentase pajak baru — TIDAK ADA di API Accurate manapun,
+dikonfirmasi live portal developer). Setelah dibandingkan ke format Excel LAMA client (`docs/referencehtml/facport/format_sales_inv_v7.xlsx`,
+sheet "Penjelasan Kolom"): kolom **"Fiscal Rate"** ("Kurs Pajak"/"Nilai Tukar Pajak") memang ADA di format lama DAN di API resmi
+(`fiscalRate`, root, opsional, Money — dipakai kalau transaksi pakai mata uang asing) — TAPI belum pernah dipetakan di
+`sales-invoice.mapping.ts` sejak modul ini dibangun (Fase 13). Modul sibling lain (Purchase Return, Sales Return) SUDAH benar memetakannya —
+gap ini spesifik di Sales Invoice/Purchase Invoice. Fix: `fiscalRate` ditambahkan ke `fieldToAccuratePath`/`defaultColumnMap`
+(kolom "Fiscal Rate", persis sejajar "Rate"), opsional (BUKAN wajib, sama seperti di format lama).
+
 ## Kolom Excel & UI
 
 Pola 1:1 PI: `sales-invoice.mapping.ts` (`fieldToAccuratePath`,

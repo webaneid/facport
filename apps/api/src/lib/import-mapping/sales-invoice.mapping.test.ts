@@ -17,6 +17,16 @@ import {
 // § Fase 13 — mirror 1:1 `purchase-invoice.mapping.test.ts` (customerNo↔
 // vendorNo, poNumber↔billNumber).
 describe("buildSalesInvoicePayload", () => {
+  // § field 2026-09-22 — "Fiscal Rate" (Kurs Pajak) ADA di format Excel lama client (v7 Sales Invoice/v8 Purchase Invoice) DAN
+  // di API resmi Accurate (`fiscalRate`, root), sebelumnya belum dipetakan di sini — client bertanya "Rate Pajak" kok tidak ada.
+  test("fiscalRate (Kurs Pajak) masuk ke root payload, sejajar dengan rate (kurs mata uang biasa)", () => {
+    const rawRow = { "Customer No": "X.001", Rate: 1, "Fiscal Rate": 15500 };
+    const columnMapping = { "Customer No": "customerNo", Rate: "rate", "Fiscal Rate": "fiscalRate" };
+    const payload = buildSalesInvoicePayload([rawRow], columnMapping);
+    expect(payload.rate).toBe(1);
+    expect(payload.fiscalRate).toBe(15500);
+  });
+
   test("field header masuk ke root payload, field item masuk ke detailItem[0]", () => {
     const rawRow = {
       "Customer No": "C.00001",
