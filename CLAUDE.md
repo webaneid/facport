@@ -158,6 +158,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Dashboard pelanggan, App Shell (sidebar/nav modul baru) | `docs/architecture/architecture-app-dashboard.md` |
 | Banner promo di /pilih-usaha, kelola admin Promo | `docs/architecture/architecture-promo.md` |
 | Facport sebagai super-app multi-produk (Facport/Konverter/AutoProduksi) | `docs/architecture/architecture-product-lines.md` |
+| Produk Konverter (Excel→XML untuk Accurate Desktop) | `docs/architecture/architecture-konverter.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan
