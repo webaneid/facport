@@ -1,3 +1,13 @@
+## 2.9.0 (2026-09-22)
+
+* Merge pull request #70 from webaneid/develop ([f04f004](https://github.com/webaneid/facport/commit/f04f004)), closes [#70](https://github.com/webaneid/facport/issues/70)
+* fix(manufacture): template unduhan multi-baris + perbaikan nama kolom Qty ([71c4787](https://github.com/webaneid/facport/commit/71c4787))
+* feat(manufacture): modul import Material Slip (Fase 148) dan Finished Good Slip (Fase 149) ([1985582](https://github.com/webaneid/facport/commit/1985582))
+* docs(manufacture): arsitektur Material Slip (Fase 148) dan Finished Good Slip (Fase 149) ([a9154b4](https://github.com/webaneid/facport/commit/a9154b4))
+* docs(manufacture): verifikasi data riil client — portion=persen, temuan grouping multi-baris ([27f57b6](https://github.com/webaneid/facport/commit/27f57b6))
+* docs(material-slip): konfirmasi contoh data riil — enum literal, grouping multi-item ([856922d](https://github.com/webaneid/facport/commit/856922d))
+* docs(material-slip): koreksi Dept Name — field departmentName ADA di API ([92e574e](https://github.com/webaneid/facport/commit/92e574e))
+
 ## 2.8.0 (2026-09-22)
 
 * Merge pull request #69 from webaneid/develop ([e0af4e3](https://github.com/webaneid/facport/commit/e0af4e3)), closes [#69](https://github.com/webaneid/facport/issues/69)
