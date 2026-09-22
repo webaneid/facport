@@ -1,6 +1,6 @@
 "use client";
 
-import { Menu, LogOut, UserRound } from "lucide-react";
+import { Menu, LogOut, UserRound, Receipt } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -43,6 +43,14 @@ function getInitials(name: string, email: string) {
 // begitu avatar diklik. `activeDataUsahaName` SENGAJA `undefined` di surface "admin" (staff tidak terikat 1 Data
 // Usaha, § app-shell.tsx) — kalau kosong, render avatar polos seperti sebelumnya, 0 perubahan visual di admin.
 // Ini BUKAN switcher baru — mekanisme GANTI Data Usaha tetap di rail bawah Sidebar (§ Fase 109, sengaja begitu).
+//
+// § diminta user 2026-09-22 — "Tagihan" DIPINDAH dari grup Sidebar "Langganan" (§ sidebar.tsx) ke sini.
+// `GET /me/invoices` (`routes/invoices.route.ts`) filter `WHERE invoices.userId = session.user.id` — riwayat
+// tagihan PER-USER (akun yang login), BUKAN per-Data-Usaha (§ juga `architecture-user-tambahan.md` soal
+// `invoices.userId` yang sengaja tidak ditulis ulang saat transfer kepemilikan). Karena itu tempatnya lebih pas
+// di sini (identitas akun) daripada di Sidebar (konteks Data Usaha) — SEKALIGUS memperbaiki gap kecil: grup
+// Sidebar lama itu `ownerOnly`, jadi member (non-owner) sebelumnya TIDAK BISA lihat Tagihan pribadinya sendiri
+// walau invoice itu jelas miliknya. Cuma surface "app" (admin staff tidak punya tagihan Facport pribadi).
 export function Topbar({
   surface,
   user,
@@ -129,6 +137,14 @@ export function Topbar({
                   Profil & Ganti Password
                 </Link>
               </DropdownMenuItem>
+              {surface === "app" && (
+                <DropdownMenuItem asChild>
+                  <Link href="/billing">
+                    <Receipt className="h-4 w-4" />
+                    Tagihan
+                  </Link>
+                </DropdownMenuItem>
+              )}
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={handleLogout}>
                 <LogOut className="h-4 w-4" />

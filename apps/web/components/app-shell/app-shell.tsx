@@ -44,8 +44,9 @@ export function AppShell({
   activeDataUsahaName?: string;
   // § Fase 110 — false kalau user cuma MEMBER (seat) di Data Usaha aktif
   // ini, bukan pemiliknya — sidebar sembunyikan grup "Langganan"
-  // (Koneksi Accurate/Tagihan/Berlangganan/Kelola Tim, semua urusan
-  // billing/kepemilikan, BUKAN wilayah member).
+  // (Koneksi Accurate/Berlangganan/Kelola Tim, semua urusan
+  // billing/kepemilikan, BUKAN wilayah member). "Tagihan" TIDAK ikut
+  // (§ topbar.tsx, 2026-09-22) — sekarang di dropdown avatar, per-user.
   isDataUsahaOwner?: boolean;
   user: { name: string; email: string };
   children: React.ReactNode;
