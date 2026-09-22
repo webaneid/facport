@@ -47,7 +47,7 @@ import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/use-permissions";
-import { moduleCategory, MODULE_CATEGORIES } from "@/lib/module-options";
+import { moduleCategory, modulesForProductLine, MODULE_CATEGORIES } from "@/lib/module-options";
 import { CATEGORY_ICON, CATEGORY_ICON_FALLBACK } from "@/lib/category-icons";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
 // § `DropdownMenuPrimitive.Item` MENTAH (bukan `DropdownMenuItem` yang
@@ -69,7 +69,10 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 // Server Component ke Client Component. Server Component cuma oper
 // STRING murni (`surface`), `Sidebar` yang lookup nav-nya sendiri.
 export type Surface = "app" | "admin";
-export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; permission?: string };
+// § Fase 150 — `moduleKeys?` (BEDA dari `moduleKey?` tunggal) — dipakai item yang relevansinya "user punya
+// SATU PUN dari beberapa modul ini" (ATAU, bukan modul spesifik), mis. "Riwayat Konversi" yang relevan begitu
+// user subscribe SALAH SATU dari 16 Varian Konverter, bukan modul tertentu (§ `navGroupsFor` di bawah).
+export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; moduleKeys?: string[]; permission?: string };
 // § Fase 110 — `ownerOnly: true` = grup ini disembunyikan TOTAL kalau
 // `isDataUsahaOwner === false` (user cuma member/seat, bukan pemilik Data
 // Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Berlangganan/
@@ -159,6 +162,18 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       ],
     },
     {
+      // § Fase 150, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
+      // (`productLine: "konverter"` men-trigger clustering per kategori juga). BARU 1 item hari ini ("Riwayat
+      // Konversi", TANPA moduleKey — selalu tampil, mirror "Arsip Import") karena halaman per-Varian (16 tipe
+      // transaksi) BELUM dibangun (menyusul Fase 151+, § docs/architecture/architecture-konverter.md) — item nav
+      // ke halaman yang belum ada akan jadi tautan mati, SENGAJA ditunda sampai Varian pertama (`requisition`)
+      // siap. Grup ini validasi clustering multi-Produk (§ `groupItemsByCategory`) benar-benar jalan dengan >1
+      // `productLine` aktif BERSAMAAN (bukan cuma asumsi/tipe), bukan cuma "Facport" sendirian seperti sebelumnya.
+      label: "Konverter",
+      productLine: "konverter",
+      items: [{ href: "/konverter/riwayat", label: "Riwayat Konversi", icon: FileSpreadsheet, moduleKeys: modulesForProductLine("konverter") }],
+    },
+    {
       label: "Langganan",
       ownerOnly: true,
       // § Fase 15/17 — TANPA moduleKey (selalu tampil untuk customer login).
@@ -215,7 +230,14 @@ export function navGroupsFor(surface: Surface, subscriptionModules?: string[], i
     .filter((group) => !(group.ownerOnly && isDataUsahaOwner === false))
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.moduleKey || (subscriptionModules?.includes(item.moduleKey) ?? false)),
+      items: group.items.filter((item) => {
+        if (item.moduleKey) return subscriptionModules?.includes(item.moduleKey) ?? false;
+        // § Fase 150 — `moduleKeys` (ATAU beberapa modul, § definisi tipe di atas): visible kalau subscribe
+        // SALAH SATU. Item TANPA `moduleKey`/`moduleKeys` sama sekali (mis. "Arsip Import") TETAP selalu
+        // tampil, TIDAK berubah dari behavior sebelumnya.
+        if (item.moduleKeys) return item.moduleKeys.some((k) => subscriptionModules?.includes(k) ?? false);
+        return true;
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }

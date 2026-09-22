@@ -16,13 +16,15 @@ import {
   productLineLabel as productLineLabelSource,
   moduleCategory as moduleCategorySource,
   moduleProductLine as moduleProductLineSource,
+  modulesForProductLine as modulesForProductLineSource,
   PRODUCT_LINES,
   type ModuleKey,
+  type ModuleKeyForProductLine,
   type ProductLineKey,
 } from "../../api/src/lib/module-catalog";
 
 export { PRODUCT_LINES, MODULE_CATEGORIES };
-export type { ModuleKey, ProductLineKey };
+export type { ModuleKey, ModuleKeyForProductLine, ProductLineKey };
 
 export const MODULE_OPTIONS = MODULE_CATALOG;
 
@@ -37,3 +39,5 @@ export const productLineLabel = productLineLabelSource;
 export const moduleCategory = moduleCategorySource;
 // § Fase 127 — dipakai `/subscribe` split grup modul per Produk sebelum render per section.
 export const moduleProductLine = moduleProductLineSource;
+// § Fase 150 — dipakai sidebar buat gerbang "punya subscription apa pun di Produk ini" (§ komentar sumber).
+export const modulesForProductLine = modulesForProductLineSource;

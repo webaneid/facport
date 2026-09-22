@@ -63,6 +63,7 @@ import { teamRoute } from "./routes/team.route";
 import { invitesRoute } from "./routes/invites.route";
 import { transfersRoute } from "./routes/transfers.route";
 import { adminDataUsahaRoute } from "./routes/admin/data-usaha.route";
+import { conversionLogsRoute } from "./routes/conversion-logs.route";
 
 const allowedOrigins = [
   "http://localhost:6209",
@@ -257,6 +258,9 @@ export const app = new Elysia()
   .use(teamRoute)
   .use(invitesRoute)
   .use(transfersRoute)
-  .use(adminDataUsahaRoute);
+  .use(adminDataUsahaRoute)
+  // § Fase 150, ADR-0038 — Produk Konverter, 1 endpoint bersama untuk SEMUA 16 Varian (beda dari pola
+  // 1-route-per-modul di atas, § komentar di conversion-logs.route.ts).
+  .use(conversionLogsRoute);
 
 export type App = typeof app;

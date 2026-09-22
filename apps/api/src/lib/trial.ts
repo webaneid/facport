@@ -1,6 +1,6 @@
-import { eq, and, count } from "drizzle-orm";
+import { eq, and, count, sum } from "drizzle-orm";
 import { db } from "./db";
-import { subscriptions, auditLogs, settings, importBatches, importBatchRows } from "../db/schema";
+import { subscriptions, auditLogs, settings, importBatches, importBatchRows, conversionLogs } from "../db/schema";
 
 // § Fase 43 — trial gratis per modul (self-service, 1x seumur hidup per
 // modul per user). Dibatasi jumlah BARIS berhasil-import (bukan durasi
@@ -90,4 +90,42 @@ export async function checkTrialRowBudget(
     return { ok: false, remaining, max: maxRows };
   }
   return { ok: true };
+}
+
+// § Fase 150, ADR-0038 poin 5, architecture-konverter.md § "Trial — Kuota Baris, Ditegakkan Server" — TWIN
+// `checkTrialRowBudget` di atas, tapi untuk Produk Konverter (TIDAK punya `import_batches`). BEDA MEKANIK PENTING:
+// `checkTrialRowBudget` di atas CUMA MENGECEK (pemanggil yang insert `import_batch_rows` terpisah, lewat job
+// worker) — fungsi ini MENGECEK **DAN** MENCATAT dalam 1 transaksi atomik, karena `conversion_logs` (beda dari
+// `import_batch_rows`) TIDAK punya proses async terpisah yang menulis barisnya nanti; baris `conversion_logs`
+// SAAT DIBUAT hanya kalau lolos kuota, itulah satu-satunya kesempatan menulisnya. `rowCount` yang dikirim caller
+// BUKAN angka bebas — hasil hitungan otomatis browser dari `summary()` (baris yang LOLOS validasi build XML),
+// dikirim SEBELUM tombol download aktif (§ route `POST /me/conversion-logs`).
+export async function checkAndRecordConversionRowBudget(params: {
+  subscriptionId: string;
+  userId: string;
+  dataUsahaId: string;
+  moduleKey: string;
+  fileName: string;
+  rowCount: number;
+}): Promise<{ ok: true; id: string } | { ok: false; remaining: number; max: number }> {
+  const { subscriptionId, userId, dataUsahaId, moduleKey, fileName, rowCount } = params;
+  return db.transaction(async (tx) => {
+    const [subscription] = await tx.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
+
+    if (subscription?.isTrial) {
+      const [sumResult] = await tx
+        .select({ totalRows: sum(conversionLogs.rowCount) })
+        .from(conversionLogs)
+        .where(eq(conversionLogs.subscriptionId, subscriptionId));
+      const usedRows = Number(sumResult?.totalRows ?? 0);
+      const maxRows = await getTrialMaxRows(tx);
+      const remaining = Math.max(0, maxRows - usedRows);
+      if (usedRows + rowCount > maxRows) {
+        return { ok: false, remaining, max: maxRows };
+      }
+    }
+
+    const [inserted] = await tx.insert(conversionLogs).values({ userId, dataUsahaId, subscriptionId, moduleKey, fileName, rowCount }).returning();
+    return { ok: true, id: inserted!.id };
+  });
 }

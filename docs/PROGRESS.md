@@ -157,7 +157,7 @@
 | 147  | Modul Work Order (Perintah Kerja) — produksi berbasis BOM, 4 array, lookup cabang & PIC | Done | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-147-modul-work-order.md` |
 | 148  | Modul Material Slip (Pengambilan Bahan Baku) — realisasi bahan baku dari Work Order | Done | `docs/architecture/architecture-material-slip.md` | `docs/phases/phase-148-modul-material-slip.md` |
 | 149  | Modul Finished Good Slip (Penyelesaian Barang Jadi) — realisasi FG dari Work Order, lookup cabang+gudang | Done | `docs/architecture/architecture-finished-good-slip.md` | `docs/phases/phase-149-modul-finished-good-slip.md` |
-| 150  | Arsitektur Produk Konverter (fondasi: katalog 16 Varian, conversion_logs, sidebar multi-Produk) — belum ada tipe transaksi | Planned | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-150-arsitektur-konverter.md` |
+| 150  | Arsitektur Produk Konverter (fondasi: katalog 16 Varian, conversion_logs, sidebar multi-Produk) — belum ada tipe transaksi | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-150-arsitektur-konverter.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
