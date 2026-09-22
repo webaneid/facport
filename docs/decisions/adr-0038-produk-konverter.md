@@ -51,13 +51,36 @@ Riset (3 subagent Explore, grounded ke kode nyata kedua sisi — app lama & Facp
      dataUsahaId   uuid NOT NULL → data_usaha.id
      subscriptionId uuid NOT NULL → subscriptions.id
      moduleKey     varchar(50) NOT NULL   -- "konverter_sales_invoice", dst
-     fileName      varchar(255) NOT NULL  -- nama file Excel yang diupload, self-reported
-     rowCount      integer NOT NULL       -- jumlah baris berhasil dikonversi, self-reported
+     fileName      varchar(255) NOT NULL  -- nama file Excel yang diupload
+     rowCount      integer NOT NULL       -- jumlah baris BERHASIL dikonversi (dihitung browser dari hasil parse+build, § poin 5)
      createdAt     timestamptz NOT NULL default now()
    ```
-   SEMUA self-reported dari client (browser lapor "saya baru convert file X, N baris, tipe Y") — TIDAK diverifikasi server (tidak ada cara verifikasi tanpa mengirim isi file, yang justru melanggar prinsip privacy-first 100%-client-side app lama). Tabel ini PURE riwayat/analytics (halaman "Riwayat Konversi" customer + rekap admin), **BUKAN untuk enforcement kuota trial** (§ poin 5) — beda filosofi dari `import_batches` Facport yang server-verified.
+   Isi Excel TIDAK PERNAH dikirim ke server (mempertahankan prinsip privacy-first 100%-client-side app lama) — HANYA
+   metadata (nama file, jumlah baris) yang lintas jaringan. Tabel ini dipakai untuk 2 hal SEKALIGUS: (a) riwayat/
+   analytics (halaman "Riwayat Konversi" customer + rekap admin), (b) **sumber hitung kuota trial** (§ poin 5) — beda
+   dari draft awal ADR ini yang sempat menganggap tabel ini "murni riwayat, tidak untuk enforcement"; setelah
+   ditinjau ulang (masukan user 2026-09-22), `rowCount` di sini BUKAN angka bebas yang diketik user — dia adalah
+   HASIL HITUNGAN OTOMATIS dari parsing yang browser toh WAJIB lakukan untuk membangun XML, sehingga BISA dipakai
+   sebagai basis kuota yang genuinely ditegakkan server, bukan cuma dicatat pasif.
 
-5. **Trial Konverter = DURASI HARI SAJA, TANPA kuota baris.** `checkTrialRowBudget()` (`lib/trial.ts`) TIDAK dipanggil sama sekali oleh rute Konverter manapun (Konverter tidak punya route import server-side — satu-satunya endpoint server adalah `POST /me/conversion-logs`, sekadar insert log, TIDAK ada pengecekan kuota di situ). `createTrialSubscription()` dipakai APA ADANYA (generik, tidak butuh ubah kode) — trial berakhir murni berdasar `trial.durationDays` (backstop kadaluarsa yang sudah ada), konsisten karena kuota baris HARD-ENFORCED tidak mungkin secara teknis untuk proses 100% client-side/self-reported (user bisa lapor angka apa saja).
+5. **Trial Konverter = KUOTA BARIS, DITEGAKKAN SERVER, PRIVACY-PRESERVING** (revisi 2026-09-22, mengoreksi draft awal
+   yang keliru menyimpulkan "tidak mungkin secara teknis"). Mekanisme: browser parse Excel → hitung jumlah baris
+   YANG LOLOS VALIDASI (hasil `summary()`, bukan jumlah baris upload mentah — mirror filosofi Facport "hanya baris
+   sukses yang dihitung") → panggil `POST /me/conversion-logs` dengan `{moduleKey, fileName, rowCount}` **SEBELUM**
+   tombol download aktif. Server: fungsi baru `checkAndRecordConversionRowBudget()` (`lib/trial.ts`, SEJAJAR
+   `checkTrialRowBudget`, REUSE setting global `trial.maxRows` YANG SAMA — admin tidak perlu atur kuota terpisah
+   untuk Konverter) — kalau `subscription.isTrial`, jumlahkan `rowCount` SEMUA baris `conversion_logs` existing
+   milik subscription itu + `rowCount` yang baru masuk, banding ke `trial.maxRows`; kalau melebihi → tolak (400
+   `TRIAL_ROW_LIMIT_EXCEEDED`, bentuk respons SAMA seperti Facport untuk konsistensi UI), TIDAK insert baris log;
+   kalau lolos (atau bukan trial) → INSERT baris `conversion_logs` SEKARANG (baris inilah yang jadi rekaman
+   otoritatif, bukan self-report pasif setelah fakta) → balas `{ok:true}`. Browser HANYA lanjut ke `downloadTextFile()`
+   setelah dapat `{ok:true}`.
+
+   **Kejujuran model ini**: sama seperti SEMUA endpoint lain yang menerima input dari client, pengguna yang sangat
+   teknis (DevTools) tetap BISA memanipulasi angka yang dikirim — tapi itu risiko generik yang sama di semua API,
+   BUKAN celah baru yang lebih lemah dari mekanisme lain. Untuk penggunaan NORMAL lewat UI (bukan API-tampering),
+   angka yang dikirim SELALU jujur karena dihitung otomatis dari file yang sungguh diproses, bukan field bebas yang
+   diketik user. Proporsional untuk kasus low-stakes (abuse trial gratis), bukan skenario keamanan data sensitif.
 
 6. **Union TypeBox `modules` (`admin/plans.route.ts`) ditambah 16 `t.Literal` manual** — TIDAK digenerate otomatis dari `module-catalog.ts` (alasan sama seperti Facport: `.map()` dari const array merusak inferensi Eden Treaty, insiden 2026-09-04, dijaga test guard drift-check yang sudah ada).
 
@@ -71,7 +94,8 @@ Riset (3 subagent Explore, grounded ke kode nyata kedua sisi — app lama & Facp
 
 - **Bundel tetap (Paket Penjualan/Pembelian/dst, mirror "paket cepat" app lama)** — ditolak: kurang fleksibel dibanding SKU granular, admin tetap bisa BUAT plan yang menggabungkan beberapa moduleKey lewat `/admin/plans` yang sudah ada (1 Plan boleh berisi banyak `modules`) — jadi granular tidak menghalangi dijual sebagai "paket", cuma fleksibel di kedua arah.
 - **1 SKU tunggal buka semua 16 tipe** — ditolak: tidak bisa jual sebagian tipe ke customer yang cuma butuh sedikit, kontradiksi dengan model ADR-0019 yang sudah terbukti bekerja untuk Facport.
-- **Reuse `checkTrialRowBudget` dengan tabel `conversion_logs` sebagai pengganti `import_batches`** — ditolak: `conversion_logs` self-reported (bisa dipalsukan client), memakainya sebagai HARD QUOTA menciptakan ilusi keamanan yang salah. Trial durasi-hari saja lebih honest tentang batasan teknis yang sebenarnya.
+- **Trial durasi-hari saja, TANPA kuota baris** — draft AWAL ADR ini (sebelum ditinjau ulang) memilih opsi ini dengan alasan "kuota baris tidak mungkin ditegakkan untuk proses self-reported/client-side". **DIKOREKSI 2026-09-22** (masukan user): keliru — kuota baris TETAP bisa ditegakkan server-side dengan pola pre-flight-check (§ poin 5), karena `rowCount` yang dikirim adalah hasil hitungan otomatis dari parsing yang browser toh wajib lakukan, bukan angka bebas. Opsi "durasi saja" TIDAK dipakai lagi — final: kuota baris + durasi SEKALIGUS (mirror persis pengalaman Facport, bukan pengalaman yang lebih lemah).
+- **Reuse LANGSUNG `checkTrialRowBudget` apa adanya (tanpa fungsi baru)** — ditolak: fungsi itu hardcode join `import_batches`/`import_batch_rows` yang Konverter tidak punya sama sekali; kalau dipanggil apa adanya akan selalu balikin `successCount=0` (trial jadi seolah tanpa kuota, SALAH TANPA ERROR TERLIHAT). Tetap perlu fungsi TWIN baru (`checkAndRecordConversionRowBudget`) yang membaca `conversion_logs`, bukan `import_batches` — tapi REUSE setting global `trial.maxRows` yang sama, dan REUSE bentuk respons yang sama (`TRIAL_ROW_LIMIT_EXCEEDED`) untuk konsistensi UI.
 - **Migrasi 34 user sekarang** — ditunda (bukan ditolak permanen), keputusan eksplisit user demi tidak memperlambat pembangunan fitur inti.
 
 ## Konsekuensi

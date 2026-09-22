@@ -17,7 +17,9 @@ dites). TIDAK ada tipe transaksi yang diimplementasi penuh di fase ini (menyusul
 - [ ] T3 `apps/api/src/lib/module-catalog.ts` — 16 entry `MODULE_CATALOG` (`productLine: "konverter"`) + kategori
       baru "Master Data" di `MODULE_CATEGORIES`
 - [ ] T4 `apps/api/src/routes/admin/plans.route.ts` — 16 `t.Literal` union TypeBox baru
-- [ ] T5 `POST /me/conversion-logs` + `GET /me/conversion-logs` (route baru, Elysia)
+- [ ] T5 `POST /me/conversion-logs` (gerbang kuota trial + insert log, § "Trial — Kuota Baris" di architecture doc)
+      + `GET /me/conversion-logs` (riwayat) — route baru Elysia; `lib/trial.ts` fungsi baru
+      `checkAndRecordConversionRowBudget()` (sejajar `checkTrialRowBudget`, reuse setting `trial.maxRows`)
 - [ ] T6 `apps/web/lib/converter/shared.ts` — port helper generik (`escapeXml`/`str`/`flag1`/`num`/`normDate`/
       `reserved`/`envelope`) dari `tool.html` app lama
 - [ ] T7 `apps/web/lib/download-file.ts` — helper `downloadTextFile()` baru (Blob+`<a download>`)

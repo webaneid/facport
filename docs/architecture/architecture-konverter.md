@@ -17,8 +17,10 @@ Facport:    Upload Excel → SERVER parse+validasi → job queue → Accurate On
 Konverter:  Upload Excel → BROWSER parse+validasi+build XML → download .xml → (opsional) lapor log ke server
 ```
 Tidak ada `import_batches`/`import_batch_rows`, tidak ada `pg-boss` job, tidak ada `accurate_connections`. Server
-Elysia HANYA dipakai untuk: auth (Better Auth, sama Facport), gating subscription (`moduleAccess()`, sama Facport),
-dan 1 endpoint kecil `POST /me/conversion-logs` (insert riwayat self-reported, § di bawah).
+Elysia dipakai untuk: auth (Better Auth, sama Facport), gating subscription (`moduleAccess()`, sama Facport), dan
+1 endpoint `POST /me/conversion-logs` yang SEKALIGUS jadi **gerbang kuota trial** (§ "Trial — Kuota Baris,
+Ditegakkan Server" di bawah) — browser WAJIB dapat OK dari endpoint ini SEBELUM tombol download aktif, bukan cuma
+lapor riwayat setelah fakta.
 
 ## 16 Tipe Transaksi (diporting dari `tool.html` app lama)
 Tabel lengkap moduleKey + kategori → `docs/decisions/adr-0038-produk-konverter.md` poin 2. Tiap tipe = 1 "unit"
@@ -62,7 +64,7 @@ memang wajib ada di skema resmi Accurate Desktop XML import).
 |---|---|
 | `moduleAccess()` macro | Apa adanya — `moduleAccess("konverter_sales_invoice")` di route halaman Konverter yang butuh gating (kalau ada server-side check; halaman Next.js sendiri sudah difilter dari sisi UI via `subscriptionModules`, sama pola modul Facport) |
 | `createTrialSubscription()` | Apa adanya |
-| `checkTrialRowBudget()` | **TIDAK dipanggil sama sekali** — Konverter tidak punya route import server, jadi otomatis tidak lewat fungsi ini |
+| `checkTrialRowBudget()` | **TIDAK dipanggil apa adanya** (hardcode `import_batches`, Konverter tidak punya) — tapi settingnya (`trial.maxRows`) DIPAKAI ULANG oleh fungsi TWIN baru `checkAndRecordConversionRowBudget()`, § "Trial — Kuota Baris" di bawah |
 | `plans.productLine/kind/durationDays/trialEligible` | Apa adanya, admin bikin Plan lewat `/admin/plans` seperti biasa, `productLine: "konverter"` |
 | Union TypeBox `admin/plans.route.ts` | Tambah 16 `t.Literal` manual (§ ADR-0038 poin 6) |
 | `FileDropzone` (`components/ui/file-dropzone.tsx`) | Apa adanya — ganti handler submit jadi proses `File` di browser, bukan POST server |
@@ -78,12 +80,38 @@ memang wajib ada di skema resmi Accurate Desktop XML import).
   fitur/lisensi). **WAJIB `dynamic import()`** (`const XLSX = await import("xlsx")`) di halaman `/konverter/*` SAJA
   — full build ~1MB+ minified, jangan masuk bundle global/initial load.
 - `apps/api/src/db/schema/*.ts` — tabel `conversion_logs` baru (skema § ADR-0038 poin 4) + migration.
-- `POST /me/conversion-logs` — endpoint baru, `auth: true` + `moduleAccess(moduleKey dari body)`, insert 1 baris,
-  BARE payload (§ konvensi Response Format project), TIDAK ada validasi rowCount/fileName selain schema dasar
-  (self-reported, sengaja tidak diverifikasi — § filosofi privacy-first app lama, data Excel TIDAK PERNAH dikirim
-  ke server, cuma metadata).
+- `POST /me/conversion-logs` — endpoint baru, `auth: true` + `moduleAccess(moduleKey dari body)`. Body
+  `{moduleKey, fileName, rowCount}` — `rowCount` = HASIL HITUNGAN OTOMATIS browser dari parsing (bukan angka bebas).
+  Handler panggil `checkAndRecordConversionRowBudget()` (§ di bawah) SEBELUM insert — kalau ditolak (trial sudah
+  lewat kuota), balas 400 `TRIAL_ROW_LIMIT_EXCEEDED` TANPA insert; kalau lolos, insert 1 baris `conversion_logs`
+  (BARE payload, § konvensi Response Format project) lalu balas `{ok:true}`. Isi Excel TIDAK PERNAH dikirim ke
+  server, cuma metadata (nama file, jumlah baris) — prinsip privacy-first app lama dipertahankan.
 - `GET /me/conversion-logs` — riwayat customer sendiri, dipakai halaman "Riwayat Konversi" (mirror ringkas "Arsip
   Import" Facport, tapi baca tabel berbeda).
+
+## Trial — Kuota Baris, Ditegakkan Server (revisi 2026-09-22)
+Draft awal dokumen ini sempat menyimpulkan "kuota baris tidak mungkin ditegakkan untuk Konverter, trial cuma
+durasi-hari" — **DIKOREKSI** (masukan user): kuota baris TETAP bisa nyata, sama seperti Facport, karena `rowCount`
+bukan input bebas — dia hasil parsing yang browser toh WAJIB lakukan untuk membangun XML.
+
+**Alur (mirror `checkTrialRowBudget` Facport, tapi pre-flight bukan post-hoc):**
+1. Browser parse Excel (`xlsx`) → panggil `process()`+`build()` type Konverter yang relevan → dapat `summary()`
+   (jumlah baris yang LOLOS validasi, bukan jumlah baris upload mentah — mirror filosofi Facport "hanya baris
+   sukses yang dihitung").
+2. Browser panggil `POST /me/conversion-logs` dengan `rowCount` itu **SEBELUM** tombol download aktif/enabled.
+3. Server (`lib/trial.ts`, fungsi BARU `checkAndRecordConversionRowBudget(subscriptionId, moduleKey, fileName, rowCount)`,
+   SEJAJAR `checkTrialRowBudget` yang sudah ada): kalau `subscription.isTrial` — jumlahkan `rowCount` SEMUA baris
+   `conversion_logs` existing milik subscription itu + `rowCount` baru, banding ke setting global `trial.maxRows`
+   (REUSE, TIDAK perlu setting baru); melebihi → return `{ok:false, remaining, max}` TANPA insert; kalau bukan
+   trial atau masih dalam kuota → INSERT baris `conversion_logs` SEKARANG (bukan self-report pasif setelah fakta)
+   → return `{ok:true}`.
+4. Browser HANYA panggil `downloadTextFile()` setelah dapat `{ok:true}`. Kalau ditolak, tampilkan pesan yang SAMA
+   gayanya dengan Facport ("batas trial tercapai", reuse komponen/copy yang sudah ada kalau memungkinkan).
+
+**Kejujuran model ini**: pengguna sangat teknis (DevTools) tetap BISA memanipulasi angka yang dikirim langsung ke
+API — risiko generik yang sama di semua endpoint manapun, BUKAN celah baru yang lebih lemah. Untuk pemakaian
+NORMAL lewat UI, angka SELALU jujur (hasil hitung otomatis, bukan field yang diketik user). Proporsional untuk
+kasus low-stakes (abuse trial gratis), bukan skenario keamanan data sensitif.
 - `apps/api/src/lib/module-catalog.ts` — 16 entry `MODULE_CATALOG` baru (`productLine: "konverter"`), + 1 nilai
   baru di `MODULE_CATEGORIES` ("Master Data").
 - `apps/web/components/app-shell/sidebar.tsx` — `NavGroup` baru `{label: "Konverter", productLine: "konverter",
@@ -99,9 +127,10 @@ memang wajib ada di skema resmi Accurate Desktop XML import).
 ## Known Limitations (isi seiring Fase 151+ menemukan hal baru)
 - Belum ada Web Worker — kalau file besar (banyak ribu baris) bikin UI freeze terasa, pertimbangkan pindah proses
   ke Web Worker (belum ada precedent project ini, akan jadi yang pertama).
-- `conversion_logs` self-reported TIDAK bisa dipakai enforcement kuota keras (§ ADR-0038 poin 5) — kalau bisnis
-  nanti butuh kuota trial yang benar-benar dijaga, perlu desain ulang (mis. proses SEBAGIAN di server untuk
-  verifikasi, yang akan mengubah filosofi privacy-first 100%-client-side).
+- Kuota trial (§ "Trial — Kuota Baris" di atas) ditegakkan lewat `rowCount` yang DIKIRIM browser — pengguna yang
+  memanipulasi request API langsung (bukan lewat UI biasa) bisa melaporkan angka palsu. Risiko diterima (sepadan
+  dengan risiko generik semua endpoint), TIDAK butuh mitigasi tambahan sekarang; revisit kalau ternyata abuse
+  trial jadi masalah nyata di produksi.
 - Sidebar clustering multi-Produk belum pernah dites sebelum Fase 150 — kalau ketemu bug di `navGroupsFor()`,
   catat di sini.
 - Nomor dokumen referensi (No_Faktur/No_SO/No_PO di tipe yang merujuk dokumen existing) TIDAK divalidasi
