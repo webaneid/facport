@@ -107,6 +107,23 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     }
     toast.success(plan ? "Paket diperbarui." : "Paket dibuat.");
     setOpen(false);
+    // § 2026-09-24 — bug ditemukan di produksi: dialog "Tambah Paket" adalah 1 instance
+    // yang DIPAKAI ULANG tiap kali dibuka (bukan di-mount ulang per plan seperti dialog Edit
+    // per-baris), jadi state field (terutama `moduleKey`) SEBELUMNYA nyangkut ke buka berikutnya
+    // kalau tidak direset — admin yang bikin beberapa paket berurutan lalu lupa pilih ulang radio
+    // modul akan diam-diam submit modul yang SALAH (persis kejadian nyata: 3 paket Konverter
+    // "Purchase Invoice"/"Purchase Order" ke-submit dengan modules=["konverter_journal_voucher"]
+    // karena radio itu tidak disentuh ulang). Reset SELURUH field ke default cuma untuk create
+    // (bukan edit — dialog Edit sudah scoped per-baris via prop `plan`, tidak butuh reset ini).
+    if (!plan) {
+      setName("");
+      setPrice("");
+      setDurationAmount("30");
+      setDurationUnit("hari");
+      setModuleKey("");
+      setPackageType(PRODUCT_LINES_WITH_MODULES[0]?.key ?? "seat_addon");
+      setTrialEligible(false);
+    }
     onSaved();
   }
 

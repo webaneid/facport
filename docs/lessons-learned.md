@@ -4209,3 +4209,49 @@ defaultColumnMap/template-guide) untuk field BARU WAJIB dicek juga di frontend `
 Combobox tiap halaman terkait — backend "tahu" field itu valid tidak berarti UI punya cara menampilkannya. Jangan
 simpulkan "cuma soal deploy" dari git log semata — WAJIB uji ulang di environment yang PASTI sudah punya fix-nya
 (di sini: dev lokal) sebelum menutup investigasi sebagai "bukan bug baru".
+
+## 2026-09-24 — Bug dilaporkan sebagai "Journal Voucher duplikat di /subscribe" — root cause form admin "Tambah Paket" tidak reset state
+
+**Simtom yang dilaporkan**: client screenshot `/subscribe`, kartu "Journal Voucher" (General Ledger) tampil 4-5
+pill "PILIH PERIODE" (harusnya cuma 2: 1 Bulan + 1 Tahun) — sekilas terlihat seperti bug rendering (Facport dan
+Konverter ke-merge jadi 1 kartu). **Investigasi kode dulu (SEBELUM lihat data)**: baca ulang `use-grouped-plans.ts`,
+`category-card.tsx`, `subscribe-form.tsx` — SEMUA grouping/bucketing terbukti benar (key by `moduleKey`, bukan
+label). Ini mengarahkan ke kesimpulan sementara "kode benar, curiga data" — baru divalidasi via `get_page_text`
+browser LANGSUNG ke halaman live (bukan cuma baca screenshot user), ketemu detail penting yang screenshot user
+tidak tangkap: pill berlebih itu muncul BAHKAN di DALAM section Facport sendiri (4 pill) DAN section Konverter
+sendiri (5 pill) — BUKAN merge lintas Produk, melainkan duplikasi tier DI DALAM 1 group yang sama. Ini langsung
+menyingkirkan hipotesis "bug rendering lintas productLine" dan mengarahkan ke "data plan itself punya baris
+duplikat/salah".
+
+**Root cause data** (dikonfirmasi via SQL `SELECT ... FROM plans WHERE modules::text ILIKE '%journal_voucher%'`
+yang dijalankan user sendiri di production, § pola `feedback_deploy_and_prod_debug_style`): 9 baris utk kata kunci
+ini, bukan 4 yang diharapkan. 2 baris Facport `journal_voucher` (nama "Journal Voucher", 0 subscriber, dibuat
+2026-09-22) adalah DUPLIKAT dari 2 baris lama (nama "Jurnal Umum", 2 & 9 subscriber, dibuat 2026-09-07) — rename
+yang dimaksud ternyata dilakukan lewat "buat baru" bukan "edit", meninggalkan baris lama tetap aktif. 3 baris lain
+(dibuat 2026-09-23 16:48:06–16:48:51, berurutan dalam 45 detik) diberi NAMA "Purchase Invoice"/"Purchase Order"
+tapi kolom `modules`-nya TETAP `["konverter_journal_voucher"]` — akibatnya modul Konverter Purchase Invoice &
+Purchase Order (30 hari) TIDAK PUNYA plan sama sekali di production, sementara Journal Voucher kelebihan.
+
+**Root cause kode** (`apps/web/app/admin/(protected)/plans/page.tsx`, `PlanFormDialog`): dialog "Tambah Paket"
+(tombol tanpa prop `plan`) adalah SATU instance komponen yang dipakai ULANG setiap kali dibuka — bukan di-mount
+ulang per submit. `handleSave()` sukses cuma `setOpen(false)` lalu `onSaved()`, TIDAK PERNAH reset state field
+(`name`, `price`, `moduleKey`, `packageType`, `trialEligible`, dst). Radio pemilihan modul TIDAK divisualkan beda
+antara "baru saya pilih" vs "nyangkut dari submit sebelumnya" — kalau admin bikin beberapa paket berurutan dan
+lupa klik ulang radio modul (karena mengira sudah reset), submit diam-diam pakai `moduleKey` LAMA. Persis
+skenario 3 baris di atas. **Fix**: reset SELURUH field ke default setelah create sukses (bukan edit — dialog Edit
+sudah scoped per-baris via prop `plan`, tidak kena bug ini).
+
+**Bonus temuan saat investigasi**: SEMUA plan Konverter (bukan cuma yang di skenario ini) tersimpan dengan
+`product_line = "facport"` — kolom ini SETIAP KALI default ke "facport" di server saat create karena tidak pernah
+diisi eksplisit dari form berbasis `packageType` yang sebenarnya sudah tahu productLine-nya. Blanket SQL fix
+(`WHERE modules::text LIKE '%konverter_%' AND product_line <> 'konverter'`) memperbaiki 29 baris sekaligus —
+lebih luas dari yang dilaporkan.
+
+**Pelajaran**: (1) dialog/form yang di-render SEKALI dan dipakai ulang lintas beberapa submit (pola "1 instance,
+banyak kali open/close" — beda dari dialog Edit per-baris yang di-scope oleh key/prop) WAJIB reset semua state
+form-nya sendiri setelah submit sukses, jangan andalkan admin mengingat untuk re-pilih tiap field setiap kali.
+(2) Saat user lapor "bug rendering" dari screenshot, verifikasi LANGSUNG ke halaman live (`get_page_text`/baca DOM
+nyata) sebelum lanjut menduga-duga dari screenshot semata — detail yang tidak masuk crop screenshot user (di sini:
+duplikasi terjadi DI DALAM section yang sama, bukan lintas section) mengubah total arah investigasi. (3) Waktu
+pembuatan baris (`created_at`) yang berurutan dalam hitungan detik adalah sinyal kuat "form state nyangkut antar
+submit", bukan seed data lama atau race condition async.
