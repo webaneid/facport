@@ -17,24 +17,30 @@
 // `buildDetailItemFromRow`, TIDAK lewat helper `collectSerialEntries`
 // (helper itu untuk kasus multi-baris-per-item yang tidak berlaku di sini).
 //
-// § DITUNDA 2026-09-24 (keputusan eksplisit user, § lessons-learned) — 2
-// kolom Excel client SENGAJA TIDAK dikirim ke Accurate sampai
-// diklarifikasi, walau TETAP dipetakan di sini (kalau nanti diaktifkan
-// cuma pindah 1 baris, bukan nulis ulang):
-//   1. `salesOrderDetailId` — field API kemungkinan besar (ANALOGI
-//      `receiveItemDetailId` yang dikonfirmasi resmi Accurate Support
-//      untuk Purchase Invoice←Receive Item), TAPI TIDAK ADA di spec resmi
-//      — presisi nama/perilaku field ini WAJIB dikonfirmasi dulu ke
-//      Accurate Support. Field ADA di `fieldToAccuratePath` (jadi bisa
-//      dipetakan tanpa error di UI), TAPI di-EXCLUDE eksplisit di
-//      `buildDetailItemFromRow` (§ `DEFERRED_FIELDS`) — TIDAK ikut payload.
-//   2. CLS2/CLS5 versi HEADER (posisi Excel SEBELUM "Item No") — dicek
-//      MENYELURUH ke SEMUA endpoint `save.do` di spec resmi Accurate: TIDAK
-//      ADA SATU PUN endpoint yang punya Kategori Keuangan level header.
-//      TIDAK dimasukkan ke `fieldToAccuratePath` SAMA SEKALI (beda dari
-//      poin 1 di atas) — tidak ada kandidat field Accurate yang plausible
-//      untuk dijadikan tujuan mapping, jadi kolom ini kalau ada di Excel
-//      user cuma akan tampil "(tidak dipetakan)", aman diabaikan.
+// § Fase 158 (2026-09-24) — `salesOrderDetailId` SEKARANG DI-AUTO-RESOLVE
+// server-side (§ `resolveSalesOrderDetailIds`, workers/index.ts), BUKAN
+// lagi field pasif "ditunda". Ditemukan dari reverse-engineering legacy
+// tool client sendiri (facport.com/FAC Institute, alat yang sedang
+// digantikan project ini): mereka WAJIB user cek manual halaman "Sales
+// Order Item Check" → VLOOKUP Excel manual (Item No & CLS5/"Week") sebelum
+// upload — bukti kuat backend LEGACY-nya cuma pass-through APA ADANYA,
+// tidak resolve otomatis. Kita BISA lebih baik: server sendiri panggil
+// `GET sales-order/detail.do?number=...`, cocokkan `itemNo` (+`CLS5` kalau
+// `itemNo` duplikat dalam 1 SO) ke `id` baris yang benar. Field ini TETAP
+// ada di `fieldToAccuratePath` sebagai OPSI MANUAL OVERRIDE (user tetap
+// bisa isi sendiri kalau mau, mis. hasil dari tool lama) — auto-resolve
+// HANYA jalan kalau kolom ini TIDAK dipetakan/kosong.
+//
+// § CLS2/CLS5 versi HEADER (posisi Excel SEBELUM "Item No") — dicek
+// MENYELURUH ke SEMUA endpoint `save.do` di spec resmi Accurate: TIDAK
+// ADA SATU PUN endpoint yang punya Kategori Keuangan level header. TIDAK
+// dimasukkan ke `fieldToAccuratePath` sama sekali — tidak ada kandidat
+// field Accurate yang plausible, jadi kolom ini kalau ada di Excel user
+// cuma tampil "(tidak dipetakan)", aman diabaikan. (Reverse-engineering
+// legacy tool mengonfirmasi CLS5 VERSI ITEM dipakai client sebagai label
+// "Week N" untuk disambiguasi — BUKAN Kategori Keuangan akuntansi
+// sungguhan, tapi tetap dikirim ke field `dataClassification5Name` apa
+// adanya, konsisten cara legacy tool memperlakukannya.)
 export const deliveryOrderMapping = {
   requiredFields: ["transDate", "customerNo", "itemNo", "quantity", "itemUnitName"] as const,
   fieldToAccuratePath: {
@@ -103,10 +109,6 @@ export const deliveryOrderMapping = {
 
 export type DeliveryOrderField = keyof typeof deliveryOrderMapping.fieldToAccuratePath;
 
-// § field yang ADA di mapping (bisa dipetakan tanpa error) tapi SENGAJA
-// tidak pernah ikut ke payload — lihat komentar besar di atas file.
-const DEFERRED_FIELDS = new Set<DeliveryOrderField>(["salesOrderDetailId"]);
-
 const DATE_FIELDS = new Set<DeliveryOrderField>(["transDate", "serialNumExpDate"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
@@ -145,7 +147,6 @@ export function buildDeliveryOrderPayload(rawRows: Record<string, unknown>[], co
   const payload: Record<string, unknown> = {};
   for (const [field, accuratePath] of Object.entries(deliveryOrderMapping.fieldToAccuratePath)) {
     if (accuratePath.startsWith("detailItem.")) continue;
-    if (DEFERRED_FIELDS.has(field as DeliveryOrderField)) continue;
     const value = headerValues[field as DeliveryOrderField];
     if (value !== undefined) payload[accuratePath] = value;
   }
@@ -161,7 +162,6 @@ export function buildDetailItemFromRow(rawRow: Record<string, unknown>, columnMa
   for (const [field, accuratePath] of Object.entries(deliveryOrderMapping.fieldToAccuratePath)) {
     if (!accuratePath.startsWith("detailItem.")) continue;
     if (accuratePath.startsWith("detailItem.detailSerialNumber.")) continue; // § dirangkai terpisah di bawah
-    if (DEFERRED_FIELDS.has(field as DeliveryOrderField)) continue;
     const value = rowValues[field as DeliveryOrderField];
     if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
   }
@@ -233,4 +233,37 @@ export function extractDataClassificationValues(rawRow: Record<string, unknown>,
     if (name !== "") result.push({ index, name });
   }
   return result;
+}
+
+// § Fase 158, architecture-delivery-order.md § "Auto-resolve Sales Order
+// Detail ID" — logic MURNI (tanpa I/O ke Accurate) dipisah di sini
+// SUPAYA bisa ditest tanpa mock HTTP (§ konvensi project: lapisan I/O
+// accurate-*.ts diverifikasi test call NYATA, bukan mock — lapisan
+// keputusan/matching-nya yang ditest unit di sini). Dipanggil dari
+// `resolveSalesOrderDetailIds` (workers/index.ts) SETELAH fetch detail
+// Sales Order dari Accurate.
+export type SalesOrderDetailCandidate = { id: number; itemNo: string; dataClassification5Name: string | null };
+
+export function resolveSalesOrderDetailId(candidates: SalesOrderDetailCandidate[], itemNo: string, soNumber: string, week: string | undefined): number {
+  const byItemNo = candidates.filter((d) => d.itemNo === itemNo);
+
+  if (byItemNo.length === 0) {
+    throw new Error(`Item "${itemNo}" tidak ditemukan di Sales Order "${soNumber}" — cek kembali No SO atau kode barang.`);
+  }
+  if (byItemNo.length === 1) return byItemNo[0]!.id;
+
+  // § itemNo duplikat dalam 1 SO — WAJIB disambiguasi via CLS5 ("Week N",
+  // § lessons-learned 2026-09-24), TIDAK BOLEH tebak (mirror ADR-0013).
+  if (!week) {
+    throw new Error(
+      `Item "${itemNo}" muncul ${byItemNo.length}× di Sales Order "${soNumber}" dengan kode sama — isi kolom CLS5 (Week) untuk membedakan baris mana yang dimaksud.`,
+    );
+  }
+  const matched = byItemNo.filter((d) => d.dataClassification5Name === week);
+  if (matched.length !== 1) {
+    throw new Error(
+      `Item "${itemNo}" dengan CLS5 "${week}" di Sales Order "${soNumber}" ${matched.length === 0 ? "tidak ditemukan" : `masih ambigu (${matched.length} baris cocok)`} — cek kembali nilainya.`,
+    );
+  }
+  return matched[0]!.id;
 }

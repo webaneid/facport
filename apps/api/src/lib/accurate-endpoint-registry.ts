@@ -84,7 +84,9 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   sales_return: { endpoints: ["POST sales-return/save.do", ...CLASSIFICATION] },
   // § Fase 157 — Delivery Order: TIDAK auto-create customer/item (mirror `receive_item`,
   // dokumen fulfillment lanjutan — customerNo/itemNo dikirim apa adanya).
-  delivery_order: { endpoints: ["POST delivery-order/save.do", ...CLASSIFICATION] },
+  // § Fase 158 — `GET sales-order/detail.do` ditambah untuk auto-resolve `salesOrderDetailId`
+  // (§ `resolveSalesOrderDetailIds`, workers/index.ts) saat `itemNo` duplikat dalam 1 Sales Order.
+  delivery_order: { endpoints: ["POST delivery-order/save.do", "GET sales-order/detail.do", ...CLASSIFICATION] },
   // Item Transfer & Item Requisition: 1 endpoint Accurate yang sama (Fase 134-135).
   item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
   item_requisition: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },

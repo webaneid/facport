@@ -6,14 +6,19 @@ import {
   deliveryOrderMapping,
   groupDeliveryOrderRows,
   validateGroupCustomerConsistency,
+  resolveSalesOrderDetailId,
   type ImportRowRecord,
 } from "./delivery-order.mapping";
 
-// § Fase 157 — mirror `receive-item.mapping.test.ts`, disesuaikan dengan
-// perbedaan Delivery Order: grouping DEFAULT ADR-0011 by "number" (BUKAN
-// wajib seperti Receive Number Receive Item), DAN cakupan khusus untuk 2
-// kolom DITUNDA (`salesOrderDetailId` tidak boleh pernah muncul di
-// payload meski dipetakan) + struktur `detailSerialNumber[]`.
+// § Fase 157-158 — mirror `receive-item.mapping.test.ts`, disesuaikan
+// dengan perbedaan Delivery Order: grouping DEFAULT ADR-0011 by "number"
+// (BUKAN wajib seperti Receive Number Receive Item), `salesOrderDetailId`
+// SEKARANG mengalir normal ke payload sebagai manual override, logic
+// AUTO-RESOLVE murni (`resolveSalesOrderDetailId`, § Fase 158) DITEST di
+// sini (lapisan fetch-nya sendiri, `getSalesOrderDetailByNumber`, TIDAK
+// di-mock — konvensi project: I/O ke Accurate diverifikasi test call
+// nyata, § lessons-learned 2026-09-24, bukan mock) + struktur
+// `detailSerialNumber[]`.
 describe("buildDeliveryOrderPayload", () => {
   test("field header masuk ke root payload, field item masuk ke detailItem[0]", () => {
     const rawRow = {
@@ -78,14 +83,13 @@ describe("buildDeliveryOrderPayload", () => {
     expect(detailItem[1]!.itemNo).toBe("BRG-2");
   });
 
-  test("§ DITUNDA — 'Sales Order Detail ID' dipetakan tapi TIDAK PERNAH muncul di payload", () => {
+  test("§ Fase 158 — 'Sales Order Detail ID' dipetakan MANUAL mengalir normal ke payload (override, auto-resolve terjadi di worker bukan di sini)", () => {
     const rawRow = { "Cust No": "C.001", "Item No": "BRG-1", "Sales Order Detail ID": "120" };
     const columnMapping = { "Cust No": "customerNo", "Item No": "itemNo", "Sales Order Detail ID": "salesOrderDetailId" };
 
     const payload = buildDeliveryOrderPayload([rawRow], columnMapping);
     const detail = (payload.detailItem as Record<string, unknown>[])[0]!;
-    expect(detail.salesOrderDetailId).toBeUndefined();
-    expect(JSON.stringify(payload)).not.toContain("120");
+    expect(detail.salesOrderDetailId).toBe("120");
   });
 
   test("Serial Num + Qty + Exp Date dirangkai jadi 1 entri detailSerialNumber[]", () => {
@@ -195,5 +199,39 @@ describe("requiredFields", () => {
     expect(deliveryOrderMapping.requiredFields).toContain("itemUnitName");
     expect(deliveryOrderMapping.requiredFields).not.toContain("branchName");
     expect(deliveryOrderMapping.requiredFields).not.toContain("number");
+  });
+});
+
+// § Fase 158 — logic MURNI auto-resolve Sales Order Detail ID, dites
+// TANPA mock HTTP (kandidat dikonstruksi manual, mirror data nyata hasil
+// test call `SO-IDR-01` 2026-09-24: 2 baris `itemNo` "9900014" sama, `id`
+// 102300/102301 beda).
+describe("resolveSalesOrderDetailId", () => {
+  const dup = [
+    { id: 102300, itemNo: "9900014", dataClassification5Name: "Week 37" },
+    { id: 102301, itemNo: "9900014", dataClassification5Name: "Week 38" },
+  ];
+
+  test("itemNo cuma muncul 1× di SO -> langsung return id-nya, TIDAK butuh CLS5/week", () => {
+    const candidates = [{ id: 500, itemNo: "BRG-1", dataClassification5Name: null }];
+    expect(resolveSalesOrderDetailId(candidates, "BRG-1", "SO-001", undefined)).toBe(500);
+  });
+
+  test("itemNo TIDAK ditemukan di SO -> lempar error jelas (bukan diam-diam 0/undefined)", () => {
+    const candidates = [{ id: 500, itemNo: "BRG-LAIN", dataClassification5Name: null }];
+    expect(() => resolveSalesOrderDetailId(candidates, "BRG-1", "SO-001", undefined)).toThrow(/tidak ditemukan/i);
+  });
+
+  test("itemNo duplikat + week diisi + cocok tepat 1 -> return id yang benar (mirror kasus nyata SO-IDR-01)", () => {
+    expect(resolveSalesOrderDetailId(dup, "9900014", "SO-IDR-01", "Week 37")).toBe(102300);
+    expect(resolveSalesOrderDetailId(dup, "9900014", "SO-IDR-01", "Week 38")).toBe(102301);
+  });
+
+  test("itemNo duplikat TANPA week -> lempar error minta isi CLS5 (aman, bukan tebak)", () => {
+    expect(() => resolveSalesOrderDetailId(dup, "9900014", "SO-IDR-01", undefined)).toThrow(/CLS5/i);
+  });
+
+  test("itemNo duplikat + week diisi TAPI tidak cocok satu pun -> lempar error", () => {
+    expect(() => resolveSalesOrderDetailId(dup, "9900014", "SO-IDR-01", "Week 99")).toThrow(/tidak ditemukan/i);
   });
 });

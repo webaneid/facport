@@ -15,14 +15,14 @@ import { api } from "@/lib/api-client";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
-// § architecture-delivery-order.md, Fase 157 — dokumen LANJUTAN dalam
+// § architecture-delivery-order.md, Fase 157-158 — dokumen LANJUTAN dalam
 // rantai Sales (Sales Quotation → Sales Order → Delivery Order → Sales
 // Invoice), bukti FISIK barang sudah dikirim ke customer. BEDA dari Sales
 // Order: TIDAK auto-create customer/item (dikirim apa adanya), TIDAK ada
-// Expense sama sekali. "Sales Order Detail ID" berlabel jelas BELUM AKTIF
-// (§ delivery-order.mapping.ts, ditunda menunggu konfirmasi Accurate
-// Support) — bisa dipetakan tanpa error, tapi nilainya belum dikirim ke
-// Accurate.
+// Expense sama sekali. "Sales Order Detail ID" (§ Fase 158) OPSIONAL —
+// server OTOMATIS cari sendiri ke Accurate kalau kosong (cocokkan Item
+// No, pakai CLS5/Week kalau kodenya duplikat dalam 1 Sales Order), kolom
+// ini cuma untuk override manual kalau user sudah tahu ID-nya sendiri.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "transDate", label: "Trans Date (wajib)" },
@@ -42,11 +42,11 @@ const ACCURATE_FIELDS = [
   { value: "warehouseName", label: "Item Warehouse" },
   { value: "projectNo", label: "Item Project No" },
   { value: "salesOrderNumber", label: "Item Sales Order No (prioritas > Sales Quot No)" },
-  { value: "salesOrderDetailId", label: "Sales Order Detail ID — BELUM AKTIF (ditunda, lihat catatan tim)" },
+  { value: "salesOrderDetailId", label: "Sales Order Detail ID (opsional — otomatis dicari server kalau kosong)" },
   { value: "salesQuotationNumber", label: "Item Sales Quot No" },
   { value: "reverseInvoiceNumber", label: "Item Reverse Invoice" },
   { value: "attribut2", label: "CLS2 / Finance Category 2 (level barang)" },
-  { value: "attribut5", label: "CLS5 / Finance Category 5 (level barang)" },
+  { value: "attribut5", label: "CLS5 / Finance Category 5 (level barang) — dipakai auto-cari Sales Order Detail ID kalau Item No duplikat" },
   { value: "serialNum", label: "Serial Num" },
   { value: "serialNumQty", label: "Serial Num Qty" },
   { value: "serialNumExpDate", label: "Serial Num Exp Date" },

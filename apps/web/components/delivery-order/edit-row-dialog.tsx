@@ -32,7 +32,7 @@ const FIELD_HINTS: Record<string, string> = {
   itemNo: "Kode Barang di Accurate, contoh: BRG-001 — TIDAK dibuatkan otomatis kalau belum ada",
   quantity: "Contoh: 10 (angka saja)",
   unitPrice: "Contoh: 50000 (angka saja, tanpa titik/koma)",
-  salesOrderDetailId: "BELUM AKTIF — kolom ini ditunda, nilainya belum dikirim ke Accurate",
+  salesOrderDetailId: "Opsional — server otomatis cari sendiri kalau kosong, isi manual cuma kalau sudah tahu ID-nya",
 };
 
 function toDisplayDate(value: unknown): string {

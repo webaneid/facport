@@ -4305,3 +4305,50 @@ kegunaannya" — client sedang tidur, tidak mau tebak-tebak):
 Security review: 0 Critical/High/Medium — pure mirror pola Receive Item yang sudah direview, tanpa permukaan
 risiko baru. **Belum diverifikasi**: test call NYATA ke Accurate sandbox untuk `delivery-order/save.do` (tidak
 ada koneksi live saat eksekusi) — dicatat Known Limitation di phase doc, bukan diasumsikan bekerja.
+
+## 2026-09-24 — Fase 158: Reverse-engineering legacy tool client ternyata legacy-nya SENDIRI (facport.com)
+
+**Konteks**: user minta cek `facport.com` (browser, kredensial sudah login) untuk "belajar dari aplikasi yang
+sama dengan kita" — ternyata bukan kompetitor pihak ketiga, tapi **legacy tool client sendiri** (logo literal
+"facport #Excel to Accurate Online", brand "FAC Institute") yang SEDANG DIGANTIKAN project ini (developer lama
+tidak mau serahkan source code ke client). Ini penjelasan langsung kenapa file template client sebelumnya
+bernama "FACPORT_Delivery Order_v8.xlsx" dan "Sample_Format_DO_v8.xlsx" — keduanya berasal dari tool yang sama.
+
+**Temuan kunci — alur manual "Sales Order Detail ID" legacy tool**: halaman "Sales Order Item Check"
+(`sales-order-detail-search`) — user masukkan No. SO, dapat tabel `Item No | Item Name | Quantity | Description
+| Sales Order Detail ID` (kolom "Description" ternyata CLS5/`dataClassification5Name` SO itu, dipakai client
+sebagai label **"Week N"**). User HARUS copy hasil ke sheet bantu Excel, bikin kolom Rumus (`ItemNo & Week`),
+lalu di sheet utama kolom "Item Project No" diisi rumus SAMA (`ItemNo & CLS5`, bukan projectNo asli — di-overload
+jadi kunci komposit), dan "Sales Order Detail ID" diisi via `VLOOKUP`. **Kesimpulan penting**: fakta bahwa user
+WAJIB melalui proses manual ini SEBELUM upload adalah bukti kuat backend legacy-nya cuma PASS-THROUGH (baca
+kolom itu dari Excel, kirim apa adanya ke Accurate) — TIDAK ADA resolusi otomatis di server mereka. Ini
+menjelaskan SEKALIGUS 2 misteri Fase 157: kegunaan CLS5 (bukan Kategori Keuangan akuntansi, tapi label batch
+"Week") DAN cara kerja "Sales Order Detail ID" (manual, bukan ajaib).
+
+**Keputusan user**: bangun versi LEBIH BAIK — auto-resolve di server Facport sendiri (§ Fase 158, arsitektur
+lengkap di `architecture-delivery-order.md`), user tidak pernah perlu tahu apa itu VLOOKUP. Scope SENGAJA
+dibatasi Delivery Order dulu ("focus ke DO dulu ajah, kalau sudah jalan kita bisa copas ke 2 lainnya").
+
+**Verifikasi test call nyata (bukan tebakan)**: dev environment awalnya gagal 401 di 3 koneksi test/seed (token
+stale, bukan koneksi live sungguhan) — ternyata koneksi yang BENAR adalah Data Usaha "Webane Indonesia" (database
+"Retail Demo", akun `kurikulum.fac@gmail.com`), ketemu setelah user kasih screenshot halaman `/accurate` yang
+menunjukkan nama akunnya, dicocokkan via query `accurate_connections.accurate_user_email`. Hasil test call ke
+`GET sales-order/detail.do`:
+- `detailItem[].id` = ID PER-BARIS (bukan ID header SO) — dibuktikan pakai SO nyata "SO-IDR-01" (2 baris `itemNo`
+  "9900014" SAMA) yang balik `id` 102300 & 102301 (beda, urut). SO ber-1-baris kebetulan punya `detailItem[0].id`
+  == id header-nya sendiri (Accurate alokasikan ID baris pertama = ID header, +1 per baris berikutnya) — awalnya
+  terlihat seperti bug baca field yang salah, ternyata cuma pola alokasi ID Accurate.
+- `detailItem[].item.no` nested — persis pola `getPurchaseInvoiceDetail` (ADR-0012), dikonfirmasi ulang di sini.
+- `detailItem[].dataClassification5` — OBJEK nested `{id, name}`, BUKAN string flat seperti kode awal saya tulis
+  (`dataClassification5Name`) — ketahuan salah SAAT test call nyata, langsung diperbaiki. Belum ada data uji
+  dengan CLS5 benar-benar terisi (semua SO uji `null`) untuk konfirmasi 100% bentuk objeknya saat terisi.
+
+**Pelajaran**: (1) kalau user minta cek "aplikasi kompetitor", jangan asumsikan itu benar-benar pihak ketiga —
+cek branding/logo dulu, bisa jadi itu aset/legacy tool client sendiri yang justru jadi SUMBER KEBENARAN paling
+otentik untuk business logic yang sedang di-rebuild. (2) Proses manual yang "menyakitkan" di sistem lama (VLOOKUP
+berlapis) seringkali adalah SINYAL bahwa backend lama tidak punya kapabilitas tertentu (bukan sekadar UX buruk) —
+gunakan itu untuk memahami batasan REAL sistem lama, bukan cuma menirunya. (3) Field nested-object vs flat-string
+dari respons Accurate yang tidak terdokumentasi TETAP bisa salah tebak meski sudah mengikuti pola lain yang mirip
+(`item.no` benar, tapi `dataClassification5Name` ternyata salah — harusnya `dataClassification5.name`) — test
+call nyata menemukan ini dalam hitungan menit, dibanding berpotensi salah diam-diam di production kalau tidak
+diverifikasi.

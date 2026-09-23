@@ -165,6 +165,7 @@
 | 155  | Konverter — Port Sales (Sales Invoice/Order, Delivery Order, Sales Return) — SELURUH 15 tipe transaksi Konverter selesai | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-155-konverter-sales.md` |
 | 156  | Konverter — Port Standard Cost (Master Data) — SELURUH 16 Varian Konverter SELESAI, + fix regresi `converterHasData` | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-156-konverter-standard-cost.md` |
 | 157  | Modul Baru: Delivery Order (Pengiriman Pesanan) — modul ke-22 Facport, ditemukan belum ada saat investigasi bug lintas-dokumen "Detail ID" | Done | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-157-delivery-order.md` |
+| 158  | Delivery Order — Auto-Resolve Sales Order Detail ID server-side, gantikan proses manual VLOOKUP legacy tool client, diverifikasi test call nyata | Done | `docs/architecture/architecture-delivery-order.md` § "Fase 158" | `docs/phases/phase-158-delivery-order-auto-resolve-sales-order-detail-id.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
