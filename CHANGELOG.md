@@ -1,3 +1,10 @@
+## 2.12.0 (2026-09-23)
+
+* Merge pull request #73 from webaneid/develop ([5b1cd00](https://github.com/webaneid/facport/commit/5b1cd00)), closes [#73](https://github.com/webaneid/facport/issues/73)
+* feat(delivery-order): auto-resolve Sales Order Detail ID server-side ([e42ef3a](https://github.com/webaneid/facport/commit/e42ef3a))
+* feat(delivery-order): modul baru Delivery Order (Pengiriman Pesanan) ([591c023](https://github.com/webaneid/facport/commit/591c023))
+* fix(admin): reset form Tambah Paket setelah create sukses ([e6da88b](https://github.com/webaneid/facport/commit/e6da88b))
+
 ## 2.11.0 (2026-09-23)
 
 * Merge pull request #72 from webaneid/develop ([7ad2a17](https://github.com/webaneid/facport/commit/7ad2a17)), closes [#72](https://github.com/webaneid/facport/issues/72)
