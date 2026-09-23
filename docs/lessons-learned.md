@@ -4107,6 +4107,7 @@ gejalanya bisa diperbaiki dengan lebih dari satu cara struktural. Kalau menambah
 namespace presentasional (Kategori, label) dengan yang sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak
 disaring) — cek juga apakah SEMUA titik UI yang menampilkannya (bukan cuma yang customer-facing) sudah punya cara
 membedakan sumbernya, dan pertimbangkan Produk sebagai GERBANG (bukan sub-grup) kalau alur kerja penggunanya memang
+"pilih 1 Produk dulu, baru urus detailnya" — bukan "lihat semua lalu cari yang cocok".
 
 ## 2026-09-23 — SEMUA 16 halaman Konverter crash runtime ("Functions cannot be passed to Client Components"), lolos dari typecheck+lint+unit test SEPENUHNYA
 **Gejala:** user buka `/konverter/other-deposit`, dapat Runtime Error "Functions cannot be passed directly to Client
@@ -4140,4 +4141,34 @@ punya kelas bug RUNTIME-ONLY (serialisasi boundary, "use client"/"use server" pl
 TypeScript type checker maupun di test yang memanggil fungsi murni langsung tanpa lewat pipeline render Next.js
 sungguhan — kalau pola baru menyeberang batas Server/Client, itu sinyal untuk verifikasi manual, bukan cukup lolos
 compiler.
-"pilih 1 Produk dulu, baru urus detailnya" — bukan "lihat semua lalu cari yang cocok".
+
+## 2026-09-23 — Konverter: isi Branch Code setelah upload file → hasil tidak pernah muncul kecuali file di-upload ULANG
+**Gejala:** user upload Excel dulu (Branch Code masih kosong) → muncul notice "Branch Code belum diisi", file
+kelihatan "sudah terpilih" di UI. User isi Branch Code SETELAH itu → tidak terjadi apa-apa, ringkasan tidak pernah
+muncul kecuali file di-upload ulang dari awal.
+
+**Root cause:** `ConverterTypeView` (§ Fase 151) menggabung PARSE (baca file Excel) + PROCESS (`type.process()`)
+jadi SATU fungsi `handleFile`, dipanggil SEKALI SAJA saat `FileDropzone.onChange` — kalau Branch Code kosong saat
+itu, fungsi berhenti (`return`) dan TIDAK ADA apa pun yang memicunya lagi begitu `branch` (state input Branch Code)
+berubah belakangan. State `file` sudah keburu di-set SEBELUM early-return, jadi UI menunjukkan file "terpilih"
+walau belum pernah benar-benar diproses — inkonsistensi antara APA YANG TERLIHAT dan APA YANG SEBENARNYA TERJADI,
+sumber kebingungan user.
+
+**Fix:** pisah PARSE (state `parsed`, di-set SEKALI per file lewat `handleFile`, async — mahal, baca file Excel)
+dari PROCESS (`type.process()`, murah — pure function sinkron atas `parsed`+`branch`+`defCurrency`). PROCESS
+dihitung sebagai NILAI DERIVED (`useMemo`, bukan `useEffect`+`setState` — percobaan pertama pakai `useEffect` kena
+lint `react-hooks/set-state-in-effect`, DAN memang tidak perlu effect sama sekali untuk komputasi sinkron begini,
+§ react.dev "you might not need an effect") — otomatis ikut setiap perubahan `branch`/`defCurrency`/`parsed`,
+TIDAK PERNAH butuh "pemicu ulang" manual apa pun. Excel TIDAK di-parse ulang cuma karena Branch Code berubah
+(mahal, dan isi file tidak berubah) — cuma PROCESS (murah) yang re-run tiap keystroke.
+
+**Verifikasi:** diuji LANGSUNG di browser (bukan cuma baca kode) — generate file Excel asli via script, upload ke
+`/konverter/other-deposit` TANPA isi Branch Code dulu (notice muncul, benar), isi Branch Code TANPA re-upload
+(ringkasan+preview XML muncul otomatis, `BranchCode="HO"` tertanam benar di XML) — sesuai skenario bug yang
+dilaporkan user, persis.
+
+**Pelajaran:** kalau sebuah aksi user (upload file) punya PRASYARAT dari state lain yang BISA diisi user
+BELAKANGAN (Branch Code), JANGAN gabung "validasi prasyarat" dengan "proses yang butuh prasyarat itu" jadi 1
+fungsi imperatif yang cuma jalan sekali dipicu event — pisahkan jadi computed/derived value yang otomatis
+konsisten terhadap SEMUA state terkait, supaya tidak ada jalur "keadaan UI tidak sinkron dengan data" yang harus
+diingat-ingat manual (di sini: "upload lagi kalau lupa isi field dulu").

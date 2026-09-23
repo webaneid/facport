@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,41 +34,56 @@ export function ConverterTypeView({ moduleKey }: { moduleKey: string }) {
   const [branch, setBranch] = useState("");
   const [defCurrency, setDefCurrency] = useState("IDR");
   const [file, setFile] = useState<File | undefined>(undefined);
-  const [ctx, setCtx] = useState<ConverterCtxBase | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
+  // § diminta user 2026-09-23 (bug) — SEBELUM ini, parse+process JADI SATU di `handleFile` (dipanggil SEKALI
+  // saat file dipilih): kalau Branch Code masih kosong saat itu, prosesnya berhenti total dan TIDAK ADA yang
+  // memicunya lagi begitu Branch Code diisi belakangan — file kelihatan "sudah terpilih" di UI tapi hasilnya
+  // tidak pernah muncul sampai user re-upload file yang SAMA lagi. Fix: PARSE (baca file Excel, mahal — sekali
+  // per file, ASYNC — state biasa) dipisah dari PROCESS (`type.process()`, murah, SYNCHRONOUS pure function
+  // dari state yang sudah ada) — PROCESS dihitung sebagai NILAI DERIVED (`useMemo`, BUKAN `useEffect`+`setState`,
+  // yang kena lint `react-hooks/set-state-in-effect` DAN secara desain memang tidak perlu effect sama sekali
+  // untuk komputasi sinkron begini) — otomatis mengikuti setiap perubahan `branch`/`defCurrency`/`parsed`, TANPA
+  // perlu "memicu ulang" apa pun secara manual. Parse Excel TIDAK diulang cuma karena Branch Code berubah (mahal,
+  // tidak perlu — isi file tidak berubah).
+  const [parsed, setParsed] = useState<{ rows: Record<string, unknown>[]; sheetCount: number; skippedExampleRows: number } | null>(null);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [branchTouched, setBranchTouched] = useState(false);
 
   async function handleFile(selected: File | undefined) {
     setFile(selected);
-    setCtx(null);
-    setNotice(null);
+    setParsed(null);
+    setActionNotice(null);
     if (!selected || !type) return;
-
-    if (!branch.trim()) {
-      setBranchTouched(true);
-      setNotice("Branch Code belum diisi — isi dulu sebelum upload file.");
-      return;
-    }
 
     setProcessing(true);
     try {
-      const { rows, sheetCount, skippedExampleRows } = await readExcelFile(selected);
-      const result = type.process(rows, { branch: branch.trim(), defCurrency: defCurrency.trim() || "IDR" });
-      // § Fase 151 — warning tambahan pola SAMA legacy (baris contoh dilewati / lebih dari 1 sheet), ditaruh
-      // di AWAL array (bukan diacak) supaya paling menonjol di kartu ringkasan.
-      const extraWarnings: string[] = [];
-      if (sheetCount > 1) extraWarnings.push(`File berisi ${sheetCount} sheet; hanya sheet pertama yang dibaca.`);
-      if (skippedExampleRows) extraWarnings.push(`Dilewati ${skippedExampleRows} baris contoh template (bertanda CONTOH-HAPUS). Hapus baris contoh sebelum mengisi data asli.`);
-      result.warnings = [...extraWarnings, ...result.warnings];
-      setCtx(result);
+      const result = await readExcelFile(selected);
+      setParsed(result);
     } catch (err) {
-      setNotice(`Gagal membaca file: ${err instanceof Error ? err.message : String(err)}. Pastikan file Excel valid.`);
+      setActionNotice(`Gagal membaca file: ${err instanceof Error ? err.message : String(err)}. Pastikan file Excel valid.`);
     } finally {
       setProcessing(false);
     }
   }
+
+  const trimmedBranch = branch.trim();
+  // § true begitu file SUDAH diparse (bukan cuma dipilih) TAPI Branch Code masih kosong — dipakai baik untuk
+  // validasi inline field maupun notice, TIDAK PERNAH ketinggalan sinkron dari `ctx` karena sama-sama derived.
+  const branchRequired = !!parsed && !trimmedBranch;
+  const branchNotice = branchRequired ? "Branch Code belum diisi — isi dulu sebelum melihat ringkasan." : null;
+  const notice = actionNotice ?? branchNotice;
+
+  const ctx = useMemo<ConverterCtxBase | null>(() => {
+    if (!parsed || !trimmedBranch || !type) return null;
+    const result = type.process(parsed.rows, { branch: trimmedBranch, defCurrency: defCurrency.trim() || "IDR" });
+    // § Fase 151 — warning tambahan pola SAMA legacy (baris contoh dilewati / lebih dari 1 sheet), ditaruh
+    // di AWAL array (bukan diacak) supaya paling menonjol di kartu ringkasan.
+    const extraWarnings: string[] = [];
+    if (parsed.sheetCount > 1) extraWarnings.push(`File berisi ${parsed.sheetCount} sheet; hanya sheet pertama yang dibaca.`);
+    if (parsed.skippedExampleRows) extraWarnings.push(`Dilewati ${parsed.skippedExampleRows} baris contoh template (bertanda CONTOH-HAPUS). Hapus baris contoh sebelum mengisi data asli.`);
+    result.warnings = [...extraWarnings, ...result.warnings];
+    return result;
+  }, [parsed, trimmedBranch, defCurrency, type]);
 
   const hasErrors = !!ctx && ctx.errors.length > 0;
   // § Fase 156 — mirror legacy `hasData` (§ `converterHasData`, converter-type.ts): 0 error di file KOSONG (tidak
@@ -80,14 +95,14 @@ export function ConverterTypeView({ moduleKey }: { moduleKey: string }) {
   async function handleDownload() {
     if (!xml || !ctx || !summary || !type) return;
     setDownloading(true);
-    setNotice(null);
+    setActionNotice(null);
     try {
       // § rowCount = field EKSPLISIT `summary().rowCount` (§ converter-type.ts) — hasil hitungan OTOMATIS, BUKAN
       // angka bebas (§ prinsip kuota trial architecture doc).
       const res = await api.me["conversion-logs"].post({ moduleKey: type.key, fileName: file?.name ?? type.fileName, rowCount: summary.rowCount });
       if (res.error) {
         const value = res.error.value as { code?: string; remaining?: number; max?: number } | undefined;
-        setNotice(
+        setActionNotice(
           value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
             ? `Batas trial tercapai — sisa ${value.remaining} dari ${value.max} baris. Upgrade ke paket berbayar untuk lanjut.`
             : value?.code === "MODULE_NOT_SUBSCRIBED"
@@ -126,7 +141,7 @@ export function ConverterTypeView({ moduleKey }: { moduleKey: string }) {
           <label className="flex flex-1 flex-col gap-1.5">
             <span className="text-sm font-medium text-foreground">Branch Code</span>
             <Input value={branch} onChange={(e) => setBranch(e.target.value)} placeholder="mis. HO" />
-            {branchTouched && !branch.trim() && <span className="text-xs text-destructive">Wajib diisi.</span>}
+            {branchRequired && <span className="text-xs text-destructive">Wajib diisi.</span>}
           </label>
           {type.needsCurrency && (
             <label className="flex flex-1 flex-col gap-1.5">
@@ -211,7 +226,9 @@ export function ConverterTypeView({ moduleKey }: { moduleKey: string }) {
         </Card>
       )}
 
-      {!ctx && !processing && (
+      {/* § `!notice` ditambah — tanpa ini, hint generik ini tampil BERSAMAAN dengan Alert "Branch Code belum
+         diisi" (keduanya sama-sama true saat ctx null gara-gara branch kosong), jadi user lihat 2 pesan sekaligus. */}
+      {!ctx && !processing && !notice && (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <FileSpreadsheet className="h-4 w-4" />
           Upload file Excel untuk melihat ringkasan konversi.
