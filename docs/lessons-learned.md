@@ -4087,13 +4087,24 @@ konverter" — investigasi lanjutan menemukan kode SUDAH menampilkan modul Konve
 sebelum Konverter ada) — begitu 2 Produk berbagi Kategori DAN label, admin melihat 2 radio button identik tanpa cara
 membedakan mana Facport mana Konverter (risiko nyata: admin bikin Plan dengan modul yang SALAH tanpa sadar).
 
-**Fix:** kelompokkan radio DUA LEVEL (Produk dulu, baru Kategori di dalamnya) — pola SAMA `ProductCatalogSection`
-(`components/subscribe/product-catalog-section.tsx`, sudah ada sejak Fase 127 untuk halaman `/subscribe` pelanggan, TIDAK
-PERNAH diterapkan ke admin karena saat itu belum ada Produk ke-2). Kolom "Fitur" di tabel daftar Plan juga diberi label
-Produk (`"{label} ({Produk})"`) supaya baris Plan existing juga tidak ambigu.
+**Fix (percobaan 1, tidak cukup — user koreksi)**: kelompokkan radio modul DUA LEVEL (Produk dulu, baru Kategori di
+dalamnya) di DALAM section "Fitur", `kind` (module/seat_addon) tetap terpisah. User menegaskan itu bukan yang dimaksud:
+maksudnya "Jenis Paket" SENDIRI yang jadi gerbang Produk, bukan sub-heading di section terpisah — supaya pilih Produk
+LANGSUNG memfilter daftar modul di bawahnya (admin tidak scroll lewat Produk lain sama sekali).
 
-**Pelajaran:** kalau menambah Produk/kategori baru yang BERBAGI namespace presentasional (Kategori, label) dengan yang
-sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak disaring) — cek juga apakah SEMUA titik UI yang menampilkannya
-(bukan cuma yang customer-facing) sudah punya cara membedakan sumbernya. Pola yang sudah benar di 1 tempat (`/subscribe`)
-tidak otomatis menyebar ke tempat lain (`/admin/plans`) yang dibangun sebelum kebutuhan itu ada — WAJIB dicek manual tiap
-titik yang menampilkan moduleKey mentah begitu Produk ke-2+ ditambahkan, tidak cukup asumsi "sudah general".
+**Fix final:** "Jenis Paket" sekarang 1 opsi PER PRODUK (dinamis dari `PRODUCT_LINES` yang punya ≥1 modul, § "kosong =
+hilang") + 1 opsi "Slot User Tambahan" — total 3 opsi hari ini (Fitur Facport / Fitur Konverter / Slot User Tambahan),
+otomatis bertambah begitu Produk baru (AutoProduksi) punya modul. Pilih Produk = state `packageType` (bukan `kind`
+langsung) yang MENENTUKAN `kind` server (`"module"` untuk produk apa pun, `"seat_addon"` untuk seat) DAN memfilter
+daftar modul section "Fitur" ke Produk itu saja (single-level per Kategori seperti semula, karena Produk sudah pasti 1
+dari gerbang atas). Kolom "Fitur" di tabel daftar Plan tetap diberi label Produk (`"{label} ({Produk})"`) — itu bagian
+fix yang sudah benar dari percobaan 1.
+
+**Pelajaran:** kalau user minta ubah 1 mekanisme UI dan disainnya SALAH tapi tetap "menyelesaikan gejala yang terlihat"
+(modul Konverter memang jadi terlihat di percobaan 1), itu belum berarti user maksudnya benar-benar itu — TANYA ULANG
+alur interaksi yang dibayangkan user secara konkret ("klik apa, lihat apa berikutnya") sebelum implementasi kalau
+gejalanya bisa diperbaiki dengan lebih dari satu cara struktural. Kalau menambah Produk/kategori baru yang BERBAGI
+namespace presentasional (Kategori, label) dengan yang sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak
+disaring) — cek juga apakah SEMUA titik UI yang menampilkannya (bukan cuma yang customer-facing) sudah punya cara
+membedakan sumbernya, dan pertimbangkan Produk sebagai GERBANG (bukan sub-grup) kalau alur kerja penggunanya memang
+"pilih 1 Produk dulu, baru urus detailnya" — bukan "lihat semua lalu cari yang cocok".

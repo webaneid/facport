@@ -17,10 +17,14 @@ import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
 import { currencyFormatter } from "@/lib/utils";
-import { MODULE_OPTIONS, MODULE_CATEGORIES, PRODUCT_LINES, productLineLabel, type ModuleKey } from "@/lib/module-options";
+import { MODULE_OPTIONS, MODULE_CATEGORIES, PRODUCT_LINES, productLineLabel, moduleProductLine, type ModuleKey } from "@/lib/module-options";
 import { DURATION_UNIT_LABELS, formatDuration, inferDurationUnit, toDurationDays, type DurationUnit } from "@/lib/duration";
 
 type PlanKind = "module" | "seat_addon";
+// § diminta user 2026-09-23 — Produk yang PUNYA modul saja boleh jadi pilihan "Jenis Paket" (Konverter/
+// AutoProduksi yang 0 modul TIDAK muncul, sama prinsip "kosong = hilang" § module-catalog.ts). Dihitung SEKALI
+// di module scope (bukan per-render) karena `MODULE_OPTIONS`/`PRODUCT_LINES` statis.
+const PRODUCT_LINES_WITH_MODULES = PRODUCT_LINES.filter((p) => MODULE_OPTIONS.some((m) => m.productLine === p.key));
 type Plan = {
   id: string;
   name: string;
@@ -44,10 +48,15 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
   const [durationUnit, setDurationUnit] = useState<DurationUnit>(inferred.unit);
   // § 1 plan = 1 sub-modul (radio, bukan checkbox lagi sejak Fase 14)
   const [moduleKey, setModuleKey] = useState<ModuleKey | "">((plan?.modules[0] as ModuleKey) ?? "");
-  // § Fase 110, architecture-user-tambahan.md — "seat_addon" (slot User
-  // Tambahan) TIDAK terikat modul import apa pun — pilih fitur disembunyikan
-  // sepenuhnya kalau jenis ini dipilih, § handleSave (`modules: []`).
-  const [kind, setKind] = useState<PlanKind>(plan?.kind ?? "module");
+  // § diminta user 2026-09-23 — "Jenis Paket" SEKARANG jadi gerbang tunggal: Produk (Facport/Konverter/dst,
+  // key `PRODUCT_LINES`) ATAU "seat_addon", BUKAN 2 langkah terpisah (pilih kind lalu scroll cari Produk di
+  // daftar modul). Memilih Produk di sini SEKALIGUS memfilter daftar modul di bawah ke Produk itu saja — admin
+  // Konverter tidak perlu lihat/scroll lewat modul Facport sama sekali, dan sebaliknya. `kind` (dikirim ke
+  // server) diturunkan dari ini (§ `planKindOf` di bawah), TIDAK disimpan sebagai state terpisah lagi.
+  const [packageType, setPackageType] = useState<string>(
+    plan?.kind === "seat_addon" ? "seat_addon" : (moduleProductLine(plan?.modules[0] ?? "") ?? PRODUCT_LINES_WITH_MODULES[0]?.key ?? "seat_addon"),
+  );
+  const kind: PlanKind = packageType === "seat_addon" ? "seat_addon" : "module";
   // § Fase 43 (koreksi) — trial BUKAN otomatis semua paket, admin WAJIB
   // tandai eksplisit per paket. Default OFF untuk paket baru (bukan ON) —
   // admin yang memutuskan, bukan sistem yang mengaktifkan diam-diam.
@@ -138,12 +147,28 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
           <div className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">Jenis Paket</span>
             <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label="Jenis Paket">
+              {/* § diminta user 2026-09-23 — 1 opsi PER PRODUK (bukan 1 opsi generik "Fitur Modul") supaya
+                 pilih Produk = pilih Jenis Paket, sekaligus jadi filter modul di bawah. Dinamis dari
+                 `PRODUCT_LINES_WITH_MODULES` — begitu AutoProduksi punya modul nanti, opsinya OTOMATIS
+                 muncul di sini, tidak perlu sentuh halaman ini lagi. */}
+              {PRODUCT_LINES_WITH_MODULES.map((productLine) => (
+                <label key={productLine.key} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="packageType"
+                    checked={packageType === productLine.key}
+                    onChange={() => {
+                      setPackageType(productLine.key);
+                      // § moduleKey lama bisa milik Produk LAIN (mis. pindah dari Facport ke Konverter) —
+                      // reset supaya tidak submit modul yang tidak cocok Produk yang baru dipilih.
+                      if (moduleProductLine(moduleKey) !== productLine.key) setModuleKey("");
+                    }}
+                  />
+                  Fitur {productLineLabel(productLine.key)}
+                </label>
+              ))}
               <label className="flex items-center gap-2">
-                <input type="radio" name="kind" checked={kind === "module"} onChange={() => setKind("module")} />
-                Fitur Modul (paket import biasa)
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="radio" name="kind" checked={kind === "seat_addon"} onChange={() => setKind("seat_addon")} />
+                <input type="radio" name="packageType" checked={packageType === "seat_addon"} onChange={() => setPackageType("seat_addon")} />
                 Slot User Tambahan (seat)
               </label>
             </div>
@@ -167,40 +192,26 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             </div>
           </div>
           {kind === "module" && (
-            <div className="flex flex-col gap-4">
-              <span className="text-xs font-medium text-foreground">Fitur (1 paket = 1 fitur)</span>
-              {/* § diminta user 2026-09-23 — SEBELUM ini dikelompokkan CUMA per Kategori, tanpa Produk sama
-                 sekali. Sejak Konverter punya Varian nyata (Fase 150-156) beberapa Kategori (Sales/Purchase/
-                 Cash & Bank/Inventory) DIPAKAI BERSAMA 2 Produk, dan beberapa Varian bahkan punya LABEL SAMA
-                 (mis. "Sales Invoice" ada di Facport DAN Konverter) — tanpa pengelompokan Produk, admin tidak
-                 bisa bedakan radio mana milik Produk mana. Sekarang: Produk dulu (judul besar), Kategori di
-                 dalamnya — pola SAMA `ProductCatalogSection` (§ components/subscribe/product-catalog-section.tsx,
-                 halaman /subscribe pelanggan), instance terpisah karena ini radio polos bukan kartu tier harga. */}
-              {PRODUCT_LINES.map((productLine) => {
-                const productModules = MODULE_OPTIONS.filter((m) => m.productLine === productLine.key);
-                if (productModules.length === 0) return null;
-                const categoriesInProduct = MODULE_CATEGORIES.filter((category) => productModules.some((m) => m.category === category));
-                return (
-                  <div key={productLine.key} className="flex flex-col gap-3 rounded-md border border-border p-3">
-                    <span className="text-sm font-semibold text-foreground">{productLineLabel(productLine.key)}</span>
-                    {categoriesInProduct.map((category) => (
-                      <div key={category} className="flex flex-col gap-1.5">
-                        <span className="text-xs text-muted-foreground">{category}</span>
-                        <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={`${productLineLabel(productLine.key)} — ${category}`}>
-                          {productModules
-                            .filter((m) => m.category === category)
-                            .map((m) => (
-                              <label key={m.key} className="flex items-center gap-2">
-                                <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
-                                {m.label}
-                              </label>
-                            ))}
-                        </div>
-                      </div>
+            <div className="flex flex-col gap-3">
+              <span className="text-xs font-medium text-foreground">Fitur {productLineLabel(packageType)} (1 paket = 1 fitur)</span>
+              {/* § diminta user 2026-09-23 — daftar modul SUDAH DIFILTER ke Produk yang dipilih di "Jenis
+                 Paket" di atas (bukan tampil semua Produk sekaligus lalu di-sub-grup) — admin Konverter tidak
+                 scroll lewat modul Facport sama sekali, dan sebaliknya. Kelompok di sini CUMA per Kategori
+                 (Cash & Bank/Sales/dst), sama seperti sebelum Konverter ada, karena Produk sudah pasti 1 dari
+                 gerbang "Jenis Paket" — tidak perlu sub-heading Produk lagi di sini. */}
+              {MODULE_CATEGORIES.filter((category) => MODULE_OPTIONS.some((m) => m.productLine === packageType && m.category === category)).map((category) => (
+                <div key={category} className="flex flex-col gap-1.5">
+                  <span className="text-xs text-muted-foreground">{category}</span>
+                  <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={category}>
+                    {MODULE_OPTIONS.filter((m) => m.productLine === packageType && m.category === category).map((m) => (
+                      <label key={m.key} className="flex items-center gap-2">
+                        <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
+                        {m.label}
+                      </label>
                     ))}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
           )}
           {kind === "module" && (
