@@ -162,6 +162,7 @@
 | 152  | Konverter — Port Item Transfer & Journal Voucher, ekstrak gerbang subscription jadi component reusable | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-152-konverter-item-transfer-journal-voucher.md` |
 | 153  | Konverter — Port Cash & Bank (Other Deposit/Payment, Customer Receipt, Vendor Payment) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-153-konverter-cash-bank.md` |
 | 154  | Konverter — Port Purchase (Purchase Invoice/Order, Receive Item, Purchase Return) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-154-konverter-purchase.md` |
+| 155  | Konverter — Port Sales (Sales Invoice/Order, Delivery Order, Sales Return) — SELURUH 15 tipe transaksi Konverter selesai | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-155-konverter-sales.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

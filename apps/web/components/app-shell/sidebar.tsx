@@ -42,6 +42,8 @@ import {
   Cog,
   PackageOpen,
   PackageSearch,
+  // § Fase 155 — Delivery Order (Konverter), tidak ada modul Facport setara jadi icon baru.
+  Truck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -185,6 +187,12 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/konverter/purchase-order", label: "Pesanan Pembelian (Purchase Order)", icon: ShoppingCart, moduleKey: "konverter_purchase_order" },
         { href: "/konverter/receive-item", label: "Penerimaan Barang (Receive Item)", icon: PackageCheck, moduleKey: "konverter_receive_item" },
         { href: "/konverter/purchase-return", label: "Retur Pembelian (Purchase Return)", icon: Undo2, moduleKey: "konverter_purchase_return" },
+        // § Fase 155 — Sales (4 tipe, kategori ini SELESAI — sekaligus PENUTUP seluruh 16 Varian Konverter,
+        // menyusul stdcost Master Data di fase berikutnya).
+        { href: "/konverter/sales-invoice", label: "Faktur Penjualan (Sales Invoice)", icon: FileSpreadsheet, moduleKey: "konverter_sales_invoice" },
+        { href: "/konverter/sales-order", label: "Sales Order (Pesanan Penjualan)", icon: ClipboardCheck, moduleKey: "konverter_sales_order" },
+        { href: "/konverter/delivery-order", label: "Pengiriman Pesanan (Delivery Order)", icon: Truck, moduleKey: "konverter_delivery_order" },
+        { href: "/konverter/sales-return", label: "Retur Penjualan (Sales Return)", icon: RotateCcw, moduleKey: "konverter_sales_return" },
       ],
     },
     {
