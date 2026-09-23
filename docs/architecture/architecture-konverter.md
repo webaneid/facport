@@ -118,11 +118,27 @@ kasus low-stakes (abuse trial gratis), bukan skenario keamanan data sensitif.
   items: [...]}` — TES NYATA dengan grup "Facport" aktif bersamaan (§ Known Limitations kalau ternyata ada bug).
 
 ## Halaman UI (per tipe, dibangun Fase 151+)
-`apps/web/app/app/(protected)/konverter/{tipe}/page.tsx` — pola: (1) `FileDropzone` upload Excel, (2) dynamic-import
-`xlsx`, parse buffer di browser, (3) panggil `process()`+`build()` dari `lib/converter/types/{tipe}.ts`, (4) tampilkan
-`summary()` (jumlah dokumen/baris/error) SEBELUM download — kalau ada error, tampilkan jelas per baris (mirror pola
-`EditRowDialog` Facport: user harus tahu APA yang salah, bukan cuma "gagal"), (5) tombol download panggil
-`downloadTextFile()`, (6) (opsional, kalau berhasil) `POST /me/conversion-logs`.
+`apps/web/app/app/(protected)/konverter/{tipe}/page.tsx` — pola FINAL, divalidasi Fase 151 (`requisition`, port
+pertama), REUSE apa adanya untuk 15 tipe sisanya:
+1. `page.tsx` (Server Component TIPIS, pola sama `import/arsip/page.tsx`) — gerbang subscription: fetch
+   `/me/subscriptions`, cek moduleKey tipe ini aktif di Data Usaha aktif (cookie). TIDAK subscribe → render
+   `EmptyState` + CTA `/subscribe`. WAJIB ada per halaman (BEDA dari Facport, § alasan di "Known Limitations" —
+   pemrosesan Konverter 100% client-side, jadi TIDAK ada 403 server yang otomatis menahan preview kalau
+   page-level tidak menahan duluan).
+2. Subscribe → render `ConverterTypeView` (`components/converter/converter-type-view.tsx`, GENERIK terhadap
+   `ConverterType<TCtx>` apa pun — tiap tipe cuma pass instance type-nya sendiri, TIDAK perlu bikin UI baru).
+3. Di dalam `ConverterTypeView`: isi Branch Code (+Mata Uang kalau `needsCurrency`) → `FileDropzone` upload →
+   `readExcelFile()` (`lib/converter/read-excel.ts`, dynamic-import `xlsx`) → `type.process()`+`type.build()` →
+   tampilkan `summary()` (stats+error/warning, mirror `EditRowDialog` Facport: user harus tahu APA yang salah)
+   → tombol Download panggil `POST /me/conversion-logs` DULU (gerbang kuota trial) → `{ok:true}` baru
+   `downloadTextFile()`. Template Excel: `downloadConverterTemplate()` (`lib/converter/template.ts`, client-side,
+   generate dari `type.headers`+`type.examples`, baris contoh ditandai "CONTOH-HAPUS").
+
+**Status porting per tipe** (update tiap fase menambah tipe baru):
+| Tipe | moduleKey | Fase | Status |
+|---|---|---|---|
+| requisition | `konverter_requisition` | 151 | ✅ Done |
+| 15 tipe lain | — | 152+ | Belum diporting |
 
 ## Known Limitations (isi seiring Fase 151+ menemukan hal baru)
 - Belum ada Web Worker — kalau file besar (banyak ribu baris) bikin UI freeze terasa, pertimbangkan pindah proses
@@ -135,6 +151,15 @@ kasus low-stakes (abuse trial gratis), bukan skenario keamanan data sensitif.
   catat di sini.
 - Nomor dokumen referensi (No_Faktur/No_SO/No_PO di tipe yang merujuk dokumen existing) TIDAK divalidasi
   eksistensinya — kegagalan baru diketahui user saat impor manual ke Accurate Desktop, bukan saat convert.
+- **Gerbang page-level (Fase 151, security review) TIDAK airtight terhadap user teknis**: halaman
+  `/konverter/{tipe}` cek subscription server-side SEBELUM render `ConverterTypeView` (mencegah preview XML
+  gratis lewat navigasi biasa), TAPI logic `process()`/`build()` tetap terkirim sebagai bundle JS ke browser
+  SIAPA PUN yang login (Next.js code-splitting tidak menjamin chunk client component tidak terunduh) — user yang
+  buka DevTools & panggil fungsi itu langsung BISA dapat preview XML tanpa subscription, melewati gerbang
+  halaman. KATEGORI RISIKO SAMA dengan kuota trial self-reported di atas (mesin 100% client-side = business
+  logic-nya visible ke yang punya akses tool teknis) — diterima, proporsional untuk produk low-stakes ini,
+  TIDAK butuh mitigasi tambahan sekarang. Gerbang OTORITATIF tetap `POST /me/conversion-logs` (download file
+  sungguhan TIDAK BISA didapat tanpa lolos gerbang itu, TIDAK PEDULI preview-nya terlihat atau tidak).
 
 ## Referensi
 - ADR: `docs/decisions/adr-0038-produk-konverter.md`

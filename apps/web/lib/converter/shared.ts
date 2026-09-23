@@ -1,8 +1,8 @@
-// § Fase 150, ADR-0038, architecture-konverter.md — port VERBATIM dari app legacy
-// `/Users/webane/sites/konverter/tool.html` (baris 457-483, fungsi `escapeXml`/`str`/`flag1`/`num`/`normDate`/
-// `reserved`/`envelope`). WAJIB IDENTIK secara logika+regex dengan sumbernya — HANYA bahasa program yang berubah
-// (JS lepas → TypeScript modul), mesin/aturan bisnisnya TIDAK — lihat instruksi user Fase 151+ soal verifikasi
-// kesetaraan Excel/XML. JANGAN "rapikan"/"perbaiki" logic di sini tanpa mengubah juga sumber pembandingnya.
+// § Fase 150-151, ADR-0038, architecture-konverter.md — port VERBATIM dari app legacy
+// `/Users/webane/sites/konverter/tool.html` (baris 457-491, fungsi `escapeXml`/`str`/`flag1`/`num`/`normDate`/
+// `reserved`/`envelope`/`checkHeaders`). WAJIB IDENTIK secara logika+regex dengan sumbernya — HANYA bahasa program
+// yang berubah (JS lepas → TypeScript modul), mesin/aturan bisnisnya TIDAK — lihat instruksi user Fase 151+ soal
+// verifikasi kesetaraan Excel/XML. JANGAN "rapikan"/"perbaiki" logic di sini tanpa mengubah juga sumber pembandingnya.
 
 /** Escape 5 karakter XML terlarang — urutan replace SENGAJA `&` duluan (kalau tidak, `&amp;` hasil escape
  * karakter lain akan di-escape ulang jadi `&amp;amp;`). */
@@ -85,4 +85,14 @@ export function envelope(branch: string, inner: string): string {
     inner +
     "</TRANSACTIONS></NMEXML>\r\n"
   );
+}
+
+/** Cek kolom header WAJIB ada di baris Excel (bandingkan ke `Object.keys(rows[0])` — SAMA PERSIS logic legacy,
+ * termasuk keterbatasannya: kalau `rows` kosong, tidak ada yang bisa dicek, balikin `[]` BUKAN error "kolom
+ * hilang" — baris kosong ditangani terpisah oleh pemanggil, § tiap type `process()`). */
+export function checkHeaders(rows: Record<string, unknown>[], need: string[]): string[] {
+  if (!rows.length) return [];
+  const keys = Object.keys(rows[0]!);
+  const missing = need.filter((h) => !keys.includes(h));
+  return missing.length ? ["Kolom wajib hilang: " + missing.join(", ") + ". Pakai template yang disediakan."] : [];
 }

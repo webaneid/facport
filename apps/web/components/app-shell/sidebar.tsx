@@ -162,16 +162,16 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       ],
     },
     {
-      // § Fase 150, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
-      // (`productLine: "konverter"` men-trigger clustering per kategori juga). BARU 1 item hari ini ("Riwayat
-      // Konversi", TANPA moduleKey — selalu tampil, mirror "Arsip Import") karena halaman per-Varian (16 tipe
-      // transaksi) BELUM dibangun (menyusul Fase 151+, § docs/architecture/architecture-konverter.md) — item nav
-      // ke halaman yang belum ada akan jadi tautan mati, SENGAJA ditunda sampai Varian pertama (`requisition`)
-      // siap. Grup ini validasi clustering multi-Produk (§ `groupItemsByCategory`) benar-benar jalan dengan >1
-      // `productLine` aktif BERSAMAAN (bukan cuma asumsi/tipe), bukan cuma "Facport" sendirian seperti sebelumnya.
+      // § Fase 150-151, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
+      // (`productLine: "konverter"` men-trigger clustering per kategori juga). Varian per-halaman ditambah
+      // BERTAHAP seiring Fase 151+ porting tiap tipe (16 total) — "Requisition" (Inventory) yang PERTAMA.
       label: "Konverter",
       productLine: "konverter",
-      items: [{ href: "/konverter/riwayat", label: "Riwayat Konversi", icon: FileSpreadsheet, moduleKeys: modulesForProductLine("konverter") }],
+      items: [
+        { href: "/konverter/riwayat", label: "Riwayat Konversi", icon: FileSpreadsheet, moduleKeys: modulesForProductLine("konverter") },
+        // § Fase 151 — Requisition, Varian PERTAMA yang dibangun (paling sederhana, § architecture-konverter.md).
+        { href: "/konverter/requisition", label: "Permintaan Barang (Requisition)", icon: ClipboardList, moduleKey: "konverter_requisition" },
+      ],
     },
     {
       label: "Langganan",
