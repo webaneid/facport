@@ -144,7 +144,11 @@ pertama), REUSE apa adanya untuk 15 tipe sisanya:
 | otherpayment | `konverter_other_payment` | 153 | ✅ Done |
 | customerreceipt | `konverter_customer_receipt` | 153 | ✅ Done |
 | vendorpayment | `konverter_vendor_payment` | 153 | ✅ Done |
-| 9 tipe lain (Purchase 4, Sales 4, Master Data 1) | — | 154+ | Belum diporting |
+| purchaseinvoice | `konverter_purchase_invoice` | 154 | ✅ Done |
+| purchaseorder | `konverter_purchase_order` | 154 | ✅ Done |
+| receiveitem | `konverter_receive_item` | 154 | ✅ Done |
+| purchasereturn | `konverter_purchase_return` | 154 | ✅ Done |
+| 5 tipe lain (Sales 4, Master Data 1) | — | 155+ | Belum diporting |
 
 ## Known Limitations (isi seiring Fase 151+ menemukan hal baru)
 - Belum ada Web Worker — kalau file besar (banyak ribu baris) bikin UI freeze terasa, pertimbangkan pindah proses

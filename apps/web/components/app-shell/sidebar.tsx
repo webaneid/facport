@@ -180,6 +180,11 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/konverter/other-payment", label: "Pembayaran Lain (Other Payment)", icon: Banknote, moduleKey: "konverter_other_payment" },
         { href: "/konverter/customer-receipt", label: "Penerimaan dari Pelanggan (Customer Receipt)", icon: HandCoins, moduleKey: "konverter_customer_receipt" },
         { href: "/konverter/vendor-payment", label: "Pembayaran ke Pemasok (Vendor Payment)", icon: Wallet, moduleKey: "konverter_vendor_payment" },
+        // § Fase 154 — Purchase (4 tipe, kategori ini SELESAI).
+        { href: "/konverter/purchase-invoice", label: "Faktur Pembelian (Purchase Invoice)", icon: FileSpreadsheet, moduleKey: "konverter_purchase_invoice" },
+        { href: "/konverter/purchase-order", label: "Pesanan Pembelian (Purchase Order)", icon: ShoppingCart, moduleKey: "konverter_purchase_order" },
+        { href: "/konverter/receive-item", label: "Penerimaan Barang (Receive Item)", icon: PackageCheck, moduleKey: "konverter_receive_item" },
+        { href: "/konverter/purchase-return", label: "Retur Pembelian (Purchase Return)", icon: Undo2, moduleKey: "konverter_purchase_return" },
       ],
     },
     {
