@@ -160,6 +160,7 @@
 | 150  | Arsitektur Produk Konverter (fondasi: katalog 16 Varian, conversion_logs, sidebar multi-Produk) — belum ada tipe transaksi | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-150-arsitektur-konverter.md` |
 | 151  | Konverter — Port Requisition (Permintaan Barang), tipe transaksi PERTAMA dari 16 Varian, validasi pipeline end-to-end | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-151-konverter-requisition.md` |
 | 152  | Konverter — Port Item Transfer & Journal Voucher, ekstrak gerbang subscription jadi component reusable | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-152-konverter-item-transfer-journal-voucher.md` |
+| 153  | Konverter — Port Cash & Bank (Other Deposit/Payment, Customer Receipt, Vendor Payment) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-153-konverter-cash-bank.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

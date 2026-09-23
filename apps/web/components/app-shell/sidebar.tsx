@@ -174,6 +174,12 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 152 — Item Transfer (Inventory, penutup kategori ini) & Journal Voucher (General Ledger).
         { href: "/konverter/item-transfer", label: "Pindah Barang (Item Transfer)", icon: ArrowLeftRight, moduleKey: "konverter_item_transfer" },
         { href: "/konverter/journal-voucher", label: "Jurnal Umum (Journal Voucher)", icon: BookOpenCheck, moduleKey: "konverter_journal_voucher" },
+        // § Fase 153 — Cash & Bank (4 tipe, kategori ini SELESAI): Other Deposit/Payment (1 factory function
+        // legacy, § cashbook.ts), Customer Receipt, Vendor Payment (merujuk faktur AR/AP existing).
+        { href: "/konverter/other-deposit", label: "Penerimaan Lain (Other Deposit)", icon: Coins, moduleKey: "konverter_other_deposit" },
+        { href: "/konverter/other-payment", label: "Pembayaran Lain (Other Payment)", icon: Banknote, moduleKey: "konverter_other_payment" },
+        { href: "/konverter/customer-receipt", label: "Penerimaan dari Pelanggan (Customer Receipt)", icon: HandCoins, moduleKey: "konverter_customer_receipt" },
+        { href: "/konverter/vendor-payment", label: "Pembayaran ke Pemasok (Vendor Payment)", icon: Wallet, moduleKey: "konverter_vendor_payment" },
       ],
     },
     {
