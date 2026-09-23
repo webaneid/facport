@@ -1433,3 +1433,38 @@ export const finishedGoodSlipTemplateGuide: TemplateFieldGuide[] = [
   { column: "Qty", required: false, example: "15", description: "Jumlah barang untuk nomor seri ini (kolom \"Qty\" KEDUA — nama sama persis dengan kolom Qty barang di atas, dibedakan otomatis saat upload)." },
   { column: "Expired Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
 ];
+
+// § Fase 157, architecture-delivery-order.md — dokumen bukti barang sudah
+// dikirim ke customer, kelanjutan Sales Order/Sales Quotation. Mirror
+// Receive Item: TIDAK auto-create customer/item, TIDAK ADA detailExpense.
+// § Kolom "Sales Order Detail ID" DAN "CLS2"/"CLS5" versi header (posisi
+// SEBELUM "Item No" di Excel client) SENGAJA TIDAK dimasukkan ke template
+// unduhan ini — keputusan 2026-09-24 ("ditunda") untuk yang pertama, dan
+// TIDAK ADA field Accurate yang plausible untuk yang kedua (dicek spec
+// resmi, nihil di SEMUA endpoint) — lihat delivery-order.mapping.ts.
+export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "24/09/2026", description: "Tanggal transaksi Delivery Order." },
+  { column: "Cust No", required: true, example: "C.00001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Trans No", required: false, example: "", description: "Nomor transaksi INTERNAL Accurate — kosongkan untuk auto-number, sekaligus kunci penggabungan baris kalau diisi (isi SAMA di beberapa baris untuk 1 pengiriman berisi banyak barang)." },
+  { column: "Branch Name", required: false, example: "", description: "Nama cabang, harus PERSIS terdaftar di Accurate." },
+  { column: "Description", required: false, example: "", description: "Keterangan/catatan untuk transaksi ini." },
+  { column: "To Address", required: false, example: "", description: "Alamat tujuan pengiriman." },
+  { column: "PO No", required: false, example: "", description: "Nomor PO dari customer (referensi internal customer, bukan PO Accurate)." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Item Unit Price", required: false, example: "", description: "Harga satuan barang." },
+  { column: "Item Qty", required: true, example: "10", description: "Jumlah barang yang dikirim." },
+  { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Detail Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
+  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini." },
+  { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Warehouse", required: false, example: "", description: "Nama gudang asal barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
+  { column: "Item Sales Order No", required: false, example: "", description: "Nomor transaksi Sales Order terkait, kalau barang ini mengirim pesanan tertentu (prioritas di atas Sales Quot No kalau keduanya diisi)." },
+  { column: "Item Sales Quot No", required: false, example: "", description: "Nomor transaksi Sales Quotation terkait." },
+  { column: "Item Reverse Invoice", required: false, example: "", description: "Nomor Faktur Penjualan, kalau memakai fitur Faktur Dimuka (mendahului pengiriman)." },
+  { column: "CLS2", required: false, example: "", description: "Kategori Keuangan slot 2, level barang." },
+  { column: "CLS5", required: false, example: "", description: "Kategori Keuangan slot 5, level barang." },
+  { column: "Serial Num", required: false, example: "", description: "Nomor seri/produksi barang, kalau barang ini pakai pelacakan serial number." },
+  { column: "Serial Num Qty", required: false, example: "", description: "Jumlah barang untuk nomor seri ini." },
+  { column: "Serial Num Exp Date", required: false, format: DATE_FORMAT, example: "", description: "Tanggal kedaluwarsa untuk nomor seri ini, kalau ada." },
+];

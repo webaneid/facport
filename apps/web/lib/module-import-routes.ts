@@ -24,6 +24,7 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   sales_quotation: "/sales-quotation/import",
   sales_order: "/sales-order/import",
   sales_return: "/sales-return/import",
+  delivery_order: "/delivery-order/import",
   item_transfer: "/item-transfer/import",
   item_requisition: "/item-requisition/import",
   inventory_adjustment: "/inventory-adjustment/import",

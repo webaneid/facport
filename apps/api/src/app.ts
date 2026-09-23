@@ -47,6 +47,7 @@ import { otherPaymentImportRoute } from "./routes/other-payment-import.route";
 import { otherDepositImportRoute } from "./routes/other-deposit-import.route";
 import { purchaseOrderImportRoute } from "./routes/purchase-order-import.route";
 import { receiveItemImportRoute } from "./routes/receive-item-import.route";
+import { deliveryOrderImportRoute } from "./routes/delivery-order-import.route";
 import { purchaseReturnImportRoute } from "./routes/purchase-return-import.route";
 import { salesQuotationImportRoute } from "./routes/sales-quotation-import.route";
 import { salesOrderImportRoute } from "./routes/sales-order-import.route";
@@ -243,6 +244,7 @@ export const app = new Elysia()
   .use(otherDepositImportRoute)
   .use(purchaseOrderImportRoute)
   .use(receiveItemImportRoute)
+  .use(deliveryOrderImportRoute)
   .use(purchaseReturnImportRoute)
   .use(salesQuotationImportRoute)
   .use(salesOrderImportRoute)

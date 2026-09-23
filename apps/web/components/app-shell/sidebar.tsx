@@ -141,6 +141,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul
         // baru (architecture-sales-return.md).
         { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
+        // § Fase 157 — Delivery Order, modul baru (architecture-delivery-order.md).
+        { href: "/delivery-order/import", label: "Import Delivery Order", icon: Truck, moduleKey: "delivery_order" },
         // § Fase 134-135 — Item Transfer & Item Requisition, modul
         // PERTAMA kategori "Inventory" (architecture-item-transfer.md,
         // architecture-item-requisition.md).

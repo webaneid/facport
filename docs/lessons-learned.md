@@ -4209,3 +4209,146 @@ defaultColumnMap/template-guide) untuk field BARU WAJIB dicek juga di frontend `
 Combobox tiap halaman terkait — backend "tahu" field itu valid tidak berarti UI punya cara menampilkannya. Jangan
 simpulkan "cuma soal deploy" dari git log semata — WAJIB uji ulang di environment yang PASTI sudah punya fix-nya
 (di sini: dev lokal) sebelum menutup investigasi sebagai "bukan bug baru".
+
+## 2026-09-24 — Bug dilaporkan sebagai "Journal Voucher duplikat di /subscribe" — root cause form admin "Tambah Paket" tidak reset state
+
+**Simtom yang dilaporkan**: client screenshot `/subscribe`, kartu "Journal Voucher" (General Ledger) tampil 4-5
+pill "PILIH PERIODE" (harusnya cuma 2: 1 Bulan + 1 Tahun) — sekilas terlihat seperti bug rendering (Facport dan
+Konverter ke-merge jadi 1 kartu). **Investigasi kode dulu (SEBELUM lihat data)**: baca ulang `use-grouped-plans.ts`,
+`category-card.tsx`, `subscribe-form.tsx` — SEMUA grouping/bucketing terbukti benar (key by `moduleKey`, bukan
+label). Ini mengarahkan ke kesimpulan sementara "kode benar, curiga data" — baru divalidasi via `get_page_text`
+browser LANGSUNG ke halaman live (bukan cuma baca screenshot user), ketemu detail penting yang screenshot user
+tidak tangkap: pill berlebih itu muncul BAHKAN di DALAM section Facport sendiri (4 pill) DAN section Konverter
+sendiri (5 pill) — BUKAN merge lintas Produk, melainkan duplikasi tier DI DALAM 1 group yang sama. Ini langsung
+menyingkirkan hipotesis "bug rendering lintas productLine" dan mengarahkan ke "data plan itself punya baris
+duplikat/salah".
+
+**Root cause data** (dikonfirmasi via SQL `SELECT ... FROM plans WHERE modules::text ILIKE '%journal_voucher%'`
+yang dijalankan user sendiri di production, § pola `feedback_deploy_and_prod_debug_style`): 9 baris utk kata kunci
+ini, bukan 4 yang diharapkan. 2 baris Facport `journal_voucher` (nama "Journal Voucher", 0 subscriber, dibuat
+2026-09-22) adalah DUPLIKAT dari 2 baris lama (nama "Jurnal Umum", 2 & 9 subscriber, dibuat 2026-09-07) — rename
+yang dimaksud ternyata dilakukan lewat "buat baru" bukan "edit", meninggalkan baris lama tetap aktif. 3 baris lain
+(dibuat 2026-09-23 16:48:06–16:48:51, berurutan dalam 45 detik) diberi NAMA "Purchase Invoice"/"Purchase Order"
+tapi kolom `modules`-nya TETAP `["konverter_journal_voucher"]` — akibatnya modul Konverter Purchase Invoice &
+Purchase Order (30 hari) TIDAK PUNYA plan sama sekali di production, sementara Journal Voucher kelebihan.
+
+**Root cause kode** (`apps/web/app/admin/(protected)/plans/page.tsx`, `PlanFormDialog`): dialog "Tambah Paket"
+(tombol tanpa prop `plan`) adalah SATU instance komponen yang dipakai ULANG setiap kali dibuka — bukan di-mount
+ulang per submit. `handleSave()` sukses cuma `setOpen(false)` lalu `onSaved()`, TIDAK PERNAH reset state field
+(`name`, `price`, `moduleKey`, `packageType`, `trialEligible`, dst). Radio pemilihan modul TIDAK divisualkan beda
+antara "baru saya pilih" vs "nyangkut dari submit sebelumnya" — kalau admin bikin beberapa paket berurutan dan
+lupa klik ulang radio modul (karena mengira sudah reset), submit diam-diam pakai `moduleKey` LAMA. Persis
+skenario 3 baris di atas. **Fix**: reset SELURUH field ke default setelah create sukses (bukan edit — dialog Edit
+sudah scoped per-baris via prop `plan`, tidak kena bug ini).
+
+**Bonus temuan saat investigasi**: SEMUA plan Konverter (bukan cuma yang di skenario ini) tersimpan dengan
+`product_line = "facport"` — kolom ini SETIAP KALI default ke "facport" di server saat create karena tidak pernah
+diisi eksplisit dari form berbasis `packageType` yang sebenarnya sudah tahu productLine-nya. Blanket SQL fix
+(`WHERE modules::text LIKE '%konverter_%' AND product_line <> 'konverter'`) memperbaiki 29 baris sekaligus —
+lebih luas dari yang dilaporkan.
+
+**Pelajaran**: (1) dialog/form yang di-render SEKALI dan dipakai ulang lintas beberapa submit (pola "1 instance,
+banyak kali open/close" — beda dari dialog Edit per-baris yang di-scope oleh key/prop) WAJIB reset semua state
+form-nya sendiri setelah submit sukses, jangan andalkan admin mengingat untuk re-pilih tiap field setiap kali.
+(2) Saat user lapor "bug rendering" dari screenshot, verifikasi LANGSUNG ke halaman live (`get_page_text`/baca DOM
+nyata) sebelum lanjut menduga-duga dari screenshot semata — detail yang tidak masuk crop screenshot user (di sini:
+duplikasi terjadi DI DALAM section yang sama, bukan lintas section) mengubah total arah investigasi. (3) Waktu
+pembuatan baris (`created_at`) yang berurutan dalam hitungan detik adalah sinyal kuat "form state nyangkut antar
+submit", bukan seed data lama atau race condition async.
+
+## 2026-09-24 — Fase 157: Modul baru Delivery Order, ditemukan dari bug lintas-dokumen "Detail ID"
+
+**Konteks penemuan.** Client testing Sales Quotation→Sales Order native Accurate (screenshot: 2 baris "Item A"
+kode sama, qty beda, ditarik salah saat "Ambil") + video tutorial Delivery Order dari Sales Order + jawaban resmi
+Accurate Support soal Purchase Invoice←Receive Item (WAJIB kirim `detailItem[n].receiveItemDetailId` kalau
+`itemNo` duplikat dalam 1 dokumen sumber, field ini **TIDAK ADA di spec resmi** — cuma diketahui lewat email
+support). Investigasi kode ketemu: pola ini berlaku di **7 relasi lintas-dokumen** Facport (Purchase Invoice←
+Receive Item/PO/PR, Sales Invoice←DO/SO/SQ, Sales Order←SQ, Receive Item←PO, PO←PR, Item Requisition/Item
+Transfer←SO) — SEMUANYA rawan ambiguitas kalau dokumen sumber punya `itemNo` berulang, TAPI cuma 1 dari 7
+(`receiveItemDetailId`) yang punya konfirmasi resmi. **Technical debt dicatat, TIDAK dikerjakan sekaligus** —
+scope membesar tanpa kejelasan, vs fokus dulu ke yang paling jelas.
+
+**Ketemuan sampingan besar**: Facport **belum punya modul Delivery Order sama sekali**, padahal Sales Invoice
+sudah punya field `itemDeliveryOrderNo` yang mereferensikannya sejak lama. Client sudah punya template Excel siap
+(`developmen-15-september-2026.xlsx` + `FACPORT_Delivery Order_v8.xlsx`, keduanya gitignored) — modul ke-22
+dibangun fase ini (§ `architecture-delivery-order.md`, `phase-157-delivery-order.md`).
+
+**3 kolom di template client SENGAJA ditunda** (keputusan eksplisit user, "biarkan tetap ada, besok kita cari
+kegunaannya" — client sedang tidur, tidak mau tebak-tebak):
+1. `Sales Order Detail ID` — field API kemungkinan `salesOrderDetailId` (analogi `receiveItemDetailId`), TIDAK
+   ADA di spec resmi. Tetap dipetakan di `fieldToAccuratePath` (user bisa pilih tanpa error) tapi di-EXCLUDE
+   eksplisit dari payload build (`DEFERRED_FIELDS`) — **follow-up WAJIB besok: tanya Accurate Support presisi
+   nama & perilaku field ini**, sama seperti yang sudah dilakukan client untuk kasus Receive Item.
+2. CLS2/CLS5 versi HEADER (posisi Excel SEBELUM "Item No") — dicek MENYELURUH ke **SEMUA** endpoint `save.do` di
+   spec resmi Accurate (bukan cuma Delivery Order): **tidak ada SATU PUN endpoint yang punya Kategori Keuangan
+   level header** — classification di Accurate SELALU cuma level detail/expense. Nilai contoh di template client
+   MEMANG berbeda dari versi item (`PONO0912332`/`Week 1` vs `ITMPONO098241231`/`WeekItem 1`, bukan copy-paste
+   error) — kemungkinan besar catatan internal client, bukan field Accurate. TIDAK dimasukkan ke
+   `fieldToAccuratePath` sama sekali (beda dari poin 1) — **follow-up: tanya client kegunaannya**.
+
+**Detail teknis yang KETAHUAN saat implementasi (bukan ditebak, diverifikasi ke spec/kode existing)**:
+- `detailSerialNumber[]` — struktur (`serialNumberNo`/`quantity`/`expiredDate`) awalnya dikira belum
+  terverifikasi (dugaan awal di plan), TAPI pas cek spec resmi PERSIS SAMA dengan yang sudah dipakai
+  `material-slip.mapping.ts`/`finished-good-slip.mapping.ts` sejak Fase 148-149 — bukan area abu-abu, tinggal
+  reuse struktur yang sudah confirmed. **Pelajaran**: sebelum menulis "belum terverifikasi" di dokumen
+  perencanaan, `grep` dulu apakah field API yang sama SUDAH dipakai modul lain — sering sudah ada jawabannya di
+  kode sendiri, tidak perlu tes ulang dari nol.
+- **Header duplikat "CLS2"/"CLS5" (nama SAMA muncul 2x di 1 file Excel, posisi beda)** — `parseExcelBuffer`
+  (§ fix Fase 147, Work Order) sudah dedupe otomatis jadi "CLS2"/"CLS2_1" berdasar URUTAN KOLOM. Auto-suggest
+  mapping (`defaultColumnMap`) kalau tetap diisi "CLS2" akan comot occurrence PERTAMA (versi header yang
+  sengaja ditunda) untuk field item yang AKTIF — salah diam-diam. **Fix**: SENGAJA tidak ada entry auto-suggest
+  untuk "CLS2"/"CLS5" sama sekali, user wajib pilih manual sambil lihat preview data. **Pelajaran**: kolom Excel
+  dengan nama identik berulang butuh perhatian ekstra di `defaultColumnMap` — auto-suggest berbasis TEKS nama
+  kolom gagal membedakan MAKNA kalau user attach 2 hal berbeda ke label yang sama.
+
+**Verifikasi**: typecheck 0 error, lint bersih, test API 1653 pass (+17 baru)/0 fail, test web 268 pass/0 fail.
+Security review: 0 Critical/High/Medium — pure mirror pola Receive Item yang sudah direview, tanpa permukaan
+risiko baru. **Belum diverifikasi**: test call NYATA ke Accurate sandbox untuk `delivery-order/save.do` (tidak
+ada koneksi live saat eksekusi) — dicatat Known Limitation di phase doc, bukan diasumsikan bekerja.
+
+## 2026-09-24 — Fase 158: Reverse-engineering legacy tool client ternyata legacy-nya SENDIRI (facport.com)
+
+**Konteks**: user minta cek `facport.com` (browser, kredensial sudah login) untuk "belajar dari aplikasi yang
+sama dengan kita" — ternyata bukan kompetitor pihak ketiga, tapi **legacy tool client sendiri** (logo literal
+"facport #Excel to Accurate Online", brand "FAC Institute") yang SEDANG DIGANTIKAN project ini (developer lama
+tidak mau serahkan source code ke client). Ini penjelasan langsung kenapa file template client sebelumnya
+bernama "FACPORT_Delivery Order_v8.xlsx" dan "Sample_Format_DO_v8.xlsx" — keduanya berasal dari tool yang sama.
+
+**Temuan kunci — alur manual "Sales Order Detail ID" legacy tool**: halaman "Sales Order Item Check"
+(`sales-order-detail-search`) — user masukkan No. SO, dapat tabel `Item No | Item Name | Quantity | Description
+| Sales Order Detail ID` (kolom "Description" ternyata CLS5/`dataClassification5Name` SO itu, dipakai client
+sebagai label **"Week N"**). User HARUS copy hasil ke sheet bantu Excel, bikin kolom Rumus (`ItemNo & Week`),
+lalu di sheet utama kolom "Item Project No" diisi rumus SAMA (`ItemNo & CLS5`, bukan projectNo asli — di-overload
+jadi kunci komposit), dan "Sales Order Detail ID" diisi via `VLOOKUP`. **Kesimpulan penting**: fakta bahwa user
+WAJIB melalui proses manual ini SEBELUM upload adalah bukti kuat backend legacy-nya cuma PASS-THROUGH (baca
+kolom itu dari Excel, kirim apa adanya ke Accurate) — TIDAK ADA resolusi otomatis di server mereka. Ini
+menjelaskan SEKALIGUS 2 misteri Fase 157: kegunaan CLS5 (bukan Kategori Keuangan akuntansi, tapi label batch
+"Week") DAN cara kerja "Sales Order Detail ID" (manual, bukan ajaib).
+
+**Keputusan user**: bangun versi LEBIH BAIK — auto-resolve di server Facport sendiri (§ Fase 158, arsitektur
+lengkap di `architecture-delivery-order.md`), user tidak pernah perlu tahu apa itu VLOOKUP. Scope SENGAJA
+dibatasi Delivery Order dulu ("focus ke DO dulu ajah, kalau sudah jalan kita bisa copas ke 2 lainnya").
+
+**Verifikasi test call nyata (bukan tebakan)**: dev environment awalnya gagal 401 di 3 koneksi test/seed (token
+stale, bukan koneksi live sungguhan) — ternyata koneksi yang BENAR adalah Data Usaha "Webane Indonesia" (database
+"Retail Demo", akun `kurikulum.fac@gmail.com`), ketemu setelah user kasih screenshot halaman `/accurate` yang
+menunjukkan nama akunnya, dicocokkan via query `accurate_connections.accurate_user_email`. Hasil test call ke
+`GET sales-order/detail.do`:
+- `detailItem[].id` = ID PER-BARIS (bukan ID header SO) — dibuktikan pakai SO nyata "SO-IDR-01" (2 baris `itemNo`
+  "9900014" SAMA) yang balik `id` 102300 & 102301 (beda, urut). SO ber-1-baris kebetulan punya `detailItem[0].id`
+  == id header-nya sendiri (Accurate alokasikan ID baris pertama = ID header, +1 per baris berikutnya) — awalnya
+  terlihat seperti bug baca field yang salah, ternyata cuma pola alokasi ID Accurate.
+- `detailItem[].item.no` nested — persis pola `getPurchaseInvoiceDetail` (ADR-0012), dikonfirmasi ulang di sini.
+- `detailItem[].dataClassification5` — OBJEK nested `{id, name}`, BUKAN string flat seperti kode awal saya tulis
+  (`dataClassification5Name`) — ketahuan salah SAAT test call nyata, langsung diperbaiki. Belum ada data uji
+  dengan CLS5 benar-benar terisi (semua SO uji `null`) untuk konfirmasi 100% bentuk objeknya saat terisi.
+
+**Pelajaran**: (1) kalau user minta cek "aplikasi kompetitor", jangan asumsikan itu benar-benar pihak ketiga —
+cek branding/logo dulu, bisa jadi itu aset/legacy tool client sendiri yang justru jadi SUMBER KEBENARAN paling
+otentik untuk business logic yang sedang di-rebuild. (2) Proses manual yang "menyakitkan" di sistem lama (VLOOKUP
+berlapis) seringkali adalah SINYAL bahwa backend lama tidak punya kapabilitas tertentu (bukan sekadar UX buruk) —
+gunakan itu untuk memahami batasan REAL sistem lama, bukan cuma menirunya. (3) Field nested-object vs flat-string
+dari respons Accurate yang tidak terdokumentasi TETAP bisa salah tebak meski sudah mengikuti pola lain yang mirip
+(`item.no` benar, tapi `dataClassification5Name` ternyata salah — harusnya `dataClassification5.name`) — test
+call nyata menemukan ini dalam hitungan menit, dibanding berpotensi salah diam-diam di production kalau tidak
+diverifikasi.
