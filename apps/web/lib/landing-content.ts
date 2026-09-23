@@ -1,4 +1,4 @@
-import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, PackageCheck, Undo2, FileSignature, RotateCcw, Coins, ArrowLeftRight, ClipboardList, ClipboardCheck, Boxes, Factory, CheckCheck, Cog, PackageOpen, PackageSearch, type LucideIcon } from "lucide-react";
+import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, PackageCheck, Undo2, FileSignature, RotateCcw, Coins, ArrowLeftRight, ClipboardList, ClipboardCheck, Boxes, Factory, CheckCheck, Cog, PackageOpen, PackageSearch, Truck, type LucideIcon } from "lucide-react";
 import type { ModuleKeyForProductLine } from "./module-options";
 
 // § Fase 47 — icon per modul di kartu Fitur landing page. REUSE PERSIS
@@ -23,6 +23,8 @@ export const LANDING_MODULE_ICON: Record<ModuleKeyForProductLine<"facport">, Luc
   sales_quotation: FileSignature,
   sales_order: ClipboardCheck,
   sales_return: RotateCcw,
+  // § Fase 157 — modul baru, kelanjutan Sales Order/Sales Quotation.
+  delivery_order: Truck,
   // § Fase 134-135 — kategori "Inventory" pertama.
   item_transfer: ArrowLeftRight,
   item_requisition: ClipboardList,
@@ -59,6 +61,7 @@ export const LANDING_MODULE_TAGLINE: Record<ModuleKeyForProductLine<"facport">, 
   sales_quotation: "Import penawaran harga ke Accurate dari Excel, otomatis buat Customer & Barang baru kalau belum ada.",
   sales_order: "Import pesanan penjualan ke Accurate dari Excel, kelanjutan penawaran harga, otomatis buat Customer & Barang baru kalau belum ada.",
   sales_return: "Catat retur barang dari customer ke Accurate dari Excel, terhubung otomatis ke faktur penjualan terkait.",
+  delivery_order: "Catat pengiriman barang ke customer ke Accurate dari Excel, langsung ter-link ke pesanan/penawaran penjualan terkait.",
   item_transfer: "Pindahkan barang antar gudang ke Accurate dari Excel, lengkap dengan nomor seri dan Kategori Keuangan per barang.",
   item_requisition: "Catat permintaan barang antar gudang ke Accurate dari Excel, sesuai format Permintaan Barang yang kamu pakai sehari-hari.",
   inventory_adjustment: "Catat penyesuaian stok (stok opname, barang rusak/hilang) ke Accurate dari Excel, lengkap dengan nomor seri per barang.",

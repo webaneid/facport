@@ -4255,3 +4255,53 @@ nyata) sebelum lanjut menduga-duga dari screenshot semata — detail yang tidak 
 duplikasi terjadi DI DALAM section yang sama, bukan lintas section) mengubah total arah investigasi. (3) Waktu
 pembuatan baris (`created_at`) yang berurutan dalam hitungan detik adalah sinyal kuat "form state nyangkut antar
 submit", bukan seed data lama atau race condition async.
+
+## 2026-09-24 — Fase 157: Modul baru Delivery Order, ditemukan dari bug lintas-dokumen "Detail ID"
+
+**Konteks penemuan.** Client testing Sales Quotation→Sales Order native Accurate (screenshot: 2 baris "Item A"
+kode sama, qty beda, ditarik salah saat "Ambil") + video tutorial Delivery Order dari Sales Order + jawaban resmi
+Accurate Support soal Purchase Invoice←Receive Item (WAJIB kirim `detailItem[n].receiveItemDetailId` kalau
+`itemNo` duplikat dalam 1 dokumen sumber, field ini **TIDAK ADA di spec resmi** — cuma diketahui lewat email
+support). Investigasi kode ketemu: pola ini berlaku di **7 relasi lintas-dokumen** Facport (Purchase Invoice←
+Receive Item/PO/PR, Sales Invoice←DO/SO/SQ, Sales Order←SQ, Receive Item←PO, PO←PR, Item Requisition/Item
+Transfer←SO) — SEMUANYA rawan ambiguitas kalau dokumen sumber punya `itemNo` berulang, TAPI cuma 1 dari 7
+(`receiveItemDetailId`) yang punya konfirmasi resmi. **Technical debt dicatat, TIDAK dikerjakan sekaligus** —
+scope membesar tanpa kejelasan, vs fokus dulu ke yang paling jelas.
+
+**Ketemuan sampingan besar**: Facport **belum punya modul Delivery Order sama sekali**, padahal Sales Invoice
+sudah punya field `itemDeliveryOrderNo` yang mereferensikannya sejak lama. Client sudah punya template Excel siap
+(`developmen-15-september-2026.xlsx` + `FACPORT_Delivery Order_v8.xlsx`, keduanya gitignored) — modul ke-22
+dibangun fase ini (§ `architecture-delivery-order.md`, `phase-157-delivery-order.md`).
+
+**3 kolom di template client SENGAJA ditunda** (keputusan eksplisit user, "biarkan tetap ada, besok kita cari
+kegunaannya" — client sedang tidur, tidak mau tebak-tebak):
+1. `Sales Order Detail ID` — field API kemungkinan `salesOrderDetailId` (analogi `receiveItemDetailId`), TIDAK
+   ADA di spec resmi. Tetap dipetakan di `fieldToAccuratePath` (user bisa pilih tanpa error) tapi di-EXCLUDE
+   eksplisit dari payload build (`DEFERRED_FIELDS`) — **follow-up WAJIB besok: tanya Accurate Support presisi
+   nama & perilaku field ini**, sama seperti yang sudah dilakukan client untuk kasus Receive Item.
+2. CLS2/CLS5 versi HEADER (posisi Excel SEBELUM "Item No") — dicek MENYELURUH ke **SEMUA** endpoint `save.do` di
+   spec resmi Accurate (bukan cuma Delivery Order): **tidak ada SATU PUN endpoint yang punya Kategori Keuangan
+   level header** — classification di Accurate SELALU cuma level detail/expense. Nilai contoh di template client
+   MEMANG berbeda dari versi item (`PONO0912332`/`Week 1` vs `ITMPONO098241231`/`WeekItem 1`, bukan copy-paste
+   error) — kemungkinan besar catatan internal client, bukan field Accurate. TIDAK dimasukkan ke
+   `fieldToAccuratePath` sama sekali (beda dari poin 1) — **follow-up: tanya client kegunaannya**.
+
+**Detail teknis yang KETAHUAN saat implementasi (bukan ditebak, diverifikasi ke spec/kode existing)**:
+- `detailSerialNumber[]` — struktur (`serialNumberNo`/`quantity`/`expiredDate`) awalnya dikira belum
+  terverifikasi (dugaan awal di plan), TAPI pas cek spec resmi PERSIS SAMA dengan yang sudah dipakai
+  `material-slip.mapping.ts`/`finished-good-slip.mapping.ts` sejak Fase 148-149 — bukan area abu-abu, tinggal
+  reuse struktur yang sudah confirmed. **Pelajaran**: sebelum menulis "belum terverifikasi" di dokumen
+  perencanaan, `grep` dulu apakah field API yang sama SUDAH dipakai modul lain — sering sudah ada jawabannya di
+  kode sendiri, tidak perlu tes ulang dari nol.
+- **Header duplikat "CLS2"/"CLS5" (nama SAMA muncul 2x di 1 file Excel, posisi beda)** — `parseExcelBuffer`
+  (§ fix Fase 147, Work Order) sudah dedupe otomatis jadi "CLS2"/"CLS2_1" berdasar URUTAN KOLOM. Auto-suggest
+  mapping (`defaultColumnMap`) kalau tetap diisi "CLS2" akan comot occurrence PERTAMA (versi header yang
+  sengaja ditunda) untuk field item yang AKTIF — salah diam-diam. **Fix**: SENGAJA tidak ada entry auto-suggest
+  untuk "CLS2"/"CLS5" sama sekali, user wajib pilih manual sambil lihat preview data. **Pelajaran**: kolom Excel
+  dengan nama identik berulang butuh perhatian ekstra di `defaultColumnMap` — auto-suggest berbasis TEKS nama
+  kolom gagal membedakan MAKNA kalau user attach 2 hal berbeda ke label yang sama.
+
+**Verifikasi**: typecheck 0 error, lint bersih, test API 1653 pass (+17 baru)/0 fail, test web 268 pass/0 fail.
+Security review: 0 Critical/High/Medium — pure mirror pola Receive Item yang sudah direview, tanpa permukaan
+risiko baru. **Belum diverifikasi**: test call NYATA ke Accurate sandbox untuk `delivery-order/save.do` (tidak
+ada koneksi live saat eksekusi) — dicatat Known Limitation di phase doc, bukan diasumsikan bekerja.

@@ -186,6 +186,18 @@ import {
   returnTypeRowError as returnTypeRowErrorSR,
   type SalesReturnGroup,
 } from "../lib/import-mapping/sales-return.mapping";
+// § Fase 157, architecture-delivery-order.md — Delivery Order, dokumen
+// LANJUTAN Sales Order/Sales Quotation (TIDAK auto-create customer/item,
+// mirror Receive Item) TAPI grouping DEFAULT ADR-0011 (opsional by
+// "number", BEDA dari Receive Item yang wajib by "receiveNumber").
+import { saveDeliveryOrder } from "../lib/accurate-delivery-order";
+import {
+  buildDeliveryOrderPayload,
+  groupDeliveryOrderRows,
+  validateGroupCustomerConsistency as validateGroupCustomerConsistencyForDO,
+  extractDataClassificationValues as extractDataClassificationValuesDO,
+  type DeliveryOrderGroup,
+} from "../lib/import-mapping/delivery-order.mapping";
 // § Fase 134-135, architecture-item-transfer.md — Item Transfer & Item
 // Requisition, 2 Facport module TERPISAH yang panggil endpoint Accurate
 // SAMA (`item-transfer/save.do`, § `saveItemTransfer` DI-SHARE literal,
@@ -514,6 +526,24 @@ async function ensureSalesReturnDataClassifications(
   for (const rawRow of rawRows) {
     const values = [...extractDataClassificationValuesSR(rawRow, columnMapping), ...extractExpenseDataClassificationValuesSR(rawRow, columnMapping)];
     for (const { index, name } of values) {
+      const key = `${index}::${name.toLowerCase()}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      await findOrCreateDataClassification(ctx, index, name);
+    }
+  }
+}
+
+// § Fase 157 — Delivery Order, cuma CLS2/CLS5 level item (§ komentar
+// `delivery-order.mapping.ts` soal CLS2/CLS5 versi header yang DITUNDA).
+async function ensureDeliveryOrderDataClassifications(
+  ctx: AccurateSessionContext,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const rawRow of rawRows) {
+    for (const { index, name } of extractDataClassificationValuesDO(rawRow, columnMapping)) {
       const key = `${index}::${name.toLowerCase()}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -1398,6 +1428,34 @@ export async function processSalesReturnGroup(
 
   const result = await saveSalesReturn(ctx, payload);
   return { returnId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 157 — Delivery Order, mirror `processReceiveItemGroup` (TIDAK
+// auto-create customer/item) TAPI grouping DEFAULT ADR-0011 by "number"
+// (mirror `processSalesReturnGroup`), bukan by kolom khusus seperti
+// Receive Item.
+// ============================================================
+export type DeliveryOrderGroupResult = {
+  deliveryOrderId: number;
+  rowIds: string[];
+};
+
+export async function processDeliveryOrderGroup(
+  ctx: AccurateSessionContext,
+  group: DeliveryOrderGroup,
+  columnMapping: Record<string, string>,
+): Promise<DeliveryOrderGroupResult> {
+  const mismatchError = validateGroupCustomerConsistencyForDO(group, columnMapping);
+  if (mismatchError) throw new Error(mismatchError);
+
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildDeliveryOrderPayload(rawRows, columnMapping);
+
+  await ensureDeliveryOrderDataClassifications(ctx, rawRows, columnMapping);
+
+  const result = await saveDeliveryOrder(ctx, payload);
+  return { deliveryOrderId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
 // ============================================================
@@ -2527,6 +2585,34 @@ async function main() {
             .set({
               status: "success",
               accurateTransactionId: String(result.returnId),
+              errorMessage: null,
+              processedAt: new Date(),
+            })
+            .where(inArray(importBatchRows.id, result.rowIds));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Fase 157 — Delivery Order, grouping DEFAULT ADR-0011 (opsional
+      // by "number"), TANPA auto-create customer/item (§ komentar
+      // `processDeliveryOrderGroup`).
+    } else if (batch.module === "delivery_order") {
+      const groups = groupDeliveryOrderRows(
+        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
+        columnMapping,
+      );
+      for (const group of groups) {
+        const rowIds = group.rows.map((r) => r.id);
+        try {
+          const result = await processDeliveryOrderGroup(session, group, columnMapping);
+          await db
+            .update(importBatchRows)
+            .set({
+              status: "success",
+              accurateTransactionId: String(result.deliveryOrderId),
               errorMessage: null,
               processedAt: new Date(),
             })

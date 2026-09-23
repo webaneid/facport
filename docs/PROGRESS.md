@@ -164,6 +164,7 @@
 | 154  | Konverter — Port Purchase (Purchase Invoice/Order, Receive Item, Purchase Return) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-154-konverter-purchase.md` |
 | 155  | Konverter — Port Sales (Sales Invoice/Order, Delivery Order, Sales Return) — SELURUH 15 tipe transaksi Konverter selesai | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-155-konverter-sales.md` |
 | 156  | Konverter — Port Standard Cost (Master Data) — SELURUH 16 Varian Konverter SELESAI, + fix regresi `converterHasData` | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-156-konverter-standard-cost.md` |
+| 157  | Modul Baru: Delivery Order (Pengiriman Pesanan) — modul ke-22 Facport, ditemukan belum ada saat investigasi bug lintas-dokumen "Detail ID" | Done | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-157-delivery-order.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

@@ -50,6 +50,9 @@ export const MODULE_CATALOG = [
   // § Fase 137 — Sales Order, kelanjutan Sales Quotation.
   { key: "sales_order", label: "Sales Order", productLine: "facport", category: "Sales" },
   { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
+  // § Fase 157 — Delivery Order, modul ke-22 Facport (dokumen fulfillment
+  // fisik, kelanjutan Sales Order/Sales Quotation, mirror Receive Item).
+  { key: "delivery_order", label: "Delivery Order", productLine: "facport", category: "Sales" },
   { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
   { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
   { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Purchase" },
