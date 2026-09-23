@@ -15,6 +15,7 @@ import {
   dataUsaha,
   memberSeats,
   ownershipTransfers,
+  conversionLogs,
 } from "../db/schema";
 import { announcements, notifications } from "../db/schema/notification.schema";
 import { auditLogs, settings, media } from "../db/schema/core.schema";
@@ -100,6 +101,15 @@ async function main() {
     if (testUserIds.length) batchConditions.push(inArray(importBatches.userId, testUserIds));
     if (testSubscriptionIds.length) batchConditions.push(inArray(importBatches.subscriptionId, testSubscriptionIds));
     if (batchConditions.length) await tx.delete(importBatches).where(or(...batchConditions));
+
+    // § Fase 150, ADR-0038 — `conversion_logs` (Produk Konverter), 3 FK sendiri-sendiri (userId/dataUsahaId/
+    // subscriptionId) SEMUA `ON DELETE no action` (§ migration 0031) — WAJIB dihapus di sini SEBELUM
+    // subscriptions/dataUsaha/user di bawah, pola SAMA `importBatches` di atas (match SALAH SATU FK).
+    const conversionLogConditions = [];
+    if (testUserIds.length) conversionLogConditions.push(inArray(conversionLogs.userId, testUserIds));
+    if (testSubscriptionIds.length) conversionLogConditions.push(inArray(conversionLogs.subscriptionId, testSubscriptionIds));
+    if (testDataUsahaIds.length) conversionLogConditions.push(inArray(conversionLogs.dataUsahaId, testDataUsahaIds));
+    if (conversionLogConditions.length) await tx.delete(conversionLogs).where(or(...conversionLogConditions));
 
     // § Fase 113 — memberSeats & ownershipTransfers WAJIB dihapus SEBELUM
     // subscriptions/dataUsaha (FK: seatSubscriptionId -> subscriptions,

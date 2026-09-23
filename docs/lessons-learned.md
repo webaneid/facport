@@ -4076,3 +4076,136 @@ NYATA (format Excel lama/screenshot data riil) untuk mengecek apakah client sebe
 yang dibayangkan pertama kali ("Rate Pajak" ternyata = "Fiscal Rate", bukan persentase tarif pajak). Bandingkan juga ke modul
 SIBLING yang sudah dibangun (kalau modul lain sudah benar, modul yang komplain client kemungkinan cuma kelewat, bukan memang
 API tidak mendukung) — cara cepat konfirmasi gap nyata vs limitasi API sungguhan.
+
+## 2026-09-23 — "Tambah Paket" admin tidak bedakan Produk sama sekali; 2 Varian beda Produk bisa berlabel IDENTIK
+**Konteks:** Fase 150-156 (porting 16 Varian Konverter) menambah modul baru yang berbagi Kategori (Sales/Purchase/Cash &
+Bank/Inventory) dengan modul Facport, dan beberapa berbagi LABEL YANG SAMA PERSIS (mis. `sales_invoice` Facport dan
+`konverter_sales_invoice` sama-sama berlabel "Sales Invoice" di `MODULE_CATALOG`). Ditemukan lewat pertanyaan user: "ketika
+klik tambah paket... tidak ada tuh konverter... kan harusnya bisa milih jenis paketnya apa, lalu baru muncul modul2
+konverter" — investigasi lanjutan menemukan kode SUDAH menampilkan modul Konverter (tidak ada yang menyaringnya), tapi
+`app/admin/(protected)/plans/page.tsx` mengelompokkan radio pemilihan modul CUMA per Kategori (SATU sumber kebenaran sejak
+sebelum Konverter ada) — begitu 2 Produk berbagi Kategori DAN label, admin melihat 2 radio button identik tanpa cara
+membedakan mana Facport mana Konverter (risiko nyata: admin bikin Plan dengan modul yang SALAH tanpa sadar).
+
+**Fix (percobaan 1, tidak cukup — user koreksi)**: kelompokkan radio modul DUA LEVEL (Produk dulu, baru Kategori di
+dalamnya) di DALAM section "Fitur", `kind` (module/seat_addon) tetap terpisah. User menegaskan itu bukan yang dimaksud:
+maksudnya "Jenis Paket" SENDIRI yang jadi gerbang Produk, bukan sub-heading di section terpisah — supaya pilih Produk
+LANGSUNG memfilter daftar modul di bawahnya (admin tidak scroll lewat Produk lain sama sekali).
+
+**Fix final:** "Jenis Paket" sekarang 1 opsi PER PRODUK (dinamis dari `PRODUCT_LINES` yang punya ≥1 modul, § "kosong =
+hilang") + 1 opsi "Slot User Tambahan" — total 3 opsi hari ini (Fitur Facport / Fitur Konverter / Slot User Tambahan),
+otomatis bertambah begitu Produk baru (AutoProduksi) punya modul. Pilih Produk = state `packageType` (bukan `kind`
+langsung) yang MENENTUKAN `kind` server (`"module"` untuk produk apa pun, `"seat_addon"` untuk seat) DAN memfilter
+daftar modul section "Fitur" ke Produk itu saja (single-level per Kategori seperti semula, karena Produk sudah pasti 1
+dari gerbang atas). Kolom "Fitur" di tabel daftar Plan tetap diberi label Produk (`"{label} ({Produk})"`) — itu bagian
+fix yang sudah benar dari percobaan 1.
+
+**Pelajaran:** kalau user minta ubah 1 mekanisme UI dan disainnya SALAH tapi tetap "menyelesaikan gejala yang terlihat"
+(modul Konverter memang jadi terlihat di percobaan 1), itu belum berarti user maksudnya benar-benar itu — TANYA ULANG
+alur interaksi yang dibayangkan user secara konkret ("klik apa, lihat apa berikutnya") sebelum implementasi kalau
+gejalanya bisa diperbaiki dengan lebih dari satu cara struktural. Kalau menambah Produk/kategori baru yang BERBAGI
+namespace presentasional (Kategori, label) dengan yang sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak
+disaring) — cek juga apakah SEMUA titik UI yang menampilkannya (bukan cuma yang customer-facing) sudah punya cara
+membedakan sumbernya, dan pertimbangkan Produk sebagai GERBANG (bukan sub-grup) kalau alur kerja penggunanya memang
+"pilih 1 Produk dulu, baru urus detailnya" — bukan "lihat semua lalu cari yang cocok".
+
+## 2026-09-23 — SEMUA 16 halaman Konverter crash runtime ("Functions cannot be passed to Client Components"), lolos dari typecheck+lint+unit test SEPENUHNYA
+**Gejala:** user buka `/konverter/other-deposit`, dapat Runtime Error "Functions cannot be passed directly to Client
+Components... {..., summary: function summary}". SEMUA 16 halaman Konverter (Fase 151-156) kena, bukan cuma satu —
+bug ada di component GENERIK yang dipakai semua (`KonverterPage`/`ConverterTypeView`), bukan di tipe tertentu.
+
+**Root cause:** `app/app/(protected)/konverter/{tipe}/page.tsx` (Server Component) import objek `xxxType`
+(`ConverterType`, berisi 3 FUNCTION: `process`/`build`/`summary`) dan mengopernya sebagai prop ke `KonverterPage`
+(Server Component juga) → yang lalu mengopernya LAGI sebagai prop ke `ConverterTypeView` ("use client"). Next.js App
+Router (React Server Components) TIDAK BISA serialisasi function menyeberang boundary Server→Client — SATU-SATUNYA
+cara valid membawa "kemampuan" dari server ke client adalah Server Action (`"use server"`), yang tidak relevan di
+sini (logic-nya memang HARUS jalan di browser, bukan di server). **Ini murni bug desain arsitektur session yang
+membangun Fase 151-156** — TIDAK ADA satu pun dari 6 fase itu yang benar-benar membuka halamannya di browser;
+verifikasi selama ini CUMA `bun run typecheck`/`lint`/unit test (`type.process()`/`build()`/`summary()` dipanggil
+LANGSUNG di Node/Bun, di luar Next.js sama sekali) — ketiganya TIDAK BISA dan TIDAK PERNAH mendeteksi kesalahan
+serialisasi RSC ini, itu murni error Next.js RUNTIME yang hanya muncul saat komponennya benar-benar dirender.
+
+**Fix:** `page.tsx`/`KonverterPage` sekarang cuma oper `moduleKey` (STRING, aman diserialisasi) — TIDAK PERNAH
+mengimpor objek `xxxType` sama sekali lagi. `ConverterTypeView` (client) resolve objek `ConverterType` (dengan
+function-nya) SENDIRI lewat `CONVERTER_TYPE_REGISTRY` (§ `lib/converter/type-registry.ts`, baru) — resolusi itu
+100% di dalam modul client, tidak pernah menyeberang boundary apa pun. Label tampilan di gerbang subscription pakai
+`moduleLabel()` (dari `MODULE_CATALOG`), bukan `type.label` lagi.
+
+**Pelajaran:** untuk fitur BARU yang memakai pola arsitektur BELUM ADA PRESEDENNYA di codebase (di sini: "objek
+modul berisi function dioper dari Server Component ke Client Component" — sebelumnya TIDAK ADA satu pun halaman
+lain di project ini yang butuh pola serupa), `typecheck`+`lint`+unit test SAJA TIDAK CUKUP sebagai bukti "selesai
+dan benar" — WAJIB tambah 1 langkah: benar-benar BUKA halamannya di browser (dev server + baca hasil render/
+console), minimal SEKALI per pola arsitektur baru (tidak perlu semua 16 halaman satu-satu kalau strukturnya identik
+dan bug-nya di komponen bersama — cukup representatif dari tiap bentuk `Ctx` yang berbeda). React Server Components
+punya kelas bug RUNTIME-ONLY (serialisasi boundary, "use client"/"use server" placement) yang TIDAK ADA di
+TypeScript type checker maupun di test yang memanggil fungsi murni langsung tanpa lewat pipeline render Next.js
+sungguhan — kalau pola baru menyeberang batas Server/Client, itu sinyal untuk verifikasi manual, bukan cukup lolos
+compiler.
+
+## 2026-09-23 — Konverter: isi Branch Code setelah upload file → hasil tidak pernah muncul kecuali file di-upload ULANG
+**Gejala:** user upload Excel dulu (Branch Code masih kosong) → muncul notice "Branch Code belum diisi", file
+kelihatan "sudah terpilih" di UI. User isi Branch Code SETELAH itu → tidak terjadi apa-apa, ringkasan tidak pernah
+muncul kecuali file di-upload ulang dari awal.
+
+**Root cause:** `ConverterTypeView` (§ Fase 151) menggabung PARSE (baca file Excel) + PROCESS (`type.process()`)
+jadi SATU fungsi `handleFile`, dipanggil SEKALI SAJA saat `FileDropzone.onChange` — kalau Branch Code kosong saat
+itu, fungsi berhenti (`return`) dan TIDAK ADA apa pun yang memicunya lagi begitu `branch` (state input Branch Code)
+berubah belakangan. State `file` sudah keburu di-set SEBELUM early-return, jadi UI menunjukkan file "terpilih"
+walau belum pernah benar-benar diproses — inkonsistensi antara APA YANG TERLIHAT dan APA YANG SEBENARNYA TERJADI,
+sumber kebingungan user.
+
+**Fix:** pisah PARSE (state `parsed`, di-set SEKALI per file lewat `handleFile`, async — mahal, baca file Excel)
+dari PROCESS (`type.process()`, murah — pure function sinkron atas `parsed`+`branch`+`defCurrency`). PROCESS
+dihitung sebagai NILAI DERIVED (`useMemo`, bukan `useEffect`+`setState` — percobaan pertama pakai `useEffect` kena
+lint `react-hooks/set-state-in-effect`, DAN memang tidak perlu effect sama sekali untuk komputasi sinkron begini,
+§ react.dev "you might not need an effect") — otomatis ikut setiap perubahan `branch`/`defCurrency`/`parsed`,
+TIDAK PERNAH butuh "pemicu ulang" manual apa pun. Excel TIDAK di-parse ulang cuma karena Branch Code berubah
+(mahal, dan isi file tidak berubah) — cuma PROCESS (murah) yang re-run tiap keystroke.
+
+**Verifikasi:** diuji LANGSUNG di browser (bukan cuma baca kode) — generate file Excel asli via script, upload ke
+`/konverter/other-deposit` TANPA isi Branch Code dulu (notice muncul, benar), isi Branch Code TANPA re-upload
+(ringkasan+preview XML muncul otomatis, `BranchCode="HO"` tertanam benar di XML) — sesuai skenario bug yang
+dilaporkan user, persis.
+
+**Pelajaran:** kalau sebuah aksi user (upload file) punya PRASYARAT dari state lain yang BISA diisi user
+BELAKANGAN (Branch Code), JANGAN gabung "validasi prasyarat" dengan "proses yang butuh prasyarat itu" jadi 1
+fungsi imperatif yang cuma jalan sekali dipicu event — pisahkan jadi computed/derived value yang otomatis
+konsisten terhadap SEMUA state terkait, supaya tidak ada jalur "keadaan UI tidak sinkron dengan data" yang harus
+diingat-ingat manual (di sini: "upload lagi kalau lupa isi field dulu").
+
+## 2026-09-23 — Evaluasi client sebelum rilis: 3 temuan (kategori Job Costing/Roll Over, pesan upload menyesatkan, Fiscal Rate tak bisa dipetakan)
+
+**1. Kategori Job Costing & Roll Over salah.** Client eksplisit minta kedua modul ini (kategori Manufacture sejak
+Fase 139/146) dipindah ke "Inventory" — client anggap keduanya pelacakan biaya/pekerjaan sisi Inventory, bukan
+produksi lantai pabrik. Fix: `category` di `module-catalog.ts` dipindah (Work Order jadi modul PERTAMA Manufacture
+yang tersisa). `category` MURNI presentasional (§ komentar file itu sendiri) — pindah ini tidak menyentuh
+gating/permission apa pun, aman walau production sudah ada pelanggan nyata.
+
+**2. Upload 5000 baris gagal, pesan "Upload gagal, cek format file" MENYESATKAN.** Client upload file besar
+(Other Payment), dapat pesan generik yang menuduh FORMAT file padahal filenya valid Excel. **Root cause**: SEMUA
+22 route import Facport (`MAX_ROWS = 5000`, cek `rows.length > MAX_ROWS` → kode `TOO_MANY_ROWS`) sudah balikin kode
+error SPESIFIK, TAPI 22 halaman frontend-nya SEMUA cuma bedakan `EMPTY_FILE` — kode lain (termasuk `TOO_MANY_ROWS`
+dan `INVALID_EXCEL_FILE`) jatuh ke fallback generik yang sama sekali tidak membantu diagnosis (menyalahkan format,
+padahal masalah sungguhannya beda). Pola copy-paste yang sama persis di 22 file, dari modul PALING AWAL (Fase 02)
+sampai yang paling baru. **Fix**: SEMUA 22 halaman sekarang tampilkan pesan spesifik per kode (`TOO_MANY_ROWS` →
+sebutkan batas baris + saran pecah file; `INVALID_EXCEL_FILE` → saran cek format/korup), fallback generik CUMA
+untuk kode yang benar-benar tak dikenal. **Pelajaran**: kalau nemu 1 halaman dengan pesan error yang cuma bedakan
+1 dari beberapa kode yang mungkin dibalas server, CURIGAI itu pola copy-paste yang berulang di semua modul
+sejenis — `grep` pattern yang sama persis di semua file SEBELUM memutuskan cuma perbaiki 1 file yang dilaporkan.
+
+**3. "Fiscal Rate" tidak bisa dipetakan sama sekali dari UI (BUKAN cuma auto-suggest gagal).** Fix Fiscal Rate
+2026-09-22 (commit `a2bf805`, § entri sebelumnya) menambah `fiscalRate` ke `fieldToAccuratePath`/`defaultColumnMap`/
+`template-guide.ts` — TAPI KELEWAT menambah opsi `{ value: "fiscalRate", label: ... }` ke array `ACCURATE_FIELDS`
+(daftar opsi Combobox) di `sales-invoice/import/page.tsx` DAN `purchase-invoice/import/page.tsx`. Akibatnya:
+server SUDAH benar menyarankan `fiscalRate` (`suggestedMapping["Fiscal Rate"] = "fiscalRate"`), tapi Combobox
+frontend tidak punya opsi berlabel itu untuk ditampilkan — SELALU tampil "(tidak dipetakan)", dan user JUGA TIDAK
+BISA memetakannya manual (opsinya memang tidak ada di dropdown). **Diverifikasi ULANG di browser sebelum
+menyimpulkan** (awalnya dikira cuma soal deploy belum jalan — git log menunjukkan commit `a2bf805` cuma di
+`develop`, belum `main` — TAPI diuji langsung di `develop` lokal, bug-nya TETAP ADA, jadi bukan cuma soal deploy).
+**Fix**: tambah `{ value: "fiscalRate", label: "Kurs Pajak / Fiscal Rate" }` ke `ACCURATE_FIELDS` kedua halaman.
+Diverifikasi ulang: upload file berkolom "Fiscal Rate" ke `/sales-invoice/import` → sekarang auto-suggest benar
+jadi "Kurs Pajak / Fiscal Rate". **Pelajaran**: fix yang menyentuh MAPPING BACKEND (fieldToAccuratePath/
+defaultColumnMap/template-guide) untuk field BARU WAJIB dicek juga di frontend `ACCURATE_FIELDS`/`ACCURATE_ITEM_FIELDS`
+Combobox tiap halaman terkait — backend "tahu" field itu valid tidak berarti UI punya cara menampilkannya. Jangan
+simpulkan "cuma soal deploy" dari git log semata — WAJIB uji ulang di environment yang PASTI sudah punya fix-nya
+(di sini: dev lokal) sebelum menutup investigasi sebagai "bukan bug baru".

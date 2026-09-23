@@ -2,8 +2,8 @@
 
 import { useMemo } from "react";
 import { Check } from "lucide-react";
-import { moduleLabel, type ModuleKey } from "@/lib/module-options";
-import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
+import { moduleLabel } from "@/lib/module-options";
+import { LANDING_MODULE_ICON_ANY, LANDING_MODULE_TAGLINE_ANY } from "@/lib/landing-content";
 import { currencyFormatter } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
 import { useGroupedPlans } from "@/lib/use-grouped-plans";
@@ -47,9 +47,8 @@ export function ModuleFeatures({ plans, appUrl }: { plans: Plan[]; appUrl: strin
     <div id="fitur" className="flex flex-col gap-8">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
         {groups.map((group) => {
-          const moduleKey = group.moduleKey as ModuleKey;
-          const Icon = LANDING_MODULE_ICON[moduleKey];
-          const tagline = LANDING_MODULE_TAGLINE[moduleKey];
+          const Icon = LANDING_MODULE_ICON_ANY[group.moduleKey];
+          const tagline = LANDING_MODULE_TAGLINE_ANY[group.moduleKey];
           const isSelected = isModuleSelected(group.moduleKey);
           const activePlan = activePlanFor(group);
 
@@ -87,7 +86,7 @@ export function ModuleFeatures({ plans, appUrl }: { plans: Plan[]; appUrl: strin
                   {isSelected && <Check className="h-3.5 w-3.5 text-white" />}
                 </span>
               </div>
-              <h3 className="font-semibold text-slate-900">{moduleLabel(moduleKey)}</h3>
+              <h3 className="font-semibold text-slate-900">{moduleLabel(group.moduleKey)}</h3>
               {tagline && (
                 <p className="flex items-start gap-1.5 text-xs text-slate-500">
                   <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-landing-primary" />

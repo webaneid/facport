@@ -42,12 +42,16 @@ import {
   Cog,
   PackageOpen,
   PackageSearch,
+  // § Fase 155 — Delivery Order (Konverter), tidak ada modul Facport setara jadi icon baru.
+  Truck,
+  // § Fase 156 — Standard Cost (Konverter, kategori "Master Data" PERTAMA), tidak ada modul Facport setara.
+  Tag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/use-permissions";
-import { moduleCategory, MODULE_CATEGORIES } from "@/lib/module-options";
+import { moduleCategory, modulesForProductLine, MODULE_CATEGORIES } from "@/lib/module-options";
 import { CATEGORY_ICON, CATEGORY_ICON_FALLBACK } from "@/lib/category-icons";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
 // § `DropdownMenuPrimitive.Item` MENTAH (bukan `DropdownMenuItem` yang
@@ -69,7 +73,10 @@ import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu";
 // Server Component ke Client Component. Server Component cuma oper
 // STRING murni (`surface`), `Sidebar` yang lookup nav-nya sendiri.
 export type Surface = "app" | "admin";
-export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; permission?: string };
+// § Fase 150 — `moduleKeys?` (BEDA dari `moduleKey?` tunggal) — dipakai item yang relevansinya "user punya
+// SATU PUN dari beberapa modul ini" (ATAU, bukan modul spesifik), mis. "Riwayat Konversi" yang relevan begitu
+// user subscribe SALAH SATU dari 16 Varian Konverter, bukan modul tertentu (§ `navGroupsFor` di bawah).
+export type NavItem = { href: string; label: string; icon: LucideIcon; moduleKey?: string; moduleKeys?: string[]; permission?: string };
 // § Fase 110 — `ownerOnly: true` = grup ini disembunyikan TOTAL kalau
 // `isDataUsahaOwner === false` (user cuma member/seat, bukan pemilik Data
 // Usaha aktif) — urusan billing/kepemilikan (Koneksi Accurate/Berlangganan/
@@ -141,7 +148,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/item-requisition/import", label: "Import Item Requisition", icon: ClipboardList, moduleKey: "item_requisition" },
         // § Fase 138 (architecture-inventory-adjustment.md).
         { href: "/inventory-adjustment/import", label: "Import Inventory Adjustment", icon: Boxes, moduleKey: "inventory_adjustment" },
-        // § Fase 139 — modul PERTAMA kategori "Manufacture" (architecture-job-costing.md).
+        // § Fase 139 — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan client — §
+        // lessons-learned.md; architecture-job-costing.md).
         { href: "/job-costing/import", label: "Import Job Costing", icon: Factory, moduleKey: "job_costing" },
         // § Fase 146 — penutup Job Costing (architecture-roll-over.md).
         { href: "/roll-over/import", label: "Import Roll Over", icon: CheckCheck, moduleKey: "roll_over" },
@@ -156,6 +164,40 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // modul tertentu). TANPA kategori (moduleKey kosong → cluster
         // taruh di bagian "Lainnya" paling bawah, § NavGroupBlock).
         { href: "/import/arsip", label: "Arsip Import", icon: Archive },
+      ],
+    },
+    {
+      // § Fase 150-152, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
+      // (`productLine: "konverter"` men-trigger clustering per kategori juga). Varian per-halaman ditambah
+      // BERTAHAP seiring Fase 151+ porting tiap tipe (16 total).
+      label: "Konverter",
+      productLine: "konverter",
+      items: [
+        { href: "/konverter/riwayat", label: "Riwayat Konversi", icon: FileSpreadsheet, moduleKeys: modulesForProductLine("konverter") },
+        // § Fase 151 — Requisition, Varian PERTAMA (paling sederhana, § architecture-konverter.md).
+        { href: "/konverter/requisition", label: "Permintaan Barang (Requisition)", icon: ClipboardList, moduleKey: "konverter_requisition" },
+        // § Fase 152 — Item Transfer (Inventory, penutup kategori ini) & Journal Voucher (General Ledger).
+        { href: "/konverter/item-transfer", label: "Pindah Barang (Item Transfer)", icon: ArrowLeftRight, moduleKey: "konverter_item_transfer" },
+        { href: "/konverter/journal-voucher", label: "Jurnal Umum (Journal Voucher)", icon: BookOpenCheck, moduleKey: "konverter_journal_voucher" },
+        // § Fase 153 — Cash & Bank (4 tipe, kategori ini SELESAI): Other Deposit/Payment (1 factory function
+        // legacy, § cashbook.ts), Customer Receipt, Vendor Payment (merujuk faktur AR/AP existing).
+        { href: "/konverter/other-deposit", label: "Penerimaan Lain (Other Deposit)", icon: Coins, moduleKey: "konverter_other_deposit" },
+        { href: "/konverter/other-payment", label: "Pembayaran Lain (Other Payment)", icon: Banknote, moduleKey: "konverter_other_payment" },
+        { href: "/konverter/customer-receipt", label: "Penerimaan dari Pelanggan (Customer Receipt)", icon: HandCoins, moduleKey: "konverter_customer_receipt" },
+        { href: "/konverter/vendor-payment", label: "Pembayaran ke Pemasok (Vendor Payment)", icon: Wallet, moduleKey: "konverter_vendor_payment" },
+        // § Fase 154 — Purchase (4 tipe, kategori ini SELESAI).
+        { href: "/konverter/purchase-invoice", label: "Faktur Pembelian (Purchase Invoice)", icon: FileSpreadsheet, moduleKey: "konverter_purchase_invoice" },
+        { href: "/konverter/purchase-order", label: "Pesanan Pembelian (Purchase Order)", icon: ShoppingCart, moduleKey: "konverter_purchase_order" },
+        { href: "/konverter/receive-item", label: "Penerimaan Barang (Receive Item)", icon: PackageCheck, moduleKey: "konverter_receive_item" },
+        { href: "/konverter/purchase-return", label: "Retur Pembelian (Purchase Return)", icon: Undo2, moduleKey: "konverter_purchase_return" },
+        // § Fase 155 — Sales (4 tipe, kategori ini SELESAI — sekaligus PENUTUP seluruh 16 Varian Konverter,
+        // menyusul stdcost Master Data di fase berikutnya).
+        { href: "/konverter/sales-invoice", label: "Faktur Penjualan (Sales Invoice)", icon: FileSpreadsheet, moduleKey: "konverter_sales_invoice" },
+        { href: "/konverter/sales-order", label: "Sales Order (Pesanan Penjualan)", icon: ClipboardCheck, moduleKey: "konverter_sales_order" },
+        { href: "/konverter/delivery-order", label: "Pengiriman Pesanan (Delivery Order)", icon: Truck, moduleKey: "konverter_delivery_order" },
+        { href: "/konverter/sales-return", label: "Retur Penjualan (Sales Return)", icon: RotateCcw, moduleKey: "konverter_sales_return" },
+        // § Fase 156 — Standard Cost (Master Data), PENUTUP seluruh 16 Varian Konverter.
+        { href: "/konverter/standard-cost", label: "Update Harga Pokok Standar & Harga Jual", icon: Tag, moduleKey: "konverter_standard_cost" },
       ],
     },
     {
@@ -215,7 +257,14 @@ export function navGroupsFor(surface: Surface, subscriptionModules?: string[], i
     .filter((group) => !(group.ownerOnly && isDataUsahaOwner === false))
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => !item.moduleKey || (subscriptionModules?.includes(item.moduleKey) ?? false)),
+      items: group.items.filter((item) => {
+        if (item.moduleKey) return subscriptionModules?.includes(item.moduleKey) ?? false;
+        // § Fase 150 — `moduleKeys` (ATAU beberapa modul, § definisi tipe di atas): visible kalau subscribe
+        // SALAH SATU. Item TANPA `moduleKey`/`moduleKeys` sama sekali (mis. "Arsip Import") TETAP selalu
+        // tampil, TIDAK berubah dari behavior sebelumnya.
+        if (item.moduleKeys) return item.moduleKeys.some((k) => subscriptionModules?.includes(k) ?? false);
+        return true;
+      }),
     }))
     .filter((group) => group.items.length > 0);
 }

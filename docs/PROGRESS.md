@@ -157,6 +157,13 @@
 | 147  | Modul Work Order (Perintah Kerja) — produksi berbasis BOM, 4 array, lookup cabang & PIC | Done | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-147-modul-work-order.md` |
 | 148  | Modul Material Slip (Pengambilan Bahan Baku) — realisasi bahan baku dari Work Order | Done | `docs/architecture/architecture-material-slip.md` | `docs/phases/phase-148-modul-material-slip.md` |
 | 149  | Modul Finished Good Slip (Penyelesaian Barang Jadi) — realisasi FG dari Work Order, lookup cabang+gudang | Done | `docs/architecture/architecture-finished-good-slip.md` | `docs/phases/phase-149-modul-finished-good-slip.md` |
+| 150  | Arsitektur Produk Konverter (fondasi: katalog 16 Varian, conversion_logs, sidebar multi-Produk) — belum ada tipe transaksi | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-150-arsitektur-konverter.md` |
+| 151  | Konverter — Port Requisition (Permintaan Barang), tipe transaksi PERTAMA dari 16 Varian, validasi pipeline end-to-end | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-151-konverter-requisition.md` |
+| 152  | Konverter — Port Item Transfer & Journal Voucher, ekstrak gerbang subscription jadi component reusable | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-152-konverter-item-transfer-journal-voucher.md` |
+| 153  | Konverter — Port Cash & Bank (Other Deposit/Payment, Customer Receipt, Vendor Payment) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-153-konverter-cash-bank.md` |
+| 154  | Konverter — Port Purchase (Purchase Invoice/Order, Receive Item, Purchase Return) — kategori ini SELESAI | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-154-konverter-purchase.md` |
+| 155  | Konverter — Port Sales (Sales Invoice/Order, Delivery Order, Sales Return) — SELURUH 15 tipe transaksi Konverter selesai | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-155-konverter-sales.md` |
+| 156  | Konverter — Port Standard Cost (Master Data) — SELURUH 16 Varian Konverter SELESAI, + fix regresi `converterHasData` | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-156-konverter-standard-cost.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

@@ -85,8 +85,19 @@ export default function ItemTransferImportPage() {
     const file = values.file!;
     const res = await api["item-transfer"].import.upload.post({ file });
     if (res.error || !res.data) {
-      const code = (res.error?.value as { code?: string } | undefined)?.code;
-      setError(code === "EMPTY_FILE" ? "File Excel kosong — tidak ada baris data." : "Upload gagal, cek format file.");
+      // § diminta client 2026-09-23 — SEBELUM ini cuma bedakan EMPTY_FILE, kode LAIN (termasuk TOO_MANY_ROWS,
+      // ditemukan client upload file besar kena batas baris) jatuh ke pesan generik yang menyesatkan ("cek format
+      // file", padahal file-nya valid). Tiap kode server (§ {module}-import.route.ts) sekarang punya pesan sendiri.
+      const value = res.error?.value as { code?: string; maxRows?: number } | undefined;
+      setError(
+        value?.code === "EMPTY_FILE"
+          ? "File Excel kosong — tidak ada baris data."
+          : value?.code === "TOO_MANY_ROWS"
+            ? `File terlalu banyak baris — maksimal ${value.maxRows ?? 5000} baris per upload. Pecah file jadi beberapa batch.`
+            : value?.code === "INVALID_EXCEL_FILE"
+              ? "File tidak bisa dibaca sebagai Excel — pastikan formatnya .xlsx/.xls dan tidak korup."
+              : "Upload gagal, cek format file.",
+      );
       return;
     }
     setResult(res.data as unknown as UploadResult);

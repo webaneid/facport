@@ -32,7 +32,8 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
   return suggestion;
 }
 
-// § architecture-job-costing.md — modul PERTAMA kategori "Manufacture".
+// § architecture-job-costing.md — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan
+// client — § lessons-learned.md, category MURNI presentasional, TIDAK menyentuh logic modul ini).
 // TIDAK ada "Batal Import" (mirror Inventory Adjustment/Item Transfer).
 // Route SESEDERHANA item-transfer-import.route.ts — validasi row TIDAK
 // butuh helper khusus (beda dari Inventory Adjustment/Item Transfer yang

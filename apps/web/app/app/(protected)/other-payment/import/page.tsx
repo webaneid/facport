@@ -106,8 +106,20 @@ export default function OtherPaymentImportPage() {
     const file = values.file!;
     const res = await api["other-payment"].import.upload.post({ file });
     if (res.error || !res.data) {
-      const code = (res.error?.value as { code?: string } | undefined)?.code;
-      setError(code === "EMPTY_FILE" ? "File Excel kosong — tidak ada baris data." : "Upload gagal, cek format file.");
+      // § diminta client 2026-09-23 — SEBELUM ini cuma bedakan EMPTY_FILE, kode LAIN (termasuk TOO_MANY_ROWS —
+      // client upload 5000 baris pas kena batas, dapat pesan "cek format file" yang MENYESATKAN, padahal file-nya
+      // valid, cuma kelebihan baris) jatuh ke pesan generik yang salah arah. Sekarang tiap kode server (§
+      // other-payment-import.route.ts) punya pesan sendiri yang jelas.
+      const value = res.error?.value as { code?: string; maxRows?: number } | undefined;
+      setError(
+        value?.code === "EMPTY_FILE"
+          ? "File Excel kosong — tidak ada baris data."
+          : value?.code === "TOO_MANY_ROWS"
+            ? `File terlalu banyak baris — maksimal ${value.maxRows ?? 5000} baris per upload. Pecah file jadi beberapa batch.`
+            : value?.code === "INVALID_EXCEL_FILE"
+              ? "File tidak bisa dibaca sebagai Excel — pastikan formatnya .xlsx/.xls dan tidak korup."
+              : "Upload gagal, cek format file.",
+      );
       return;
     }
     setResult(res.data as unknown as UploadResult);

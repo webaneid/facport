@@ -9,7 +9,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
-import { moduleLabel, moduleProductLine, PRODUCT_LINES, productLineLabel } from "@/lib/module-options";
+import { moduleLabel, moduleProductLine, PRODUCT_LINES } from "@/lib/module-options";
+import { PRODUCT_LINE_SUBSCRIBE_COPY } from "@/lib/product-line-copy";
 import { currencyFormatter } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
 import { useGroupedPlans, type ModuleGroup } from "@/lib/use-grouped-plans";
@@ -245,7 +246,8 @@ function SubscribeFormInner({ dataUsahaId }: { dataUsahaId: string }) {
               return (
                 <ProductCatalogSection
                   key={productLine.key}
-                  title={productLineLabel(productLine.key)}
+                  title={PRODUCT_LINE_SUBSCRIBE_COPY[productLine.key].title}
+                  description={PRODUCT_LINE_SUBSCRIBE_COPY[productLine.key].description}
                   groups={lineGroups}
                   activeModuleMap={activeModuleMap}
                   activeSubscriptionInfo={activeSubscriptionInfo}

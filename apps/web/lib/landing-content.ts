@@ -1,11 +1,14 @@
 import { FileSpreadsheet, Landmark, Wallet, HandCoins, BookOpenCheck, Banknote, ShoppingCart, PackageCheck, Undo2, FileSignature, RotateCcw, Coins, ArrowLeftRight, ClipboardList, ClipboardCheck, Boxes, Factory, CheckCheck, Cog, PackageOpen, PackageSearch, type LucideIcon } from "lucide-react";
-import type { ModuleKey } from "./module-options";
+import type { ModuleKeyForProductLine } from "./module-options";
 
 // § Fase 47 — icon per modul di kartu Fitur landing page. REUSE PERSIS
 // mapping `components/app-shell/sidebar.tsx` (nav Import Data) supaya
 // identitas visual modul konsisten lintas surface. WAJIB tambah entri
 // baru di sini kalau ada sub-modul baru (pola sama `MODULE_IMPORT_BASE_PATH`).
-export const LANDING_MODULE_ICON: Record<ModuleKey, LucideIcon> = {
+// § Fase 150 — konten ini KHUSUS landing page Facport (Konverter belum punya landing/copy sendiri), jadi
+// di-filter ke `ModuleKeyForProductLine<"facport">` (bukan `ModuleKey` polos) — nambah Varian Konverter TIDAK
+// memaksa file ini ikut update, tapi nambah Varian Facport baru tetap wajib (§ module-catalog.ts).
+export const LANDING_MODULE_ICON: Record<ModuleKeyForProductLine<"facport">, LucideIcon> = {
   purchase_invoice: FileSpreadsheet,
   sales_invoice: FileSpreadsheet,
   vendor_payable_account: Landmark,
@@ -25,7 +28,7 @@ export const LANDING_MODULE_ICON: Record<ModuleKey, LucideIcon> = {
   item_requisition: ClipboardList,
   // § Fase 138.
   inventory_adjustment: Boxes,
-  // § Fase 139 — kategori "Manufacture" pertama.
+  // § Fase 139 — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan client).
   job_costing: Factory,
   // § Fase 146 — penutup Job Costing.
   roll_over: CheckCheck,
@@ -41,7 +44,7 @@ export const LANDING_MODULE_ICON: Record<ModuleKey, LucideIcon> = {
 // data dari admin), sengaja statis (§ phase-47 doc, "static kecuali
 // fitur & tombol berlangganan" — teksnya statis, yang dinamis cuma
 // MODUL MANA yang tampil, sesuai paket aktif admin).
-export const LANDING_MODULE_TAGLINE: Record<ModuleKey, string> = {
+export const LANDING_MODULE_TAGLINE: Record<ModuleKeyForProductLine<"facport">, string> = {
   purchase_invoice: "Import faktur pembelian dari Excel, otomatis buat Pemasok & Barang baru kalau belum ada.",
   sales_invoice: "Import faktur penjualan ke Accurate, hitung pajak & diskon otomatis sesuai data Excel kamu.",
   vendor_payable_account: "Kelola akun hutang pemasok lintas banyak vendor sekaligus, tanpa input satu-satu.",
@@ -65,3 +68,13 @@ export const LANDING_MODULE_TAGLINE: Record<ModuleKey, string> = {
   finished_good_slip: "Catat realisasi barang jadi yang diselesaikan dari Work Order, langsung dari Excel ke Accurate.",
   roll_over: "Selesaikan pesanan produksi: ubah biaya Job Order jadi barang jadi atau alokasi biaya ke akun, langsung dari Excel ke Accurate.",
 };
+
+// § Fase 150 — alias tipe LEBAR (pola sama `moduleLabel()`, `module-catalog.ts`) dipakai komponen yang menerima
+// moduleKey RUNTIME apa pun (`ModuleKey` lintas-Produk, mis. `/subscribe` yang me-reuse map ini untuk SEMUA
+// Produk, § `module-pricing-panel.tsx`), bukan cuma Facport — index langsung (BUKAN lewat function call) supaya
+// TIDAK kena lint `react-hooks/static-components` ("Cannot create components during render") yang salah kira
+// pemanggilan fungsi sebagai JSX tag-provider = membuat komponen baru tiap render, padahal cuma resolve
+// referensi STABIL dari lookup table. Key Produk lain yang belum punya copy → `undefined` (konsumen SUDAH
+// toleran render kosong, `{Icon && ...}`).
+export const LANDING_MODULE_ICON_ANY: Partial<Record<string, LucideIcon>> = LANDING_MODULE_ICON;
+export const LANDING_MODULE_TAGLINE_ANY: Partial<Record<string, string>> = LANDING_MODULE_TAGLINE;

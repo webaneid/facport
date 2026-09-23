@@ -36,6 +36,11 @@ const ACCURATE_FIELDS = [
   { value: "description", label: "Keterangan" },
   { value: "currencyCode", label: "Kode Mata Uang" },
   { value: "rate", label: "Nilai Tukar" },
+  // § diminta client 2026-09-23 — field SUDAH dipetakan di server sejak 2026-09-22 (commit a2bf805,
+  // purchase-invoice.mapping.ts `fieldToAccuratePath`/`defaultColumnMap`), tapi KELEWAT ditambah ke daftar
+  // dropdown di sini — kolom Excel "Fiscal Rate" TIDAK PERNAH bisa dipetakan sama sekali dari UI (bukan cuma
+  // gagal auto-suggest, dropdown-nya memang tidak punya opsi ini), server selalu terima `fiscalRate` kosong.
+  { value: "fiscalRate", label: "Kurs Pajak / Fiscal Rate" },
   { value: "paymentTermName", label: "Syarat Bayar" },
   { value: "taxable", label: "Kena Pajak (Y/N)" },
   { value: "inclusiveTax", label: "Termasuk Pajak (Y/N)" },
@@ -199,8 +204,19 @@ export default function PurchaseInvoiceImportPage() {
     const file = values.file!;
     const res = await api["purchase-invoice"].import.upload.post({ file });
     if (res.error || !res.data) {
-      const code = (res.error?.value as { code?: string } | undefined)?.code;
-      setError(code === "EMPTY_FILE" ? "File Excel kosong — tidak ada baris data." : "Upload gagal, cek format file.");
+      // § diminta client 2026-09-23 — SEBELUM ini cuma bedakan EMPTY_FILE, kode LAIN (termasuk TOO_MANY_ROWS,
+      // ditemukan client upload file besar kena batas baris) jatuh ke pesan generik yang menyesatkan ("cek format
+      // file", padahal file-nya valid). Tiap kode server (§ {module}-import.route.ts) sekarang punya pesan sendiri.
+      const value = res.error?.value as { code?: string; maxRows?: number } | undefined;
+      setError(
+        value?.code === "EMPTY_FILE"
+          ? "File Excel kosong — tidak ada baris data."
+          : value?.code === "TOO_MANY_ROWS"
+            ? `File terlalu banyak baris — maksimal ${value.maxRows ?? 5000} baris per upload. Pecah file jadi beberapa batch.`
+            : value?.code === "INVALID_EXCEL_FILE"
+              ? "File tidak bisa dibaca sebagai Excel — pastikan formatnya .xlsx/.xls dan tidak korup."
+              : "Upload gagal, cek format file.",
+      );
       return;
     }
     // § adr-0010 — t.File() route: Eden infer sukses jadi `{}`, cast scoped

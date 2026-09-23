@@ -1,9 +1,9 @@
 import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { moduleLabel, type ModuleKey } from "@/lib/module-options";
+import { moduleLabel } from "@/lib/module-options";
 import { currencyFormatter, formatDate } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
-import { LANDING_MODULE_ICON, LANDING_MODULE_TAGLINE } from "@/lib/landing-content";
+import { LANDING_MODULE_ICON_ANY, LANDING_MODULE_TAGLINE_ANY } from "@/lib/landing-content";
 import type { ModuleGroup } from "@/lib/use-grouped-plans";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
@@ -56,9 +56,8 @@ export function ModulePricingPanel({
   onSelectTier: (planId: string) => void;
   onStartTrial: (e: React.MouseEvent, plan: Plan) => void;
 }) {
-  const moduleKey = group.moduleKey as ModuleKey;
-  const Icon = LANDING_MODULE_ICON[moduleKey];
-  const tagline = LANDING_MODULE_TAGLINE[moduleKey];
+  const Icon = LANDING_MODULE_ICON_ANY[group.moduleKey];
+  const tagline = LANDING_MODULE_TAGLINE_ANY[group.moduleKey];
   const companyTimezone = useCompanyTimezone();
 
   return (

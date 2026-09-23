@@ -31,6 +31,7 @@ function groupByCategory(groups: ModuleGroup<Plan>[]): { category: string; group
 // tanggung jawab keputusan "produk mana yang tampil hari ini".
 export function ProductCatalogSection({
   title,
+  description,
   groups,
   activeModuleMap,
   activeSubscriptionInfo,
@@ -43,6 +44,9 @@ export function ProductCatalogSection({
   onStartTrial,
 }: {
   title: string;
+  // § diminta user 2026-09-23 — SEBELUM ini hardcode 1 kalimat generik ("Pilih fitur yang ingin Anda gunakan")
+  // sama untuk SEMUA Produk. Sekarang per-Produk, dioper caller (§ `lib/product-line-copy.ts`).
+  description: string;
   groups: ModuleGroup<Plan>[];
   activeModuleMap: Map<string, boolean>;
   activeSubscriptionInfo: Map<string, SubscriptionInfo>;
@@ -61,7 +65,7 @@ export function ProductCatalogSection({
     <div className="flex flex-col gap-4">
       <div>
         <h2 className="text-2xl font-bold tracking-tight text-foreground">{title}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Pilih fitur yang ingin Anda gunakan</p>
+        <p className="mt-1 text-sm text-muted-foreground">{description}</p>
         <div className="mt-3 border-t border-border" />
       </div>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
