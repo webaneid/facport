@@ -44,6 +44,8 @@ import {
   PackageSearch,
   // § Fase 155 — Delivery Order (Konverter), tidak ada modul Facport setara jadi icon baru.
   Truck,
+  // § Fase 156 — Standard Cost (Konverter, kategori "Master Data" PERTAMA), tidak ada modul Facport setara.
+  Tag,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -193,6 +195,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/konverter/sales-order", label: "Sales Order (Pesanan Penjualan)", icon: ClipboardCheck, moduleKey: "konverter_sales_order" },
         { href: "/konverter/delivery-order", label: "Pengiriman Pesanan (Delivery Order)", icon: Truck, moduleKey: "konverter_delivery_order" },
         { href: "/konverter/sales-return", label: "Retur Penjualan (Sales Return)", icon: RotateCcw, moduleKey: "konverter_sales_return" },
+        // § Fase 156 — Standard Cost (Master Data), PENUTUP seluruh 16 Varian Konverter.
+        { href: "/konverter/standard-cost", label: "Update Harga Pokok Standar & Harga Jual", icon: Tag, moduleKey: "konverter_standard_cost" },
       ],
     },
     {

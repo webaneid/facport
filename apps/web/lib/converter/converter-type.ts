@@ -37,3 +37,17 @@ export type ConverterType<TCtx extends ConverterCtxBase = ConverterCtxBase> = {
   build(ctx: TCtx): string;
   summary(ctx: TCtx): ConverterSummary;
 };
+
+// § Fase 156 — ditemukan saat porting `stdcost` (tipe PERTAMA yang pakai `items`, bukan `order`/`groups`):
+// mirror legacy `render()` (`tool.html` baris 1409, `hasData=(ctx.order&&ctx.order.length)||(ctx.items&&
+// ctx.items.length)`) — tombol Download WAJIB tetap nonaktif kalau `errors.length===0` TAPI TIDAK ADA data sama
+// sekali (mis. file Excel diupload kosong/0 baris data) — 0 error di file kosong BUKAN berarti "valid", cuma
+// "tidak ada yang bisa divalidasi". Duck-typing SENGAJA (bukan generic constraint) karena tiap `Ctx` beda field
+// datanya (`order` utk 15 tipe dokumen, `items` utk `stdcost`) dan `ConverterCtxBase` tidak mendeklarasikan
+// keduanya. `ConverterTypeView` (dipakai SEMUA tipe) memanggil ini SEBELUM `build()`, retroaktif menutup gap
+// yang sama untuk 15 tipe yang sudah diporting sebelum fase ini (belum pernah ketahuan karena semuanya baru
+// dites dengan data valid, bukan file kosong).
+export function converterHasData(ctx: ConverterCtxBase): boolean {
+  const anyCtx = ctx as unknown as { order?: unknown[]; items?: unknown[] };
+  return (Array.isArray(anyCtx.order) && anyCtx.order.length > 0) || (Array.isArray(anyCtx.items) && anyCtx.items.length > 0);
+}

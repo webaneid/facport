@@ -8,7 +8,7 @@ import { Alert } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { api } from "@/lib/api-client";
-import type { ConverterType, ConverterCtxBase } from "@/lib/converter/converter-type";
+import { converterHasData, type ConverterType, type ConverterCtxBase } from "@/lib/converter/converter-type";
 import { readExcelFile } from "@/lib/converter/read-excel";
 import { downloadConverterTemplate } from "@/lib/converter/template";
 import { downloadTextFile } from "@/lib/converter/download-file";
@@ -61,8 +61,11 @@ export function ConverterTypeView<TCtx extends ConverterCtxBase>({ type }: { typ
   }
 
   const hasErrors = !!ctx && ctx.errors.length > 0;
+  // § Fase 156 — mirror legacy `hasData` (§ `converterHasData`, converter-type.ts): 0 error di file KOSONG (tidak
+  // ada baris tervalidasi sama sekali) bukan berarti valid untuk di-download.
+  const hasData = !!ctx && converterHasData(ctx);
   const summary = ctx ? type.summary(ctx) : null;
-  const xml = ctx && !hasErrors ? type.build(ctx) : null;
+  const xml = ctx && !hasErrors && hasData ? type.build(ctx) : null;
 
   async function handleDownload() {
     if (!xml || !ctx || !summary) return;

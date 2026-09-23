@@ -152,7 +152,10 @@ pertama), REUSE apa adanya untuk 15 tipe sisanya:
 | salesorder | `konverter_sales_order` | 155 | ✅ Done |
 | deliveryorder | `konverter_delivery_order` | 155 | ✅ Done |
 | salesreturn | `konverter_sales_return` | 155 | ✅ Done |
-| stdcost (Master Data, bukan transaksi) | `konverter_standard_cost` | 156 | Belum diporting |
+| stdcost (Master Data, bukan transaksi) | `konverter_standard_cost` | 156 | ✅ Done |
+
+**SELURUH 16 Varian Konverter sudah diporting** (Fase 151-156). Halaman UI, sidebar, dan test (fidelity XML
+exact-string-match) lengkap untuk semua tipe.
 
 ## Known Limitations (isi seiring Fase 151+ menemukan hal baru)
 - Belum ada Web Worker — kalau file besar (banyak ribu baris) bikin UI freeze terasa, pertimbangkan pindah proses
