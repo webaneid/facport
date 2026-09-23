@@ -1,3 +1,22 @@
+## 2.11.0 (2026-09-23)
+
+* Merge pull request #72 from webaneid/develop ([7ad2a17](https://github.com/webaneid/facport/commit/7ad2a17)), closes [#72](https://github.com/webaneid/facport/issues/72)
+* fix: evaluasi client sebelum rilis — 3 temuan (kategori, pesan upload, Fiscal Rate) ([0089516](https://github.com/webaneid/facport/commit/0089516))
+* fix(admin): "Jenis Paket" jadi gerbang Produk (bukan sub-heading di section Fitur) ([417be05](https://github.com/webaneid/facport/commit/417be05))
+* fix(admin): kelompokkan "Tambah Paket" per Produk, bukan cuma Kategori ([7bd4b47](https://github.com/webaneid/facport/commit/7bd4b47))
+* fix(konverter): isi Branch Code setelah upload tidak pernah memicu ringkasan ([dc27a46](https://github.com/webaneid/facport/commit/dc27a46))
+* fix(konverter): perbaiki crash runtime "Functions cannot be passed to Client Components" di SEMUA 16 ([008be63](https://github.com/webaneid/facport/commit/008be63))
+* fix(subscribe): judul+deskripsi section Konverter di /subscribe ([e055490](https://github.com/webaneid/facport/commit/e055490))
+* feat(konverter): Fase 150 — fondasi Produk Konverter (katalog, conversion_logs, sidebar multi-Produk ([497658e](https://github.com/webaneid/facport/commit/497658e))
+* feat(konverter): Fase 151 — port tipe transaksi pertama (Requisition) ([e8766e6](https://github.com/webaneid/facport/commit/e8766e6))
+* feat(konverter): Fase 152 — port Item Transfer & Journal Voucher ([03638d2](https://github.com/webaneid/facport/commit/03638d2))
+* feat(konverter): Fase 153 — port Cash & Bank (4 tipe, kategori selesai) ([dcabe0a](https://github.com/webaneid/facport/commit/dcabe0a))
+* feat(konverter): Fase 154 — port Purchase (4 tipe, kategori selesai) ([cc4afa4](https://github.com/webaneid/facport/commit/cc4afa4))
+* feat(konverter): Fase 155 — port Sales (4 tipe, 15/16 Varian selesai) ([450388a](https://github.com/webaneid/facport/commit/450388a))
+* feat(konverter): Fase 156 — port Standard Cost, SELURUH 16 Varian selesai ([9a1b264](https://github.com/webaneid/facport/commit/9a1b264))
+* docs(konverter): arsitektur Produk Konverter (Fase 150) - fondasi, belum ada kode ([4339fe1](https://github.com/webaneid/facport/commit/4339fe1))
+* docs(konverter): revisi trial - kuota baris DITEGAKKAN server, bukan cuma durasi ([3997312](https://github.com/webaneid/facport/commit/3997312))
+
 ## 2.10.0 (2026-09-22)
 
 * Merge pull request #71 from webaneid/develop ([0905d7d](https://github.com/webaneid/facport/commit/0905d7d)), closes [#71](https://github.com/webaneid/facport/issues/71)
