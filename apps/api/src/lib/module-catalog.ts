@@ -69,12 +69,16 @@ export const MODULE_CATALOG = [
   { key: "item_requisition", label: "Item Requisition (Permintaan Barang)", productLine: "facport", category: "Inventory" },
   // § Fase 138 — architecture-inventory-adjustment.md.
   { key: "inventory_adjustment", label: "Inventory Adjustment (Penyesuaian Persediaan)", productLine: "facport", category: "Inventory" },
-  // § Fase 139 — modul PERTAMA kategori "Manufacture" (disiapkan sejak
-  // Fase 126, sebelumnya 0 modul). architecture-job-costing.md.
-  { key: "job_costing", label: "Job Costing (Pekerjaan Pesanan)", productLine: "facport", category: "Manufacture" },
-  // Fase 146 — penutup Job Costing (architecture-roll-over.md).
-  { key: "roll_over", label: "Roll Over (Penyelesaian Pesanan)", productLine: "facport", category: "Manufacture" },
-  // Fase 147 — produksi berbasis BOM (architecture-work-order.md).
+  // § Fase 139, architecture-job-costing.md — koreksi 2026-09-23 (evaluasi client): kategori SEMULA
+  // "Manufacture", DIPINDAH ke "Inventory" (permintaan client eksplisit, Job Costing+Roll Over dianggap
+  // pelacakan biaya/pekerjaan sisi Inventory bagi client, bukan produksi lantai pabrik). Field `category` MURNI
+  // presentasional (§ komentar atas file ini) — pindah ini TIDAK menyentuh gating/permission apa pun.
+  { key: "job_costing", label: "Job Costing (Pekerjaan Pesanan)", productLine: "facport", category: "Inventory" },
+  // Fase 146 — penutup Job Costing (architecture-roll-over.md). Kategori ikut pindah ke "Inventory" bersama
+  // Job Costing (§ komentar di atas), TETAP sepasang dengan Job Costing (Roll Over = tahap penutup Job Order).
+  { key: "roll_over", label: "Roll Over (Penyelesaian Pesanan)", productLine: "facport", category: "Inventory" },
+  // Fase 147 — modul PERTAMA kategori "Manufacture" yang TERSISA (Job Costing/Roll Over pindah ke Inventory,
+  // § komentar di atas) — produksi berbasis BOM (architecture-work-order.md).
   { key: "work_order", label: "Work Order (Perintah Kerja)", productLine: "facport", category: "Manufacture" },
   // Fase 148 — realisasi bahan baku dari Work Order (architecture-material-slip.md).
   { key: "material_slip", label: "Material Slip (Pengambilan Bahan Baku)", productLine: "facport", category: "Manufacture" },

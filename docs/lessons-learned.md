@@ -4172,3 +4172,40 @@ BELAKANGAN (Branch Code), JANGAN gabung "validasi prasyarat" dengan "proses yang
 fungsi imperatif yang cuma jalan sekali dipicu event — pisahkan jadi computed/derived value yang otomatis
 konsisten terhadap SEMUA state terkait, supaya tidak ada jalur "keadaan UI tidak sinkron dengan data" yang harus
 diingat-ingat manual (di sini: "upload lagi kalau lupa isi field dulu").
+
+## 2026-09-23 — Evaluasi client sebelum rilis: 3 temuan (kategori Job Costing/Roll Over, pesan upload menyesatkan, Fiscal Rate tak bisa dipetakan)
+
+**1. Kategori Job Costing & Roll Over salah.** Client eksplisit minta kedua modul ini (kategori Manufacture sejak
+Fase 139/146) dipindah ke "Inventory" — client anggap keduanya pelacakan biaya/pekerjaan sisi Inventory, bukan
+produksi lantai pabrik. Fix: `category` di `module-catalog.ts` dipindah (Work Order jadi modul PERTAMA Manufacture
+yang tersisa). `category` MURNI presentasional (§ komentar file itu sendiri) — pindah ini tidak menyentuh
+gating/permission apa pun, aman walau production sudah ada pelanggan nyata.
+
+**2. Upload 5000 baris gagal, pesan "Upload gagal, cek format file" MENYESATKAN.** Client upload file besar
+(Other Payment), dapat pesan generik yang menuduh FORMAT file padahal filenya valid Excel. **Root cause**: SEMUA
+22 route import Facport (`MAX_ROWS = 5000`, cek `rows.length > MAX_ROWS` → kode `TOO_MANY_ROWS`) sudah balikin kode
+error SPESIFIK, TAPI 22 halaman frontend-nya SEMUA cuma bedakan `EMPTY_FILE` — kode lain (termasuk `TOO_MANY_ROWS`
+dan `INVALID_EXCEL_FILE`) jatuh ke fallback generik yang sama sekali tidak membantu diagnosis (menyalahkan format,
+padahal masalah sungguhannya beda). Pola copy-paste yang sama persis di 22 file, dari modul PALING AWAL (Fase 02)
+sampai yang paling baru. **Fix**: SEMUA 22 halaman sekarang tampilkan pesan spesifik per kode (`TOO_MANY_ROWS` →
+sebutkan batas baris + saran pecah file; `INVALID_EXCEL_FILE` → saran cek format/korup), fallback generik CUMA
+untuk kode yang benar-benar tak dikenal. **Pelajaran**: kalau nemu 1 halaman dengan pesan error yang cuma bedakan
+1 dari beberapa kode yang mungkin dibalas server, CURIGAI itu pola copy-paste yang berulang di semua modul
+sejenis — `grep` pattern yang sama persis di semua file SEBELUM memutuskan cuma perbaiki 1 file yang dilaporkan.
+
+**3. "Fiscal Rate" tidak bisa dipetakan sama sekali dari UI (BUKAN cuma auto-suggest gagal).** Fix Fiscal Rate
+2026-09-22 (commit `a2bf805`, § entri sebelumnya) menambah `fiscalRate` ke `fieldToAccuratePath`/`defaultColumnMap`/
+`template-guide.ts` — TAPI KELEWAT menambah opsi `{ value: "fiscalRate", label: ... }` ke array `ACCURATE_FIELDS`
+(daftar opsi Combobox) di `sales-invoice/import/page.tsx` DAN `purchase-invoice/import/page.tsx`. Akibatnya:
+server SUDAH benar menyarankan `fiscalRate` (`suggestedMapping["Fiscal Rate"] = "fiscalRate"`), tapi Combobox
+frontend tidak punya opsi berlabel itu untuk ditampilkan — SELALU tampil "(tidak dipetakan)", dan user JUGA TIDAK
+BISA memetakannya manual (opsinya memang tidak ada di dropdown). **Diverifikasi ULANG di browser sebelum
+menyimpulkan** (awalnya dikira cuma soal deploy belum jalan — git log menunjukkan commit `a2bf805` cuma di
+`develop`, belum `main` — TAPI diuji langsung di `develop` lokal, bug-nya TETAP ADA, jadi bukan cuma soal deploy).
+**Fix**: tambah `{ value: "fiscalRate", label: "Kurs Pajak / Fiscal Rate" }` ke `ACCURATE_FIELDS` kedua halaman.
+Diverifikasi ulang: upload file berkolom "Fiscal Rate" ke `/sales-invoice/import` → sekarang auto-suggest benar
+jadi "Kurs Pajak / Fiscal Rate". **Pelajaran**: fix yang menyentuh MAPPING BACKEND (fieldToAccuratePath/
+defaultColumnMap/template-guide) untuk field BARU WAJIB dicek juga di frontend `ACCURATE_FIELDS`/`ACCURATE_ITEM_FIELDS`
+Combobox tiap halaman terkait — backend "tahu" field itu valid tidak berarti UI punya cara menampilkannya. Jangan
+simpulkan "cuma soal deploy" dari git log semata — WAJIB uji ulang di environment yang PASTI sudah punya fix-nya
+(di sini: dev lokal) sebelum menutup investigasi sebagai "bukan bug baru".

@@ -28,7 +28,7 @@ export const LANDING_MODULE_ICON: Record<ModuleKeyForProductLine<"facport">, Luc
   item_requisition: ClipboardList,
   // § Fase 138.
   inventory_adjustment: Boxes,
-  // § Fase 139 — kategori "Manufacture" pertama.
+  // § Fase 139 — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan client).
   job_costing: Factory,
   // § Fase 146 — penutup Job Costing.
   roll_over: CheckCheck,

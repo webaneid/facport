@@ -148,7 +148,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/item-requisition/import", label: "Import Item Requisition", icon: ClipboardList, moduleKey: "item_requisition" },
         // § Fase 138 (architecture-inventory-adjustment.md).
         { href: "/inventory-adjustment/import", label: "Import Inventory Adjustment", icon: Boxes, moduleKey: "inventory_adjustment" },
-        // § Fase 139 — modul PERTAMA kategori "Manufacture" (architecture-job-costing.md).
+        // § Fase 139 — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan client — §
+        // lessons-learned.md; architecture-job-costing.md).
         { href: "/job-costing/import", label: "Import Job Costing", icon: Factory, moduleKey: "job_costing" },
         // § Fase 146 — penutup Job Costing (architecture-roll-over.md).
         { href: "/roll-over/import", label: "Import Roll Over", icon: CheckCheck, moduleKey: "roll_over" },
