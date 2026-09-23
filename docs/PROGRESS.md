@@ -159,6 +159,7 @@
 | 149  | Modul Finished Good Slip (Penyelesaian Barang Jadi) — realisasi FG dari Work Order, lookup cabang+gudang | Done | `docs/architecture/architecture-finished-good-slip.md` | `docs/phases/phase-149-modul-finished-good-slip.md` |
 | 150  | Arsitektur Produk Konverter (fondasi: katalog 16 Varian, conversion_logs, sidebar multi-Produk) — belum ada tipe transaksi | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-150-arsitektur-konverter.md` |
 | 151  | Konverter — Port Requisition (Permintaan Barang), tipe transaksi PERTAMA dari 16 Varian, validasi pipeline end-to-end | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-151-konverter-requisition.md` |
+| 152  | Konverter — Port Item Transfer & Journal Voucher, ekstrak gerbang subscription jadi component reusable | Done | `docs/architecture/architecture-konverter.md` | `docs/phases/phase-152-konverter-item-transfer-journal-voucher.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

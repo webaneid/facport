@@ -162,15 +162,18 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       ],
     },
     {
-      // § Fase 150-151, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
+      // § Fase 150-152, ADR-0038 — grup PRODUK ke-2 ("Konverter"), pola SAMA grup "Facport" di atas
       // (`productLine: "konverter"` men-trigger clustering per kategori juga). Varian per-halaman ditambah
-      // BERTAHAP seiring Fase 151+ porting tiap tipe (16 total) — "Requisition" (Inventory) yang PERTAMA.
+      // BERTAHAP seiring Fase 151+ porting tiap tipe (16 total).
       label: "Konverter",
       productLine: "konverter",
       items: [
         { href: "/konverter/riwayat", label: "Riwayat Konversi", icon: FileSpreadsheet, moduleKeys: modulesForProductLine("konverter") },
-        // § Fase 151 — Requisition, Varian PERTAMA yang dibangun (paling sederhana, § architecture-konverter.md).
+        // § Fase 151 — Requisition, Varian PERTAMA (paling sederhana, § architecture-konverter.md).
         { href: "/konverter/requisition", label: "Permintaan Barang (Requisition)", icon: ClipboardList, moduleKey: "konverter_requisition" },
+        // § Fase 152 — Item Transfer (Inventory, penutup kategori ini) & Journal Voucher (General Ledger).
+        { href: "/konverter/item-transfer", label: "Pindah Barang (Item Transfer)", icon: ArrowLeftRight, moduleKey: "konverter_item_transfer" },
+        { href: "/konverter/journal-voucher", label: "Jurnal Umum (Journal Voucher)", icon: BookOpenCheck, moduleKey: "konverter_journal_voucher" },
       ],
     },
     {

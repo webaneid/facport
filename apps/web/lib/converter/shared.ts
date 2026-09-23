@@ -26,6 +26,12 @@ export function flag1(v: unknown): 0 | 1 {
   return s === "1" || s === "ya" || s === "iya" || s === "y" || s === "yes" || s === "true" || s === "benar" ? 1 : 0;
 }
 
+/** Format angka jadi string uang gaya Indonesia (pemisah ribuan titik) — dipakai pesan ringkasan/error, BUKAN nilai
+ * XML (nilai XML pakai `num`/format mentah, JANGAN pernah `fmtMoney` — beda tujuan). */
+export function fmtMoney(n: number): string {
+  return n.toLocaleString("id-ID");
+}
+
 /** Parse angka gaya Indonesia (koma desimal, titik ribuan) — lihat komentar inline sumber legacy soal disambiguasi
  * "." vs "," (keduanya ada = titik ribuan+koma desimal; koma saja = desimal ID kecuali >1 koma = ribuan gaya
  * Inggris; titik saja pola 3-digit berulang = ribuan). */

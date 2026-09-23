@@ -138,7 +138,9 @@ pertama), REUSE apa adanya untuk 15 tipe sisanya:
 | Tipe | moduleKey | Fase | Status |
 |---|---|---|---|
 | requisition | `konverter_requisition` | 151 | ✅ Done |
-| 15 tipe lain | — | 152+ | Belum diporting |
+| itemtransfer | `konverter_item_transfer` | 152 | ✅ Done |
+| journalvoucher | `konverter_journal_voucher` | 152 | ✅ Done |
+| 13 tipe lain | — | 153+ | Belum diporting |
 
 ## Known Limitations (isi seiring Fase 151+ menemukan hal baru)
 - Belum ada Web Worker — kalau file besar (banyak ribu baris) bikin UI freeze terasa, pertimbangkan pindah proses
