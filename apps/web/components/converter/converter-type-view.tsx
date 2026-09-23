@@ -8,7 +8,8 @@ import { Alert } from "@/components/ui/alert";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { api } from "@/lib/api-client";
-import { converterHasData, type ConverterType, type ConverterCtxBase } from "@/lib/converter/converter-type";
+import { converterHasData, type ConverterCtxBase } from "@/lib/converter/converter-type";
+import { CONVERTER_TYPE_REGISTRY } from "@/lib/converter/type-registry";
 import { readExcelFile } from "@/lib/converter/read-excel";
 import { downloadConverterTemplate } from "@/lib/converter/template";
 import { downloadTextFile } from "@/lib/converter/download-file";
@@ -20,11 +21,20 @@ import { downloadTextFile } from "@/lib/converter/download-file";
 // /me/conversion-logs` DULU (gerbang kuota trial + entitlement, § "Trial — Kuota Baris" architecture doc) —
 // BARU kalau `{ok:true}\` panggil `downloadTextFile()`. Component ini generik terhadap `ConverterType<TCtx>` apa
 // pun — tiap halaman `/konverter/{tipe}/page.tsx` cuma nge-pass 1 modul type-nya sendiri.
-export function ConverterTypeView<TCtx extends ConverterCtxBase>({ type }: { type: ConverterType<TCtx> }) {
+//
+// § Fase 157 (fix bug runtime, ditemukan user via /konverter/other-deposit) — SEBELUM ini terima `type:
+// ConverterType<TCtx>` LANGSUNG sebagai prop dari `KonverterPage` (Server Component, § konverter-gate.tsx).
+// Next.js App Router MENOLAK itu saat runtime: "Functions cannot be passed directly to Client Components" — objek
+// `ConverterType` berisi 3 FUNCTION (`process`/`build`/`summary`), dan React TIDAK BISA serialisasi function
+// menyeberang boundary Server→Client (kecuali Server Action). Fix: terima `moduleKey` (STRING, aman
+// diserialisasi) saja, resolve objek `ConverterType` sendiri di sini lewat `CONVERTER_TYPE_REGISTRY` — resolusi
+// itu terjadi 100% DI DALAM modul client ini, tidak pernah menyeberang boundary apa pun.
+export function ConverterTypeView({ moduleKey }: { moduleKey: string }) {
+  const type = CONVERTER_TYPE_REGISTRY[moduleKey];
   const [branch, setBranch] = useState("");
   const [defCurrency, setDefCurrency] = useState("IDR");
   const [file, setFile] = useState<File | undefined>(undefined);
-  const [ctx, setCtx] = useState<TCtx | null>(null);
+  const [ctx, setCtx] = useState<ConverterCtxBase | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -34,7 +44,7 @@ export function ConverterTypeView<TCtx extends ConverterCtxBase>({ type }: { typ
     setFile(selected);
     setCtx(null);
     setNotice(null);
-    if (!selected) return;
+    if (!selected || !type) return;
 
     if (!branch.trim()) {
       setBranchTouched(true);
@@ -64,11 +74,11 @@ export function ConverterTypeView<TCtx extends ConverterCtxBase>({ type }: { typ
   // § Fase 156 — mirror legacy `hasData` (§ `converterHasData`, converter-type.ts): 0 error di file KOSONG (tidak
   // ada baris tervalidasi sama sekali) bukan berarti valid untuk di-download.
   const hasData = !!ctx && converterHasData(ctx);
-  const summary = ctx ? type.summary(ctx) : null;
-  const xml = ctx && !hasErrors && hasData ? type.build(ctx) : null;
+  const summary = ctx && type ? type.summary(ctx) : null;
+  const xml = ctx && type && !hasErrors && hasData ? type.build(ctx) : null;
 
   async function handleDownload() {
-    if (!xml || !ctx || !summary) return;
+    if (!xml || !ctx || !summary || !type) return;
     setDownloading(true);
     setNotice(null);
     try {
@@ -90,6 +100,13 @@ export function ConverterTypeView<TCtx extends ConverterCtxBase>({ type }: { typ
     } finally {
       setDownloading(false);
     }
+  }
+
+  // § pertahanan — SEHARUSNYA tidak pernah terjadi (`moduleKey` selalu dikirim `KonverterPage` dari daftar
+  // moduleKey yang sudah divalidasi terdaftar di `MODULE_CATALOG`/`CONVERTER_TYPE_REGISTRY`), tapi gagal jelas
+  // lebih baik daripada crash putih kalau suatu saat ada moduleKey yang lolos tanpa entri registry.
+  if (!type) {
+    return <Alert variant="destructive">Varian &quot;{moduleKey}&quot; tidak dikenal. Hubungi dukungan.</Alert>;
   }
 
   return (

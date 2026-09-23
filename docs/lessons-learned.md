@@ -4107,4 +4107,37 @@ gejalanya bisa diperbaiki dengan lebih dari satu cara struktural. Kalau menambah
 namespace presentasional (Kategori, label) dengan yang sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak
 disaring) — cek juga apakah SEMUA titik UI yang menampilkannya (bukan cuma yang customer-facing) sudah punya cara
 membedakan sumbernya, dan pertimbangkan Produk sebagai GERBANG (bukan sub-grup) kalau alur kerja penggunanya memang
+
+## 2026-09-23 — SEMUA 16 halaman Konverter crash runtime ("Functions cannot be passed to Client Components"), lolos dari typecheck+lint+unit test SEPENUHNYA
+**Gejala:** user buka `/konverter/other-deposit`, dapat Runtime Error "Functions cannot be passed directly to Client
+Components... {..., summary: function summary}". SEMUA 16 halaman Konverter (Fase 151-156) kena, bukan cuma satu —
+bug ada di component GENERIK yang dipakai semua (`KonverterPage`/`ConverterTypeView`), bukan di tipe tertentu.
+
+**Root cause:** `app/app/(protected)/konverter/{tipe}/page.tsx` (Server Component) import objek `xxxType`
+(`ConverterType`, berisi 3 FUNCTION: `process`/`build`/`summary`) dan mengopernya sebagai prop ke `KonverterPage`
+(Server Component juga) → yang lalu mengopernya LAGI sebagai prop ke `ConverterTypeView` ("use client"). Next.js App
+Router (React Server Components) TIDAK BISA serialisasi function menyeberang boundary Server→Client — SATU-SATUNYA
+cara valid membawa "kemampuan" dari server ke client adalah Server Action (`"use server"`), yang tidak relevan di
+sini (logic-nya memang HARUS jalan di browser, bukan di server). **Ini murni bug desain arsitektur session yang
+membangun Fase 151-156** — TIDAK ADA satu pun dari 6 fase itu yang benar-benar membuka halamannya di browser;
+verifikasi selama ini CUMA `bun run typecheck`/`lint`/unit test (`type.process()`/`build()`/`summary()` dipanggil
+LANGSUNG di Node/Bun, di luar Next.js sama sekali) — ketiganya TIDAK BISA dan TIDAK PERNAH mendeteksi kesalahan
+serialisasi RSC ini, itu murni error Next.js RUNTIME yang hanya muncul saat komponennya benar-benar dirender.
+
+**Fix:** `page.tsx`/`KonverterPage` sekarang cuma oper `moduleKey` (STRING, aman diserialisasi) — TIDAK PERNAH
+mengimpor objek `xxxType` sama sekali lagi. `ConverterTypeView` (client) resolve objek `ConverterType` (dengan
+function-nya) SENDIRI lewat `CONVERTER_TYPE_REGISTRY` (§ `lib/converter/type-registry.ts`, baru) — resolusi itu
+100% di dalam modul client, tidak pernah menyeberang boundary apa pun. Label tampilan di gerbang subscription pakai
+`moduleLabel()` (dari `MODULE_CATALOG`), bukan `type.label` lagi.
+
+**Pelajaran:** untuk fitur BARU yang memakai pola arsitektur BELUM ADA PRESEDENNYA di codebase (di sini: "objek
+modul berisi function dioper dari Server Component ke Client Component" — sebelumnya TIDAK ADA satu pun halaman
+lain di project ini yang butuh pola serupa), `typecheck`+`lint`+unit test SAJA TIDAK CUKUP sebagai bukti "selesai
+dan benar" — WAJIB tambah 1 langkah: benar-benar BUKA halamannya di browser (dev server + baca hasil render/
+console), minimal SEKALI per pola arsitektur baru (tidak perlu semua 16 halaman satu-satu kalau strukturnya identik
+dan bug-nya di komponen bersama — cukup representatif dari tiap bentuk `Ctx` yang berbeda). React Server Components
+punya kelas bug RUNTIME-ONLY (serialisasi boundary, "use client"/"use server" placement) yang TIDAK ADA di
+TypeScript type checker maupun di test yang memanggil fungsi murni langsung tanpa lewat pipeline render Next.js
+sungguhan — kalau pola baru menyeberang batas Server/Client, itu sinyal untuk verifikasi manual, bukan cukup lolos
+compiler.
 "pilih 1 Produk dulu, baru urus detailnya" — bukan "lihat semua lalu cari yang cocok".

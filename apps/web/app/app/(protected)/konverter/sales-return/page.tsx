@@ -1,6 +1,5 @@
 import { KonverterPage } from "@/components/converter/konverter-gate";
-import { salesReturnType } from "@/lib/converter/types/sales-return";
 
 export default function KonverterSalesReturnPage() {
-  return <KonverterPage type={salesReturnType} />;
+  return <KonverterPage moduleKey="konverter_sales_return" />;
 }

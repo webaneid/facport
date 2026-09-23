@@ -1,6 +1,5 @@
 import { KonverterPage } from "@/components/converter/konverter-gate";
-import { deliveryOrderType } from "@/lib/converter/types/delivery-order";
 
 export default function KonverterDeliveryOrderPage() {
-  return <KonverterPage type={deliveryOrderType} />;
+  return <KonverterPage moduleKey="konverter_delivery_order" />;
 }

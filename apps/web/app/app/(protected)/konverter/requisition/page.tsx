@@ -1,8 +1,8 @@
 import { KonverterPage } from "@/components/converter/konverter-gate";
-import { requisitionType } from "@/lib/converter/types/requisition";
 
-// § Fase 151, ADR-0038 — gerbang subscription + render `ConverterTypeView` sekarang di `KonverterPage`
-// (component reusable, § `components/converter/konverter-gate.tsx`, diekstrak Fase 152).
+// § Fase 157 — `moduleKey` string literal langsung (BUKAN import objek `xxxType` lagi, § catatan lengkap
+// `konverter-gate.tsx`/`converter-type-view.tsx` soal kenapa: objek `ConverterType` berisi function, TIDAK BOLEH
+// diserialisasi Server→Client).
 export default function KonverterRequisitionPage() {
-  return <KonverterPage type={requisitionType} />;
+  return <KonverterPage moduleKey="konverter_requisition" />;
 }
