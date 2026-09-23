@@ -17,7 +17,7 @@ import { SearchForm } from "@/components/ui/search-form";
 import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
 import { currencyFormatter } from "@/lib/utils";
-import { MODULE_OPTIONS, MODULE_GROUPS, type ModuleKey } from "@/lib/module-options";
+import { MODULE_OPTIONS, MODULE_CATEGORIES, PRODUCT_LINES, productLineLabel, type ModuleKey } from "@/lib/module-options";
 import { DURATION_UNIT_LABELS, formatDuration, inferDurationUnit, toDurationDays, type DurationUnit } from "@/lib/duration";
 
 type PlanKind = "module" | "seat_addon";
@@ -167,21 +167,40 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             </div>
           </div>
           {kind === "module" && (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-4">
               <span className="text-xs font-medium text-foreground">Fitur (1 paket = 1 fitur)</span>
-              {MODULE_GROUPS.map((group) => (
-                <div key={group} className="flex flex-col gap-1.5">
-                  <span className="text-xs text-muted-foreground">{group}</span>
-                  <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={group}>
-                    {MODULE_OPTIONS.filter((m) => m.category === group).map((m) => (
-                      <label key={m.key} className="flex items-center gap-2">
-                        <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
-                        {m.label}
-                      </label>
+              {/* § diminta user 2026-09-23 — SEBELUM ini dikelompokkan CUMA per Kategori, tanpa Produk sama
+                 sekali. Sejak Konverter punya Varian nyata (Fase 150-156) beberapa Kategori (Sales/Purchase/
+                 Cash & Bank/Inventory) DIPAKAI BERSAMA 2 Produk, dan beberapa Varian bahkan punya LABEL SAMA
+                 (mis. "Sales Invoice" ada di Facport DAN Konverter) — tanpa pengelompokan Produk, admin tidak
+                 bisa bedakan radio mana milik Produk mana. Sekarang: Produk dulu (judul besar), Kategori di
+                 dalamnya — pola SAMA `ProductCatalogSection` (§ components/subscribe/product-catalog-section.tsx,
+                 halaman /subscribe pelanggan), instance terpisah karena ini radio polos bukan kartu tier harga. */}
+              {PRODUCT_LINES.map((productLine) => {
+                const productModules = MODULE_OPTIONS.filter((m) => m.productLine === productLine.key);
+                if (productModules.length === 0) return null;
+                const categoriesInProduct = MODULE_CATEGORIES.filter((category) => productModules.some((m) => m.category === category));
+                return (
+                  <div key={productLine.key} className="flex flex-col gap-3 rounded-md border border-border p-3">
+                    <span className="text-sm font-semibold text-foreground">{productLineLabel(productLine.key)}</span>
+                    {categoriesInProduct.map((category) => (
+                      <div key={category} className="flex flex-col gap-1.5">
+                        <span className="text-xs text-muted-foreground">{category}</span>
+                        <div className="flex flex-col gap-2 pl-1" role="radiogroup" aria-label={`${productLineLabel(productLine.key)} — ${category}`}>
+                          {productModules
+                            .filter((m) => m.category === category)
+                            .map((m) => (
+                              <label key={m.key} className="flex items-center gap-2">
+                                <input type="radio" name="moduleKey" checked={moduleKey === m.key} onChange={() => setModuleKey(m.key)} />
+                                {m.label}
+                              </label>
+                            ))}
+                        </div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
           {kind === "module" && (
@@ -260,7 +279,14 @@ export default function AdminPlansPage() {
           <span className="text-muted-foreground">Slot User Tambahan</span>
         ) : (
           <TruncateText className="text-muted-foreground">
-            {row.original.modules.map((m) => MODULE_OPTIONS.find((o) => o.key === m)?.label ?? m).join(", ") || "-"}
+            {/* § diminta user 2026-09-23 — label modul BISA SAMA lintas Produk (mis. "Sales Invoice" ada di
+               Facport DAN Konverter), jadi Produk WAJIB ikut ditampilkan, bukan cuma label mentah. */}
+            {row.original.modules
+              .map((m) => {
+                const found = MODULE_OPTIONS.find((o) => o.key === m);
+                return found ? `${found.label} (${productLineLabel(found.productLine)})` : m;
+              })
+              .join(", ") || "-"}
           </TruncateText>
         ),
     }),

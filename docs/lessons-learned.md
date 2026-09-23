@@ -4076,3 +4076,24 @@ NYATA (format Excel lama/screenshot data riil) untuk mengecek apakah client sebe
 yang dibayangkan pertama kali ("Rate Pajak" ternyata = "Fiscal Rate", bukan persentase tarif pajak). Bandingkan juga ke modul
 SIBLING yang sudah dibangun (kalau modul lain sudah benar, modul yang komplain client kemungkinan cuma kelewat, bukan memang
 API tidak mendukung) — cara cepat konfirmasi gap nyata vs limitasi API sungguhan.
+
+## 2026-09-23 — "Tambah Paket" admin tidak bedakan Produk sama sekali; 2 Varian beda Produk bisa berlabel IDENTIK
+**Konteks:** Fase 150-156 (porting 16 Varian Konverter) menambah modul baru yang berbagi Kategori (Sales/Purchase/Cash &
+Bank/Inventory) dengan modul Facport, dan beberapa berbagi LABEL YANG SAMA PERSIS (mis. `sales_invoice` Facport dan
+`konverter_sales_invoice` sama-sama berlabel "Sales Invoice" di `MODULE_CATALOG`). Ditemukan lewat pertanyaan user: "ketika
+klik tambah paket... tidak ada tuh konverter... kan harusnya bisa milih jenis paketnya apa, lalu baru muncul modul2
+konverter" — investigasi lanjutan menemukan kode SUDAH menampilkan modul Konverter (tidak ada yang menyaringnya), tapi
+`app/admin/(protected)/plans/page.tsx` mengelompokkan radio pemilihan modul CUMA per Kategori (SATU sumber kebenaran sejak
+sebelum Konverter ada) — begitu 2 Produk berbagi Kategori DAN label, admin melihat 2 radio button identik tanpa cara
+membedakan mana Facport mana Konverter (risiko nyata: admin bikin Plan dengan modul yang SALAH tanpa sadar).
+
+**Fix:** kelompokkan radio DUA LEVEL (Produk dulu, baru Kategori di dalamnya) — pola SAMA `ProductCatalogSection`
+(`components/subscribe/product-catalog-section.tsx`, sudah ada sejak Fase 127 untuk halaman `/subscribe` pelanggan, TIDAK
+PERNAH diterapkan ke admin karena saat itu belum ada Produk ke-2). Kolom "Fitur" di tabel daftar Plan juga diberi label
+Produk (`"{label} ({Produk})"`) supaya baris Plan existing juga tidak ambigu.
+
+**Pelajaran:** kalau menambah Produk/kategori baru yang BERBAGI namespace presentasional (Kategori, label) dengan yang
+sudah ada, JANGAN cuma pastikan data-nya "muncul" (tidak disaring) — cek juga apakah SEMUA titik UI yang menampilkannya
+(bukan cuma yang customer-facing) sudah punya cara membedakan sumbernya. Pola yang sudah benar di 1 tempat (`/subscribe`)
+tidak otomatis menyebar ke tempat lain (`/admin/plans`) yang dibangun sebelum kebutuhan itu ada — WAJIB dicek manual tiap
+titik yang menampilkan moduleKey mentah begitu Produk ke-2+ ditambahkan, tidak cukup asumsi "sudah general".
