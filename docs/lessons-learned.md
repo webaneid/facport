@@ -4352,3 +4352,149 @@ dari respons Accurate yang tidak terdokumentasi TETAP bisa salah tebak meski sud
 (`item.no` benar, tapi `dataClassification5Name` ternyata salah — harusnya `dataClassification5.name`) — test
 call nyata menemukan ini dalam hitungan menit, dibanding berpotensi salah diam-diam di production kalau tidak
 diverifikasi.
+
+## 2026-09-24 — 2 perbaikan UI: label paket admin ambigu lintas Produk, opsi Konverter di gerbang koneksi Accurate
+
+**1. Dropdown/checkbox paket admin tidak bisa bedakan Facport vs Konverter.** Ditemukan client screenshot
+"Assign Paket Baru" (`admin/(protected)/users/page.tsx`) — dropdown tampil 4× "Delivery Order — 30/360 hari"
+identik, tidak bisa dibedakan mana Facport mana Konverter. **Root cause**: label dropdown & checkbox "Fitur"
+pakai `p.name` (nama bebas yang diketik admin, seringkali SAMA dengan label modul) TANPA suffix Produk — beda
+dari kolom "Fitur" di `/admin/plans` yang SUDAH diperbaiki sesi sebelumnya (`${label} (${productLineLabel})`).
+**Fix**: helper baru `planProductLineSuffix(modules)` (resolve productLine dari `MODULE_OPTIONS`), diterapkan ke
+2 lokasi di file yang sama (checkbox "Fitur" & dropdown "Assign Paket Baru") — hasil: "Delivery Order (Facport)"
+vs "Delivery Order (Konverter)".
+
+**2. Gerbang koneksi Accurate untuk Data Usaha baru (belum subscribe apa pun) selalu minta connect Accurate
+Online**, walau niat user cuma pakai Konverter (Accurate Desktop, tidak butuh koneksi apa pun). **Konfirmasi
+kode**: `requiresAccurate = boughtModules.length === 0 || accurateModules.length > 0` (`accurate-gate.ts`) —
+begitu Data Usaha SUDAH punya subscription Konverter-only, gate SUDAH otomatis `state: "ok"` (tidak ada bug di
+sini, sudah dites `accurate-gate.route.test.ts`). Gap-nya CUMA di titik SEBELUM subscribe apa pun
+(`boughtModules.length === 0` selalu `true` di awal) — user baru yang niatnya Konverter tetap lihat popup
+"Hubungkan ke Accurate Online" di layar pertama, sebelum sempat memilih. **Fix**: field baru
+`hasNoSubscriptionYet` di response `/accurate/gate` (derived, tanpa query baru) → popup `not_connected` (non-
+migrated, tanpa `lastKnownDbAlias`) tampilkan tautan tambahan "Pengguna Accurate Desktop? Anda tidak perlu ini —
+lihat paket Konverter" ke `/subscribe`. Begitu mereka subscribe Konverter, gate resolve sendiri ke `ok`; begitu
+mereka BELAKANGAN beli modul Facport, gate otomatis balik `not_connected` (dikonfirmasi dari BACA KODE
+`requiresAccurate` yang dihitung ULANG tiap fetch — bukan tes klik manual langsung, karena butuh 2 subscription
+berbeda waktu untuk disimulasikan; logic-nya sudah dites unit di `accurate-gate.route.test.ts` untuk kasus statis).
+
+**Pelajaran**: (1) fix disambiguasi Produk yang sudah diterapkan di 1 halaman (`/admin/plans`) TIDAK otomatis
+menutup gap di halaman LAIN yang punya pola serupa (`admin/users/page.tsx`) — grep pola sejenis (`p.name`+durasi,
+`moduleLabel` polos) di seluruh codebase sebelum menganggap 1 fix sudah menutup semua kasus. (2) Sebelum
+menambah fitur baru ke sebuah gate/mesin status, baca dulu variabel LOKAL yang sudah dihitung tapi belum
+di-expose ke caller (`boughtModules.length` di sini) — sering sudah ada info yang dibutuhkan, cuma belum
+"naik" ke response, jadi fix-nya expose field baru bukan re-derive logic dari nol.
+
+Detail: `apps/web/app/admin/(protected)/users/page.tsx`, `apps/api/src/lib/accurate-gate.ts`,
+`apps/web/lib/accurate-gate-copy.ts`, `apps/web/components/accurate/accurate-gate-provider.tsx`.
+
+## 2026-09-24 — Accordion "Cocokkan Kolom" tertutup default kelewat diterapkan ke 22 dari 23 halaman import
+
+**Temuan**: user tanya "apakah [accordion Cocokkan Kolom tertutup default] sudah implemented di semua laman
+import?" — grep `"Accordion"` di 23 halaman `{module}/import/page.tsx` cuma ketemu **1** (`purchase-invoice`,
+pola dibuat 2026-09-12, § komentar `resetMapping`). 22 modul lain (termasuk **Delivery Order yang baru dibangun
+HARI ITU JUGA**, Fase 157) masih pola lama: tabel "Cocokkan Kolom" langsung terbuka begitu file di-upload, admin
+harus scroll lewat tabel panjang untuk sampai ke tombol "Mulai Import" walau pemetaan otomatis sudah benar.
+
+**Fix**: rollout pola `purchase-invoice` ke 22 halaman lain via script Python (bukan Edit manual 22×, terlalu
+banyak tool call untuk transformasi yang 100% mekanis & identik di semua file — diverifikasi dulu byte-identik
+strukturnya via grep sebelum scripting). 4 perubahan per file: (1) import `Accordion` dkk, (2) `useForm` mapping
+form expose `reset: resetMapping`, (3) `onUpload` panggil `resetMapping(uploadResult.suggestedMapping)` SETELAH
+`setResult` (WAJIB — accordion Radix UNMOUNT isinya saat tertutup, `Controller` dengan `defaultValue` yang
+bergantung pada dia ke-mount TIDAK PERNAH register kalau user tidak pernah buka accordion, submit kirim mapping
+KOSONG kalau ini kelewat), (4) bungkus `<Table>` dengan `Accordion`/`AccordionItem`/`AccordionTrigger`/
+`AccordionContent`, re-indent isi Table +6 spasi. Diverifikasi: typecheck 0 error, lint bersih, test web 272
+pass/0 fail (sesudah rollout, sebelum ada perubahan lain) — SEMUA 22 file, bukan sampel.
+
+**Pencegahan berulang**: checklist modul baru (`architecture-accurate-integration.md` § 3b, poin "File BARU" #4)
+diupdate EKSPLISIT menyebut requirement accordion ini — sebelumnya cuma tertulis generik "(upload + cocokkan
+kolom)" tanpa detail, jadi waktu Delivery Order dibangun hari ini, checklist itu SENDIRI tidak menangkap gap-nya
+(checklist memang bicara soal *keberadaan* file, bukan *pola UI di dalamnya* — pelajaran baru: kalau ada 1
+keputusan UI/UX yang berlaku UNIVERSAL ke semua modul (bukan cuma soal file-titik-registrasi seperti checklist
+ini awalnya dirancang untuk), ETIKAD checklist itu WAJIB diperluas mencakup "pola implementasi", bukan cuma
+"file mana yang harus ada").
+
+**Pelajaran**: (1) 1 fitur UX yang dibuat untuk 1 modul (purchase-invoice, "modul paling kompleks") MUDAH
+dikira "sudah standar" padahal cuma diterapkan ke SATU tempat — kalau ada perubahan UI yang terasa seperti
+"perbaikan umum", grep dulu SELURUH modul sejenis sebelum menganggap itu sudah konsisten di mana-mana. (2)
+Modul yang dibangun BELAKANGAN (Delivery Order, hari ini) otomatis mewarisi gap yang SUDAH ADA di modul yang
+dicontoh (`receive-item`, yang jadi template) — meng-copy pola dari modul existing itu BENAR (konsisten), tapi
+kalau modul TEMPLATE itu sendiri belum dapat 1 perbaikan yang sudah ada di modul LAIN, modul baru akan ikut
+ketinggalan. Checklist modul baru harus dicek ulang terhadap PERUBAHAN TERBARU project, bukan cuma terhadap
+1 modul template yang dipilih.
+
+## 2026-09-24 — Kolom Status/Tanggal "meluber" di tabel Arsip Import (table-fixed + whitespace-nowrap + % terlalu sempit)
+
+**Temuan**: user lapor tabel "Arsip Import" ada "penumpukan" di bagian Status & Tanggal. **Root cause**:
+`components/ui/table.tsx` pakai `table-fixed` (ADR-0034, supaya lebar kolom deklarasi `w-[%]` dihormati BUKAN
+auto-mengikuti konten) + `whitespace-nowrap` di tiap sel (tidak boleh membungkus baris) — kombinasi ini AMAN
+kalau lebar % cukup, tapi kalau isi sel (badge status "Dibatalkan (sebagian)"/"Menunggu Konfirmasi", tanggal
+id-ID "24 Sep 2026, 14.35") lebih panjang dari % yang dideklarasikan, hasilnya konten MELUBER ke kolom sebelah
+(bukan wrap, bukan truncate — visual rusak/tumpang tindih). Kolom "Status" `w-[10%]`/`w-[16%]` dan "Tanggal"
+`w-[12%]`/`w-[16%]` di 2 tempat (`import-batch-table.tsx` gabungan + SEMUA 23 halaman "Riwayat" per-modul)
+konsisten terlalu sempit untuk label terpanjang di masing-masing.
+
+**Fix**: tambah `min-w-[150px]` (Status) dan `min-w-[130px]` (Tanggal) di SEMUA 24 lokasi (1 gabungan + 23
+per-modul) — `Table` primitive SUDAH dibungkus `overflow-x-auto` (§ table.tsx sendiri), jadi begitu % lebih
+kecil dari minimum, tabel scroll horizontal (rapi, sesuai konvensi artifact-design "tabel lebar overflow-x-auto
+di container sendiri") BUKAN meluber.
+
+**Ditemukan sekalian** (trik verifikasi checklist § architecture-accurate-integration.md § 3b dijalankan ulang
+untuk `delivery_order`, bandingkan file list vs `receive_item`): 2 titik LAIN yang kelewat saat membangun
+Delivery Order hari itu juga — `components/import-archive/import-batch-table.tsx` (dispatch Delete di tabel
+Arsip Import gabungan) dan `admin/(protected)/import-batches/[batchId]/page.tsx` (`DeliveryOrderView` + entri
+`MODULE_TITLE` + dispatch, admin read-only). Trik verifikasi (`diff` 2 hasil grep dinormalisasi) langsung
+menangkap KEDUANYA dalam 1x jalan — checklist ini sendiri sudah bilang "JALANKAN sebelum menganggap modul baru
+selesai", tapi tidak dijalankan lagi setelah Fase 157 ditutup pagi itu. Sekarang sudah 0 gap tersisa.
+
+**Pelajaran**: (1) `table-fixed` + `whitespace-nowrap` (pola project ini demi konsistensi lebar kolom) BUKAN
+otomatis aman dari overflow — WAJIB dicek label/konten TERPANJANG yang mungkin muncul di kolom itu (grep
+`STATUS_REGISTRY`/`formatDate` yang dipakai), bukan cuma dites dengan data pendek yang kebetulan pas. (2)
+Checklist "trik verifikasi" (diff modul baru vs modul lama) itu SENDIRI baru benar-benar berguna kalau DIJALANKAN
+ULANG — sekadar "sudah ada di dokumen" tidak mencegah apa pun kalau tidak dieksekusi tiap kali modul baru
+ditutup. Tambahkan ke rutinitas penutupan fase: jalankan trik ini SEBELUM `git commit`, bukan cuma sesekali saat
+audit terpisah.
+
+## 2026-09-24 — Naikkan MAX_ROWS 5.000→10.000: 15 menit timeout job BUKAN dari Accurate, kelalaian konfigurasi sendiri
+
+**Pertanyaan user**: "kalau upload jumlah baris maksimal kita naikan jadi 10.000 apakah masih aman untuk server
+kita?" — jawaban BUKAN cuma ya/tidak, ada 1 constraint konkret yang harus dihitung dulu: limit RESMI Accurate
+**8 request/detik + 8 concurrent** (`accurate-rate-limiter.ts`) — bottleneck SEBENARNYA bukan kapasitas server
+kita, tapi seberapa cepat Accurate mengizinkan kita memanggil API mereka.
+
+**Ditemukan saat menghitung**: job queue `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` TIDAK PERNAH di-override
+`expireInSeconds`-nya sejak awal — jatuh ke default `pg-boss` 900 detik (15 menit). User tanya balik "yg
+menetapkan 15 menit itu siapa? kita atau officially dari accurate?" — jawaban PENTING dibedakan: 8 req/detik itu
+resmi Accurate (tidak bisa diubah), TAPI 15 menit itu MURNI default library `pg-boss` yang kita sendiri belum
+pernah sengaja atur — bukan aturan eksternal apa pun, kita punya kendali penuh.
+
+**Matematika keamanan** (skenario terburuk: 1 baris = 1 dokumen tanpa grouping + 1 panggilan find-or-create per
+baris kalau vendor/barang semuanya baru = ~2 panggilan/baris):
+- 5.000 baris (limit lama) ÷ 8/detik × 2 ≈ 20,8 menit — **sudah dekat** ke 15 menit (headroom kecil, worst-case
+  ekstrem MEMANG bisa melewati, tapi jarang terjadi di praktik nyata karena tidak semua modul selalu grouping-0%+item-baru-100%).
+- 10.000 baris (limit baru) ÷ 8/detik × 2 ≈ 41,7 menit — **pasti melewati** 15 menit di skenario umum sekalipun.
+
+**Fix (2 perubahan bersamaan, bukan cuma naikkan angka)**:
+1. `MAX_ROWS` 5000→10000 di 23 `{module}-import.route.ts` + fallback frontend `?? 5000`→`?? 10000` di 23
+   `{module}/import/page.tsx` (fallback ini cuma dipakai kalau server TIDAK kirim `maxRows` — server selalu
+   kirim, jadi murni jaga-jaga).
+2. `lib/queue.ts` — `expireInSeconds: 3600` (60 menit, margin dari skenario terburuk ~42 menit) KHUSUS untuk
+   `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` (queue lain seperti email/refresh-token TETAP default 15 menit, cukup
+   untuk kerjanya). **Ditemukan sekalian**: `createQueue()` pg-boss pakai `ON CONFLICT DO NOTHING` — TIDAK
+   meng-update queue yang SUDAH ADA di database (production sudah lama punya baris queue ini dari
+   import-import sebelumnya). Kalau cuma ganti opsi `createQueue()` dan deploy, production TIDAK akan ikut
+   naik nilainya — WAJIB panggil `boss.updateQueue()` juga (beneran `UPDATE ... SET expire_seconds`).
+
+**Pelajaran**: (1) pertanyaan "apakah aman menaikkan limit X" seringkali punya jawaban tersembunyi di constraint
+LAIN yang tidak terlihat dari limit itu sendiri (di sini: limit rate API pihak ketiga × timeout job queue kita
+sendiri) — jangan cuma jawab dari sisi "server kita kuat/tidak", telusuri SEMUA titik yang bergantung pada
+angka itu. (2) Sebelum mengklaim "X aman untuk dinaikkan", HITUNG angka konkretnya (baris ÷ rate limit × margin
+error), jangan asumsi kualitatif ("kayaknya cukup kuat"). (3) Default library (pg-boss 15 menit, atau default
+mana pun) yang tidak pernah disentuh BUKAN otomatis berarti "sudah dipertimbangkan" — bisa jadi cuma belum
+pernah ada yang mengecek apakah default itu masih cocok dengan skala project SEKARANG. (4) Config idempoten
+(`createQueue` dengan `ON CONFLICT DO NOTHING`) bisa diam-diam TIDAK berefek di production kalau row-nya sudah
+ada dari sebelumnya — selalu cek SQL/behavior persis dari library sebelum asumsi "ganti kode = otomatis
+ke-apply ke semua environment".
+
+Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/routes/*-import.route.ts` (23 file),
+`apps/web/app/app/(protected)/*/import/page.tsx` (23 file), `docs/architecture/architecture-jobs.md`.

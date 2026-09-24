@@ -20,7 +20,7 @@ const ALLOWED_MIME = [
   "application/vnd.ms-excel",
 ] as const;
 const MAX_SIZE_MB = 10;
-const MAX_ROWS = 5000;
+const MAX_ROWS = 10000;
 
 const ALL_DEFAULT_COLUMN_MAPS: Record<string, string>[] = [
   salesInvoiceMapping.defaultColumnMap,

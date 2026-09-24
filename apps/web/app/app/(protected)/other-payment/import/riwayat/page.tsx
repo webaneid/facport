@@ -71,9 +71,9 @@ export default function OtherPaymentImportArchivePage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[32%]">File</TableHead>
-                    <TableHead className="w-[16%]">Status</TableHead>
+                    <TableHead className="w-[16%] min-w-[150px]">Status</TableHead>
                     <TableHead className="w-[12%]">Baris</TableHead>
-                    <TableHead className="w-[16%]">Tanggal</TableHead>
+                    <TableHead className="w-[16%] min-w-[130px]">Tanggal</TableHead>
                     <TableHead className="w-[60px] text-right">Aksi</TableHead>
                   </TableRow>
                 </TableHeader>

@@ -39,6 +39,9 @@ import { DeleteImportDialog as RollOverDeleteImportDialog } from "@/components/r
 import { DeleteImportDialog as WorkOrderDeleteImportDialog } from "@/components/work-order/delete-import-dialog";
 import { DeleteImportDialog as MaterialSlipDeleteImportDialog } from "@/components/material-slip/delete-import-dialog";
 import { DeleteImportDialog as FinishedGoodSlipDeleteImportDialog } from "@/components/finished-good-slip/delete-import-dialog";
+// § Fase 157 — Delivery Order, ditemukan KELEWAT (§ checklist modul baru,
+// architecture-accurate-integration.md § 3b poin 10) saat audit tabel ini 2026-09-24.
+import { DeleteImportDialog as DeliveryOrderDeleteImportDialog } from "@/components/delivery-order/delete-import-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -94,9 +97,14 @@ export function ImportBatchTable({
           <TableHead className="w-[24%]">File</TableHead>
           <TableHead className="w-[16%]">Fitur</TableHead>
           <TableHead className="w-[16%]">Diupload oleh</TableHead>
-          <TableHead className="w-[10%]">Status</TableHead>
+          {/* § diminta user 2026-09-24 — `min-w` WAJIB di kolom label panjang (badge status "Dibatalkan
+             (sebagian)"/"Menunggu Konfirmasi", tanggal id-ID "24 Sep 2026, 14.35") — tanpa ini, `table-fixed`
+             + `whitespace-nowrap` (§ ADR-0034, components/ui/table.tsx) bikin isi kolom MELUBER ke kolom
+             sebelah kalau % lebih kecil dari kontennya. `overflow-x-auto` (sudah ada di `Table`) yang
+             menampung selisihnya jadi scroll horizontal, bukan tabel yang dideklarasikan lebar tapi rusak. */}
+          <TableHead className="w-[10%] min-w-[150px]">Status</TableHead>
           <TableHead className="w-[8%]">Baris</TableHead>
-          <TableHead className="w-[12%]">Tanggal</TableHead>
+          <TableHead className="w-[12%] min-w-[130px]">Tanggal</TableHead>
           <TableHead className="w-[112px] text-right">Aksi</TableHead>
         </TableRow>
       </TableHeader>
@@ -204,6 +212,9 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "finished_good_slip" && (
                     <FinishedGoodSlipDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "delivery_order" && (
+                    <DeliveryOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

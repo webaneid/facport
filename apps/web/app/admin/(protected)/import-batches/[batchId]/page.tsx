@@ -392,6 +392,36 @@ function ReceiveItemView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Fase 157 — Delivery Order, ditemukan KELEWAT (§ checklist modul baru,
+// architecture-accurate-integration.md § 3b poin 11) saat audit 2026-09-24.
+// Mirror persis `ReceiveItemView` (tidak butuh grouping kolom khusus).
+function DeliveryOrderView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Delivery Order Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function PurchaseReturnView({ rows }: { rows: Row[] }) {
   return (
     <Table>
@@ -753,6 +783,7 @@ const MODULE_TITLE: Record<string, string> = {
   work_order: "Hasil Import Work Order",
   material_slip: "Hasil Import Material Slip",
   finished_good_slip: "Hasil Import Finished Good Slip",
+  delivery_order: "Hasil Import Delivery Order",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -835,6 +866,7 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "work_order" && <WorkOrderView rows={rows} />}
           {batch.module === "material_slip" && <MaterialSlipView rows={rows} />}
           {batch.module === "finished_good_slip" && <FinishedGoodSlipView rows={rows} />}
+          {batch.module === "delivery_order" && <DeliveryOrderView rows={rows} />}
         </CardContent>
       </Card>
     </div>
