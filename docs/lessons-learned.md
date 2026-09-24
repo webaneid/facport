@@ -4422,3 +4422,35 @@ dicontoh (`receive-item`, yang jadi template) — meng-copy pola dari modul exis
 kalau modul TEMPLATE itu sendiri belum dapat 1 perbaikan yang sudah ada di modul LAIN, modul baru akan ikut
 ketinggalan. Checklist modul baru harus dicek ulang terhadap PERUBAHAN TERBARU project, bukan cuma terhadap
 1 modul template yang dipilih.
+
+## 2026-09-24 — Kolom Status/Tanggal "meluber" di tabel Arsip Import (table-fixed + whitespace-nowrap + % terlalu sempit)
+
+**Temuan**: user lapor tabel "Arsip Import" ada "penumpukan" di bagian Status & Tanggal. **Root cause**:
+`components/ui/table.tsx` pakai `table-fixed` (ADR-0034, supaya lebar kolom deklarasi `w-[%]` dihormati BUKAN
+auto-mengikuti konten) + `whitespace-nowrap` di tiap sel (tidak boleh membungkus baris) — kombinasi ini AMAN
+kalau lebar % cukup, tapi kalau isi sel (badge status "Dibatalkan (sebagian)"/"Menunggu Konfirmasi", tanggal
+id-ID "24 Sep 2026, 14.35") lebih panjang dari % yang dideklarasikan, hasilnya konten MELUBER ke kolom sebelah
+(bukan wrap, bukan truncate — visual rusak/tumpang tindih). Kolom "Status" `w-[10%]`/`w-[16%]` dan "Tanggal"
+`w-[12%]`/`w-[16%]` di 2 tempat (`import-batch-table.tsx` gabungan + SEMUA 23 halaman "Riwayat" per-modul)
+konsisten terlalu sempit untuk label terpanjang di masing-masing.
+
+**Fix**: tambah `min-w-[150px]` (Status) dan `min-w-[130px]` (Tanggal) di SEMUA 24 lokasi (1 gabungan + 23
+per-modul) — `Table` primitive SUDAH dibungkus `overflow-x-auto` (§ table.tsx sendiri), jadi begitu % lebih
+kecil dari minimum, tabel scroll horizontal (rapi, sesuai konvensi artifact-design "tabel lebar overflow-x-auto
+di container sendiri") BUKAN meluber.
+
+**Ditemukan sekalian** (trik verifikasi checklist § architecture-accurate-integration.md § 3b dijalankan ulang
+untuk `delivery_order`, bandingkan file list vs `receive_item`): 2 titik LAIN yang kelewat saat membangun
+Delivery Order hari itu juga — `components/import-archive/import-batch-table.tsx` (dispatch Delete di tabel
+Arsip Import gabungan) dan `admin/(protected)/import-batches/[batchId]/page.tsx` (`DeliveryOrderView` + entri
+`MODULE_TITLE` + dispatch, admin read-only). Trik verifikasi (`diff` 2 hasil grep dinormalisasi) langsung
+menangkap KEDUANYA dalam 1x jalan — checklist ini sendiri sudah bilang "JALANKAN sebelum menganggap modul baru
+selesai", tapi tidak dijalankan lagi setelah Fase 157 ditutup pagi itu. Sekarang sudah 0 gap tersisa.
+
+**Pelajaran**: (1) `table-fixed` + `whitespace-nowrap` (pola project ini demi konsistensi lebar kolom) BUKAN
+otomatis aman dari overflow — WAJIB dicek label/konten TERPANJANG yang mungkin muncul di kolom itu (grep
+`STATUS_REGISTRY`/`formatDate` yang dipakai), bukan cuma dites dengan data pendek yang kebetulan pas. (2)
+Checklist "trik verifikasi" (diff modul baru vs modul lama) itu SENDIRI baru benar-benar berguna kalau DIJALANKAN
+ULANG — sekadar "sudah ada di dokumen" tidak mencegah apa pun kalau tidak dieksekusi tiap kali modul baru
+ditutup. Tambahkan ke rutinitas penutupan fase: jalankan trik ini SEBELUM `git commit`, bukan cuma sesekali saat
+audit terpisah.
