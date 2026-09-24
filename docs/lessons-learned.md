@@ -4352,3 +4352,38 @@ dari respons Accurate yang tidak terdokumentasi TETAP bisa salah tebak meski sud
 (`item.no` benar, tapi `dataClassification5Name` ternyata salah — harusnya `dataClassification5.name`) — test
 call nyata menemukan ini dalam hitungan menit, dibanding berpotensi salah diam-diam di production kalau tidak
 diverifikasi.
+
+## 2026-09-24 — 2 perbaikan UI: label paket admin ambigu lintas Produk, opsi Konverter di gerbang koneksi Accurate
+
+**1. Dropdown/checkbox paket admin tidak bisa bedakan Facport vs Konverter.** Ditemukan client screenshot
+"Assign Paket Baru" (`admin/(protected)/users/page.tsx`) — dropdown tampil 4× "Delivery Order — 30/360 hari"
+identik, tidak bisa dibedakan mana Facport mana Konverter. **Root cause**: label dropdown & checkbox "Fitur"
+pakai `p.name` (nama bebas yang diketik admin, seringkali SAMA dengan label modul) TANPA suffix Produk — beda
+dari kolom "Fitur" di `/admin/plans` yang SUDAH diperbaiki sesi sebelumnya (`${label} (${productLineLabel})`).
+**Fix**: helper baru `planProductLineSuffix(modules)` (resolve productLine dari `MODULE_OPTIONS`), diterapkan ke
+2 lokasi di file yang sama (checkbox "Fitur" & dropdown "Assign Paket Baru") — hasil: "Delivery Order (Facport)"
+vs "Delivery Order (Konverter)".
+
+**2. Gerbang koneksi Accurate untuk Data Usaha baru (belum subscribe apa pun) selalu minta connect Accurate
+Online**, walau niat user cuma pakai Konverter (Accurate Desktop, tidak butuh koneksi apa pun). **Konfirmasi
+kode**: `requiresAccurate = boughtModules.length === 0 || accurateModules.length > 0` (`accurate-gate.ts`) —
+begitu Data Usaha SUDAH punya subscription Konverter-only, gate SUDAH otomatis `state: "ok"` (tidak ada bug di
+sini, sudah dites `accurate-gate.route.test.ts`). Gap-nya CUMA di titik SEBELUM subscribe apa pun
+(`boughtModules.length === 0` selalu `true` di awal) — user baru yang niatnya Konverter tetap lihat popup
+"Hubungkan ke Accurate Online" di layar pertama, sebelum sempat memilih. **Fix**: field baru
+`hasNoSubscriptionYet` di response `/accurate/gate` (derived, tanpa query baru) → popup `not_connected` (non-
+migrated, tanpa `lastKnownDbAlias`) tampilkan tautan tambahan "Pengguna Accurate Desktop? Anda tidak perlu ini —
+lihat paket Konverter" ke `/subscribe`. Begitu mereka subscribe Konverter, gate resolve sendiri ke `ok`; begitu
+mereka BELAKANGAN beli modul Facport, gate otomatis balik `not_connected` (dikonfirmasi dari BACA KODE
+`requiresAccurate` yang dihitung ULANG tiap fetch — bukan tes klik manual langsung, karena butuh 2 subscription
+berbeda waktu untuk disimulasikan; logic-nya sudah dites unit di `accurate-gate.route.test.ts` untuk kasus statis).
+
+**Pelajaran**: (1) fix disambiguasi Produk yang sudah diterapkan di 1 halaman (`/admin/plans`) TIDAK otomatis
+menutup gap di halaman LAIN yang punya pola serupa (`admin/users/page.tsx`) — grep pola sejenis (`p.name`+durasi,
+`moduleLabel` polos) di seluruh codebase sebelum menganggap 1 fix sudah menutup semua kasus. (2) Sebelum
+menambah fitur baru ke sebuah gate/mesin status, baca dulu variabel LOKAL yang sudah dihitung tapi belum
+di-expose ke caller (`boughtModules.length` di sini) — sering sudah ada info yang dibutuhkan, cuma belum
+"naik" ke response, jadi fix-nya expose field baru bukan re-derive logic dari nol.
+
+Detail: `apps/web/app/admin/(protected)/users/page.tsx`, `apps/api/src/lib/accurate-gate.ts`,
+`apps/web/lib/accurate-gate-copy.ts`, `apps/web/components/accurate/accurate-gate-provider.tsx`.

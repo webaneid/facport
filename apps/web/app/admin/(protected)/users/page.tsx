@@ -24,7 +24,7 @@ import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
-import { moduleLabel } from "@/lib/module-options";
+import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
 
 const PAGE_SIZE = 20;
 
@@ -40,6 +40,19 @@ type UserRow = {
   activeSubscriptions: ActiveSubscription[];
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
+
+// § diminta user 2026-09-24 — "Delivery Order 30 hari" (Facport) vs
+// "Delivery Order 30 hari" (Konverter) SAMA PERSIS teksnya di checkbox
+// "Fitur" & dropdown "Assign Paket Baru" (nama plan cuma dari `p.name`
+// bebas ketik admin, § label modul yang ambigu lintas Produk) — admin
+// tidak bisa bedakan mana yang mau di-assign. Mirror pola yang sudah ada
+// di `admin/plans/page.tsx` kolom "Fitur" (`${label} (${productLineLabel})`),
+// cuma di sini sebagai suffix pendek supaya tidak duplikat nama plan.
+function planProductLineSuffix(modules: string[]): string {
+  const key = modules[0];
+  const found = key ? MODULE_OPTIONS.find((o) => o.key === key) : undefined;
+  return found ? ` (${productLineLabel(found.productLine)})` : "";
+}
 // § Fase 115 — field SEKARANG match response `GET /admin/users/:id/subscriptions`
 // (`apps/api/src/routes/admin/user-subscriptions.route.ts`, sudah JOIN
 // `dataUsaha` sejak 2026-09-12) — ganti dari `GET /admin/subscriptions?userId=`
@@ -194,7 +207,10 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
                   {plans.map((p) => (
                     <label key={p.id} className="flex items-center gap-2">
                       <Checkbox checked={selectedPlanIds.has(p.id)} onCheckedChange={() => togglePlan(p.id)} />
-                      <span className="text-foreground">{p.name}</span>
+                      <span className="text-foreground">
+                        {p.name}
+                        {planProductLineSuffix(p.modules)}
+                      </span>
                       <span className="text-xs text-muted-foreground">
                         ({p.modules.map(moduleLabel).join(", ")}, {currencyFormatter.format(p.price)})
                       </span>
@@ -478,7 +494,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
             ) : (
               <Combobox
-                options={plans.map((p) => ({ value: p.id, label: `${p.name} — ${p.durationDays} hari` }))}
+                options={plans.map((p) => ({ value: p.id, label: `${p.name}${planProductLineSuffix(p.modules)} — ${p.durationDays} hari` }))}
                 value={selectedPlanId}
                 onChange={handleSelectPlan}
                 placeholder="(pilih paket)"

@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import Link from "next/link";
 import { useAccurateGateNavigation } from "@/lib/use-accurate-gate-navigation";
 import { AlertTriangle, CheckCircle2, Link2, Building2 } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -342,6 +343,14 @@ function GatePopup({
                   </button>
                 ))}
               </div>
+            )}
+
+            {copy.alternativeLink && (
+              <p className="text-center text-xs text-muted-foreground">
+                <Link href={copy.alternativeLink.href} className="font-medium text-primary-700 underline-offset-2 hover:underline">
+                  {copy.alternativeLink.label}
+                </Link>
+              </p>
             )}
 
             {copy.note && <p className="text-center text-xs text-muted-foreground">{copy.note}</p>}

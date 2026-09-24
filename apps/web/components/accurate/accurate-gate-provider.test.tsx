@@ -51,6 +51,7 @@ function gate(over: Partial<AccurateGate> = {}): AccurateGate {
     catalogMissingScopes: [],
     importRunning: false,
     accounts: [],
+    hasNoSubscriptionYet: false,
     ...over,
   };
 }

@@ -28,6 +28,7 @@ function gate(over: Partial<AccurateGate> = {}): AccurateGate {
     catalogMissingScopes: [],
     importRunning: false,
     accounts: [],
+    hasNoSubscriptionYet: false,
     ...over,
   };
 }
@@ -46,6 +47,27 @@ describe("gateCopy — label tombol per situasi", () => {
     expect(c.title).toContain("sekali saja");
     expect(c.primary.label).toBe("Hubungkan Ulang");
     expect(c.note).toContain("PT Lama");
+  });
+
+  // § diminta user 2026-09-24 — Data Usaha BENAR-BENAR baru (belum beli apa pun) ditawari jalur Konverter,
+  // supaya tidak merasa wajib connect Accurate Online kalau niatnya cuma pakai Accurate Desktop.
+  test("not_connected + hasNoSubscriptionYet: muncul alternativeLink ke /subscribe", () => {
+    const c = copyOf({ state: "not_connected", hasNoSubscriptionYet: true });
+    expect(c.alternativeLink).toEqual({ label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe" });
+  });
+
+  test("not_connected TANPA hasNoSubscriptionYet (sudah punya modul Facport) -> TIDAK ada alternativeLink", () => {
+    expect(copyOf({ state: "not_connected", hasNoSubscriptionYet: false }).alternativeLink).toBeUndefined();
+  });
+
+  test("not_connected migrated + hasNoSubscriptionYet -> TETAP TIDAK ada alternativeLink (migrated = sudah pernah pakai Facport)", () => {
+    const c = copyOf({ state: "not_connected", migrated: true, hasNoSubscriptionYet: true, lastKnownDbAlias: "PT Lama" });
+    expect(c.alternativeLink).toBeUndefined();
+  });
+
+  test("not_connected + hasNoSubscriptionYet TAPI ada lastKnownDbAlias -> TIDAK ada alternativeLink (pernah connect sebelumnya)", () => {
+    const c = copyOf({ state: "not_connected", hasNoSubscriptionYet: true, lastKnownDbAlias: "PT Lama" });
+    expect(c.alternativeLink).toBeUndefined();
   });
 
   test("reconnect: 'Hubungkan Ulang' (aksi reconnect) / 'Nanti'", () => {

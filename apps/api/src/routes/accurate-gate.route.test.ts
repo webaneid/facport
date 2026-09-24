@@ -58,17 +58,17 @@ describe("GET /accurate/gate — mesin status", () => {
     expect((await testApp.handle(new Request(`http://localhost/accurate/gate?dataUsahaId=${du}`, { headers: { cookie: b.cookie } }))).status).toBe(404);
   });
 
-  test("Data Usaha BARU (belum beli apa pun) → not_connected, memerlukan Accurate, pemilik", async () => {
+  test("Data Usaha BARU (belum beli apa pun) → not_connected, memerlukan Accurate, pemilik, hasNoSubscriptionYet true", async () => {
     const { userId, cookie } = await newUser("fresh");
     const du = await createTestDataUsaha(userId);
-    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: false, requiresAccurate: true, isOwner: true, accounts: [] });
+    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: false, requiresAccurate: true, isOwner: true, accounts: [], hasNoSubscriptionYet: true });
   });
 
-  test("Data Usaha yang hanya memakai produk NON-Accurate → ok, requiresAccurate false (tidak ada gerbang)", async () => {
+  test("Data Usaha yang hanya memakai produk NON-Accurate → ok, requiresAccurate false (tidak ada gerbang), hasNoSubscriptionYet false (sudah beli sesuatu)", async () => {
     const { userId, cookie } = await newUser("nonaccurate");
     const du = await createTestDataUsaha(userId);
     await subscribe(userId, du, "modul_non_accurate", "na");
-    expect(await gateOf(cookie, du)).toMatchObject({ state: "ok", requiresAccurate: false });
+    expect(await gateOf(cookie, du)).toMatchObject({ state: "ok", requiresAccurate: false, hasNoSubscriptionYet: false });
   });
 
   test("not_connected varian `migrated`: Data Usaha yang dulu terhubung lewat model LAMA (pointer lama di subscription) & belum terhubung lagi", async () => {

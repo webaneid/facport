@@ -33,6 +33,10 @@ export type AccurateGate = {
   importRunning: boolean;
   /** Akun Accurate milik pemilik yang sudah terhubung (untuk "pakai akun yang sama"). HANYA pemilik. */
   accounts: { id: string; accountEmail: string | null }[];
+  /** § diminta user 2026-09-24 — true = Data Usaha BENAR-BENAR belum beli apa pun (bukan sudah punya modul Facport
+   * tapi belum connect). Dipakai popup `not_connected` untuk tawarkan jalur "pengguna Accurate Desktop → lihat
+   * Konverter" — HANYA masuk akal kalau belum ada komitmen ke Facport sama sekali, § accurate-gate-copy.ts. */
+  hasNoSubscriptionYet: boolean;
 };
 
 const LABELS = new Map<string, string>(MODULE_CATALOG.map((m) => [m.key, m.label]));
@@ -68,6 +72,7 @@ export async function computeAccurateGate(userId: string, dataUsahaId: string): 
     catalogMissingScopes: [],
     importRunning: false,
     accounts: [],
+    hasNoSubscriptionYet: boughtModules.length === 0,
   };
   if (!requiresAccurate) return base;
 

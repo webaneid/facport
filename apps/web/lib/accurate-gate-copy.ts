@@ -18,6 +18,9 @@ export type AccurateGate = {
   catalogMissingScopes: string[];
   importRunning: boolean;
   accounts: { id: string; accountEmail: string | null }[];
+  /** § diminta user 2026-09-24 — true = Data Usaha BENAR-BENAR belum beli apa pun. Dipakai `not_connected` untuk
+   * tawarkan jalur "pengguna Accurate Desktop → lihat Konverter", § `gateCopy`. */
+  hasNoSubscriptionYet: boolean;
 };
 
 /** Aksi tombol utama. `reconnect` = OAuth dengan flag reconnect (koneksi sudah ada): hubungkan ulang / perbarui izin. */
@@ -31,6 +34,10 @@ export type GateCopy = {
   note?: string;
   primary: { label: string; action: PrimaryAction; disabledReason?: string };
   secondary: { label: string; action: SecondaryAction };
+  /** § diminta user 2026-09-24 — tautan keluar opsional (BUKAN tombol aksi popup), dirender sebagai teks-link
+   * di atas `note`. Sejauh ini cuma dipakai `not_connected` + `hasNoSubscriptionYet` (jalur "pengguna Accurate
+   * Desktop, lihat Konverter") — jangan disalahgunakan untuk hal lain tanpa alasan sekuat itu. */
+  alternativeLink?: { label: string; href: string };
 };
 
 /** "A", "A dan B", "A, B, dan C" — untuk menyebut nama fitur dalam narasi. */
@@ -83,6 +90,11 @@ export function gateCopy(gate: AccurateGate, opts: { dataUsahaName: string; hasE
           : "Belum siap? Pilih Nanti — Anda bisa menghubungkan kapan saja dari menu Koneksi Accurate.",
         primary: { label: retry ?? "Hubungkan Sekarang", action: "connect" },
         secondary: later,
+        // § belum ada komitmen ke Facport sama sekali (Data Usaha benar-benar baru) — tawarkan jalur Konverter
+        // (Excel→XML untuk Accurate Desktop) yang TIDAK butuh koneksi Accurate Online ini sama sekali.
+        alternativeLink: !gate.lastKnownDbAlias && gate.hasNoSubscriptionYet
+          ? { label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe" }
+          : undefined,
       };
 
     case "reconnect":
