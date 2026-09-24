@@ -1,3 +1,11 @@
+## 2.13.0 (2026-09-24)
+
+* fix(admin,accurate-gate): disambiguasi label paket + opsi Konverter di gerbang koneksi ([12b1d50](https://github.com/webaneid/facport/commit/12b1d50))
+* Merge pull request #74 from webaneid/develop ([6b61ebd](https://github.com/webaneid/facport/commit/6b61ebd)), closes [#74](https://github.com/webaneid/facport/issues/74)
+* feat(import): naikkan MAX_ROWS 5000->10000 + job timeout 15->60 menit ([c0febf8](https://github.com/webaneid/facport/commit/c0febf8))
+* fix(import-archive): kolom Status/Tanggal meluber di tabel Arsip Import ([199afc8](https://github.com/webaneid/facport/commit/199afc8))
+* fix(import): rollout accordion "Cocokkan Kolom" tertutup default ke 22 halaman ([cac7cc8](https://github.com/webaneid/facport/commit/cac7cc8))
+
 ## 2.12.0 (2026-09-23)
 
 * Merge pull request #73 from webaneid/develop ([5b1cd00](https://github.com/webaneid/facport/commit/5b1cd00)), closes [#73](https://github.com/webaneid/facport/issues/73)
