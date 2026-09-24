@@ -7,6 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { FileDropzone } from "@/components/ui/file-dropzone";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -134,6 +135,7 @@ export default function PurchaseReturnImportPage() {
     control: mappingControl,
     handleSubmit: handleMappingSubmit,
     getValues,
+    reset: resetMapping,
   } = useForm<Record<string, string>>();
 
   async function onUpload(values: UploadValues) {
@@ -156,7 +158,13 @@ export default function PurchaseReturnImportPage() {
       );
       return;
     }
-    setResult(res.data as unknown as UploadResult);
+    const uploadResult = res.data as unknown as UploadResult;
+    setResult(uploadResult);
+    // § diminta user 2026-09-24 — accordion "Cocokkan Kolom" TERTUTUP by default (rollout dari purchase-invoice,
+    // § lessons-learned.md). WAJIB seed di sini (bukan cuma `defaultValue` per `Controller`) — accordion Radix
+    // UNMOUNT isinya saat tertutup, jadi `Controller` yang defaultValue-nya bergantung pada dia ke-mount TIDAK
+    // PERNAH register kalau user tidak pernah buka accordion-nya, dan submit akan kirim mapping KOSONG.
+    resetMapping(uploadResult.suggestedMapping);
   }
 
   async function onConfirmMapping() {
@@ -184,6 +192,8 @@ export default function PurchaseReturnImportPage() {
     }
     router.push(`/purchase-return/import/${result.batchId}`);
   }
+
+  const mappedCount = result ? result.excelColumns.filter((col) => result.suggestedMapping[col]).length : 0;
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
@@ -242,36 +252,50 @@ export default function PurchaseReturnImportPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleMappingSubmit(onConfirmMapping)} className="flex flex-col gap-4">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-[35%]">Kolom Excel</TableHead>
-                    <TableHead className="w-[65%]">Field Accurate</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {result.excelColumns.map((col) => (
-                    <TableRow key={col}>
-                      <TableCell className="font-medium text-foreground"><TruncateText>{col}</TruncateText></TableCell>
-                      <TableCell>
-                        <Controller
-                          control={mappingControl}
-                          name={col}
-                          defaultValue={result.suggestedMapping[col] ?? ""}
-                          render={({ field }) => (
-                            <Combobox
-                              options={[...ACCURATE_FIELDS]}
-                              value={field.value}
-                              onChange={field.onChange}
-                              placeholder="(tidak dipetakan)"
-                            />
-                          )}
-                        />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+              <Accordion type="single" collapsible>
+                <AccordionItem value="mapping" className="border-none">
+                  <AccordionTrigger className="rounded-lg border border-border/60 px-4 py-3 hover:no-underline">
+                    <span className="flex flex-col items-start gap-0.5 text-left">
+                      <span>Cocokkan Kolom Manual (opsional)</span>
+                      <span className="text-xs font-normal text-muted-foreground">
+                        {mappedCount} dari {result.excelColumns.length} kolom sudah otomatis terpetakan — buka kalau mau cek/ubah.
+                      </span>
+                    </span>
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-0 pt-3">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-[35%]">Kolom Excel</TableHead>
+                          <TableHead className="w-[65%]">Field Accurate</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {result.excelColumns.map((col) => (
+                          <TableRow key={col}>
+                            <TableCell className="font-medium text-foreground"><TruncateText>{col}</TruncateText></TableCell>
+                            <TableCell>
+                              <Controller
+                                control={mappingControl}
+                                name={col}
+                                defaultValue={result.suggestedMapping[col] ?? ""}
+                                render={({ field }) => (
+                                  <Combobox
+                                    options={[...ACCURATE_FIELDS]}
+                                    value={field.value}
+                                    onChange={field.onChange}
+                                    placeholder="(tidak dipetakan)"
+                                  />
+                                )}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
               <Button type="submit" disabled={confirming} className="self-start">
                 {confirming ? "Memulai import..." : "Mulai Import"}
               </Button>

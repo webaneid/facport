@@ -4387,3 +4387,38 @@ di-expose ke caller (`boughtModules.length` di sini) — sering sudah ada info y
 
 Detail: `apps/web/app/admin/(protected)/users/page.tsx`, `apps/api/src/lib/accurate-gate.ts`,
 `apps/web/lib/accurate-gate-copy.ts`, `apps/web/components/accurate/accurate-gate-provider.tsx`.
+
+## 2026-09-24 — Accordion "Cocokkan Kolom" tertutup default kelewat diterapkan ke 22 dari 23 halaman import
+
+**Temuan**: user tanya "apakah [accordion Cocokkan Kolom tertutup default] sudah implemented di semua laman
+import?" — grep `"Accordion"` di 23 halaman `{module}/import/page.tsx` cuma ketemu **1** (`purchase-invoice`,
+pola dibuat 2026-09-12, § komentar `resetMapping`). 22 modul lain (termasuk **Delivery Order yang baru dibangun
+HARI ITU JUGA**, Fase 157) masih pola lama: tabel "Cocokkan Kolom" langsung terbuka begitu file di-upload, admin
+harus scroll lewat tabel panjang untuk sampai ke tombol "Mulai Import" walau pemetaan otomatis sudah benar.
+
+**Fix**: rollout pola `purchase-invoice` ke 22 halaman lain via script Python (bukan Edit manual 22×, terlalu
+banyak tool call untuk transformasi yang 100% mekanis & identik di semua file — diverifikasi dulu byte-identik
+strukturnya via grep sebelum scripting). 4 perubahan per file: (1) import `Accordion` dkk, (2) `useForm` mapping
+form expose `reset: resetMapping`, (3) `onUpload` panggil `resetMapping(uploadResult.suggestedMapping)` SETELAH
+`setResult` (WAJIB — accordion Radix UNMOUNT isinya saat tertutup, `Controller` dengan `defaultValue` yang
+bergantung pada dia ke-mount TIDAK PERNAH register kalau user tidak pernah buka accordion, submit kirim mapping
+KOSONG kalau ini kelewat), (4) bungkus `<Table>` dengan `Accordion`/`AccordionItem`/`AccordionTrigger`/
+`AccordionContent`, re-indent isi Table +6 spasi. Diverifikasi: typecheck 0 error, lint bersih, test web 272
+pass/0 fail (sesudah rollout, sebelum ada perubahan lain) — SEMUA 22 file, bukan sampel.
+
+**Pencegahan berulang**: checklist modul baru (`architecture-accurate-integration.md` § 3b, poin "File BARU" #4)
+diupdate EKSPLISIT menyebut requirement accordion ini — sebelumnya cuma tertulis generik "(upload + cocokkan
+kolom)" tanpa detail, jadi waktu Delivery Order dibangun hari ini, checklist itu SENDIRI tidak menangkap gap-nya
+(checklist memang bicara soal *keberadaan* file, bukan *pola UI di dalamnya* — pelajaran baru: kalau ada 1
+keputusan UI/UX yang berlaku UNIVERSAL ke semua modul (bukan cuma soal file-titik-registrasi seperti checklist
+ini awalnya dirancang untuk), ETIKAD checklist itu WAJIB diperluas mencakup "pola implementasi", bukan cuma
+"file mana yang harus ada").
+
+**Pelajaran**: (1) 1 fitur UX yang dibuat untuk 1 modul (purchase-invoice, "modul paling kompleks") MUDAH
+dikira "sudah standar" padahal cuma diterapkan ke SATU tempat — kalau ada perubahan UI yang terasa seperti
+"perbaikan umum", grep dulu SELURUH modul sejenis sebelum menganggap itu sudah konsisten di mana-mana. (2)
+Modul yang dibangun BELAKANGAN (Delivery Order, hari ini) otomatis mewarisi gap yang SUDAH ADA di modul yang
+dicontoh (`receive-item`, yang jadi template) — meng-copy pola dari modul existing itu BENAR (konsisten), tapi
+kalau modul TEMPLATE itu sendiri belum dapat 1 perbaikan yang sudah ada di modul LAIN, modul baru akan ikut
+ketinggalan. Checklist modul baru harus dicek ulang terhadap PERUBAHAN TERBARU project, bukan cuma terhadap
+1 modul template yang dipilih.

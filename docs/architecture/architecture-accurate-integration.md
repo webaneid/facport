@@ -471,7 +471,16 @@ sendiri:
 1. `apps/api/src/lib/import-mapping/{module}.mapping.ts` (+ `.test.ts`)
 2. `apps/api/src/lib/accurate-{module}.ts` (client `save.do`)
 3. `apps/api/src/routes/{module}-import.route.ts` (+ `.test.ts`)
-4. `apps/web/app/app/(protected)/{module}/import/page.tsx` (upload + cocokkan kolom)
+4. `apps/web/app/app/(protected)/{module}/import/page.tsx` (upload + cocokkan kolom). **§ diminta user
+   2026-09-24, WAJIB — bukan opsional**: tabel "Cocokkan Kolom" WAJIB dibungkus `<Accordion type="single"
+   collapsible>` **TERTUTUP by default** (label trigger "Cocokkan Kolom Manual (opsional)" + subtitle "{n} dari
+   {total} kolom sudah otomatis terpetakan — buka kalau mau cek/ubah"), BUKAN Table polos langsung terbuka —
+   mirror `purchase-invoice/import/page.tsx` (pola asli 2026-09-12) persis, termasuk `reset: resetMapping` di
+   `useForm` mapping form + panggil `resetMapping(uploadResult.suggestedMapping)` di `onUpload` (accordion Radix
+   UNMOUNT isinya saat tertutup — `Controller` dengan `defaultValue` yang bergantung pada dia ke-mount TIDAK
+   PERNAH register kalau user tidak pernah buka accordion-nya, submit akan kirim mapping KOSONG kalau ini
+   kelewat). **Riwayat**: pola ini kelewat diterapkan ke 22 dari 23 modul (termasuk Delivery Order yang baru
+   dibangun hari itu juga) sampai ketahuan & di-rollout massal — jangan terulang untuk modul BERIKUTNYA.
 5. `apps/web/app/app/(protected)/{module}/import/[batchId]/page.tsx` (progress customer)
 6. `apps/web/app/app/(protected)/{module}/import/riwayat/page.tsx` (arsip per-modul)
 7. `apps/web/components/{module}/delete-import-dialog.tsx`
