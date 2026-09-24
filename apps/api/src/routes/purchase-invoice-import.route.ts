@@ -28,7 +28,7 @@ const MAX_SIZE_MB = 10;
 // TERKOMPRESI besar; .xlsx adalah arsip ZIP, rasio dekompresi tinggi bisa
 // bikin hasil parse jauh lebih besar dari ukuran file. Batas baris eksplisit
 // ini pertahanan lapis kedua, independen dari MAX_SIZE_MB.
-const MAX_ROWS = 5000;
+const MAX_ROWS = 10000;
 
 // § phase-05-purchase-invoice-auto-create.md — kolom mapping gabungan:
 // field transaksi (wajib, purchaseInvoiceMapping) + field OPSIONAL untuk

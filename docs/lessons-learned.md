@@ -4454,3 +4454,47 @@ Checklist "trik verifikasi" (diff modul baru vs modul lama) itu SENDIRI baru ben
 ULANG — sekadar "sudah ada di dokumen" tidak mencegah apa pun kalau tidak dieksekusi tiap kali modul baru
 ditutup. Tambahkan ke rutinitas penutupan fase: jalankan trik ini SEBELUM `git commit`, bukan cuma sesekali saat
 audit terpisah.
+
+## 2026-09-24 — Naikkan MAX_ROWS 5.000→10.000: 15 menit timeout job BUKAN dari Accurate, kelalaian konfigurasi sendiri
+
+**Pertanyaan user**: "kalau upload jumlah baris maksimal kita naikan jadi 10.000 apakah masih aman untuk server
+kita?" — jawaban BUKAN cuma ya/tidak, ada 1 constraint konkret yang harus dihitung dulu: limit RESMI Accurate
+**8 request/detik + 8 concurrent** (`accurate-rate-limiter.ts`) — bottleneck SEBENARNYA bukan kapasitas server
+kita, tapi seberapa cepat Accurate mengizinkan kita memanggil API mereka.
+
+**Ditemukan saat menghitung**: job queue `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` TIDAK PERNAH di-override
+`expireInSeconds`-nya sejak awal — jatuh ke default `pg-boss` 900 detik (15 menit). User tanya balik "yg
+menetapkan 15 menit itu siapa? kita atau officially dari accurate?" — jawaban PENTING dibedakan: 8 req/detik itu
+resmi Accurate (tidak bisa diubah), TAPI 15 menit itu MURNI default library `pg-boss` yang kita sendiri belum
+pernah sengaja atur — bukan aturan eksternal apa pun, kita punya kendali penuh.
+
+**Matematika keamanan** (skenario terburuk: 1 baris = 1 dokumen tanpa grouping + 1 panggilan find-or-create per
+baris kalau vendor/barang semuanya baru = ~2 panggilan/baris):
+- 5.000 baris (limit lama) ÷ 8/detik × 2 ≈ 20,8 menit — **sudah dekat** ke 15 menit (headroom kecil, worst-case
+  ekstrem MEMANG bisa melewati, tapi jarang terjadi di praktik nyata karena tidak semua modul selalu grouping-0%+item-baru-100%).
+- 10.000 baris (limit baru) ÷ 8/detik × 2 ≈ 41,7 menit — **pasti melewati** 15 menit di skenario umum sekalipun.
+
+**Fix (2 perubahan bersamaan, bukan cuma naikkan angka)**:
+1. `MAX_ROWS` 5000→10000 di 23 `{module}-import.route.ts` + fallback frontend `?? 5000`→`?? 10000` di 23
+   `{module}/import/page.tsx` (fallback ini cuma dipakai kalau server TIDAK kirim `maxRows` — server selalu
+   kirim, jadi murni jaga-jaga).
+2. `lib/queue.ts` — `expireInSeconds: 3600` (60 menit, margin dari skenario terburuk ~42 menit) KHUSUS untuk
+   `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` (queue lain seperti email/refresh-token TETAP default 15 menit, cukup
+   untuk kerjanya). **Ditemukan sekalian**: `createQueue()` pg-boss pakai `ON CONFLICT DO NOTHING` — TIDAK
+   meng-update queue yang SUDAH ADA di database (production sudah lama punya baris queue ini dari
+   import-import sebelumnya). Kalau cuma ganti opsi `createQueue()` dan deploy, production TIDAK akan ikut
+   naik nilainya — WAJIB panggil `boss.updateQueue()` juga (beneran `UPDATE ... SET expire_seconds`).
+
+**Pelajaran**: (1) pertanyaan "apakah aman menaikkan limit X" seringkali punya jawaban tersembunyi di constraint
+LAIN yang tidak terlihat dari limit itu sendiri (di sini: limit rate API pihak ketiga × timeout job queue kita
+sendiri) — jangan cuma jawab dari sisi "server kita kuat/tidak", telusuri SEMUA titik yang bergantung pada
+angka itu. (2) Sebelum mengklaim "X aman untuk dinaikkan", HITUNG angka konkretnya (baris ÷ rate limit × margin
+error), jangan asumsi kualitatif ("kayaknya cukup kuat"). (3) Default library (pg-boss 15 menit, atau default
+mana pun) yang tidak pernah disentuh BUKAN otomatis berarti "sudah dipertimbangkan" — bisa jadi cuma belum
+pernah ada yang mengecek apakah default itu masih cocok dengan skala project SEKARANG. (4) Config idempoten
+(`createQueue` dengan `ON CONFLICT DO NOTHING`) bisa diam-diam TIDAK berefek di production kalau row-nya sudah
+ada dari sebelumnya — selalu cek SQL/behavior persis dari library sebelum asumsi "ganti kode = otomatis
+ke-apply ke semua environment".
+
+Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/routes/*-import.route.ts` (23 file),
+`apps/web/app/app/(protected)/*/import/page.tsx` (23 file), `docs/architecture/architecture-jobs.md`.

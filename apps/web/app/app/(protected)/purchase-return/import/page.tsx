@@ -151,7 +151,7 @@ export default function PurchaseReturnImportPage() {
         value?.code === "EMPTY_FILE"
           ? "File Excel kosong — tidak ada baris data."
           : value?.code === "TOO_MANY_ROWS"
-            ? `File terlalu banyak baris — maksimal ${value.maxRows ?? 5000} baris per upload. Pecah file jadi beberapa batch.`
+            ? `File terlalu banyak baris — maksimal ${value.maxRows ?? 10000} baris per upload. Pecah file jadi beberapa batch.`
             : value?.code === "INVALID_EXCEL_FILE"
               ? "File tidak bisa dibaca sebagai Excel — pastikan formatnya .xlsx/.xls dan tidak korup."
               : "Upload gagal, cek format file.",

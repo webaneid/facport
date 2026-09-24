@@ -174,6 +174,29 @@ gagal setelah retry masuk status `failed`, WAJIB ada monitoring (Sentry akan
 capture exception-nya, lihat contoh di atas) supaya job gagal tidak
 diam-diam hilang tanpa siapa pun tahu.
 
+## Timeout Job (`expireInSeconds`) — WAJIB Dihitung dari Limit Rate Accurate, Bukan Ditebak
+`pg-boss` punya default `expireInSeconds: 900` (15 menit) per queue — **ini
+BUKAN aturan dari Accurate**, murni default library yang kalau tidak
+di-override, dipakai apa adanya (§ `docs/lessons-learned.md` 2026-09-24).
+Job yang "expired" di tengah proses bisa di-retry (`retryLimit` default 2)
+SEMENTARA proses lama masih jalan → risiko transaksi dobel masuk Accurate
+kalau job itu sifatnya "panggil Accurate berkali-kali" (import/cancel).
+
+`IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` (`lib/queue.ts`) di-override eksplisit
+ke **3600 detik (60 menit)**, dihitung dari skenario TERBURUK: `MAX_ROWS`
+(10.000, § `{module}-import.route.ts`) × sampai 2 panggilan Accurate per
+baris (1 save + 1 find-or-create kalau vendor/barang semuanya baru) ÷ **8
+request/detik** (limit RESMI Accurate, § `accurate-rate-limiter.ts`) ≈ 42
+menit — 3600 detik kasih margin ~18 menit. **Kalau `MAX_ROWS` dinaikkan
+lagi nanti, hitung ulang angka ini, JANGAN dibiarkan di 3600 begitu saja.**
+
+`createQueue()` pakai `ON CONFLICT DO NOTHING` (dikonfirmasi dari sumber
+pg-boss) — TIDAK meng-update queue yang SUDAH ADA di database. Perubahan
+`expireInSeconds` untuk queue yang sudah pernah dibuat (kasus production)
+WAJIB lewat `updateQueue()` juga (beneran `UPDATE`), bukan cuma ganti opsi
+di `createQueue()` dan berharap efeknya otomatis — `startQueue()` sudah
+memanggil keduanya untuk queue yang masuk `LONG_RUNNING_QUEUES`.
+
 ## Referensi
 - Notifikasi email/WA → `docs/architecture/architecture-notifications.md`
 - Observability (Sentry/Pino) → `docs/architecture/architecture-observability.md`

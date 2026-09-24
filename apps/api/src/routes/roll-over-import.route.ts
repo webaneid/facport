@@ -18,7 +18,7 @@ const ALLOWED_MIME = [
   "application/vnd.ms-excel", // .xls lama
 ] as const;
 const MAX_SIZE_MB = 10;
-const MAX_ROWS = 5000;
+const MAX_ROWS = 10000;
 
 const VALID_FIELDS = new Set(Object.keys(rollOverMapping.fieldToAccuratePath));
 
