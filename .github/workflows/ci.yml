@@ -65,13 +65,19 @@ jobs:
       # Pakai quay.io (bukan docker.io) — 2026-09-12 docker.io/minio/minio
       # kena rate-limit anonymous pull di shared runner GitHub Actions
       # ("pull access denied"), quay.io adalah registry resmi MinIO saat ini.
+      # § 2026-09-27 — quay.io/minio/minio JUGA berhenti bisa di-pull anonim
+      # (MinIO Inc. berhenti publikasikan image community lewat registry
+      # publik mana pun sejak ~24 Sept 2026, dikonfirmasi meluas, bukan cuma
+      # project ini). Pindah ke `chainguard/minio` — drop-in replacement
+      # (entrypoint `/usr/bin/minio` sama, argumen/env TIDAK berubah), lihat
+      # docs/lessons-learned.md.
       - name: Start MinIO
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio server /data
+            chainguard/minio:latest server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && exit 0
             sleep 1

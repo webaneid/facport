@@ -4754,3 +4754,48 @@ Detail: migration `drizzle/0032_ambitious_sleepwalker.sql`, `apps/api/src/db/sch
 `apps/api/src/lib/data-usaha.ts` (+ test), `apps/api/src/workers/index.ts`, `apps/api/src/routes/me.route.ts`
 (+ test), `apps/api/src/routes/admin/stats.route.ts` (+ test), `apps/api/src/routes/public/stats.route.ts`
 (+ test).
+
+## 2026-09-27 — CI & MinIO gagal total: MinIO berhenti publikasikan image lewat registry publik MANAPUN (bukan cuma quay.io yang bermasalah lagi)
+
+Saat proses rilis PR #75, CI (`build-and-push`, `validate`) gagal dengan `docker: Error response from daemon:
+unauthorized: access to the requested resource is not authorized` waktu start container MinIO untuk test.
+
+**Investigasi awal SEMPAT dikira transient** (pola sama insiden 2026-09-12 & deploy sebelumnya) — re-run CI, GAGAL
+LAGI dengan error identik. Dicek manual: `curl` langsung ke `quay.io/v2/minio/minio/manifests/latest` PAKAI
+token anonim resmi (alur OAuth2 registry yang benar) TETAP balas 401 — bukan rate-limit (yang biasanya balas
+429 atau berhasil setelah delay), tapi PENOLAKAN AKSES permanen ke repository itu sendiri.
+
+**Root cause (dikonfirmasi via web search, bukan tebakan)**: MinIO Inc. berhenti mempublikasikan image
+community mereka lewat registry publik APA PUN sejak sekitar 24 September 2026 (2 hari sebelum insiden ini) —
+bukan cuma `quay.io/minio/minio` (yang kita pakai sejak insiden 2026-09-12), tapi JUGA `docker.io/minio/minio`
+(image lama yang sudah kita tinggalkan) ikut dihapus/dikunci. Ini perubahan kebijakan bisnis MinIO Inc.
+(pembatasan distribusi build community), BUKAN outage sementara — dikonfirmasi berdampak LUAS ke banyak project
+lain di waktu yang sama (bukan cuma masalah project ini).
+
+**Fix**: pindah ke `chainguard/minio:latest` (build resmi Chainguard, di-hosting publik di Docker Hub,
+dikonfirmasi masih bisa di-pull anonim) — **drop-in replacement**, TIDAK perlu ubah apa pun selain nama image:
+entrypoint (`/usr/bin/minio`), argumen (`server /data --console-address ":9001"`), dan environment variable
+(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) semuanya identik dengan image lama. Diterapkan di **6 file sekaligus**
+(supaya tidak ada environment yang kelewat, pola SAMA seperti rollout-rollout fitur minggu ini):
+`docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`, `.github/workflows/ci.yml`,
+`.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.
+
+**⚠️ Dampak ke PRODUCTION yang SEDANG JALAN**: container MinIO yang SUDAH berjalan di server TIDAK terpengaruh
+(image lama masih ter-cache lokal di VPS, tidak perlu re-pull sampai container itu di-restart/recreate). Tapi
+DEPLOY BERIKUTNYA (`docker compose pull` lalu `up -d`) akan MENARIK image `chainguard/minio:latest` yang BARU —
+**WAJIB diverifikasi manual sekali** setelah deploy pertama pasca-fix ini (cek `docker logs minio`, cek upload
+file media/bukti transfer masih berfungsi) — walau drop-in replacement menurut dokumentasi resmi, belum pernah
+diverifikasi langsung di lingkungan production project ini.
+
+**Pelajaran**: (1) begitu registry image pihak ketiga menolak pull dengan 401 (bukan timeout/5xx), JANGAN
+langsung asumsikan "transient, coba lagi nanti" — verifikasi dulu dengan curl manual + full token flow (kalau
+TETAP 401 walau sudah dapat token resmi, itu penolakan akses yang disengaja, bukan gangguan sesaat). (2) Kalau
+sudah pernah pindah registry SEKALI karena masalah serupa (di sini: docker.io→quay.io, 2026-09-12), JANGAN
+asumsikan registry baru itu permanen aman — kebijakan vendor bisa berubah lagi, siapkan mental untuk pindah
+LAGI kalau perlu, dan cari REPLACEMENT RESMI/TERPERCAYA (bukan asal fork acak) begitu insiden serupa terulang.
+(3) Perubahan image Docker HARUS diterapkan ke SEMUA environment (dev/staging/prod) DAN semua workflow CI
+sekaligus dalam 1 perbaikan — kalau cuma fix CI tapi lupa `docker-compose.prod.yml`, deploy berikutnya akan
+gagal dengan cara yang sama, cuma telat ketahuannya (pas deploy, bukan pas CI).
+
+Detail: `docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`,
+`.github/workflows/ci.yml`, `.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.

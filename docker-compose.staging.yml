@@ -96,9 +96,15 @@ services:
 
   minio:
     # § 2026-09-12 — docker.io/minio/minio kena rate-limit anonymous pull
-    # (VPS shared, IP sama dipakai banyak project lain) — pindah ke quay.io,
-    # registry resmi MinIO saat ini, software identik. Lihat lessons-learned.md.
-    image: quay.io/minio/minio:latest
+    # (VPS shared, IP sama dipakai banyak project lain) — pindah ke quay.io.
+    # § 2026-09-27 — quay.io/minio/minio JUGA berhenti bisa di-pull anonim
+    # (MinIO Inc. berhenti publikasikan image community lewat registry
+    # publik mana pun sejak ~24 Sept 2026, dikonfirmasi meluas — bukan cuma
+    # project ini). Pindah ke `chainguard/minio` (build resmi Chainguard,
+    # publik di Docker Hub, drop-in replacement — entrypoint
+    # `/usr/bin/minio` sama, argumen `server /data ...` & env
+    # `MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD` TIDAK berubah). Lihat lessons-learned.md.
+    image: chainguard/minio:latest
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
