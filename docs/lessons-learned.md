@@ -4556,3 +4556,65 @@ cuma andalkan test end-to-end yang jalur gagalnya kebetulan tidak pernah ke-trig
 Detail: `apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
 `apps/api/src/routes/admin/customer-care.route.ts`,
 `apps/web/app/admin/(protected)/{staff,users,customer-care,announcements,plans,promos}/page.tsx`.
+
+## 2026-09-25 — Import 10.000 baris "kelamaan dan gagal": bukan MAX_ROWS-nya, tapi `retryLimit` pg-boss yang tidak pernah di-override bikin job yang sama jalan 2x bersamaan
+
+Client laporkan import Sales Quotation 10.000 baris: 1 jam 22 menit, 1.457 baris gagal dengan pesan Accurate
+"Jumlah request API melebihi toleransi yang diperbolehkan. Batas maksimum yang diperbolehkan yaitu 8 proses
+paralel per Token dan 8 request/detik." User bertanya apakah `MAX_ROWS` harus diturunkan lagi ke 5.000.
+
+**Investigasi awal (dari baca kode saja) sempat SALAH ARAH**: `accurate-rate-limiter.ts` sudah benar (throttle
+global per-proses, matematis tidak mungkin proses kita sendiri melebihi 8/detik) — sempat disimpulkan pasti dari
+"penggunaan Accurate di luar app" (Accurate Desktop klien, dll). **Baru dapat penyebab PASTI setelah user jalankan
+3 query SQL read-only** (§ pola SOP: user jalankan `docker exec -e PGPASSWORD=... facport-postgres-1 psql ...`,
+Claude cuma siapkan query-nya) — pelajaran: untuk bug intermiten/timing-sensitive, JANGAN puas dengan "kode-nya
+sudah benar secara teori", verifikasi ke DATA ASLI kejadian tersebut.
+
+**Root cause (terkonfirmasi presisi lewat 3 bukti yang SALING COCOK)**:
+1. `pgboss.job` untuk batch ini: `retry_count = 1`, dan `started_on` (baris TERKINI, yaitu percobaan retry)
+   = `created_on` + **PERSIS 3600 detik** — angka `expireInSeconds` yang di-set 2026-09-24 untuk queue
+   `IMPORT_TO_ACCURATE`.
+2. Baris gagal pertama di `import_batch_rows` muncul PERSIS di detik yang sama dengan `started_on` retry itu.
+3. Total SEMUA baris "failed" dari detik itu sampai job selesai = **1457 — sama persis** dengan yang dilaporkan
+   client.
+
+Kesimpulan: throughput ASLI Sales Quotation (~3,5 panggilan Accurate/baris — customer lookup + item lookup +
+save, LEBIH BERAT dari asumsi lama "2 panggilan/baris") bikin 10.000 baris makan waktu ~78-82 menit, MELEWATI
+`expireInSeconds` 3600 detik (60 menit) SAAT MASIH BERJALAN. `retryLimit` TIDAK PERNAH di-override (tetap
+default pg-boss = 2) — begitu pg-boss anggap job "expired" di menit ke-60, dia otomatis men-dispatch ULANG job
+yang SAMA (retry), SEMENTARA invocation LAMA masih jalan (kode kita tidak py mekanisme cancel-on-expire, jadi
+proses lama terus jalan sampai selesai tanpa tahu pg-boss sudah "menyerah" dari sisi bookkeeping-nya). 2
+invocation itu berebut jatah 8 request/detik yang SAMA untuk batch yang SAMA → separuh percobaan Accurate-nya
+ditolak dengan pesan rate-limit. Dicek juga (query terpisah): TIDAK ada `accurate_transaction_id` duplikat dari
+insiden ini (untung, tapi race condition-nya sendiri tetap ada — bukan jaminan aman selamanya).
+
+**Fix (`apps/api/src/lib/queue.ts`)**:
+1. `retryLimit: 0` untuk `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` — retry per-baris SUDAH ada jalur sendiri yang
+   aman ("Retry baris gagal" di UI), pg-boss TIDAK BOLEH PERNAH retry di level JOB untuk 2 queue ini. Ini SATU
+   perubahan yang langsung menutup TOTAL kemungkinan 2 invocation batch yang sama jalan bersamaan, apa pun nanti
+   penyebab lambatnya.
+2. `expireInSeconds` naik 3600→7200 (2 jam), dihitung ulang dari throughput ASLI (bukan asumsi lama).
+3. `boss.updateQueue()` dipanggil lagi (pola sama minggu lalu) supaya production yang SUDAH punya baris queue
+   lama ikut ke-update.
+4. Tambahan defensif (`accurate-rate-limiter.ts`): retry-with-backoff (maks 4x, eksponensial+jitter) KHUSUS
+   untuk pesan Accurate "melebihi toleransi" — supaya tabrakan yang genuinely dari luar kendali kita (klien
+   pakai Accurate Desktop bersamaan, dll) sembuh sendiri, bukan langsung gagal permanen per baris.
+
+**Jawaban ke user**: MAX_ROWS TIDAK perlu diturunkan — 10.000 baris aman SELAMA config queue-nya benar. Bug ini
+bisa terjadi di JUMLAH BARIS BERAPA PUN (bahkan 5.000) kalau kebetulan modulnya berat panggilan API-nya sampai
+lewat `expireInSeconds`.
+
+**Pelajaran**: (1) "job lambat, lalu di-retry otomatis oleh library queue, SEMENTARA proses lama masih jalan"
+adalah kelas bug yang jauh LEBIH BERBAHAYA dari sekadar lambat — bisa menciptakan concurrent execution ganda
+untuk kerja yang SAMA, dan efeknya (di sini: rate-limit ganda) sering terlihat seperti masalah lain sama sekali
+(user awalnya curiga "jumlah baris kebanyakan"). (2) Dokumentasi lama sudah MEMPERINGATKAN risiko persis ini
+(komentar `queue.ts` sebelumnya sudah bilang "job expired bisa di-retry SEMENTARA proses lama masih jalan →
+risiko transaksi dobel") — tapi peringatan itu TIDAK diikuti tindakan (`retryLimit` tidak pernah benar-benar
+di-set), jadi cuma jadi catatan mati. Kalau sudah tahu ada risiko konkret, SET konfigurasinya, jangan cuma
+dicatat sebagai "awas". (3) Untuk memastikan hipotesis "2 invocation jalan bersamaan" itu BENAR (bukan sekadar
+plausible), 3 bukti independen (retry_count, timing match persis, jumlah gagal match persis) jauh lebih
+meyakinkan daripada 1 bukti saja — pola "cocokkan angka observasi dengan angka prediksi teori" ini pola
+verifikasi yang kuat untuk bug race-condition yang svarnya susah direproduksi manual.
+
+Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/lib/accurate-rate-limiter.ts`,
+`apps/api/src/lib/accurate-rate-limiter.test.ts`, `docs/architecture/architecture-jobs.md`.
