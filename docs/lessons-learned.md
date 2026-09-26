@@ -4831,3 +4831,44 @@ di runbook — cuma dicatat sebagai narasi lessons-learned yang mudah kelewat ba
 lalu tapi benar-benar dibaca tiap rilis.
 
 Detail: `docs/architecture/architecture-deployment.md` § "Pembagian tugas baku".
+
+## 2026-09-27 — Deploy `chainguard/minio` production: crash-loop "Unable to write to backend" — volume data lama milik root, image baru jalan sebagai UID 65532
+
+Lanjutan langsung dari 2 insiden di atas (MinIO Inc. berhenti distribusi image, pindah ke `chainguard/minio`).
+Setelah `docker-compose.prod.yml` diperbaiki di server (§ insiden sebelumnya) dan `up -d` dijalankan,
+`facport-minio-1` **crash-loop** dengan error:
+```
+FATAL Unable to initialize backend: Unable to write to the backend
+Error: unable to rename (/data/.minio.sys/tmp -> ...) file access denied, drive may be faulty
+```
+
+**Root cause**: image `quay.io/minio/minio` (lama) jalan sebagai **root**, sedangkan `chainguard/minio` (baru)
+sengaja jalan sebagai **non-root user, UID `65532`** (hardening keamanan khas image Chainguard/distroless).
+Volume data MinIO yang SUDAH ADA di server (`facport_minio_data`, isi bucket production nyata) masih punya
+kepemilikan file dari image lama (root) — user UID 65532 di image baru TIDAK PUNYA izin tulis ke direktori itu,
+walau secara CLI/env-var image ini memang drop-in replacement (§ insiden sebelumnya, benar untuk ARGUMEN
+container, TAPI TIDAK untuk PERMISSION filesystem volume yang sudah ada).
+
+**Fix**: `chown` isi volume ke UID 65532 pakai container sementara (volume Docker named, bukan bind mount host
+langsung, jadi tidak bisa `chown` dari shell host biasa):
+```bash
+docker run --rm -v facport_minio_data:/data alpine chown -R 65532:65532 /data
+docker compose ... restart minio
+```
+Setelah itu container start normal, TIDAK ADA data yang hilang (cuma ganti kepemilikan file, isi bucket utuh).
+
+**Pelajaran**: (1) "drop-in replacement" untuk image Docker itu ADA BATASNYA — kompatibel di level
+ENTRYPOINT/ARGUMEN/ENV VAR (yang sempat diverifikasi sebelum deploy) BELUM TENTU kompatibel di level
+FILESYSTEM/USER RUNTIME kalau image lama & baru jalan sebagai user berbeda DAN ada volume data PERSISTEN yang
+sudah terlanjur dimiliki user lama — ini kasus KHUSUS yang cuma muncul saat MENGGANTI image di server dengan
+DATA EXISTING (fresh install/CI tidak akan pernah ketemu masalah ini, karena volume-nya kosong/baru). (2) Image
+berbasis Chainguard/distroless SECARA UMUM jalan non-root by default (biasanya UID `65532`, konvensi umum
+"nonroot" di ekosistem distroless) — kalau mengganti KE image Chainguard apa pun untuk service yang punya
+volume data persisten lama, WAJIB `chown` volume ke UID itu SEBAGAI BAGIAN DARI MIGRASI, bukan opsional. (3)
+Verifikasi "drop-in replacement" dari dokumentasi/web search TETAP perlu diuji nyata di environment dengan DATA
+ASLI (bukan cuma fresh container) sebelum yakin aman — persis peringatan yang sudah ditulis di lessons-learned
+sebelumnya ("belum pernah diverifikasi langsung di lingkungan production project ini"), dan peringatan itu
+TERBUKTI BENAR.
+
+Detail: server production, volume `facport_minio_data`, `docker-compose.prod.yml`/`docker-compose.staging.yml`
+(image `chainguard/minio` — kalau staging JUGA punya volume data lama, WAJIB `chown` yang sama saat dipakai).
