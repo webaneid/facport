@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, varchar, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { accurateConnections } from "./accurate.schema";
 
@@ -35,6 +35,25 @@ export const dataUsaha = pgTable("data_usaha", {
   // § Fase 144 — kapan pemilik memilih/MENGONFIRMASI database ini. NULL = "database terakhir diketahui" hasil backfill 0028
   // (belum diverifikasi manusia) → gerbang koneksi meminta konfirmasi (`confirm_database`). Diisi `databases/select` & `confirm`.
   accurateDbConfirmedAt: timestamp("accurate_db_confirmed_at", { withTimezone: true }),
+  // § diminta user 2026-09-27 — counter PERMANEN "baris sukses diimport"
+  // untuk kartu "efisiensi waktu kerja" (`GET /me/stats`,
+  // `admin/stats.route.ts`). SEBELUM ini dihitung LIVE via
+  // `COUNT(import_batch_rows WHERE status='success')` — rusak begitu job
+  // `PURGE_OLD_IMPORTS` menghapus baris lewat masa retensi (default 2
+  // hari, § lib/import-retention.ts): angka "menghemat sekian jam" reset
+  // turun tiap kali data lama terhapus, padahal tujuannya justru
+  // akumulasi SEPANJANG WAKTU. Kolom ini ditambah SEKALI di titik final
+  // proses import (`workers/index.ts`, job `IMPORT_TO_ACCURATE`) begitu
+  // baris BARU sukses, dan dikurangi kalau baris itu di-Batal Import
+  // (job `CANCEL_IMPORT`, cuma modul Purchase Invoice/Sales Invoice) —
+  // TIDAK PERNAH ikut terhapus oleh purge, karena hidup di `data_usaha`
+  // (bukan `import_batch_rows`). Milik Data Usaha (bukan user) SENGAJA —
+  // supaya riwayat "sudah menghemat sekian" ikut BISNISNYA, bukan hilang
+  // kalau kepemilikan/staf berganti (§ Keputusan Desain #10 di atas).
+  // Data historis SEBELUM kolom ini ada TIDAK bisa dipulihkan (baris
+  // mentahnya sudah lama terhapus retensi) — mulai dari 0 sejak fitur ini
+  // live, akumulasi ke depannya permanen.
+  cumulativeSuccessfulRowCount: integer("cumulative_successful_row_count").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

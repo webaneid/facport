@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminStatsRoute } from "./stats.route";
 import { db } from "../../lib/db";
-import { plans, subscriptions, importBatches, importBatchRows, roles, userRoles, user as userTable } from "../../db/schema";
+import { plans, subscriptions, importBatches, importBatchRows, dataUsaha, roles, userRoles, user as userTable } from "../../db/schema";
 import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 59 — dashboard admin. Angka agregat di sini GLOBAL (bukan
@@ -80,6 +80,42 @@ describe("GET /admin/stats", () => {
     const after = (await (await get("/admin/stats", adminCookie)).json()) as { userCount: number };
     expect(after.userCount).toBe(before.userCount + 1);
   });
+
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 — sumbernya pindah dari COUNT()
+  // live `import_batch_rows` (rusak oleh purge retensi, § lessons-learned)
+  // ke SUM `data_usaha.cumulativeSuccessfulRowCount` (counter PERMANEN).
+  test("successfulRowCount adalah SUM data_usaha.cumulativeSuccessfulRowCount lintas SEMUA Data Usaha, bukan COUNT() import_batch_rows live", async () => {
+    const adminCookie = await makeAdminCookie();
+    const userId = await makeCustomer();
+    const dataUsahaId = await createTestDataUsaha(userId);
+
+    const before = (await (await get("/admin/stats", adminCookie)).json()) as { successfulRowCount: number };
+
+    // § insert import_batch_rows LANGSUNG (tanpa lewat worker) — TIDAK
+    // BOLEH mempengaruhi angka, karena sumbernya sekarang counter
+    // permanen, bukan agregat live.
+    const [plan] = await db
+      .insert(plans)
+      .values({ name: `Admin Stats SuccessfulRow Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
+      .returning();
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
+      .returning();
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "x.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+    await db.insert(importBatchRows).values([{ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "success" }]);
+
+    const afterRawInsertOnly = (await (await get("/admin/stats", adminCookie)).json()) as { successfulRowCount: number };
+    expect(afterRawInsertOnly.successfulRowCount).toBe(before.successfulRowCount); // TIDAK berubah — insert langsung tidak dihitung
+
+    // § simulasikan increment worker — SEKARANG baru ikut ke-hitung.
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 1 }).where(eq(dataUsaha.id, dataUsahaId));
+    const afterCounterSet = (await (await get("/admin/stats", adminCookie)).json()) as { successfulRowCount: number };
+    expect(afterCounterSet.successfulRowCount).toBe(before.successfulRowCount + 1);
+  });
 });
 
 describe("GET /admin/stats/monthly", () => {
@@ -128,6 +164,14 @@ describe("GET /admin/stats/module-popularity", () => {
 });
 
 describe("GET /admin/stats/efficiency", () => {
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 — `totalEfficiencySeconds`
+  // sumbernya pindah dari COUNT() live `import_batch_rows` (rusak oleh
+  // purge retensi) ke SUM `data_usaha.cumulativeSuccessfulRowCount`
+  // (counter PERMANEN, § komentar kolom itu & `admin/stats.route.ts`).
+  // Test ini set counter itu LANGSUNG (mensimulasikan hasil increment
+  // worker), BUKAN cuma insert `import_batch_rows` — `rowsThisMonth` TETAP
+  // dari COUNT() live (belum dibenahi, § lessons-learned technical debt),
+  // jadi insert baris di bawah tetap perlu untuk asersi itu.
   test("batch selesai HARI INI nambah rowsThisMonth & totalEfficiencySeconds sesuai jumlah baris sukses", async () => {
     const adminCookie = await makeAdminCookie();
     const userId = await makeCustomer();
@@ -152,6 +196,8 @@ describe("GET /admin/stats/efficiency", () => {
       { batchId: batch!.id, rowNumber: 2, rawData: {}, status: "success" },
       { batchId: batch!.id, rowNumber: 3, rawData: {}, status: "failed" }, // TIDAK dihitung
     ]);
+    // § simulasikan increment worker (§ komentar di atas) — 2 baris sukses.
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 2 }).where(eq(dataUsaha.id, dataUsahaId));
 
     const after = (await (await get("/admin/stats/efficiency", adminCookie)).json()) as {
       rowsThisMonth: number;

@@ -4696,3 +4696,61 @@ TAPI tidak otomatis benar lagi begitu data itu sudah bolak-balik lewat storage l
 Detail: `apps/api/src/lib/excel.ts`, `apps/api/src/lib/excel.test.ts`, 23 `apps/api/src/routes/*-import.route.ts`,
 `apps/api/src/routes/sales-quotation-import.route.test.ts`, 23
 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — "Menit dihemat" reset tiap 2 hari: agregat LIVE di atas data yang SENGAJA dihapus retensi
+
+User (customer-facing, bukan tim penguji internal) sadar sendiri: angka "efisiensi waktu kerja" (dashboard
+customer, admin, DAN landing page publik) selalu balik ke kecil, padahal tujuannya justru akumulasi
+"sekian tahun sudah menghemat sekian ribu jam" supaya klien selalu ingat nilai Facport.
+
+**Root cause**: SEMUA 3 tempat (`GET /me/stats`, `GET /admin/stats` + `/admin/stats/efficiency`, `GET
+/public/stats`) menghitung `successfulRowCount` via `COUNT(import_batch_rows WHERE status='success')` LIVE —
+padahal job `PURGE_OLD_IMPORTS` (jam 3 pagi, § `lib/import-retention.ts`) MENGHAPUS PERMANEN `import_batches`+
+`import_batch_rows` setelah masa retensi (default **2 hari**). Begitu baris terhapus, COUNT() otomatis turun
+untuk baris yang sudah tidak ada — angka "all-time" SEBENARNYA cuma "sisa retensi 2 hari terakhir", bukan
+akumulasi sungguhan. Komentar kode `admin/stats.route.ts` bahkan SALAH KLAIM "total detik dihemat ALL-TIME...
+dari SELURUH row" — niatnya benar, implementasinya tidak sesuai niat itu.
+
+**Fix**: pola counter permanen (sama seperti saldo tabungan bank — angka permanen, detail transaksi boleh
+diarsipkan) —
+1. Kolom baru `data_usaha.cumulative_successful_row_count` (integer, default 0) — MILIK Data Usaha (bukan
+   user), supaya riwayat "sudah menghemat sekian" ikut BISNISNYA walau kepemilikan/staf berganti.
+2. `lib/data-usaha.ts` — `addCumulativeSuccessfulRows(dataUsahaId, delta)`, SQL atomic increment
+   (`GREATEST(col+delta, 0)`) — aman dari race condition, tidak pernah negatif.
+3. `workers/index.ts` — dipanggil di titik final `IMPORT_TO_ACCURATE` (delta = selisih rows sebelum/sesudah
+   proses run INI, BUKAN `finalRows.filter(success).length` — supaya batch yang di-retry berkali-kali tidak
+   menghitung ulang baris yang SUDAH sukses dari run sebelumnya) dan `CANCEL_IMPORT` (decrement, baris yang
+   tadinya sukses dibatalkan — TIDAK dihitung lagi, konsisten perilaku lama).
+4. 3 endpoint baca dari counter ini (SUM lintas `data_usaha` untuk yang global/admin/publik) — TIDAK PERNAH
+   ikut terhapus purge, karena hidup di `data_usaha`, bukan `import_batch_rows`.
+5. Data historis SEBELUM fix ini ada TIDAK bisa dipulihkan (baris mentahnya sudah lama terhapus retensi) —
+   counter mulai dari 0 sejak fitur ini live, akumulasi ke depannya permanen (keputusan eksplisit user,
+   diterima — bukan masalah).
+
+**Technical debt SENGAJA belum dibenahi** (keputusan eksplisit user, scope fase ini dibatasi):
+- `admin/stats.route.ts`'s `rowsThisMonth`/`rowsLastMonth`/`rowGrowthPercent` (pertumbuhan bulan-ke-bulan) DAN
+  `efficiencyPercent` (dari durasi batch asli) MASIH pakai data historis bertanggal langsung dari
+  `import_batches`/`import_batch_rows` — TETAP rusak/tidak bermakna dengan retensi < 1 bulan. Butuh pendekatan
+  BEDA (snapshot periodik per bulan, bukan 1 counter total) — bukan sekadar ganti sumber seperti fix di atas.
+- **Ditemukan sekalian, LEBIH SERIUS dari sekadar tampilan**: `lib/trial.ts`'s `checkTrialRowBudget()` (kuota
+  baris gratis untuk subscription trial) JUGA menghitung LIVE dari `import_batch_rows` — customer trial yang
+  MENUNGGU 2 hari (retensi purge) bisa MENGIMPOR ULANG melebihi kuota trial yang seharusnya, karena "pemakaian
+  sebelumnya" sudah hilang dari hitungan. Ini bug KUOTA/BISNIS (potensi trial abuse), bukan cuma tampilan —
+  belum diperbaiki, perlu didiskusikan terpisah dengan user (kemungkinan butuh counter permanen serupa, TAPI
+  arahnya beda — kuota trial mungkin justru HARUS reset berkala, perlu klarifikasi maksud bisnisnya dulu).
+
+**Pelajaran**: (1) statistik "all-time"/akumulasi yang ditampilkan ke user (apalagi untuk marketing/motivasi)
+TIDAK BOLEH dihitung live dari tabel operasional yang punya kebijakan retensi/purge — begitu ada job yang
+menghapus data lama untuk alasan storage/privasi, SEMUA agregat yang bergantung padanya diam-diam ikut rusak,
+dan biasanya BARU ketahuan lama setelah fitur retensi jalan (di sini: user sendiri yang notice, bukan dari
+testing). (2) Kalau menemukan pola bug ini di 1 tempat, curigai SEMUA tempat lain yang query tabel yang SAMA
+untuk tujuan SERUPA — di sini ditemukan di 3 tempat (customer, admin, publik) SEKALIGUS 1 tempat lagi yang
+BEDA TUJUAN tapi SAMA MEKANISME (kuota trial) yang justru lebih berisiko bisnis. (3) Counter permanen yang
+di-increment INKREMENTAL (bukan re-agregat ulang) adalah pola standar untuk kasus "butuh angka akumulatif tapi
+data mentahnya boleh/harus dihapus" — pola yang sama berlaku untuk kebutuhan serupa di masa depan (jangan
+re-derive metric penting dari data yang punya siklus hidup pendek).
+
+Detail: migration `drizzle/0032_ambitious_sleepwalker.sql`, `apps/api/src/db/schema/data-usaha.schema.ts`,
+`apps/api/src/lib/data-usaha.ts` (+ test), `apps/api/src/workers/index.ts`, `apps/api/src/routes/me.route.ts`
+(+ test), `apps/api/src/routes/admin/stats.route.ts` (+ test), `apps/api/src/routes/public/stats.route.ts`
+(+ test).

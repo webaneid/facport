@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
 import { dataUsaha, memberSeats, user as userTable } from "../db/schema";
-import { hasAccessToDataUsaha } from "./data-usaha";
+import { hasAccessToDataUsaha, addCumulativeSuccessfulRows } from "./data-usaha";
 import { createTestDataUsaha, createTestSeat } from "./test-fixtures";
 
 // § Fase 113, security review — `hasAccessToDataUsaha` dibuat SPESIFIK
@@ -85,5 +85,60 @@ describe("hasAccessToDataUsaha", () => {
 
     expect(await hasAccessToDataUsaha(formerOwnerId, dataUsahaId)).toBe(false);
     expect(await hasAccessToDataUsaha(newOwnerId, dataUsahaId)).toBe(true);
+  });
+});
+
+// § diminta user 2026-09-27 — counter PERMANEN "efisiensi waktu kerja"
+// (§ komentar kolom `data_usaha.cumulativeSuccessfulRowCount`), dipanggil
+// dari `workers/index.ts` (increment di `IMPORT_TO_ACCURATE`, decrement di
+// `CANCEL_IMPORT`) TIDAK di-mock/di-integration-test di sini (butuh koneksi
+// Accurate nyata/mock berat, di luar scope) — test ini kunci PERILAKU
+// FUNGSI ATOMIKNYA sendiri, terpisah dari logic delta di worker.
+describe("addCumulativeSuccessfulRows", () => {
+  test("delta positif menambah counter", async () => {
+    const ownerId = await signUp(`du-cumulative-add-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+
+    await addCumulativeSuccessfulRows(dataUsahaId, 5);
+    const [row] = await db.select({ n: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(row?.n).toBe(5);
+
+    // § dipanggil lagi (simulasi batch KEDUA sukses) — AKUMULASI, bukan menimpa.
+    await addCumulativeSuccessfulRows(dataUsahaId, 3);
+    const [row2] = await db.select({ n: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(row2?.n).toBe(8);
+  });
+
+  test("delta negatif mengurangi counter (simulasi Batal Import)", async () => {
+    const ownerId = await signUp(`du-cumulative-sub-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+    await addCumulativeSuccessfulRows(dataUsahaId, 10);
+
+    await addCumulativeSuccessfulRows(dataUsahaId, -4);
+    const [row] = await db.select({ n: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(row?.n).toBe(6);
+  });
+
+  // § defensif — counter TIDAK BOLEH negatif walau ada skenario tak
+  // terduga (mis. urutan job aneh) yang bikin decrement lebih besar dari
+  // yang pernah di-increment.
+  test("tidak pernah turun di bawah 0 walau delta negatif lebih besar dari nilai saat ini", async () => {
+    const ownerId = await signUp(`du-cumulative-floor-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+    await addCumulativeSuccessfulRows(dataUsahaId, 2);
+
+    await addCumulativeSuccessfulRows(dataUsahaId, -100);
+    const [row] = await db.select({ n: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(row?.n).toBe(0);
+  });
+
+  test("delta 0 tidak melakukan apa-apa (no-op, tidak menyentuh DB)", async () => {
+    const ownerId = await signUp(`du-cumulative-noop-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+    await addCumulativeSuccessfulRows(dataUsahaId, 7);
+
+    await addCumulativeSuccessfulRows(dataUsahaId, 0);
+    const [row] = await db.select({ n: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+    expect(row?.n).toBe(7);
   });
 });

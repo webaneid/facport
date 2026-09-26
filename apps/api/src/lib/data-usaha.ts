@@ -1,4 +1,4 @@
-import { and, eq, inArray, or } from "drizzle-orm";
+import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { dataUsaha, memberSeats } from "../db/schema";
 
@@ -74,4 +74,21 @@ export async function hasAccessToDataUsaha(userId: string, dataUsahaId: string):
       ),
     );
   return !!row;
+}
+
+// § diminta user 2026-09-27 — increment/decrement ATOMIK counter permanen
+// "efisiensi waktu kerja" (`data_usaha.cumulativeSuccessfulRowCount`, §
+// komentar kolom itu untuk kenapa kolom ini ada). Dipanggil dari
+// `workers/index.ts`: `delta` POSITIF di titik final `IMPORT_TO_ACCURATE`
+// (baris baru sukses), NEGATIF di `CANCEL_IMPORT` (baris yang tadinya
+// sukses dibatalkan). `sql` increment (bukan read-modify-write di JS)
+// supaya aman dari race condition kalau 2 job berbeda kebetulan nyentuh
+// Data Usaha yang sama nyaris bersamaan. `GREATEST(..., 0)` jaga
+// defensif — counter TIDAK BOLEH negatif walau ada skenario tak terduga.
+export async function addCumulativeSuccessfulRows(dataUsahaId: string, delta: number): Promise<void> {
+  if (delta === 0) return;
+  await db
+    .update(dataUsaha)
+    .set({ cumulativeSuccessfulRowCount: sql`GREATEST(${dataUsaha.cumulativeSuccessfulRowCount} + ${delta}, 0)` })
+    .where(eq(dataUsaha.id, dataUsahaId));
 }

@@ -9,7 +9,6 @@ import {
   subscriptions,
   memberSeats,
   importBatches,
-  importBatchRows,
   settings,
   ownershipTransfers,
   dataUsaha,
@@ -409,7 +408,16 @@ describe("GET /me/stats", () => {
     expect(res.status).toBe(422);
   });
 
-  test("hitung total baris sukses lintas modul × setting admin, abaikan baris failed/cancelled dan batch user lain", async () => {
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 — sumber angka ini pindah dari
+  // COUNT() live `import_batch_rows` (rusak oleh purge retensi) ke counter
+  // PERMANEN `data_usaha.cumulativeSuccessfulRowCount` (§ komentar kolom
+  // itu). Test ini sekarang set counter itu LANGSUNG (mensimulasikan hasil
+  // akumulasi worker dari waktu ke waktu), BUKAN insert `import_batch_rows`
+  // lalu berharap di-agregat live — filtering "abaikan failed/cancelled/
+  // lintas modul/batch user lain" itu SEKARANG jadi tanggung jawab worker
+  // saat increment (`addCumulativeSuccessfulRows`, § test terpisah di
+  // `lib/data-usaha.test.ts` dan `workers/index.test.ts`), bukan endpoint ini.
+  test("baca successfulRowCount dari data_usaha.cumulativeSuccessfulRowCount × setting admin (bukan agregat live)", async () => {
     await db
       .insert(settings)
       .values({ key: MANUAL_INPUT_SECONDS_SETTING_KEY, value: 45, group: "data" })
@@ -417,99 +425,30 @@ describe("GET /me/stats", () => {
 
     const userId = await signUp(`me-stats-owner-${runId}@test.local`);
     const cookie = await signIn(`me-stats-owner-${runId}@test.local`);
-    const otherUserId = await signUp(`me-stats-other-${runId}@test.local`);
-
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Me Stats Test Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice", "sales_invoice"] })
-      .returning();
     const dataUsahaId = await createTestDataUsaha(userId);
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
-      .returning();
-
-    // § 2 batch modul BEDA (purchase_invoice + sales_invoice) untuk
-    // konfirmasi query ini GABUNGAN lintas modul, bukan 1 modul saja.
-    const [batchPI] = await db
-      .insert(importBatches)
-      .values({ userId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "pi.xlsx", totalRows: 3, status: "completed" })
-      .returning();
-    const [batchSI] = await db
-      .insert(importBatches)
-      .values({ userId, subscriptionId: sub!.id, module: "sales_invoice", fileName: "si.xlsx", totalRows: 2, status: "completed" })
-      .returning();
-
-    await db.insert(importBatchRows).values([
-      { batchId: batchPI!.id, rowNumber: 1, rawData: {}, status: "success" },
-      { batchId: batchPI!.id, rowNumber: 2, rawData: {}, status: "success" },
-      { batchId: batchPI!.id, rowNumber: 3, rawData: {}, status: "failed" }, // TIDAK dihitung
-      { batchId: batchSI!.id, rowNumber: 1, rawData: {}, status: "success" },
-      { batchId: batchSI!.id, rowNumber: 2, rawData: {}, status: "cancelled" }, // TIDAK dihitung (Batal Import)
-    ]);
-
-    // § batch milik user LAIN — TIDAK BOLEH ikut ke-hitung.
-    const [otherPlan] = await db
-      .insert(plans)
-      .values({ name: `Me Stats Other Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-    const otherDataUsahaId = await createTestDataUsaha(otherUserId);
-    const [otherSub] = await db
-      .insert(subscriptions)
-      .values({ userId: otherUserId, planId: otherPlan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: otherDataUsahaId })
-      .returning();
-    const [otherBatch] = await db
-      .insert(importBatches)
-      .values({ userId: otherUserId, subscriptionId: otherSub!.id, module: "purchase_invoice", fileName: "other.xlsx", totalRows: 10, status: "completed" })
-      .returning();
-    await db.insert(importBatchRows).values([{ batchId: otherBatch!.id, rowNumber: 1, rawData: {}, status: "success" }]);
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 3 }).where(eq(dataUsaha.id, dataUsahaId));
 
     const res = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaId}`, { headers: { cookie } }));
     expect(res.status).toBe(200);
     const body = (await res.json()) as { successfulRowCount: number; estimatedTimeSavedSeconds: number };
-    expect(body.successfulRowCount).toBe(3); // 2 (PI success) + 1 (SI success), TIDAK termasuk failed/cancelled/user lain
+    expect(body.successfulRowCount).toBe(3);
     expect(body.estimatedTimeSavedSeconds).toBe(3 * 45);
   });
 
   // § Fase 113 — bug ditemukan: dashboard belum di-scope ke Data Usaha
   // aktif, `/me/stats` union lintas SEMUA Data Usaha milik user (walau
   // beda company). Test ini pastikan `dataUsahaId` benar-benar
-  // mempersempit, bukan cuma diterima lalu diabaikan.
-  test("cuma hitung baris di Data Usaha yang diminta, bukan gabungan semua Data Usaha milik user yang sama", async () => {
+  // mempersempit, bukan cuma diterima lalu diabaikan — counter di-set
+  // BEDA per Data Usaha (§ update 2026-09-27, lihat komentar test di atas
+  // soal sumber angka pindah ke `data_usaha.cumulativeSuccessfulRowCount`).
+  test("cuma baca counter Data Usaha yang diminta, bukan gabungan/tertukar dengan Data Usaha lain milik user yang sama", async () => {
     const userId = await signUp(`me-stats-multi-du-${runId}@test.local`);
     const cookie = await signIn(`me-stats-multi-du-${runId}@test.local`);
 
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Me Stats Multi-DU Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
-
     const dataUsahaA = await createTestDataUsaha(userId, "Data Usaha A");
     const dataUsahaB = await createTestDataUsaha(userId, "Data Usaha B");
-    const [subA] = await db
-      .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaA })
-      .returning();
-    const [subB] = await db
-      .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId: dataUsahaB })
-      .returning();
-
-    const [batchA] = await db
-      .insert(importBatches)
-      .values({ userId, subscriptionId: subA!.id, module: "purchase_invoice", fileName: "du-a.xlsx", totalRows: 2, status: "completed" })
-      .returning();
-    const [batchB] = await db
-      .insert(importBatches)
-      .values({ userId, subscriptionId: subB!.id, module: "purchase_invoice", fileName: "du-b.xlsx", totalRows: 5, status: "completed" })
-      .returning();
-    await db.insert(importBatchRows).values([
-      { batchId: batchA!.id, rowNumber: 1, rawData: {}, status: "success" },
-      { batchId: batchA!.id, rowNumber: 2, rawData: {}, status: "success" },
-    ]);
-    await db.insert(importBatchRows).values(
-      Array.from({ length: 5 }, (_, i) => ({ batchId: batchB!.id, rowNumber: i + 1, rawData: {}, status: "success" as const })),
-    );
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 2 }).where(eq(dataUsaha.id, dataUsahaA));
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 5 }).where(eq(dataUsaha.id, dataUsahaB));
 
     const resA = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaA}`, { headers: { cookie } }));
     const resB = await testApp.handle(new Request(`http://localhost/me/stats?dataUsahaId=${dataUsahaB}`, { headers: { cookie } }));
