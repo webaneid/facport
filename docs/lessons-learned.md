@@ -4799,3 +4799,35 @@ gagal dengan cara yang sama, cuma telat ketahuannya (pas deploy, bukan pas CI).
 
 Detail: `docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`,
 `.github/workflows/ci.yml`, `.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.
+
+## 2026-09-27 — Runbook deploy Full LUPA sebut file compose di server harus di-update manual dulu (fix `chainguard/minio` di atas TIDAK otomatis kepakai)
+
+Langsung dampak dari insiden di atas: setelah fix `docker-compose.prod.yml` (ganti image MinIO) di-push ke repo
+dan release berhasil, user jalankan `docker compose ... pull` di server persis sesuai runbook Full — **tetap
+gagal** dengan error IDENTIK (`quay.io/minio/minio:latest ... 401 Unauthorized`), padahal fix-nya sudah ada di
+repo.
+
+**Root cause**: SUDAH PERNAH DICATAT sebelumnya (§ insiden 2026-09-12, docker.io→quay.io) tapi TERLEWAT lagi kali
+ini — file compose di server (`/opt/facport/*.yml`) adalah **COPY MANUAL**, TIDAK auto-sync dari git. Image
+Docker (api/web) memang ditarik dari registry (GHCR) sesuai `IMAGE_TAG` rilis, TAPI file `docker-compose.prod.yml`
+ITU SENDIRI (termasuk baris `image: chainguard/minio:latest` yang baru diperbaiki) TETAP versi LAMA di server
+sampai ada yang memperbaruinya secara eksplisit (scp, atau — kalau `/opt/facport` server ternyata git checkout
+beneran, `git pull` — TAPI berdasar catatan 2026-09-12, itu BUKAN git checkout, murni file yang di-copy).
+
+**Fix langsung (workaround cepat, tidak perlu scp ulang file utuh)**: `sed -i` 1 baris langsung di server:
+```bash
+sed -i 's|image: quay.io/minio/minio:latest|image: chainguard/minio:latest|' docker-compose.prod.yml
+```
+
+**Pelajaran (PENGULANGAN dari 2026-09-12, kali ini benar-benar ditutup, bukan cuma dicatat)**: `docs/architecture/
+architecture-deployment.md` § runbook Minimal/Full **TIDAK PERNAH secara eksplisit mengingatkan** "kalau rilis
+ini mengubah file `docker-compose*.yml`/`Caddyfile`/file konfigurasi LAIN yang hidup di server (bukan di-build
+ke image), WAJIB update file itu di server dulu (scp/copy manual) SEBELUM `pull`/`up -d`" — bug KELAS ini
+(perubahan config yang tidak ke-deploy karena cuma image aplikasi yang benar-benar "dirilis" via registry) sudah
+terjadi 2 KALI (2026-09-12 & 2026-09-27) dengan gejala IDENTIK, tapi belum pernah masuk sebagai LANGKAH EKSPLISIT
+di runbook — cuma dicatat sebagai narasi lessons-learned yang mudah kelewat baca ulang saat rilis berikutnya.
+**Ditambahkan SEKARANG** (bukan ditunda jadi TODO) — checklist eksplisit di `architecture-deployment.md` §
+"Pembagian tugas baku", sebelum kedua varian runbook (Minimal & Full), supaya tidak sekadar jadi cerita masa
+lalu tapi benar-benar dibaca tiap rilis.
+
+Detail: `docs/architecture/architecture-deployment.md` § "Pembagian tugas baku".
