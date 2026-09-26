@@ -114,3 +114,58 @@ export function generateTemplateBuffer(fields: TemplateFieldGuide[], extraExampl
   XLSX.utils.book_append_sheet(workbook, guideSheet, "Petunjuk Pengisian");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
+
+// § diminta user 2026-09-27 — export baris GAGAL sebagai Excel, generik
+// lintas SEMUA modul import (dipanggil dari `{module}-import.route.ts`
+// masing-masing, pola sama `generateTemplateBuffer`/`parseExcelBuffer` di
+// atas) — supaya client bisa review error offline atau perbaiki nilai di
+// Excel lalu upload ulang sebagai import baru (kolomnya SENGAJA kolom
+// ASLI Excel yang diupload, BUKAN nama field internal Accurate, supaya
+// cocok balik ke template asli).
+//
+// ⚠️ BUG DITEMUKAN saat nulis test (2026-09-27) — urutan kolom TIDAK BOLEH
+// diambil dari `Object.keys(rawData)` (kolom `jsonb` di DB): dikonfirmasi
+// lewat query nyata, Postgres `jsonb` TIDAK menjamin urutan key sama
+// dengan urutan aslinya saat disimpan (beda dari tipe `json` yang
+// preserve teks apa adanya) — `{"Customer Number":.., "Item Number":..}`
+// bisa balik jadi urutan lain sama sekali setelah round-trip DB. Fix:
+// urutan kolom MAPPED ditentukan dari `canonicalFieldOrder` (array biasa
+// dari SOURCE CODE, BUKAN dari DB — mis. `[...VALID_FIELDS]` di tiap
+// route, yang aman karena dibangun dari object literal statis, JS
+// menjamin urutan insersinya), kolom yang TIDAK di-mapping (ekstra di
+// Excel asli, jarang tapi mungkin) ditaruh di akhir diurutkan alfabetis
+// (tidak ada sumber urutan asli yang bisa diandalkan untuk kasus ini).
+export function generateFailedRowsBuffer(
+  rows: { rawData: Record<string, unknown>; errorMessage: string | null }[],
+  columnMapping: Record<string, string>, // excelColumn -> field internal (dari `batch.columnMapping`)
+  canonicalFieldOrder: string[], // urutan field STABIL dari source code (mis. `[...VALID_FIELDS]`)
+): Buffer {
+  const rawColumns = rows.length > 0 ? Object.keys(rows[0]!.rawData) : [];
+  const fieldOrderIndex = new Map(canonicalFieldOrder.map((field, i) => [field, i]));
+  const mappedColumns = rawColumns
+    .filter((c) => columnMapping[c] !== undefined)
+    .sort((a, b) => (fieldOrderIndex.get(columnMapping[a]!) ?? Infinity) - (fieldOrderIndex.get(columnMapping[b]!) ?? Infinity));
+  const unmappedColumns = rawColumns.filter((c) => columnMapping[c] === undefined).sort();
+  const columns = [...mappedColumns, ...unmappedColumns];
+
+  const header = [...columns, "Pesan Error"];
+  const dataRows = rows.map((r) => [...columns.map((c) => (r.rawData[c] as string | number | undefined) ?? ""), r.errorMessage ?? ""]);
+
+  const sheet = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
+  sheet["!cols"] = header.map(() => ({ wch: 20 }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, sheet, "Baris Gagal");
+  return XLSX.write(workbook, { type: "buffer", bookType: "xlsx" }) as Buffer;
+}
+
+// § filename dari `Content-Disposition` di sini SEBAGIAN dari
+// `batch.fileName` (nama file ASLI upload user, disimpan apa adanya di
+// DB) — user-controlled string, bukan aman langsung ditaruh mentah dalam
+// header HTTP: `"`/backslash bisa "kabur" dari atribut quoted-string,
+// CR/LF bisa header injection. Strip karakter itu SAJA (bukan whitelist
+// ketat) supaya nama file tetap mirip aslinya buat user, sambil aman
+// dipakai di header.
+export function sanitizeFilenamePart(name: string): string {
+  return name.replace(/[\r\n"\\]/g, "").trim() || "file";
+}

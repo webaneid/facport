@@ -8,7 +8,7 @@ import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
-import { parseExcelBuffer, generateTemplateBuffer } from "../lib/excel";
+import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import {
   purchaseInvoiceMapping,
   vendorAutoCreateMapping,
@@ -246,6 +246,43 @@ export const purchaseInvoiceImportRoute = new Elysia()
       return { batch, summary, rows };
     },
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+  )
+  .get(
+    "/purchase-invoice/import/:batchId/failed-rows/export",
+    async ({ params, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+
+      const failedRows = await db
+        .select()
+        .from(importBatchRows)
+        .where(and(eq(importBatchRows.batchId, batch.id), eq(importBatchRows.status, "failed")));
+      if (failedRows.length === 0) {
+        set.status = 404;
+        return { code: "NO_FAILED_ROWS" };
+      }
+
+      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      const buffer = generateFailedRowsBuffer(
+        failedRows.map((r) => ({ rawData: r.rawData as Record<string, unknown>, errorMessage: r.errorMessage })),
+        columnMapping,
+        [...VALID_FIELDS],
+      );
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="baris-gagal-${sanitizeFilenamePart(batch.fileName.replace(/\.xlsx?$/i, ""))}.xlsx"`,
+        },
+      });
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "purchase_invoice",
+      params: t.Object({ batchId: t.String({ format: "uuid" }) }),
+    },
   )
   .post(
     "/purchase-invoice/import/:batchId/retry",

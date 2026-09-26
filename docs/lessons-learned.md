@@ -4639,3 +4639,60 @@ verifikasi yang kuat untuk bug race-condition yang svarnya susah direproduksi ma
 
 Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/lib/accurate-rate-limiter.ts`,
 `apps/api/src/lib/accurate-rate-limiter.test.ts`, `docs/architecture/architecture-jobs.md`.
+
+## 2026-09-27 — Fitur baru "Download Baris Gagal (Excel)": Postgres `jsonb` TIDAK menjamin urutan kolom, ketahuan lewat test SEBELUM sempat ke production
+
+Client minta fitur baru: download baris gagal 1 batch import sebagai file Excel (kolom asli + kolom "Pesan
+Error"), supaya bisa direview/diperbaiki offline. Dibangun sekaligus untuk SEMUA 23 modul import dari awal
+(bukan 1 modul dulu) — sesuai pola & pelajaran minggu ini soal fitur yang cuma dibangun sebagian modul selalu
+berujung jadi bug "kelupaan rollout" (accordion, pesan error, tombol retry — 3 kasus SEBELUM ini di sesi yang
+sama).
+
+**Bug ditemukan SAAT NULIS TEST, sebelum sempat dipakai user**: rencana awal `generateFailedRowsBuffer()`
+menentukan urutan kolom Excel dari `Object.keys(row.rawData)` (kolom `rawData` di tabel `import_batch_rows`
+bertipe `jsonb`). Test pertama (`{"Customer Number":.., "Item Number":..}` sebagai input) GAGAL — urutan kolom
+di file Excel hasil malah `Item Number` duluan. Dikonfirmasi langsung via query manual:
+```sql
+SELECT '{"Customer Number": "C1", "Item Number": "I1", "Zebra": "z"}'::jsonb;
+-- balik: {"Zebra": "z", "Item Number": "I1", "Customer Number": "C1"}
+```
+**Postgres `jsonb` TIDAK menjamin preserve urutan key input** — beda dari tipe `json` yang simpan teks APA
+ADANYA (termasuk urutan). `jsonb` di-parse ke representasi biner internal untuk query cepat, dan urutan key
+saat di-serialize balik ke JSON TIDAK dijamin sama dengan urutan saat di-insert. Ini murni perilaku resmi
+Postgres, bukan bug Drizzle/driver — dan **berlaku untuk SEMUA kolom `jsonb` di project ini** (`rawData`,
+`columnMapping`, `rawData` modul lain, dst), bukan cuma kasus fitur ini.
+
+**Fix**: urutan kolom TIDAK BOLEH diambil dari isi `jsonb` manapun. `generateFailedRowsBuffer()` sekarang minta
+2 parameter tambahan: `columnMapping` (excelColumn→field internal, dari `batch.columnMapping` — TETAP dipakai
+sebagai LOOKUP/SET, bukan sumber urutan) dan `canonicalFieldOrder` (array PLAIN dari SOURCE CODE, bukan dari
+DB — tiap route sudah punya `VALID_FIELDS` yang dibangun dari object literal statis `{module}Mapping.
+fieldToAccuratePath`, dan `Set` JS menjamin urutan iterasi = urutan insersi, jadi `[...VALID_FIELDS]` aman
+dipakai). Kolom yang di-mapping diurutkan berdasar posisi field internalnya di `canonicalFieldOrder`; kolom
+yang TIDAK di-mapping (ekstra di Excel asli, jarang tapi mungkin) ditaruh di akhir, diurutkan alfabetis (tidak
+ada sumber urutan asli yang reliable untuk kasus ini).
+
+**Detail implementasi**:
+- `apps/api/src/lib/excel.ts` — `generateFailedRowsBuffer()` (kolom asli + "Pesan Error") dan
+  `sanitizeFilenamePart()` (strip `"`/backslash/CR/LF dari `batch.fileName` sebelum masuk header
+  `Content-Disposition` — user-controlled string, § security review).
+- 23 `apps/api/src/routes/*-import.route.ts` — endpoint baru `GET .../:batchId/failed-rows/export`, pola
+  identik (ownership check, filter `status='failed'` saja, 404 `NO_FAILED_ROWS` kalau kosong).
+- 23 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx` — tombol "Download Baris Gagal (Excel)" (`<a
+  href>` ke origin API, pola sama "Download Template" yang sudah ada), muncul kalau `summary.failed > 0`.
+- Semua 23 file diverifikasi byte-identik dulu sebelum transformasi massal via script (pola sama rollout-rollout
+  sebelumnya di sesi ini) — 1 bug kecil ketahuan & diperbaiki di skrip sendiri (double-slash di URL dari
+  regex capture group yang sudah termasuk leading slash).
+
+**Pelajaran**: (1) `jsonb` ≠ `json` soal preservasi urutan — kalau butuh urutan yang PERSIS sama dengan input
+(bukan cuma nilai), JANGAN simpan sebagai `jsonb` dan andalkan `Object.keys()` saat baca balik; kalau urutan
+penting, simpan array eksplisit (`text[]`/`jsonb` array literal, BUKAN object) atau derive urutan dari sumber
+LAIN yang stabil (di sini: definisi field statis di source code). (2) Test yang REALISTIS (nulis data lalu baca
+BALIK lewat DB asli, bukan cuma pakai objek JS in-memory) menangkap bug ini SEBELUM sempat sampai ke user —
+kalau test cuma pakai `rawData` sebagai literal JS langsung tanpa lewat DB round-trip, bug ini TIDAK akan
+ketahuan sampai laporan user nyata. (3) Kalau ada fungsi generik yang PERLU urutan tertentu dari data yang
+sumbernya bisa dari DB, jangan asumsikan "urutan objek JS selalu preserve" — asumsi itu benar untuk JS murni,
+TAPI tidak otomatis benar lagi begitu data itu sudah bolak-balik lewat storage layer yang punya aturan sendiri.
+
+Detail: `apps/api/src/lib/excel.ts`, `apps/api/src/lib/excel.test.ts`, 23 `apps/api/src/routes/*-import.route.ts`,
+`apps/api/src/routes/sales-quotation-import.route.test.ts`, 23
+`apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.

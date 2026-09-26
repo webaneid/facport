@@ -5,7 +5,7 @@ import { auth } from "../lib/auth";
 import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
 import { salesQuotationImportRoute } from "./sales-quotation-import.route";
-import { generateTemplateBuffer } from "../lib/excel";
+import { generateTemplateBuffer, parseExcelBuffer } from "../lib/excel";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
 // § Fase 123 — mirror `purchase-order-import.route.test.ts` (modul yang
@@ -150,6 +150,74 @@ describe("Ownership batch — user lain TIDAK BOLEH akses batch orang lain", () 
       new Request(`http://localhost/sales-quotation/import/${batch!.id}`, { headers: { cookie: owner.cookie } }),
     );
     expect(ownerRes.status).toBe(200);
+  });
+});
+
+// § diminta user 2026-09-27 — download baris gagal sebagai Excel, generik
+// lintas 23 modul import (mirror lib/excel.test.ts untuk isi filenya).
+describe("GET /sales-quotation/import/:batchId/failed-rows/export", () => {
+  test("401 kalau tidak login", async () => {
+    const res = await testApp.handle(
+      new Request("http://localhost/sales-quotation/import/00000000-0000-0000-0000-000000000000/failed-rows/export"),
+    );
+    expect(res.status).toBe(401);
+  });
+
+  test("404 BATCH_NOT_FOUND kalau batch milik user LAIN", async () => {
+    const owner = await createProvisionedUser(`sq-export-owner-${runId}@test.local`);
+    const attacker = await createProvisionedUser(`sq-export-attacker-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_quotation", fileName: "test.xlsx", totalRows: 1, status: "completed_with_errors", columnMapping })
+      .returning();
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: { "Customer Number": "C.0001" }, status: "failed", errorMessage: "Customer tidak ditemukan" });
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-quotation/import/${batch!.id}/failed-rows/export`, { headers: { cookie: attacker.cookie } }),
+    );
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_FOUND");
+  });
+
+  test("404 NO_FAILED_ROWS kalau batch tidak punya baris gagal sama sekali", async () => {
+    const owner = await createProvisionedUser(`sq-export-nofailed-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_quotation", fileName: "test.xlsx", totalRows: 1, status: "completed", columnMapping })
+      .returning();
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: { "Customer Number": "C.0001" }, status: "success", accurateTransactionId: "101" });
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-quotation/import/${batch!.id}/failed-rows/export`, { headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(404);
+    expect(((await res.json()) as { code: string }).code).toBe("NO_FAILED_ROWS");
+  });
+
+  test("200 balikin file .xlsx berisi HANYA baris failed (bukan success/pending), kolom asli + Pesan Error, nama file disanitasi", async () => {
+    const owner = await createProvisionedUser(`sq-export-ok-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_quotation", fileName: 'data "klien" 2026.xlsx', totalRows: 3, status: "completed_with_errors", columnMapping })
+      .returning();
+    await db.insert(importBatchRows).values([
+      { batchId: batch!.id, rowNumber: 1, rawData: { "Customer Number": "C.0001", "Item Number": "BRG-01" }, status: "failed", errorMessage: "Item tidak ditemukan" },
+      { batchId: batch!.id, rowNumber: 2, rawData: { "Customer Number": "C.0002", "Item Number": "BRG-02" }, status: "success", accurateTransactionId: "101" },
+      { batchId: batch!.id, rowNumber: 3, rawData: { "Customer Number": "C.0003", "Item Number": "BRG-03" }, status: "pending" },
+    ]);
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-quotation/import/${batch!.id}/failed-rows/export`, { headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    // § tanda kutip di nama file asli WAJIB tersanitasi — tidak boleh "kabur" dari atribut quoted-string.
+    expect(res.headers.get("Content-Disposition")).toBe('attachment; filename="baris-gagal-data klien 2026.xlsx"');
+
+    const buffer = Buffer.from(await res.arrayBuffer());
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.headers).toEqual(["Customer Number", "Item Number", "Pesan Error"]);
+    expect(parsed.rows).toEqual([{ "Customer Number": "C.0001", "Item Number": "BRG-01", "Pesan Error": "Item tidak ditemukan" }]);
   });
 });
 
