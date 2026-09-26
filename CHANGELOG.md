@@ -1,3 +1,14 @@
+## 2.14.0 (2026-09-26)
+
+* fix(ci,infra): pindah image MinIO ke chainguard/minio, quay.io berhenti pull anonim ([d6b607c](https://github.com/webaneid/facport/commit/d6b607c))
+* Merge pull request #75 from webaneid/develop ([23f7147](https://github.com/webaneid/facport/commit/23f7147)), closes [#75](https://github.com/webaneid/facport/issues/75)
+* fix(admin): pesan error spesifik + tangkap duplicate-email di 6 halaman admin ([635aabb](https://github.com/webaneid/facport/commit/635aabb))
+* fix(import): rollout tombol "Retry baris gagal" tetap tampil saat cuma ada baris pending ke 21 halam ([95625d1](https://github.com/webaneid/facport/commit/95625d1))
+* fix(queue): retryLimit:0 + expireInSeconds 3600->7200 cegah 2 invocation import bersamaan ([fd41fc3](https://github.com/webaneid/facport/commit/fd41fc3))
+* fix(stats): counter permanen "efisiensi waktu kerja", tidak lagi reset tiap retensi purge ([9220c36](https://github.com/webaneid/facport/commit/9220c36))
+* feat(import): fitur download baris gagal sebagai Excel, semua 23 modul ([66178a5](https://github.com/webaneid/facport/commit/66178a5))
+* docs(editable-grid): perbaiki komentar usang soal cakupan modul ([46a96b2](https://github.com/webaneid/facport/commit/46a96b2))
+
 ## 2.13.0 (2026-09-24)
 
 * fix(admin,accurate-gate): disambiguasi label paket + opsi Konverter di gerbang koneksi ([12b1d50](https://github.com/webaneid/facport/commit/12b1d50))
