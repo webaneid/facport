@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
 import { eq, and, or, ilike, inArray, desc } from "drizzle-orm";
+import { APIError } from "better-auth";
 import { db } from "../../lib/db";
 import { auth } from "../../lib/auth";
 import { roles, userRoles, auditLogs, user as userTable } from "../../db/schema";
@@ -78,7 +79,23 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
     }
 
     const tempPassword = randomBytes(12).toString("base64url");
-    const result = await auth.api.signUpEmail({ body: { email: body.email, password: tempPassword, name: body.name } });
+    // § 2026-09-27 — `signUpEmail` TIDAK return `{user: null}` untuk email
+    // duplikat, dia THROW `APIError` (code
+    // USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL) — sebelumnya tidak ditangkap
+    // di sini, jatuh ke `.onError()` global jadi 500 generik yang
+    // menyembunyikan penyebab asli (bug real: "Gagal membuat akun staff —
+    // coba lagi." untuk fajar@cpssoft.com yang ternyata email sudah
+    // terdaftar). § docs/lessons-learned.md.
+    let result: Awaited<ReturnType<typeof auth.api.signUpEmail>>;
+    try {
+      result = await auth.api.signUpEmail({ body: { email: body.email, password: tempPassword, name: body.name } });
+    } catch (err) {
+      if (err instanceof APIError && err.body?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
+        set.status = 400;
+        return { code: "EMAIL_ALREADY_EXISTS" };
+      }
+      throw err;
+    }
     if (!result?.user) {
       set.status = 400;
       return { code: "USER_CREATE_FAILED" };

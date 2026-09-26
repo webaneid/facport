@@ -4,16 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { publicStatsRoute } from "./stats.route";
 import { db } from "../../lib/db";
-import {
-  user as userTable,
-  roles,
-  userRoles,
-  subscriptions,
-  plans,
-  importBatches,
-  importBatchRows,
-  settings,
-} from "../../db/schema";
+import { user as userTable, roles, userRoles, dataUsaha, settings } from "../../db/schema";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY } from "../../lib/manual-input-estimate";
 import { createTestDataUsaha } from "../../lib/test-fixtures";
 
@@ -65,38 +56,33 @@ describe("GET /public/stats", () => {
     expect(afterBody.customerCount).toBe(beforeBody.customerCount + 1);
   });
 
-  test("successfulRowCount cuma hitung baris status=success, exclude failed/pending/cancelled", async () => {
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 — sumbernya pindah dari COUNT()
+  // live `import_batch_rows` (rusak oleh purge retensi, ini angka
+  // MARKETING landing page yang justru paling penting untuk akumulasi
+  // sepanjang waktu) ke SUM `data_usaha.cumulativeSuccessfulRowCount`
+  // (counter PERMANEN, § komentar kolom itu). Insert `import_batch_rows`
+  // LANGSUNG (tanpa lewat worker) SENGAJA TIDAK BOLEH mempengaruhi angka
+  // ini lagi — filtering success/failed/cancelled sekarang tanggung jawab
+  // worker saat increment/decrement (§ test `lib/data-usaha.test.ts`).
+  test("successfulRowCount adalah SUM data_usaha.cumulativeSuccessfulRowCount, BUKAN COUNT() import_batch_rows live", async () => {
     await db
       .insert(settings)
       .values({ key: MANUAL_INPUT_SECONDS_SETTING_KEY, value: 30, group: "data" })
       .onConflictDoUpdate({ target: settings.key, set: { value: 30 } });
 
     const userId = await signUp(`public-stats-rows-${runId}@test.local`);
-    const [plan] = await db
-      .insert(plans)
-      .values({ name: `Public Stats Plan ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })
-      .returning();
     const dataUsahaId = await createTestDataUsaha(userId);
-    const [sub] = await db
-      .insert(subscriptions)
-      .values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), dataUsahaId })
-      .returning();
-    const [batch] = await db
-      .insert(importBatches)
-      .values({ userId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "test.xlsx", totalRows: 3, status: "completed_with_errors" })
-      .returning();
 
     const before = await testApp.handle(new Request("http://localhost/public/stats"));
     const beforeBody = (await before.json()) as { successfulRowCount: number; estimatedTimeSavedSeconds: number };
 
-    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "success" });
-    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 2, rawData: {}, status: "failed" });
-    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 3, rawData: {}, status: "cancelled" });
+    // § simulasikan increment worker (1 baris sukses) — LANGSUNG ke counter permanen.
+    await db.update(dataUsaha).set({ cumulativeSuccessfulRowCount: 1 }).where(eq(dataUsaha.id, dataUsahaId));
 
     const after = await testApp.handle(new Request("http://localhost/public/stats"));
     const afterBody = (await after.json()) as { successfulRowCount: number; estimatedTimeSavedSeconds: number };
 
-    expect(afterBody.successfulRowCount).toBe(beforeBody.successfulRowCount + 1); // cuma 1 baris "success"
+    expect(afterBody.successfulRowCount).toBe(beforeBody.successfulRowCount + 1);
     expect(afterBody.estimatedTimeSavedSeconds).toBe(afterBody.successfulRowCount * 30);
   });
 });

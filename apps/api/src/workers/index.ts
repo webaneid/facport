@@ -13,6 +13,7 @@ import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
 import { resolveConnectionForSubscription } from "../lib/accurate-connection";
+import { addCumulativeSuccessfulRows } from "../lib/data-usaha";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
 import { checkConnectionScopes } from "../lib/accurate-scope-check";
@@ -3033,6 +3034,22 @@ async function main() {
       .set({ status: hasFailed ? "completed_with_errors" : "completed", completedAt: new Date() })
       .where(eq(importBatches.id, batch.id));
 
+    // § diminta user 2026-09-27 — counter PERMANEN "efisiensi waktu kerja"
+    // (§ komentar kolom `data_usaha.cumulativeSuccessfulRowCount`), TIDAK
+    // BOLEH ikut kena purge retensi seperti `import_batch_rows`. Hitung
+    // dari DELTA: baris yang TADINYA ada di working set `rows` (status
+    // pending/failed SAAT run ini mulai) dan SEKARANG (`finalRows`)
+    // berstatus success — bukan `finalRows.filter(success).length` saja,
+    // supaya batch yang di-retry berkali-kali TIDAK menghitung ulang baris
+    // yang SUDAH sukses dari run sebelumnya (baris itu sudah tidak ada di
+    // `rows` — query awal cuma ambil pending/failed).
+    const workingSetIds = new Set(rows.map((r) => r.id));
+    const newlySucceededCount = finalRows.filter((r) => r.status === "success" && workingSetIds.has(r.id)).length;
+    if (newlySucceededCount > 0) {
+      const [sub] = await db.select({ dataUsahaId: subscriptions.dataUsahaId }).from(subscriptions).where(eq(subscriptions.id, batch.subscriptionId));
+      if (sub) await addCumulativeSuccessfulRows(sub.dataUsahaId, newlySucceededCount);
+    }
+
     logger.info({ batchId, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length }, "Import batch selesai");
   });
 
@@ -3091,6 +3108,13 @@ async function main() {
     }
 
     const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[] };
+    // § diminta user 2026-09-27 — counter PERMANEN "efisiensi waktu kerja"
+    // (§ komentar kolom `data_usaha.cumulativeSuccessfulRowCount`) HARUS
+    // ikut turun kalau baris yang tadinya dihitung "sukses" dibatalkan —
+    // sama seperti perilaku lama (baris `cancelled` TIDAK dihitung
+    // `GET /me/stats`), cuma sekarang sumbernya counter permanen, bukan
+    // COUNT() live yang otomatis ikut turun begitu status berubah.
+    let cancelledRowCount = 0;
 
     for (const [invoiceIdStr, thisBatchRows] of byInvoice) {
       const invoiceId = Number(invoiceIdStr);
@@ -3164,6 +3188,7 @@ async function main() {
               thisBatchRows.map((r) => r.id),
             ),
           );
+        cancelledRowCount += thisBatchRows.length;
         summary.deleted.push(invoiceIdStr);
       } catch (err) {
         // § faktur mungkin sudah "dipakai" downstream (dibayar/
@@ -3173,6 +3198,11 @@ async function main() {
         logger.error({ err, batchId, invoiceId }, "Cancel import: gagal membatalkan 1 faktur, lanjut ke faktur berikutnya");
         summary.failed.push(invoiceIdStr);
       }
+    }
+
+    if (cancelledRowCount > 0) {
+      const [sub] = await db.select({ dataUsahaId: subscriptions.dataUsahaId }).from(subscriptions).where(eq(subscriptions.id, batch.subscriptionId));
+      if (sub) await addCumulativeSuccessfulRows(sub.dataUsahaId, -cancelledRowCount);
     }
 
     await db.insert(auditLogs).values({

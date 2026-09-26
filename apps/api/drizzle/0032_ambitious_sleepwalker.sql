@@ -1,0 +1,1 @@
+ALTER TABLE "data_usaha" ADD COLUMN "cumulative_successful_row_count" integer DEFAULT 0 NOT NULL;

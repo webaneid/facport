@@ -191,8 +191,13 @@ export const adminCustomerCareRoute = new Elysia({ prefix: "/admin/customer-care
   )
   .put(
     "/settings",
-    async ({ body, user }) => {
+    async ({ body, user, set }) => {
       if (body.workStartMinutes >= body.workEndMinutes) {
+        // § 2026-09-27 — sebelumnya TIDAK ada `set.status`, jadi response
+        // ini balik sebagai HTTP 200 padahal isinya kode error → Eden
+        // Treaty di frontend baca `res.error` FALSY (dianggap sukses),
+        // "silent success" bug. § docs/lessons-learned.md.
+        set.status = 400;
         return { code: "INVALID_WORK_HOURS" };
       }
       for (const [key, value, group] of [

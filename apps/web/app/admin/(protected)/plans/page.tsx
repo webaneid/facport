@@ -102,7 +102,16 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     const res = plan ? await api.admin.plans({ id: plan.id }).put(body) : await api.admin.plans.post(body);
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal menyimpan paket.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "PLAN_NOT_FOUND"
+          ? "Paket tidak ditemukan."
+          : code === "SEAT_ADDON_CANNOT_HAVE_MODULES"
+            ? "Paket seat tambahan tidak boleh punya fitur."
+            : code === "MODULE_PLAN_REQUIRES_EXACTLY_ONE_MODULE"
+              ? "Paket fitur wajib punya tepat 1 fitur."
+              : "Gagal menyimpan paket.",
+      );
       return;
     }
     toast.success(plan ? "Paket diperbarui." : "Paket dibuat.");

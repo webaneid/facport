@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -13,6 +13,7 @@ import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § Fase 96 (2026-09-10) — Opsi A (format lebar) DIPENSIUNKAN TOTAL,
 // modul ini SEKARANG SATU FORMAT SAJA — tidak perlu deteksi format lagi
@@ -125,15 +126,23 @@ export default function JournalVoucherImportResultPage() {
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
-        {summary.failed > 0 && !isProcessing && (
+        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}
             </Button>
-            {batch.columnMapping && (
+            {summary.failed > 0 && (
               <Button variant="outline" onClick={() => setGridOpen((v) => !v)}>
                 {gridOpen ? "Tutup Tabel" : "Edit Semua (Tabel)"}
               </Button>
+            )}
+            {summary.failed > 0 && (
+              <a
+                href={`${process.env.NODE_ENV === "production" ? getProdApiOrigin() : (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001")}/journal-voucher/import/${batch.id}/failed-rows/export`}
+                className={buttonVariants("outline")}
+              >
+                Download Baris Gagal (Excel)
+              </a>
             )}
           </CardContent>
         )}

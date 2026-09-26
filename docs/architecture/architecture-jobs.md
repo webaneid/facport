@@ -174,7 +174,7 @@ gagal setelah retry masuk status `failed`, WAJIB ada monitoring (Sentry akan
 capture exception-nya, lihat contoh di atas) supaya job gagal tidak
 diam-diam hilang tanpa siapa pun tahu.
 
-## Timeout Job (`expireInSeconds`) — WAJIB Dihitung dari Limit Rate Accurate, Bukan Ditebak
+## Timeout Job (`expireInSeconds`) — WAJIB Dihitung dari Throughput ASLI, Bukan Ditebak
 `pg-boss` punya default `expireInSeconds: 900` (15 menit) per queue — **ini
 BUKAN aturan dari Accurate**, murni default library yang kalau tidak
 di-override, dipakai apa adanya (§ `docs/lessons-learned.md` 2026-09-24).
@@ -182,20 +182,47 @@ Job yang "expired" di tengah proses bisa di-retry (`retryLimit` default 2)
 SEMENTARA proses lama masih jalan → risiko transaksi dobel masuk Accurate
 kalau job itu sifatnya "panggil Accurate berkali-kali" (import/cancel).
 
-`IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` (`lib/queue.ts`) di-override eksplisit
-ke **3600 detik (60 menit)**, dihitung dari skenario TERBURUK: `MAX_ROWS`
-(10.000, § `{module}-import.route.ts`) × sampai 2 panggilan Accurate per
-baris (1 save + 1 find-or-create kalau vendor/barang semuanya baru) ÷ **8
-request/detik** (limit RESMI Accurate, § `accurate-rate-limiter.ts`) ≈ 42
-menit — 3600 detik kasih margin ~18 menit. **Kalau `MAX_ROWS` dinaikkan
-lagi nanti, hitung ulang angka ini, JANGAN dibiarkan di 3600 begitu saja.**
+**⚠️ Bug NYATA terjadi 2026-09-25** (§ `docs/lessons-learned.md`) — persis
+risiko yang diperingatkan di atas: `expireInSeconds` lama (3600 detik)
+dihitung dari asumsi "2 panggilan Accurate/baris" yang TERLALU OPTIMIS
+untuk Sales Quotation (nyatanya ~3,5 panggilan/baris — customer lookup +
+item lookup + save), 10.000 baris makan waktu ~78-82 menit, MELEWATI 3600
+detik SAAT MASIH BERJALAN. `retryLimit` tidak pernah di-override (default
+pg-boss = 2) → pg-boss otomatis retry job yang sama di menit ke-60,
+SEMENTARA invocation lama masih jalan → 2 invocation berebut kuota 8
+request/detik untuk batch yang SAMA → 1.457 baris gagal dengan pesan
+rate-limit Accurate (dikonfirmasi presisi lewat 3 query SQL: `retry_count=1`,
+timing `started_on` = `created_on`+3600 detik PERSIS, jumlah baris gagal
+match PERSIS dengan window waktu setelah retry itu).
+
+**Fix (`lib/queue.ts`, berlaku untuk `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT`)**:
+- **`retryLimit: 0`** — retry per-baris SUDAH ADA jalur sendiri yang aman
+  ("Retry baris gagal" di UI), pg-boss TIDAK PERNAH BOLEH retry di level
+  JOB untuk 2 queue ini. Ini yang MENUTUP TOTAL risiko 2 invocation batch
+  yang sama jalan bersamaan, apa pun penyebab lambatnya nanti — **WAJIB
+  ada untuk queue apa pun yang memanggil API pihak ketiga berkali-kali**,
+  jangan andalkan `expireInSeconds` besar saja sebagai satu-satunya jaring
+  pengaman.
+- `expireInSeconds` naik 3600→**7200 detik (2 jam)**, dihitung ulang dari
+  throughput ASLI (~3,5-4 panggilan/baris, bukan asumsi lama 2): `MAX_ROWS`
+  (10.000) × 4 ÷ 8 request/detik (limit RESMI Accurate, §
+  `accurate-rate-limiter.ts`) ≈ 83 menit — 7200 detik kasih margin ~1x
+  lipat dari situ. **Kalau `MAX_ROWS` dinaikkan lagi nanti ATAU ada modul
+  baru yang ternyata butuh lebih banyak panggilan/baris (mis. serial
+  number/classification lookup), hitung ulang angka ini dari throughput
+  ASLI (bukan asumsi) — JANGAN dibiarkan di 7200 begitu saja.**
+- Tambahan defensif (`accurate-rate-limiter.ts`): retry-with-backoff (maks
+  4x, eksponensial+jitter) khusus untuk pesan Accurate "melebihi
+  toleransi" — supaya tabrakan sesaat yang genuinely dari luar kendali
+  kita (klien pakai Accurate Desktop bersamaan, dll) sembuh sendiri,
+  bukan langsung jadi kegagalan permanen per baris.
 
 `createQueue()` pakai `ON CONFLICT DO NOTHING` (dikonfirmasi dari sumber
 pg-boss) — TIDAK meng-update queue yang SUDAH ADA di database. Perubahan
-`expireInSeconds` untuk queue yang sudah pernah dibuat (kasus production)
-WAJIB lewat `updateQueue()` juga (beneran `UPDATE`), bukan cuma ganti opsi
-di `createQueue()` dan berharap efeknya otomatis — `startQueue()` sudah
-memanggil keduanya untuk queue yang masuk `LONG_RUNNING_QUEUES`.
+`expireInSeconds`/`retryLimit` untuk queue yang sudah pernah dibuat (kasus
+production) WAJIB lewat `updateQueue()` juga (beneran `UPDATE`), bukan cuma
+ganti opsi di `createQueue()` dan berharap efeknya otomatis — `startQueue()`
+sudah memanggil keduanya untuk queue yang masuk `LONG_RUNNING_QUEUES`.
 
 ## Referensi
 - Notifikasi email/WA → `docs/architecture/architecture-notifications.md`

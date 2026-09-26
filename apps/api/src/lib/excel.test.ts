@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import * as XLSX from "xlsx";
-import { generateTemplateBuffer, parseExcelBuffer, type TemplateFieldGuide } from "./excel";
+import { generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart, parseExcelBuffer, type TemplateFieldGuide } from "./excel";
 
 function bufferFromRows(rows: unknown[][]): Buffer {
   const ws = XLSX.utils.aoa_to_sheet(rows);
@@ -101,5 +101,91 @@ describe("generateTemplateBuffer — baris contoh tambahan (extraExampleRows)", 
     ]);
     const parsed = parseExcelBuffer(buffer);
     expect(parsed.rows[1]).toMatchObject({ "Item No": "C", Qty: 10, Qty_1: 99 });
+  });
+});
+
+// § diminta user 2026-09-27 — download baris gagal sebagai Excel, generik
+// lintas 23 modul import (dipanggil dari `{module}-import.route.ts`
+// masing-masing).
+describe("generateFailedRowsBuffer — export baris gagal ke Excel", () => {
+  const columnMapping = { "Cust No": "customerNo", "Trans No": "number" };
+  const canonicalFieldOrder = ["customerNo", "number"];
+
+  test("kolom output PERSIS kolom Excel asli (dari rawData), ditambah 1 kolom 'Pesan Error' di akhir", () => {
+    const buffer = generateFailedRowsBuffer(
+      [
+        { rawData: { "Cust No": "C-001", "Trans No": "SQ-001" }, errorMessage: "Item tidak ditemukan" },
+        { rawData: { "Cust No": "C-002", "Trans No": "SQ-002" }, errorMessage: "Customer tidak ditemukan" },
+      ],
+      columnMapping,
+      canonicalFieldOrder,
+    );
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.headers).toEqual(["Cust No", "Trans No", "Pesan Error"]);
+    expect(parsed.rows).toEqual([
+      { "Cust No": "C-001", "Trans No": "SQ-001", "Pesan Error": "Item tidak ditemukan" },
+      { "Cust No": "C-002", "Trans No": "SQ-002", "Pesan Error": "Customer tidak ditemukan" },
+    ]);
+  });
+
+  // § BUG DITEMUKAN nulis test ini (2026-09-27) — Postgres `jsonb`
+  // TIDAK menjamin urutan key sama dengan input (dikonfirmasi query
+  // langsung: `{"Customer Number":..,"Item Number":..}` bisa balik
+  // terbalik urutannya). Kolom MAPPED wajib diurutkan dari
+  // `canonicalFieldOrder` (array biasa, bukan dari jsonb), BUKAN dari
+  // `Object.keys(rawData)` — test ini simulasikan rawData yang urutannya
+  // SUDAH DIACAK (seolah abis round-trip DB) untuk kunci perilakunya.
+  test("urutan kolom MAPPED ikut canonicalFieldOrder, BUKAN urutan key rawData (simulasi jsonb yang bisa acak urutan)", () => {
+    const buffer = generateFailedRowsBuffer(
+      // § rawData sengaja "Trans No" duluan (urutan KEBALIK dari canonicalFieldOrder) — simulasi jsonb reorder.
+      [{ rawData: { "Trans No": "SQ-001", "Cust No": "C-001" }, errorMessage: "err" }],
+      columnMapping,
+      canonicalFieldOrder,
+    );
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.headers).toEqual(["Cust No", "Trans No", "Pesan Error"]);
+  });
+
+  test("kolom yang TIDAK di-mapping (ekstra di Excel asli) tetap ikut, ditaruh SETELAH kolom mapped, diurutkan alfabetis", () => {
+    const buffer = generateFailedRowsBuffer(
+      [{ rawData: { "Cust No": "C-001", "Trans No": "SQ-001", "Catatan Internal": "x", "Kolom Lain": "y" }, errorMessage: "err" }],
+      columnMapping,
+      canonicalFieldOrder,
+    );
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.headers).toEqual(["Cust No", "Trans No", "Catatan Internal", "Kolom Lain", "Pesan Error"]);
+  });
+
+  test("errorMessage null -> sel 'Pesan Error' kosong, bukan literal 'null'", () => {
+    const buffer = generateFailedRowsBuffer([{ rawData: { "Item No": "BRG-01" }, errorMessage: null }], {}, []);
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.rows[0]!["Pesan Error"]).toBe("");
+  });
+
+  test("tidak ada baris gagal -> tetap balikin buffer valid (sheet kosong), tidak throw", () => {
+    const buffer = generateFailedRowsBuffer([], {}, []);
+    expect(() => parseExcelBuffer(buffer)).not.toThrow();
+  });
+});
+
+describe("sanitizeFilenamePart — cegah header injection dari nama file upload asli", () => {
+  test("nama file normal tidak berubah", () => {
+    expect(sanitizeFilenamePart("template-sales-quotation (10k Baris)")).toBe("template-sales-quotation (10k Baris)");
+  });
+
+  test('tanda kutip ganda dibuang (cegah "kabur" dari atribut quoted-string Content-Disposition)', () => {
+    expect(sanitizeFilenamePart('nama"jahat.xlsx')).toBe("namajahat.xlsx");
+  });
+
+  test("CR/LF dibuang (cegah header injection)", () => {
+    expect(sanitizeFilenamePart("nama\r\nX-Evil-Header: 1")).toBe("namaX-Evil-Header: 1");
+  });
+
+  test("backslash dibuang", () => {
+    expect(sanitizeFilenamePart("nama\\file.xlsx")).toBe("namafile.xlsx");
+  });
+
+  test("string kosong setelah sanitasi -> fallback 'file'", () => {
+    expect(sanitizeFilenamePart('"\r\n')).toBe("file");
   });
 });

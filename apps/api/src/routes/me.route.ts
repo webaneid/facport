@@ -201,27 +201,28 @@ export const meRoute = new Elysia()
     { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
   // § diminta user 2026-09-06 — "efisiensi waktu kerja" di dashboard
-  // customer: total baris SUKSES milik user ini sendiri (GABUNGAN semua
-  // modul yang pernah dia import, `import_batches.userId`, TIDAK dibatasi
-  // subscription/module tertentu) dikali estimasi admin
-  // (`data.manualInputSecondsPerRow`, § lib/manual-input-estimate.ts).
-  // Baris `cancelled` (Batal Import) TIDAK dihitung — sama prinsipnya
-  // dengan `admin/stats.route.ts`. Perhitungan waktu dilakukan DI SINI
+  // customer, dikali estimasi admin (`data.manualInputSecondsPerRow`, §
+  // lib/manual-input-estimate.ts). Perhitungan waktu dilakukan DI SINI
   // (server), frontend cuma format tampilan — 1 sumber kebenaran logic.
-  // § Fase 113 — `dataUsahaId` WAJIB: sebelum ini cuma filter `userId`,
-  // union lintas SEMUA Data Usaha milik/di-seat user (bug, dashboard belum
-  // scoped ke Data Usaha aktif). Di-join lewat `importBatches.subscriptionId`
-  // → `subscriptions.dataUsahaId` — TIDAK butuh migration, kolom join
-  // sudah ada.
-  // § security review Fase 113 (Medium, DIPERBAIKI) — `importBatches.userId`
-  // DIBEKUKAN ke pelaku import asli, TIDAK ikut berubah saat kepemilikan
-  // Data Usaha ditransfer (`lib/ownership-transfer.ts`) atau seat
-  // di-revoke. Filter `userId` SAJA tidak cukup buktikan user masih
-  // berhak akses Data Usaha ini SEKARANG — mantan pemilik/member yang
-  // sudah kehilangan akses tapi masih ingat `dataUsahaId` bisa panggil
-  // endpoint ini langsung (bypass gate `layout.tsx`) dan tetap dapat
-  // datanya. `hasAccessToDataUsaha` (`lib/data-usaha.ts`) WAJIB dicek
-  // eksplisit dulu, bukan andalkan JOIN doang.
+  //
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 — SEBELUM ini `successfulRowCount`
+  // dihitung LIVE via `COUNT(import_batch_rows WHERE status='success')`,
+  // yang RESET turun tiap kali job `PURGE_OLD_IMPORTS` menghapus baris
+  // lewat masa retensi (default 2 hari, § lib/import-retention.ts) —
+  // padahal tujuan angka ini justru akumulasi SEPANJANG WAKTU pakai
+  // Facport, bukan "sisa data 2 hari terakhir". Sekarang dibaca dari
+  // `data_usaha.cumulativeSuccessfulRowCount` — counter PERMANEN yang
+  // di-increment di titik final proses import (`workers/index.ts`, job
+  // `IMPORT_TO_ACCURATE`) dan di-decrement kalau baris itu di-Batal Import
+  // (job `CANCEL_IMPORT`) — TIDAK PERNAH ikut terhapus purge karena hidup
+  // di `data_usaha`, bukan `import_batch_rows`. Milik Data Usaha (bukan
+  // scoped per-user seperti dulu) — konsisten dengan kolomnya sendiri,
+  // riwayat "sudah menghemat sekian" ikut BISNISNYA walau staf/kepemilikan
+  // berganti.
+  // § Fase 113 — `hasAccessToDataUsaha` (`lib/data-usaha.ts`) WAJIB dicek
+  // eksplisit dulu (bukan andalkan JOIN `userId` doang) — mantan pemilik/
+  // member yang sudah kehilangan akses tapi masih ingat `dataUsahaId` bisa
+  // panggil endpoint ini langsung (bypass gate `layout.tsx`).
   .get(
     "/me/stats",
     async ({ user, query, set }) => {
@@ -229,23 +230,12 @@ export const meRoute = new Elysia()
         set.status = 404;
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
-      const [rowCountRows, manualInputSetting] = await Promise.all([
-        db
-          .select({ successfulRowCount: count() })
-          .from(importBatchRows)
-          .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
-          .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
-          .where(
-            and(
-              eq(importBatches.userId, user.id),
-              eq(importBatchRows.status, "success"),
-              eq(subscriptions.dataUsahaId, query.dataUsahaId),
-            ),
-          ),
+      const [dataUsahaRows, manualInputSetting] = await Promise.all([
+        db.select({ cumulativeSuccessfulRowCount: dataUsaha.cumulativeSuccessfulRowCount }).from(dataUsaha).where(eq(dataUsaha.id, query.dataUsahaId)),
         db.select().from(settings).where(eq(settings.key, MANUAL_INPUT_SECONDS_SETTING_KEY)),
       ]);
 
-      const successfulRowCount = rowCountRows[0]?.successfulRowCount ?? 0;
+      const successfulRowCount = dataUsahaRows[0]?.cumulativeSuccessfulRowCount ?? 0;
       const manualInputSecondsPerRow = Number(manualInputSetting[0]?.value ?? DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW);
 
       return {

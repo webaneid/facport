@@ -52,7 +52,8 @@ function AgentFormDialog({ agent, onSaved }: { agent?: Agent; onSaved: () => voi
     const res = agent ? await api.admin["customer-care"].agents({ id: agent.id }).put(body) : await api.admin["customer-care"].agents.post(body);
     if (res.error) {
       setSubmitting(false);
-      setError("Gagal menyimpan agent.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(code === "AGENT_NOT_FOUND" ? "Agent tidak ditemukan." : "Gagal menyimpan agent.");
       return;
     }
     const savedId = agent?.id ?? (res.data as unknown as { id: string }).id;
@@ -158,7 +159,8 @@ function WorkScheduleDialog({ onSaved }: { onSaved: () => void }) {
     const res = await api.admin["customer-care"].settings.put({ workStartMinutes, workEndMinutes, workDays: [...workDays] });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal menyimpan jam kerja.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(code === "INVALID_WORK_HOURS" ? "Jam mulai harus lebih awal dari jam selesai." : "Gagal menyimpan jam kerja.");
       return;
     }
     toast.success("Jam kerja disimpan.");

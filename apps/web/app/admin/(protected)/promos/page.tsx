@@ -116,7 +116,18 @@ function PromoFormDialog({ promo, onSaved }: { promo?: Promo; onSaved: () => voi
     const res = promo ? await api.admin.promos({ id: promo.id }).patch(body) : await api.admin.promos.post(body);
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal menyimpan promo.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "PROMO_NOT_FOUND"
+          ? "Promo tidak ditemukan."
+          : code === "URL_SCHEME_NOT_ALLOWED"
+            ? "URL harus diawali http:// atau https://"
+            : code === "URL_INVALID"
+              ? "Format URL tidak valid."
+              : code === "TITLE_DESCRIPTION_BUTTON_LABEL_ALL_OR_NOTHING"
+                ? "Judul, deskripsi, dan label tombol harus diisi semua atau dikosongkan semua."
+                : "Gagal menyimpan promo.",
+      );
       return;
     }
     toast.success(promo ? "Promo diperbarui." : "Promo dibuat.");

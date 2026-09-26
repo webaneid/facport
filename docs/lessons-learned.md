@@ -2932,6 +2932,27 @@ halaman ini dengan mapping kosong lewat alur tombol normal (redirect
 cuma terjadi SETELAH `/confirm` sukses), tapi navigasi manual/back-button
 ke `batchId` yang baru diupload tetap kemungkinan nyata.
 
+**⚠️ UPDATE 2026-09-27 — fix ini TERNYATA CUMA diterapkan ke 1 modul (Purchase
+Invoice) waktu itu, TIDAK PERNAH di-rollout ke modul lain**: tim penguji
+laporkan bug identik ("edit baris lalu retry, status tetap Menunggu
+selamanya") di Sales Quotation. Dicek ke SEMUA 23 halaman
+`{module}/import/[batchId]/page.tsx` — cuma 2 yang punya kondisi benar
+(`purchase-invoice`, `sales-invoice`, mungkin `sales-invoice` ikut
+dibetulkan terpisah kemudian), **21 SISANYA masih pakai kondisi lama yang
+bug** (`summary.failed > 0 && !isProcessing`) — persis pola gap rollout
+yang sama seperti accordion "Cocokkan Kolom" (2026-09-24) dan pesan error
+generik admin (2026-09-27 lebih awal). Fix di atas SUDAH ditulis lengkap
+di sini sejak 2026-09-01, tapi karena tidak ada mekanisme yang memaksa
+modul BARU (dan modul LAMA lain yang sudah ada saat itu) ikut pola ini,
+21 modul tetap punya bug yang PERSIS SAMA selama hampir sebulan tanpa
+disadari. Sudah di-rollout ke semua 21 halaman (verifikasi byte-identik
+sebelum replace massal, sama teknik `accordion rollout`). **Pelajaran
+tambahan**: nulis fix + root cause di lessons-learned SAJA TIDAK CUKUP
+kalau fix itu berupa pola UI yang harus disalin manual ke banyak file —
+WAJIB ditambah 1 langkah "grep semua file sejenis, verifikasi SEMUA sudah
+match pola yang sama" sebagai bagian dari MENUTUP task, bukan technical
+debt yang didokumentasikan lalu dilupakan.
+
 **Pencegahan:** kalau nambah kondisi tampil/sembunyi tombol yang
 tergantung status agregat (`summary.*`), CEK SEMUA state transition yang
 bisa mengubah status row/batch — termasuk transition yang "tidak
@@ -4498,3 +4519,283 @@ ke-apply ke semua environment".
 
 Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/routes/*-import.route.ts` (23 file),
 `apps/web/app/app/(protected)/*/import/page.tsx` (23 file), `docs/architecture/architecture-jobs.md`.
+
+## 2026-09-27 — Pesan error generik admin menyembunyikan penyebab asli: "Tambah Staff" & "Assign Paket" jadi 2 kasus nyata dari pola sistemik 6 file
+
+User laporkan 2 bug via screenshot: (1) "Tambah Staff" gagal dengan pesan generik "Gagal membuat akun staff —
+coba lagi." untuk email `fajar@cpssoft.com`; (2) "Assign Paket" gagal dengan "pastikan tanggal expired di masa
+depan" padahal tanggal yang diisi JELAS di masa depan (20 September 2028).
+
+**Root cause bug 1 — Better Auth `signUpEmail()` THROW, bukan return `{user: null}`, untuk email duplikat**:
+`admin/staff.route.ts` & `admin/users.route.ts` cuma cek `if (!result?.user) return {code:"USER_CREATE_FAILED"}`
+— pola ini cuma menangkap kasus HYPOTHETICAL (`signUpEmail` resolve tapi `.user` falsy), TIDAK PERNAH menangkap
+kasus REAL (email sudah terdaftar): dikonfirmasi baca source `better-auth`'s `sign-up.mjs` —
+`throw APIError.from("UNPROCESSABLE_ENTITY", BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL)`. Exception
+ini TIDAK ditangkap di kedua route, jatuh ke `.onError()` global (`app.ts`) yang balikin `500 {message:"Internal
+server error"}` generik — persis penyebab pesan "coba lagi" tidak jelas untuk `fajar@cpssoft.com` (ternyata email
+itu SUDAH ada).
+
+**Root cause bug 2 — pesan frontend generik menutupi kode error asli yang SUDAH BENAR di backend**:
+`admin/users/page.tsx`'s `handleAssign()` selalu tampilkan "pastikan tanggal expired di masa depan" untuk
+SEMUA `res.error`, padahal `POST /admin/subscriptions` sudah balikin 3 kode berbeda dengan `set.status` yang
+BENAR (`PLAN_NOT_FOUND` 404, `DATA_USAHA_NOT_FOUND` 404, `END_AT_MUST_BE_FUTURE` 400) — backend TIDAK bug,
+frontend cuma tidak pernah baca `res.error.value?.code`-nya. Report tanggal 2028 gagal ternyata karena
+`DATA_USAHA_NOT_FOUND`/`PLAN_NOT_FOUND`, bukan soal tanggal sama sekali — pesan generik salah arah total.
+
+**Pola sistemik ditemukan** (SAMA seperti bug pesan error 22 halaman import yang baru diperbaiki minggu ini,
+§ entri 2026-09-16 kalau ada): banyak dialog admin (`staff`, `admin/users` create+assign, `customer-care` ×2,
+`announcements`, `plans`, `promos`) pakai `if (res.error) { setError("Gagal <verb> <noun>."); return; }` TANPA
+baca `res.error.value?.code`, meski backend-nya SUDAH balikin kode spesifik dengan `set.status` yang benar.
+Sekalian ditemukan 1 bug LEBIH SERIUS: `customer-care.route.ts`'s `PUT /settings` (jam kerja) return
+`{code:"INVALID_WORK_HOURS"}` TANPA `set.status = 400` — response ini balik HTTP 200, jadi Eden Treaty's
+`res.error` FALSY meski body-nya kode error ("silent success", beda kategori dari sekadar pesan generik).
+
+**Fix**:
+1. `staff.route.ts` + `users.route.ts` — bungkus `signUpEmail()` `try/catch`, deteksi
+   `err instanceof APIError && err.body?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"` (import `APIError`
+   dari `better-auth` root — dikonfirmasi identity SAMA dengan yang dipakai `sign-up.mjs` untuk throw, `instanceof`
+   valid), balikin `400 {code:"EMAIL_ALREADY_EXISTS"}`. Kasus lain tetap `throw err` (perilaku lama, tetap ke
+   Sentry via `.onError()`).
+2. `customer-care.route.ts` — tambah `set.status = 400` yang hilang untuk `INVALID_WORK_HOURS`.
+3. 6 halaman frontend (`staff`, `users` ×3 handler, `customer-care` ×2, `announcements`, `plans`, `promos`) —
+   ganti `setError("pesan generik")` jadi fallback chain baca `res.error.value?.code`, pola SAMA PERSIS yang
+   dipakai 22 halaman import.
+
+**Pelajaran**: (1) pesan error generik BUKAN cuma UX buruk — dia BISA menyembunyikan bahwa backend sebenarnya
+SUDAH mengembalikan diagnosis yang benar, membuat orang salah menyimpulkan lokasi bug (tanggal 2028 dikira
+masalah tanggal, padahal backend sudah bilang `DATA_USAHA_NOT_FOUND`). (2) `library.signUpEmail()`/fungsi serupa
+yang "biasanya return null/falsy untuk gagal" TIDAK BOLEH diasumsikan konsisten TANPA baca source-nya — Better
+Auth throw untuk 1 kasus (duplikat) tapi return falsy untuk kasus lain, campuran begini gampang bikin 1 jalur
+tertangkap dan 1 lagi tidak. (3) Kalau pola "pesan generik menutupi kode spesifik" ditemukan di 1 file, curigai
+SEMUA file dengan bentuk `if (res.error) setError("...")` serupa di modul yang sama — di sini ditemukan di 6
+file sekaligus dari 1 investigasi. (4) `set.status` yang hilang untuk 1 return statement itu 1 baris, tapi
+efeknya (response 200 untuk body error) TIDAK KETAHUAN sama sekali dari testing UI biasa kalau frontend-nya
+kebetulan SUDAH validasi kondisi yang sama duluan (di sini: `workStartMinutes >= workEndMinutes` divalidasi di
+client SEBELUM submit) — baca tiap `return {code}` di route dan pastikan ada `set.status` di sebelahnya, jangan
+cuma andalkan test end-to-end yang jalur gagalnya kebetulan tidak pernah ke-trigger.
+
+Detail: `apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
+`apps/api/src/routes/admin/customer-care.route.ts`,
+`apps/web/app/admin/(protected)/{staff,users,customer-care,announcements,plans,promos}/page.tsx`.
+
+## 2026-09-25 — Import 10.000 baris "kelamaan dan gagal": bukan MAX_ROWS-nya, tapi `retryLimit` pg-boss yang tidak pernah di-override bikin job yang sama jalan 2x bersamaan
+
+Client laporkan import Sales Quotation 10.000 baris: 1 jam 22 menit, 1.457 baris gagal dengan pesan Accurate
+"Jumlah request API melebihi toleransi yang diperbolehkan. Batas maksimum yang diperbolehkan yaitu 8 proses
+paralel per Token dan 8 request/detik." User bertanya apakah `MAX_ROWS` harus diturunkan lagi ke 5.000.
+
+**Investigasi awal (dari baca kode saja) sempat SALAH ARAH**: `accurate-rate-limiter.ts` sudah benar (throttle
+global per-proses, matematis tidak mungkin proses kita sendiri melebihi 8/detik) — sempat disimpulkan pasti dari
+"penggunaan Accurate di luar app" (Accurate Desktop klien, dll). **Baru dapat penyebab PASTI setelah user jalankan
+3 query SQL read-only** (§ pola SOP: user jalankan `docker exec -e PGPASSWORD=... facport-postgres-1 psql ...`,
+Claude cuma siapkan query-nya) — pelajaran: untuk bug intermiten/timing-sensitive, JANGAN puas dengan "kode-nya
+sudah benar secara teori", verifikasi ke DATA ASLI kejadian tersebut.
+
+**Root cause (terkonfirmasi presisi lewat 3 bukti yang SALING COCOK)**:
+1. `pgboss.job` untuk batch ini: `retry_count = 1`, dan `started_on` (baris TERKINI, yaitu percobaan retry)
+   = `created_on` + **PERSIS 3600 detik** — angka `expireInSeconds` yang di-set 2026-09-24 untuk queue
+   `IMPORT_TO_ACCURATE`.
+2. Baris gagal pertama di `import_batch_rows` muncul PERSIS di detik yang sama dengan `started_on` retry itu.
+3. Total SEMUA baris "failed" dari detik itu sampai job selesai = **1457 — sama persis** dengan yang dilaporkan
+   client.
+
+Kesimpulan: throughput ASLI Sales Quotation (~3,5 panggilan Accurate/baris — customer lookup + item lookup +
+save, LEBIH BERAT dari asumsi lama "2 panggilan/baris") bikin 10.000 baris makan waktu ~78-82 menit, MELEWATI
+`expireInSeconds` 3600 detik (60 menit) SAAT MASIH BERJALAN. `retryLimit` TIDAK PERNAH di-override (tetap
+default pg-boss = 2) — begitu pg-boss anggap job "expired" di menit ke-60, dia otomatis men-dispatch ULANG job
+yang SAMA (retry), SEMENTARA invocation LAMA masih jalan (kode kita tidak py mekanisme cancel-on-expire, jadi
+proses lama terus jalan sampai selesai tanpa tahu pg-boss sudah "menyerah" dari sisi bookkeeping-nya). 2
+invocation itu berebut jatah 8 request/detik yang SAMA untuk batch yang SAMA → separuh percobaan Accurate-nya
+ditolak dengan pesan rate-limit. Dicek juga (query terpisah): TIDAK ada `accurate_transaction_id` duplikat dari
+insiden ini (untung, tapi race condition-nya sendiri tetap ada — bukan jaminan aman selamanya).
+
+**Fix (`apps/api/src/lib/queue.ts`)**:
+1. `retryLimit: 0` untuk `IMPORT_TO_ACCURATE`/`CANCEL_IMPORT` — retry per-baris SUDAH ada jalur sendiri yang
+   aman ("Retry baris gagal" di UI), pg-boss TIDAK BOLEH PERNAH retry di level JOB untuk 2 queue ini. Ini SATU
+   perubahan yang langsung menutup TOTAL kemungkinan 2 invocation batch yang sama jalan bersamaan, apa pun nanti
+   penyebab lambatnya.
+2. `expireInSeconds` naik 3600→7200 (2 jam), dihitung ulang dari throughput ASLI (bukan asumsi lama).
+3. `boss.updateQueue()` dipanggil lagi (pola sama minggu lalu) supaya production yang SUDAH punya baris queue
+   lama ikut ke-update.
+4. Tambahan defensif (`accurate-rate-limiter.ts`): retry-with-backoff (maks 4x, eksponensial+jitter) KHUSUS
+   untuk pesan Accurate "melebihi toleransi" — supaya tabrakan yang genuinely dari luar kendali kita (klien
+   pakai Accurate Desktop bersamaan, dll) sembuh sendiri, bukan langsung gagal permanen per baris.
+
+**Jawaban ke user**: MAX_ROWS TIDAK perlu diturunkan — 10.000 baris aman SELAMA config queue-nya benar. Bug ini
+bisa terjadi di JUMLAH BARIS BERAPA PUN (bahkan 5.000) kalau kebetulan modulnya berat panggilan API-nya sampai
+lewat `expireInSeconds`.
+
+**Pelajaran**: (1) "job lambat, lalu di-retry otomatis oleh library queue, SEMENTARA proses lama masih jalan"
+adalah kelas bug yang jauh LEBIH BERBAHAYA dari sekadar lambat — bisa menciptakan concurrent execution ganda
+untuk kerja yang SAMA, dan efeknya (di sini: rate-limit ganda) sering terlihat seperti masalah lain sama sekali
+(user awalnya curiga "jumlah baris kebanyakan"). (2) Dokumentasi lama sudah MEMPERINGATKAN risiko persis ini
+(komentar `queue.ts` sebelumnya sudah bilang "job expired bisa di-retry SEMENTARA proses lama masih jalan →
+risiko transaksi dobel") — tapi peringatan itu TIDAK diikuti tindakan (`retryLimit` tidak pernah benar-benar
+di-set), jadi cuma jadi catatan mati. Kalau sudah tahu ada risiko konkret, SET konfigurasinya, jangan cuma
+dicatat sebagai "awas". (3) Untuk memastikan hipotesis "2 invocation jalan bersamaan" itu BENAR (bukan sekadar
+plausible), 3 bukti independen (retry_count, timing match persis, jumlah gagal match persis) jauh lebih
+meyakinkan daripada 1 bukti saja — pola "cocokkan angka observasi dengan angka prediksi teori" ini pola
+verifikasi yang kuat untuk bug race-condition yang svarnya susah direproduksi manual.
+
+Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/lib/accurate-rate-limiter.ts`,
+`apps/api/src/lib/accurate-rate-limiter.test.ts`, `docs/architecture/architecture-jobs.md`.
+
+## 2026-09-27 — Fitur baru "Download Baris Gagal (Excel)": Postgres `jsonb` TIDAK menjamin urutan kolom, ketahuan lewat test SEBELUM sempat ke production
+
+Client minta fitur baru: download baris gagal 1 batch import sebagai file Excel (kolom asli + kolom "Pesan
+Error"), supaya bisa direview/diperbaiki offline. Dibangun sekaligus untuk SEMUA 23 modul import dari awal
+(bukan 1 modul dulu) — sesuai pola & pelajaran minggu ini soal fitur yang cuma dibangun sebagian modul selalu
+berujung jadi bug "kelupaan rollout" (accordion, pesan error, tombol retry — 3 kasus SEBELUM ini di sesi yang
+sama).
+
+**Bug ditemukan SAAT NULIS TEST, sebelum sempat dipakai user**: rencana awal `generateFailedRowsBuffer()`
+menentukan urutan kolom Excel dari `Object.keys(row.rawData)` (kolom `rawData` di tabel `import_batch_rows`
+bertipe `jsonb`). Test pertama (`{"Customer Number":.., "Item Number":..}` sebagai input) GAGAL — urutan kolom
+di file Excel hasil malah `Item Number` duluan. Dikonfirmasi langsung via query manual:
+```sql
+SELECT '{"Customer Number": "C1", "Item Number": "I1", "Zebra": "z"}'::jsonb;
+-- balik: {"Zebra": "z", "Item Number": "I1", "Customer Number": "C1"}
+```
+**Postgres `jsonb` TIDAK menjamin preserve urutan key input** — beda dari tipe `json` yang simpan teks APA
+ADANYA (termasuk urutan). `jsonb` di-parse ke representasi biner internal untuk query cepat, dan urutan key
+saat di-serialize balik ke JSON TIDAK dijamin sama dengan urutan saat di-insert. Ini murni perilaku resmi
+Postgres, bukan bug Drizzle/driver — dan **berlaku untuk SEMUA kolom `jsonb` di project ini** (`rawData`,
+`columnMapping`, `rawData` modul lain, dst), bukan cuma kasus fitur ini.
+
+**Fix**: urutan kolom TIDAK BOLEH diambil dari isi `jsonb` manapun. `generateFailedRowsBuffer()` sekarang minta
+2 parameter tambahan: `columnMapping` (excelColumn→field internal, dari `batch.columnMapping` — TETAP dipakai
+sebagai LOOKUP/SET, bukan sumber urutan) dan `canonicalFieldOrder` (array PLAIN dari SOURCE CODE, bukan dari
+DB — tiap route sudah punya `VALID_FIELDS` yang dibangun dari object literal statis `{module}Mapping.
+fieldToAccuratePath`, dan `Set` JS menjamin urutan iterasi = urutan insersi, jadi `[...VALID_FIELDS]` aman
+dipakai). Kolom yang di-mapping diurutkan berdasar posisi field internalnya di `canonicalFieldOrder`; kolom
+yang TIDAK di-mapping (ekstra di Excel asli, jarang tapi mungkin) ditaruh di akhir, diurutkan alfabetis (tidak
+ada sumber urutan asli yang reliable untuk kasus ini).
+
+**Detail implementasi**:
+- `apps/api/src/lib/excel.ts` — `generateFailedRowsBuffer()` (kolom asli + "Pesan Error") dan
+  `sanitizeFilenamePart()` (strip `"`/backslash/CR/LF dari `batch.fileName` sebelum masuk header
+  `Content-Disposition` — user-controlled string, § security review).
+- 23 `apps/api/src/routes/*-import.route.ts` — endpoint baru `GET .../:batchId/failed-rows/export`, pola
+  identik (ownership check, filter `status='failed'` saja, 404 `NO_FAILED_ROWS` kalau kosong).
+- 23 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx` — tombol "Download Baris Gagal (Excel)" (`<a
+  href>` ke origin API, pola sama "Download Template" yang sudah ada), muncul kalau `summary.failed > 0`.
+- Semua 23 file diverifikasi byte-identik dulu sebelum transformasi massal via script (pola sama rollout-rollout
+  sebelumnya di sesi ini) — 1 bug kecil ketahuan & diperbaiki di skrip sendiri (double-slash di URL dari
+  regex capture group yang sudah termasuk leading slash).
+
+**Pelajaran**: (1) `jsonb` ≠ `json` soal preservasi urutan — kalau butuh urutan yang PERSIS sama dengan input
+(bukan cuma nilai), JANGAN simpan sebagai `jsonb` dan andalkan `Object.keys()` saat baca balik; kalau urutan
+penting, simpan array eksplisit (`text[]`/`jsonb` array literal, BUKAN object) atau derive urutan dari sumber
+LAIN yang stabil (di sini: definisi field statis di source code). (2) Test yang REALISTIS (nulis data lalu baca
+BALIK lewat DB asli, bukan cuma pakai objek JS in-memory) menangkap bug ini SEBELUM sempat sampai ke user —
+kalau test cuma pakai `rawData` sebagai literal JS langsung tanpa lewat DB round-trip, bug ini TIDAK akan
+ketahuan sampai laporan user nyata. (3) Kalau ada fungsi generik yang PERLU urutan tertentu dari data yang
+sumbernya bisa dari DB, jangan asumsikan "urutan objek JS selalu preserve" — asumsi itu benar untuk JS murni,
+TAPI tidak otomatis benar lagi begitu data itu sudah bolak-balik lewat storage layer yang punya aturan sendiri.
+
+Detail: `apps/api/src/lib/excel.ts`, `apps/api/src/lib/excel.test.ts`, 23 `apps/api/src/routes/*-import.route.ts`,
+`apps/api/src/routes/sales-quotation-import.route.test.ts`, 23
+`apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — "Menit dihemat" reset tiap 2 hari: agregat LIVE di atas data yang SENGAJA dihapus retensi
+
+User (customer-facing, bukan tim penguji internal) sadar sendiri: angka "efisiensi waktu kerja" (dashboard
+customer, admin, DAN landing page publik) selalu balik ke kecil, padahal tujuannya justru akumulasi
+"sekian tahun sudah menghemat sekian ribu jam" supaya klien selalu ingat nilai Facport.
+
+**Root cause**: SEMUA 3 tempat (`GET /me/stats`, `GET /admin/stats` + `/admin/stats/efficiency`, `GET
+/public/stats`) menghitung `successfulRowCount` via `COUNT(import_batch_rows WHERE status='success')` LIVE —
+padahal job `PURGE_OLD_IMPORTS` (jam 3 pagi, § `lib/import-retention.ts`) MENGHAPUS PERMANEN `import_batches`+
+`import_batch_rows` setelah masa retensi (default **2 hari**). Begitu baris terhapus, COUNT() otomatis turun
+untuk baris yang sudah tidak ada — angka "all-time" SEBENARNYA cuma "sisa retensi 2 hari terakhir", bukan
+akumulasi sungguhan. Komentar kode `admin/stats.route.ts` bahkan SALAH KLAIM "total detik dihemat ALL-TIME...
+dari SELURUH row" — niatnya benar, implementasinya tidak sesuai niat itu.
+
+**Fix**: pola counter permanen (sama seperti saldo tabungan bank — angka permanen, detail transaksi boleh
+diarsipkan) —
+1. Kolom baru `data_usaha.cumulative_successful_row_count` (integer, default 0) — MILIK Data Usaha (bukan
+   user), supaya riwayat "sudah menghemat sekian" ikut BISNISNYA walau kepemilikan/staf berganti.
+2. `lib/data-usaha.ts` — `addCumulativeSuccessfulRows(dataUsahaId, delta)`, SQL atomic increment
+   (`GREATEST(col+delta, 0)`) — aman dari race condition, tidak pernah negatif.
+3. `workers/index.ts` — dipanggil di titik final `IMPORT_TO_ACCURATE` (delta = selisih rows sebelum/sesudah
+   proses run INI, BUKAN `finalRows.filter(success).length` — supaya batch yang di-retry berkali-kali tidak
+   menghitung ulang baris yang SUDAH sukses dari run sebelumnya) dan `CANCEL_IMPORT` (decrement, baris yang
+   tadinya sukses dibatalkan — TIDAK dihitung lagi, konsisten perilaku lama).
+4. 3 endpoint baca dari counter ini (SUM lintas `data_usaha` untuk yang global/admin/publik) — TIDAK PERNAH
+   ikut terhapus purge, karena hidup di `data_usaha`, bukan `import_batch_rows`.
+5. Data historis SEBELUM fix ini ada TIDAK bisa dipulihkan (baris mentahnya sudah lama terhapus retensi) —
+   counter mulai dari 0 sejak fitur ini live, akumulasi ke depannya permanen (keputusan eksplisit user,
+   diterima — bukan masalah).
+
+**Technical debt SENGAJA belum dibenahi** (keputusan eksplisit user, scope fase ini dibatasi):
+- `admin/stats.route.ts`'s `rowsThisMonth`/`rowsLastMonth`/`rowGrowthPercent` (pertumbuhan bulan-ke-bulan) DAN
+  `efficiencyPercent` (dari durasi batch asli) MASIH pakai data historis bertanggal langsung dari
+  `import_batches`/`import_batch_rows` — TETAP rusak/tidak bermakna dengan retensi < 1 bulan. Butuh pendekatan
+  BEDA (snapshot periodik per bulan, bukan 1 counter total) — bukan sekadar ganti sumber seperti fix di atas.
+- **Ditemukan sekalian, LEBIH SERIUS dari sekadar tampilan**: `lib/trial.ts`'s `checkTrialRowBudget()` (kuota
+  baris gratis untuk subscription trial) JUGA menghitung LIVE dari `import_batch_rows` — customer trial yang
+  MENUNGGU 2 hari (retensi purge) bisa MENGIMPOR ULANG melebihi kuota trial yang seharusnya, karena "pemakaian
+  sebelumnya" sudah hilang dari hitungan. Ini bug KUOTA/BISNIS (potensi trial abuse), bukan cuma tampilan —
+  belum diperbaiki, perlu didiskusikan terpisah dengan user (kemungkinan butuh counter permanen serupa, TAPI
+  arahnya beda — kuota trial mungkin justru HARUS reset berkala, perlu klarifikasi maksud bisnisnya dulu).
+
+**Pelajaran**: (1) statistik "all-time"/akumulasi yang ditampilkan ke user (apalagi untuk marketing/motivasi)
+TIDAK BOLEH dihitung live dari tabel operasional yang punya kebijakan retensi/purge — begitu ada job yang
+menghapus data lama untuk alasan storage/privasi, SEMUA agregat yang bergantung padanya diam-diam ikut rusak,
+dan biasanya BARU ketahuan lama setelah fitur retensi jalan (di sini: user sendiri yang notice, bukan dari
+testing). (2) Kalau menemukan pola bug ini di 1 tempat, curigai SEMUA tempat lain yang query tabel yang SAMA
+untuk tujuan SERUPA — di sini ditemukan di 3 tempat (customer, admin, publik) SEKALIGUS 1 tempat lagi yang
+BEDA TUJUAN tapi SAMA MEKANISME (kuota trial) yang justru lebih berisiko bisnis. (3) Counter permanen yang
+di-increment INKREMENTAL (bukan re-agregat ulang) adalah pola standar untuk kasus "butuh angka akumulatif tapi
+data mentahnya boleh/harus dihapus" — pola yang sama berlaku untuk kebutuhan serupa di masa depan (jangan
+re-derive metric penting dari data yang punya siklus hidup pendek).
+
+Detail: migration `drizzle/0032_ambitious_sleepwalker.sql`, `apps/api/src/db/schema/data-usaha.schema.ts`,
+`apps/api/src/lib/data-usaha.ts` (+ test), `apps/api/src/workers/index.ts`, `apps/api/src/routes/me.route.ts`
+(+ test), `apps/api/src/routes/admin/stats.route.ts` (+ test), `apps/api/src/routes/public/stats.route.ts`
+(+ test).
+
+## 2026-09-27 — CI & MinIO gagal total: MinIO berhenti publikasikan image lewat registry publik MANAPUN (bukan cuma quay.io yang bermasalah lagi)
+
+Saat proses rilis PR #75, CI (`build-and-push`, `validate`) gagal dengan `docker: Error response from daemon:
+unauthorized: access to the requested resource is not authorized` waktu start container MinIO untuk test.
+
+**Investigasi awal SEMPAT dikira transient** (pola sama insiden 2026-09-12 & deploy sebelumnya) — re-run CI, GAGAL
+LAGI dengan error identik. Dicek manual: `curl` langsung ke `quay.io/v2/minio/minio/manifests/latest` PAKAI
+token anonim resmi (alur OAuth2 registry yang benar) TETAP balas 401 — bukan rate-limit (yang biasanya balas
+429 atau berhasil setelah delay), tapi PENOLAKAN AKSES permanen ke repository itu sendiri.
+
+**Root cause (dikonfirmasi via web search, bukan tebakan)**: MinIO Inc. berhenti mempublikasikan image
+community mereka lewat registry publik APA PUN sejak sekitar 24 September 2026 (2 hari sebelum insiden ini) —
+bukan cuma `quay.io/minio/minio` (yang kita pakai sejak insiden 2026-09-12), tapi JUGA `docker.io/minio/minio`
+(image lama yang sudah kita tinggalkan) ikut dihapus/dikunci. Ini perubahan kebijakan bisnis MinIO Inc.
+(pembatasan distribusi build community), BUKAN outage sementara — dikonfirmasi berdampak LUAS ke banyak project
+lain di waktu yang sama (bukan cuma masalah project ini).
+
+**Fix**: pindah ke `chainguard/minio:latest` (build resmi Chainguard, di-hosting publik di Docker Hub,
+dikonfirmasi masih bisa di-pull anonim) — **drop-in replacement**, TIDAK perlu ubah apa pun selain nama image:
+entrypoint (`/usr/bin/minio`), argumen (`server /data --console-address ":9001"`), dan environment variable
+(`MINIO_ROOT_USER`/`MINIO_ROOT_PASSWORD`) semuanya identik dengan image lama. Diterapkan di **6 file sekaligus**
+(supaya tidak ada environment yang kelewat, pola SAMA seperti rollout-rollout fitur minggu ini):
+`docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`, `.github/workflows/ci.yml`,
+`.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.
+
+**⚠️ Dampak ke PRODUCTION yang SEDANG JALAN**: container MinIO yang SUDAH berjalan di server TIDAK terpengaruh
+(image lama masih ter-cache lokal di VPS, tidak perlu re-pull sampai container itu di-restart/recreate). Tapi
+DEPLOY BERIKUTNYA (`docker compose pull` lalu `up -d`) akan MENARIK image `chainguard/minio:latest` yang BARU —
+**WAJIB diverifikasi manual sekali** setelah deploy pertama pasca-fix ini (cek `docker logs minio`, cek upload
+file media/bukti transfer masih berfungsi) — walau drop-in replacement menurut dokumentasi resmi, belum pernah
+diverifikasi langsung di lingkungan production project ini.
+
+**Pelajaran**: (1) begitu registry image pihak ketiga menolak pull dengan 401 (bukan timeout/5xx), JANGAN
+langsung asumsikan "transient, coba lagi nanti" — verifikasi dulu dengan curl manual + full token flow (kalau
+TETAP 401 walau sudah dapat token resmi, itu penolakan akses yang disengaja, bukan gangguan sesaat). (2) Kalau
+sudah pernah pindah registry SEKALI karena masalah serupa (di sini: docker.io→quay.io, 2026-09-12), JANGAN
+asumsikan registry baru itu permanen aman — kebijakan vendor bisa berubah lagi, siapkan mental untuk pindah
+LAGI kalau perlu, dan cari REPLACEMENT RESMI/TERPERCAYA (bukan asal fork acak) begitu insiden serupa terulang.
+(3) Perubahan image Docker HARUS diterapkan ke SEMUA environment (dev/staging/prod) DAN semua workflow CI
+sekaligus dalam 1 perbaikan — kalau cuma fix CI tapi lupa `docker-compose.prod.yml`, deploy berikutnya akan
+gagal dengan cara yang sama, cuma telat ketahuannya (pas deploy, bukan pas CI).
+
+Detail: `docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`,
+`.github/workflows/ci.yml`, `.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.

@@ -58,13 +58,15 @@ jobs:
       # wajib command "server /data" yang tidak bisa diset lewat services:.
       # Pakai quay.io (bukan docker.io) — § ci.yml, hindari rate-limit
       # anonymous pull docker.io di shared runner.
+      # § 2026-09-27 — quay.io/minio/minio JUGA berhenti bisa di-pull anonim
+      # (§ ci.yml untuk detail) — pindah ke `chainguard/minio`.
       - name: Start MinIO
         run: |
           docker run -d --name minio \
             -p 9000:9000 \
             -e MINIO_ROOT_USER=minioadmin \
             -e MINIO_ROOT_PASSWORD=minioadmin \
-            quay.io/minio/minio server /data
+            chainguard/minio:latest server /data
           for i in $(seq 1 30); do
             curl -sf http://localhost:9000/minio/health/live && exit 0
             sleep 1
