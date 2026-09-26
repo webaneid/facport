@@ -121,12 +121,12 @@ export default function OtherDepositImportResultPage() {
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
-        {summary.failed > 0 && !isProcessing && (
+        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}
             </Button>
-            {batch.columnMapping && (
+            {summary.failed > 0 && (
               <Button variant="outline" onClick={() => setGridOpen((v) => !v)}>
                 {gridOpen ? "Tutup Tabel" : "Edit Semua (Tabel)"}
               </Button>

@@ -2932,6 +2932,27 @@ halaman ini dengan mapping kosong lewat alur tombol normal (redirect
 cuma terjadi SETELAH `/confirm` sukses), tapi navigasi manual/back-button
 ke `batchId` yang baru diupload tetap kemungkinan nyata.
 
+**⚠️ UPDATE 2026-09-27 — fix ini TERNYATA CUMA diterapkan ke 1 modul (Purchase
+Invoice) waktu itu, TIDAK PERNAH di-rollout ke modul lain**: tim penguji
+laporkan bug identik ("edit baris lalu retry, status tetap Menunggu
+selamanya") di Sales Quotation. Dicek ke SEMUA 23 halaman
+`{module}/import/[batchId]/page.tsx` — cuma 2 yang punya kondisi benar
+(`purchase-invoice`, `sales-invoice`, mungkin `sales-invoice` ikut
+dibetulkan terpisah kemudian), **21 SISANYA masih pakai kondisi lama yang
+bug** (`summary.failed > 0 && !isProcessing`) — persis pola gap rollout
+yang sama seperti accordion "Cocokkan Kolom" (2026-09-24) dan pesan error
+generik admin (2026-09-27 lebih awal). Fix di atas SUDAH ditulis lengkap
+di sini sejak 2026-09-01, tapi karena tidak ada mekanisme yang memaksa
+modul BARU (dan modul LAMA lain yang sudah ada saat itu) ikut pola ini,
+21 modul tetap punya bug yang PERSIS SAMA selama hampir sebulan tanpa
+disadari. Sudah di-rollout ke semua 21 halaman (verifikasi byte-identik
+sebelum replace massal, sama teknik `accordion rollout`). **Pelajaran
+tambahan**: nulis fix + root cause di lessons-learned SAJA TIDAK CUKUP
+kalau fix itu berupa pola UI yang harus disalin manual ke banyak file —
+WAJIB ditambah 1 langkah "grep semua file sejenis, verifikasi SEMUA sudah
+match pola yang sama" sebagai bagian dari MENUTUP task, bukan technical
+debt yang didokumentasikan lalu dilupakan.
+
 **Pencegahan:** kalau nambah kondisi tampil/sembunyi tombol yang
 tergantung status agregat (`summary.*`), CEK SEMUA state transition yang
 bisa mengubah status row/batch — termasuk transition yang "tidak
