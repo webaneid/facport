@@ -48,7 +48,14 @@ function AddStaffDialog({ onCreated }: { onCreated: () => void }) {
     const res = await api.admin.staff.post({ name: name.trim(), email: email.trim(), role });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal membuat akun staff — coba lagi.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "EMAIL_ALREADY_EXISTS"
+          ? "Email ini sudah terdaftar — gunakan email lain."
+          : code === "ROLE_NOT_FOUND"
+            ? "Role tidak ditemukan."
+            : "Gagal membuat akun staff — coba lagi.",
+      );
       return;
     }
     setCreated(res.data as unknown as { email: string; tempPassword: string });

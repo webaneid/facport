@@ -4498,3 +4498,61 @@ ke-apply ke semua environment".
 
 Detail: `apps/api/src/lib/queue.ts`, `apps/api/src/routes/*-import.route.ts` (23 file),
 `apps/web/app/app/(protected)/*/import/page.tsx` (23 file), `docs/architecture/architecture-jobs.md`.
+
+## 2026-09-27 — Pesan error generik admin menyembunyikan penyebab asli: "Tambah Staff" & "Assign Paket" jadi 2 kasus nyata dari pola sistemik 6 file
+
+User laporkan 2 bug via screenshot: (1) "Tambah Staff" gagal dengan pesan generik "Gagal membuat akun staff —
+coba lagi." untuk email `fajar@cpssoft.com`; (2) "Assign Paket" gagal dengan "pastikan tanggal expired di masa
+depan" padahal tanggal yang diisi JELAS di masa depan (20 September 2028).
+
+**Root cause bug 1 — Better Auth `signUpEmail()` THROW, bukan return `{user: null}`, untuk email duplikat**:
+`admin/staff.route.ts` & `admin/users.route.ts` cuma cek `if (!result?.user) return {code:"USER_CREATE_FAILED"}`
+— pola ini cuma menangkap kasus HYPOTHETICAL (`signUpEmail` resolve tapi `.user` falsy), TIDAK PERNAH menangkap
+kasus REAL (email sudah terdaftar): dikonfirmasi baca source `better-auth`'s `sign-up.mjs` —
+`throw APIError.from("UNPROCESSABLE_ENTITY", BASE_ERROR_CODES.USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL)`. Exception
+ini TIDAK ditangkap di kedua route, jatuh ke `.onError()` global (`app.ts`) yang balikin `500 {message:"Internal
+server error"}` generik — persis penyebab pesan "coba lagi" tidak jelas untuk `fajar@cpssoft.com` (ternyata email
+itu SUDAH ada).
+
+**Root cause bug 2 — pesan frontend generik menutupi kode error asli yang SUDAH BENAR di backend**:
+`admin/users/page.tsx`'s `handleAssign()` selalu tampilkan "pastikan tanggal expired di masa depan" untuk
+SEMUA `res.error`, padahal `POST /admin/subscriptions` sudah balikin 3 kode berbeda dengan `set.status` yang
+BENAR (`PLAN_NOT_FOUND` 404, `DATA_USAHA_NOT_FOUND` 404, `END_AT_MUST_BE_FUTURE` 400) — backend TIDAK bug,
+frontend cuma tidak pernah baca `res.error.value?.code`-nya. Report tanggal 2028 gagal ternyata karena
+`DATA_USAHA_NOT_FOUND`/`PLAN_NOT_FOUND`, bukan soal tanggal sama sekali — pesan generik salah arah total.
+
+**Pola sistemik ditemukan** (SAMA seperti bug pesan error 22 halaman import yang baru diperbaiki minggu ini,
+§ entri 2026-09-16 kalau ada): banyak dialog admin (`staff`, `admin/users` create+assign, `customer-care` ×2,
+`announcements`, `plans`, `promos`) pakai `if (res.error) { setError("Gagal <verb> <noun>."); return; }` TANPA
+baca `res.error.value?.code`, meski backend-nya SUDAH balikin kode spesifik dengan `set.status` yang benar.
+Sekalian ditemukan 1 bug LEBIH SERIUS: `customer-care.route.ts`'s `PUT /settings` (jam kerja) return
+`{code:"INVALID_WORK_HOURS"}` TANPA `set.status = 400` — response ini balik HTTP 200, jadi Eden Treaty's
+`res.error` FALSY meski body-nya kode error ("silent success", beda kategori dari sekadar pesan generik).
+
+**Fix**:
+1. `staff.route.ts` + `users.route.ts` — bungkus `signUpEmail()` `try/catch`, deteksi
+   `err instanceof APIError && err.body?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL"` (import `APIError`
+   dari `better-auth` root — dikonfirmasi identity SAMA dengan yang dipakai `sign-up.mjs` untuk throw, `instanceof`
+   valid), balikin `400 {code:"EMAIL_ALREADY_EXISTS"}`. Kasus lain tetap `throw err` (perilaku lama, tetap ke
+   Sentry via `.onError()`).
+2. `customer-care.route.ts` — tambah `set.status = 400` yang hilang untuk `INVALID_WORK_HOURS`.
+3. 6 halaman frontend (`staff`, `users` ×3 handler, `customer-care` ×2, `announcements`, `plans`, `promos`) —
+   ganti `setError("pesan generik")` jadi fallback chain baca `res.error.value?.code`, pola SAMA PERSIS yang
+   dipakai 22 halaman import.
+
+**Pelajaran**: (1) pesan error generik BUKAN cuma UX buruk — dia BISA menyembunyikan bahwa backend sebenarnya
+SUDAH mengembalikan diagnosis yang benar, membuat orang salah menyimpulkan lokasi bug (tanggal 2028 dikira
+masalah tanggal, padahal backend sudah bilang `DATA_USAHA_NOT_FOUND`). (2) `library.signUpEmail()`/fungsi serupa
+yang "biasanya return null/falsy untuk gagal" TIDAK BOLEH diasumsikan konsisten TANPA baca source-nya — Better
+Auth throw untuk 1 kasus (duplikat) tapi return falsy untuk kasus lain, campuran begini gampang bikin 1 jalur
+tertangkap dan 1 lagi tidak. (3) Kalau pola "pesan generik menutupi kode spesifik" ditemukan di 1 file, curigai
+SEMUA file dengan bentuk `if (res.error) setError("...")` serupa di modul yang sama — di sini ditemukan di 6
+file sekaligus dari 1 investigasi. (4) `set.status` yang hilang untuk 1 return statement itu 1 baris, tapi
+efeknya (response 200 untuk body error) TIDAK KETAHUAN sama sekali dari testing UI biasa kalau frontend-nya
+kebetulan SUDAH validasi kondisi yang sama duluan (di sini: `workStartMinutes >= workEndMinutes` divalidasi di
+client SEBELUM submit) — baca tiap `return {code}` di route dan pastikan ada `set.status` di sebelahnya, jangan
+cuma andalkan test end-to-end yang jalur gagalnya kebetulan tidak pernah ke-trigger.
+
+Detail: `apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
+`apps/api/src/routes/admin/customer-care.route.ts`,
+`apps/web/app/admin/(protected)/{staff,users,customer-care,announcements,plans,promos}/page.tsx`.

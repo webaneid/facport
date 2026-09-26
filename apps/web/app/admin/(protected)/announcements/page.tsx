@@ -110,7 +110,14 @@ function AnnouncementFormDialog({ onCreated }: { onCreated: () => void }) {
     });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal membuat pengumuman.");
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "TARGET_MODULES_REQUIRED"
+          ? "Pilih minimal 1 fitur target."
+          : code === "TARGET_USER_IDS_REQUIRED"
+            ? "Pilih minimal 1 user target."
+            : "Gagal membuat pengumuman.",
+      );
       return;
     }
     toast.success("Pengumuman sedang dikirim ke penerima.");

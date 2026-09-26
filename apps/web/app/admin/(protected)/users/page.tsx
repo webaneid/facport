@@ -132,7 +132,15 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     setSubmitting(false);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
-      setError(code === "PLAN_NOT_ACTIVE" ? "Salah satu paket sudah tidak aktif." : "Gagal membuat user — coba lagi.");
+      setError(
+        code === "EMAIL_ALREADY_EXISTS"
+          ? "Email ini sudah terdaftar — gunakan email lain."
+          : code === "PLAN_NOT_ACTIVE"
+            ? "Salah satu paket sudah tidak aktif."
+            : code === "PLAN_NOT_FOUND"
+              ? "Salah satu paket tidak ditemukan."
+              : "Gagal membuat user — coba lagi.",
+      );
       return;
     }
     setCreated(res.data as unknown as CreatedUserResult);
@@ -348,7 +356,22 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     });
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal assign paket — pastikan tanggal expired di masa depan.");
+      // § bug dilaporkan user 2026-09-27 — pesan generik ini SELALU
+      // muncul apa pun kode error asli (`PLAN_NOT_FOUND`,
+      // `DATA_USAHA_NOT_FOUND`, `END_AT_MUST_BE_FUTURE`), termasuk saat
+      // tanggal SUDAH benar di masa depan tapi penyebab sebenarnya beda
+      // (mis. Data Usaha tidak valid) — sekarang tampilkan pesan sesuai
+      // kode asli dari backend. § docs/lessons-learned.md.
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      setError(
+        code === "PLAN_NOT_FOUND"
+          ? "Paket tidak ditemukan."
+          : code === "DATA_USAHA_NOT_FOUND"
+            ? "Data Usaha tujuan tidak ditemukan."
+            : code === "END_AT_MUST_BE_FUTURE"
+              ? "Tanggal expired harus di masa depan."
+              : "Gagal assign paket — coba lagi.",
+      );
       return;
     }
     toast.success(`Paket berhasil di-assign ke ${user.name || user.email}.`);
@@ -370,7 +393,15 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     const res = await api.admin.subscriptions({ id }).patch({ endAt: endOfDayInTimezone(editEndAt, companyTimezone).toISOString() });
     setEditSubmitting(false);
     if (res.error) {
-      toast.error("Gagal ubah tanggal expired — pastikan tanggal di masa depan.");
+      // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      toast.error(
+        code === "SUBSCRIPTION_NOT_FOUND"
+          ? "Subscription tidak ditemukan."
+          : code === "END_AT_MUST_BE_FUTURE"
+            ? "Tanggal expired harus di masa depan."
+            : "Gagal ubah tanggal expired — coba lagi.",
+      );
       return;
     }
     toast.success("Tanggal expired berhasil diubah.");
