@@ -6,9 +6,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-// § Fase 51 — grid editable ala Excel, dipakai LINTAS 6 modul import
-// (Purchase Invoice, Sales Invoice, Purchase Payment, Sales Receipt,
-// Journal Voucher, Vendor Payable Account). BEDA dari
+// § Fase 51 — grid editable ala Excel, dipakai LINTAS SEMUA 23 modul
+// import (awalnya 6 modul saat fase ini dibuat, ikut tumbuh seiring modul
+// baru dibangun — komentar lama ketinggalan, dikoreksi 2026-09-27 § cek
+// fitur "Edit Semua (Tabel)"). BEDA dari
 // `edit-row-dialog.tsx` (1 komponen per modul, form 1 baris) — komponen
 // ini GENERIC (module-agnostic, semua pengetahuan spesifik-modul
 // dioper via props oleh halaman pemanggil), karena kompleksitas grid
