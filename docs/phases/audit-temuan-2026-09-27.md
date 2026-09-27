@@ -2,8 +2,9 @@
 
 > Hasil audit 3 subagent paralel (security, konsistensi+performa backend,
 > konsistensi frontend) terhadap seluruh 23 modul import + infrastruktur
-> inti. Status: **Batch 1, 2, 3 & 4 SELESAI dieksekusi (2026-09-27)**, Batch
-> 5 (perlu konfirmasi produk) masih rencana untuk sesi berikutnya.
+> inti. Status: **Batch 1-5 SELESAI dieksekusi (2026-09-27)**, KECUALI
+> item 5.1 (label "ID Item Transfer Accurate") yang masih menunggu
+> konfirmasi produk/klien sebelum diubah.
 >
 > **Update penting Batch 1** — item 1.3 (bug email duplikat di
 > invites/transfers) ternyata membongkar fix PAGI HARI INI (admin/staff,
