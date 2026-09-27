@@ -2,8 +2,8 @@
 
 > Hasil audit 3 subagent paralel (security, konsistensi+performa backend,
 > konsistensi frontend) terhadap seluruh 23 modul import + infrastruktur
-> inti. Status: **Batch 1, 2 & 3 SELESAI dieksekusi (2026-09-27)**, Batch
-> 4-5 masih rencana untuk sesi berikutnya.
+> inti. Status: **Batch 1, 2, 3 & 4 SELESAI dieksekusi (2026-09-27)**, Batch
+> 5 (perlu konfirmasi produk) masih rencana untuk sesi berikutnya.
 >
 > **Update penting Batch 1** — item 1.3 (bug email duplikat di
 > invites/transfers) ternyata membongkar fix PAGI HARI INI (admin/staff,
@@ -154,9 +154,9 @@ sibuk).
 
 ---
 
-## BATCH 4 — Security Hardening
+## BATCH 4 — ✅ SELESAI (2026-09-27) — Security Hardening
 
-### 4.1 [MEDIUM] `apps/web` tidak set HTTP security header sama sekali
+### 4.1 ✅ [MEDIUM] `apps/web` tidak set HTTP security header sama sekali
 - **File**: `apps/web/next.config.ts` (tidak ada `headers()`), `Caddyfile`
   (reverse proxy transparan).
 - Halaman login/admin/dashboard terkirim TANPA `X-Frame-Options`, CSP,
@@ -165,10 +165,20 @@ sibuk).
 - Mitigasi parsial SUDAH ada: cookie sesi `sameSite: "lax"` mengurangi
   risiko clickjacking klasik di browser modern. Gap yang tetap nyata: TIDAK
   ada CSP sama sekali (lapis pertahanan tambahan kalau ada XSS lolos).
-- **Fix**: tambah `headers()` di `next.config.ts` — perlu inventarisasi
-  dulu semua sumber eksternal yang dipakai runtime (Google Fonts, domain
-  MinIO publik `media.*`, API `api.*`) sebelum tulis CSP final supaya
-  tidak malah blokir resource sendiri.
+- **Fix**: tambah `headers()` di `apps/web/next.config.ts` — 4 header sama
+  persis dengan `apps/api/src/app.ts` (X-Content-Type-Options, X-Frame-Options,
+  Referrer-Policy, HSTS production-only) + CSP baru. Origin `img-src`/
+  `connect-src` diturunkan dari `process.env.NEXT_PUBLIC_API_URL`/
+  `MINIO_PUBLIC_URL` dibaca SERVER-SIDE saat `next start` boot (bukan lewat
+  bundle client — beda dari `lib/get-prod-api-origin.ts` yang sengaja
+  hindari pola itu, § lessons-learned 2026-09-27 penjelasan lengkap kenapa
+  keduanya aman meski mirip). `script-src`/`style-src` pakai `'unsafe-inline'`
+  (keputusan sadar, bukan kelonggaran ceroboh — nonce butuh SEMUA halaman
+  dynamic rendering + tidak menolong Radix UI inline style via JS, dicek
+  langsung ke `node_modules/next/dist/docs/` versi Next 16 project ini).
+  Diverifikasi NYATA browser (landing/app/admin, 3 surface) — 0 pelanggaran
+  CSP, header dikonfirmasi `curl -I`. Security review: 0 temuan
+  Critical/High.
 
 ### 4.2 [LOW] CSRF token API belum diimplementasikan (gap terdokumentasi, risiko rendah)
 - Sudah disadari dari awal (`architecture-security.md` §5), bukan temuan

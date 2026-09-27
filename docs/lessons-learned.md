@@ -5016,3 +5016,60 @@ di masa depan untuk kode error BARU yang mungkin ditambahkan nanti.
 
 Detail: `apps/web/lib/import-error-message.ts` (baru), `apps/web/lib/import-error-message.test.ts` (baru), 23
 `apps/web/app/app/(protected)/*/import/page.tsx`, 23 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — Batch 4 audit: `apps/web` tidak pernah punya HTTP security header (CSP dst) sejak awal — dan kenapa origin CSP AMAN dibaca dari `process.env.NEXT_PUBLIC_*` di `next.config.ts` padahal `lib/get-prod-api-origin.ts` sengaja menghindarinya
+
+`apps/api` sudah set 4 header keamanan minimal sejak awal (`app.ts` `.onAfterHandle`) — `apps/web` TIDAK PERNAH,
+di SEMUA 3 surface (landing/admin/app), sejak Fase 00. Fix: `apps/web/next.config.ts` `headers()` — 4 header
+sama persis nilainya dengan `apps/api` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security` production-only) + `Content-
+Security-Policy` baru.
+
+**Kebingungan yang HARUS diluruskan dulu sebelum nulis kode** (kalau tidak, hampir salah desain total): apakah
+boleh baca `process.env.NEXT_PUBLIC_API_URL`/`MINIO_PUBLIC_URL` langsung di `next.config.ts` untuk isi origin
+`connect-src`/`img-src`, padahal `lib/get-prod-api-origin.ts` (§ lessons-learned 2026-08-27) SENGAJA
+menghindari `process.env.NEXT_PUBLIC_API_URL` karena "di-bake ke bundle client SAAT BUILD CI, bukan dibaca
+ulang saat container jalan — 1 image dipakai ulang lintas domain (prod/staging) tanpa rebuild"? Jawabannya:
+BOLEH, dan TIDAK kontradiksi — dua kode ini jalan di LAYER BERBEDA. Masalah "baked saat build" HANYA berlaku
+untuk kode yang ikut ke-bundle ke JS **browser** (`"use client"` atau yang diimpor olehnya) — nilai
+`NEXT_PUBLIC_*` di situ memang di-substitusi jadi string literal oleh bundler SAAT `next build` jalan di CI
+(runtime container tidak bisa mengubahnya lagi). `next.config.ts` `headers()` sebaliknya adalah **kode server
+murni** yang tidak pernah ikut dibundle ke browser — dieksekusi LANGSUNG oleh proses `next start` saat
+CONTAINER BOOT, membaca `process.env` container itu sendiri secara live. Karena `docker-compose.prod.yml`/
+`docker-compose.staging.yml` inject env lewat `env_file: .env.production`/`.env.staging` (variabel OS asli,
+bukan file `.env` yang dibaca Next.js sendiri), nilai yang dibaca `headers()` SELALU benar sesuai environment
+kontainer itu, tanpa perlu rebuild image — sama portable-nya dengan strategi `get-prod-api-origin.ts`, cuma
+beda mekanisme (itu per-request di browser dari `window.location`, ini per-container-start di server dari
+`process.env`).
+
+**Detail lain**:
+- `MINIO_PUBLIC_URL` itu nominal punya `apps/api`, tapi ikut kebaca container `web` juga karena
+  `docker-compose.prod.yml`/`.staging.yml` set `env_file` yang SAMA untuk kedua service.
+- Fallback kalau env kosong (`?? ""`) SENGAJA fail-closed: `connect-src`/`img-src` jatuh ke `'self'` polos,
+  bukan wildcard — kalau env lupa di-set, akibatnya broken image/API call yang KELIHATAN JELAS di
+  console/network tab, bukan celah keamanan diam-diam.
+- `script-src`/`style-src` pakai `'unsafe-inline'` (+`'unsafe-eval'` dev only) — keputusan SADAR, dibaca
+  langsung dari `node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md` (WAJIB dicek untuk
+  Next.js versi project ini, § peringatan `apps/web/CLAUDE.md` "This is NOT the Next.js you know"): CSP
+  nonce-based MEMAKSA SEMUA halaman jadi dynamic rendering (mematikan static optimization/ISR landing publik —
+  regresi performa nyata), DAN tetap tidak menolong Radix UI (dasar shadcn/ui) yang set inline `style`
+  attribute lewat JS langsung untuk positioning popover/dropdown/tooltip (bukan lewat React `style` prop yang
+  bisa di-nonce otomatis Next). Trade-off: CSP ini TIDAK memblokir inline-script-injection kalau ada XSS lolos
+  di tempat lain, fokus proteksinya ke origin resource (img/connect/frame/object/form) + clickjacking +
+  MIME-sniffing — bukan proteksi XSS penuh. Dicatat eksplisit sebagai limitation, bukan kelalaian.
+- `/api-proxy/*` (Route Handler dev-only proxy ke `apps/api`) DIKECUALIKAN dari matcher `headers()` — dicek
+  langsung `route.ts`-nya forward SEMUA header dari respons `apps/api` verbatim (termasuk 4 header yang sama),
+  jadi tidak ada gap, cuma hindari 2 sumber nilai untuk header yang sama.
+- Diverifikasi NYATA di browser (bukan cuma baca kode, sesuai kebiasaan project) — 3 surface (landing/app/
+  admin) via Claude in Chrome: 0 pelanggaran CSP di console, dropdown Radix positioning normal, gambar dari
+  MinIO + WordPress ke-load, login flow jalan, header dikonfirmasi `curl -I` sesuai yang ditulis.
+
+**Pelajaran**: (1) "kode ini sengaja hindari pola X karena alasan Y" (komentar lama di codebase) tidak otomatis
+berarti pola X selalu terlarang di SELURUH project — perlu ngerti PERSIS *layer* mana yang kena masalahnya
+(browser bundle vs server runtime) sebelum menyimpulkan boleh/tidak di tempat lain, jangan main aman
+menghindari total atau ceroboh mengulang tanpa cek. (2) Untuk Next.js versi yang lebih baru dari training data
+(§ peringatan `apps/web/CLAUDE.md`), WAJIB baca `node_modules/next/dist/docs/` dulu sebelum menulis fitur yang
+tergantung perilaku framework spesifik (CSP nonce di sini) — bukan asumsi dari pengetahuan umum, karena
+behavior/requirement-nya (mis. "nonce butuh dynamic rendering semua halaman") bisa beda dari versi lama.
+
+Detail: `apps/web/next.config.ts`.
