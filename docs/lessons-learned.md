@@ -5140,3 +5140,52 @@ authorization user.
 
 Detail: `apps/web/app/app/(protected)/item-requisition/import/[batchId]/page.tsx`,
 `apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx`.
+
+## 2026-09-28 — Urutan tampil sub-modul diseragamkan sesuai urutan bisnis client (sidebar, `/subscribe`, landing, dropdown admin)
+
+Client minta urutan sub-modul (submenu sidebar, kartu `/subscribe`, dropdown pilih modul di admin) mengikuti
+urutan alur bisnis mereka (per kategori: Cash & Bank → General Ledger → Purchase → Sales → Inventory →
+Manufacture, lalu urutan spesifik DI DALAM tiap kategori), BUKAN urutan kronologis fase modul itu dibangun
+(urutan lama). Diminta "tanpa mengubah apapun selain urutan" — dieksekusi murni presentational.
+
+**Temuan penting saat investigasi** (harus dipahami SEBELUM eksekusi, supaya fix menyentuh SEMUA tempat yang
+diminta, bukan cuma sidebar): ada 2 MEKANISME URUTAN BERBEDA yang kebetulan sama-sama "ikut urutan array",
+TAPI array sumbernya beda:
+1. **Sidebar & dropdown admin plan** (`MODULE_OPTIONS.filter(...)`) — urutan ikut posisi literal di
+   `MODULE_CATALOG` (`apps/api/src/lib/module-catalog.ts`) untuk dropdown, dan array hardcoded terpisah di
+   `sidebar.tsx` untuk sidebar (BUKAN diturunkan dari `MODULE_CATALOG`, cuma kebetulan disusun manual meniru
+   urutannya).
+2. **`/subscribe` & landing (`module-features.tsx`)** — urutan TIDAK SAMA SEKALI diturunkan dari
+   `MODULE_CATALOG`. `useGroupedPlans()` (`apps/web/lib/use-grouped-plans.ts`) membentuk urutan dari urutan
+   MUNCUL PERTAMA tiap `moduleKey` di array `plans` — dan `GET /plans` (`apps/api/src/routes/plans.route.ts`)
+   SEBELUMNYA TIDAK PUNYA `ORDER BY` SAMA SEKALI, jadi urutannya kebetulan urutan INSERT row di DB (riwayat
+   pembuatan plan lintas fase, TIDAK match urutan bisnis yang diinginkan).
+
+Kalau cuma reorder `MODULE_CATALOG` + `sidebar.tsx` tanpa sadar poin 2, sidebar akan benar tapi `/subscribe`
+dan landing TETAP acak (mengikuti urutan insert DB yang lama) — bug "sebagian tempat kebetulan benar, sebagian
+diam-diam tidak", kelas masalah yang sama dengan pola rollout-tidak-lengkap yang berulang kali ditemukan audit
+2026-09-27 (§ [[project_facport_overview]] kalau ada, atau baca entri Batch 3 audit di atas).
+
+**Fix**: (1) reorder literal array `MODULE_CATALOG` (blok `productLine: "facport"`) sesuai urutan yang
+diminta client — SEMUA field (key/label/category) byte-identik, diverifikasi via `diff` set-sorted sebelum &
+sesudah (bukti murni reorder, 0 value berubah); (2) reorder literal array item Facport di `sidebar.tsx` dengan
+pola verifikasi sama; (3) tambah `.sort()` di `GET /plans` berdasarkan index posisi `moduleKey` di
+`MODULE_CATALOG` — SATU perubahan ini otomatis membetulkan `/subscribe` DAN landing sekaligus (keduanya
+konsumen `useGroupedPlans` dari endpoint yang sama), tanpa perlu sentuh kode `/subscribe`/landing itu sendiri.
+`vendor_payable_account` tidak disebut di urutan yang diberikan klien — diletakkan di akhir blok Purchase
+(posisi netral).
+
+**Verifikasi**: test baru `plans.route.test.ts` (insert 3 plan SENGAJA terbalik dari urutan katalog, assert
+balikan endpoint tetap ikut urutan katalog — pola filter by ID hasil `.returning()`, BUKAN by module key, karena
+dev DB shared punya ribuan row test lama dengan module key yang sama, § `feedback_dev_db_test_cleanup`).
+Diverifikasi juga NYATA: `curl /plans` di dev server (urutan cocok), browser `/subscribe` (kartu Sales Invoice
+sebelum Sales Receipt, sesuai index katalog).
+
+**Pelajaran**: 2 UI yang KELIHATANNYA konsumen sumber data yang sama ("urutan modul") bisa diam-diam
+diturunkan dari MEKANISME YANG BERBEDA TOTAL (array literal vs urutan insert DB tanpa `ORDER BY`) — WAJIB
+telusuri SETIAP konsumen sampai ke akar mekanisme urutannya (bukan asumsi "sama-sama dari MODULE_CATALOG")
+sebelum klaim "sudah konsisten di semua tempat", terutama untuk permintaan eksplisit "urutannya konsisten
+DIMANAPUN ditampilkan".
+
+Detail: `apps/api/src/lib/module-catalog.ts`, `apps/api/src/routes/plans.route.ts`,
+`apps/api/src/routes/plans.route.test.ts` (baru), `apps/web/components/app-shell/sidebar.tsx`.

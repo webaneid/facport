@@ -43,35 +43,53 @@ export type ProductLineKey = (typeof PRODUCT_LINES)[number]["key"];
 // `vendor_payable_account` (dulu kategori "Data Master" sendiri) digabung
 // ke "Purchase" — data vendor memang sisi pembelian, sama seperti
 // penempatannya di menu Accurate Online sendiri.
+// § diminta user 2026-09-27 — urutan array DI BAWAH INI (untuk `productLine:
+// "facport"`) SEKARANG SENGAJA disusun sesuai urutan tampil yang diminta
+// klien (menu sidebar, `/subscribe`, landing, dropdown admin — SEMUA
+// konsumen yang preserve urutan array/`.filter()` tanpa sort ulang, § fungsi
+// di bawah file ini). BUKAN lagi urutan kronologis fase dibangun (comment
+// "§ Fase N" per entri TETAP dipertahankan sebagai riwayat, tapi posisi
+// array TIDAK LAGI mengikuti urutan itu). Urutan per kategori: Cash & Bank →
+// General Ledger → Purchase → Sales → Inventory → Manufacture (§
+// `MODULE_CATEGORIES` di bawah, urutan KATEGORI itu sendiri tidak berubah,
+// cuma urutan Varian DI DALAM tiap kategori). `vendor_payable_account` tidak ada
+// di urutan yang diberikan klien — diletakkan di akhir blok Purchase
+// (posisi paling "netral", bukan bagian alur transaksi utama).
 export const MODULE_CATALOG = [
-  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Sales" },
-  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Sales" },
-  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Sales" },
-  // § Fase 137 — Sales Order, kelanjutan Sales Quotation.
-  { key: "sales_order", label: "Sales Order", productLine: "facport", category: "Sales" },
-  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
-  // § Fase 157 — Delivery Order, modul ke-22 Facport (dokumen fulfillment
-  // fisik, kelanjutan Sales Order/Sales Quotation, mirror Receive Item).
-  { key: "delivery_order", label: "Delivery Order", productLine: "facport", category: "Sales" },
-  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
-  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
-  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Purchase" },
-  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Purchase" },
-  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Purchase" },
-  { key: "vendor_payable_account", label: "Vendor Payable Account", productLine: "facport", category: "Purchase" },
   { key: "other_payment", label: "Other Payment (Cash/Bank Payment)", productLine: "facport", category: "Cash & Bank" },
   // § Fase 128 — Other Deposit, kebalikan Other Payment (penerimaan,
   // bukan pengeluaran), kategori sama "Cash & Bank".
   { key: "other_deposit", label: "Other Deposit (Cash/Bank Receipt)", productLine: "facport", category: "Cash & Bank" },
   { key: "journal_voucher", label: "Journal Voucher", productLine: "facport", category: "General Ledger" },
+  // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru.
+  { key: "purchase_order", label: "Purchase Order", productLine: "facport", category: "Purchase" },
+  // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru.
+  { key: "receive_item", label: "Receive Item", productLine: "facport", category: "Purchase" },
+  { key: "purchase_invoice", label: "Purchase Invoice", productLine: "facport", category: "Purchase" },
+  { key: "purchase_payment", label: "Purchase Payment", productLine: "facport", category: "Purchase" },
+  // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru.
+  { key: "purchase_return", label: "Purchase Return", productLine: "facport", category: "Purchase" },
+  // § ADR-0026 — dulu moduleKey "purchase_invoice" (bundel gratis), sekarang
+  // sub-modul sendiri, dijual terpisah. Tidak disebut di urutan yang
+  // diberikan klien — diletakkan paling akhir blok Purchase.
+  { key: "vendor_payable_account", label: "Vendor Payable Account", productLine: "facport", category: "Purchase" },
+  { key: "sales_quotation", label: "Sales Quotation", productLine: "facport", category: "Sales" },
+  // § Fase 137 — Sales Order, kelanjutan Sales Quotation.
+  { key: "sales_order", label: "Sales Order", productLine: "facport", category: "Sales" },
+  // § Fase 157 — Delivery Order, modul ke-22 Facport (dokumen fulfillment
+  // fisik, kelanjutan Sales Order/Sales Quotation, mirror Receive Item).
+  { key: "delivery_order", label: "Delivery Order", productLine: "facport", category: "Sales" },
+  { key: "sales_invoice", label: "Sales Invoice", productLine: "facport", category: "Sales" },
+  { key: "sales_receipt", label: "Sales Receipt (Customer Receipt)", productLine: "facport", category: "Sales" },
+  { key: "sales_return", label: "Sales Return", productLine: "facport", category: "Sales" },
   // § Fase 134-135 — modul PERTAMA kategori "Inventory" (disiapkan sejak
   // Fase 126, sebelumnya 0 modul). 2 modul terpisah walau panggil API
   // Accurate yang SAMA (`item-transfer/save.do`) — keputusan eksplisit
   // user mengikuti 2 sheet Excel client apa adanya, § architecture-item-transfer.md.
-  { key: "item_transfer", label: "Item Transfer (Pindah Gudang)", productLine: "facport", category: "Inventory" },
   { key: "item_requisition", label: "Item Requisition (Permintaan Barang)", productLine: "facport", category: "Inventory" },
   // § Fase 138 — architecture-inventory-adjustment.md.
   { key: "inventory_adjustment", label: "Inventory Adjustment (Penyesuaian Persediaan)", productLine: "facport", category: "Inventory" },
+  { key: "item_transfer", label: "Item Transfer (Pindah Gudang)", productLine: "facport", category: "Inventory" },
   // § Fase 139, architecture-job-costing.md — koreksi 2026-09-23 (evaluasi client): kategori SEMULA
   // "Manufacture", DIPINDAH ke "Inventory" (permintaan client eksplisit, Job Costing+Roll Over dianggap
   // pelacakan biaya/pekerjaan sisi Inventory bagi client, bukan produksi lantai pabrik). Field `category` MURNI
