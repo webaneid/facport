@@ -5118,3 +5118,25 @@ lebih (di luar scope fix N+1 LOW-priority ini) — diverifikasi manual via `bun 
 1689 pass (tidak ada regresi test LAIN yang sempat menyentuh job ini secara tidak langsung).
 
 Detail: `apps/api/src/workers/index.ts` (job `NOTIFY_EXPIRING_SOON`).
+
+## 2026-09-27 — Batch 5.1 audit: label kolom "ID Item Transfer Accurate" di Item Requisition diganti label netral (konfirmasi user)
+
+Item Requisition & Item Transfer memanggil endpoint Accurate yang SAMA (`item-transfer/save.do`, § Fase 134-135)
+— jadi `accurateTransactionId` yang ditampilkan literal "ID Item Transfer" punya Accurate, BUKAN typo/bug. Tapi
+karena "Item Transfer" JUGA nama modul Facport lain yang aktif secara terpisah, label ini berpotensi bikin user
+Item Requisition mengira salah lihat data modul lain. Ditanyakan ke user (bukan diputuskan sepihak, sesuai
+rencana audit yang menandai ini "perlu konfirmasi produk") — user pilih **ganti ke label netral**.
+
+**Fix**: `TableHead` diganti dari "ID Item Transfer Accurate / Error" → "ID Transaksi Accurate / Error" di 2
+tempat: halaman customer (`item-requisition/import/[batchId]/page.tsx`) dan `ItemRequisitionView` di halaman
+admin (`admin/import-batches/[batchId]/page.tsx`). `ItemTransferView` di halaman admin (baris sebelum
+`ItemRequisitionView` di file yang sama) SENGAJA TIDAK diubah — itu memang modul Item Transfer beneran,
+tidak ambigu.
+
+**Pelajaran**: temuan yang eksplisit ditandai "perlu konfirmasi produk/klien" di rencana audit WAJIB benar-benar
+ditanyakan (pakai `AskUserQuestion`), bukan diputuskan sendiri walau opsinya kelihatan jelas — beda dengan
+temuan LOW/technical (5.2, 5.3) yang polanya sudah established dan aman dieksekusi langsung sesuai standing
+authorization user.
+
+Detail: `apps/web/app/app/(protected)/item-requisition/import/[batchId]/page.tsx`,
+`apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx`.

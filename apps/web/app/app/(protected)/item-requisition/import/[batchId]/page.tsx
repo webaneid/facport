@@ -167,7 +167,13 @@ export default function ItemRequisitionImportResultPage() {
               <TableRow>
                 <TableHead className="w-20">Baris</TableHead>
                 <TableHead className="w-28">Status</TableHead>
-                <TableHead>ID Item Transfer Accurate / Error</TableHead>
+                {/* § audit-temuan-2026-09-27 Batch 5.1 — sebelumnya "ID Item Transfer
+                Accurate" (nama field API asli, item-transfer/save.do dipakai bareng
+                modul Item Transfer, § arsitektur). Diganti label netral atas
+                konfirmasi user 2026-09-27 — "Item Transfer" ambigu dengan nama modul
+                Facport lain yang aktif, beda dari modul lain yang nama field API-nya
+                tidak bentrok nama modul (mis. Inventory Adjustment). */}
+                <TableHead>ID Transaksi Accurate / Error</TableHead>
                 <TableHead className="w-16 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>

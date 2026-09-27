@@ -569,7 +569,12 @@ function ItemRequisitionView({ rows }: { rows: Row[] }) {
         <TableRow>
           <TableHead className="w-20">Baris</TableHead>
           <TableHead className="w-28">Status</TableHead>
-          <TableHead>ID Item Transfer Accurate / Error</TableHead>
+          {/* § audit-temuan-2026-09-27 Batch 5.1 — sebelumnya "ID Item Transfer
+          Accurate" (benar secara teknis, sama endpoint Accurate dengan
+          ItemTransferView di atas, tapi ambigu dengan nama modul Item Transfer
+          yang aktif terpisah). Diganti label netral atas konfirmasi user
+          2026-09-27 — TIDAK diubah di ItemTransferView (situ memang modulnya). */}
+          <TableHead>ID Transaksi Accurate / Error</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>

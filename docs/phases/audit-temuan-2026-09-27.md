@@ -2,9 +2,8 @@
 
 > Hasil audit 3 subagent paralel (security, konsistensi+performa backend,
 > konsistensi frontend) terhadap seluruh 23 modul import + infrastruktur
-> inti. Status: **Batch 1-5 SELESAI dieksekusi (2026-09-27)**, KECUALI
-> item 5.1 (label "ID Item Transfer Accurate") yang masih menunggu
-> konfirmasi produk/klien sebelum diubah.
+> inti. Status: **Batch 1-5 SELESAI dieksekusi TUNTAS (2026-09-27)**, semua
+> item termasuk 5.1 (setelah konfirmasi user).
 >
 > **Update penting Batch 1** — item 1.3 (bug email duplikat di
 > invites/transfers) ternyata membongkar fix PAGI HARI INI (admin/staff,
@@ -190,8 +189,9 @@ sibuk).
 
 ## BATCH 5 — Minor / Perlu Konfirmasi Produk Dulu
 
-### 5.1 [MEDIUM, perlu konfirmasi] Label kolom "ID Item Transfer Accurate" di halaman Item Requisition
-- **File**: `apps/web/app/app/(protected)/item-requisition/import/[batchId]/page.tsx:173`
+### 5.1 ✅ [MEDIUM, perlu konfirmasi] Label kolom "ID Item Transfer Accurate" di halaman Item Requisition
+- **File**: `apps/web/app/app/(protected)/item-requisition/import/[batchId]/page.tsx`,
+  `apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx` (`ItemRequisitionView`).
 - Item Requisition memang memanggil endpoint Accurate `item-transfer/save.do`
   yang sama (keputusan produk: 2 modul Facport → 1 endpoint Accurate,
   terdokumentasi) — jadi ID yang dikembalikan API memang literal "Item
@@ -199,9 +199,10 @@ sibuk).
   pakai nama field API mentah serupa (Inventory Adjustment→"ID Item
   Adjustment", dst — tidak ambigu), "Item Transfer" JUGA nama modul
   Facport lain yang aktif → berpotensi bikin user mengira nyasar modul.
-- **Rekomendasi**: tanya klien/tim produk — pertahankan (konsisten filosofi
-  "nama field API asli") atau ganti ke label netral ("ID Transaksi
-  Accurate / Error") supaya tidak ambigu dengan modul Item Transfer.
+- **Keputusan user (2026-09-27)**: ganti ke label netral. **Fix**: label
+  diganti "ID Transaksi Accurate / Error" di KEDUA halaman (customer +
+  admin) — `ItemTransferView` di halaman admin SENGAJA TIDAK diubah (situ
+  memang modul Item Transfer beneran, tidak ambigu).
 
 ### 5.2 ✅ [LOW] Purchase Invoice/Sales Invoice: tombol Retry tidak memperhitungkan status `cancelling`
 - Kalau batch sedang dibatalkan, tombol Retry tetap tampil & backend tidak
