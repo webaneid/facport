@@ -2,8 +2,8 @@
 
 > Hasil audit 3 subagent paralel (security, konsistensi+performa backend,
 > konsistensi frontend) terhadap seluruh 23 modul import + infrastruktur
-> inti. Status: **Batch 1 & 2 SELESAI dieksekusi (2026-09-27)**, Batch
-> 3-5 masih rencana untuk sesi berikutnya.
+> inti. Status: **Batch 1, 2 & 3 SELESAI dieksekusi (2026-09-27)**, Batch
+> 4-5 masih rencana untuk sesi berikutnya.
 >
 > **Update penting Batch 1** — item 1.3 (bug email duplikat di
 > invites/transfers) ternyata membongkar fix PAGI HARI INI (admin/staff,
@@ -126,9 +126,9 @@ sibuk).
 
 ---
 
-## BATCH 3 — `ACCURATE_SCOPE_MISSING` tidak ditangani frontend (23 modul, sistemik)
+## BATCH 3 — ✅ SELESAI (2026-09-27) — `ACCURATE_SCOPE_MISSING` tidak ditangani frontend (23 modul, sistemik)
 
-### 3.1 [HIGH] Semua 23 modul: `confirm` & `retry` tidak baca kode `ACCURATE_SCOPE_MISSING`
+### 3.1 ✅ [HIGH] Semua 23 modul: `confirm` & `retry` tidak baca kode `ACCURATE_SCOPE_MISSING`
 - **Backend**: SEMUA 23 route.ts (confirm & retry) sudah balikin
   `{code: "ACCURATE_SCOPE_MISSING", missing: [...]}` (409) kalau koneksi
   Accurate kurang scope untuk modul itu.
@@ -147,7 +147,7 @@ sibuk).
   Sekalian jadi kesempatan REFACTOR supaya error-handling generik masa
   depan otomatis konsisten di 23 tempat (bukan copy-paste lagi).
 
-### 3.2 [LOW] `INVALID_MAPPING_FIELD` juga tidak ditangani FE
+### 3.2 ✅ [LOW] `INVALID_MAPPING_FIELD` juga tidak ditangani FE
 - Kemungkinan besar TIDAK reachable dari alur UI normal (dropdown mapping
   sudah dibatasi ke field valid) — defense-in-depth saja, prioritas rendah,
   bisa sekalian masuk helper yang sama di 3.1.

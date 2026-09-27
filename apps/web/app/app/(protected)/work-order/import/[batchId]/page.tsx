@@ -13,6 +13,7 @@ import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 type Row = {
@@ -75,12 +76,8 @@ export default function WorkOrderImportResultPage() {
     const res = await api["work-order"].import({ batchId: params.batchId }).retry.post();
     setRetrying(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; remaining?: number; max?: number } | undefined;
-      toast.error(
-        value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
-          ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris atau upgrade ke paket berbayar.`
-          : "Gagal mengirim ulang baris — coba lagi.",
-      );
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      toast.error(describeImportActionError(value, "Gagal mengirim ulang baris — coba lagi."));
       return;
     }
     load();

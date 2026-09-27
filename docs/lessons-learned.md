@@ -4978,3 +4978,41 @@ index tunggal terpisah (composite lebih efisien untuk pola query itu).
 Detail: migration `drizzle/0033_complex_mephisto.sql`, `apps/api/src/db/schema/import.schema.ts`,
 `apps/api/src/db/schema/subscription.schema.ts`, `apps/api/src/db/schema/notification.schema.ts`,
 `apps/api/src/db/schema/core.schema.ts`.
+
+## 2026-09-27 — Batch 3 audit: kode `ACCURATE_SCOPE_MISSING` tidak pernah ditangani frontend di SEMUA 23 modul (sistemik sejak Fase 142)
+
+Audit menyeluruh menemukan: SEMUA 23 `{module}-import.route.ts` (endpoint `confirm` & `retry`) sudah balikin kode
+`ACCURATE_SCOPE_MISSING` (409, `missing: string[]` nama scope yang kurang) sejak Fase 142 kalau koneksi Accurate
+customer kurang izin untuk modul itu — TAPI frontend TIDAK PERNAH baca kode ini sama sekali, di SEMUA 23 modul.
+`onConfirmMapping` (halaman upload) & `handleRetry` (halaman detail) cuma cek `MISSING_REQUIRED_FIELDS`/
+`TRIAL_ROW_LIMIT_EXCEEDED`, lalu fallback ke pesan generik ("Gagal konfirmasi mapping."/"Gagal mengirim ulang
+baris — coba lagi."). Skenario nyata: katalog scope Accurate PERNAH berubah (§ perubahan `glaccount_view`
+2026-09-22) — customer yang koneksinya sempat lolos gerbang lalu scope-nya berubah, retry batch lama dapat
+pesan generik tanpa tahu solusinya "Perbarui Izin Accurate".
+
+**Fix**: helper terpusat baru `describeImportActionError()` (`apps/web/lib/import-error-message.ts`) — SATU
+fungsi pure yang menangani SEMUA kode error umum alur import (`MISSING_REQUIRED_FIELDS`,
+`TRIAL_ROW_LIMIT_EXCEEDED`, `ACCURATE_SCOPE_MISSING`, `INVALID_MAPPING_FIELD`, fallback) — dipakai oleh SEMUA 46
+titik (23 `onConfirmMapping` + 23 `handleRetry`), BUKAN ditempel manual 46x (itu pola yang sudah berulang kali
+terbukti bikin drift minggu ini — accordion, pesan error admin, tombol retry, SEKARANG ini juga). Diverifikasi
+byte-identik SEBELUM replace massal (pola sama rollout-rollout sebelumnya) — SEMUA 23 modul memang 100%
+identik strukturnya untuk blok ini, aman di-scripted-replace.
+
+**Keputusan desain**: awalnya dipertimbangkan JUGA memicu popup interaktif "Perbarui Izin" (`useAccurateGate().
+openPopup()`, sudah ada infrastrukturnya di `components/accurate/accurate-gate-provider.tsx`) — DITUNDA
+(bukan bug, keputusan sengaja): butuh tambah hook React ke 46 komponen (bukan cuma fungsi pure), dan gate's
+state client-side bisa lag sesaat dari kondisi scope SEBENARNYA (race kecil, popup bisa sempat tampil status
+lama). Pesan TEKS yang benar (dari respons server LANGSUNG, selalu akurat) sudah cukup menjawab keluhan inti
+audit ("customer tidak tahu solusinya") — buka popup interaktif dicatat sebagai enhancement lanjutan, bukan
+bagian fix WAJIB.
+
+**Pelajaran**: (1) pola "backend sudah balikin kode spesifik sejak fase tertentu, tapi frontend baru menangani
+SEBAGIAN kode (yang lain di-launch bareng modul), yang ditambahkan BELAKANGAN (di fase lain) kelupaan" adalah
+KELAS BUG YANG SAMA seperti rollout-rollout minggu ini — kalau nambah kode error baru ke endpoint yang SUDAH
+dipakai banyak modul, WAJIB cek SEMUA pemanggil frontend-nya, jangan asumsi "nanti juga kepakai otomatis". (2)
+Untuk penanganan kode error yang dipakai LINTAS BANYAK modul (bukan spesifik 1 modul), bikin helper TERPUSAT
+dari AWAL (bukan tempel manual per modul) — mencegah kelas bug "1 tempat diperbaiki, lupa disebar" muncul lagi
+di masa depan untuk kode error BARU yang mungkin ditambahkan nanti.
+
+Detail: `apps/web/lib/import-error-message.ts` (baru), `apps/web/lib/import-error-message.test.ts` (baru), 23
+`apps/web/app/app/(protected)/*/import/page.tsx`, 23 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.

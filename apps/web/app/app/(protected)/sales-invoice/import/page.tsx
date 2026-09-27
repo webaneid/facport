@@ -14,6 +14,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
+import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/page.tsx`
@@ -256,14 +257,8 @@ export default function SalesInvoiceImportPage() {
     const res = await api["sales-invoice"].import({ batchId: result.batchId }).confirm.post({ columnMapping });
     setConfirming(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; fields?: string[]; remaining?: number; max?: number } | undefined;
-      setError(
-        value?.code === "MISSING_REQUIRED_FIELDS"
-          ? `Field wajib belum dipetakan: ${value.fields?.join(", ")}`
-          : value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
-            ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris di file atau upgrade ke paket berbayar.`
-            : "Gagal konfirmasi mapping.",
-      );
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      setError(describeImportActionError(value, "Gagal konfirmasi mapping."));
       return;
     }
     router.push(`/sales-invoice/import/${result.batchId}`);
