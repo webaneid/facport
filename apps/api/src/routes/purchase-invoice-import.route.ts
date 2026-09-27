@@ -292,6 +292,16 @@ export const purchaseInvoiceImportRoute = new Elysia()
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
       }
+      // § audit-temuan-2026-09-27 Batch 5.2 — retry TIDAK pernah cek status
+      // batch sebelum ini, padahal PI/SI punya fitur "Batal Import"
+      // (ADR-0013/0014): kalau batch lagi diproses ATAU lagi dibatalkan
+      // (job CANCEL_IMPORT jalan), retry yang lolos bikin 2 job pg-boss
+      // berebut baris/subscription yang SAMA. Guard sama persis kode &
+      // status yang sudah dipakai handler delete di file ini.
+      if (batch.status === "processing" || batch.status === "cancelling") {
+        set.status = 409;
+        return { code: "BATCH_BUSY" };
+      }
 
       // § Fase 43 — retry cuma memproses ULANG baris pending/failed
       // (bukan seluruh batch seperti confirm), jadi additionalRows =

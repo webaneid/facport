@@ -114,7 +114,11 @@ export default function PurchaseInvoiceImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
-  const isProcessing = batch.status === "processing";
+  // § audit-temuan-2026-09-27 Batch 5.2 — sebelumnya cuma cek "processing",
+  // tombol Retry tetap tampil saat batch "cancelling" (job Batal Import
+  // lagi jalan) — race window kecil sebelum backend juga ditutup (409
+  // BATCH_BUSY, lihat purchase-invoice-import.route.ts).
+  const isBusy = batch.status === "processing" || batch.status === "cancelling";
   const numberColumn = findNumberColumn(batch.columnMapping);
   const billNumberColumn = findBillNumberColumn(batch.columnMapping);
   const sortedRows = sortByInvoiceNumber(rows, numberColumn, billNumberColumn);
@@ -140,7 +144,7 @@ export default function PurchaseInvoiceImportResultPage() {
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
-        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
+        {(summary.failed > 0 || summary.pending > 0) && !isBusy && batch.columnMapping && (
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}

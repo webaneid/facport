@@ -34,6 +34,11 @@ describe("describeImportActionError", () => {
     expect(msg).toContain("pemetaan kolom");
   });
 
+  test("BATCH_BUSY (retry PI/SI saat batch processing/cancelling, § Batch 5.2) — pesan jelas, bukan generik", () => {
+    const msg = describeImportActionError({ code: "BATCH_BUSY" }, "fallback");
+    expect(msg).toContain("diproses/dibatalkan");
+  });
+
   test("kode tidak dikenal — balikin fallback apa adanya", () => {
     expect(describeImportActionError({ code: "SOME_OTHER_CODE" }, "Pesan default")).toBe("Pesan default");
   });

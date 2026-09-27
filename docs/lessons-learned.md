@@ -5073,3 +5073,48 @@ tergantung perilaku framework spesifik (CSP nonce di sini) — bukan asumsi dari
 behavior/requirement-nya (mis. "nonce butuh dynamic rendering semua halaman") bisa beda dari versi lama.
 
 Detail: `apps/web/next.config.ts`.
+
+## 2026-09-27 — Batch 5.2 audit: retry Purchase Invoice/Sales Invoice TIDAK cek status batch sama sekali (bukan cuma "lupa `cancelling`")
+
+Rencana audit awal menyebut "tombol Retry tidak memperhitungkan status `cancelling`" — pas eksekusi ternyata
+LEBIH DALAM: endpoint `POST /{purchase,sales}-invoice/import/:batchId/retry` TIDAK PERNAH cek `batch.status`
+SAMA SEKALI sebelum set status jadi `processing` + enqueue `IMPORT_TO_ACCURATE` — beda dari handler `delete` di
+file yang SAMA yang sudah punya guard `if (batch.status === "processing" || batch.status === "cancelling") →
+409 BATCH_BUSY`. Artinya bukan cuma race window dengan proses "Batal Import" (`cancelling`), tapi retry ganda
+(`processing`, mis. user klik retry 2x cepat sebelum re-render) JUGA lolos — 2 job pg-boss `IMPORT_TO_ACCURATE`
+untuk batch yang SAMA bisa jalan bersamaan.
+
+**Fix**: guard 409 `BATCH_BUSY` ditambah ke retry PI & SI, reuse KODE & STATUS yang sama persis dengan `delete`
+(konsisten, bukan bikin kode baru). Frontend: variabel `isProcessing` (cuma cek `"processing"`) diganti
+`isBusy` (cek `"processing"` ATAU `"cancelling"`) di kedua halaman `[batchId]/page.tsx` — tombol Retry sekarang
+sembunyi utuh selama batch sedang diproses ATAU dibatalkan. Pesan toast: ditambah case `BATCH_BUSY` ke helper
+terpusat `describeImportActionError()` (§ Batch 3) — otomatis konsisten dengan pola sentralisasi yang baru
+dibangun, bukan pesan generik lagi.
+
+**Pelajaran**: rencana audit yang ditulis dari MEMBACA kode (bukan eksekusi test nyata) bisa meremehkan skala
+masalah — "lupa 1 status" ternyata "lupa validasi status SAMA SEKALI". Selalu re-verifikasi detail temuan saat
+eksekusi (§ juga [[feedback_facport_scope_and_check_existing_first]]), jangan asumsi rencana lama 100% akurat.
+
+Detail: `apps/api/src/routes/purchase-invoice-import.route.ts`, `apps/api/src/routes/sales-invoice-import.route.ts`,
+`apps/web/lib/import-error-message.ts`, `apps/web/app/app/(protected)/{purchase,sales}-invoice/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — Batch 5.3 audit: N+1 query di job `NOTIFY_EXPIRING_SOON` (insert notifikasi + update threshold per subscription)
+
+Job harian `NOTIFY_EXPIRING_SOON` (reminder trial/langganan akan berakhir) insert 1 notifikasi + update 1 baris
+`subscriptions.lastReminderThresholdDays` per kandidat DI DALAM LOOP — N+1 klasik, meski volume rendah (jalan
+1x/hari, kandidat = subset kecil subscription aktif yang kena threshold hari ITU). Fix: kumpulkan payload
+notifikasi di loop (murni in-memory), insert sekali lewat `createNotificationsBulk()` (helper yang SUDAH ADA,
+dipakai fan-out `SEND_ANNOUNCEMENT` — bukan bikin abstraksi baru). Update threshold dikelompokkan per NILAI
+threshold (`Map<number, string[]>` id per threshold) jadi beberapa `UPDATE ... WHERE id IN (...)` — jumlah
+distinct value SELALU kecil (§ `SUBSCRIPTION_REMINDER_THRESHOLDS`/`TRIAL_REMINDER_THRESHOLDS`), jadi ini
+turun dari N update jadi ~5 update maksimal. `boss.send` (kirim email) TETAP per-penerima — itu dispatch job
+queue (pg-boss insert 1 row per job, BUKAN kelas masalah "N+1 query aplikasi" yang jadi concern audit ini),
+konsisten dengan pola fan-out announcement yang juga begitu.
+
+**Known limitation**: job ini TIDAK punya test dedicated (sudah begitu SEBELUM fix ini juga) — logic-nya inline
+di dalam `boss.work(JOBS.NOTIFY_EXPIRING_SOON, ...)` di `workers/index.ts`, bukan fungsi terpisah yang bisa
+di-import test. Ekstraksi jadi testable function adalah follow-up terpisah kalau job ini butuh test coverage
+lebih (di luar scope fix N+1 LOW-priority ini) — diverifikasi manual via `bun run typecheck` + full test suite
+1689 pass (tidak ada regresi test LAIN yang sempat menyentuh job ini secara tidak langsung).
+
+Detail: `apps/api/src/workers/index.ts` (job `NOTIFY_EXPIRING_SOON`).

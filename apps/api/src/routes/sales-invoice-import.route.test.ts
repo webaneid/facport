@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, memberSeats } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
 import { salesInvoiceImportRoute } from "./sales-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
@@ -210,5 +210,40 @@ describe("DELETE /sales-invoice/import/:batchId — ownership (pemilik vs member
 
     const [stillThere] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
     expect(stillThere).toBeDefined();
+  });
+});
+
+// § audit-temuan-2026-09-27 Batch 5.2 — mirror 1:1 test PI (retry
+// SEBELUMNYA tidak cek status batch sama sekali, tombol FE juga cuma
+// sembunyi saat "processing" — batch "cancelling" lolos, berpotensi 2 job
+// pg-boss berebut baris/subscription yang sama).
+describe("audit Batch 5.2 — retry ditolak 409 BATCH_BUSY kalau batch processing/cancelling", () => {
+  test.each(["processing", "cancelling"] as const)("409 BATCH_BUSY kalau status batch = %s", async (status) => {
+    const provisioned = await createProvisionedUser(`si-batch-busy-${status}-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({
+        userId: provisioned.userId,
+        subscriptionId: provisioned.subscriptionId,
+        module: "sales_invoice",
+        fileName: `batch-busy-${status}.xlsx`,
+        totalRows: 1,
+        status,
+      })
+      .returning();
+    await db.insert(importBatchRows).values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed" });
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-invoice/import/${batch!.id}/retry`, {
+        method: "POST",
+        headers: { cookie: provisioned.cookie },
+      }),
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("BATCH_BUSY");
+
+    const [reloaded] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(reloaded!.status).toBe(status);
   });
 });

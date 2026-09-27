@@ -202,14 +202,32 @@ sibuk).
   "nama field API asli") atau ganti ke label netral ("ID Transaksi
   Accurate / Error") supaya tidak ambigu dengan modul Item Transfer.
 
-### 5.2 [LOW] Purchase Invoice/Sales Invoice: tombol Retry tidak memperhitungkan status `cancelling`
+### 5.2 ✅ [LOW] Purchase Invoice/Sales Invoice: tombol Retry tidak memperhitungkan status `cancelling`
 - Kalau batch sedang dibatalkan, tombol Retry tetap tampil & backend tidak
   memblokirnya — race window kecil dengan proses cancel. Prioritas rendah
   (jarang kejadian, butuh timing pas).
+- **Fix**: guard `409 BATCH_BUSY` ditambah di endpoint `retry` PI & SI
+  (sebelumnya TIDAK cek status batch sama sekali — bukan cuma "lupa
+  `cancelling`", ternyata `processing` pun tidak dicek), reuse kode/status
+  yang sama persis dengan handler `delete`. Tombol FE (`isProcessing` →
+  `isBusy`) sekarang sembunyi untuk `processing` MAUPUN `cancelling`. Pesan
+  `BATCH_BUSY` ditambah ke helper terpusat `describeImportActionError()`
+  (§ Batch 3) supaya toast-nya jelas, bukan fallback generik. Test baru:
+  4 test backend (`test.each` processing/cancelling × PI/SI) + 1 test
+  frontend.
 
-### 5.3 [LOW] Minor N+1 di job `NOTIFY_EXPIRING_SOON`
+### 5.3 ✅ [LOW] Minor N+1 di job `NOTIFY_EXPIRING_SOON`
 - 1 query update per subscription dalam loop — volume kecil (notifikasi
   harian), bukan bug import, tidak mendesak.
+- **Fix**: insert notifikasi dikumpulkan jadi 1 `createNotificationsBulk()`
+  (helper yang sudah ada, dipakai fan-out announcement), update
+  `lastReminderThresholdDays` dikelompokkan per NILAI threshold jadi
+  beberapa `UPDATE ... WHERE id IN (...)` (bukan 1 update per subscription).
+  `boss.send` email TETAP per-penerima (dispatch job queue, bukan query DB
+  berulang yang jadi concern audit ini). Tidak ada test dedicated untuk job
+  ini (sudah begitu SEBELUM fix ini juga — job inline di `workers/index.ts`,
+  butuh ekstraksi jadi fungsi terpisah untuk testable, di luar scope fix
+  LOW-priority ini).
 
 ---
 

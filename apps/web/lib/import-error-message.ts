@@ -37,6 +37,12 @@ export function describeImportActionError(value: ImportActionErrorValue | undefi
     // mapping sudah dibatasi ke field valid) — defense-in-depth saja.
     case "INVALID_MAPPING_FIELD":
       return "Ada kolom yang dipetakan ke field yang tidak dikenal Accurate — cek ulang pemetaan kolom.";
+    // § audit-temuan-2026-09-27 Batch 5.2 — retry PI/SI ditolak backend
+    // kalau batch masih "processing" (retry lain lagi jalan) atau
+    // "cancelling" (job Batal Import lagi jalan), cegah 2 job pg-boss
+    // berebut baris/subscription yang sama.
+    case "BATCH_BUSY":
+      return "Batch ini masih diproses/dibatalkan — tunggu sampai selesai sebelum retry lagi.";
     default:
       return fallback;
   }
