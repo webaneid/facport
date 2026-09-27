@@ -1,8 +1,8 @@
 import { Elysia, t } from "elysia";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
+import { safeSignUpEmail } from "../lib/auth-errors";
 import { user as userTable } from "../db/schema";
-import { auth } from "../lib/auth";
 import { assignCustomerRole } from "../lib/assign-customer-role";
 import { findValidTransferByToken, executeOwnershipTransfer } from "../lib/ownership-transfer";
 import { permissionPlugin } from "../lib/permission";
@@ -46,24 +46,29 @@ export const transfersRoute = new Elysia()
         set.status = 404;
         return { code: "TRANSFER_NOT_FOUND_OR_EXPIRED" };
       }
-      const [existingAccount] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, found.transfer.toEmail));
-      if (existingAccount) {
-        set.status = 409;
-        return { code: "EMAIL_ALREADY_REGISTERED" };
-      }
 
-      const result = await auth.api.signUpEmail({ body: { email: found.transfer.toEmail, password: body.password, name: body.name } });
-      if (!result?.user) {
-        set.status = 400;
-        return { code: "ACCOUNT_CREATE_FAILED" };
+      // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — pola
+      // sama `invites.route.ts` (lihat komentar lengkap di sana):
+      // pre-check manual sebelumnya SUDAH benar untuk kasus normal, tapi
+      // TIDAK menutup race window, DAN fix try/catch pertama hari ini
+      // salah asumsi (cek throw yang TERNYATA tidak pernah terjadi di
+      // project ini — `requireEmailVerification: true` bikin Better Auth
+      // balikin user SINTETIS/PALSU, bukan throw). `safeSignUpEmail`
+      // (lib/auth-errors.ts) menangani pre-check + SEMUA bentuk kegagalan
+      // asli + verifikasi id BENAR tersimpan.
+      const signUpResult = await safeSignUpEmail({ email: found.transfer.toEmail, password: body.password, name: body.name });
+      if (!signUpResult.ok) {
+        set.status = signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? 409 : 400;
+        return { code: signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? "EMAIL_ALREADY_REGISTERED" : "ACCOUNT_CREATE_FAILED" };
       }
+      const userId = signUpResult.userId;
 
       // § transfer itu SENDIRI membuktikan kepemilikan email (link
       // dikirim ke email tsb) — pola sama invite Fase 110, tidak perlu
       // verifikasi email tambahan.
-      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, result.user.id));
-      await assignCustomerRole(result.user.id);
-      await executeOwnershipTransfer(found.transfer.id, found.transfer.dataUsahaId, result.user.id);
+      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+      await assignCustomerRole(userId);
+      await executeOwnershipTransfer(found.transfer.id, found.transfer.dataUsahaId, userId);
 
       return { ok: true };
     },

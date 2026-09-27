@@ -90,6 +90,22 @@ describe("POST /admin/users", () => {
     expect(subs.length).toBe(0);
   });
 
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — pola sama
+  // `admin/staff.route.ts`: Better Auth balikin user SINTETIS/PALSU (bukan
+  // throw) untuk email yang sudah terdaftar — tanpa deteksi ini, kode
+  // lanjut pakai id palsu itu untuk insert `userRoles`/dst → FK violation
+  // → 500 generik. TIDAK PERNAH ada test untuk skenario ini sebelumnya.
+  test("400 EMAIL_ALREADY_EXISTS (BUKAN 500) kalau email SUDAH terdaftar", async () => {
+    const adminCookie = await makeAdminCookie();
+    const email = `admin-users-dup-${runId}@test.local`;
+    await signUp(email);
+
+    const res = await postAdminUser(adminCookie, { email, name: "Siapa Saja" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("EMAIL_ALREADY_EXISTS");
+  });
+
   test("404 PLAN_NOT_FOUND kalau salah satu planId tidak ada — user TIDAK ikut dibuat", async () => {
     const adminCookie = await makeAdminCookie();
     const email = `admin-users-badplan-${runId}@test.local`;

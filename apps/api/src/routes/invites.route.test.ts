@@ -132,6 +132,19 @@ describe("POST /invites/:token/accept — akun baru", () => {
     expect(body.code).toBe("EMAIL_ALREADY_REGISTERED");
   });
 
+  // § BUG DITEMUKAN 2026-09-27 (audit menyeluruh), FIX PARSIAL — pre-check
+  // `existingAccount` di atas TIDAK menutup race window kalau email
+  // didaftarkan lewat jalur lain PERSIS di antara pre-check & `signUpEmail`
+  // — sekarang ditutup untuk kasus REALISTIS (jeda beberapa milidetik,
+  // pre-check internal Better Auth sendiri yang menangkap, § `lib/auth-errors.ts`,
+  // dites di `lib/auth-errors.test.ts` dengan APIError ASLI dari Better
+  // Auth). Race Promise.all BENAR-BENAR simultan (2 request literally
+  // bersamaan) SENGAJA TIDAK dites di sini — dicoba, tapi perilaku
+  // internal adapter Better Auth untuk kasus se-ketat itu ternyata TIDAK
+  // deterministik/belum dipahami penuh (§ komentar keterbatasan di
+  // `lib/auth-errors.ts`), butuh investigasi terpisah sebelum bisa
+  // ditulis jadi assertion yang stabil.
+
   test("404 kalau token sudah dipakai (2x accept)", async () => {
     const ownerId = await signUp(`invite-accept-reuse-owner-${runId}@test.local`);
     const invitedEmail = `invite-accept-reuse-${runId}@test.local`;

@@ -1,8 +1,8 @@
 import { Elysia, t } from "elysia";
 import { eq, and, gt } from "drizzle-orm";
 import { db } from "../lib/db";
+import { safeSignUpEmail } from "../lib/auth-errors";
 import { memberSeats, dataUsaha, user as userTable } from "../db/schema";
-import { auth } from "../lib/auth";
 import { assignCustomerRole } from "../lib/assign-customer-role";
 import { hashInviteToken } from "../lib/member-seats";
 import { permissionPlugin } from "../lib/permission";
@@ -49,24 +49,34 @@ export const invitesRoute = new Elysia()
         set.status = 404;
         return { code: "INVITE_NOT_FOUND_OR_EXPIRED" };
       }
-      const [existingAccount] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, seat.invitedEmail!));
-      if (existingAccount) {
-        set.status = 409;
-        return { code: "EMAIL_ALREADY_REGISTERED" };
-      }
 
-      const result = await auth.api.signUpEmail({ body: { email: seat.invitedEmail!, password: body.password, name: body.name } });
-      if (!result?.user) {
-        set.status = 400;
-        return { code: "ACCOUNT_CREATE_FAILED" };
+      // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) —
+      // pre-check `existingAccount` manual di sini (sebelum fix ini) SUDAH
+      // BENAR untuk kasus normal/sequential, tapi TIDAK menutup race
+      // window (email didaftarkan lewat jalur lain PERSIS di antara
+      // pre-check & `signUpEmail`). Fix try/catch pertama hari ini untuk
+      // celah itu salah asumsi (cek throw `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL`
+      // yang TERNYATA TIDAK PERNAH terjadi di project ini —
+      // `requireEmailVerification: true` bikin Better Auth balikin user
+      // SINTETIS/PALSU untuk email duplikat, bukan throw itu). Sekarang
+      // pakai `safeSignUpEmail` (lib/auth-errors.ts) yang menangani
+      // pre-check + SEMUA bentuk kegagalan asli + verifikasi id BENAR
+      // tersimpan sebelum dipakai `assignCustomerRole`/`linkSeatToMember` —
+      // pre-check manual di baris atas jadi REDUNDAN (sudah dilakukan
+      // ulang di dalam helper), dihapus dari sini.
+      const signUpResult = await safeSignUpEmail({ email: seat.invitedEmail!, password: body.password, name: body.name });
+      if (!signUpResult.ok) {
+        set.status = signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? 409 : 400;
+        return { code: signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? "EMAIL_ALREADY_REGISTERED" : "ACCOUNT_CREATE_FAILED" };
       }
+      const userId = signUpResult.userId;
 
       // § Invite itu SENDIRI membuktikan kepemilikan email (link dikirim
       // ke email tsb) — pola sama admin-provisioned (admin/users.route.ts),
       // TIDAK perlu verifikasi email tambahan.
-      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, result.user.id));
-      await assignCustomerRole(result.user.id);
-      await linkSeatToMember(seat.id, result.user.id);
+      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+      await assignCustomerRole(userId);
+      await linkSeatToMember(seat.id, userId);
 
       return { ok: true };
     },

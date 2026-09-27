@@ -1,14 +1,13 @@
 import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
 import { eq, and, or, ilike, inArray, desc } from "drizzle-orm";
-import { APIError } from "better-auth";
 import { db } from "../../lib/db";
-import { auth } from "../../lib/auth";
 import { roles, userRoles, auditLogs, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { boss, JOBS, startQueue } from "../../lib/queue";
 import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
+import { safeSignUpEmail } from "../../lib/auth-errors";
 
 function getAdminOrigin(): string {
   // `||` (bukan `??`) SENGAJA — pola sama `getAppOrigin()` di
@@ -79,36 +78,30 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
     }
 
     const tempPassword = randomBytes(12).toString("base64url");
-    // § 2026-09-27 — `signUpEmail` TIDAK return `{user: null}` untuk email
-    // duplikat, dia THROW `APIError` (code
-    // USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL) — sebelumnya tidak ditangkap
-    // di sini, jatuh ke `.onError()` global jadi 500 generik yang
-    // menyembunyikan penyebab asli (bug real: "Gagal membuat akun staff —
-    // coba lagi." untuk fajar@cpssoft.com yang ternyata email sudah
-    // terdaftar). § docs/lessons-learned.md.
-    let result: Awaited<ReturnType<typeof auth.api.signUpEmail>>;
-    try {
-      result = await auth.api.signUpEmail({ body: { email: body.email, password: tempPassword, name: body.name } });
-    } catch (err) {
-      if (err instanceof APIError && err.body?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
-        set.status = 400;
-        return { code: "EMAIL_ALREADY_EXISTS" };
-      }
-      throw err;
-    }
-    if (!result?.user) {
+    // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh, KOREKSI
+    // dari fix pertama hari ini yang salah asumsi) — `signUpEmail` untuk
+    // email duplikat TIDAK throw di project ini (`requireEmailVerification:
+    // true` bikin Better Auth balikin user SINTETIS/PALSU, bukan throw) —
+    // pakai `safeSignUpEmail` (lib/auth-errors.ts) yang menangani SEMUA
+    // bentuk kegagalan ini + verifikasi id BENAR tersimpan di DB sebelum
+    // dipakai insert ke tabel lain. § docs/lessons-learned.md untuk detail
+    // lengkap root cause asli bug "Gagal membuat akun staff" untuk
+    // fajar@cpssoft.com.
+    const signUpResult = await safeSignUpEmail({ email: body.email, password: tempPassword, name: body.name });
+    if (!signUpResult.ok) {
       set.status = 400;
-      return { code: "USER_CREATE_FAILED" };
+      return { code: signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? "EMAIL_ALREADY_EXISTS" : "USER_CREATE_FAILED" };
     }
+    const userId = signUpResult.userId;
 
     // § pola sama `admin/users.route.ts` — admin-provisioned dianggap
     // terverifikasi (admin yang vouch), TIDAK perlu verifikasi email.
-    await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, result.user.id));
-    await db.insert(userRoles).values({ userId: result.user.id, roleId: role.id }).onConflictDoNothing();
+    await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+    await db.insert(userRoles).values({ userId, roleId: role.id }).onConflictDoNothing();
 
     await db.insert(auditLogs).values({
       entityType: "user",
-      entityId: result.user.id,
+      entityId: userId,
       action: "create",
       changes: { email: body.email, name: body.name, role: body.role, provisionedBy: "admin" },
       actorId: user.id,
@@ -127,7 +120,7 @@ export const adminStaffRoute = new Elysia({ prefix: "/admin/staff" })
       sensitive: true,
     });
 
-    return { id: result.user.id, email: body.email, role: body.role, tempPassword };
+    return { id: userId, email: body.email, role: body.role, tempPassword };
   },
   {
     // § HANYA Super Admin — role "staff" (Admin terbatas) TIDAK BOLEH

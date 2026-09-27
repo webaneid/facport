@@ -4872,3 +4872,69 @@ TERBUKTI BENAR.
 
 Detail: server production, volume `facport_minio_data`, `docker-compose.prod.yml`/`docker-compose.staging.yml`
 (image `chainguard/minio` — kalau staging JUGA punya volume data lama, WAJIB `chown` yang sama saat dipakai).
+
+## 2026-09-27 — KOREKSI bug "email sudah terdaftar": fix PAGI INI salah asumsi total, root cause asli baru ketemu pas eksekusi Batch 1 audit
+
+Investigasi PAGI INI (bug "Gagal membuat akun staff" untuk fajar@cpssoft.com) baca source `better-auth/dist/api/
+routes/sign-up.mjs` dan menemukan `throw APIError.from(..., USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL)` untuk email
+duplikat — disimpulkan itu penyebabnya, dipasang try/catch di `admin/staff.route.ts`/`admin/users.route.ts`,
+di-test dengan `bun run test` (lolos, TAPI tidak ada test yang BENAR-BENAR memicu skenario "signUpEmail dipanggil
+untuk email yang sudah ada" — cuma menjalankan test suite yang SUDAH ADA, yang kebetulan tidak menyentuh baris
+baru itu sama sekali). **Fix itu SUDAH DI-RILIS ke production (v2.14.0)**, dan TIDAK PERNAH benar-benar berfungsi.
+
+**Ditemukan saat eksekusi Batch 1 rencana audit** (menulis test race condition untuk `invites.route.ts` —
+BUKAN utk staff/users, tapi triknya membongkar fix pagi ini juga salah): test panggil `signUpEmail` 2x
+SEQUENTIAL (bukan race) untuk email yang sama — percobaan KEDUA **TIDAK PERNAH throw sama sekali**.
+
+**Root cause SEBENARNYA** (dikonfirmasi via 2 test langsung ke `auth.api.signUpEmail`, bukan tebakan):
+`sign-up.mjs` baris ~163: `shouldReturnGenericDuplicateResponse = requireEmailVerification ||
+autoSignIn === false`. Project ini set `requireEmailVerification: true` (`lib/auth.ts`) — jadi flag ini SELALU
+`true`. Konsekuensinya, baris ~202 (`if (shouldReturnGenericDuplicateResponse) return
+buildGenericDuplicateResponse()`) yang jalan, BUKAN baris `throw` di bawahnya — Better Auth SENGAJA mengembalikan
+**user SINTETIS/PALSU** (`{token: null, user: {...id BARU YANG TIDAK PERNAH DISIMPAN KE DB...}}`) untuk kasus
+ini, demi mencegah *email enumeration attack* (respons duplikat harus SAMA BENTUK dengan respons sukses, supaya
+penyerang tidak bisa membedakan "email baru" vs "email sudah ada" dari bentuk responsnya). **Kode lama (`if
+(!result?.user)`) TIDAK PERNAH mendeteksi ini** — `result.user` SELALU truthy (walau isinya id palsu) — kode
+lanjut jalan pakai id palsu itu untuk `db.insert(userRoles)`/`assignCustomerRole`/dst, yang menabrak FOREIGN KEY
+CONSTRAINT (raw PostgresError, uncaught) → **INI baru penyebab ASLI 500 generik** untuk fajar@cpssoft.com — bukan
+exception dari `signUpEmail` itu sendiri.
+
+**Ditemukan JUGA (via `Promise.allSettled` langsung ke `signUpEmail`, bypass semua pre-check)**: kalau 2 request
+BENAR-BENAR simultan lolos pre-check internal Better Auth SEKALIGUS, satu berhasil (insert nyata), satu lagi
+throw `APIError` code `FAILED_TO_CREATE_USER` (422) — **BUKAN** `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` yang
+diasumsikan pagi ini. Kode `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` yang jadi dasar fix pagi ini TERNYATA
+**tidak pernah reachable sama sekali** di project ini (given `requireEmailVerification: true` permanen).
+
+**Fix (koreksi total)**: helper terpusat baru `safeSignUpEmail()` (`lib/auth-errors.ts`), dipakai oleh SEMUA 4
+endpoint (`admin/staff.route.ts`, `admin/users.route.ts`, `invites.route.ts`, `transfers.route.ts`) — 3 lapis:
+1. **Pre-check** email di DB SEBELUM panggil `signUpEmail` — menutup kasus PALING UMUM (sequential, kasus asli
+   fajar@cpssoft.com) secara eksplisit, bukan bereaksi ke exception yang ternyata tidak pernah muncul.
+2. **`catch`** untuk `APIError` code `FAILED_TO_CREATE_USER` ATAU `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` — race
+   window sempit di antara pre-check & signUpEmail (kedua kode dicek, kode kedua dijaga untuk berjaga-jaga kalau
+   konfigurasi `requireEmailVerification` pernah berubah di masa depan).
+3. **Verifikasi setelah "berhasil"** — `result.user.id` yang dikembalikan Better Auth BENAR-BENAR ada di tabel
+   `user` (bukan sintetis) SEBELUM dipakai insert ke tabel lain — jaring pengaman TERAKHIR kalau race-di-dalam-
+   race entah bagaimana melewati kedua lapis di atas.
+
+Ditulis test BARU untuk kasus yang SEBELUMNYA TIDAK PERNAH ada test-nya (`lib/auth-errors.test.ts`,
+`admin/staff.route.test.ts`, `admin/users.route.test.ts`) — memanggil `signUpEmail`/endpoint untuk email yang
+BENAR-BENAR sudah terdaftar dan memverifikasi hasilnya, bukan cuma menjalankan suite lama yang tidak menyentuh
+jalur ini.
+
+**Pelajaran (PALING PENTING dari temuan hari ini)**: (1) **membaca source code library MENEMUKAN throw/exception
+di suatu tempat TIDAK BERARTI baris itu benar-benar reachable dari konfigurasi project SENDIRI** — library besar
+sering punya banyak CABANG PERILAKU tergantung config (di sini: `requireEmailVerification`), WAJIB dites EMPIRIS
+(panggil fungsinya beneran dengan skenario yang persis mau diperbaiki) sebelum yakin suatu baris kode itu
+relevan — baca source SAJA tanpa verifikasi runtime bisa (dan di sini TERBUKTI) salah total. (2) **"test suite
+lolos" TIDAK SAMA DENGAN "skenario yang diperbaiki benar-benar teruji"** — fix pagi ini lolos `bun run test`
+karena TIDAK ADA test baru yang benar-benar memanggil endpoint dengan email duplikat sungguhan; kalau ada,
+langsung ketahuan gagal saat itu juga, bukan menunggu audit sore harinya. WAJIB tulis test yang MEMICU
+skenario spesifik yang sedang diperbaiki, bukan cuma percaya suite lama yang kebetulan tidak menyentuhnya. (3)
+Bug yang "sudah diperbaiki dan dirilis" tetap bisa SALAH TOTAL — proses audit/investigasi ulang yang independen
+(di sini: menulis test race condition untuk masalah LAIN yang TIDAK SENGAJA membongkar fix lama) adalah alasan
+kuat untuk sesekali menantang ulang kesimpulan lama, bukan asumsi "sudah pernah diperiksa berarti aman
+selamanya".
+
+Detail: `apps/api/src/lib/auth-errors.ts` (ditulis ulang total), `apps/api/src/lib/auth-errors.test.ts` (baru),
+`apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
+`apps/api/src/routes/invites.route.ts`, `apps/api/src/routes/transfers.route.ts`, test terkait di semua 4 file.

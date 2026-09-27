@@ -1,9 +1,7 @@
 import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
 import { eq, and, or, ilike, inArray, desc, count } from "drizzle-orm";
-import { APIError } from "better-auth";
 import { db } from "../../lib/db";
-import { auth } from "../../lib/auth";
 import { roles, userRoles, auditLogs, subscriptions, plans, user as userTable, session } from "../../db/schema";
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { createInvoiceAndOrder } from "../../lib/invoice-order";
@@ -12,6 +10,7 @@ import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { boss, JOBS, startQueue } from "../../lib/queue";
 import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
+import { safeSignUpEmail } from "../../lib/auth-errors";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -162,41 +161,33 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
 
       const tempPassword = randomBytes(12).toString("base64url");
 
-      // § 2026-09-27 — sama seperti admin/staff.route.ts: `signUpEmail`
-      // THROW `APIError` (bukan return `{user: null}`) untuk email
-      // duplikat — tanpa try/catch ini jatuh ke `.onError()` global jadi
-      // 500 generik. § docs/lessons-learned.md.
-      let result: Awaited<ReturnType<typeof auth.api.signUpEmail>>;
-      try {
-        result = await auth.api.signUpEmail({
-          body: { email: body.email, password: tempPassword, name: body.name },
-        });
-      } catch (err) {
-        if (err instanceof APIError && err.body?.code === "USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL") {
-          set.status = 400;
-          return { code: "EMAIL_ALREADY_EXISTS" };
-        }
-        throw err;
-      }
-      if (!result?.user) {
+      // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh, KOREKSI
+      // dari fix pertama hari ini) — `safeSignUpEmail` (lib/auth-errors.ts)
+      // menangani SEMUA bentuk kegagalan "email sudah terdaftar" (Better
+      // Auth balikin user SINTETIS/PALSU untuk kasus ini, BUKAN throw,
+      // karena `requireEmailVerification: true`) + verifikasi id BENAR
+      // tersimpan sebelum dipakai insert ke tabel lain.
+      const signUpResult = await safeSignUpEmail({ email: body.email, password: tempPassword, name: body.name });
+      if (!signUpResult.ok) {
         set.status = 400;
-        return { code: "USER_CREATE_FAILED" };
+        return { code: signUpResult.reason === "EMAIL_ALREADY_EXISTS" ? "EMAIL_ALREADY_EXISTS" : "USER_CREATE_FAILED" };
       }
+      const userId = signUpResult.userId;
 
       // Self-service WAJIB verifikasi email (§ lib/auth.ts,
       // requireEmailVerification: true) — admin-provisioned SENGAJA
       // dikecualikan, admin yang vouch validitas data, bukan email itu
       // sendiri (§ architecture-subscription.md § "Admin-Provisioned").
-      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, result.user.id));
+      await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
 
       const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
       if (customerRole) {
-        await db.insert(userRoles).values({ userId: result.user.id, roleId: customerRole.id }).onConflictDoNothing();
+        await db.insert(userRoles).values({ userId, roleId: customerRole.id }).onConflictDoNothing();
       }
 
       await db.insert(auditLogs).values({
         entityType: "user",
-        entityId: result.user.id,
+        entityId: userId,
         action: "create",
         changes: { email: body.email, name: body.name, provisionedBy: "admin" },
         actorId: user.id,
@@ -216,15 +207,11 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         // Usaha Utama" default (admin belum atur pilih Data Usaha
         // spesifik di alur provisioning ini — UI itu menyusul Fase
         // 109/110, dicatat sebagai Known Limitation phase doc).
-        const dataUsahaId = await getOrCreateDefaultDataUsaha(result.user!.id);
+        const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
         if (body.markAsPaid) {
-          subscriptionIds = await db.transaction((tx) =>
-            createManualSubscriptions(tx, { userId: result.user!.id, planRows, actorId: user.id, dataUsahaId }),
-          );
+          subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId }));
         } else {
-          const created = await db.transaction((tx) =>
-            createInvoiceAndOrder(tx, { userId: result.user!.id, billToName: body.name, planRows, dataUsahaId }),
-          );
+          const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId }));
           invoiceId = created.invoiceId;
           orderId = created.orderId;
           amountDue = created.amountDue;
@@ -264,7 +251,7 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         sensitive: true,
       });
 
-      return { id: result.user.id, email: body.email, tempPassword, invoiceId, orderId, amountDue, subscriptionIds };
+      return { id: userId, email: body.email, tempPassword, invoiceId, orderId, amountDue, subscriptionIds };
     },
     {
       permission: "users.manage",
