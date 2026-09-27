@@ -5189,3 +5189,56 @@ DIMANAPUN ditampilkan".
 
 Detail: `apps/api/src/lib/module-catalog.ts`, `apps/api/src/routes/plans.route.ts`,
 `apps/api/src/routes/plans.route.test.ts` (baru), `apps/web/components/app-shell/sidebar.tsx`.
+
+## 2026-09-28 — INSIDEN PRODUCTION: CSP Batch 4 audit ternyata di-bake `next build` (bukan dibaca ulang runtime seperti diasumsikan) — logo/favicon pecah, kemungkinan API call browser terblokir
+
+**Kronologi**: Batch 4 audit (2026-09-27) menambah CSP header di `apps/web/next.config.ts` `headers()`, dengan
+asumsi eksplisit (ditulis di komentar kode itu sendiri!) bahwa fungsi ini "kode SERVER MURNI, dieksekusi
+langsung oleh proses `next start` saat container boot". Diverifikasi di DEV (`bun run dev`) — bekerja sempurna,
+0 pelanggaran CSP. Dirilis ke production v2.15.0, deploy sukses (container healthy, migration jalan). Saat
+verifikasi pasca-deploy (screenshot dashboard customer asli), ketahuan: logo perusahaan tampil sebagai teks alt
+"Logo Perusahaan" (gambar gagal load), network request ke `media.facinstitute.id` balik 503.
+
+**Root cause (diverifikasi empiris, bukan cuma baca dokumentasi)**: asumsi "headers() dibaca ulang saat
+runtime" SALAH TOTAL untuk Next.js 16 — `headers()` di-EVALUASI SAAT `next build`, hasilnya (STRING LITERAL,
+bukan referensi fungsi) DIBEKUKAN ke `.next/routes-manifest.json`. Dibuktikan lokal: `rm -rf .next && env -i
+NODE_ENV=production bun run build` (env benar-benar kosong, mensimulasikan persis kondisi `docker build` di CI
+yang cuma kasih `--build-arg APP_VERSION`, TIDAK PERNAH `NEXT_PUBLIC_API_URL`/`MINIO_PUBLIC_URL`) → baca
+`.next/routes-manifest.json` → string CSP-nya **SAMA PERSIS** dengan yang muncul di `curl -I` production
+(`connect-src 'self'` kosong, `img-src` tanpa origin MinIO). Kenapa testing DEV tidak pernah menangkap ini:
+cabang `isDev` di kode lama HARDCODE `http://localhost:3001`/`http://localhost:9000` — TIDAK PERNAH
+mengeksekusi cabang yang baca `process.env.NEXT_PUBLIC_API_URL`/`MINIO_PUBLIC_URL` sama sekali, jadi testing
+dev memberi rasa aman palsu untuk logic yang cuma jalan di production.
+
+**Fix**: pindah SELURUH logic header keamanan dari `next.config.ts` `headers()` ke `proxy.ts` (middleware) —
+kode di situ genuinely dieksekusi PER REQUEST oleh server Node (dikonfirmasi juga oleh contoh resmi "nonce"
+Next.js sendiri yang bilang nonce di-generate "every time a page is viewed" via Proxy, § `node_modules/next/
+dist/docs/01-app/02-guides/content-security-policy.md`). Origin `api`/`media` diturunkan dari **Host header
+request itu sendiri** (pola sama persis `lib/get-prod-api-origin.ts` — ganti label pertama hostname), BUKAN
+dari `process.env`, jadi tidak mungkin kosong berapa pun env var yang (tidak) tersedia saat image di-build.
+**Diverifikasi ulang dengan metode yang SAMA PERSIS yang gagal menangkap bug ini** (build tanpa env var sama
+sekali) — kali ini `curl` ke server hasil build itu dengan `Host: app.facinstitute.id` mengembalikan
+`connect-src 'self' https://api.facinstitute.id` & `img-src ... https://media.facinstitute.id` yang BENAR,
+membuktikan fix genuinely tidak bergantung env var saat build.
+
+**Known limitation ditemukan saat fix (TIDAK diperbaiki sekarang, technical debt terpisah)**: pola "ganti label
+pertama hostname" (dipakai di sini DAN `get-prod-api-origin.ts`) TIDAK BENAR untuk domain staging berpola
+`app-staging.<domain>` (§ `.env.staging.example`, Caddyfile) — hasilnya `api.<domain>` (hilang suffix
+`-staging`), bukan `api-staging.<domain>`. Ini bug YANG SUDAH ADA SEBELUMNYA di `get-prod-api-origin.ts` (bukan
+regresi baru dari fix ini) — kemungkinan besar juga berarti `getSurface()` (`h.startsWith("app.")`) salah
+mendeteksi surface untuk domain staging berpola ini juga (BELUM diverifikasi). Perlu sesi terpisah untuk audit
+domain staging menyeluruh — di luar scope hotfix production ini.
+
+**Pelajaran (KRITIKAL untuk kerja ke depan)**: (1) klaim "kode ini genuinely jalan saat runtime, bukan di-bake
+saat build" untuk framework yang PERILAKUNYA BISA BEDA dari training data (§ peringatan eksplisit `apps/web/
+CLAUDE.md` "This is NOT the Next.js you know") **WAJIB diverifikasi EMPIRIS** (build lalu baca manifest/output
+mentahnya) — TIDAK CUKUP membaca dokumentasi resmi & menyimpulkan logis, karena kesimpulan logis itu SENDIRI
+yang ternyata salah kemarin. (2) Testing di DEV MODE tidak otomatis memvalidasi cabang kode yang HANYA
+dieksekusi di PRODUCTION MODE (`isDev` branch vs `!isDev` branch) — kalau sebuah fix punya percabangan
+prod/dev, **WAJIB test kedua cabang secara terpisah** (build production lokal, bukan cuma `bun run dev`),
+bukan asumsi "dev jalan berarti production juga jalan" — celah ini PERSIS yang bikin bug ini lolos review
+kemarin meski sudah "diverifikasi nyata di browser" (verifikasi itu SELALU di dev mode). (3) Sebelum
+mengklaim rilis "selesai", untuk perubahan yang menyentuh build-time vs runtime Next.js, tambahkan langkah
+build production + baca manifest mentah (bukan cuma jalankan `bun run dev`) ke checklist verifikasi.
+
+Detail: `apps/web/proxy.ts`, `apps/web/next.config.ts`.

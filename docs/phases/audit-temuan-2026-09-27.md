@@ -165,19 +165,34 @@ sibuk).
 - Mitigasi parsial SUDAH ada: cookie sesi `sameSite: "lax"` mengurangi
   risiko clickjacking klasik di browser modern. Gap yang tetap nyata: TIDAK
   ada CSP sama sekali (lapis pertahanan tambahan kalau ada XSS lolos).
-- **Fix**: tambah `headers()` di `apps/web/next.config.ts` — 4 header sama
-  persis dengan `apps/api/src/app.ts` (X-Content-Type-Options, X-Frame-Options,
-  Referrer-Policy, HSTS production-only) + CSP baru. Origin `img-src`/
-  `connect-src` diturunkan dari `process.env.NEXT_PUBLIC_API_URL`/
-  `MINIO_PUBLIC_URL` dibaca SERVER-SIDE saat `next start` boot (bukan lewat
-  bundle client — beda dari `lib/get-prod-api-origin.ts` yang sengaja
-  hindari pola itu, § lessons-learned 2026-09-27 penjelasan lengkap kenapa
-  keduanya aman meski mirip). `script-src`/`style-src` pakai `'unsafe-inline'`
-  (keputusan sadar, bukan kelonggaran ceroboh — nonce butuh SEMUA halaman
-  dynamic rendering + tidak menolong Radix UI inline style via JS, dicek
-  langsung ke `node_modules/next/dist/docs/` versi Next 16 project ini).
-  Diverifikasi NYATA browser (landing/app/admin, 3 surface) — 0 pelanggaran
-  CSP, header dikonfirmasi `curl -I`. Security review: 0 temuan
+- **Fix (versi ASLI, 2026-09-27 — TERNYATA BUGGY, lihat HOTFIX di bawah)**:
+  tambah `headers()` di `apps/web/next.config.ts` — 4 header sama persis
+  dengan `apps/api/src/app.ts` (X-Content-Type-Options, X-Frame-Options,
+  Referrer-Policy, HSTS production-only) + CSP baru. `script-src`/
+  `style-src` pakai `'unsafe-inline'` (keputusan sadar, bukan kelonggaran
+  ceroboh — nonce butuh SEMUA halaman dynamic rendering + tidak menolong
+  Radix UI inline style via JS, dicek langsung ke `node_modules/next/dist/
+  docs/` versi Next 16 project ini) — bagian ini TETAP dipakai di fix final.
+  Diverifikasi NYATA browser (landing/app/admin, 3 surface) di DEV MODE — 0
+  pelanggaran CSP, header dikonfirmasi `curl -I`. Security review: 0 temuan
+  Critical/High.
+- **⚠️ HOTFIX 2026-09-28 (SETELAH dirilis ke production v2.15.0)**: origin
+  `img-src`/`connect-src` yang diasumsikan "dibaca SERVER-SIDE saat `next
+  start` boot" TERNYATA di-bake `next build` (Next.js meng-evaluasi
+  `headers()` next.config saat build, bukan runtime) — `docker build` CI
+  tidak pernah kasih `NEXT_PUBLIC_API_URL`/`MINIO_PUBLIC_URL` sebagai
+  build-arg, jadi CSP production PERMANEN punya origin kosong. Dampak nyata:
+  logo/favicon company pecah di production, kemungkinan API call browser
+  ikut terblokir. Testing dev mode kemarin TIDAK menangkap ini karena
+  cabang `isDev` hardcode localhost, tidak pernah mengeksekusi cabang
+  `process.env` yang buggy. **Fix**: pindah SELURUH logic CSP dari
+  `next.config.ts` ke `proxy.ts` (middleware, genuinely per-request),
+  origin `api`/`media` diturunkan dari Host header request (pola sama
+  `lib/get-prod-api-origin.ts`), BUKAN `process.env`. Diverifikasi ulang
+  dengan metode yang PERSIS gagal menangkap bug asli (build tanpa env var
+  sama sekali, lalu `curl` dengan Host header production) — kali ini benar.
+  Detail lengkap kronologi + pelajaran: `docs/lessons-learned.md` 2026-09-28
+  "INSIDEN PRODUCTION".
   Critical/High.
 
 ### 4.2 [LOW] CSRF token API belum diimplementasikan (gap terdokumentasi, risiko rendah)
