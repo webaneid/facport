@@ -1,3 +1,17 @@
+## 2.15.0 (2026-09-27)
+
+* feat(web,api): urutkan tampil sub-modul sesuai alur bisnis client (sidebar, /subscribe, landing, dro ([4ccd3ae](https://github.com/webaneid/facport/commit/4ccd3ae))
+* fix(api,web): retry PI/SI ditolak saat batch busy + batch query NOTIFY_EXPIRING_SOON (Batch 5.2 & 5. ([8b885f3](https://github.com/webaneid/facport/commit/8b885f3))
+* Merge pull request #76 from webaneid/develop ([bf21735](https://github.com/webaneid/facport/commit/bf21735)), closes [#76](https://github.com/webaneid/facport/issues/76)
+* fix: eksekusi Batch 1 audit menyeluruh (3 fix) + koreksi total bug email duplikat ([be2ed4d](https://github.com/webaneid/facport/commit/be2ed4d))
+* fix(web): label kolom Item Requisition diganti netral, hindari ambigu dgn modul Item Transfer (Batch ([17325c4](https://github.com/webaneid/facport/commit/17325c4))
+* fix(web): tangani kode ACCURATE_SCOPE_MISSING & INVALID_MAPPING_FIELD di semua 23 modul import (Batc ([a385d97](https://github.com/webaneid/facport/commit/a385d97))
+* docs(audit): update banner status — Batch 1-5 selesai kecuali 5.1 (perlu konfirmasi) ([fb350fe](https://github.com/webaneid/facport/commit/fb350fe))
+* docs(deploy): tambah checklist wajib "update file compose di server dulu" ke runbook ([604005e](https://github.com/webaneid/facport/commit/604005e))
+* docs(lessons-learned): catat fix crash-loop chainguard/minio production (permission volume UID 65532 ([bcbf4bd](https://github.com/webaneid/facport/commit/bcbf4bd))
+* feat(web): tambah HTTP security header + CSP di next.config.ts (Batch 4 audit) ([4446df1](https://github.com/webaneid/facport/commit/4446df1))
+* perf(db): tambah 8 index yang hilang sejak awal (Batch 2 audit menyeluruh) ([d9b9273](https://github.com/webaneid/facport/commit/d9b9273))
+
 ## 2.14.0 (2026-09-26)
 
 * fix(ci,infra): pindah image MinIO ke chainguard/minio, quay.io berhenti pull anonim ([d6b607c](https://github.com/webaneid/facport/commit/d6b607c))
