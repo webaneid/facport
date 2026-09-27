@@ -101,10 +101,16 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       // ADR-0033) — `productLine: "facport"` men-trigger `NavGroupBlock`
       // cluster item-item di bawah ini jadi sub-header per `category`
       // (§ `moduleCategory()`, urutan tetap ikut `MODULE_CATEGORIES`).
-      // Urutan item DI SINI sengaja dikelompokkan per kategori (Cash &
-      // Bank → General Ledger → Purchase → Sales) supaya enak dibaca
-      // walau clustering-nya sendiri sebenarnya tidak bergantung urutan
-      // array (dihitung dari `moduleCategory()`, bukan posisi).
+      // § diminta user 2026-09-27 — urutan item DI DALAM tiap kategori DI
+      // BAWAH INI SEKARANG BERPENGARUH LANGSUNG ke urutan tampil (beda dari
+      // catatan lama di sini yang bilang "clustering tidak bergantung
+      // urutan array" — itu benar untuk urutan KATEGORI, tapi urutan VARIAN
+      // di dalam 1 kategori tetap ikut posisi array ini, § `groupItemsByCategory`
+      // di bawah file ini). Disamakan PERSIS urutan `MODULE_CATALOG`
+      // (apps/api/src/lib/module-catalog.ts, SATU sumber kebenaran yang
+      // sama juga dipakai `/plans` sort & dropdown admin plan) — jangan
+      // ubah urutan di sini tanpa ikut ubah di sana, supaya sidebar,
+      // `/subscribe`, dan landing tetap konsisten satu sama lain.
       label: "Facport",
       productLine: "facport",
       items: [
@@ -115,14 +121,14 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // General Ledger
         { href: "/journal-voucher/import", label: "Import Jurnal Umum", icon: BookOpenCheck, moduleKey: "journal_voucher" },
         // Purchase
-        { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "purchase_invoice" },
-        { href: "/purchase-payment/import", label: "Import Purchase Payment", icon: Wallet, moduleKey: "purchase_payment" },
         // § Fase 120 — Purchase Order, modul pertama dari 5 sub-modul baru
         // (architecture-purchase-order.md).
         { href: "/purchase-order/import", label: "Import Purchase Order", icon: ShoppingCart, moduleKey: "purchase_order" },
         // § Fase 121 — Receive Item, modul ke-2 dari 5 sub-modul baru
         // (architecture-receive-item.md).
         { href: "/receive-item/import", label: "Import Receive Item", icon: PackageCheck, moduleKey: "receive_item" },
+        { href: "/purchase-invoice/import", label: "Import Faktur Pembelian", icon: FileSpreadsheet, moduleKey: "purchase_invoice" },
+        { href: "/purchase-payment/import", label: "Import Purchase Payment", icon: Wallet, moduleKey: "purchase_payment" },
         // § Fase 122 — Purchase Return, modul ke-3 dari 5 sub-modul baru
         // (architecture-purchase-return.md).
         { href: "/purchase-return/import", label: "Import Purchase Return", icon: Undo2, moduleKey: "purchase_return" },
@@ -130,31 +136,33 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // sekarang sub-modul sendiri, dijual terpisah.
         { href: "/vendor/payable-account/import", label: "Import Akun Hutang Pemasok", icon: Landmark, moduleKey: "vendor_payable_account" },
         // Sales
-        { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "sales_invoice" },
-        { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
         // § Fase 123 — Sales Quotation, modul ke-4 dari 5 sub-modul baru
         // (architecture-sales-quotation.md).
         { href: "/sales-quotation/import", label: "Import Sales Quotation", icon: FileSignature, moduleKey: "sales_quotation" },
         // § Fase 137 — Sales Order, kelanjutan Sales Quotation
         // (architecture-sales-order.md).
         { href: "/sales-order/import", label: "Import Sales Order", icon: ClipboardCheck, moduleKey: "sales_order" },
+        // § Fase 157 — Delivery Order, modul baru (architecture-delivery-order.md).
+        { href: "/delivery-order/import", label: "Import Delivery Order", icon: Truck, moduleKey: "delivery_order" },
+        { href: "/sales-invoice/import", label: "Import Faktur Penjualan", icon: FileSpreadsheet, moduleKey: "sales_invoice" },
+        { href: "/sales-receipt/import", label: "Import Sales Receipt", icon: HandCoins, moduleKey: "sales_receipt" },
         // § Fase 124 — Sales Return, modul TERAKHIR dari 5 sub-modul
         // baru (architecture-sales-return.md).
         { href: "/sales-return/import", label: "Import Sales Return", icon: RotateCcw, moduleKey: "sales_return" },
-        // § Fase 157 — Delivery Order, modul baru (architecture-delivery-order.md).
-        { href: "/delivery-order/import", label: "Import Delivery Order", icon: Truck, moduleKey: "delivery_order" },
+        // Inventory
         // § Fase 134-135 — Item Transfer & Item Requisition, modul
         // PERTAMA kategori "Inventory" (architecture-item-transfer.md,
         // architecture-item-requisition.md).
-        { href: "/item-transfer/import", label: "Import Item Transfer", icon: ArrowLeftRight, moduleKey: "item_transfer" },
         { href: "/item-requisition/import", label: "Import Item Requisition", icon: ClipboardList, moduleKey: "item_requisition" },
         // § Fase 138 (architecture-inventory-adjustment.md).
         { href: "/inventory-adjustment/import", label: "Import Inventory Adjustment", icon: Boxes, moduleKey: "inventory_adjustment" },
+        { href: "/item-transfer/import", label: "Import Item Transfer", icon: ArrowLeftRight, moduleKey: "item_transfer" },
         // § Fase 139 — kategori "Inventory" (dipindah dari "Manufacture" 2026-09-23, permintaan client — §
         // lessons-learned.md; architecture-job-costing.md).
         { href: "/job-costing/import", label: "Import Job Costing", icon: Factory, moduleKey: "job_costing" },
         // § Fase 146 — penutup Job Costing (architecture-roll-over.md).
         { href: "/roll-over/import", label: "Import Roll Over", icon: CheckCheck, moduleKey: "roll_over" },
+        // Manufacture
         // § Fase 147 — produksi berbasis BOM (architecture-work-order.md).
         { href: "/work-order/import", label: "Import Work Order", icon: Cog, moduleKey: "work_order" },
         // § Fase 148 — realisasi bahan baku dari Work Order (architecture-material-slip.md).

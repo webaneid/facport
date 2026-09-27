@@ -2122,6 +2122,20 @@ async function main() {
       const nameByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
       const emailByUserId = new Map(userRows.map((u) => [u.id, u.email]));
 
+      // § audit-temuan-2026-09-27 Batch 5.3 — SEBELUMNYA insert notifikasi +
+      // update `lastReminderThresholdDays` masing-masing 1 query TERPISAH
+      // per subscription di loop ini (N+1). Bangun dulu payload-nya di loop
+      // (murni in-memory, tidak ada query), baru eksekusi 1 bulk insert +
+      // beberapa `UPDATE ... WHERE id IN (...)` (dikelompokkan per NILAI
+      // threshold — biasanya cuma segelintir nilai berbeda, § SUBSCRIPTION_
+      // REMINDER_THRESHOLDS/TRIAL_REMINDER_THRESHOLDS) menggantikan N update
+      // satu-satu. `boss.send` TETAP per-email (dispatch job queue, bukan
+      // query DB berulang yang jadi concern audit ini, pola sama fan-out
+      // announcement di atas).
+      const notificationInputs: Parameters<typeof createNotificationsBulk>[0] = [];
+      const subscriptionIdsByThreshold = new Map<number, string[]>();
+      const emailJobs: { email: string; title: string; body: string }[] = [];
+
       for (const sub of candidates) {
         const daysLeft = daysLeftById.get(sub.id)!;
         const applicableThreshold = thresholdById.get(sub.id)!;
@@ -2134,7 +2148,7 @@ async function main() {
           ? `Trial ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — upgrade sekarang supaya tidak terputus.`
           : `Langganan ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — perpanjang sekarang supaya tidak terputus.`;
 
-        await createNotification({
+        notificationInputs.push({
           userId: sub.userId,
           type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_ENDING_SOON : NOTIFICATION_TYPES.SUBSCRIPTION_ENDING_SOON,
           title,
@@ -2142,14 +2156,23 @@ async function main() {
           entityType: "subscription",
           entityId: sub.id,
         });
-        await db.update(subscriptions).set({ lastReminderThresholdDays: applicableThreshold }).where(eq(subscriptions.id, sub.id));
+
+        const idsForThreshold = subscriptionIdsByThreshold.get(applicableThreshold) ?? [];
+        idsForThreshold.push(sub.id);
+        subscriptionIdsByThreshold.set(applicableThreshold, idsForThreshold);
 
         const email = emailByUserId.get(sub.userId);
-        if (email) {
-          await boss.send(JOBS.SEND_EMAIL, { to: email, subject: title, html: `<p>${escapeHtml(body)}</p>` });
-        }
+        if (email) emailJobs.push({ email, title, body });
         notified++;
       }
+
+      await createNotificationsBulk(notificationInputs);
+      await Promise.all(
+        [...subscriptionIdsByThreshold.entries()].map(([threshold, ids]) =>
+          db.update(subscriptions).set({ lastReminderThresholdDays: threshold }).where(inArray(subscriptions.id, ids)),
+        ),
+      );
+      await Promise.all(emailJobs.map(({ email, title, body }) => boss.send(JOBS.SEND_EMAIL, { to: email, subject: title, html: `<p>${escapeHtml(body)}</p>` })));
     }
 
     logger.info({ notified }, "Notify expiring soon selesai");

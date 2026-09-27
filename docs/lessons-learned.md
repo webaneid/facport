@@ -4799,3 +4799,393 @@ gagal dengan cara yang sama, cuma telat ketahuannya (pas deploy, bukan pas CI).
 
 Detail: `docker-compose.dev.yml`, `docker-compose.staging.yml`, `docker-compose.prod.yml`,
 `.github/workflows/ci.yml`, `.github/workflows/deploy-staging.yml`, `.github/workflows/release.yml`.
+
+## 2026-09-27 — Runbook deploy Full LUPA sebut file compose di server harus di-update manual dulu (fix `chainguard/minio` di atas TIDAK otomatis kepakai)
+
+Langsung dampak dari insiden di atas: setelah fix `docker-compose.prod.yml` (ganti image MinIO) di-push ke repo
+dan release berhasil, user jalankan `docker compose ... pull` di server persis sesuai runbook Full — **tetap
+gagal** dengan error IDENTIK (`quay.io/minio/minio:latest ... 401 Unauthorized`), padahal fix-nya sudah ada di
+repo.
+
+**Root cause**: SUDAH PERNAH DICATAT sebelumnya (§ insiden 2026-09-12, docker.io→quay.io) tapi TERLEWAT lagi kali
+ini — file compose di server (`/opt/facport/*.yml`) adalah **COPY MANUAL**, TIDAK auto-sync dari git. Image
+Docker (api/web) memang ditarik dari registry (GHCR) sesuai `IMAGE_TAG` rilis, TAPI file `docker-compose.prod.yml`
+ITU SENDIRI (termasuk baris `image: chainguard/minio:latest` yang baru diperbaiki) TETAP versi LAMA di server
+sampai ada yang memperbaruinya secara eksplisit (scp, atau — kalau `/opt/facport` server ternyata git checkout
+beneran, `git pull` — TAPI berdasar catatan 2026-09-12, itu BUKAN git checkout, murni file yang di-copy).
+
+**Fix langsung (workaround cepat, tidak perlu scp ulang file utuh)**: `sed -i` 1 baris langsung di server:
+```bash
+sed -i 's|image: quay.io/minio/minio:latest|image: chainguard/minio:latest|' docker-compose.prod.yml
+```
+
+**Pelajaran (PENGULANGAN dari 2026-09-12, kali ini benar-benar ditutup, bukan cuma dicatat)**: `docs/architecture/
+architecture-deployment.md` § runbook Minimal/Full **TIDAK PERNAH secara eksplisit mengingatkan** "kalau rilis
+ini mengubah file `docker-compose*.yml`/`Caddyfile`/file konfigurasi LAIN yang hidup di server (bukan di-build
+ke image), WAJIB update file itu di server dulu (scp/copy manual) SEBELUM `pull`/`up -d`" — bug KELAS ini
+(perubahan config yang tidak ke-deploy karena cuma image aplikasi yang benar-benar "dirilis" via registry) sudah
+terjadi 2 KALI (2026-09-12 & 2026-09-27) dengan gejala IDENTIK, tapi belum pernah masuk sebagai LANGKAH EKSPLISIT
+di runbook — cuma dicatat sebagai narasi lessons-learned yang mudah kelewat baca ulang saat rilis berikutnya.
+**Ditambahkan SEKARANG** (bukan ditunda jadi TODO) — checklist eksplisit di `architecture-deployment.md` §
+"Pembagian tugas baku", sebelum kedua varian runbook (Minimal & Full), supaya tidak sekadar jadi cerita masa
+lalu tapi benar-benar dibaca tiap rilis.
+
+Detail: `docs/architecture/architecture-deployment.md` § "Pembagian tugas baku".
+
+## 2026-09-27 — Deploy `chainguard/minio` production: crash-loop "Unable to write to backend" — volume data lama milik root, image baru jalan sebagai UID 65532
+
+Lanjutan langsung dari 2 insiden di atas (MinIO Inc. berhenti distribusi image, pindah ke `chainguard/minio`).
+Setelah `docker-compose.prod.yml` diperbaiki di server (§ insiden sebelumnya) dan `up -d` dijalankan,
+`facport-minio-1` **crash-loop** dengan error:
+```
+FATAL Unable to initialize backend: Unable to write to the backend
+Error: unable to rename (/data/.minio.sys/tmp -> ...) file access denied, drive may be faulty
+```
+
+**Root cause**: image `quay.io/minio/minio` (lama) jalan sebagai **root**, sedangkan `chainguard/minio` (baru)
+sengaja jalan sebagai **non-root user, UID `65532`** (hardening keamanan khas image Chainguard/distroless).
+Volume data MinIO yang SUDAH ADA di server (`facport_minio_data`, isi bucket production nyata) masih punya
+kepemilikan file dari image lama (root) — user UID 65532 di image baru TIDAK PUNYA izin tulis ke direktori itu,
+walau secara CLI/env-var image ini memang drop-in replacement (§ insiden sebelumnya, benar untuk ARGUMEN
+container, TAPI TIDAK untuk PERMISSION filesystem volume yang sudah ada).
+
+**Fix**: `chown` isi volume ke UID 65532 pakai container sementara (volume Docker named, bukan bind mount host
+langsung, jadi tidak bisa `chown` dari shell host biasa):
+```bash
+docker run --rm -v facport_minio_data:/data alpine chown -R 65532:65532 /data
+docker compose ... restart minio
+```
+Setelah itu container start normal, TIDAK ADA data yang hilang (cuma ganti kepemilikan file, isi bucket utuh).
+
+**Pelajaran**: (1) "drop-in replacement" untuk image Docker itu ADA BATASNYA — kompatibel di level
+ENTRYPOINT/ARGUMEN/ENV VAR (yang sempat diverifikasi sebelum deploy) BELUM TENTU kompatibel di level
+FILESYSTEM/USER RUNTIME kalau image lama & baru jalan sebagai user berbeda DAN ada volume data PERSISTEN yang
+sudah terlanjur dimiliki user lama — ini kasus KHUSUS yang cuma muncul saat MENGGANTI image di server dengan
+DATA EXISTING (fresh install/CI tidak akan pernah ketemu masalah ini, karena volume-nya kosong/baru). (2) Image
+berbasis Chainguard/distroless SECARA UMUM jalan non-root by default (biasanya UID `65532`, konvensi umum
+"nonroot" di ekosistem distroless) — kalau mengganti KE image Chainguard apa pun untuk service yang punya
+volume data persisten lama, WAJIB `chown` volume ke UID itu SEBAGAI BAGIAN DARI MIGRASI, bukan opsional. (3)
+Verifikasi "drop-in replacement" dari dokumentasi/web search TETAP perlu diuji nyata di environment dengan DATA
+ASLI (bukan cuma fresh container) sebelum yakin aman — persis peringatan yang sudah ditulis di lessons-learned
+sebelumnya ("belum pernah diverifikasi langsung di lingkungan production project ini"), dan peringatan itu
+TERBUKTI BENAR.
+
+Detail: server production, volume `facport_minio_data`, `docker-compose.prod.yml`/`docker-compose.staging.yml`
+(image `chainguard/minio` — kalau staging JUGA punya volume data lama, WAJIB `chown` yang sama saat dipakai).
+
+## 2026-09-27 — KOREKSI bug "email sudah terdaftar": fix PAGI INI salah asumsi total, root cause asli baru ketemu pas eksekusi Batch 1 audit
+
+Investigasi PAGI INI (bug "Gagal membuat akun staff" untuk fajar@cpssoft.com) baca source `better-auth/dist/api/
+routes/sign-up.mjs` dan menemukan `throw APIError.from(..., USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL)` untuk email
+duplikat — disimpulkan itu penyebabnya, dipasang try/catch di `admin/staff.route.ts`/`admin/users.route.ts`,
+di-test dengan `bun run test` (lolos, TAPI tidak ada test yang BENAR-BENAR memicu skenario "signUpEmail dipanggil
+untuk email yang sudah ada" — cuma menjalankan test suite yang SUDAH ADA, yang kebetulan tidak menyentuh baris
+baru itu sama sekali). **Fix itu SUDAH DI-RILIS ke production (v2.14.0)**, dan TIDAK PERNAH benar-benar berfungsi.
+
+**Ditemukan saat eksekusi Batch 1 rencana audit** (menulis test race condition untuk `invites.route.ts` —
+BUKAN utk staff/users, tapi triknya membongkar fix pagi ini juga salah): test panggil `signUpEmail` 2x
+SEQUENTIAL (bukan race) untuk email yang sama — percobaan KEDUA **TIDAK PERNAH throw sama sekali**.
+
+**Root cause SEBENARNYA** (dikonfirmasi via 2 test langsung ke `auth.api.signUpEmail`, bukan tebakan):
+`sign-up.mjs` baris ~163: `shouldReturnGenericDuplicateResponse = requireEmailVerification ||
+autoSignIn === false`. Project ini set `requireEmailVerification: true` (`lib/auth.ts`) — jadi flag ini SELALU
+`true`. Konsekuensinya, baris ~202 (`if (shouldReturnGenericDuplicateResponse) return
+buildGenericDuplicateResponse()`) yang jalan, BUKAN baris `throw` di bawahnya — Better Auth SENGAJA mengembalikan
+**user SINTETIS/PALSU** (`{token: null, user: {...id BARU YANG TIDAK PERNAH DISIMPAN KE DB...}}`) untuk kasus
+ini, demi mencegah *email enumeration attack* (respons duplikat harus SAMA BENTUK dengan respons sukses, supaya
+penyerang tidak bisa membedakan "email baru" vs "email sudah ada" dari bentuk responsnya). **Kode lama (`if
+(!result?.user)`) TIDAK PERNAH mendeteksi ini** — `result.user` SELALU truthy (walau isinya id palsu) — kode
+lanjut jalan pakai id palsu itu untuk `db.insert(userRoles)`/`assignCustomerRole`/dst, yang menabrak FOREIGN KEY
+CONSTRAINT (raw PostgresError, uncaught) → **INI baru penyebab ASLI 500 generik** untuk fajar@cpssoft.com — bukan
+exception dari `signUpEmail` itu sendiri.
+
+**Ditemukan JUGA (via `Promise.allSettled` langsung ke `signUpEmail`, bypass semua pre-check)**: kalau 2 request
+BENAR-BENAR simultan lolos pre-check internal Better Auth SEKALIGUS, satu berhasil (insert nyata), satu lagi
+throw `APIError` code `FAILED_TO_CREATE_USER` (422) — **BUKAN** `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` yang
+diasumsikan pagi ini. Kode `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` yang jadi dasar fix pagi ini TERNYATA
+**tidak pernah reachable sama sekali** di project ini (given `requireEmailVerification: true` permanen).
+
+**Fix (koreksi total)**: helper terpusat baru `safeSignUpEmail()` (`lib/auth-errors.ts`), dipakai oleh SEMUA 4
+endpoint (`admin/staff.route.ts`, `admin/users.route.ts`, `invites.route.ts`, `transfers.route.ts`) — 3 lapis:
+1. **Pre-check** email di DB SEBELUM panggil `signUpEmail` — menutup kasus PALING UMUM (sequential, kasus asli
+   fajar@cpssoft.com) secara eksplisit, bukan bereaksi ke exception yang ternyata tidak pernah muncul.
+2. **`catch`** untuk `APIError` code `FAILED_TO_CREATE_USER` ATAU `USER_ALREADY_EXISTS_USE_ANOTHER_EMAIL` — race
+   window sempit di antara pre-check & signUpEmail (kedua kode dicek, kode kedua dijaga untuk berjaga-jaga kalau
+   konfigurasi `requireEmailVerification` pernah berubah di masa depan).
+3. **Verifikasi setelah "berhasil"** — `result.user.id` yang dikembalikan Better Auth BENAR-BENAR ada di tabel
+   `user` (bukan sintetis) SEBELUM dipakai insert ke tabel lain — jaring pengaman TERAKHIR kalau race-di-dalam-
+   race entah bagaimana melewati kedua lapis di atas.
+
+Ditulis test BARU untuk kasus yang SEBELUMNYA TIDAK PERNAH ada test-nya (`lib/auth-errors.test.ts`,
+`admin/staff.route.test.ts`, `admin/users.route.test.ts`) — memanggil `signUpEmail`/endpoint untuk email yang
+BENAR-BENAR sudah terdaftar dan memverifikasi hasilnya, bukan cuma menjalankan suite lama yang tidak menyentuh
+jalur ini.
+
+**Pelajaran (PALING PENTING dari temuan hari ini)**: (1) **membaca source code library MENEMUKAN throw/exception
+di suatu tempat TIDAK BERARTI baris itu benar-benar reachable dari konfigurasi project SENDIRI** — library besar
+sering punya banyak CABANG PERILAKU tergantung config (di sini: `requireEmailVerification`), WAJIB dites EMPIRIS
+(panggil fungsinya beneran dengan skenario yang persis mau diperbaiki) sebelum yakin suatu baris kode itu
+relevan — baca source SAJA tanpa verifikasi runtime bisa (dan di sini TERBUKTI) salah total. (2) **"test suite
+lolos" TIDAK SAMA DENGAN "skenario yang diperbaiki benar-benar teruji"** — fix pagi ini lolos `bun run test`
+karena TIDAK ADA test baru yang benar-benar memanggil endpoint dengan email duplikat sungguhan; kalau ada,
+langsung ketahuan gagal saat itu juga, bukan menunggu audit sore harinya. WAJIB tulis test yang MEMICU
+skenario spesifik yang sedang diperbaiki, bukan cuma percaya suite lama yang kebetulan tidak menyentuhnya. (3)
+Bug yang "sudah diperbaiki dan dirilis" tetap bisa SALAH TOTAL — proses audit/investigasi ulang yang independen
+(di sini: menulis test race condition untuk masalah LAIN yang TIDAK SENGAJA membongkar fix lama) adalah alasan
+kuat untuk sesekali menantang ulang kesimpulan lama, bukan asumsi "sudah pernah diperiksa berarti aman
+selamanya".
+
+Detail: `apps/api/src/lib/auth-errors.ts` (ditulis ulang total), `apps/api/src/lib/auth-errors.test.ts` (baru),
+`apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
+`apps/api/src/routes/invites.route.ts`, `apps/api/src/routes/transfers.route.ts`, test terkait di semua 4 file.
+
+## 2026-09-27 — Batch 2 audit: 8 index database yang hilang sejak awal, ditemukan lewat audit bukan lewat masalah nyata di production
+
+Audit menyeluruh (subagent backend) menemukan 5 tabel yang sering di-query (`import_batch_rows`,
+`import_batches`, `subscriptions`, `notifications`, `audit_logs`) SAMA SEKALI tidak punya index eksplisit sejak
+tabel-tabel itu dibuat — beda dari `auth.schema.ts`/`accurate.schema.ts`/`data-usaha.schema.ts` yang SUDAH
+punya index sejak awal. Paling parah: `import_batch_rows.batch_id` dipakai di **107 tempat** (SETIAP endpoint
+get-detail/export/retry/edit di SEMUA 23 modul + worker) dan `subscriptions`'s beberapa kolom dipakai di 54
+tempat termasuk `moduleAccess` guard yang jalan di HAMPIR SEMUA endpoint aplikasi (bukan cuma modul import).
+
+**Fix**: 8 index baru (composite untuk kolom yang SERING difilter bersamaan, dirancang dari POLA QUERY ASLI di
+kode — bukan tebakan):
+- `import_batch_rows(batch_id, status)` — worker fetch pending/failed, summary count per status.
+- `import_batches(subscription_id, module)` — list batch per subscription+module (SEMUA 23 modul).
+- `subscriptions(data_usaha_id, status)` — `moduleAccess` guard (paling sering dipanggil di antara semua).
+- `subscriptions(user_id)`, `subscriptions(status)` — dipakai sendirian di banyak tempat (admin, worker jobs).
+- `subscriptions(accurate_connection_id)` — FK, defensif (belum ada query eksplisit ditemukan, tapi wajar untuk
+  JOIN/cascade).
+- `notifications(user_id, is_read)` — bell dashboard (list + unread count).
+- `audit_logs(created_at)` — prioritas rendah (traffic admin kecil), sekalian ditambah di migration yang sama.
+
+**Catatan deploy**: migration ini `CREATE INDEX` biasa (BUKAN `CONCURRENTLY`) — konsisten dengan SEMUA migration
+lain di project ini (belum pernah pakai `CONCURRENTLY`). Untuk tabel `subscriptions`/`import_batch_rows` yang
+sudah punya data production nyata, `CREATE INDEX` mengunci tabel itu (blok WRITE, bukan READ) selama index
+dibangun — durasinya proporsional ke jumlah baris. Belum jadi masalah nyata di skala project ini sekarang
+(retensi 2 hari untuk `import_batch_rows`, jumlah subscription masih kecil), TAPI kalau tabel sudah jauh lebih
+besar di masa depan, revisit pakai `CREATE INDEX CONCURRENTLY` (perlu migration runner yang mendukung statement
+di luar transaksi — `drizzle-kit migrate` default membungkus migration dalam transaksi, `CONCURRENTLY` tidak
+bisa jalan di dalam transaksi, jadi butuh pola migration terpisah kalau nanti perlu).
+
+**Pelajaran**: (1) index yang hilang biasanya BARU ketahuan setelah keluhan performa nyata (query lambat
+dilaporkan user) — audit PROAKTIF (cek pola `WHERE`/`JOIN` di kode dibanding index yang ADA di skema) bisa
+menemukan gap ini SEBELUM jadi masalah production, bukan sesudahnya. (2) Rancang index dari POLA QUERY ASLI di
+kode (baca semua `eq()`/`and()` yang benar-benar dipakai), bukan tebak dari nama kolom yang "kelihatannya
+penting" — kolom yang SERING difilter BERSAMAAN (mis. `batchId` + `status`) butuh index COMPOSITE, bukan 2
+index tunggal terpisah (composite lebih efisien untuk pola query itu).
+
+Detail: migration `drizzle/0033_complex_mephisto.sql`, `apps/api/src/db/schema/import.schema.ts`,
+`apps/api/src/db/schema/subscription.schema.ts`, `apps/api/src/db/schema/notification.schema.ts`,
+`apps/api/src/db/schema/core.schema.ts`.
+
+## 2026-09-27 — Batch 3 audit: kode `ACCURATE_SCOPE_MISSING` tidak pernah ditangani frontend di SEMUA 23 modul (sistemik sejak Fase 142)
+
+Audit menyeluruh menemukan: SEMUA 23 `{module}-import.route.ts` (endpoint `confirm` & `retry`) sudah balikin kode
+`ACCURATE_SCOPE_MISSING` (409, `missing: string[]` nama scope yang kurang) sejak Fase 142 kalau koneksi Accurate
+customer kurang izin untuk modul itu — TAPI frontend TIDAK PERNAH baca kode ini sama sekali, di SEMUA 23 modul.
+`onConfirmMapping` (halaman upload) & `handleRetry` (halaman detail) cuma cek `MISSING_REQUIRED_FIELDS`/
+`TRIAL_ROW_LIMIT_EXCEEDED`, lalu fallback ke pesan generik ("Gagal konfirmasi mapping."/"Gagal mengirim ulang
+baris — coba lagi."). Skenario nyata: katalog scope Accurate PERNAH berubah (§ perubahan `glaccount_view`
+2026-09-22) — customer yang koneksinya sempat lolos gerbang lalu scope-nya berubah, retry batch lama dapat
+pesan generik tanpa tahu solusinya "Perbarui Izin Accurate".
+
+**Fix**: helper terpusat baru `describeImportActionError()` (`apps/web/lib/import-error-message.ts`) — SATU
+fungsi pure yang menangani SEMUA kode error umum alur import (`MISSING_REQUIRED_FIELDS`,
+`TRIAL_ROW_LIMIT_EXCEEDED`, `ACCURATE_SCOPE_MISSING`, `INVALID_MAPPING_FIELD`, fallback) — dipakai oleh SEMUA 46
+titik (23 `onConfirmMapping` + 23 `handleRetry`), BUKAN ditempel manual 46x (itu pola yang sudah berulang kali
+terbukti bikin drift minggu ini — accordion, pesan error admin, tombol retry, SEKARANG ini juga). Diverifikasi
+byte-identik SEBELUM replace massal (pola sama rollout-rollout sebelumnya) — SEMUA 23 modul memang 100%
+identik strukturnya untuk blok ini, aman di-scripted-replace.
+
+**Keputusan desain**: awalnya dipertimbangkan JUGA memicu popup interaktif "Perbarui Izin" (`useAccurateGate().
+openPopup()`, sudah ada infrastrukturnya di `components/accurate/accurate-gate-provider.tsx`) — DITUNDA
+(bukan bug, keputusan sengaja): butuh tambah hook React ke 46 komponen (bukan cuma fungsi pure), dan gate's
+state client-side bisa lag sesaat dari kondisi scope SEBENARNYA (race kecil, popup bisa sempat tampil status
+lama). Pesan TEKS yang benar (dari respons server LANGSUNG, selalu akurat) sudah cukup menjawab keluhan inti
+audit ("customer tidak tahu solusinya") — buka popup interaktif dicatat sebagai enhancement lanjutan, bukan
+bagian fix WAJIB.
+
+**Pelajaran**: (1) pola "backend sudah balikin kode spesifik sejak fase tertentu, tapi frontend baru menangani
+SEBAGIAN kode (yang lain di-launch bareng modul), yang ditambahkan BELAKANGAN (di fase lain) kelupaan" adalah
+KELAS BUG YANG SAMA seperti rollout-rollout minggu ini — kalau nambah kode error baru ke endpoint yang SUDAH
+dipakai banyak modul, WAJIB cek SEMUA pemanggil frontend-nya, jangan asumsi "nanti juga kepakai otomatis". (2)
+Untuk penanganan kode error yang dipakai LINTAS BANYAK modul (bukan spesifik 1 modul), bikin helper TERPUSAT
+dari AWAL (bukan tempel manual per modul) — mencegah kelas bug "1 tempat diperbaiki, lupa disebar" muncul lagi
+di masa depan untuk kode error BARU yang mungkin ditambahkan nanti.
+
+Detail: `apps/web/lib/import-error-message.ts` (baru), `apps/web/lib/import-error-message.test.ts` (baru), 23
+`apps/web/app/app/(protected)/*/import/page.tsx`, 23 `apps/web/app/app/(protected)/*/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — Batch 4 audit: `apps/web` tidak pernah punya HTTP security header (CSP dst) sejak awal — dan kenapa origin CSP AMAN dibaca dari `process.env.NEXT_PUBLIC_*` di `next.config.ts` padahal `lib/get-prod-api-origin.ts` sengaja menghindarinya
+
+`apps/api` sudah set 4 header keamanan minimal sejak awal (`app.ts` `.onAfterHandle`) — `apps/web` TIDAK PERNAH,
+di SEMUA 3 surface (landing/admin/app), sejak Fase 00. Fix: `apps/web/next.config.ts` `headers()` — 4 header
+sama persis nilainya dengan `apps/api` (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+`Referrer-Policy: strict-origin-when-cross-origin`, `Strict-Transport-Security` production-only) + `Content-
+Security-Policy` baru.
+
+**Kebingungan yang HARUS diluruskan dulu sebelum nulis kode** (kalau tidak, hampir salah desain total): apakah
+boleh baca `process.env.NEXT_PUBLIC_API_URL`/`MINIO_PUBLIC_URL` langsung di `next.config.ts` untuk isi origin
+`connect-src`/`img-src`, padahal `lib/get-prod-api-origin.ts` (§ lessons-learned 2026-08-27) SENGAJA
+menghindari `process.env.NEXT_PUBLIC_API_URL` karena "di-bake ke bundle client SAAT BUILD CI, bukan dibaca
+ulang saat container jalan — 1 image dipakai ulang lintas domain (prod/staging) tanpa rebuild"? Jawabannya:
+BOLEH, dan TIDAK kontradiksi — dua kode ini jalan di LAYER BERBEDA. Masalah "baked saat build" HANYA berlaku
+untuk kode yang ikut ke-bundle ke JS **browser** (`"use client"` atau yang diimpor olehnya) — nilai
+`NEXT_PUBLIC_*` di situ memang di-substitusi jadi string literal oleh bundler SAAT `next build` jalan di CI
+(runtime container tidak bisa mengubahnya lagi). `next.config.ts` `headers()` sebaliknya adalah **kode server
+murni** yang tidak pernah ikut dibundle ke browser — dieksekusi LANGSUNG oleh proses `next start` saat
+CONTAINER BOOT, membaca `process.env` container itu sendiri secara live. Karena `docker-compose.prod.yml`/
+`docker-compose.staging.yml` inject env lewat `env_file: .env.production`/`.env.staging` (variabel OS asli,
+bukan file `.env` yang dibaca Next.js sendiri), nilai yang dibaca `headers()` SELALU benar sesuai environment
+kontainer itu, tanpa perlu rebuild image — sama portable-nya dengan strategi `get-prod-api-origin.ts`, cuma
+beda mekanisme (itu per-request di browser dari `window.location`, ini per-container-start di server dari
+`process.env`).
+
+**Detail lain**:
+- `MINIO_PUBLIC_URL` itu nominal punya `apps/api`, tapi ikut kebaca container `web` juga karena
+  `docker-compose.prod.yml`/`.staging.yml` set `env_file` yang SAMA untuk kedua service.
+- Fallback kalau env kosong (`?? ""`) SENGAJA fail-closed: `connect-src`/`img-src` jatuh ke `'self'` polos,
+  bukan wildcard — kalau env lupa di-set, akibatnya broken image/API call yang KELIHATAN JELAS di
+  console/network tab, bukan celah keamanan diam-diam.
+- `script-src`/`style-src` pakai `'unsafe-inline'` (+`'unsafe-eval'` dev only) — keputusan SADAR, dibaca
+  langsung dari `node_modules/next/dist/docs/01-app/02-guides/content-security-policy.md` (WAJIB dicek untuk
+  Next.js versi project ini, § peringatan `apps/web/CLAUDE.md` "This is NOT the Next.js you know"): CSP
+  nonce-based MEMAKSA SEMUA halaman jadi dynamic rendering (mematikan static optimization/ISR landing publik —
+  regresi performa nyata), DAN tetap tidak menolong Radix UI (dasar shadcn/ui) yang set inline `style`
+  attribute lewat JS langsung untuk positioning popover/dropdown/tooltip (bukan lewat React `style` prop yang
+  bisa di-nonce otomatis Next). Trade-off: CSP ini TIDAK memblokir inline-script-injection kalau ada XSS lolos
+  di tempat lain, fokus proteksinya ke origin resource (img/connect/frame/object/form) + clickjacking +
+  MIME-sniffing — bukan proteksi XSS penuh. Dicatat eksplisit sebagai limitation, bukan kelalaian.
+- `/api-proxy/*` (Route Handler dev-only proxy ke `apps/api`) DIKECUALIKAN dari matcher `headers()` — dicek
+  langsung `route.ts`-nya forward SEMUA header dari respons `apps/api` verbatim (termasuk 4 header yang sama),
+  jadi tidak ada gap, cuma hindari 2 sumber nilai untuk header yang sama.
+- Diverifikasi NYATA di browser (bukan cuma baca kode, sesuai kebiasaan project) — 3 surface (landing/app/
+  admin) via Claude in Chrome: 0 pelanggaran CSP di console, dropdown Radix positioning normal, gambar dari
+  MinIO + WordPress ke-load, login flow jalan, header dikonfirmasi `curl -I` sesuai yang ditulis.
+
+**Pelajaran**: (1) "kode ini sengaja hindari pola X karena alasan Y" (komentar lama di codebase) tidak otomatis
+berarti pola X selalu terlarang di SELURUH project — perlu ngerti PERSIS *layer* mana yang kena masalahnya
+(browser bundle vs server runtime) sebelum menyimpulkan boleh/tidak di tempat lain, jangan main aman
+menghindari total atau ceroboh mengulang tanpa cek. (2) Untuk Next.js versi yang lebih baru dari training data
+(§ peringatan `apps/web/CLAUDE.md`), WAJIB baca `node_modules/next/dist/docs/` dulu sebelum menulis fitur yang
+tergantung perilaku framework spesifik (CSP nonce di sini) — bukan asumsi dari pengetahuan umum, karena
+behavior/requirement-nya (mis. "nonce butuh dynamic rendering semua halaman") bisa beda dari versi lama.
+
+Detail: `apps/web/next.config.ts`.
+
+## 2026-09-27 — Batch 5.2 audit: retry Purchase Invoice/Sales Invoice TIDAK cek status batch sama sekali (bukan cuma "lupa `cancelling`")
+
+Rencana audit awal menyebut "tombol Retry tidak memperhitungkan status `cancelling`" — pas eksekusi ternyata
+LEBIH DALAM: endpoint `POST /{purchase,sales}-invoice/import/:batchId/retry` TIDAK PERNAH cek `batch.status`
+SAMA SEKALI sebelum set status jadi `processing` + enqueue `IMPORT_TO_ACCURATE` — beda dari handler `delete` di
+file yang SAMA yang sudah punya guard `if (batch.status === "processing" || batch.status === "cancelling") →
+409 BATCH_BUSY`. Artinya bukan cuma race window dengan proses "Batal Import" (`cancelling`), tapi retry ganda
+(`processing`, mis. user klik retry 2x cepat sebelum re-render) JUGA lolos — 2 job pg-boss `IMPORT_TO_ACCURATE`
+untuk batch yang SAMA bisa jalan bersamaan.
+
+**Fix**: guard 409 `BATCH_BUSY` ditambah ke retry PI & SI, reuse KODE & STATUS yang sama persis dengan `delete`
+(konsisten, bukan bikin kode baru). Frontend: variabel `isProcessing` (cuma cek `"processing"`) diganti
+`isBusy` (cek `"processing"` ATAU `"cancelling"`) di kedua halaman `[batchId]/page.tsx` — tombol Retry sekarang
+sembunyi utuh selama batch sedang diproses ATAU dibatalkan. Pesan toast: ditambah case `BATCH_BUSY` ke helper
+terpusat `describeImportActionError()` (§ Batch 3) — otomatis konsisten dengan pola sentralisasi yang baru
+dibangun, bukan pesan generik lagi.
+
+**Pelajaran**: rencana audit yang ditulis dari MEMBACA kode (bukan eksekusi test nyata) bisa meremehkan skala
+masalah — "lupa 1 status" ternyata "lupa validasi status SAMA SEKALI". Selalu re-verifikasi detail temuan saat
+eksekusi (§ juga [[feedback_facport_scope_and_check_existing_first]]), jangan asumsi rencana lama 100% akurat.
+
+Detail: `apps/api/src/routes/purchase-invoice-import.route.ts`, `apps/api/src/routes/sales-invoice-import.route.ts`,
+`apps/web/lib/import-error-message.ts`, `apps/web/app/app/(protected)/{purchase,sales}-invoice/import/[batchId]/page.tsx`.
+
+## 2026-09-27 — Batch 5.3 audit: N+1 query di job `NOTIFY_EXPIRING_SOON` (insert notifikasi + update threshold per subscription)
+
+Job harian `NOTIFY_EXPIRING_SOON` (reminder trial/langganan akan berakhir) insert 1 notifikasi + update 1 baris
+`subscriptions.lastReminderThresholdDays` per kandidat DI DALAM LOOP — N+1 klasik, meski volume rendah (jalan
+1x/hari, kandidat = subset kecil subscription aktif yang kena threshold hari ITU). Fix: kumpulkan payload
+notifikasi di loop (murni in-memory), insert sekali lewat `createNotificationsBulk()` (helper yang SUDAH ADA,
+dipakai fan-out `SEND_ANNOUNCEMENT` — bukan bikin abstraksi baru). Update threshold dikelompokkan per NILAI
+threshold (`Map<number, string[]>` id per threshold) jadi beberapa `UPDATE ... WHERE id IN (...)` — jumlah
+distinct value SELALU kecil (§ `SUBSCRIPTION_REMINDER_THRESHOLDS`/`TRIAL_REMINDER_THRESHOLDS`), jadi ini
+turun dari N update jadi ~5 update maksimal. `boss.send` (kirim email) TETAP per-penerima — itu dispatch job
+queue (pg-boss insert 1 row per job, BUKAN kelas masalah "N+1 query aplikasi" yang jadi concern audit ini),
+konsisten dengan pola fan-out announcement yang juga begitu.
+
+**Known limitation**: job ini TIDAK punya test dedicated (sudah begitu SEBELUM fix ini juga) — logic-nya inline
+di dalam `boss.work(JOBS.NOTIFY_EXPIRING_SOON, ...)` di `workers/index.ts`, bukan fungsi terpisah yang bisa
+di-import test. Ekstraksi jadi testable function adalah follow-up terpisah kalau job ini butuh test coverage
+lebih (di luar scope fix N+1 LOW-priority ini) — diverifikasi manual via `bun run typecheck` + full test suite
+1689 pass (tidak ada regresi test LAIN yang sempat menyentuh job ini secara tidak langsung).
+
+Detail: `apps/api/src/workers/index.ts` (job `NOTIFY_EXPIRING_SOON`).
+
+## 2026-09-27 — Batch 5.1 audit: label kolom "ID Item Transfer Accurate" di Item Requisition diganti label netral (konfirmasi user)
+
+Item Requisition & Item Transfer memanggil endpoint Accurate yang SAMA (`item-transfer/save.do`, § Fase 134-135)
+— jadi `accurateTransactionId` yang ditampilkan literal "ID Item Transfer" punya Accurate, BUKAN typo/bug. Tapi
+karena "Item Transfer" JUGA nama modul Facport lain yang aktif secara terpisah, label ini berpotensi bikin user
+Item Requisition mengira salah lihat data modul lain. Ditanyakan ke user (bukan diputuskan sepihak, sesuai
+rencana audit yang menandai ini "perlu konfirmasi produk") — user pilih **ganti ke label netral**.
+
+**Fix**: `TableHead` diganti dari "ID Item Transfer Accurate / Error" → "ID Transaksi Accurate / Error" di 2
+tempat: halaman customer (`item-requisition/import/[batchId]/page.tsx`) dan `ItemRequisitionView` di halaman
+admin (`admin/import-batches/[batchId]/page.tsx`). `ItemTransferView` di halaman admin (baris sebelum
+`ItemRequisitionView` di file yang sama) SENGAJA TIDAK diubah — itu memang modul Item Transfer beneran,
+tidak ambigu.
+
+**Pelajaran**: temuan yang eksplisit ditandai "perlu konfirmasi produk/klien" di rencana audit WAJIB benar-benar
+ditanyakan (pakai `AskUserQuestion`), bukan diputuskan sendiri walau opsinya kelihatan jelas — beda dengan
+temuan LOW/technical (5.2, 5.3) yang polanya sudah established dan aman dieksekusi langsung sesuai standing
+authorization user.
+
+Detail: `apps/web/app/app/(protected)/item-requisition/import/[batchId]/page.tsx`,
+`apps/web/app/admin/(protected)/import-batches/[batchId]/page.tsx`.
+
+## 2026-09-28 — Urutan tampil sub-modul diseragamkan sesuai urutan bisnis client (sidebar, `/subscribe`, landing, dropdown admin)
+
+Client minta urutan sub-modul (submenu sidebar, kartu `/subscribe`, dropdown pilih modul di admin) mengikuti
+urutan alur bisnis mereka (per kategori: Cash & Bank → General Ledger → Purchase → Sales → Inventory →
+Manufacture, lalu urutan spesifik DI DALAM tiap kategori), BUKAN urutan kronologis fase modul itu dibangun
+(urutan lama). Diminta "tanpa mengubah apapun selain urutan" — dieksekusi murni presentational.
+
+**Temuan penting saat investigasi** (harus dipahami SEBELUM eksekusi, supaya fix menyentuh SEMUA tempat yang
+diminta, bukan cuma sidebar): ada 2 MEKANISME URUTAN BERBEDA yang kebetulan sama-sama "ikut urutan array",
+TAPI array sumbernya beda:
+1. **Sidebar & dropdown admin plan** (`MODULE_OPTIONS.filter(...)`) — urutan ikut posisi literal di
+   `MODULE_CATALOG` (`apps/api/src/lib/module-catalog.ts`) untuk dropdown, dan array hardcoded terpisah di
+   `sidebar.tsx` untuk sidebar (BUKAN diturunkan dari `MODULE_CATALOG`, cuma kebetulan disusun manual meniru
+   urutannya).
+2. **`/subscribe` & landing (`module-features.tsx`)** — urutan TIDAK SAMA SEKALI diturunkan dari
+   `MODULE_CATALOG`. `useGroupedPlans()` (`apps/web/lib/use-grouped-plans.ts`) membentuk urutan dari urutan
+   MUNCUL PERTAMA tiap `moduleKey` di array `plans` — dan `GET /plans` (`apps/api/src/routes/plans.route.ts`)
+   SEBELUMNYA TIDAK PUNYA `ORDER BY` SAMA SEKALI, jadi urutannya kebetulan urutan INSERT row di DB (riwayat
+   pembuatan plan lintas fase, TIDAK match urutan bisnis yang diinginkan).
+
+Kalau cuma reorder `MODULE_CATALOG` + `sidebar.tsx` tanpa sadar poin 2, sidebar akan benar tapi `/subscribe`
+dan landing TETAP acak (mengikuti urutan insert DB yang lama) — bug "sebagian tempat kebetulan benar, sebagian
+diam-diam tidak", kelas masalah yang sama dengan pola rollout-tidak-lengkap yang berulang kali ditemukan audit
+2026-09-27 (§ [[project_facport_overview]] kalau ada, atau baca entri Batch 3 audit di atas).
+
+**Fix**: (1) reorder literal array `MODULE_CATALOG` (blok `productLine: "facport"`) sesuai urutan yang
+diminta client — SEMUA field (key/label/category) byte-identik, diverifikasi via `diff` set-sorted sebelum &
+sesudah (bukti murni reorder, 0 value berubah); (2) reorder literal array item Facport di `sidebar.tsx` dengan
+pola verifikasi sama; (3) tambah `.sort()` di `GET /plans` berdasarkan index posisi `moduleKey` di
+`MODULE_CATALOG` — SATU perubahan ini otomatis membetulkan `/subscribe` DAN landing sekaligus (keduanya
+konsumen `useGroupedPlans` dari endpoint yang sama), tanpa perlu sentuh kode `/subscribe`/landing itu sendiri.
+`vendor_payable_account` tidak disebut di urutan yang diberikan klien — diletakkan di akhir blok Purchase
+(posisi netral).
+
+**Verifikasi**: test baru `plans.route.test.ts` (insert 3 plan SENGAJA terbalik dari urutan katalog, assert
+balikan endpoint tetap ikut urutan katalog — pola filter by ID hasil `.returning()`, BUKAN by module key, karena
+dev DB shared punya ribuan row test lama dengan module key yang sama, § `feedback_dev_db_test_cleanup`).
+Diverifikasi juga NYATA: `curl /plans` di dev server (urutan cocok), browser `/subscribe` (kartu Sales Invoice
+sebelum Sales Receipt, sesuai index katalog).
+
+**Pelajaran**: 2 UI yang KELIHATANNYA konsumen sumber data yang sama ("urutan modul") bisa diam-diam
+diturunkan dari MEKANISME YANG BERBEDA TOTAL (array literal vs urutan insert DB tanpa `ORDER BY`) — WAJIB
+telusuri SETIAP konsumen sampai ke akar mekanisme urutannya (bukan asumsi "sama-sama dari MODULE_CATALOG")
+sebelum klaim "sudah konsisten di semua tempat", terutama untuk permintaan eksplisit "urutannya konsisten
+DIMANAPUN ditampilkan".
+
+Detail: `apps/api/src/lib/module-catalog.ts`, `apps/api/src/routes/plans.route.ts`,
+`apps/api/src/routes/plans.route.test.ts` (baru), `apps/web/components/app-shell/sidebar.tsx`.

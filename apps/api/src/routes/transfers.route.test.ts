@@ -167,6 +167,14 @@ describe("POST /transfers/:token/accept — akun baru", () => {
     );
     expect(res.status).toBe(409);
   });
+
+  // § BUG DITEMUKAN 2026-09-27 (audit menyeluruh), FIX PARSIAL — pola sama
+  // `invites.route.ts` (lihat komentar lengkap di sana): race window
+  // REALISTIS (jeda milidetik) sekarang tertutup via `lib/auth-errors.ts`,
+  // dites deterministik di `lib/auth-errors.test.ts`. Race Promise.all
+  // BENAR-BENAR simultan sengaja tidak dites di sini — perilaku adapter
+  // Better Auth untuk kasus itu belum dipahami penuh, butuh investigasi
+  // terpisah.
 });
 
 describe("POST /transfers/:token/accept-existing — akun existing", () => {

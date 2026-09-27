@@ -188,6 +188,20 @@ alur CI/CD otomatis, sama seperti host lain):
 2. **User** — jalankan salah satu runbook di bawah via SSH ke VPS
    (`wasugi@76.13.18.136`, path `/opt/facport`).
 
+> ⚠️ **CEK WAJIB SEBELUM `pull` (§ lessons-learned.md 2026-09-12 & 2026-09-27,
+> bug KELAS INI terjadi 2x dengan gejala identik sebelum akhirnya masuk
+> checklist)**: file `docker-compose*.yml`/`Caddyfile`/config lain yang
+> hidup LANGSUNG di server (`/opt/facport/*.yml`) adalah **COPY MANUAL**,
+> **TIDAK auto-sync dari git** — beda dari kode `apps/api`/`apps/web` yang
+> memang ter-bundle ke image lewat `Deploy` workflow. Kalau rilis ini
+> MENGUBAH salah satu file itu (mis. ganti image MinIO, ubah `Caddyfile`,
+> tambah service baru), file itu WAJIB di-update di server DULU (scp file
+> utuh, atau `sed -i` untuk perubahan 1 baris kecil) SEBELUM
+> `docker compose ... pull` — kalau kelewat, `pull`/`up -d` tetap jalan
+> dengan config LAMA tanpa error yang jelas (atau, kasus image registry
+> mati, error yang MEMBINGUNGKAN karena kelihatan seperti fix belum
+> ke-deploy padahal sudah ada di repo).
+
 ### Minimal — fix kecil, tanpa migration DB, tanpa ubah worker/queue
 Cocok untuk: fix UI, pesan error/teks, perubahan 1 route tanpa skema baru.
 ```bash

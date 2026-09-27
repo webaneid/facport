@@ -13,6 +13,7 @@ import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 type Row = {
@@ -75,12 +76,8 @@ export default function ItemRequisitionImportResultPage() {
     const res = await api["item-requisition"].import({ batchId: params.batchId }).retry.post();
     setRetrying(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; remaining?: number; max?: number } | undefined;
-      toast.error(
-        value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
-          ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris atau upgrade ke paket berbayar.`
-          : "Gagal mengirim ulang baris — coba lagi.",
-      );
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      toast.error(describeImportActionError(value, "Gagal mengirim ulang baris — coba lagi."));
       return;
     }
     load();
@@ -170,7 +167,13 @@ export default function ItemRequisitionImportResultPage() {
               <TableRow>
                 <TableHead className="w-20">Baris</TableHead>
                 <TableHead className="w-28">Status</TableHead>
-                <TableHead>ID Item Transfer Accurate / Error</TableHead>
+                {/* § audit-temuan-2026-09-27 Batch 5.1 — sebelumnya "ID Item Transfer
+                Accurate" (nama field API asli, item-transfer/save.do dipakai bareng
+                modul Item Transfer, § arsitektur). Diganti label netral atas
+                konfirmasi user 2026-09-27 — "Item Transfer" ambigu dengan nama modul
+                Facport lain yang aktif, beda dari modul lain yang nama field API-nya
+                tidak bentrok nama modul (mis. Inventory Adjustment). */}
+                <TableHead>ID Transaksi Accurate / Error</TableHead>
                 <TableHead className="w-16 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>

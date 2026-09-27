@@ -32,7 +32,15 @@ export const DATE_INTERNAL_FIELDS = new Set([
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 // § HARUS SINKRON dengan `salesInvoiceMapping.requiredFields`.
-export const REQUIRED_INTERNAL_FIELDS = new Set(["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"]);
+// § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — set ini
+// TIDAK PERNAH di-update balik saat requiredFields backend berubah Fase 61
+// (`number` DITAMBAH jadi wajib, `itemUnitName` DIHAPUS dari wajib) —
+// akibatnya dialog ini memblokir simpan baris yang sebenarnya valid
+// (itemUnitName kosong) DAN tidak memberi tahu field yang sungguh wajib
+// (number) sampai submit ditolak server. `purchase-invoice/edit-row-dialog.tsx`
+// (Fase 81, mirror keputusan yang SAMA) sudah benar sejak awal — cuma
+// sumber keputusannya sendiri (Sales Invoice) yang kelewat di-update.
+export const REQUIRED_INTERNAL_FIELDS = new Set(["customerNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "warehouseName"]);
 
 const FIELD_HINTS: Record<string, string> = {
   customerNo: "Kode Customer di Accurate, contoh: C.00001",

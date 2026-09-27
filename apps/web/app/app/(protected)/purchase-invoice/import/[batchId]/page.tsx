@@ -13,6 +13,7 @@ import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findBillNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/purchase-invoice-batch-helpers";
 
@@ -87,12 +88,8 @@ export default function PurchaseInvoiceImportResultPage() {
     const res = await api["purchase-invoice"].import({ batchId: params.batchId }).retry.post();
     setRetrying(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; remaining?: number; max?: number } | undefined;
-      toast.error(
-        value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
-          ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris atau upgrade ke paket berbayar.`
-          : "Gagal mengirim ulang baris — coba lagi.",
-      );
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      toast.error(describeImportActionError(value, "Gagal mengirim ulang baris — coba lagi."));
       return;
     }
     load();
@@ -117,7 +114,11 @@ export default function PurchaseInvoiceImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
-  const isProcessing = batch.status === "processing";
+  // § audit-temuan-2026-09-27 Batch 5.2 — sebelumnya cuma cek "processing",
+  // tombol Retry tetap tampil saat batch "cancelling" (job Batal Import
+  // lagi jalan) — race window kecil sebelum backend juga ditutup (409
+  // BATCH_BUSY, lihat purchase-invoice-import.route.ts).
+  const isBusy = batch.status === "processing" || batch.status === "cancelling";
   const numberColumn = findNumberColumn(batch.columnMapping);
   const billNumberColumn = findBillNumberColumn(batch.columnMapping);
   const sortedRows = sortByInvoiceNumber(rows, numberColumn, billNumberColumn);
@@ -143,7 +144,7 @@ export default function PurchaseInvoiceImportResultPage() {
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
-        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
+        {(summary.failed > 0 || summary.pending > 0) && !isBusy && batch.columnMapping && (
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Mengirim ulang..." : "Retry baris gagal"}

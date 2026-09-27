@@ -6,6 +6,7 @@ import {
   integer,
   text,
   timestamp,
+  index,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 
@@ -38,14 +39,22 @@ export const media = pgTable("media", {
 });
 
 // --- Audit Logs (§ architecture-security.md §11) ---
-export const auditLogs = pgTable("audit_logs", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  entityType: varchar("entity_type", { length: 50 }).notNull(),
-  entityId: varchar("entity_id", { length: 100 }).notNull(),
-  action: varchar("action", { length: 20 }).notNull(), // "create" | "update" | "delete"
-  changes: jsonb("changes"),
-  actorId: text("actor_id").references(() => user.id),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .defaultNow()
-    .notNull(),
-});
+export const auditLogs = pgTable(
+  "audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    entityType: varchar("entity_type", { length: 50 }).notNull(),
+    entityId: varchar("entity_id", { length: 100 }).notNull(),
+    action: varchar("action", { length: 20 }).notNull(), // "create" | "update" | "delete"
+    changes: jsonb("changes"),
+    actorId: text("actor_id").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  // § audit menyeluruh 2026-09-27 — traffic admin rendah (bukan prioritas
+  // tinggi), tapi endpoint admin list SELALU `ORDER BY created_at DESC
+  // LIMIT` — index murah untuk itu, sekalian ditambah waktu migration
+  // index lain di batch yang sama.
+  (t) => [index("audit_logs_created_at_idx").on(t.createdAt)],
+);

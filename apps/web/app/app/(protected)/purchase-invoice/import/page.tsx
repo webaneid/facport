@@ -14,6 +14,7 @@ import { TruncateText } from "@/components/ui/truncate-text";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from "@/components/ui/accordion";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { api } from "@/lib/api-client";
+import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-accurate-integration.md § 3, § phase-02 doc — upload
@@ -249,14 +250,8 @@ export default function PurchaseInvoiceImportPage() {
     const res = await api["purchase-invoice"].import({ batchId: result.batchId }).confirm.post({ columnMapping });
     setConfirming(false);
     if (res.error) {
-      const value = res.error.value as { code?: string; fields?: string[]; remaining?: number; max?: number } | undefined;
-      setError(
-        value?.code === "MISSING_REQUIRED_FIELDS"
-          ? `Field wajib belum dipetakan: ${value.fields?.join(", ")}`
-          : value?.code === "TRIAL_ROW_LIMIT_EXCEEDED"
-            ? `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris di file atau upgrade ke paket berbayar.`
-            : "Gagal konfirmasi mapping.",
-      );
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      setError(describeImportActionError(value, "Gagal konfirmasi mapping."));
       return;
     }
     router.push(`/purchase-invoice/import/${result.batchId}`);

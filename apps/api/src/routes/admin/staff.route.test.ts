@@ -103,6 +103,24 @@ describe("POST /admin/staff", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — kasus
+  // NYATA yang dilaporkan user (fajar@cpssoft.com): sebelumnya 500 generik
+  // "Gagal membuat akun staff — coba lagi." untuk email yang SUDAH
+  // terdaftar. Root cause ASLI: Better Auth balikin user SINTETIS/PALSU
+  // (bukan throw) untuk kasus ini — TIDAK PERNAH ada test untuk skenario
+  // ini sebelumnya, itu kenapa fix pertama (yang salah asumsi soal throw)
+  // tidak ketahuan tidak benar-benar berfungsi.
+  test("400 EMAIL_ALREADY_EXISTS (BUKAN 500) kalau email SUDAH terdaftar", async () => {
+    const adminCookie = await makeAdminCookie();
+    const email = `staff-route-dup-${runId}@test.local`;
+    await signUp(email);
+
+    const res = await postStaff(adminCookie, { email, name: "Siapa Saja", role: "staff" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string };
+    expect(body.code).toBe("EMAIL_ALREADY_EXISTS");
+  });
 });
 
 // § diminta user 2026-09-05 — menu khusus tim internal, TERPISAH dari

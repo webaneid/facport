@@ -56,11 +56,34 @@ export const JOBS = {
 //    margin ekstra untuk modul lain yang mungkin lebih berat (classification/
 //    serial number lookup) — 10.000 × 4 ÷ 8 ≈ 5.000 detik (~83 menit),
 //    7200 detik kasih margin ~2x dari situ.
-// Queue LAIN (email, refresh token, dst) TETAP pakai default (15 menit
-// expire, retry 2x) — itu memang cukup & retry aman untuk kerjanya (tidak
-// ada risiko "kirim dokumen 2x ke sistem eksternal" seperti import).
-const LONG_RUNNING_QUEUES = new Set<string>([JOBS.IMPORT_TO_ACCURATE, JOBS.CANCEL_IMPORT]);
-const LONG_RUNNING_QUEUE_OPTIONS = { expireInSeconds: 7200, retryLimit: 0 };
+// Queue LAIN (email, dst) TETAP pakai default (15 menit expire, retry
+// 2x) — itu memang cukup & retry aman untuk kerjanya (tidak ada risiko
+// "kirim dokumen 2x ke sistem eksternal" seperti import).
+//
+// § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) —
+// `REFRESH_ACCURATE_TOKEN` TERNYATA rentan RACE CONDITION YANG PERSIS SAMA
+// dengan bug di atas, cuma belum ketahuan (dampaknya "cuma" minta customer
+// connect ulang, bukan baris impor gagal massal yang mencolok): job ini
+// me-refresh token OAuth (DIROTASI & SEKALI-PAKAI, § komentar
+// `refreshConnectionToken`/`hasRunningBatch`) untuk SEMUA koneksi aktif
+// dalam 1 loop sequential — kalau job dianggap "expired" pg-boss di menit
+// ke-15 (default) lalu di-retry OTOMATIS SEMENTARA invocation lama masih
+// jalan, 2 invocation bisa berebut refresh TOKEN YANG SAMA untuk koneksi
+// yang SAMA → invocation kedua dapat `invalid_grant` (token sudah
+// dipakai/dirotasi invocation pertama) → `markConnectionExpired()`
+// terpanggil KELIRU, customer yang koneksinya SEBENARNYA SEHAT diputus
+// paksa. `retryLimit: 0` MENUTUP TOTAL risiko ini (alasan sama IMPORT_TO_ACCURATE
+// di atas) — job ini SUDAH dijadwalkan harian (`boss.schedule`), jadi
+// "retry alami"-nya sudah ada tanpa perlu retry level pg-boss.
+// `expireInSeconds` TETAP di 3600 (bukan 7200 seperti import) — job ini
+// jauh lebih ringan (1 panggilan OAuth sequential per koneksi due-refresh
+// SAJA, bukan per SEMUA koneksi, TANPA rate-limit 8/detik seperti data API
+// Accurate), 3600 detik sudah margin besar untuk skala saat ini.
+const NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS: Record<string, { expireInSeconds: number; retryLimit: number }> = {
+  [JOBS.IMPORT_TO_ACCURATE]: { expireInSeconds: 7200, retryLimit: 0 },
+  [JOBS.CANCEL_IMPORT]: { expireInSeconds: 7200, retryLimit: 0 },
+  [JOBS.REFRESH_ACCURATE_TOKEN]: { expireInSeconds: 3600, retryLimit: 0 },
+};
 
 let started = false;
 
@@ -68,17 +91,16 @@ export async function startQueue() {
   if (started) return boss;
   await boss.start();
   for (const queue of Object.values(JOBS)) {
-    await boss.createQueue(queue, LONG_RUNNING_QUEUES.has(queue) ? LONG_RUNNING_QUEUE_OPTIONS : undefined);
+    await boss.createQueue(queue, NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS[queue]);
   }
   // § `createQueue` di atas pakai `ON CONFLICT DO NOTHING` (dikonfirmasi
   // dari sumber pg-boss) — TIDAK meng-update queue yang SUDAH ADA di
-  // database (IMPORT_TO_ACCURATE/CANCEL_IMPORT sudah lama dibuat di
-  // production, dari import-import sebelum perubahan ini). `updateQueue`
-  // (beneran `UPDATE ... SET expire_seconds = ..., retry_limit = ...`)
-  // WAJIB dipanggil terpisah supaya production ikut ke-update, bukan cuma
-  // database baru/dev.
-  for (const queue of LONG_RUNNING_QUEUES) {
-    await boss.updateQueue(queue, LONG_RUNNING_QUEUE_OPTIONS);
+  // database (queue-queue ini sudah lama dibuat di production, dari
+  // sebelum perubahan ini). `updateQueue` (beneran `UPDATE ... SET
+  // expire_seconds = ..., retry_limit = ...`) WAJIB dipanggil terpisah
+  // supaya production ikut ke-update, bukan cuma database baru/dev.
+  for (const [queue, options] of Object.entries(NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS)) {
+    await boss.updateQueue(queue, options);
   }
   started = true;
   return boss;
