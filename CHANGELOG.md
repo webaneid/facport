@@ -1,3 +1,8 @@
+## <small>2.15.1 (2026-09-27)</small>
+
+* Merge pull request #77 from webaneid/develop ([2f04083](https://github.com/webaneid/facport/commit/2f04083)), closes [#77](https://github.com/webaneid/facport/issues/77)
+* fix(web): HOTFIX production — pindah CSP dari next.config.ts ke proxy.ts (di-bake build time, bukan  ([f08e815](https://github.com/webaneid/facport/commit/f08e815))
+
 ## 2.15.0 (2026-09-27)
 
 * feat(web,api): urutkan tampil sub-modul sesuai alur bisnis client (sidebar, /subscribe, landing, dro ([4ccd3ae](https://github.com/webaneid/facport/commit/4ccd3ae))
