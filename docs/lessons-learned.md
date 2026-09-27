@@ -4938,3 +4938,43 @@ selamanya".
 Detail: `apps/api/src/lib/auth-errors.ts` (ditulis ulang total), `apps/api/src/lib/auth-errors.test.ts` (baru),
 `apps/api/src/routes/admin/staff.route.ts`, `apps/api/src/routes/admin/users.route.ts`,
 `apps/api/src/routes/invites.route.ts`, `apps/api/src/routes/transfers.route.ts`, test terkait di semua 4 file.
+
+## 2026-09-27 — Batch 2 audit: 8 index database yang hilang sejak awal, ditemukan lewat audit bukan lewat masalah nyata di production
+
+Audit menyeluruh (subagent backend) menemukan 5 tabel yang sering di-query (`import_batch_rows`,
+`import_batches`, `subscriptions`, `notifications`, `audit_logs`) SAMA SEKALI tidak punya index eksplisit sejak
+tabel-tabel itu dibuat — beda dari `auth.schema.ts`/`accurate.schema.ts`/`data-usaha.schema.ts` yang SUDAH
+punya index sejak awal. Paling parah: `import_batch_rows.batch_id` dipakai di **107 tempat** (SETIAP endpoint
+get-detail/export/retry/edit di SEMUA 23 modul + worker) dan `subscriptions`'s beberapa kolom dipakai di 54
+tempat termasuk `moduleAccess` guard yang jalan di HAMPIR SEMUA endpoint aplikasi (bukan cuma modul import).
+
+**Fix**: 8 index baru (composite untuk kolom yang SERING difilter bersamaan, dirancang dari POLA QUERY ASLI di
+kode — bukan tebakan):
+- `import_batch_rows(batch_id, status)` — worker fetch pending/failed, summary count per status.
+- `import_batches(subscription_id, module)` — list batch per subscription+module (SEMUA 23 modul).
+- `subscriptions(data_usaha_id, status)` — `moduleAccess` guard (paling sering dipanggil di antara semua).
+- `subscriptions(user_id)`, `subscriptions(status)` — dipakai sendirian di banyak tempat (admin, worker jobs).
+- `subscriptions(accurate_connection_id)` — FK, defensif (belum ada query eksplisit ditemukan, tapi wajar untuk
+  JOIN/cascade).
+- `notifications(user_id, is_read)` — bell dashboard (list + unread count).
+- `audit_logs(created_at)` — prioritas rendah (traffic admin kecil), sekalian ditambah di migration yang sama.
+
+**Catatan deploy**: migration ini `CREATE INDEX` biasa (BUKAN `CONCURRENTLY`) — konsisten dengan SEMUA migration
+lain di project ini (belum pernah pakai `CONCURRENTLY`). Untuk tabel `subscriptions`/`import_batch_rows` yang
+sudah punya data production nyata, `CREATE INDEX` mengunci tabel itu (blok WRITE, bukan READ) selama index
+dibangun — durasinya proporsional ke jumlah baris. Belum jadi masalah nyata di skala project ini sekarang
+(retensi 2 hari untuk `import_batch_rows`, jumlah subscription masih kecil), TAPI kalau tabel sudah jauh lebih
+besar di masa depan, revisit pakai `CREATE INDEX CONCURRENTLY` (perlu migration runner yang mendukung statement
+di luar transaksi — `drizzle-kit migrate` default membungkus migration dalam transaksi, `CONCURRENTLY` tidak
+bisa jalan di dalam transaksi, jadi butuh pola migration terpisah kalau nanti perlu).
+
+**Pelajaran**: (1) index yang hilang biasanya BARU ketahuan setelah keluhan performa nyata (query lambat
+dilaporkan user) — audit PROAKTIF (cek pola `WHERE`/`JOIN` di kode dibanding index yang ADA di skema) bisa
+menemukan gap ini SEBELUM jadi masalah production, bukan sesudahnya. (2) Rancang index dari POLA QUERY ASLI di
+kode (baca semua `eq()`/`and()` yang benar-benar dipakai), bukan tebak dari nama kolom yang "kelihatannya
+penting" — kolom yang SERING difilter BERSAMAAN (mis. `batchId` + `status`) butuh index COMPOSITE, bukan 2
+index tunggal terpisah (composite lebih efisien untuk pola query itu).
+
+Detail: migration `drizzle/0033_complex_mephisto.sql`, `apps/api/src/db/schema/import.schema.ts`,
+`apps/api/src/db/schema/subscription.schema.ts`, `apps/api/src/db/schema/notification.schema.ts`,
+`apps/api/src/db/schema/core.schema.ts`.

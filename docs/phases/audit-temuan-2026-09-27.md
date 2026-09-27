@@ -2,8 +2,8 @@
 
 > Hasil audit 3 subagent paralel (security, konsistensi+performa backend,
 > konsistensi frontend) terhadap seluruh 23 modul import + infrastruktur
-> inti. Status: **Batch 1 SELESAI dieksekusi (2026-09-27, sore)**, Batch
-> 2-5 masih rencana untuk sesi berikutnya.
+> inti. Status: **Batch 1 & 2 SELESAI dieksekusi (2026-09-27)**, Batch
+> 3-5 masih rencana untuk sesi berikutnya.
 >
 > **Update penting Batch 1** — item 1.3 (bug email duplikat di
 > invites/transfers) ternyata membongkar fix PAGI HARI INI (admin/staff,
@@ -89,27 +89,32 @@ bug email sudah terdaftar" — WAJIB dibaca kalau ada endpoint BARU nanti yang p
 
 ---
 
-## BATCH 2 — Index Database (1 migration, dampak luas)
+## BATCH 2 — ✅ SELESAI (2026-09-27) — Index Database (1 migration, dampak luas)
 
-### 2.1 [CRITICAL] `import_batch_rows.batch_id` tanpa index
+> Migration `drizzle/0033_complex_mephisto.sql` — 8 index (2.1-2.5 semuanya, plus `subscriptions_status_idx` &
+> `subscriptions_accurate_connection_id_idx` terpisah dari composite `data_usaha_id+status`). `CREATE INDEX`
+> biasa (bukan `CONCURRENTLY`, konsisten migration lain di project ini) — § catatan lock table di
+> `docs/lessons-learned.md` 2026-09-27 kalau tabel sudah jauh lebih besar di masa depan.
+
+### 2.1 ✅ [CRITICAL] `import_batch_rows.batch_id` tanpa index
 - Dipakai di **107 tempat** — SETIAP endpoint get-detail/export/retry/edit
   di SEMUA 23 modul + worker. Rekomendasi: index composite `(batch_id, status)`
   (query paling sering filter KEDUA kolom sekaligus).
 
-### 2.2 [HIGH] `import_batches.subscription_id` tanpa index
+### 2.2 ✅ [HIGH] `import_batches.subscription_id` tanpa index
 - 32 pemakaian, termasuk list batch per subscription. Rekomendasi: composite
   `(subscription_id, module)`.
 
-### 2.3 [HIGH] `subscriptions` — `user_id`/`data_usaha_id`/`accurate_connection_id`/`status` semua tanpa index
+### 2.3 ✅ [HIGH] `subscriptions` — `user_id`/`data_usaha_id`/`accurate_connection_id`/`status` semua tanpa index
 - 54 pemakaian — termasuk gating akses modul (`moduleAccess` guard) yang
   jalan di HAMPIR SEMUA endpoint aplikasi (bukan cuma import). Ini
   kandidat index dengan dampak PALING LUAS (bukan cuma modul import).
 
-### 2.4 [MEDIUM] `notifications.user_id` tanpa index
+### 2.4 ✅ [MEDIUM] `notifications.user_id` tanpa index
 - Dipakai buat list notifikasi (bell dashboard) — traffic tinggi tiap
   load dashboard meski cuma 4 titik kode.
 
-### 2.5 [LOW] `audit_logs` tanpa index di `created_at`
+### 2.5 ✅ [LOW] `audit_logs` tanpa index di `created_at`
 - Traffic admin rendah, bukan prioritas — boleh sekalian kalau lagi
   bikin migration index yang lain.
 

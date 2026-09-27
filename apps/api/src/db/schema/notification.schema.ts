@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, jsonb, boolean, integer, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, jsonb, boolean, integer, timestamp, index } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 
 // § Fase 45, ADR-0029 — 1 row = 1 broadcast/pengumuman yang admin buat.
@@ -26,25 +26,34 @@ export const announcements = pgTable("announcements", {
 // Dipakai SEKALIGUS untuk customer (mis. "pembayaran terverifikasi") dan
 // admin/staff (mis. "ada bukti transfer baru") — dibedakan oleh siapa
 // `userId`-nya, BUKAN tabel/endpoint terpisah per surface.
-export const notifications = pgTable("notifications", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  userId: text("user_id")
-    .notNull()
-    .references(() => user.id, { onDelete: "cascade" }),
-  // § lihat architecture-notifications.md § "Katalog Tipe" untuk daftar
-  // lengkap nilai yang valid — varchar+comment (pola sama
-  // `orders.status`/`import_batches.module`), BUKAN pg enum.
-  type: varchar("type", { length: 50 }).notNull(),
-  title: varchar("title", { length: 200 }).notNull(),
-  body: text("body").notNull(),
-  // § entityType/entityId: referensi ke entity terkait (order/subscription/
-  // accurate_connection/announcement) — dipakai frontend (lib/notification-
-  // routes.ts) resolve link tujuan saat notifikasi diklik. Nullable —
-  // sebagian tipe (mis. broadcast tanpa target spesifik) tidak selalu ada.
-  entityType: varchar("entity_type", { length: 50 }),
-  entityId: uuid("entity_id"),
-  sourceAnnouncementId: uuid("source_announcement_id").references(() => announcements.id),
-  isRead: boolean("is_read").notNull().default(false),
-  readAt: timestamp("read_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
-});
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    // § lihat architecture-notifications.md § "Katalog Tipe" untuk daftar
+    // lengkap nilai yang valid — varchar+comment (pola sama
+    // `orders.status`/`import_batches.module`), BUKAN pg enum.
+    type: varchar("type", { length: 50 }).notNull(),
+    title: varchar("title", { length: 200 }).notNull(),
+    body: text("body").notNull(),
+    // § entityType/entityId: referensi ke entity terkait (order/subscription/
+    // accurate_connection/announcement) — dipakai frontend (lib/notification-
+    // routes.ts) resolve link tujuan saat notifikasi diklik. Nullable —
+    // sebagian tipe (mis. broadcast tanpa target spesifik) tidak selalu ada.
+    entityType: varchar("entity_type", { length: 50 }),
+    entityId: uuid("entity_id"),
+    sourceAnnouncementId: uuid("source_announcement_id").references(() => announcements.id),
+    isRead: boolean("is_read").notNull().default(false),
+    readAt: timestamp("read_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — `userId`
+  // tanpa index, dipakai buat list notifikasi (bell dashboard) — traffic
+  // tinggi tiap load dashboard. Composite (user_id, is_read) mencakup
+  // query "userId saja" (list semua) DAN "userId + isRead=false" (badge
+  // unread count) sekaligus.
+  (t) => [index("notifications_user_read_idx").on(t.userId, t.isRead)],
+);
