@@ -6,11 +6,13 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Combobox } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
+import { filterFormulas } from "@/lib/filter-formulas";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
 // form-based (BUKAN Excel-upload seperti 23 modul lain). Formula (BOM):
@@ -20,6 +22,14 @@ import { api } from "@/lib/api-client";
 // eksistensi saat "Input Produksi" beneran diproses, § konsisten filosofi
 // SEMUA modul lain, dicek lagi saat eksekusi fase ini — TIDAK ada satu pun
 // modul di Facport yang punya live-search Accurate dari browser).
+// § Fase 163 (menyusul, evaluasi client) — live-search Accurate akan
+// mengganti input manual ini, TIDAK bagian fase ini (Fase 162 murni
+// search/filter/gudang bahan baku, lihat plan file).
+// § Fase 162 (evaluasi client) — kolom "Gudang" per baris Bahan Baku
+// ditambah (field `warehouseName` SUDAH ada di backend sejak Fase 159,
+// cuma belum dimunculkan di form ini — client minta bisa tentukan sendiri
+// bahan baku diambil dari gudang mana per baris, beda dari "Gudang Barang
+// Jadi" yang sudah ada).
 type FormulaItem = { itemNo: string; itemUnitName: string; quantity: number; warehouseName?: string };
 type Formula = {
   id: string;
@@ -159,7 +169,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               </button>
             </div>
             {items.map((item, index) => (
-              <div key={index} className="grid grid-cols-[2fr_1fr_1fr_auto] gap-2">
+              <div key={index} className="grid grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr_auto] gap-2">
                 <Input value={item.itemNo} onChange={(e) => updateItem(index, { itemNo: e.target.value })} placeholder="Kode Barang, mis. 100012" />
                 <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan, KG" />
                 <Input
@@ -167,6 +177,11 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
                   value={item.quantity || ""}
                   onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
                   placeholder="Takaran, 0.5"
+                />
+                <Input
+                  value={item.warehouseName ?? ""}
+                  onChange={(e) => updateItem(index, { warehouseName: e.target.value })}
+                  placeholder="Gudang Bahan Baku (opsional)"
                 />
                 <button
                   type="button"
@@ -210,6 +225,11 @@ const columnHelper = createDataTableColumns<Formula>();
 
 export default function AutoProduksiFormulasPage() {
   const [formulas, setFormulas] = useState<Formula[] | null>(null);
+  // § Fase 162 (evaluasi client) — search nama Formula + filter Cabang,
+  // client-side (dataset per Data Usaha kecil, § plan file). Fungsi
+  // filter diekstrak ke `lib/filter-formulas.ts` supaya testable.
+  const [search, setSearch] = useState("");
+  const [branchFilter, setBranchFilter] = useState<string | null>(null);
 
   async function load() {
     const res = await api.autoproduksi.formulas.get();
@@ -265,6 +285,12 @@ export default function AutoProduksiFormulasPage() {
     }),
   ];
 
+  // § Fase 162 — opsi filter Cabang diambil dari data Formula yang SUDAH
+  // ada (tidak perlu fetch daftar Cabang dari Accurate, cukup Cabang yang
+  // benar-benar dipakai di Formula Data Usaha ini).
+  const branchOptions = formulas ? [...new Set(formulas.map((f) => f.branchName))].sort() : [];
+  const filteredFormulas = formulas ? filterFormulas(formulas, { search, branch: branchFilter }) : null;
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -280,16 +306,31 @@ export default function AutoProduksiFormulasPage() {
           <CardTitle>Daftar Formula</CardTitle>
           <CardDescription>Kode barang & akun diketik apa adanya — divalidasi Accurate saat Input Produksi diproses.</CardDescription>
         </CardHeader>
-        <CardContent>
-          {!formulas ? (
+        <CardContent className="flex flex-col gap-4">
+          {formulas && formulas.length > 0 && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama Formula..." className="max-w-xs" />
+              <div className="w-48">
+                <Combobox
+                  value={branchFilter ?? ""}
+                  onChange={(v) => setBranchFilter(v || null)}
+                  placeholder="Semua Cabang"
+                  options={[{ value: "", label: "Semua Cabang" }, ...branchOptions.map((b) => ({ value: b, label: b }))]}
+                />
+              </div>
+            </div>
+          )}
+          {!filteredFormulas ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <DataTable
               columns={columns}
-              data={formulas}
+              data={filteredFormulas}
               emptyIcon={Boxes}
-              emptyTitle="Belum ada formula"
-              emptyDescription='Klik "Tambah Formula" untuk bikin resep pertama.'
+              emptyTitle={formulas && formulas.length > 0 ? "Tidak ada Formula yang cocok" : "Belum ada formula"}
+              emptyDescription={
+                formulas && formulas.length > 0 ? "Coba ubah kata pencarian atau filter Cabang." : 'Klik "Tambah Formula" untuk bikin resep pertama.'
+              }
             />
           )}
         </CardContent>

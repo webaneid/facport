@@ -129,15 +129,22 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
 - Excel bulk input ("Kirim Dengan Excel") — fase terpisah.
 - Harga Beli bahan baku otomatis dari Accurate (`item/list.do` sudah
   endpoint baseline, gampang ditambah) — enhancement lanjutan.
-- Trial row budget belum ditegakkan (lihat di atas).
-- Live-search Accurate (Item/Akun/Cabang) dari form — TIDAK ADA sama sekali
-  di modul ini maupun 23 modul lain, konsisten filosofi project, tapi kalau
-  suatu saat dibutuhkan (UX improvement), butuh desain baru (sesi Accurate
-  per-request, bukan per-job) — di luar scope fase ini.
-- **Test call NYATA ke Accurate sandbox belum dilakukan saat dokumen ini
-  ditulis** — WAJIB sebelum fase ditutup penuh (§ pola project: jangan
-  simpulkan dari spec doang, § lesson Fase 158 Delivery Order yang nemu
-  koreksi struktur field pas test call nyata).
+- Trial row budget belum ditegakkan (lihat di atas) — evaluasi ditunda
+  eksplisit oleh user 2026-09-29 (§ `project_autoproduksi_trial_maxrows_pending`).
+- ~~Live-search Accurate (Item/Akun/Cabang) dari form~~ — **Fase 163**
+  (menyusul, evaluasi client 2026-09-29): pola live-search SINKRON dari
+  route (bukan lagi "tidak ada sama sekali", premis awal ini SUDAH
+  DIKOREKSI). ADR baru + migration (simpan nama hasil lookup) direncanakan
+  di fase itu.
+- **Test call NYATA ke Accurate sandbox** — SUDAH dilakukan (§ Fase 159
+  Ringkasan Hasil, sukses).
+
+### Fase 162 (2026-09-29, evaluasi client) — Selesai
+- Search nama Formula + filter Cabang di `/autoproduksi/formulas`
+  (client-side, § `lib/filter-formulas.ts`).
+- Input "Gudang Bahan Baku" per baris Bahan Baku — kolom `warehouseName`
+  di `autoproduksi_formula_items` SUDAH ada di backend sejak Fase 159,
+  cuma belum dimunculkan di form; sekarang ada.
 
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`
