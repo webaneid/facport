@@ -1,3 +1,10 @@
+## 2.18.0 (2026-09-29)
+
+* feat(api,web): AutoProduksi Fase 163 — live-search Accurate di form Formula ([46c077f](https://github.com/webaneid/facport/commit/46c077f))
+* fix(api,web): plans.productLine selalu default facport, salah label invoice Konverter/AutoProduksi ([e657b1f](https://github.com/webaneid/facport/commit/e657b1f))
+* Merge pull request #82 from webaneid/develop ([404ee9e](https://github.com/webaneid/facport/commit/404ee9e)), closes [#82](https://github.com/webaneid/facport/issues/82)
+* feat(web): AutoProduksi Fase 162 — search Formula, filter Cabang, Gudang Bahan Baku ([abc5416](https://github.com/webaneid/facport/commit/abc5416))
+
 ## 2.17.0 (2026-09-29)
 
 * Merge pull request #81 from webaneid/develop ([f66cd45](https://github.com/webaneid/facport/commit/f66cd45)), closes [#81](https://github.com/webaneid/facport/issues/81)
