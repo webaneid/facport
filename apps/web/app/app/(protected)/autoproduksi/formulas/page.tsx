@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
 import { filterFormulas } from "@/lib/filter-formulas";
-import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
+import { itemComboboxOptions, warehouseComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
@@ -22,11 +22,19 @@ import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 // Perantara SEKARANG dicari live ke Accurate (`GET /accurate/items/search`,
 // `GET /accurate/glaccounts/search`, § accurate-lookup.route.ts) lewat
 // `Combobox` yang sudah ada, BUKAN diketik manual lagi — kode+satuan+nama
-// otomatis terisi begitu dipilih. `branchName`/`warehouseName` TETAP
-// diketik manual (client tidak minta search untuk itu, § plan file).
+// otomatis terisi begitu dipilih. `branchName` TETAP diketik manual
+// (Accurate tidak punya endpoint search Cabang yang relevan di sini).
 // § Fase 162 (evaluasi client) — kolom "Gudang" per baris Bahan Baku.
+// § HOTFIX 2026-09-30 (evaluasi client) — Gudang (Barang Jadi & Bahan
+// Baku) SEKARANG juga search-pilih ke Accurate (`GET /accurate/warehouses/search`)
+// BUKAN ketik bebas lagi, supaya nama gudang konsisten dengan data ASLI
+// Accurate (bukan typo). CATATAN: ini BUKAN "auto-fill" seperti Satuan —
+// Accurate tidak punya konsep "gudang default" per Barang (stok tersebar
+// di banyak gudang), jadi user tetap harus PILIH gudangnya sendiri, cuma
+// dari daftar asli (bukan ketik manual).
 type AccurateItemResult = { no: string; name: string; unitName: string };
 type AccurateAccountResult = { no: string; name: string };
+type AccurateWarehouseResult = { name: string };
 
 type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: number; warehouseName?: string };
 type Formula = {
@@ -57,6 +65,12 @@ async function searchAccurateAccounts(q: string): Promise<AccurateAccountResult[
   return res.data ? (res.data as unknown as { accounts: AccurateAccountResult[] }).accounts : [];
 }
 
+async function searchAccurateWarehouses(q: string): Promise<AccurateWarehouseResult[]> {
+  if (!q.trim()) return [];
+  const res = await api.accurate.warehouses.search.get({ query: { q } });
+  return res.data ? (res.data as unknown as { warehouses: AccurateWarehouseResult[] }).warehouses : [];
+}
+
 function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved: () => void }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
@@ -77,6 +91,13 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   // dalam satu waktu), fallback per-baris (§ `itemComboboxOptions`) yang
   // menjaga baris LAIN tetap tampil benar walau state ini berubah.
   const [itemResults, setItemResults] = useState<AccurateItemResult[]>([]);
+  // § Gudang Barang Jadi vs Gudang per-baris Bahan Baku dipisah jadi 2 state
+  // hasil pencarian (bukan digabung 1 seperti Item) karena keduanya sering
+  // dicari BERSAMAAN di layar yang sama (1 field Gudang Barang Jadi + N
+  // baris Gudang Bahan Baku) — kalau digabung 1 state, hasil salah satu
+  // bisa "menimpa" tampilan yang lain.
+  const [finishedGoodWarehouseResults, setFinishedGoodWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
+  const [itemWarehouseResults, setItemWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,6 +109,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(await searchAccurateItems(q)), 350);
   const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(await searchAccurateItems(q)), 350);
   const debouncedAccountSearch = useDebouncedCallback(async (q: string) => setAccountResults(await searchAccurateAccounts(q)), 350);
+  const debouncedFinishedGoodWarehouseSearch = useDebouncedCallback(async (q: string) => setFinishedGoodWarehouseResults(await searchAccurateWarehouses(q)), 350);
+  const debouncedItemWarehouseSearch = useDebouncedCallback(async (q: string) => setItemWarehouseResults(await searchAccurateWarehouses(q)), 350);
 
   async function openDialog() {
     setOpen(true);
@@ -95,6 +118,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
     setFinishedGoodResults([]);
     setAccountResults([]);
     setItemResults([]);
+    setFinishedGoodWarehouseResults([]);
+    setItemWarehouseResults([]);
     if (!formulaId) {
       setName("");
       setFinishedGoodItemNo("");
@@ -251,10 +276,12 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
                   onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
                   placeholder="Takaran, 0.5"
                 />
-                <Input
+                <Combobox
                   value={item.warehouseName ?? ""}
-                  onChange={(e) => updateItem(index, { warehouseName: e.target.value })}
-                  placeholder="Gudang Bahan Baku (opsional)"
+                  onChange={(name) => updateItem(index, { warehouseName: name })}
+                  onSearch={debouncedItemWarehouseSearch}
+                  placeholder="Gudang (opsional)"
+                  options={warehouseComboboxOptions(item.warehouseName, itemWarehouseResults)}
                 />
                 <button
                   type="button"
@@ -286,7 +313,13 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Gudang Barang Jadi (opsional)</span>
-              <Input value={warehouseName} onChange={(e) => setWarehouseName(e.target.value)} placeholder="Gudang Utama" />
+              <Combobox
+                value={warehouseName}
+                onChange={setWarehouseName}
+                onSearch={debouncedFinishedGoodWarehouseSearch}
+                placeholder="Cari Gudang..."
+                options={warehouseComboboxOptions(warehouseName, finishedGoodWarehouseResults)}
+              />
             </label>
           </div>
 

@@ -18,3 +18,17 @@ export function itemComboboxOptions(currentNo: string, currentName: string | und
     ...results.filter((r) => r.no !== currentNo).map((r) => ({ value: r.no, label: `${r.no} — ${r.name}` })),
   ];
 }
+
+// § HOTFIX 2026-09-30 (evaluasi client, Gudang) — Gudang di Accurate TIDAK
+// punya kode ("no") seperti Item/Akun, cuma `name` (§ accurate-lookup.route.ts)
+// — jadi `value` DAN sumber label sama-sama `name` itu sendiri, bukan
+// pasangan kode+nama seperti `itemComboboxOptions`.
+type WarehouseResult = { name: string };
+
+export function warehouseComboboxOptions(currentName: string | undefined, results: WarehouseResult[]): ComboboxOption[] {
+  const current = currentName?.trim();
+  return [
+    ...(current ? [{ value: current, label: current }] : []),
+    ...results.filter((r) => r.name !== current).map((r) => ({ value: r.name, label: r.name })),
+  ];
+}

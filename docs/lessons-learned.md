@@ -5535,3 +5535,53 @@ panggil resource X yang sama (`grep -rn "item/list.do"` disini akan langsung nem
 konvensi umum kalau ada preseden INTERNAL yang sudah terverifikasi nyata.
 
 Detail: `apps/api/src/routes/accurate-lookup.route.ts`, `apps/api/src/lib/accurate-item.ts` (rujukan).
+
+## 2026-09-30 — HOTFIX production (lanjutan langsung entri di atas): Satuan MASIH kosong pasca-fix `fields` — `unit1Name` (dugaan) SALAH, field asli `unit1` OBJEK NESTED `{name, id, codeUnitTax}`
+
+Client deploy fix `fields`-param (entri di atas) — `no`/`name` langsung muncul benar ("nama sudah
+muncul"), TAPI Satuan (`unitName`) TETAP kosong, di Barang Jadi MAUPUN Bahan Baku (dikonfirmasi
+screenshot: field "Satuan (otomatis)" kosong untuk 2 barang berbeda). Client langsung menantang
+rigor diagnosisnya: "kamu tadi yakin sudah menemukan masalahnya... atau kamu ngarang tidak
+berdasarkan referensi API?" — jawaban jujur: dugaan `unit1Name` waktu itu DIAMBIL dari precedent
+nyata (`accurate-item.ts` `createFields.unit1Name`, field SAVE), tapi eksplisit BELUM diverifikasi
+untuk konteks LIST/read — dan tebakan itu ternyata salah.
+
+**Diagnosa** (sama teknik: deploy versi diagnostic sementara yang minta BEBERAPA kandidat nama
+field sekaligus — `unit1Name,unit1,unitName,unit` — PLUS sisipkan record mentah tak dipetakan
+`_raw` di respons API untuk inspeksi langsung, lalu fetch manual dari browser produksi via
+`javascript_tool`): respons ASLI Accurate untuk 1 Item (`no:"100013", name:"Tepung"`) berisi
+`"unit1":{"codeUnitTax":null,"name":"KG","id":102000}` — field satuan primer memang bernama
+`unit1` PERSIS seperti dugaan, TAPI **bentuknya OBJEK NESTED**, bukan string flat `unit1Name`.
+Nama field SAVE (`unit1Name`, flat) dan field LIST/read (`unit1`, nested objek berisi `.name`)
+untuk KONSEP YANG SAMA ternyata TIDAK SAMA namanya DAN TIDAK SAMA bentuknya di Accurate — bukan
+cuma beda nama seperti kasus `no`/`name` di entri sebelumnya, tapi beda STRUKTUR juga.
+
+**Fix**: `fields` request untuk item diubah jadi `"id,no,name,unit1"` (bukan `unit1Name`), extract
+`r.unit1?.name` (bukan `r.unit1Name`). `_raw` (debug field sementara) dihapus dari respons setelah
+diagnosis selesai.
+
+**Bonus, diminta sekalian oleh client** ("biar tidak bolak bali... gudang di bahan baku juga
+otomatis terisi saja semua"): dicek dulu ke OpenAPI spec resmi — Accurate **TIDAK PUNYA "gudang
+default" per Item** (stok Item tersebar di banyak gudang lewat entri "Saldo Awal Persediaan"
+per-gudang di `item/save.do`, bukan 1 field tunggal) — jadi auto-fill Gudang (seperti Satuan)
+memang TIDAK MUNGKIN secara arsitektur, dikomunikasikan jujur ke client alih-alih dipaksakan.
+Sebagai gantinya: Gudang Barang Jadi & Gudang Bahan Baku (tadinya `<Input>` ketik bebas, Fase 162)
+diubah jadi `Combobox` search-pilih ke `GET warehouse/list.do` (endpoint yang sudah ada precedent
+dipakai `finished_good_slip`, § `accurate-endpoint-registry.ts`) — bukan auto-fill, tapi cegah
+typo dengan pilih dari daftar Gudang ASLI. Catatan: Gudang di Accurate TIDAK punya field kode
+("no"), cuma `name` — `warehouseComboboxOptions()` (§ `accurate-combobox-options.ts`) SENGAJA beda
+signature dari `itemComboboxOptions()` (1 field identitas, bukan pasangan kode+nama).
+
+**Pelajaran**: (1) Precedent kode lama itu petunjuk KUAT, bukan JAMINAN — nama field yang sama
+persis dipakai project ini utk SAVE tidak otomatis berlaku sama utk LIST/read resource Accurate
+yang sama; keduanya harus diverifikasi terpisah lewat test call nyata, terutama untuk field yang
+BELUM pernah dibaca (baru ditulis) sebelumnya di project ini. (2) Kalau tebakan pertama meleset,
+JANGAN tebak lagi — deploy diagnostic yang minta BANYAK kandidat SEKALIGUS + balikin raw record
+tak dipetakan, supaya 1 putaran deploy langsung dapat jawaban pasti (bukan bolak-balik tebak satu-
+satu, apalagi tiap putaran makan 1 siklus rilis+deploy manual yang lambat, § keluhan client). (3)
+Saat client eksplisit tanya "kamu yakin atau ngarang?", jawab jujur soal level keyakinan yang
+sebenarnya (dugaan berdasar precedent ≠ terverifikasi) — itu justru yang mengarahkan ke solusi
+verifikasi langsung yang benar, bukan tebakan ketiga.
+
+Detail: `apps/api/src/routes/accurate-lookup.route.ts`, `apps/web/lib/accurate-combobox-options.ts`,
+`apps/web/app/app/(protected)/autoproduksi/formulas/page.tsx`.

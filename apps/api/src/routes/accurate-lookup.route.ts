@@ -17,7 +17,7 @@ import { logger } from "../lib/logger";
 // dikirim apa adanya, Accurate validasi saat SAVE" untuk operasi TULIS
 // TIDAK berubah sama sekali (item-adjustment/save.do dkk tetap dari worker).
 //
-// Rate limit: sudah otomatis kena `rateLimitPlugin({pathPrefix:"/accurate", max:60})`
+// Rate limit: sudah otomatis kena `rateLimitPlugin({pathPrefix:"/accurate", max:180}}`
 // yang SUDAH ADA (`app.ts`, dipasang lintas SEMUA route `/accurate/*`) —
 // tidak perlu limiter baru khusus endpoint ini.
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,15 +50,17 @@ function isSessionError(v: AccurateSessionContext | { error: LookupError }): v i
 }
 
 // § HOTFIX 2026-09-30 (test call nyata, ditunda Fase 163 — sekarang
-// terverifikasi) — `item/list.do`/`glaccount/list.do` TIDAK balikin
-// `no`/`name` di response default sama sekali (bukan cuma beda nama
-// field seperti diasumsikan awal — field-nya KOSONG total kecuali
-// diminta eksplisit). Dikonfirmasi dari kode LAMA yang SUDAH
-// terverifikasi test call nyata: `lib/accurate-item.ts` `findItemByNo()`
-// ("TERVERIFIKASI 2026-08-20") — `fields: "id,no,name"` WAJIB eksplisit.
-// `unit1Name` (nama field satuan primer) diturunkan dari field yang SAMA
-// dipakai payload `item/save.do` (`accurate-item.ts` `createFields.unit1Name`)
-// — konvensi Accurate field read/write biasanya konsisten nama.
+// terverifikasi PENUH, bukan asumsi lagi) — `item/list.do`/`glaccount/list.do`/
+// `warehouse/list.do` TIDAK balikin field APA PUN di response default
+// kecuali diminta eksplisit lewat `fields` (dikonfirmasi dari kode lama
+// `lib/accurate-item.ts` `findItemByNo()`, "TERVERIFIKASI 2026-08-20").
+// `unit1Name` (dugaan pertama, dari nama field payload SAVE) TERNYATA
+// SALAH untuk baca/LIST — dites langsung ke response ASLI (fetch manual
+// dari browser produksi, bukan tebakan): satuan primer sebuah Item
+// muncul sebagai OBJEK NESTED `unit1: {id, name, codeUnitTax}`, BUKAN
+// field flat "unit1Name". Field write (save) dan field read (list) TIDAK
+// selalu nama yang sama di Accurate — pelajaran untuk endpoint serupa
+// nanti, jangan asumsikan konsisten tanpa test call nyata.
 async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, keywords: string, fields: string): Promise<T[]> {
   return withAccurateRateLimit(async () => {
     const url = new URL(`${ctx.host}/accurate/api/${path}`);
@@ -73,8 +75,17 @@ async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, k
   });
 }
 
-type AccurateItemRecord = { no?: string; name?: string; unit1Name?: string } & Record<string, unknown>;
+type AccurateItemRecord = { no?: string; name?: string; unit1?: { name?: string } | null };
 type AccurateGlAccountRecord = { no?: string; name?: string };
+// § Gudang (warehouse) di Accurate TIDAK punya kode ("no") seperti
+// Item/Akun — cuma `name` (dikonfirmasi § warehouse/save.do spec resmi,
+// field-nya: name/city/country/description/id/pic/province/...). Barang
+// JUGA tidak punya "gudang default" tunggal (stok tersebar di banyak
+// gudang sekaligus, § "Saldo Awal Persediaan" per-gudang di item/save.do
+// spec) — makanya Gudang TIDAK bisa di-autofill dari pilih Barang seperti
+// Satuan, TAPI tetap bisa di-search supaya user pilih dari daftar ASLI
+// (bukan ketik bebas rawan typo), § `formulas/page.tsx`.
+type AccurateWarehouseRecord = { name?: string };
 
 export const accurateLookupRoute = new Elysia()
   .use(permissionPlugin)
@@ -92,26 +103,8 @@ export const accurateLookupRoute = new Elysia()
         return session.error;
       }
       try {
-        // § DIAGNOSTIC SEMENTARA 2026-09-30 — `unit1Name` (guess pertama)
-        // TERBUKTI SALAH (no/name benar, unitName tetap kosong setelah
-        // deploy v2.18.2). Minta beberapa kandidat nama field sekaligus +
-        // sertakan record MENTAH (`_raw`) supaya cukup 1x deploy untuk
-        // tahu nama field yang benar — `_raw` TIDAK dipakai frontend
-        // (Combobox cuma baca `.unitName`), dihapus lagi begitu ketahuan.
-        const records = await fetchAccurateList<AccurateItemRecord>(
-          session,
-          "item/list.do",
-          query.q,
-          "id,no,name,unit1Name,unit1,unitName,unit",
-        );
-        return {
-          items: records.map((r) => ({
-            no: r.no ?? "",
-            name: r.name ?? "",
-            unitName: r.unit1Name ?? "",
-            _raw: r,
-          })),
-        };
+        const records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1");
+        return { items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1?.name ?? "" })) };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Item di Accurate");
         set.status = err instanceof AccurateApiError ? 502 : 500;
@@ -138,6 +131,30 @@ export const accurateLookupRoute = new Elysia()
         return { accounts: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "" })) };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Akun (glaccount) di Accurate");
+        set.status = err instanceof AccurateApiError ? 502 : 500;
+        return { code: "ACCURATE_SEARCH_FAILED" };
+      }
+    },
+    { auth: true, query: t.Object({ q: t.String({ minLength: 1, maxLength: 100 }) }) },
+  )
+  .get(
+    "/accurate/warehouses/search",
+    async ({ query, user, request, set }) => {
+      const duResult = await resolveDataUsahaOrError(user.id, request.headers);
+      if ("error" in duResult) {
+        set.status = duResult.error.code === "DATA_USAHA_FORBIDDEN" ? 403 : 400;
+        return duResult.error;
+      }
+      const session = await openSessionOrError(duResult.dataUsahaId);
+      if (isSessionError(session)) {
+        set.status = 400;
+        return session.error;
+      }
+      try {
+        const records = await fetchAccurateList<AccurateWarehouseRecord>(session, "warehouse/list.do", query.q, "id,name");
+        return { warehouses: records.map((r) => ({ name: r.name ?? "" })).filter((r) => r.name) };
+      } catch (err) {
+        logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Gudang di Accurate");
         set.status = err instanceof AccurateApiError ? 502 : 500;
         return { code: "ACCURATE_SEARCH_FAILED" };
       }

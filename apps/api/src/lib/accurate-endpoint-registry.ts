@@ -99,7 +99,11 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   // GET glaccount/list.do BARU: live-search Akun Perantara di form Formula
   // (dulu tidak ada — glaccount_view dibuang 2026-09-22 karena waktu itu
   // belum ada kode yang memanggilnya, sekarang ADA).
-  autoproduksi_production: { endpoints: ["POST item-adjustment/save.do", "GET glaccount/list.do"] },
+  // § HOTFIX 2026-09-30 (evaluasi client) — GET warehouse/list.do BARU:
+  // live-search Gudang Barang Jadi & Gudang Bahan Baku di form Formula
+  // (`warehouse_view` sudah ada precedent, § `finished_good_slip` di
+  // bawah — bukan scope baru, cuma dipakai modul lain juga sekarang).
+  autoproduksi_production: { endpoints: ["POST item-adjustment/save.do", "GET glaccount/list.do", "GET warehouse/list.do"] },
   // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
   // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
   roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },
