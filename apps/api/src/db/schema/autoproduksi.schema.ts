@@ -19,11 +19,15 @@ import { dataUsaha } from "./data-usaha.schema";
 // adanya, Accurate yang validasi eksistensi saat SAVE beneran", § komentar
 // berulang di tiap *.mapping.ts). Kalau kode salah, gagalnya baru ketahuan
 // saat production entry diproses (pesan error jelas, sama pola modul lain)
-// — BUKAN saat setup Formula. Ini SENGAJA, bukan kelupaan: live-lookup ke
-// Accurate dari route request (bukan dari job worker) akan jadi pola BARU
-// yang belum pernah ada di codebase ini (`openAccurateSession` SELALU
-// dipanggil dari worker, tidak pernah dari route sinkron) — di luar scope
-// Fase 1, dicatat sebagai enhancement lanjutan di lessons-learned.
+// — BUKAN saat setup Formula.
+// § Fase 163 (ADR-0039, evaluasi client) — kolom `*Name` (BARU, nullable)
+// di bawah adalah SNAPSHOT nama hasil live-search Accurate saat user
+// MEMILIH (bukan hasil query/cache tersendiri) — search-nya sendiri SELALU
+// live ke Accurate tiap keystroke (`GET /accurate/items/search`,
+// `GET /accurate/glaccounts/search`), TIDAK pernah baca dari kolom ini.
+// Nullable & additive: Formula lama (sebelum Fase 163, kode diketik
+// manual) tetap valid, cuma nama-nya kosong sampai admin edit ulang lewat
+// Combobox baru.
 
 export const autoproduksiFormulas = pgTable(
   "autoproduksi_formulas",
@@ -41,11 +45,17 @@ export const autoproduksiFormulas = pgTable(
     name: varchar("name", { length: 255 }).notNull(), // "Bolu Kukus SP (Spesial BGT)"
     finishedGoodItemNo: varchar("finished_good_item_no", { length: 100 }).notNull(),
     finishedGoodItemUnitName: varchar("finished_good_item_unit_name", { length: 50 }).notNull(),
+    // § Fase 163 — nama Barang Jadi hasil live-search Accurate, snapshot
+    // saat dipilih (lihat komentar atas file). Nullable — Formula lama
+    // (kode diketik manual) belum punya nama sampai diedit ulang.
+    finishedGoodItemName: varchar("finished_good_item_name", { length: 255 }),
     // § contoh client: "Nilai dimasukan manual" — standard cost DIISI USER
     // (bukan hitung otomatis dari harga beli Accurate, itu enhancement
     // lanjutan di luar scope Fase 1, § komentar atas file ini).
     standardCost: numeric("standard_cost", { precision: 18, scale: 2 }),
     adjustmentAccountNo: varchar("adjustment_account_no", { length: 50 }).notNull(), // "Akun Perantara" / adjustmentAccountNo API
+    // § Fase 163 — nama Akun Perantara hasil live-search, sama pola di atas.
+    adjustmentAccountName: varchar("adjustment_account_name", { length: 255 }),
     branchName: varchar("branch_name", { length: 100 }).notNull(),
     warehouseName: varchar("warehouse_name", { length: 100 }), // opsional, gudang barang jadi
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -64,6 +74,9 @@ export const autoproduksiFormulaItems = pgTable(
       .references(() => autoproduksiFormulas.id, { onDelete: "cascade" }),
     itemNo: varchar("item_no", { length: 100 }).notNull(),
     itemUnitName: varchar("item_unit_name", { length: 50 }).notNull(),
+    // § Fase 163 — nama Bahan Baku hasil live-search Accurate, snapshot
+    // saat dipilih (sama pola `autoproduksiFormulas.finishedGoodItemName`).
+    itemName: varchar("item_name", { length: 255 }),
     // Takaran PER 1 unit barang jadi (dikalikan qty produksi saat entry) —
     // contoh client: Telur 0.5kg untuk 1 Loyang Bolu.
     quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),

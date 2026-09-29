@@ -56,6 +56,7 @@ import { itemTransferImportRoute } from "./routes/item-transfer-import.route";
 import { itemRequisitionImportRoute } from "./routes/item-requisition-import.route";
 import { inventoryAdjustmentImportRoute } from "./routes/inventory-adjustment-import.route";
 import { autoproduksiRoute } from "./routes/autoproduksi.route";
+import { accurateLookupRoute } from "./routes/accurate-lookup.route";
 import { jobCostingImportRoute } from "./routes/job-costing-import.route";
 import { rollOverImportRoute } from "./routes/roll-over-import.route";
 import { workOrderImportRoute } from "./routes/work-order-import.route";
@@ -266,6 +267,7 @@ export const app = new Elysia()
   // 1-route-per-modul di atas, § komentar di conversion-logs.route.ts).
   .use(conversionLogsRoute)
   // § Fase 159, ADR-0033 — Produk AutoProduksi, modul PERTAMA (1 Varian saja hari ini).
-  .use(autoproduksiRoute);
+  .use(autoproduksiRoute)
+  .use(accurateLookupRoute);
 
 export type App = typeof app;

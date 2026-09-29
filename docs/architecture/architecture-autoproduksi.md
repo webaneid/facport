@@ -131,13 +131,17 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
   endpoint baseline, gampang ditambah) — enhancement lanjutan.
 - Trial row budget belum ditegakkan (lihat di atas) — evaluasi ditunda
   eksplisit oleh user 2026-09-29 (§ `project_autoproduksi_trial_maxrows_pending`).
-- ~~Live-search Accurate (Item/Akun/Cabang) dari form~~ — **Fase 163**
-  (menyusul, evaluasi client 2026-09-29): pola live-search SINKRON dari
-  route (bukan lagi "tidak ada sama sekali", premis awal ini SUDAH
-  DIKOREKSI). ADR baru + migration (simpan nama hasil lookup) direncanakan
-  di fase itu.
-- **Test call NYATA ke Accurate sandbox** — SUDAH dilakukan (§ Fase 159
-  Ringkasan Hasil, sukses).
+- ~~Live-search Accurate (Item/Akun/Cabang) dari form~~ — **Fase 163,
+  ADR-0039 (Done, 2026-09-29)**: `GET /accurate/items/search`,
+  `GET /accurate/glaccounts/search` — pola PERTAMA di Facport, panggilan
+  Accurate SINKRON dari route (read-only, timeout+rate-limit). Cabang
+  TETAP diketik manual (tidak diminta client).
+- **Test call NYATA ke Accurate sandbox (endpoint search Fase 163)** —
+  DITUNDA ke post-deploy, keputusan eksplisit user 2026-09-29 (tidak ada
+  kredensial sandbox nyata di dev lokal sesi ini) — lihat
+  `docs/phases/phase-163-autoproduksi-live-search-accurate.md` § Known
+  Limitations. Endpoint lain (item-adjustment/save.do, Fase 159) SUDAH
+  diverifikasi test call nyata sebelumnya.
 
 ### Fase 162 (2026-09-29, evaluasi client) — Selesai
 - Search nama Formula + filter Cabang di `/autoproduksi/formulas`
@@ -145,6 +149,11 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
 - Input "Gudang Bahan Baku" per baris Bahan Baku — kolom `warehouseName`
   di `autoproduksi_formula_items` SUDAH ada di backend sejak Fase 159,
   cuma belum dimunculkan di form; sekarang ada.
+
+### Fase 163 (2026-09-29, evaluasi client) — Selesai
+- Barang Jadi, Bahan Baku, Akun Perantara sekarang dicari live ke Accurate
+  lewat `Combobox` — kode+satuan+nama otomatis terisi begitu dipilih.
+  Detail arsitektur → `docs/decisions/adr-0039-live-search-accurate-dari-route.md`.
 
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`
