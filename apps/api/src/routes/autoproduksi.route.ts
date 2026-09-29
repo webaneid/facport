@@ -25,9 +25,14 @@ import { boss, JOBS, startQueue } from "../lib/queue";
 // mentah ("value too long for type character varying(N)", 500 tak
 // terduga) kalau tidak ditolak DULU di schema Elysia (§ architecture-
 // security.md "validasi skema Elysia sebelum masuk service layer").
+// § Fase 163, ADR-0039 — `*Name` (BARU, opsional) adalah snapshot nama
+// hasil live-search Accurate saat user PILIH lewat Combobox (§
+// autoproduksi.schema.ts komentar atas). `maxLength: 255` cocok kolom
+// `varchar(255)` yang sama dipakai `name` (Nama Formula).
 const formulaItemSchema = t.Object({
   itemNo: t.String({ minLength: 1, maxLength: 100 }),
   itemUnitName: t.String({ minLength: 1, maxLength: 50 }),
+  itemName: t.Optional(t.String({ maxLength: 255 })),
   quantity: t.Number({ exclusiveMinimum: 0 }),
   warehouseName: t.Optional(t.String({ maxLength: 100 })),
 });
@@ -36,8 +41,10 @@ const formulaBodySchema = t.Object({
   name: t.String({ minLength: 1, maxLength: 255 }),
   finishedGoodItemNo: t.String({ minLength: 1, maxLength: 100 }),
   finishedGoodItemUnitName: t.String({ minLength: 1, maxLength: 50 }),
+  finishedGoodItemName: t.Optional(t.String({ maxLength: 255 })),
   standardCost: t.Optional(t.Number({ minimum: 0 })),
   adjustmentAccountNo: t.String({ minLength: 1, maxLength: 50 }),
+  adjustmentAccountName: t.Optional(t.String({ maxLength: 255 })),
   branchName: t.String({ minLength: 1, maxLength: 100 }),
   warehouseName: t.Optional(t.String({ maxLength: 100 })),
   items: t.Array(formulaItemSchema, { minItems: 1 }),
@@ -97,8 +104,10 @@ export const autoproduksiRoute = new Elysia()
             name: body.name,
             finishedGoodItemNo: body.finishedGoodItemNo,
             finishedGoodItemUnitName: body.finishedGoodItemUnitName,
+            finishedGoodItemName: body.finishedGoodItemName ?? null,
             standardCost: body.standardCost !== undefined ? String(body.standardCost) : null,
             adjustmentAccountNo: body.adjustmentAccountNo,
+            adjustmentAccountName: body.adjustmentAccountName ?? null,
             branchName: body.branchName,
             warehouseName: body.warehouseName ?? null,
           })
@@ -108,6 +117,7 @@ export const autoproduksiRoute = new Elysia()
             formulaId: inserted!.id,
             itemNo: item.itemNo,
             itemUnitName: item.itemUnitName,
+            itemName: item.itemName ?? null,
             quantity: String(item.quantity),
             warehouseName: item.warehouseName ?? null,
             sortOrder: index,
@@ -134,8 +144,10 @@ export const autoproduksiRoute = new Elysia()
             name: body.name,
             finishedGoodItemNo: body.finishedGoodItemNo,
             finishedGoodItemUnitName: body.finishedGoodItemUnitName,
+            finishedGoodItemName: body.finishedGoodItemName ?? null,
             standardCost: body.standardCost !== undefined ? String(body.standardCost) : null,
             adjustmentAccountNo: body.adjustmentAccountNo,
+            adjustmentAccountName: body.adjustmentAccountName ?? null,
             branchName: body.branchName,
             warehouseName: body.warehouseName ?? null,
             updatedAt: new Date(),
@@ -150,6 +162,7 @@ export const autoproduksiRoute = new Elysia()
             formulaId: params.id,
             itemNo: item.itemNo,
             itemUnitName: item.itemUnitName,
+            itemName: item.itemName ?? null,
             quantity: String(item.quantity),
             warehouseName: item.warehouseName ?? null,
             sortOrder: index,

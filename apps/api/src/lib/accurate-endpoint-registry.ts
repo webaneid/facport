@@ -95,7 +95,11 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   // baru, § architecture-autoproduksi.md). `adjustmentAccountNo`/`branchName`/`warehouseName`/itemNo dikirim
   // apa adanya (TIDAK ada lookup/GET glaccount|branch|warehouse — konsisten filosofi "Accurate validasi saat
   // save", § komentar `glaccount_view` di atas baris 34-35 — masih berlaku, sengaja tidak ditambah lookup).
-  autoproduksi_production: { endpoints: ["POST item-adjustment/save.do"] },
+  // § Fase 163, ADR-0039 — GET item/list.do sudah baseline (semua modul).
+  // GET glaccount/list.do BARU: live-search Akun Perantara di form Formula
+  // (dulu tidak ada — glaccount_view dibuang 2026-09-22 karena waktu itu
+  // belum ada kode yang memanggilnya, sekarang ADA).
+  autoproduksi_production: { endpoints: ["POST item-adjustment/save.do", "GET glaccount/list.do"] },
   // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
   // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
   roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },

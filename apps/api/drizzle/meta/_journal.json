@@ -246,6 +246,13 @@
       "when": 1790585552125,
       "tag": "0034_clumsy_wasp",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1790670263929,
+      "tag": "0035_right_madame_masque",
+      "breakpoints": true
     }
   ]
 }

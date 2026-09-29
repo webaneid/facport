@@ -8,8 +8,12 @@ import { moduleLabel, moduleCategory, productLineLabel } from "./module-catalog"
 // § Fase 118 — `moduleKey`/`productLine` ditambah supaya tiap baris bisa
 // tampilkan "Produk · Modul · Sub-modul" (§ ADR-0033). `moduleKey`
 // `"seat_addon"` (sentinel, § `invoice-order.ts`) BUKAN varian Facport
-// sungguhan — baris rendering SENGAJA skip anak-kalimat Modul/Sub-modul
-// untuk sentinel ini, cukup tampilkan Produk-nya.
+// sungguhan — baris rendering skip anak-kalimat Modul/Sub-modul untuk
+// sentinel ini. § KOREKSI 2026-09-29 (evaluasi client) — dulu label
+// Produk TETAP ditampilkan utk seat_addon ("cukup tampilkan Produk-nya"),
+// TERNYATA salah: 1 seat lintas SEMUA Produk aktif Data Usaha
+// (architecture-user-tambahan.md ADR-0032), bukan milik 1 Produk — label
+// Produk JUGA di-skip sekarang untuk sentinel ini, bukan cuma Modul/Sub-modul.
 // § Fase 131 (diminta user 2026-09-17) — `durationDays` SNAPSHOT (§
 // invoiceItems.durationDays), `subscriptionStartAt`/`subscriptionEndAt`
 // LIVE JOIN (null kalau invoice belum dibayar, subscription belum
@@ -245,7 +249,8 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             // — skip anak-kalimat Modul/Sub-modul, cukup label Produk-nya.
             const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
             const subModuleLabel = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
-            const metaParts = [productLineLabel(item.productLine), category, subModuleLabel].filter((v): v is string => !!v);
+            const productLine = item.moduleKey === "seat_addon" ? null : productLineLabel(item.productLine);
+            const metaParts = [productLine, category, subModuleLabel].filter((v): v is string => !!v);
             // § Fase 131 — durasi SELALU ada (snapshot), tanggal AKTUAL
             // cuma ada kalau subscription sudah tercipta (invoice sudah
             // dibayar) — belum dibayar tampilkan "Menunggu pembayaran"

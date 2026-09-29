@@ -169,6 +169,8 @@
 | 159  | Modul Pertama Produk AutoProduksi: Formula (BOM) + Input Produksi Manual — reuse endpoint Inventory Adjustment, form-based (bukan Excel), diverifikasi test call nyata + browser-test | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-159-autoproduksi-formula-input-produksi.md` |
 | 160  | AutoProduksi: Upload Excel Massal untuk Input Produksi ("Kirim Dengan Excel") — GitHub Issue [#79](https://github.com/webaneid/facport/issues/79), sengaja ditunda dari Fase 159 | Planned | `docs/architecture/architecture-autoproduksi.md` § Known Limitations | - |
 | 161  | Redesain `/subscribe`: Pilih-Produk Dulu (4 Card) → Katalog per-Produk, keranjang gabungan lintas halaman | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-161-redesign-subscribe-pilih-produk.md` |
+| 162  | AutoProduksi — Evaluasi Client Bagian 1: Search Formula, Filter Cabang, Gudang Bahan Baku di UI (quick-win, tanpa arsitektur baru) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-162-autoproduksi-quick-win-formulas-ui.md` |
+| 163  | AutoProduksi — Evaluasi Client Bagian 2: Live-Search Accurate (Item/Bahan Baku/Akun Perantara) di Form Formula | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-163-autoproduksi-live-search-accurate.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

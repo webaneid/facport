@@ -129,15 +129,31 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
 - Excel bulk input ("Kirim Dengan Excel") — fase terpisah.
 - Harga Beli bahan baku otomatis dari Accurate (`item/list.do` sudah
   endpoint baseline, gampang ditambah) — enhancement lanjutan.
-- Trial row budget belum ditegakkan (lihat di atas).
-- Live-search Accurate (Item/Akun/Cabang) dari form — TIDAK ADA sama sekali
-  di modul ini maupun 23 modul lain, konsisten filosofi project, tapi kalau
-  suatu saat dibutuhkan (UX improvement), butuh desain baru (sesi Accurate
-  per-request, bukan per-job) — di luar scope fase ini.
-- **Test call NYATA ke Accurate sandbox belum dilakukan saat dokumen ini
-  ditulis** — WAJIB sebelum fase ditutup penuh (§ pola project: jangan
-  simpulkan dari spec doang, § lesson Fase 158 Delivery Order yang nemu
-  koreksi struktur field pas test call nyata).
+- Trial row budget belum ditegakkan (lihat di atas) — evaluasi ditunda
+  eksplisit oleh user 2026-09-29 (§ `project_autoproduksi_trial_maxrows_pending`).
+- ~~Live-search Accurate (Item/Akun/Cabang) dari form~~ — **Fase 163,
+  ADR-0039 (Done, 2026-09-29)**: `GET /accurate/items/search`,
+  `GET /accurate/glaccounts/search` — pola PERTAMA di Facport, panggilan
+  Accurate SINKRON dari route (read-only, timeout+rate-limit). Cabang
+  TETAP diketik manual (tidak diminta client).
+- **Test call NYATA ke Accurate sandbox (endpoint search Fase 163)** —
+  DITUNDA ke post-deploy, keputusan eksplisit user 2026-09-29 (tidak ada
+  kredensial sandbox nyata di dev lokal sesi ini) — lihat
+  `docs/phases/phase-163-autoproduksi-live-search-accurate.md` § Known
+  Limitations. Endpoint lain (item-adjustment/save.do, Fase 159) SUDAH
+  diverifikasi test call nyata sebelumnya.
+
+### Fase 162 (2026-09-29, evaluasi client) — Selesai
+- Search nama Formula + filter Cabang di `/autoproduksi/formulas`
+  (client-side, § `lib/filter-formulas.ts`).
+- Input "Gudang Bahan Baku" per baris Bahan Baku — kolom `warehouseName`
+  di `autoproduksi_formula_items` SUDAH ada di backend sejak Fase 159,
+  cuma belum dimunculkan di form; sekarang ada.
+
+### Fase 163 (2026-09-29, evaluasi client) — Selesai
+- Barang Jadi, Bahan Baku, Akun Perantara sekarang dicari live ke Accurate
+  lewat `Combobox` — kode+satuan+nama otomatis terisi begitu dipilih.
+  Detail arsitektur → `docs/decisions/adr-0039-live-search-accurate-dari-route.md`.
 
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`

@@ -116,6 +116,56 @@ describe("POST /admin/plans — validasi kind<->modules", () => {
   });
 });
 
+// § BUG ditemukan 2026-09-29 (evaluasi client Fase 159/161) —
+// `plans.productLine` TIDAK PERNAH di-set di sini sejak kolom itu ada,
+// SELALU jatuh ke default skema "facport" apapun modulnya (plan
+// Konverter/AutoProduksi salah tampil label "(Facport)" di invoice).
+describe("POST/PUT /admin/plans — productLine di-derive dari modul (fix 2026-09-29)", () => {
+  test("plan modul Facport -> productLine 'facport'", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await postPlan(cookie, { name: `Plan PL Facport ${runId}`, price: 10000, durationDays: 30, modules: ["purchase_invoice"] });
+    const [row] = await db.select().from(plans).where(eq(plans.name, `Plan PL Facport ${runId}`));
+    expect(row!.productLine).toBe("facport");
+    expect(res.status).toBe(200);
+  });
+
+  test("plan modul Konverter -> productLine 'konverter' (BUKAN default 'facport')", async () => {
+    const cookie = await makeAdminCookie();
+    await postPlan(cookie, { name: `Plan PL Konverter ${runId}`, price: 10000, durationDays: 30, modules: ["konverter_sales_invoice"] });
+    const [row] = await db.select().from(plans).where(eq(plans.name, `Plan PL Konverter ${runId}`));
+    expect(row!.productLine).toBe("konverter");
+  });
+
+  test("plan modul AutoProduksi -> productLine 'autoproduksi'", async () => {
+    const cookie = await makeAdminCookie();
+    await postPlan(cookie, { name: `Plan PL AutoProduksi ${runId}`, price: 10000, durationDays: 30, modules: ["autoproduksi_production"] });
+    const [row] = await db.select().from(plans).where(eq(plans.name, `Plan PL AutoProduksi ${runId}`));
+    expect(row!.productLine).toBe("autoproduksi");
+  });
+
+  test("PUT ganti modul Facport -> Konverter, productLine ikut berubah", async () => {
+    const cookie = await makeAdminCookie();
+    const created = await postPlan(cookie, { name: `Plan PL Update ${runId}`, price: 10000, durationDays: 30, modules: ["purchase_invoice"] });
+    const { id } = (await created.json()) as { id: string };
+    await testApp.handle(
+      new Request(`http://localhost/admin/plans/${id}`, {
+        method: "PUT",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: `Plan PL Update ${runId}`, price: 10000, durationDays: 30, modules: ["konverter_sales_invoice"] }),
+      }),
+    );
+    const [row] = await db.select().from(plans).where(eq(plans.id, id));
+    expect(row!.productLine).toBe("konverter");
+  });
+
+  test("plan kind seat_addon (modules kosong) -> productLine dibiarkan default (sentinel, tidak ditampilkan di invoice)", async () => {
+    const cookie = await makeAdminCookie();
+    await postPlan(cookie, { name: `Plan PL Seat ${runId}`, price: 20000, durationDays: 30, modules: [], kind: "seat_addon" });
+    const [row] = await db.select().from(plans).where(eq(plans.name, `Plan PL Seat ${runId}`));
+    expect(row!.productLine).toBe("facport");
+  });
+});
+
 // § Fase 117, ADR-0033 — guard drift: union literal `modules` di
 // `planBody` (plans.route.ts) DITULIS MANUAL (generate otomatis dari
 // module-catalog.ts TERBUKTI merusak inferensi Eden Treaty, temuan

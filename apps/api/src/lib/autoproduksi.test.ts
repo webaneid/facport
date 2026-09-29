@@ -19,8 +19,10 @@ const baseFormula: Formula = {
   name: "Bolu Kukus SP (Spesial BGT)",
   finishedGoodItemNo: "100011",
   finishedGoodItemUnitName: "Loyang",
+  finishedGoodItemName: null,
   standardCost: "20000",
   adjustmentAccountNo: "11078",
+  adjustmentAccountName: null,
   branchName: "JAKARTA",
   warehouseName: null,
   createdAt: new Date(),
@@ -28,8 +30,8 @@ const baseFormula: Formula = {
 };
 
 const formulaItems: FormulaItem[] = [
-  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", quantity: "0.5", warehouseName: null, sortOrder: 0 },
-  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", quantity: "0.5", warehouseName: null, sortOrder: 1 },
+  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, sortOrder: 0 },
+  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, sortOrder: 1 },
 ];
 
 const baseEntry: ProductionEntry = {
