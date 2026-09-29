@@ -1,3 +1,8 @@
+## <small>2.18.4 (2026-09-29)</small>
+
+* Merge pull request #87 from webaneid/develop ([0c262f6](https://github.com/webaneid/facport/commit/0c262f6)), closes [#87](https://github.com/webaneid/facport/issues/87)
+* fix(api web): HOTFIX production — Satuan Item pakai field unit1 nested + Gudang search-pilih ke Accu ([7d6b61c](https://github.com/webaneid/facport/commit/7d6b61c))
+
 ## <small>2.18.3 (2026-09-29)</small>
 
 * Merge pull request #86 from webaneid/develop ([15c3ce6](https://github.com/webaneid/facport/commit/15c3ce6)), closes [#86](https://github.com/webaneid/facport/issues/86)
