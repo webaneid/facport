@@ -21,6 +21,13 @@
 Contoh: `feat(api): tambah endpoint upload gambar via presigned URL`
 Type: feat, fix, refactor, docs, chore, test
 
+> ⚠️ **`scope` JANGAN pakai koma** (mis. `fix(web,api): ...`) — bug versi
+> library ditemukan 2026-09-29 (§ `docs/lessons-learned.md`) bikin commit
+> begini SILENT GAGAL trigger release semantic-release sama sekali (bukan
+> error, cuma diam-diam "no release"). Scope lintas-app pakai spasi/slash:
+> `fix(web api): ...` atau `fix(web/api): ...` — keduanya aman lolos
+> pemindai fallback yang kena bug ini.
+
 ## TypeScript
 - Strict mode wajib
 - Hindari `any` — kalau terpaksa, kasih komentar alasan

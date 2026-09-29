@@ -5427,3 +5427,63 @@ ber-rate-limit langsung nyata dalam hitungan huruf. (3) Verifikasi manual client
 
 Detail: `apps/web/lib/use-debounced-callback.ts` (baru), `apps/web/app/app/(protected)/autoproduksi/formulas/page.tsx`,
 `apps/api/src/app.ts`.
+
+## 2026-09-29 — Commit `fix(web,api): ...` (scope BERKOMA) SILENT GAGAL trigger semantic-release — bug versi library, bukan salah format yang kelihatan
+
+Commit hotfix debounce di atas (`a531932`, `fix(web,api): HOTFIX production — ...`) berhasil di-merge
+ke `main` (PR #83), CI `validate` pass, TAPI workflow `Release` memutuskan **"no release"** —
+`build-and-push`/`deploy-to-server` ikut **skipped** (bukan gagal, cuma tidak jalan). Efeknya: kode
+fix SUDAH ada di `main`, TAPI TIDAK ADA image baru di GHCR yang membawanya — kalau user redeploy
+tag `v2.18.0` yang sama, mereka dapat image LAMA (masih bug 429), padahal terlihat seperti "sudah
+di-fix & di-rilis".
+
+**Root cause** (dibongkar sampai source code library, bukan cuma tebak-tebak dari log):
+1. `.releaserc.json` project ini pakai `@semantic-release/commit-analyzer` dengan
+   `{preset: "conventionalcommits"}` — TANPA `releaseRules` custom.
+2. `commit-analyzer`'s `load-parser-config.js` membaca `loadedConfig.parser` dari hasil preset —
+   TAPI `conventional-changelog-conventionalcommits@7.0.2` (versi terinstall) mengekspor
+   `.parserOpts`, BUKAN `.parser` — **version mismatch API antar 2 package**, `loadedConfig.parser`
+   selalu `undefined`, jadi `headerPattern` custom preset (yang permisif, `(.*)` — boleh koma di
+   scope) TIDAK PERNAH benar-benar terpakai.
+3. `CommitParser` jatuh ke **default bawaan** `conventional-commits-parser@6.4.0`:
+   `headerPattern: /^(\w*)(?:\(([\w$@.\-*/ ]*)\))?: (.*)$/` — character class scope `[\w$@.\-*/ ]`
+   **TIDAK termasuk koma**. Header `fix(web,api): ...` gagal match TOTAL (bukan sebagian) karena
+   grup scope opsional gagal match "web,api" sekaligus tidak ada fallback "anggap scope kosong" —
+   regex mundur total, `type` jadi `undefined` di commit yang sudah di-parse.
+4. `DEFAULT_RELEASE_RULES` (`{type:"fix", release:"patch"}`) tidak pernah cocok karena `commit.type`
+   bukan `"fix"` (melainkan `undefined`) — commit dianggap "tidak relevan", TIDAK error, TIDAK
+   warning yang jelas — cuma log santai "The commit should not trigger a release".
+
+**Kenapa baru ketahuan sekarang**: SEMUA commit hotfix/fix sebelumnya (mis. `fix(web): HOTFIX
+production — pindah CSP...` yang sukses trigger v2.15.1) pakai scope 1 kata TANPA koma — kebetulan
+selalu lolos default fallback pattern itu. Baru kena begitu scope-nya "web,api" (2 app sekaligus,
+ditulis pakai koma — kebiasaan penulisan yang wajar tapi TIDAK dites/didokumentasikan sebelumnya).
+
+**Verifikasi** (bukan tebakan): dites LANGSUNG panggil `analyzeCommits()` dari
+`@semantic-release/commit-analyzer` dengan commit message asli — `fix(web,api): ...` -> `null` (no
+release); ganti jadi `fix(release): ...` (scope 1 kata) -> `"patch"`. Confirmed di source code kedua
+package (`load-parser-config.js` baca `.parser`, package preset expose `.parserOpts`).
+
+**Fix immediate**: commit susulan dengan scope TANPA koma (pakai spasi/slash) untuk trigger release
+yang seharusnya — kode fix yang SUDAH di `main` ikut terbungkus di tag baru begitu release ini
+jalan, tidak perlu tulis ulang kode apa pun.
+
+**Fix permanen**: `docs/conventions.md` § Commit Message — larangan eksplisit koma di scope
++ alternatif aman (spasi/slash). Perbaikan UPSTREAM (bump/pin versi package yang API-nya cocok)
+di luar scope catatan ini — project ini tidak vendor lock versi `@semantic-release/commit-analyzer`/
+`conventional-changelog-conventionalcommits` secara eksplisit di `package.json` (ikut versi
+terbaru yang resolve saat install), jadi kombinasi versi yang cocok bisa balik lagi kalau salah satu
+di-upgrade nanti — REVISIT kalau upgrade dependency Dependabot menyentuh salah satu package ini.
+
+**Pelajaran**: (1) "CI hijau semua + PR ter-merge" BUKAN bukti rilis benar-benar terjadi — WAJIB
+cek positif tag versi baru MUNCUL & job `build-and-push` benar-benar `success` (bukan `skipped`),
+bukan asumsi dari status PR/merge saja. (2) Kegagalan SILENT (bukan error yang mencolok) di
+toolchain rilis adalah kelas bug paling berbahaya — tidak ada alarm, cuma "kelihatannya beres"
+sampai ada yang cek detail. (3) Kalau perilaku tooling terasa aneh/tidak konsisten dengan
+pengalaman sebelumnya, BONGKAR sampai source code dependency yang terlibat (bukan cuma baca log
+permukaan) — di sini akar masalahnya 3 lapis dalam (config project → API 2 package yang mismatch
+→ character class regex 1 karakter) yang tidak mungkin ketemu dari membaca log CI saja.
+
+Detail: `docs/conventions.md`, `node_modules/.../@semantic-release/commit-analyzer/lib/load-parser-config.js`,
+`node_modules/.../conventional-changelog-conventionalcommits/index.js`,
+`node_modules/.../conventional-commits-parser/dist/options.js`.
