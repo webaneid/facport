@@ -5487,3 +5487,51 @@ permukaan) — di sini akar masalahnya 3 lapis dalam (config project → API 2 p
 Detail: `docs/conventions.md`, `node_modules/.../@semantic-release/commit-analyzer/lib/load-parser-config.js`,
 `node_modules/.../conventional-changelog-conventionalcommits/index.js`,
 `node_modules/.../conventional-commits-parser/dist/options.js`.
+
+## 2026-09-30 — HOTFIX production: search Accurate (Fase 163) balikin hasil KOSONG semua — `item/list.do`/`glaccount/list.do` TIDAK isi `no`/`name` kecuali `fields` diminta eksplisit (bukan cuma beda nama field)
+
+Client coba search "tepung" (nama) DAN "100013" (kode PERSIS, dikonfirmasi ada di Accurate via
+screenshot Data Barang & Jasa) di form Formula — keduanya "Tidak ada hasil". Ini pas jadi momen
+**test call nyata** yang ditunda ke post-deploy (§ Known Limitation Fase 163) — dan benar,
+ketahuan salah beneran.
+
+**Diagnosa** (fetch langsung dari browser console via `javascript_tool`, bypass UI — cara paling
+cepat konfirmasi APAKAH request sampai/gagal dan APA isi respons ASLI, bukan tebak dari screenshot
+UI doang): endpoint sendiri balas `200 OK` dengan `{"items":[{"no":"","name":"","unitName":""}]}`
+— ARTINYA Accurate MENEMUKAN 1 record (array-nya tidak kosong!), TAPI ketiga field yang diminta
+SEMUA STRING KOSONG. Bukan error, bukan 0 hasil — field-nya kosong.
+
+**Root cause**: `item/list.do`/`glaccount/list.do` (dipanggil endpoint search BARU, § Fase 163)
+TIDAK PERNAH mengirim parameter `fields` sama sekali — asumsi awal "field defaultnya `no`/`name`
+langsung ada, cuma nama field-nya yang mungkin beda" TERNYATA SALAH TOTAL: Accurate list endpoint
+memang **kosongkan field yang tidak diminta** di response ringkas defaultnya. Ini SEBENARNYA
+SUDAH terdokumentasi di kode LAMA yang lolos dari perhatian: `lib/accurate-item.ts` `findItemByNo()`
+(komentar "TERVERIFIKASI 2026-08-20") — `fields: "id,no,name"` WAJIB eksplisit, dengan catatan
+tegas "item/list.do juga TIDAK balikin no/name di response ringkas default". Bug ini genuinely
+BISA dihindari kalau file itu dibaca dulu sebelum tulis endpoint baru yang panggil resource
+Accurate yang SAMA (item) — celah "check existing code first" yang sudah berulang kali jadi
+pelajaran (§ `feedback_facport_scope_and_check_existing_first`).
+
+**Field satuan (`unit1Name`)** — belum ada precedent LIST sebelumnya (fase ini yang pertama minta
+info satuan dari `item/list.do`), diturunkan dari nama field yang SAMA dipakai payload
+`item/save.do` (`accurate-item.ts` `createFields.unit1Name`) — konvensi Accurate field read/write
+per resource biasanya konsisten nama, TAPI ini masih ekstrapolasi (bukan verified 100% sebelum
+fix ini), WAJIB dicek lagi hasil "Satuan (otomatis)" di form beneran terisi benar pasca-deploy.
+
+**Fix**: `fetchAccurateList()` (`accurate-lookup.route.ts`) sekarang WAJIB kirim `fields` eksplisit
+per endpoint (`"id,no,name,unit1Name"` untuk item, `"id,no,name"` untuk glaccount) — mapping baca
+`r.unit1Name` (bukan `r.unit?.name` yang salah tebak sebelumnya).
+
+**Pelajaran**: (1) "test call nyata ditunda ke post-deploy" (keputusan sah, dikonfirmasi user)
+TETAP HARUS benar-benar dilakukan begitu deploy selesai — bukan cuma niat baik yang dilupakan;
+untungnya client sendiri yang langsung coba & lapor screenshot detail (nama field yang dicari,
+hasil "Tidak ada hasil", DAN bukti independen item itu memang ada di Accurate) — laporan
+selengkap itu yang bikin diagnosa cepat. (2) `res.status === 200` dan array TIDAK KOSONG bukan
+berarti "berhasil" kalau field di dalamnya masih bisa kosong semua — validasi test call nyata
+HARUS cek ISI field, bukan cuma status code/panjang array. (3) Sebelum menulis kode yang panggil
+endpoint Accurate resource X, WAJIB grep dulu apakah ADA kode lain di project yang sudah pernah
+panggil resource X yang sama (`grep -rn "item/list.do"` disini akan langsung nemu
+`accurate-item.ts` dengan catatan persis soal ini) — jangan cuma modal OpenAPI spec + asumsi
+konvensi umum kalau ada preseden INTERNAL yang sudah terverifikasi nyata.
+
+Detail: `apps/api/src/routes/accurate-lookup.route.ts`, `apps/api/src/lib/accurate-item.ts` (rujukan).
