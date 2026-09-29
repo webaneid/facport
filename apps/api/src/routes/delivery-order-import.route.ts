@@ -299,7 +299,30 @@ export const deliveryOrderImportRoute = new Elysia()
         return { code: "ROW_NOT_EDITABLE" };
       }
 
-      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+      let columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
+
+      // § ditemukan dari kasus reza.eka17@gmail.com (2026-09-30) — kolom
+      // OPSIONAL (mis. CLS5) yang tidak dicocokkan saat upload sebelumnya
+      // TIDAK PUNYA field input di form edit baris sama sekali (dulu cuma
+      // render `Object.keys(columnMapping)`), jadi baris yang gagal justru
+      // MEMINTA kolom itu ("isi kolom CLS5") tidak pernah bisa diperbaiki
+      // tanpa upload ulang seluruh batch. `columnMappingPatch` (opsional)
+      // memberi jalan user MENAMBAH cocokkan kolom baru untuk kolom yang
+      // sebelumnya terlewat, langsung dari form edit baris — disimpan ke
+      // `columnMapping` BATCH (bukan per-baris, konsisten dengan cara
+      // mapping ini sudah dipakai di seluruh alur import) supaya baris lain
+      // di batch yang sama ikut kebagian cocokkan kolom ini juga.
+      const columnMappingPatch = body.columnMappingPatch as Record<string, string> | undefined;
+      if (columnMappingPatch && Object.keys(columnMappingPatch).length > 0) {
+        const invalidFields = Object.values(columnMappingPatch).filter((f) => !VALID_FIELDS.has(f));
+        if (invalidFields.length > 0) {
+          set.status = 400;
+          return { code: "INVALID_MAPPING_FIELD", fields: invalidFields };
+        }
+        columnMapping = { ...columnMapping, ...columnMappingPatch };
+        await db.update(importBatches).set({ columnMapping }).where(eq(importBatches.id, batch.id));
+      }
+
       const missing = deliveryOrderMapping.requiredFields.filter((field) => {
         const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
         const value = excelColumn ? body.rawData[excelColumn] : undefined;
@@ -312,13 +335,16 @@ export const deliveryOrderImportRoute = new Elysia()
 
       await db.update(importBatchRows).set({ rawData: body.rawData, status: "pending", errorMessage: null }).where(eq(importBatchRows.id, row.id));
 
-      return { rowId: row.id, status: "pending" };
+      return { rowId: row.id, status: "pending", columnMapping };
     },
     {
       permission: "import.create",
       moduleAccess: "delivery_order",
       params: t.Object({ batchId: t.String({ format: "uuid" }), rowId: t.String({ format: "uuid" }) }),
-      body: t.Object({ rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) }),
+      body: t.Object({
+        rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])),
+        columnMappingPatch: t.Optional(t.Record(t.String(), t.String())),
+      }),
     },
   )
   .put(
