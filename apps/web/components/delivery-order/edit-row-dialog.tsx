@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AlertCircle, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
@@ -34,6 +35,33 @@ const FIELD_HINTS: Record<string, string> = {
   unitPrice: "Contoh: 50000 (angka saja, tanpa titik/koma)",
   salesOrderDetailId: "Opsional — server otomatis cari sendiri kalau kosong, isi manual cuma kalau sudah tahu ID-nya",
 };
+
+// § HARUS SINKRON dengan `ACCURATE_FIELDS` di
+// `app/app/(protected)/delivery-order/import/page.tsx` (duplikat sengaja,
+// § konvensi project — file beda tanggung jawab: itu untuk cocokkan kolom
+// awal, ini untuk melengkapi cocokkan kolom yang KELEWAT saat baris gagal).
+const NEW_MAPPING_FIELD_OPTIONS = [
+  { value: "", label: "(belum dipilih)" },
+  { value: "branchName", label: "Branch Name" },
+  { value: "description", label: "Description" },
+  { value: "toAddress", label: "To Address" },
+  { value: "poNumber", label: "PO No" },
+  { value: "unitPrice", label: "Item Unit Price" },
+  { value: "itemName", label: "Item Detail Name" },
+  { value: "itemNotes", label: "Item Notes" },
+  { value: "departmentName", label: "Item Dept" },
+  { value: "warehouseName", label: "Item Warehouse" },
+  { value: "projectNo", label: "Item Project No" },
+  { value: "salesOrderNumber", label: "Item Sales Order No (prioritas > Sales Quot No)" },
+  { value: "salesOrderDetailId", label: "Sales Order Detail ID (opsional — otomatis dicari server kalau kosong)" },
+  { value: "salesQuotationNumber", label: "Item Sales Quot No" },
+  { value: "reverseInvoiceNumber", label: "Item Reverse Invoice" },
+  { value: "attribut2", label: "CLS2 / Finance Category 2 (level barang)" },
+  { value: "attribut5", label: "CLS5 / Finance Category 5 (level barang) — dipakai auto-cari Sales Order Detail ID kalau Item No duplikat" },
+  { value: "serialNum", label: "Serial Num" },
+  { value: "serialNumQty", label: "Serial Num Qty" },
+  { value: "serialNumExpDate", label: "Serial Num Exp Date" },
+] as const;
 
 function toDisplayDate(value: unknown): string {
   if (typeof value === "number") {
@@ -66,8 +94,19 @@ export function EditRowDialog({
   const dateColumns = new Set(columns.filter((col) => DATE_INTERNAL_FIELDS.has(columnMapping[col]!)));
   const requiredColumns = new Set(columns.filter((col) => REQUIRED_INTERNAL_FIELDS.has(columnMapping[col]!)));
   const fieldToColumn = Object.fromEntries(columns.map((col) => [columnMapping[col], col]));
+  // § 2026-09-30 — kolom yang ADA isinya di file Excel tapi TIDAK
+  // dicocokkan ke field apa pun saat upload (kasus reza.eka17@gmail.com:
+  // "CLS5" berisi "Week1"/"Week2" tapi kelewat waktu Cocokkan Kolom).
+  // Hanya kolom yang PUNYA nilai di baris ini yang ditampilkan — kolom
+  // kosong (header duplikat kosong `__EMPTY_N` dkk dari sisa konten lain
+  // di sheet yang sama, § lessons-learned.md) tidak perlu diributkan di
+  // sini, tidak ada apa pun yang perlu dicocokkan untuknya.
+  const unmappedColumns = Object.keys(row.rawData).filter(
+    (col) => !(col in columnMapping) && String(row.rawData[col] ?? "").trim() !== "",
+  );
   const [open, setOpen] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
+  const [newMapping, setNewMapping] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [missingColumns, setMissingColumns] = useState<Set<string>>(new Set());
@@ -82,11 +121,20 @@ export function EditRowDialog({
   }
 
   function openDialog() {
+    // § seed dari SEMUA key `row.rawData` (bukan cuma `columns` yang
+    // sudah ke-mapping) — kalau cuma `columns`, kolom yang belum
+    // dicocokkan (mis. CLS5) hilang PERMANEN dari `rawData` begitu baris
+    // ini disimpan (PUT rows/:rowId REPLACE seluruh rawData, bukan
+    // merge), walau user tidak berniat mengubah/menghapusnya sama sekali.
     setValues(
       Object.fromEntries(
-        columns.map((col) => [col, dateColumns.has(col) ? toDisplayDate(row.rawData[col]) : String(row.rawData[col] ?? "")]),
+        Object.keys(row.rawData).map((col) => [
+          col,
+          dateColumns.has(col) ? toDisplayDate(row.rawData[col]) : String(row.rawData[col] ?? ""),
+        ]),
       ),
     );
+    setNewMapping({});
     setError(null);
     setMissingColumns(new Set());
     setOpen(true);
@@ -113,7 +161,11 @@ export function EditRowDialog({
     }
 
     setSubmitting(true);
-    const res = await api["delivery-order"].import({ batchId }).rows({ rowId: row.id }).put({ rawData: values });
+    const columnMappingPatch = Object.fromEntries(Object.entries(newMapping).filter(([, field]) => field.trim() !== ""));
+    const res = await api["delivery-order"].import({ batchId }).rows({ rowId: row.id }).put({
+      rawData: values,
+      ...(Object.keys(columnMappingPatch).length > 0 ? { columnMappingPatch } : {}),
+    });
     setSubmitting(false);
     if (res.error) {
       const value = res.error.value as { code?: string; fields?: string[] } | undefined;
@@ -201,6 +253,26 @@ export function EditRowDialog({
               </label>
             );
           })}
+          {unmappedColumns.length > 0 && (
+            <div className="flex flex-col gap-3 rounded-md border border-dashed border-foreground/25 p-3">
+              <p className="text-xs font-medium text-foreground">
+                Kolom belum dicocokkan saat upload — ada isinya di file, tapi belum dipilih mau dikirim sebagai field
+                Accurate yang mana. Kalau errornya minta salah satu kolom ini diisi, pilih field-nya di sini.
+              </p>
+              {unmappedColumns.map((col) => (
+                <div key={col} className="flex flex-col gap-1">
+                  <span className="text-xs font-medium text-foreground">{col}</span>
+                  <Input value={values[col] ?? ""} onChange={(e) => updateValue(col, e.target.value)} />
+                  <Combobox
+                    options={[...NEW_MAPPING_FIELD_OPTIONS]}
+                    value={newMapping[col] ?? ""}
+                    onChange={(field) => setNewMapping((m) => ({ ...m, [col]: field }))}
+                    placeholder="Pilih field Accurate untuk kolom ini..."
+                  />
+                </div>
+              ))}
+            </div>
+          )}
           <Button onClick={handleSave} disabled={submitting} className="self-end">
             {submitting ? "Menyimpan..." : "Simpan Perubahan"}
           </Button>
