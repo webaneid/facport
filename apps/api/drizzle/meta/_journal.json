@@ -239,6 +239,13 @@
       "when": 1790524639216,
       "tag": "0033_complex_mephisto",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1790585552125,
+      "tag": "0034_clumsy_wasp",
+      "breakpoints": true
     }
   ]
 }

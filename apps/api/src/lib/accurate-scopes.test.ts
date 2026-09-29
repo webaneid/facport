@@ -55,15 +55,31 @@ describe("MODULE_ACCURATE_SCOPES — Fase 98 fix", () => {
 });
 
 // § Fase 117, ADR-0033 — guard konsolidasi: `MODULE_ACCURATE_SCOPES` HARUS
-// subset dari Varian Produk "facport" di `module-catalog.ts` (satu-satunya
-// Produk yang integrasi Accurate Online). Kalau ada modul non-Accurate
-// (Konverter/AutoProduksi) ke-wire keliru ke sini, test ini gagal —
-// mencegah modul yang TIDAK PERNAH call Accurate diberi OAuth scope.
-describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117)", () => {
-  test("semua key MODULE_ACCURATE_SCOPES adalah Varian Produk facport di module-catalog.ts", () => {
-    const facportKeys = new Set<string>(MODULE_CATALOG.filter((m) => m.productLine === "facport").map((m) => m.key));
+// subset dari Varian Produk yang MEMANG integrasi Accurate Online.
+// § KOREKSI Fase 159 — premis asli tertulis "facport satu-satunya Produk
+// yang integrasi Accurate Online" TERNYATA SALAH begitu AutoProduksi
+// benar-benar dibangun (dianalisis dari simulasi client, § architecture-
+// autoproduksi.md): AutoProduksi JUGA panggil Accurate langsung
+// (`item-adjustment/save.do`, reuse endpoint Inventory Adjustment), bukan
+// "formula lokal tanpa Accurate" seperti diasumsikan Fase 117. Allowlist
+// eksplisit (bukan sekadar exclude "konverter") — supaya Produk BARU nanti
+// yang genuinely tidak integrasi Accurate (kalau ada) TIDAK otomatis lolos
+// diam-diam, harus ditambah sadar ke daftar ini kalau memang perlu.
+const PRODUCT_LINES_INTEGRATED_WITH_ACCURATE = ["facport", "autoproduksi"];
+describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117, diperbarui Fase 159)", () => {
+  test("semua key MODULE_ACCURATE_SCOPES adalah Varian Produk yang integrasi Accurate di module-catalog.ts", () => {
+    const accurateIntegratedKeys = new Set<string>(
+      MODULE_CATALOG.filter((m) => (PRODUCT_LINES_INTEGRATED_WITH_ACCURATE as string[]).includes(m.productLine)).map((m) => m.key),
+    );
     for (const key of Object.keys(MODULE_ACCURATE_SCOPES)) {
-      expect(facportKeys.has(key)).toBe(true);
+      expect(accurateIntegratedKeys.has(key)).toBe(true);
+    }
+  });
+
+  test("Konverter TETAP TIDAK PERNAH punya scope Accurate (100% client-side, § ADR-0033)", () => {
+    const konverterKeys = new Set<string>(MODULE_CATALOG.filter((m) => m.productLine === "konverter").map((m) => m.key));
+    for (const key of Object.keys(MODULE_ACCURATE_SCOPES)) {
+      expect(konverterKeys.has(key)).toBe(false);
     }
   });
 });

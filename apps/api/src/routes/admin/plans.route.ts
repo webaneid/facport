@@ -84,6 +84,8 @@ const planBody = t.Object({
       t.Literal("konverter_item_transfer"),
       t.Literal("konverter_requisition"),
       t.Literal("konverter_standard_cost"),
+      // § Fase 159, ADR-0033 — Produk AutoProduksi.
+      t.Literal("autoproduksi_production"),
     ]),
     { minItems: 0, maxItems: 1 },
   ),

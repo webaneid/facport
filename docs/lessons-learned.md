@@ -5242,3 +5242,100 @@ mengklaim rilis "selesai", untuk perubahan yang menyentuh build-time vs runtime 
 build production + baca manifest mentah (bukan cuma jalankan `bun run dev`) ke checklist verifikasi.
 
 Detail: `apps/web/proxy.ts`, `apps/web/next.config.ts`.
+
+## 2026-09-29 — Fase 159 (AutoProduksi): 2 asumsi lama di kode/script TERNYATA SALAH, ketahuan saat eksekusi modul pertama Produk ini
+
+Membangun modul PERTAMA Produk AutoProduksi (Formula/BOM + Input Produksi, reuse endpoint `item-adjustment/
+save.do` milik modul Inventory Adjustment) membongkar 2 asumsi lama yang tertulis eksplisit di kode/dokumen
+tapi ternyata salah — keduanya WAJIB dikoreksi sebelum modul ini bisa jalan benar, bukan sekadar "nice to
+have":
+
+**1. `accurate-scopes.test.ts` — asumsi "facport satu-satunya Produk yang integrasi Accurate Online" SALAH.**
+Test guard ini ditulis Fase 117 (ADR-0033) saat AutoProduksi masih konsep abstrak ("kemungkinan tidak,
+formula lokal" — § `architecture-product-lines.md` versi lama). Begitu Fase 159 benar-benar menganalisis
+kebutuhan client (simulasi Excel+screenshot), ketahuan AutoProduksi JUSTRU integrasi LANGSUNG ke Accurate
+(reuse endpoint Inventory Adjustment) — bukan "formula lokal tanpa Accurate" seperti ditebak. Test lama
+gagal begitu `autoproduksi_production` didaftarkan ke `accurate-endpoint-registry.ts` (assertion `facportKeys.
+has(key)` false untuk key Produk lain). Diperbaiki jadi allowlist eksplisit `["facport", "autoproduksi"]`
+(bukan sekadar exclude "konverter") — supaya Produk BARU nanti yang genuinely TIDAK integrasi Accurate (kalau
+ada) tetap harus ditambah SADAR ke daftar, tidak otomatis lolos diam-diam.
+
+**2. `cleanup-test-data.ts` — tidak tahu tabel baru, FK violation saat coba hapus `subscriptions`/`dataUsaha`.**
+Script cleanup dev DB (§ `feedback_dev_db_test_cleanup`) menghapus `subscriptions`/`dataUsaha`/`user` TANPA
+tahu 3 tabel baru `autoproduksi_*` masih referensi baris itu (FK `ON DELETE no action`, sama pola
+`conversion_logs`) — transaksi di-rollback otomatis (aman, TIDAK ada data korup), tapi cleanup gagal total
+sampai diperbaiki. Pola ini SAMA PERSIS yang sudah pernah terjadi & didokumentasikan untuk `conversion_logs`
+(Konverter) — harusnya jadi refleks "tabel baru dengan FK ke subscriptions/dataUsaha/user = WAJIB tambah ke
+cleanup-test-data.ts juga", tapi checklist ini TIDAK ada di mana pun secara eksplisit (beda dari checklist
+"Titik Registrasi Modul Import Baru" yang sudah terdokumentasi di `architecture-accurate-integration.md` §
+3b) — kelas bug rollout-tidak-lengkap yang sama seperti yang berulang kali ditemukan audit 2026-09-27.
+
+**Pelajaran**: (1) asumsi yang ditulis SEBAGAI KOMENTAR EKSPLISIT di kode ("satu-satunya Produk yang...")
+tetap bisa jadi USANG begitu fase build sungguhan dimulai dan requirement asli client ternyata beda dari
+tebakan awal — jangan anggap komentar lama otomatis benar, VERIFIKASI ULANG saat fase yang disebut komentar
+itu benar-benar dieksekusi. (2) Tabel baru dengan FK `ON DELETE no action` ke `user`/`data_usaha`/
+`subscriptions` (pola tenant-scoped standar project ini) WAJIB langsung ditambah ke `cleanup-test-data.ts`
+di COMMIT YANG SAMA — jangan tunda sampai ketahuan lewat error nanti. Pertimbangkan tambah checklist eksplisit
+ini ke `architecture-database.md` supaya tidak berulang lagi di Produk/modul berikutnya.
+
+**Temuan lain saat eksekusi (bukan bug, koreksi desain sebelum menulis kode)**: 2 asumsi rencana awal ternyata
+tidak akurat setelah cek kode langsung — (a) "Combobox dengan live-search ke Accurate" diasumsikan sudah ada
+presedennya di modul lain (untuk pilih Item/Vendor) — TERNYATA TIDAK ADA SAMA SEKALI, semua modul Facport
+kirim kode apa adanya tanpa lookup (Accurate validasi saat save, `openAccurateSession` SELALU dari worker job
+bukan route sinkron) — form Formula AutoProduksi akhirnya pakai text input polos, konsisten filosofi yang
+sudah ada, bukan bikin pola live-lookup baru yang belum pernah divalidasi; (b) "kategori per-Produk sendiri"
+(disebut di dokumen Fase 117/126 sebagai rencana masa depan) TERNYATA sudah TIDAK relevan — `MODULE_CATEGORIES`
+sudah jadi SATU array dibagi lintas semua Produk sejak Konverter dibangun (Fase 150), bukan per-Produk
+terpisah seperti didesain di atas kertas. Keduanya dikoreksi di `architecture-product-lines.md` sebelum
+lanjut nulis kode, bukan sesudah — pola "check existing code first" (§ `feedback_facport_scope_and_check_
+existing_first`) yang sama juga menyelamatkan waktu di sini.
+
+Detail: `apps/api/src/lib/accurate-scopes.test.ts`, `apps/api/src/scripts/cleanup-test-data.ts`,
+`apps/api/src/db/schema/autoproduksi.schema.ts`, `docs/architecture/architecture-autoproduksi.md`,
+`docs/architecture/architecture-product-lines.md`.
+
+## 2026-09-29 — Fase 159: bug sidebar NYATA baru ketahuan lewat browser-test (3 item nav tampil teks identik) — typecheck/lint/test 0 masalah, tapi UI salah total
+
+Setelah SEMUA verifikasi otomatis hijau (typecheck 0 error, lint bersih, 1707+284 test pass, bahkan test call
+NYATA ke Accurate sandbox SUKSES), browser-test manual ke sidebar AutoProduksi menemukan bug yang TIDAK
+tertangkap satu pun lapisan verifikasi di atas: ketiga item nav ("List Formula"/"Input Produksi"/"Riwayat
+Produksi") tampil dengan teks IDENTIK ("AutoProduksi - Input Produksi" — nama Plan, bukan label masing-masing),
+tidak bisa dibedakan sama sekali di UI.
+
+**Root cause**: fitur lama `modulePlanNames` (§ `app/(protected)/layout.tsx`, diminta user 2026-09-05 "label
+sidebar ikut nama paket yang admin buat, supaya customer tahu link itu bagian paket apa") substitusi
+`item.label` → nama Plan berdasarkan `item.moduleKey`. Fitur ini ASUMSI IMPLISIT (tidak tertulis eksplisit di
+mana pun, cuma "kebetulan selalu benar") "1 moduleKey = 1 item nav" — benar untuk SEMUA 23 modul Facport + 16
+Konverter (tiap halaman punya moduleKey sendiri-sendiri). AutoProduksi PERTAMA KALI melanggar asumsi itu SECARA
+SENGAJA (3 halaman dibundel 1 SKU/moduleKey, § keputusan desain Fase 159) — substitusi lama menerapkan nama
+Plan yang SAMA ke ketiga item, karena logic-nya `modulePlanNames[item.moduleKey]` tidak pernah mengecek "item
+lain yang moduleKey-nya sama juga ada di render context ini".
+
+**Kenapa TIDAK tertangkap typecheck/lint/test**: TypeScript tidak melihat "duplikasi teks tampil" sebagai
+error tipe (kode-nya type-safe, cuma logic bisnisnya salah). Tidak ada test unit untuk logic label sidebar
+sebelumnya (sidebar.tsx belum py test sama sekali). Test call Accurate sukses membuktikan BACKEND (job, payload,
+API) benar — sama sekali tidak menyentuh RENDERING sidebar. Ini PERSIS alasan kenapa checklist verifikasi
+project SELALU minta browser-test manual untuk perubahan UI, bukan cuma "typecheck+test hijau = selesai".
+
+**Fix**: `resolveNavLabel(item, siblingItems, modulePlanNames)` — substitusi HANYA dipakai kalau `moduleKey`
+CUMA dipakai 1 item di antara "item saudara" (konteks render yang sama); begitu moduleKey dipakai >1 item,
+fallback ke `item.label` (label fungsional) untuk SEMUA item itu. Fungsi dipindah ke file terpisah
+(`resolve-nav-label.ts`, BUKAN "use client") supaya bisa di-unit-test murni — ketemu SAAT eksekusi: taruh
+fungsi ini langsung di `sidebar.tsx` (file "use client" yang import `next/navigation`) bikin test GAGAL kalau
+dijalankan sebagai bagian FULL suite (`SyntaxError: Export named 'usePathname' not found`) walau LOLOS kalau
+dijalankan sendirian — jebakan false-positive kelas baru: "test hijau saat dijalankan terisolasi, merah di
+full suite" karena ordering/caching module loader, WAJIB selalu jalankan `bun run test` PENUH (bukan cuma file
+yang baru diubah) sebelum yakin aman.
+
+**Pelajaran**: (1) fitur lama dengan asumsi implisit yang TIDAK PERNAH ditulis eksplisit di kode/dokumen mana
+pun ("1 moduleKey = 1 item nav") bisa bertahan bertahun-tahun tanpa masalah SAMPAI ada kasus baru yang
+melanggarnya — audit "apakah ada asumsi implisit di fitur shared yang mau disentuh" sebelum menambah pola
+BARU (di sini: banyak nav item 1 moduleKey) ke fitur yang sudah lama stabil. (2) **Verifikasi otomatis
+(typecheck/lint/test/bahkan test call API nyata) TIDAK PERNAH cukup untuk bug RENDERING/UX** — hanya browser-
+test manual yang menangkap ini, PERSIS kelas bug yang sama seperti insiden CSP 2026-09-28 (verifikasi "hijau
+semua" ≠ "benar-benar berfungsi", beda lapisan yang diverifikasi). (3) Pisahkan logic pure function dari file
+"use client" SEJAK AWAL kalau niatnya mau di-unit-test — jangan taruh helper testable di file yang membawa
+side-effect import (Next.js hooks dkk), bahkan kalau function-nya sendiri pure.
+
+Detail: `apps/web/components/app-shell/sidebar.tsx`, `apps/web/components/app-shell/resolve-nav-label.ts`
+(baru), `apps/web/components/app-shell/resolve-nav-label.test.ts` (baru).

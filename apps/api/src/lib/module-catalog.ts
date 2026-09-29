@@ -127,6 +127,14 @@ export const MODULE_CATALOG = [
   { key: "konverter_requisition", label: "Requisition", productLine: "konverter", category: "Inventory" },
   // § "Master Data" — SATU-SATUNYA Varian yang bukan transaksi (update Harga Pokok Standar & Jual), kategori baru.
   { key: "konverter_standard_cost", label: "Standard Cost & Selling Price", productLine: "konverter", category: "Master Data" },
+
+  // § Fase 159, ADR-0033, architecture-autoproduksi.md — Produk KE-3 ("AutoProduksi", dikunci Fase 117
+  // tapi 0 kode sampai fase ini). 1 Varian SAJA (Formula/BOM + Input Produksi + Riwayat dibundel 1 SKU,
+  // mirror pola modul lain yang juga bundel CRUD+transaksi+riwayat dalam 1 moduleKey, § ADR-0019
+  // "1 plan row = 1 SKU per sub-modul"). Kategori "Produksi" BARU (ditambah ke MODULE_CATEGORIES di
+  // bawah) — TIDAK mirror Accurate Online seperti kategori Facport/Konverter, karena AutoProduksi
+  // bukan fitur native Accurate (custom di Facport sendiri).
+  { key: "autoproduksi_production", label: "Input Produksi", productLine: "autoproduksi", category: "Produksi" },
 ] as const satisfies { key: string; label: string; productLine: ProductLineKey; category: string }[];
 
 // § Fase 126 — urutan tampil kategori di sidebar/form admin (Cash & Bank
@@ -138,7 +146,12 @@ export const MODULE_CATALOG = [
 // § Fase 150 — "Master Data" ditambah (Produk Konverter, `konverter_standard_cost`) — kategori PERTAMA yang
 // dipakai LINTAS Produk-nya sendiri sekaligus jadi contoh kaidah "kosong = hilang": Facport/AutoProduksi 0 modul
 // di kategori ini, aman (§ komentar di atas soal Inventory/Manufacture dulu, prinsip yang sama berlaku).
-export const MODULE_CATEGORIES = ["Cash & Bank", "General Ledger", "Purchase", "Sales", "Inventory", "Manufacture", "Master Data"] as const;
+// § Fase 159 — "Produksi" ditambah (Produk AutoProduksi, `autoproduksi_production`). Array ini TETAP SATU
+// daftar dibagi lintas SEMUA Produk (BUKAN per-Produk sendiri seperti sempat disebut di dokumen lama sebelum
+// Konverter/AutoProduksi benar-benar dibangun) — `groupItemsByCategory` (sidebar.tsx) & `groupByCategory`
+// (product-catalog-section.tsx) sama-sama iterate SATU array ini, kategori yang 0 modul di suatu Produk
+// otomatis hilang dari section Produk itu (tidak ada cross-contamination antar Produk).
+export const MODULE_CATEGORIES = ["Cash & Bank", "General Ledger", "Purchase", "Sales", "Inventory", "Manufacture", "Master Data", "Produksi"] as const;
 
 export type ModuleKey = (typeof MODULE_CATALOG)[number]["key"];
 

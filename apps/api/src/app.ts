@@ -55,6 +55,7 @@ import { salesReturnImportRoute } from "./routes/sales-return-import.route";
 import { itemTransferImportRoute } from "./routes/item-transfer-import.route";
 import { itemRequisitionImportRoute } from "./routes/item-requisition-import.route";
 import { inventoryAdjustmentImportRoute } from "./routes/inventory-adjustment-import.route";
+import { autoproduksiRoute } from "./routes/autoproduksi.route";
 import { jobCostingImportRoute } from "./routes/job-costing-import.route";
 import { rollOverImportRoute } from "./routes/roll-over-import.route";
 import { workOrderImportRoute } from "./routes/work-order-import.route";
@@ -263,6 +264,8 @@ export const app = new Elysia()
   .use(adminDataUsahaRoute)
   // § Fase 150, ADR-0038 — Produk Konverter, 1 endpoint bersama untuk SEMUA 16 Varian (beda dari pola
   // 1-route-per-modul di atas, § komentar di conversion-logs.route.ts).
-  .use(conversionLogsRoute);
+  .use(conversionLogsRoute)
+  // § Fase 159, ADR-0033 — Produk AutoProduksi, modul PERTAMA (1 Varian saja hari ini).
+  .use(autoproduksiRoute);
 
 export type App = typeof app;

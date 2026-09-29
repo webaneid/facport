@@ -16,6 +16,8 @@ import {
   memberSeats,
   ownershipTransfers,
   conversionLogs,
+  autoproduksiFormulas,
+  autoproduksiProductionEntries,
 } from "../db/schema";
 import { announcements, notifications } from "../db/schema/notification.schema";
 import { auditLogs, settings, media } from "../db/schema/core.schema";
@@ -110,6 +112,23 @@ async function main() {
     if (testSubscriptionIds.length) conversionLogConditions.push(inArray(conversionLogs.subscriptionId, testSubscriptionIds));
     if (testDataUsahaIds.length) conversionLogConditions.push(inArray(conversionLogs.dataUsahaId, testDataUsahaIds));
     if (conversionLogConditions.length) await tx.delete(conversionLogs).where(or(...conversionLogConditions));
+
+    // § Fase 159, architecture-autoproduksi.md — Produk AutoProduksi, 3 FK sendiri-sendiri (userId/dataUsahaId/
+    // subscriptionId) SEMUA `ON DELETE no action`, pola SAMA `conversion_logs` di atas — WAJIB dihapus SEBELUM
+    // subscriptions/dataUsaha/user di bawah. `autoproduksi_production_entries.formulaId` -> `autoproduksi_formulas.id`
+    // JUGA `no action` (BUKAN cascade), jadi entries WAJIB dihapus SEBELUM formulas (beda dari formula_items yang
+    // cascade otomatis dari formulas, tidak perlu baris terpisah di sini).
+    const autoproduksiEntryConditions = [];
+    if (testUserIds.length) autoproduksiEntryConditions.push(inArray(autoproduksiProductionEntries.userId, testUserIds));
+    if (testSubscriptionIds.length) autoproduksiEntryConditions.push(inArray(autoproduksiProductionEntries.subscriptionId, testSubscriptionIds));
+    if (testDataUsahaIds.length) autoproduksiEntryConditions.push(inArray(autoproduksiProductionEntries.dataUsahaId, testDataUsahaIds));
+    if (autoproduksiEntryConditions.length) await tx.delete(autoproduksiProductionEntries).where(or(...autoproduksiEntryConditions));
+
+    const autoproduksiFormulaConditions = [];
+    if (testUserIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.userId, testUserIds));
+    if (testSubscriptionIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.subscriptionId, testSubscriptionIds));
+    if (testDataUsahaIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.dataUsahaId, testDataUsahaIds));
+    if (autoproduksiFormulaConditions.length) await tx.delete(autoproduksiFormulas).where(or(...autoproduksiFormulaConditions));
 
     // § Fase 113 — memberSeats & ownershipTransfers WAJIB dihapus SEBELUM
     // subscriptions/dataUsaha (FK: seatSubscriptionId -> subscriptions,
