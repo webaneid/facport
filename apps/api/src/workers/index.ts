@@ -6,7 +6,22 @@ import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
 import { sendEmail, escapeHtml } from "../lib/email";
 import { db } from "../lib/db";
-import { subscriptions, accurateConnections, importBatches, importBatchRows, auditLogs, settings, announcements, plans, dataUsaha, user as userTable } from "../db/schema";
+import {
+  subscriptions,
+  accurateConnections,
+  importBatches,
+  importBatchRows,
+  auditLogs,
+  settings,
+  announcements,
+  plans,
+  dataUsaha,
+  user as userTable,
+  autoproduksiFormulas,
+  autoproduksiFormulaItems,
+  autoproduksiProductionEntries,
+} from "../db/schema";
+import { buildProductionEntryPayload } from "../lib/autoproduksi";
 import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
@@ -2211,6 +2226,80 @@ async function main() {
 
     await db.update(announcements).set({ recipientCount: recipientIds.length }).where(eq(announcements.id, announcementId));
     logger.info({ announcementId, recipientCount: recipientIds.length }, "Announcement fan-out selesai");
+  });
+
+  // § Fase 159, architecture-autoproduksi.md — 1 job per "Input Produksi"
+  // AutoProduksi. Mirror pola guard IMPORT_TO_ACCURATE (resolve koneksi →
+  // cek scope → buka sesi → panggil Accurate) TAPI jauh lebih simpel: 1
+  // entry = 1 panggilan `saveInventoryAdjustment()` (endpoint yang SUDAH
+  // ADA, dipakai modul Inventory Adjustment — TIDAK ada integrasi baru).
+  await boss.work<{ entryId: string }>(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, async ([job]) => {
+    if (!job) return;
+    const { entryId } = job.data;
+
+    const [entry] = await db.select().from(autoproduksiProductionEntries).where(eq(autoproduksiProductionEntries.id, entryId));
+    if (!entry) {
+      logger.error({ entryId }, "AutoProduksi: production entry tidak ditemukan, skip job");
+      return;
+    }
+
+    const markFailed = (errorMessage: string) =>
+      db.update(autoproduksiProductionEntries).set({ status: "failed", errorMessage }).where(eq(autoproduksiProductionEntries.id, entryId));
+
+    const [formula] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, entry.formulaId));
+    if (!formula) {
+      await markFailed("Formula tidak ditemukan (mungkin sudah dihapus) — buat ulang formula lalu input produksi lagi.");
+      logger.error({ entryId, formulaId: entry.formulaId }, "AutoProduksi: formula tidak ditemukan");
+      return;
+    }
+    const formulaItems = await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, formula.id));
+
+    const resolved = await resolveConnectionForSubscription(entry.subscriptionId);
+    const connection = resolved?.connection ?? null;
+    const accurateDbId = resolved?.accurateDbId ?? null;
+    if (!connection || !accurateDbId) {
+      await markFailed("Koneksi Accurate belum dipilih atau tidak valid — hubungkan/pilih Data Usaha Accurate dulu sebelum input produksi.");
+      logger.error({ entryId }, "AutoProduksi gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
+      return;
+    }
+
+    // § architecture-accurate-scope-engine.md — scope diperiksa SEBELUM buka sesi, sama pola IMPORT_TO_ACCURATE.
+    const scopeCheck = await checkConnectionScopes(connection, ["autoproduksi_production"]);
+    if (!scopeCheck.ok) {
+      await markFailed(`Izin Accurate kurang: scope ${scopeCheck.missing.map((m) => `"${m}"`).join(", ")} belum diberikan — perbarui izin (hubungkan ulang Accurate) lalu coba lagi.`);
+      logger.error({ entryId, missing: scopeCheck.missing }, "AutoProduksi gagal: scope koneksi Accurate kurang");
+      return;
+    }
+
+    await db.update(autoproduksiProductionEntries).set({ status: "processing" }).where(eq(autoproduksiProductionEntries.id, entryId));
+
+    let session;
+    try {
+      session = await openAccurateSession(connection, accurateDbId);
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await markFailed(`Gagal membuka sesi Data Usaha Accurate: ${detail}`);
+      logger.error({ err, entryId }, "AutoProduksi gagal: tidak bisa buka sesi Data Usaha Accurate");
+      Sentry.captureException(err);
+      if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
+      return;
+    }
+
+    try {
+      const payload = buildProductionEntryPayload(formula, formulaItems, entry);
+      const result = await saveInventoryAdjustment(session, payload);
+      await db
+        .update(autoproduksiProductionEntries)
+        .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null })
+        .where(eq(autoproduksiProductionEntries.id, entryId));
+      logger.info({ entryId, accurateTransactionId: result.id }, "AutoProduksi: input produksi berhasil");
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      await markFailed(detail);
+      logger.error({ err, entryId }, "AutoProduksi gagal: penyesuaian persediaan ditolak Accurate");
+      Sentry.captureException(err);
+      if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
+    }
   });
 
   // § Fase 10, architecture-subscription.md § "Retensi Data Import" —

@@ -13,3 +13,4 @@ export * from "./notification.schema";
 export * from "./customer-care.schema";
 export * from "./promo.schema";
 export * from "./conversion.schema";
+export * from "./autoproduksi.schema";

@@ -105,7 +105,7 @@ Decision poin 3):
 |---|---|---|
 | Facport | Ya (OAuth, per Data Usaha) | `subscriptionGatePlugin.moduleAccess(key)` — sudah ada |
 | Konverter | **Tidak sama sekali** (client-side, no API call) | `moduleAccess(key)` yang SAMA — mekanisme ini cuma cek `plan.modules`, tidak pernah query `accurate_connections` |
-| AutoProduksi | Belum ditentukan (kemungkinan tidak, formula lokal) | `moduleAccess(key)` yang sama, kemungkinan besar tanpa koneksi |
+| AutoProduksi | **Ya** — § KOREKSI Fase 159 (premis "kemungkinan tidak, formula lokal" TERNYATA SALAH setelah simulasi client dianalisis): panggil `item-adjustment/save.do` (endpoint SAMA dengan modul Inventory Adjustment Facport, § architecture-autoproduksi.md) | `moduleAccess(key)` yang sama, koneksi Accurate WAJIB (sama pola Facport) |
 
 `data_usaha` dengan nol koneksi Accurate sudah state valid hari ini (alur
 trial) — Produk Konverter/AutoProduksi TIDAK butuh perubahan skema
@@ -120,12 +120,16 @@ trial) — Produk Konverter/AutoProduksi TIDAK butuh perubahan skema
   dibuat): tabel `conversion_logs` terpisah (`userId`, `dataUsahaId`,
   `subscriptionId`, `moduleKey`, `fileName`, `rowCount` — semua
   self-reported client). Dibuat pas fase build Konverter.
-- **AutoProduksi**: kemungkinan cocok job/queue (`pg-boss`) biasa — tabel
-  tujuan berbeda (bukan `import_batches`, karena bukan "impor" tapi
-  "penyesuaian stok dari formula"), desain final menunggu fase build-nya.
+- **AutoProduksi** (dibangun Fase 159, § architecture-autoproduksi.md): job/
+  queue `pg-boss` biasa (`PROCESS_AUTOPRODUKSI_ENTRY`), TABEL SENDIRI
+  `autoproduksi_production_entries` — BUKAN `import_batches` (bukan "impor
+  Excel", tiap baris = 1 "Input Produksi" = 1 dokumen Penyesuaian Persediaan
+  Accurate langsung, tanpa parsing Excel).
 - `GET /me/import-batches` ("Arsip Import" unified) **TIDAK diubah** fase
-  ini — tetap scope Facport (+ AutoProduksi nanti kalau memang lewat job
-  server). Konverter TIDAK ikut di halaman ini (riwayatnya sendiri nanti).
+  ini — tetap scope Facport SAJA (AutoProduksi punya riwayat sendiri di
+  `/autoproduksi/riwayat`, TIDAK digabung ke Arsip Import — tabelnya beda
+  struktur, § poin di atas). Konverter TIDAK ikut di halaman ini juga
+  (riwayatnya sendiri, `/konverter/riwayat`).
 
 ## Checkout/Invoice
 
@@ -140,9 +144,9 @@ dibuat (pola sama `moduleKey`/`label`/`price`, bukan join-live).
 
 | Produk | Varian live | Fase |
 |---|---|---|
-| Facport | sales_invoice, sales_receipt, purchase_invoice, purchase_payment, journal_voucher, vendor_payable_account, other_payment (7) | Fase 02–96 |
-| Konverter | — (belum ada) | — |
-| AutoProduksi | — (belum ada) | — |
+| Facport | 23 modul (Sales/Purchase/Cash & Bank/General Ledger/Inventory/Manufacture) — daftar lengkap di `module-catalog.ts`, tabel ini TIDAK di-maintain manual lagi sejak jumlah modul bertambah banyak | Fase 02–158 |
+| Konverter | 16 Varian, SELESAI seluruhnya (Fase 150–156) | Fase 150–156 |
+| AutoProduksi | autoproduksi_production (1, Formula/BOM + Input Produksi + Riwayat) | Fase 159 |
 
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`

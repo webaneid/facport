@@ -46,12 +46,17 @@ import {
   Truck,
   // § Fase 156 — Standard Cost (Konverter, kategori "Master Data" PERTAMA), tidak ada modul Facport setara.
   Tag,
+  // § Fase 159 — AutoProduksi (Formula/resep produksi), tidak ada modul Facport/Konverter setara jadi icon baru.
+  ChefHat,
+  ListChecks,
+  History,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
 import { cn } from "@/lib/utils";
 import { usePermissions } from "@/lib/use-permissions";
 import { moduleCategory, modulesForProductLine, MODULE_CATEGORIES } from "@/lib/module-options";
+import { resolveNavLabel } from "./resolve-nav-label";
 import { CATEGORY_ICON, CATEGORY_ICON_FALLBACK } from "@/lib/category-icons";
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent } from "@/components/ui/dropdown-menu";
 // § `DropdownMenuPrimitive.Item` MENTAH (bukan `DropdownMenuItem` yang
@@ -211,6 +216,18 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       ],
     },
     {
+      // § Fase 159, ADR-0033 — grup PRODUK ke-3 ("AutoProduksi"), pola SAMA grup "Facport"/"Konverter" di atas.
+      // 1 Varian saja hari ini (`autoproduksi_production`) — Formula/Input/Riwayat dibundel 1 SKU, jadi
+      // SEMUA 3 item nav di bawah pakai moduleKey yang SAMA (beda dari Facport yang 1 moduleKey = 1 halaman).
+      label: "AutoProduksi",
+      productLine: "autoproduksi",
+      items: [
+        { href: "/autoproduksi/formulas", label: "List Formula", icon: ListChecks, moduleKey: "autoproduksi_production" },
+        { href: "/autoproduksi/input", label: "Input Produksi", icon: ChefHat, moduleKey: "autoproduksi_production" },
+        { href: "/autoproduksi/riwayat", label: "Riwayat Produksi", icon: History, moduleKey: "autoproduksi_production" },
+      ],
+    },
+    {
       label: "Langganan",
       ownerOnly: true,
       // § Fase 15/17 — TANPA moduleKey (selalu tampil untuk customer login).
@@ -310,6 +327,13 @@ function IdentityCard({ collapsed, logoUrl, subtitle }: { collapsed: boolean; lo
   );
 }
 
+// § Fase 159 — bug ditemukan saat browser-test AutoProduksi (3 item nav
+// berbagi 1 moduleKey, substitusi "tampilkan nama Plan" bikin ketiganya
+// tampil teks identik). Fungsi `resolveNavLabel` DIPINDAH ke
+// `resolve-nav-label.ts` (file terpisah, BUKAN "use client") supaya bisa
+// di-unit-test murni tanpa ikut import `next/navigation` dkk dari file
+// ini — detail lengkap bug & fix di komentar file itu.
+
 // § Fase 126 — cluster item (SUDAH difilter subscription oleh
 // `navGroupsFor`, dipanggil SEBELUM fungsi ini) ke bucket per Kategori,
 // urut ikut `MODULE_CATEGORIES` (Cash & Bank → ... → Manufacture).
@@ -386,7 +410,7 @@ function NavGroupBlock({
                 <NavRow
                   key={item.href}
                   item={item}
-                  displayLabel={(item.moduleKey && modulePlanNames?.[item.moduleKey]) || item.label}
+                  displayLabel={resolveNavLabel(item, items, modulePlanNames)}
                   collapsed={collapsed}
                   active={isActive(pathname, item.href)}
                   onNavigate={onNavigate}
@@ -487,7 +511,7 @@ function NavCategoryFlyout({
       >
         {items.map((item) => {
           const ItemIcon = item.icon;
-          const label = (item.moduleKey && modulePlanNames?.[item.moduleKey]) || item.label;
+          const label = resolveNavLabel(item, items, modulePlanNames);
           const active = isActive(pathname, item.href);
           return (
             <DropdownMenuPrimitive.Item key={item.href} asChild onSelect={onNavigate} className="mb-1 outline-none last:mb-0">

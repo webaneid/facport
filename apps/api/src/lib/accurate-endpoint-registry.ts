@@ -91,6 +91,11 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
   item_requisition: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
   inventory_adjustment: { endpoints: ["POST item-adjustment/save.do"] },
+  // § Fase 159 — AutoProduksi reuse ENDPOINT YANG SAMA dengan Inventory Adjustment di atas (bukan integrasi
+  // baru, § architecture-autoproduksi.md). `adjustmentAccountNo`/`branchName`/`warehouseName`/itemNo dikirim
+  // apa adanya (TIDAK ada lookup/GET glaccount|branch|warehouse — konsisten filosofi "Accurate validasi saat
+  // save", § komentar `glaccount_view` di atas baris 34-35 — masih berlaku, sengaja tidak ditambah lookup).
+  autoproduksi_production: { endpoints: ["POST item-adjustment/save.do"] },
   // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
   // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
   roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },

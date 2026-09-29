@@ -159,6 +159,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Banner promo di /pilih-usaha, kelola admin Promo | `docs/architecture/architecture-promo.md` |
 | Facport sebagai super-app multi-produk (Facport/Konverter/AutoProduksi) | `docs/architecture/architecture-product-lines.md` |
 | Produk Konverter (Excel→XML untuk Accurate Desktop) | `docs/architecture/architecture-konverter.md` |
+| Produk AutoProduksi (Formula/BOM, Input Produksi) | `docs/architecture/architecture-autoproduksi.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan

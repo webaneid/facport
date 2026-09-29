@@ -18,6 +18,10 @@ export const JOBS = {
   PURGE_OLD_IMPORTS: "purge-old-imports", // § Fase 10 — retensi data import
   NOTIFY_EXPIRING_SOON: "notify-expiring-soon", // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir
   SEND_ANNOUNCEMENT: "send-announcement", // § Fase 45 — fan-out broadcast admin ke banyak penerima
+  // § Fase 159 — 1 job per "Input Produksi" AutoProduksi (1 panggilan item-adjustment/save.do,
+  // BUKAN bulk seperti IMPORT_TO_ACCURATE) — default pg-boss options (retry 2x, expire 15 menit)
+  // CUKUP untuk 1 panggilan ringan, tidak perlu masuk NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS di bawah.
+  PROCESS_AUTOPRODUKSI_ENTRY: "process-autoproduksi-entry",
 } as const;
 
 // § diminta user 2026-09-24 — default pg-boss (`expireInSeconds: 900` = 15
