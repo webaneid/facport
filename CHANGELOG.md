@@ -1,3 +1,8 @@
+## <small>2.18.5 (2026-09-29)</small>
+
+* Merge pull request #88 from webaneid/develop ([9790440](https://github.com/webaneid/facport/commit/9790440)), closes [#88](https://github.com/webaneid/facport/issues/88)
+* fix(api web): Delivery Order — cocokkan kolom CLS5/CLS2 bisa ditambah dari form edit baris ([9c6e647](https://github.com/webaneid/facport/commit/9c6e647))
+
 ## <small>2.18.4 (2026-09-29)</small>
 
 * Merge pull request #87 from webaneid/develop ([0c262f6](https://github.com/webaneid/facport/commit/0c262f6)), closes [#87](https://github.com/webaneid/facport/issues/87)
