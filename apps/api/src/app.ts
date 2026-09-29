@@ -97,7 +97,16 @@ export const app = new Elysia()
   // § security review Fase 143 (Medium) — /accurate/* memanggil Accurate (db-list, open-db, tukar kode) per request dari
   // user terautentikasi; tanpa batas, bisa menghabiskan kuota Accurate / menggantung. Longgar (halaman koneksi memuat
   // beberapa endpoint sekaligus), tapi menutup abuse berulang.
-  .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 60 }))
+  // § HOTFIX 2026-09-29 (Fase 163) — 60 TERBUKTI terlalu ketat begitu
+  // `GET /accurate/items|glaccounts/search` (search-as-you-type,
+  // accurate-lookup.route.ts) ikut prefix ini: 1 user isi 1 Formula
+  // (search Barang Jadi + N Bahan Baku + Akun) bisa gampang >10 request
+  // walau SUDAH didebounce (§ frontend fix bareng), ditambah bucket ini
+  // DIBAGI per-IP (1 kantor/NAT bisa banyak staff sekaligus) — naik ke
+  // 180 kasih ruang wajar, endpoint OAuth (connect/attach/databases) yang
+  // jadi alasan awal limiter ini TIDAK PERNAH mendekati bahkan 60/menit
+  // secara wajar, jadi menaikkan tidak melemahkan proteksinya.
+  .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 180 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";
