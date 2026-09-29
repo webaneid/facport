@@ -13,6 +13,7 @@ import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
 import { filterFormulas } from "@/lib/filter-formulas";
 import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
+import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
 // form-based (BUKAN Excel-upload seperti 23 modul lain). Formula (BOM):
@@ -78,6 +79,15 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const [itemResults, setItemResults] = useState<AccurateItemResult[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // § HOTFIX 2026-09-29 — WAJIB debounce (§ use-debounced-callback.ts):
+  // ditemukan NYATA di production, ketik 4 huruf ("gula") tanpa debounce
+  // langsung 429 dari Accurate (rate limit /accurate 60/menit per-IP,
+  // dibagi bersama traffic Accurate lain). 350ms sama seperti default
+  // `SearchForm` (§ ADR-0024) — konsisten timing debounce lintas project.
+  const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(await searchAccurateItems(q)), 350);
+  const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(await searchAccurateItems(q)), 350);
+  const debouncedAccountSearch = useDebouncedCallback(async (q: string) => setAccountResults(await searchAccurateAccounts(q)), 350);
 
   async function openDialog() {
     setOpen(true);
@@ -203,7 +213,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               <Combobox
                 value={finishedGoodItemNo}
                 onChange={selectFinishedGood}
-                onSearch={async (q) => setFinishedGoodResults(await searchAccurateItems(q))}
+                onSearch={debouncedFinishedGoodSearch}
                 placeholder="Ketik kode/nama barang..."
                 options={itemComboboxOptions(finishedGoodItemNo, finishedGoodItemName, finishedGoodResults)}
               />
@@ -230,7 +240,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
                 <Combobox
                   value={item.itemNo}
                   onChange={(no) => selectItemForRow(index, no)}
-                  onSearch={async (q) => setItemResults(await searchAccurateItems(q))}
+                  onSearch={debouncedItemSearch}
                   placeholder="Cari Bahan Baku..."
                   options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
                 />
@@ -265,7 +275,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               <Combobox
                 value={adjustmentAccountNo}
                 onChange={selectAccount}
-                onSearch={async (q) => setAccountResults(await searchAccurateAccounts(q))}
+                onSearch={debouncedAccountSearch}
                 placeholder="Ketik kode/nama akun..."
                 options={itemComboboxOptions(adjustmentAccountNo, adjustmentAccountName, accountResults)}
               />

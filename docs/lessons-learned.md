@@ -5386,3 +5386,44 @@ diperbaiki terpisah, bukan diabaikan karena "bukan yang diminta".
 
 Detail: `apps/api/src/routes/admin/plans.route.ts`, `apps/api/src/routes/admin/plans.route.test.ts`,
 `apps/api/src/lib/invoice-pdf.tsx`, `apps/web/app/admin/(protected)/invoices/page.tsx`.
+
+## 2026-09-29 — HOTFIX production: `Combobox.onSearch` Fase 163 kirim request tiap keystroke, 429 nyata dalam hitungan huruf — kelas bug yang SUDAH pernah ditemukan & didokumentasikan, terulang karena beda komponen
+
+Langsung setelah rilis v2.18.0 (Fase 163, live-search Accurate), client lapor screenshot console: ketik "gula"
+(4 huruf) di Combobox pencarian Bahan Baku langsung `429 Too Many Requests` dari
+`GET /accurate/items/search`.
+
+**Root cause**: `Combobox` (`components/ui/combobox.tsx`) memanggil `onSearch` LANGSUNG dari
+`CommandInput.onValueChange` — TANPA debounce. Tiap huruf yang diketik = 1 request Accurate
+sungguhan. Ditambah rate limiter `/accurate` (60/menit per-IP, `app.ts`) DIBAGI dengan traffic
+Accurate lain (OAuth connect/attach/databases) — beberapa keystroke saja + sisa kuota dari
+aktivitas lain di IP yang sama (kantor/NAT) sudah cukup untuk 429.
+
+**Ironi**: project ini SUDAH punya pelajaran identik & fix-nya — § ADR-0024, ditemukan pertama
+kali di `admin/users/page.tsx` ("search box `onChange` langsung fetch tiap keystroke... celah
+nyata ditemukan, bukan hipotetis"), diperbaiki dengan `SearchForm` (debounce 350ms bawaan). Bug
+yang SAMA PERSIS terulang di `formulas/page.tsx` karena `Combobox` adalah komponen BERBEDA dari
+`SearchForm` — `SearchForm` mengelola state input-nya sendiri (debounce built-in), `Combobox`
+TIDAK (`onSearch` cuma callback polos, pemanggil yang wajib debounce sendiri). Menulis kode baru
+yang "terasa mirip pola lama" TIDAK OTOMATIS mewarisi fix yang sudah ada di komponen lain — harus
+dicek EKSPLISIT komponen yang benar-benar dipakai.
+
+**Fix**: `lib/use-debounced-callback.ts` (hook generic BARU, bukan cuma tambal 1 file) — dipakai
+di 3 titik `Combobox.onSearch` (Barang Jadi, Bahan Baku per-baris, Akun Perantara), 350ms sama
+seperti default `SearchForm` (konsistensi timing). Sekalian rate limit `/accurate` dinaikkan
+60→180/menit (`app.ts`) — bucket itu DIBAGI per-IP dengan traffic OAuth yang endpoint tersebut
+TIDAK PERNAH mendekati batasnya secara wajar, jadi menaikkan tidak melemahkan proteksi endpoint
+OAuth, cuma kasih ruang wajar untuk search-as-you-type (bahkan yang sudah didebounce, 1 Formula
+py banyak field yang masing2 bisa search).
+
+**Pelajaran**: (1) checklist "apakah ada pola serupa yang sudah pernah bermasalah di project ini"
+WAJIB dicek per KOMPONEN yang dipakai, bukan diasumsikan dari nama fitur ("search box" ≠ 1
+komponen tunggal — ada `SearchForm` DAN `Combobox`, beda tanggung jawab debounce). (2) Endpoint
+yang manggil API eksternal (bukan cuma DB lokal) JAUH lebih sensitif ke pola "fetch tiap
+keystroke" — DB lokal biasanya cukup cepat sampai gejalanya tidak kelihatan, API eksternal
+ber-rate-limit langsung nyata dalam hitungan huruf. (3) Verifikasi manual client di production
+(bukan cuma test otomatis) lagi-lagi menangkap bug kelas UX/timing yang lolos typecheck+lint+test
+— pola berulang sepanjang project ini (§ CSP 2026-09-28, sidebar 2026-09-29 pagi).
+
+Detail: `apps/web/lib/use-debounced-callback.ts` (baru), `apps/web/app/app/(protected)/autoproduksi/formulas/page.tsx`,
+`apps/api/src/app.ts`.
