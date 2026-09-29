@@ -1,3 +1,8 @@
+## <small>2.18.3 (2026-09-29)</small>
+
+* Merge pull request #86 from webaneid/develop ([15c3ce6](https://github.com/webaneid/facport/commit/15c3ce6)), closes [#86](https://github.com/webaneid/facport/issues/86)
+* fix(api): diagnostic sementara — cari nama field satuan item/list.do yang benar ([59d6e2f](https://github.com/webaneid/facport/commit/59d6e2f))
+
 ## <small>2.18.2 (2026-09-29)</small>
 
 * Merge pull request #85 from webaneid/develop ([ba37bfa](https://github.com/webaneid/facport/commit/ba37bfa)), closes [#85](https://github.com/webaneid/facport/issues/85)
