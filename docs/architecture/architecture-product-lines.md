@@ -140,6 +140,42 @@ dibuat (pola sama `moduleKey`/`label`/`price`, bukan join-live).
 `subscriptions` TIDAK punya kolom `productLine` sendiri — join
 `plans.productLine` kalau perlu.
 
+## Katalog Langganan `/subscribe` (Fase 161 — pilih-Produk dulu)
+
+Sebelumnya (Fase 127) `/subscribe` 1 halaman FLAT: SEMUA Produk (grid kartu
+Kategori tiap Produk) ditumpuk vertikal sekaligus. Sejak Fase 161, dipecah 2
+tingkat karena jumlah Kategori lintas Produk sudah terlalu banyak untuk 1
+scroll (Facport 23 Varian/~7 Kategori, Konverter 16 Varian/~6 Kategori,
+AutoProduksi 1 Varian/1 Kategori):
+
+- **Step 0** (`/subscribe/page.tsx`) — 4 card sejajar: 3 Produk (Facport/
+  Konverter/AutoProduksi) + **Tambahan Anggota** sebagai card ke-4 (BUKAN
+  bagian salah satu Produk — 1 seat = akses ke SEMUA fitur aktif 1 Data
+  Usaha, apapun Produknya, lihat `architecture-user-tambahan.md` ADR-0032).
+  Klik card → masuk katalog Produk itu.
+- **Step 1** (`/subscribe/[productLine]/page.tsx`) — katalog 1 Produk saja
+  (grid kartu Kategori + accordion Varian, komponen `ProductCatalogSection`
+  TIDAK berubah sejak Fase 127, cuma dipanggil untuk 1 Produk bukan
+  di-loop). Param URL divalidasi terhadap whitelist `PRODUCT_LINES` sebelum
+  dipakai lookup apa pun.
+- **`/subscribe/tambahan-anggota/page.tsx`** — form beli slot seat (dulu
+  section di bagian bawah halaman lama), gated `hasAnyRealActiveSubscription`
+  (§ `lib/subscribe-gate.ts`) — EmptyState kalau Data Usaha belum punya
+  fitur berbayar aktif sama sekali.
+- **Keranjang GABUNGAN lintas halaman** (checkout tetap bisa campur SKU
+  lintas Produk dalam 1 invoice, § "Checkout/Invoice" di atas TIDAK
+  berubah) — dicapai dengan mengangkat state cart (`useGroupedPlans`, seat
+  state, handler checkout/trial) ke `SubscribeCartProvider`
+  (`components/subscribe/subscribe-cart-context.tsx`) yang dibungkus
+  `subscribe/layout.tsx` — Next.js App Router tidak remount layout ini saat
+  navigasi client-side antar `/subscribe/*`, jadi state tidak reset. Bar
+  mengambang (`cart-bar.tsx`) tampil di semua halaman `/subscribe/*` begitu
+  ada ≥1 item dipilih, buka `Dialog` Ringkasan Pesanan on-demand.
+- Kompatibilitas `?plans=<planId,...>` dari landing (`module-features.tsx`)
+  DIPERTAHANKAN — Step 0 auto-redirect ke `/subscribe/<productLine>` kalau
+  preselect semuanya dari 1 Produk (`resolveSinglePreselectProductLine`,
+  `lib/resolve-preselect-product-line.ts`).
+
 ## Status Katalog (update tiap fase menambah varian nyata)
 
 | Produk | Varian live | Fase |

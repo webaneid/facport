@@ -92,8 +92,11 @@ export function gateCopy(gate: AccurateGate, opts: { dataUsahaName: string; hasE
         secondary: later,
         // § belum ada komitmen ke Facport sama sekali (Data Usaha benar-benar baru) — tawarkan jalur Konverter
         // (Excel→XML untuk Accurate Desktop) yang TIDAK butuh koneksi Accurate Online ini sama sekali.
+        // § Fase 161 — deep-link LANGSUNG ke katalog Konverter (dulu Step 0
+        // gabungan `/subscribe`, sekarang halaman pilih-Produk dulu —
+        // link ini sudah tahu tujuannya Konverter, tidak perlu 1 klik ekstra).
         alternativeLink: !gate.lastKnownDbAlias && gate.hasNoSubscriptionYet
-          ? { label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe" }
+          ? { label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe/konverter" }
           : undefined,
       };
 

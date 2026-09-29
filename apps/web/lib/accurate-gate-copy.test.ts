@@ -51,9 +51,9 @@ describe("gateCopy — label tombol per situasi", () => {
 
   // § diminta user 2026-09-24 — Data Usaha BENAR-BENAR baru (belum beli apa pun) ditawari jalur Konverter,
   // supaya tidak merasa wajib connect Accurate Online kalau niatnya cuma pakai Accurate Desktop.
-  test("not_connected + hasNoSubscriptionYet: muncul alternativeLink ke /subscribe", () => {
+  test("not_connected + hasNoSubscriptionYet: muncul alternativeLink ke /subscribe/konverter", () => {
     const c = copyOf({ state: "not_connected", hasNoSubscriptionYet: true });
-    expect(c.alternativeLink).toEqual({ label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe" });
+    expect(c.alternativeLink).toEqual({ label: "Pengguna Accurate Desktop? Anda tidak perlu ini — lihat paket Konverter", href: "/subscribe/konverter" });
   });
 
   test("not_connected TANPA hasNoSubscriptionYet (sudah punya modul Facport) -> TIDAK ada alternativeLink", () => {
