@@ -1,3 +1,9 @@
+## 2.16.0 (2026-09-29)
+
+* Merge pull request #80 from webaneid/develop ([bf18ab4](https://github.com/webaneid/facport/commit/bf18ab4)), closes [#80](https://github.com/webaneid/facport/issues/80)
+* docs(progress): tambah Fase 160 (Planned) — AutoProduksi upload Excel massal, § Issue #79 ([04a61f4](https://github.com/webaneid/facport/commit/04a61f4)), closes [#79](https://github.com/webaneid/facport/issues/79)
+* feat(autoproduksi): modul pertama Produk AutoProduksi — Formula (BOM) + Input Produksi manual ([bd0d2e7](https://github.com/webaneid/facport/commit/bd0d2e7))
+
 ## <small>2.15.1 (2026-09-27)</small>
 
 * Merge pull request #77 from webaneid/develop ([2f04083](https://github.com/webaneid/facport/commit/2f04083)), closes [#77](https://github.com/webaneid/facport/issues/77)
