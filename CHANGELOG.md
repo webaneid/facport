@@ -1,3 +1,8 @@
+## 2.17.0 (2026-09-29)
+
+* Merge pull request #81 from webaneid/develop ([f66cd45](https://github.com/webaneid/facport/commit/f66cd45)), closes [#81](https://github.com/webaneid/facport/issues/81)
+* feat(web): redesain /subscribe — pilih-Produk dulu (4 card), keranjang gabungan ([592773d](https://github.com/webaneid/facport/commit/592773d))
+
 ## 2.16.0 (2026-09-29)
 
 * Merge pull request #80 from webaneid/develop ([bf18ab4](https://github.com/webaneid/facport/commit/bf18ab4)), closes [#80](https://github.com/webaneid/facport/issues/80)
