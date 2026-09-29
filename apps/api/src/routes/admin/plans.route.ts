@@ -3,6 +3,7 @@ import { eq, ilike, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
+import { moduleProductLine } from "../../lib/module-catalog";
 
 // § Fase 14, ADR-0019 — `price` WAJIB lagi (supersede ADR-0015 "tanpa
 // harga sementara"). `modules` WAJIB PERSIS 1 elemen, salah satu dari 5
@@ -110,6 +111,23 @@ function validatePlanKindModules(body: { kind?: string; modules: string[] }): { 
   return null;
 }
 
+// § BUG ditemukan 2026-09-29 (evaluasi client Fase 159/161) — kolom
+// `plans.productLine` (§ ADR-0033, dipakai snapshot ke `invoiceItems.productLine`
+// saat checkout, `invoice-order.ts`) TIDAK PERNAH di-set di sini sejak
+// kolom itu ada, SELALU jatuh ke DEFAULT skema `"facport"` apapun modulnya
+// — plan Konverter/AutoProduksi salah tampil label "(Facport)" di invoice
+// admin & PDF. Dipanggil dari POST & PUT (sama persis `validatePlanKindModules`
+// di atas). `seat_addon` (`modules: []`) TIDAK punya Produk tunggal yang
+// benar (1 seat lintas SEMUA Produk aktif Data Usaha, § architecture-user-tambahan.md
+// ADR-0032) — dibiarkan default "facport" (sentinel TIDAK BERMAKNA, sama
+// filosofi `invoiceItems.moduleKey = "seat_addon"` di `invoice-order.ts`),
+// tampilan invoice SUDAH skip label Produk utk sentinel itu (§ invoice-pdf.tsx).
+function planProductLine(body: { kind?: string; modules: string[] }): string | undefined {
+  if ((body.kind ?? "module") === "seat_addon") return undefined;
+  const moduleKey = body.modules[0];
+  return moduleKey ? moduleProductLine(moduleKey) ?? undefined : undefined;
+}
+
 export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
   .use(permissionPlugin)
   .get(
@@ -136,7 +154,8 @@ export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
       // § seat_addon TIDAK PERNAH trial (§ subscriptions.route.ts guard
       // yang sama) — dipaksa di sini juga supaya data konsisten sejak
       // dibuat, bukan cuma ditolak belakangan saat customer coba trial.
-      const values = body.kind === "seat_addon" ? { ...body, trialEligible: false } : body;
+      const productLine = planProductLine(body);
+      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...(productLine ? { productLine } : {}) };
       const [plan] = await db.insert(plans).values(values).returning();
       await db.insert(auditLogs).values({
         entityType: "plan",
@@ -162,7 +181,8 @@ export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
         set.status = 400;
         return validationError;
       }
-      const values = body.kind === "seat_addon" ? { ...body, trialEligible: false } : body;
+      const productLine = planProductLine(body);
+      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...(productLine ? { productLine } : {}) };
       const [updated] = await db
         .update(plans)
         .set({ ...values, updatedAt: new Date() })

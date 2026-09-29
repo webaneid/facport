@@ -373,9 +373,12 @@ function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
               {invoice.items.map((item) => {
                 // § Fase 118 — sentinel "seat_addon" (§ invoice-order.ts)
                 // bukan Varian Facport sungguhan, skip Modul/Sub-modul.
+                // § KOREKSI 2026-09-29 — label Produk JUGA di-skip (1 seat
+                // lintas SEMUA Produk aktif Data Usaha, bukan milik 1 Produk).
                 const category = item.moduleKey === "seat_addon" ? null : moduleCategory(item.moduleKey);
                 const subModule = item.moduleKey === "seat_addon" ? null : moduleLabel(item.moduleKey);
-                const metaParts = [productLineLabel(item.productLine), category, subModule].filter((v): v is string => !!v);
+                const productLine = item.moduleKey === "seat_addon" ? null : productLineLabel(item.productLine);
+                const metaParts = [productLine, category, subModule].filter((v): v is string => !!v);
                 // § Fase 131 — durasi SELALU ada (snapshot), tanggal
                 // AKTUAL cuma ada kalau subscription sudah tercipta
                 // (invoice sudah dibayar).

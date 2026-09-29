@@ -5339,3 +5339,50 @@ side-effect import (Next.js hooks dkk), bahkan kalau function-nya sendiri pure.
 
 Detail: `apps/web/components/app-shell/sidebar.tsx`, `apps/web/components/app-shell/resolve-nav-label.ts`
 (baru), `apps/web/components/app-shell/resolve-nav-label.test.ts` (baru).
+
+## 2026-09-29 — Bug ketemu SAMPING investigasi lain: `plans.productLine` SELALU default "facport" sejak kolom itu ada (Fase 117), Konverter/AutoProduksi salah label di invoice
+
+Saat investigasi laporan client "Berlangganan AutoProduksi belum bisa diproses" (§ Fase 161 lanjutan), bug itu
+sendiri TIDAK berhasil direproduksi (checkout+konfirmasi pembayaran AutoProduksi jalan normal di test lokal,
+kemungkinan client sempat test di halaman `/subscribe` LAMA sebelum v2.17.0 ter-deploy) — TAPI investigasi ini
+menemukan bug LAIN yang sudah lama ada, tidak terkait langsung.
+
+**Root cause**: kolom `plans.productLine` (§ `subscription.schema.ts`, ditambah Fase 117/ADR-0033 untuk
+snapshot ke `invoiceItems.productLine` saat checkout) `NOT NULL DEFAULT 'facport'` — TAPI
+`admin/plans.route.ts` (POST & PUT) TIDAK PERNAH men-set kolom itu secara eksplisit sejak awal dibuat, cuma
+mengandalkan default skema. Efeknya: SETIAP Paket Konverter/AutoProduksi yang admin buat lewat UI tersimpan
+dengan `productLine = "facport"` — salah, tapi TIDAK menyebabkan error apa pun (kolom `varchar(20)` tanpa
+CHECK constraint, insert tetap sukses) — makanya bug ini bisa hidup sejak Fase 150 (Konverter) tanpa ketahuan
+sama sekali sampai sekarang.
+
+**Dampak nyata**: HANYA salah label tampilan ("(Facport)" muncul di invoice admin & PDF untuk pembelian
+Konverter/AutoProduksi, bukan "(Konverter)"/"(AutoProduksi)") — TIDAK menghalangi checkout/pembayaran/aktivasi
+subscription (kode confirm di `admin/orders.route.ts` generik, tidak baca `productLine` sama sekali).
+Ditemukan HANYA karena kolom `plans.productLine` di-grep manual, TIDAK ada test yang menjaga "productLine yang
+tersimpan HARUS cocok modulnya" — celah yang sama seperti pola "asumsi implisit tidak pernah ditulis eksplisit"
+di lessons sebelumnya.
+
+**Fix**: `planProductLine(body)` di `admin/plans.route.ts` — derive dari `moduleProductLine(modules[0])`
+(`module-catalog.ts`, SATU sumber kebenaran yang sudah ada, bukan tabel mapping baru), dipanggil di POST & PUT.
+`kind: "seat_addon"` (`modules: []`) dibiarkan default "facport" SENGAJA — seat TIDAK terikat 1 Produk (1 seat
+lintas SEMUA Produk aktif Data Usaha, § `architecture-user-tambahan.md` ADR-0032), jadi tidak ada nilai
+"benar" untuk itu; sekalian dikoreksi juga: tampilan invoice (`invoice-pdf.tsx`, admin `invoices/page.tsx`)
+DULU tetap menampilkan label Produk untuk sentinel `moduleKey: "seat_addon"` (cuma skip Modul/Sub-modul) —
+SEKARANG label Produk JUGA di-skip untuk sentinel itu, konsisten alasan yang sama.
+
+**Backfill data lama** (bug SEJAK Fase 150, banyak row lama salah): `UPDATE plans SET product_line = ...`/
+`UPDATE invoice_items SET product_line = ...` berdasar `modules[0]`/`module_key` — dijalankan manual di dev
+DB (16 plans + 0 invoice_items lokal), SQL yang sama diberikan ke user untuk dijalankan di production (§ pola
+"prod DB access via user-run copy-paste SQL", `feedback_deploy_and_prod_debug_style.md`) — TIDAK dieksekusi
+otomatis oleh Claude Code langsung ke production.
+
+**Pelajaran**: (1) kolom denormalisasi/snapshot (`productLine` di `plans`, dipakai lagi via copy ke
+`invoiceItems`) WAJIB di-set eksplisit di SEMUA jalur tulis saat kolom itu ditambahkan — mengandalkan DEFAULT
+skema untuk kolom yang nilainya seharusnya DERIVED dari field lain (`modules`) adalah bug tertunda, bukan
+solusi aman. (2) Bug data yang TIDAK menyebabkan error (insert tetap sukses, cuma nilai salah) bisa hidup
+bertahun-tahun tanpa ketahuan — worth audit periodik kolom "snapshot/denormalized" lain kalau ada, bukan cuma
+nunggu ketemu kebetulan. (3) Investigasi 1 laporan bug bisa nemu bug LAIN yang tidak terkait — dicatat &
+diperbaiki terpisah, bukan diabaikan karena "bukan yang diminta".
+
+Detail: `apps/api/src/routes/admin/plans.route.ts`, `apps/api/src/routes/admin/plans.route.test.ts`,
+`apps/api/src/lib/invoice-pdf.tsx`, `apps/web/app/admin/(protected)/invoices/page.tsx`.
