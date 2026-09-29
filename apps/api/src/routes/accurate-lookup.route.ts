@@ -73,7 +73,7 @@ async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, k
   });
 }
 
-type AccurateItemRecord = { no?: string; name?: string; unit1Name?: string };
+type AccurateItemRecord = { no?: string; name?: string; unit1Name?: string } & Record<string, unknown>;
 type AccurateGlAccountRecord = { no?: string; name?: string };
 
 export const accurateLookupRoute = new Elysia()
@@ -92,8 +92,26 @@ export const accurateLookupRoute = new Elysia()
         return session.error;
       }
       try {
-        const records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1Name");
-        return { items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1Name ?? "" })) };
+        // § DIAGNOSTIC SEMENTARA 2026-09-30 — `unit1Name` (guess pertama)
+        // TERBUKTI SALAH (no/name benar, unitName tetap kosong setelah
+        // deploy v2.18.2). Minta beberapa kandidat nama field sekaligus +
+        // sertakan record MENTAH (`_raw`) supaya cukup 1x deploy untuk
+        // tahu nama field yang benar — `_raw` TIDAK dipakai frontend
+        // (Combobox cuma baca `.unitName`), dihapus lagi begitu ketahuan.
+        const records = await fetchAccurateList<AccurateItemRecord>(
+          session,
+          "item/list.do",
+          query.q,
+          "id,no,name,unit1Name,unit1,unitName,unit",
+        );
+        return {
+          items: records.map((r) => ({
+            no: r.no ?? "",
+            name: r.name ?? "",
+            unitName: r.unit1Name ?? "",
+            _raw: r,
+          })),
+        };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Item di Accurate");
         set.status = err instanceof AccurateApiError ? 502 : 500;
