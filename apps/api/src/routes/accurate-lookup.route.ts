@@ -49,14 +49,21 @@ function isSessionError(v: AccurateSessionContext | { error: LookupError }): v i
   return "error" in v;
 }
 
-// § timeout eksplisit (ADR-0039) — request search TIDAK BOLEH menggantung
-// tanpa batas kalau Accurate lambat/tidak respons; `withAccurateRateLimit`
-// (§ accurate-rate-limiter.ts) tetap dipakai supaya endpoint ini ikut
-// kuota bersama 8 req/detik & 8 concurrent yang SUDAH dijaga worker.
-async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, keywords: string): Promise<T[]> {
+// § HOTFIX 2026-09-30 (test call nyata, ditunda Fase 163 — sekarang
+// terverifikasi) — `item/list.do`/`glaccount/list.do` TIDAK balikin
+// `no`/`name` di response default sama sekali (bukan cuma beda nama
+// field seperti diasumsikan awal — field-nya KOSONG total kecuali
+// diminta eksplisit). Dikonfirmasi dari kode LAMA yang SUDAH
+// terverifikasi test call nyata: `lib/accurate-item.ts` `findItemByNo()`
+// ("TERVERIFIKASI 2026-08-20") — `fields: "id,no,name"` WAJIB eksplisit.
+// `unit1Name` (nama field satuan primer) diturunkan dari field yang SAMA
+// dipakai payload `item/save.do` (`accurate-item.ts` `createFields.unit1Name`)
+// — konvensi Accurate field read/write biasanya konsisten nama.
+async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, keywords: string, fields: string): Promise<T[]> {
   return withAccurateRateLimit(async () => {
     const url = new URL(`${ctx.host}/accurate/api/${path}`);
     url.searchParams.set("keywords", keywords);
+    url.searchParams.set("fields", fields);
     url.searchParams.set("sp.pageSize", String(SEARCH_PAGE_SIZE));
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
@@ -66,14 +73,7 @@ async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, k
   });
 }
 
-// § field respons `item/list.do`/`glaccount/list.do` — nama field BELUM
-// diverifikasi test call nyata saat kode ini ditulis, cuma dari OpenAPI
-// spec (docs/referencehtml/accurate-openapi.json) + konvensi umum Accurate
-// (`no`/`name`, item punya `unit.name`). WAJIB dikonfirmasi test call
-// nyata sebelum fase ditutup (§ pola project, lesson Fase 158) — kalau
-// field aslinya beda, cukup ubah mapping di sini, TIDAK ada perubahan
-// skema/kontrak lain yang bergantung padanya.
-type AccurateItemRecord = { no?: string; name?: string; unit?: { name?: string } | null };
+type AccurateItemRecord = { no?: string; name?: string; unit1Name?: string };
 type AccurateGlAccountRecord = { no?: string; name?: string };
 
 export const accurateLookupRoute = new Elysia()
@@ -92,8 +92,8 @@ export const accurateLookupRoute = new Elysia()
         return session.error;
       }
       try {
-        const records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q);
-        return { items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit?.name ?? "" })) };
+        const records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1Name");
+        return { items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1Name ?? "" })) };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Item di Accurate");
         set.status = err instanceof AccurateApiError ? 502 : 500;
@@ -116,7 +116,7 @@ export const accurateLookupRoute = new Elysia()
         return session.error;
       }
       try {
-        const records = await fetchAccurateList<AccurateGlAccountRecord>(session, "glaccount/list.do", query.q);
+        const records = await fetchAccurateList<AccurateGlAccountRecord>(session, "glaccount/list.do", query.q, "id,no,name");
         return { accounts: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "" })) };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Akun (glaccount) di Accurate");
