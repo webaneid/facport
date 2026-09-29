@@ -167,6 +167,7 @@
 | 157  | Modul Baru: Delivery Order (Pengiriman Pesanan) — modul ke-22 Facport, ditemukan belum ada saat investigasi bug lintas-dokumen "Detail ID" | Done | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-157-delivery-order.md` |
 | 158  | Delivery Order — Auto-Resolve Sales Order Detail ID server-side, gantikan proses manual VLOOKUP legacy tool client, diverifikasi test call nyata | Done | `docs/architecture/architecture-delivery-order.md` § "Fase 158" | `docs/phases/phase-158-delivery-order-auto-resolve-sales-order-detail-id.md` |
 | 159  | Modul Pertama Produk AutoProduksi: Formula (BOM) + Input Produksi Manual — reuse endpoint Inventory Adjustment, form-based (bukan Excel), diverifikasi test call nyata + browser-test | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-159-autoproduksi-formula-input-produksi.md` |
+| 160  | AutoProduksi: Upload Excel Massal untuk Input Produksi ("Kirim Dengan Excel") — GitHub Issue [#79](https://github.com/webaneid/facport/issues/79), sengaja ditunda dari Fase 159 | Planned | `docs/architecture/architecture-autoproduksi.md` § Known Limitations | - |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
