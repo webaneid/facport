@@ -1,3 +1,8 @@
+## <small>2.18.2 (2026-09-29)</small>
+
+* Merge pull request #85 from webaneid/develop ([ba37bfa](https://github.com/webaneid/facport/commit/ba37bfa)), closes [#85](https://github.com/webaneid/facport/issues/85)
+* fix(api): HOTFIX production — search Accurate balikin field kosong semua ([6eefe7b](https://github.com/webaneid/facport/commit/6eefe7b))
+
 ## <small>2.18.1 (2026-09-29)</small>
 
 * fix(web,api): HOTFIX production — debounce Combobox search Accurate, 429 nyata di client ([a531932](https://github.com/webaneid/facport/commit/a531932))
