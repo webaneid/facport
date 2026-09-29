@@ -40,7 +40,7 @@ async function signIn(email: string) {
   return res.headers.get("set-cookie") ?? "";
 }
 
-async function search(path: "items" | "glaccounts", cookie: string, q: string, dataUsahaId?: string) {
+async function search(path: "items" | "glaccounts" | "warehouses", cookie: string, q: string, dataUsahaId?: string) {
   return testApp.handle(
     new Request(`http://localhost/accurate/${path}/search?q=${encodeURIComponent(q)}`, {
       headers: { cookie, ...(dataUsahaId ? { "x-data-usaha-id": dataUsahaId } : {}) },
@@ -117,5 +117,27 @@ describe("GET /accurate/items/search & /accurate/glaccounts/search — guard", (
     const dataUsahaId = await createTestDataUsaha(userId);
     const res = await search("items", cookie, "", dataUsahaId);
     expect(res.status).toBe(422); // Elysia validation error utk t.String({minLength:1}) yang gagal
+  });
+});
+
+// § HOTFIX 2026-09-30 (evaluasi client, Gudang) — endpoint BARU `GET
+// /accurate/warehouses/search`, pola guard/error IDENTIK dengan 2 endpoint
+// di atas (fungsi helper YANG SAMA, `resolveDataUsahaOrError`/`openSessionOrError`)
+// — cukup 2 test representatif (401 tanpa login, 400 belum connected),
+// TIDAK perlu ulang semua 7 kasus di atas (redundan, guard-nya sama).
+describe("GET /accurate/warehouses/search — guard", () => {
+  test("401 tanpa login", async () => {
+    const res = await testApp.handle(new Request("http://localhost/accurate/warehouses/search?q=gudang"));
+    expect(res.status).toBe(401);
+  });
+
+  test("400 ACCURATE_NOT_CONNECTED — Data Usaha belum ada koneksi Accurate sama sekali", async () => {
+    const email = `lookup-wh-noconn-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
+    const res = await search("warehouses", cookie, "gudang", dataUsahaId);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("ACCURATE_NOT_CONNECTED");
   });
 });

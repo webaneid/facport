@@ -136,12 +136,20 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
   `GET /accurate/glaccounts/search` — pola PERTAMA di Facport, panggilan
   Accurate SINKRON dari route (read-only, timeout+rate-limit). Cabang
   TETAP diketik manual (tidak diminta client).
-- **Test call NYATA ke Accurate sandbox (endpoint search Fase 163)** —
-  DITUNDA ke post-deploy, keputusan eksplisit user 2026-09-29 (tidak ada
-  kredensial sandbox nyata di dev lokal sesi ini) — lihat
-  `docs/phases/phase-163-autoproduksi-live-search-accurate.md` § Known
-  Limitations. Endpoint lain (item-adjustment/save.do, Fase 159) SUDAH
-  diverifikasi test call nyata sebelumnya.
+- ~~Test call NYATA ke Accurate sandbox (endpoint search Fase 163)~~ —
+  **Done, terverifikasi via produksi nyata 2026-09-30** (bukan sandbox —
+  client langsung test di app produksinya sendiri). 2 bug ketahuan &
+  diperbaiki dari test call nyata ini, § `docs/lessons-learned.md` entri
+  2026-09-30 (dua entri): (1) `fields` param tidak dikirim sama sekali →
+  `no`/`name` kosong; (2) field Satuan salah tebak `unit1Name` (flat),
+  yang benar `unit1` (objek nested `{name}`).
+- ~~Gudang Bahan Baku/Barang Jadi diketik bebas (rawan typo)~~ — **Done,
+  2026-09-30**: diubah jadi `Combobox` search-pilih ke
+  `GET /accurate/warehouses/search` (baru, proxy `warehouse/list.do`).
+  CATATAN: ini search-pilih dari daftar ASLI, BUKAN auto-fill seperti
+  Satuan — Accurate tidak punya konsep "gudang default" per Item (stok
+  bisa tersebar di banyak gudang sekaligus), jadi user tetap wajib pilih
+  gudangnya sendiri.
 
 ### Fase 162 (2026-09-29, evaluasi client) — Selesai
 - Search nama Formula + filter Cabang di `/autoproduksi/formulas`
@@ -154,6 +162,15 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
 - Barang Jadi, Bahan Baku, Akun Perantara sekarang dicari live ke Accurate
   lewat `Combobox` — kode+satuan+nama otomatis terisi begitu dipilih.
   Detail arsitektur → `docs/decisions/adr-0039-live-search-accurate-dari-route.md`.
+
+### HOTFIX 2026-09-30 (post-deploy Fase 163, evaluasi client) — Selesai
+- Search Accurate sempat balikin hasil kosong total (`fields` param tidak
+  pernah dikirim), lalu Satuan tetap kosong walau `no`/`name` sudah benar
+  (`unit1Name` salah tebak, field asli `unit1` nested) — 2 putaran fix,
+  detail lengkap § `docs/lessons-learned.md`.
+- Gudang Barang Jadi & Gudang Bahan Baku (`GET /accurate/warehouses/search`,
+  proxy `warehouse/list.do`) sekarang search-pilih juga (bukan ketik
+  bebas), diminta sekalian oleh client untuk minimalkan siklus deploy.
 
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`
