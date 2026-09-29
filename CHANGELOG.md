@@ -1,3 +1,10 @@
+## <small>2.18.1 (2026-09-29)</small>
+
+* fix(web,api): HOTFIX production — debounce Combobox search Accurate, 429 nyata di client ([a531932](https://github.com/webaneid/facport/commit/a531932))
+* Merge pull request #83 from webaneid/develop ([05ea119](https://github.com/webaneid/facport/commit/05ea119)), closes [#83](https://github.com/webaneid/facport/issues/83)
+* Merge pull request #84 from webaneid/develop ([0de9e13](https://github.com/webaneid/facport/commit/0de9e13)), closes [#84](https://github.com/webaneid/facport/issues/84)
+* fix(docs): larang koma di scope commit message — bikin release silent gagal ([a590261](https://github.com/webaneid/facport/commit/a590261))
+
 ## 2.18.0 (2026-09-29)
 
 * feat(api,web): AutoProduksi Fase 163 — live-search Accurate di form Formula ([46c077f](https://github.com/webaneid/facport/commit/46c077f))
