@@ -53,6 +53,45 @@ type FormulaDetail = { formula: Formula; items: FormulaItem[] };
 
 const EMPTY_ITEM: FormulaItem = { itemNo: "", itemUnitName: "", quantity: 0 };
 
+// § diminta client 2026-09-30 — search Accurate (Barang/Akun/Gudang) TIDAK
+// selalu ketemu (mis. search Akun Perantara ternyata cuma cocok ke NAMA,
+// bukan kode "no" — dikonfirmasi manual oleh client, § lessons-learned.md).
+// `Combobox` sendiri TIDAK diubah (dipakai lintas project, § architecture
+// doc "WAJIB dipakai ulang") — toggle manual ini LOKAL ke halaman ini
+// saja: swap ke `Input` polos kalau user klik "Isi manual", supaya kode
+// yang tidak ketemu di search tetap bisa diisi tangan sebagai fallback.
+function SearchableField({
+  value,
+  onChange,
+  onSearch,
+  options,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSearch: (query: string) => void;
+  options: { value: string; label: string }[];
+  placeholder: string;
+}) {
+  const [manual, setManual] = useState(false);
+  return (
+    <div className="flex flex-col gap-1">
+      {manual ? (
+        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ketik kode manual..." />
+      ) : (
+        <Combobox value={value} onChange={onChange} onSearch={onSearch} placeholder={placeholder} options={options} />
+      )}
+      <button
+        type="button"
+        onClick={() => setManual((m) => !m)}
+        className="self-start text-[11px] text-muted-foreground underline decoration-dotted hover:text-foreground"
+      >
+        {manual ? "Cari di Accurate lagi" : "Tidak ketemu? Isi manual"}
+      </button>
+    </div>
+  );
+}
+
 async function searchAccurateItems(q: string): Promise<AccurateItemResult[]> {
   if (!q.trim()) return [];
   const res = await api.accurate.items.search.get({ query: { q } });
@@ -235,7 +274,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             <span className="col-span-2 text-xs font-medium text-foreground">Barang Jadi</span>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Cari Barang (Accurate)</span>
-              <Combobox
+              <SearchableField
                 value={finishedGoodItemNo}
                 onChange={selectFinishedGood}
                 onSearch={debouncedFinishedGoodSearch}
@@ -244,8 +283,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Satuan (otomatis)</span>
-              <Input value={finishedGoodItemUnitName} disabled placeholder="Pilih barang dulu" />
+              <span className="text-xs text-muted-foreground">Satuan (otomatis, atau isi manual)</span>
+              <Input value={finishedGoodItemUnitName} onChange={(e) => setFinishedGoodItemUnitName(e.target.value)} placeholder="Pilih barang dulu" />
             </label>
             <label className="col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
@@ -262,21 +301,21 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             </div>
             {items.map((item, index) => (
               <div key={index} className="grid grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr_auto] gap-2">
-                <Combobox
+                <SearchableField
                   value={item.itemNo}
                   onChange={(no) => selectItemForRow(index, no)}
                   onSearch={debouncedItemSearch}
                   placeholder="Cari Bahan Baku..."
                   options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
                 />
-                <Input value={item.itemUnitName} disabled placeholder="Satuan" />
+                <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
                 <Input
                   type="number"
                   value={item.quantity || ""}
                   onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
                   placeholder="Takaran, 0.5"
                 />
-                <Combobox
+                <SearchableField
                   value={item.warehouseName ?? ""}
                   onChange={(name) => updateItem(index, { warehouseName: name })}
                   onSearch={debouncedItemWarehouseSearch}
@@ -299,7 +338,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             <span className="col-span-2 text-xs font-medium text-foreground">Konfigurasi Lainnya</span>
             <label className="col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Akun Perantara (cari di Accurate)</span>
-              <Combobox
+              <SearchableField
                 value={adjustmentAccountNo}
                 onChange={selectAccount}
                 onSearch={debouncedAccountSearch}
@@ -313,7 +352,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Gudang Barang Jadi (opsional)</span>
-              <Combobox
+              <SearchableField
                 value={warehouseName}
                 onChange={setWarehouseName}
                 onSearch={debouncedFinishedGoodWarehouseSearch}
