@@ -1,3 +1,9 @@
+## 2.19.0 (2026-09-30)
+
+* Merge pull request #89 from webaneid/develop ([97f015b](https://github.com/webaneid/facport/commit/97f015b)), closes [#89](https://github.com/webaneid/facport/issues/89)
+* fix(web): AutoProduksi Formula — tambah opsi isi manual di semua field search Accurate ([4896690](https://github.com/webaneid/facport/commit/4896690))
+* feat(api web): Item Requisition — rebuild total ke Purchase Requisition, ganti endpoint Accurate yan ([ab89b8d](https://github.com/webaneid/facport/commit/ab89b8d))
+
 ## <small>2.18.5 (2026-09-29)</small>
 
 * Merge pull request #88 from webaneid/develop ([9790440](https://github.com/webaneid/facport/commit/9790440)), closes [#88](https://github.com/webaneid/facport/issues/88)
