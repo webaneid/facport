@@ -215,13 +215,14 @@ import {
   resolveSalesOrderDetailId,
   type DeliveryOrderGroup,
 } from "../lib/import-mapping/delivery-order.mapping";
-// § Fase 134-135, architecture-item-transfer.md — Item Transfer & Item
-// Requisition, 2 Facport module TERPISAH yang panggil endpoint Accurate
-// SAMA (`item-transfer/save.do`, § `saveItemTransfer` DI-SHARE literal,
-// beda dari semua pasangan modul lain di file ini). TIDAK auto-create
-// item. Grouping DEFAULT ADR-0011 by "No. Item Transfer" (`number`,
-// DIPAKSA REQUIRED). Validasi `itemTransferType` (mirror `returnTypeRowError`)
-// WAJIB lolos dari baris pertama grup SEBELUM payload dibangun.
+// § Fase 134, architecture-item-transfer.md — Item Transfer. TIDAK
+// auto-create item. Grouping DEFAULT ADR-0011 by "No. Item Transfer"
+// (`number`, DIPAKSA REQUIRED). Validasi `itemTransferType` (mirror
+// `returnTypeRowError`) WAJIB lolos dari baris pertama grup SEBELUM
+// payload dibangun. **Item Requisition DULU berbagi endpoint ini
+// (kembaran literal), TAPI sejak Fase 164 (rebuild total ke
+// `/api/purchase-requisition/save.do`) sudah TIDAK LAGI** — lihat import
+// `savePurchaseRequisition` terpisah di bawah.
 import { saveItemTransfer } from "../lib/accurate-item-transfer";
 import {
   buildItemTransferPayload,
@@ -230,10 +231,16 @@ import {
   extractDataClassificationValues as extractDataClassificationValuesIT,
   type ItemTransferGroup,
 } from "../lib/import-mapping/item-transfer.mapping";
+// § Fase 164, architecture-item-requisition.md — REBUILD TOTAL: Item
+// Requisition SEKARANG panggil `/api/purchase-requisition/save.do`
+// sendiri (BUKAN lagi berbagi `saveItemTransfer` dengan Item Transfer di
+// atas). "Item Transfer" TIDAK ikut berubah.
+import { savePurchaseRequisition } from "../lib/accurate-purchase-requisition";
 import {
   buildItemRequisitionPayload,
   groupItemRequisitionRows,
-  itemTransferTypeRowError as itemTransferTypeRowErrorIR,
+  requisitionTypeRowError,
+  saveAsStatusTypeRowError,
   extractDataClassificationValues as extractDataClassificationValuesIR,
   type ItemRequisitionGroup,
 } from "../lib/import-mapping/item-requisition.mapping";
@@ -1650,12 +1657,12 @@ export async function processOtherDepositGroup(
 }
 
 // ============================================================
-// § Fase 134-135 — Item Transfer & Item Requisition: TIDAK auto-create
-// item (mirror Receive Item), grouping DEFAULT ADR-0011 by "No. Item
-// Transfer". Validasi `itemTransferType` (mirror `returnTypeRowError`
-// Purchase Return) WAJIB lolos dari baris pertama grup SEBELUM payload
-// dibangun. `saveItemTransfer` DI-SHARE literal antara KEDUA fungsi ini
-// (§ komentar import di atas — endpoint Accurate-nya SAMA).
+// § Fase 134 — Item Transfer: TIDAK auto-create item (mirror Receive
+// Item), grouping DEFAULT ADR-0011 by "No. Item Transfer". Validasi
+// `itemTransferType` (mirror `returnTypeRowError` Purchase Return) WAJIB
+// lolos dari baris pertama grup SEBELUM payload dibangun. (Item
+// Requisition dulu berbagi `saveItemTransfer` di sini — sejak Fase 164
+// sudah jadi fungsi sendiri, `processItemRequisitionGroup` di bawah.)
 // ============================================================
 export type ItemTransferGroupResult = {
   itemTransferId: number;
@@ -1682,8 +1689,16 @@ export async function processItemTransferGroup(
   return { itemTransferId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
+// ============================================================
+// § Fase 164, architecture-item-requisition.md — Item Requisition
+// REBUILD TOTAL: panggil `/api/purchase-requisition/save.do` sendiri
+// (BUKAN lagi `saveItemTransfer`). TIDAK auto-create item. Grouping
+// DEFAULT ADR-0011 by "Transaction No". Validasi `requisitionType` DAN
+// `saveAsStatusType` (2 enum terpisah, keduanya WAJIB) dari baris
+// pertama grup SEBELUM payload dibangun.
+// ============================================================
 export type ItemRequisitionGroupResult = {
-  itemTransferId: number;
+  purchaseRequisitionId: number;
   rowIds: string[];
 };
 
@@ -1693,9 +1708,13 @@ export async function processItemRequisitionGroup(
   columnMapping: Record<string, string>,
 ): Promise<ItemRequisitionGroupResult> {
   const headerRow = group.rows[0]!.rawData;
-  const typeErrors = itemTransferTypeRowErrorIR(headerRow, columnMapping);
+  const typeErrors = requisitionTypeRowError(headerRow, columnMapping);
   if (typeErrors.length > 0) {
-    throw new Error(`Tipe Transfer tidak valid — harus TRANSFER_IN atau TRANSFER_OUT, kolom bermasalah: ${typeErrors.join(", ")}.`);
+    throw new Error(`Requisition Type tidak valid — harus PURCHASE atau TRANSFER, kolom bermasalah: ${typeErrors.join(", ")}.`);
+  }
+  const statusErrors = saveAsStatusTypeRowError(headerRow, columnMapping);
+  if (statusErrors.length > 0) {
+    throw new Error(`Save as Status Type tidak valid — harus APPROVED atau DRAFT, kolom bermasalah: ${statusErrors.join(", ")}.`);
   }
 
   const rawRows = group.rows.map((r) => r.rawData);
@@ -1703,8 +1722,8 @@ export async function processItemRequisitionGroup(
 
   await ensureItemRequisitionDataClassifications(ctx, rawRows, columnMapping);
 
-  const result = await saveItemTransfer(ctx, payload);
-  return { itemTransferId: result.id, rowIds: group.rows.map((r) => r.id) };
+  const result = await savePurchaseRequisition(ctx, payload);
+  return { purchaseRequisitionId: result.id, rowIds: group.rows.map((r) => r.id) };
 }
 
 // ============================================================
@@ -2908,10 +2927,9 @@ async function main() {
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
-      // § Fase 134-135 — Item Transfer & Item Requisition, grouping
-      // DEFAULT ADR-0011 by "No. Item Transfer" (`number`), create-only,
-      // TANPA auto-create item (§ komentar `processItemTransferGroup`/
-      // `processItemRequisitionGroup`).
+      // § Fase 134 — Item Transfer, grouping DEFAULT ADR-0011 by "No.
+      // Item Transfer" (`number`), create-only, TANPA auto-create item
+      // (§ komentar `processItemTransferGroup`).
     } else if (batch.module === "item_transfer") {
       const groups = groupItemTransferRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
@@ -2950,7 +2968,7 @@ async function main() {
             .update(importBatchRows)
             .set({
               status: "success",
-              accurateTransactionId: String(result.itemTransferId),
+              accurateTransactionId: String(result.purchaseRequisitionId),
               errorMessage: null,
               processedAt: new Date(),
             })

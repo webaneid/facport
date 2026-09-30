@@ -171,6 +171,7 @@
 | 161  | Redesain `/subscribe`: Pilih-Produk Dulu (4 Card) → Katalog per-Produk, keranjang gabungan lintas halaman | Done | `docs/architecture/architecture-product-lines.md` | `docs/phases/phase-161-redesign-subscribe-pilih-produk.md` |
 | 162  | AutoProduksi — Evaluasi Client Bagian 1: Search Formula, Filter Cabang, Gudang Bahan Baku di UI (quick-win, tanpa arsitektur baru) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-162-autoproduksi-quick-win-formulas-ui.md` |
 | 163  | AutoProduksi — Evaluasi Client Bagian 2: Live-Search Accurate (Item/Bahan Baku/Akun Perantara) di Form Formula | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-163-autoproduksi-live-search-accurate.md` |
+| 164  | Item Requisition — Rebuild Total ke Purchase Requisition (`/api/purchase-requisition/save.do`), draft client sebelumnya (bentuk item-transfer) terbukti salah, subscriber existing sengaja tidak dimigrasikan | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-164-item-requisition-rebuild-purchase-requisition.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

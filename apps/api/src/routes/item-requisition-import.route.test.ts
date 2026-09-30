@@ -8,30 +8,26 @@ import { itemRequisitionImportRoute } from "./item-requisition-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
-// § Fase 135 — kembaran `item-transfer-import.route.test.ts` (§
-// architecture-item-requisition.md). Sheet "Item Requisition" TIDAK
-// punya kolom "Item Requisition No" (beda dari sheet "Item Transfer"),
-// tapi kolom itu memang tidak dites di suite Item Transfer juga (bukan
-// field required) — jadi test case di sini identik strukturnya.
+// § Fase 164 — REBUILD TOTAL: modul ini SEKARANG panggil
+// `/api/purchase-requisition/save.do` (draft client sebelumnya, dipakai
+// versi item-transfer-shaped lama, TERNYATA salah — § architecture-item-requisition.md).
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(itemRequisitionImportRoute);
 const columnMapping = {
-  Tanggal: "transDate",
-  "No. Item Transfer": "number",
-  "Tipe Transfer": "itemTransferType",
-  "Branch Name": "branchName",
+  "Transaction Date": "transDate",
+  "Transaction No": "number",
+  "Requisition Type": "requisitionType",
+  "Save as Status Type": "saveAsStatusType",
   "Item No": "itemNo",
   Qty: "quantity",
-  Unit: "itemUnitName",
 };
 const validRawData = {
-  Tanggal: "05/09/2026",
-  "No. Item Transfer": "IR-001",
-  "Tipe Transfer": "TRANSFER_OUT",
+  "Transaction Date": "05/09/2026",
+  "Transaction No": "PR-001",
+  "Requisition Type": "PURCHASE",
+  "Save as Status Type": "APPROVED",
   "Item No": "BRG-1",
   Qty: "1",
-  Unit: "PCS",
-  "Branch Name": "JAKARTA",
 };
 
 async function signUp(email: string) {
@@ -161,18 +157,17 @@ describe("POST /item-requisition/import/:batchId/confirm — validasi mapping", 
       new Request(`http://localhost/item-requisition/import/${batch!.id}/confirm`, {
         method: "POST",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ columnMapping: { Tanggal: "transDate" } }), // field wajib lain sengaja tidak di-mapping
+        body: JSON.stringify({ columnMapping: { "Transaction Date": "transDate" } }), // field wajib lain sengaja tidak di-mapping
       }),
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; fields: string[] };
     expect(body.code).toBe("MISSING_REQUIRED_FIELDS");
     expect(body.fields).toContain("number");
-    expect(body.fields).toContain("itemTransferType");
-    expect(body.fields).toContain("branchName");
+    expect(body.fields).toContain("requisitionType");
+    expect(body.fields).toContain("saveAsStatusType");
     expect(body.fields).toContain("itemNo");
     expect(body.fields).toContain("quantity");
-    expect(body.fields).toContain("itemUnitName");
   });
 
   test("400 INVALID_MAPPING_FIELD kalau ada kolom di-mapping ke field yang tidak dikenal", async () => {
@@ -329,7 +324,7 @@ describe("PUT /item-requisition/import/:batchId/rows/:rowId — Edit Baris", () 
     expect(updated!.errorMessage).toBeNull();
   });
 
-  test("400 MISSING_REQUIRED_VALUES kalau 'Tipe Transfer' bukan TRANSFER_IN/TRANSFER_OUT (§ itemTransferTypeRowError)", async () => {
+  test("400 MISSING_REQUIRED_VALUES kalau 'Requisition Type' bukan PURCHASE/TRANSFER/ALL (§ requisitionTypeRowError)", async () => {
     const owner = await createProvisionedUser(`irq-editrow-badtype-${runId}@test.local`);
     const [batch] = await db
       .insert(importBatches)
@@ -337,20 +332,44 @@ describe("PUT /item-requisition/import/:batchId/rows/:rowId — Edit Baris", () 
       .returning();
     const [row] = await db
       .insert(importBatchRows)
-      .values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed", errorMessage: "Tipe Transfer tidak valid" })
+      .values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed", errorMessage: "Requisition Type tidak valid" })
       .returning();
 
     const res = await testApp.handle(
       new Request(`http://localhost/item-requisition/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { ...validRawData, "Tipe Transfer": "PINDAH" } }),
+        body: JSON.stringify({ rawData: { ...validRawData, "Requisition Type": "BELI" } }),
       }),
     );
     expect(res.status).toBe(400);
     const body = (await res.json()) as { code: string; fields: string[] };
     expect(body.code).toBe("MISSING_REQUIRED_VALUES");
-    expect(body.fields).toContain("itemTransferType");
+    expect(body.fields).toContain("requisitionType");
+  });
+
+  test("400 MISSING_REQUIRED_VALUES kalau 'Save as Status Type' bukan APPROVED/DRAFT/dst (§ saveAsStatusTypeRowError)", async () => {
+    const owner = await createProvisionedUser(`irq-editrow-badstatus-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "item_requisition", fileName: "test.xlsx", totalRows: 1, status: "completed_with_errors", columnMapping })
+      .returning();
+    const [row] = await db
+      .insert(importBatchRows)
+      .values({ batchId: batch!.id, rowNumber: 1, rawData: {}, status: "failed", errorMessage: "Save as Status Type tidak valid" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/item-requisition/import/${batch!.id}/rows/${row!.id}`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ rawData: { ...validRawData, "Save as Status Type": "DISETUJUI" } }),
+      }),
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { code: string; fields: string[] };
+    expect(body.code).toBe("MISSING_REQUIRED_VALUES");
+    expect(body.fields).toContain("saveAsStatusType");
   });
 });
 
@@ -399,7 +418,7 @@ describe("PUT /item-requisition/import/:batchId/rows — Edit Bulk (Grid)", () =
       ])
       .returning();
 
-    const missingRawData = { ...validRawData, "No. Item Transfer": "IR-002", "Item No": "" };
+    const missingRawData = { ...validRawData, "Transaction No": "PR-002", "Item No": "" };
 
     const res = await testApp.handle(
       new Request(`http://localhost/item-requisition/import/${batch!.id}/rows`, {

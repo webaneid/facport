@@ -10,10 +10,9 @@ import { api } from "@/lib/api-client";
 
 // § mirror `components/receive-item/edit-row-dialog.tsx` — modul ini
 // juga create-only (TIDAK ada findExisting/append), grouping multi-baris
-// DEFAULT ADR-0011 by "No. Item Transfer" (BUKAN field khusus seperti
-// Receive Number). TIDAK ada peringatan "siblingRowNumbers" di sini
-// karena edit baris gagal itu genuinely per-baris independen (retry
-// cuma proses ulang baris gagal itu sendiri).
+// DEFAULT ADR-0011 by "Transaction No". TIDAK ada peringatan
+// "siblingRowNumbers" di sini karena edit baris gagal itu genuinely
+// per-baris independen (retry cuma proses ulang baris gagal itu sendiri).
 type EditableRow = {
   id: string;
   rowNumber: number;
@@ -22,18 +21,20 @@ type EditableRow = {
 };
 
 // § HARUS SINKRON dengan `itemRequisitionMapping` di
-// `apps/api/src/lib/import-mapping/item-requisition.mapping.ts`.
-export const DATE_INTERNAL_FIELDS = new Set(["transDate", "serialExpDate"]);
+// `apps/api/src/lib/import-mapping/item-requisition.mapping.ts` — Fase
+// 164, REBUILD TOTAL (panggil purchase-requisition/save.do, bukan lagi
+// item-transfer/save.do).
+export const DATE_INTERNAL_FIELDS = new Set(["transDate", "requiredDate", "attributTanggal1", "attributTanggal2"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "number", "itemTransferType", "branchName", "itemNo", "quantity", "itemUnitName"]);
+export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "number", "requisitionType", "saveAsStatusType", "itemNo", "quantity"]);
 
 const FIELD_HINTS: Record<string, string> = {
-  number: "Nomor Item Transfer — WAJIB, sekaligus kunci penggabungan baris jadi 1 Item Transfer",
-  itemTransferType: "PERSIS salah satu: TRANSFER_IN atau TRANSFER_OUT",
+  number: "Nomor transaksi — WAJIB, sekaligus kunci penggabungan baris jadi 1 Permintaan Barang",
+  requisitionType: "PERSIS salah satu: PURCHASE atau TRANSFER",
+  saveAsStatusType: "PERSIS salah satu: APPROVED atau DRAFT",
   itemNo: "Kode Barang di Accurate, contoh: BRG-001 — TIDAK dibuatkan otomatis kalau belum ada",
   quantity: "Contoh: 10 (angka saja)",
-  itemUnitName: "Satuan barang, harus PERSIS terdaftar di Accurate",
-  branchName: "Nama cabang PERSIS seperti di Accurate — wajib untuk perusahaan multi-cabang",
+  unitPrice: "Kosongkan untuk 0 (belum ada harga di tahap permintaan)",
 };
 
 function toDisplayDate(value: unknown): string {

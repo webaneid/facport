@@ -107,7 +107,10 @@ const LEGACY_SCOPES: Record<string, string[]> = {
   sales_order: ["sales_order_save", "customer_view", "customer_save", "item_save", "data_classification_view", "data_classification_save"],
   sales_return: ["sales_return_save", "data_classification_view", "data_classification_save"],
   item_transfer: ["item_transfer_save", "data_classification_view", "data_classification_save"],
-  item_requisition: ["item_transfer_save", "data_classification_view", "data_classification_save"],
+  // § Fase 164 — REBUILD TOTAL, bukan regresi: endpoint Item Requisition sengaja
+  // pindah dari `item-transfer/save.do` ke `purchase-requisition/save.do` (draft
+  // client sebelumnya salah, § architecture-item-requisition.md).
+  item_requisition: ["purchase_requisition_save", "data_classification_view", "data_classification_save"],
   inventory_adjustment: ["item_adjustment_save"],
   job_costing: ["job_order_save", "material_adjustment_save", "item_save", "data_classification_view", "data_classification_save"],
 };
