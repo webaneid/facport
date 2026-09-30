@@ -5585,3 +5585,63 @@ verifikasi langsung yang benar, bukan tebakan ketiga.
 
 Detail: `apps/api/src/routes/accurate-lookup.route.ts`, `apps/web/lib/accurate-combobox-options.ts`,
 `apps/web/app/app/(protected)/autoproduksi/formulas/page.tsx`.
+
+## 2026-09-30 — Modul Item Requisition (Fase 135) dibangun dari draft client yang SALAH TOTAL — endpoint Accurate-nya beda, ketahuan cuma karena diminta cek "kok isinya sama dengan Item Transfer?"
+
+**Konteks**: Fase 135 (2026-09-17) membangun "Item Requisition" sebagai
+kembaran literal Item Transfer — sama endpoint (`item-transfer/save.do`),
+sama field, cuma beda 1 kolom. Keputusan itu diambil karena sheet "Item
+Requisition" di file spec client (`developmen-15-september-2026.xlsx`)
+memang berbentuk persis item-transfer, dan ada temuan teoretis (dari
+`accurate-openapi.json`) bahwa endpoint yang "textbook correct" untuk
+Item Requisition sebenarnya `/api/purchase-requisition/save.do` — tapi
+temuan itu SENGAJA diabaikan waktu itu karena "kebenaran hakiki adalah
+client happy", ikuti apa yang client kirim apa adanya.
+
+**Ketahuan salahnya**: 13 hari kemudian, modul ini SUDAH LIVE dengan
+subscriber nyata (termasuk transaksi produksi asli). User memberi tugas
+LAIN sama sekali (cek batch Delivery Order milik reza.eka17@gmail.com)
+tapi sekalian minta "coba cek item transfer dan item requisition,
+sepertinya excel-nya kok sama ya?" — pertanyaan santai yang ternyata
+membongkar bahwa kemiripan ini BUKAN kebetulan wajar, tapi gejala modul
+yang salah dibangun. Re-verifikasi ke file spec ASLI (bukan template
+hasil download aplikasi sendiri, yang ternyata dibandingkan dulu secara
+keliru di putaran pertama — self-referential, tentu saja cocok) membuka
+2 lapis kejutan berturut-turut: (1) sheet client MEMANG identik dengan
+Item Transfer minus 1 kolom (mengonfirmasi modul lama dibangun sesuai
+draft yang ADA saat itu — bukan salah eksekusi), lalu (2) client sendiri
+sadar dan bilang "ternyata client salah krm draft unk item requisition",
+kirim draft revisi yang STRUKTURNYA TOTAL BEDA (field custom purchase-
+requisition asli: `requisitionType`, `requiredDate`, dst — bukan lagi
+`itemTransferType`/gudang asal-tujuan).
+
+**Fix**: Fase 164, rebuild total — endpoint pindah ke
+`purchase-requisition/save.do`, scope OAuth pindah dari
+`item_transfer_save` ke `purchase_requisition_save`, 46 kolom final
+digabung dari 2 file client yang saling melengkapi (client bahkan kirim
+file KEDUA, `Format_PREQ_v2.xlsx`, yang punya kolom berbeda lagi dari
+revisi pertama — union dari keduanya, bukan pilih salah satu). Subscriber
+existing SENGAJA tidak dimigrasikan (keputusan eksplisit user: "abaikan
+yg sudah subscribe, krn sebelumnya salah total"). Detail lengkap:
+`docs/architecture/architecture-item-requisition.md`,
+`docs/phases/phase-164-item-requisition-rebuild-purchase-requisition.md`,
+memory sesi `project_item_requisition_vs_item_transfer`.
+
+**Pelajaran**: (1) "Client happy dengan draft yang mereka kirim" BUKAN
+jaminan draft itu benar — draft bisa salah dari sisi CLIENT sendiri
+(salah pilih sheet, salah copy-paste, dst), bukan cuma salah tafsir dari
+sisi kita. Temuan teoretis yang bertentangan dengan draft literal (di
+sini: bukti dari `accurate-openapi.json` bahwa endpoint yang cocok secara
+struktural itu `purchase-requisition`, bukan `item-transfer`) SEHARUSNYA
+tetap dicatat tegas sebagai risiko terbuka, bukan ditutup rapat hanya
+karena "ikuti maunya client" — Fase 135 sebenarnya SUDAH mencatat ini
+eksplisit sebagai "historical context... superseded", untung tidak
+dihapus sama sekali, jadi begitu bug ini ketahuan, jejaknya masih ada
+untuk ditelusuri balik. (2) Pertanyaan santai/sampingan dari user ("kok
+mirip ya?") bisa jadi sinyal bug besar yang tersembunyi di balik modul
+yang KELIHATANNYA berfungsi normal (tidak ada error, tidak ada komplain
+user) — jangan diabaikan sebagai obrolan ringan, ikuti sampai tuntas
+walau di luar task yang sedang dikerjakan saat itu. (3) Kalau ada 2 file
+client yang isinya BERBEDA untuk hal yang sama, JANGAN asumsikan salah
+satu benar dan yang lain usang — tanya eksplisit, karena jawabannya bisa
+jadi "gabungkan keduanya" (persis kasus ini), bukan "pilih salah satu".

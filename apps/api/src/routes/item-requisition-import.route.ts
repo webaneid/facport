@@ -7,7 +7,7 @@ import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
-import { itemRequisitionMapping, itemTransferTypeRowError } from "../lib/import-mapping/item-requisition.mapping";
+import { itemRequisitionMapping, requisitionTypeRowError, saveAsStatusTypeRowError } from "../lib/import-mapping/item-requisition.mapping";
 import { itemRequisitionTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -32,9 +32,11 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
   return suggestion;
 }
 
-// § architecture-item-requisition.md — TIDAK auto-create item (mirror
-// Receive Item), TIDAK ADA "Batal Import" — route ini SESEDERHANA
-// receive-item-import.route.ts, tanpa endpoint cancel. `itemTransferTypeRowError`
+// § architecture-item-requisition.md, Fase 164 — panggil
+// `/api/purchase-requisition/save.do` (BUKAN item-transfer.do lagi sejak
+// rebuild). TIDAK auto-create item (mirror Receive Item), TIDAK ADA
+// "Batal Import" — route ini SESEDERHANA receive-item-import.route.ts,
+// tanpa endpoint cancel. `requisitionTypeRowError`/`saveAsStatusTypeRowError`
 // divalidasi TERPISAH dari `requiredFields` biasa (§ mapping file) di
 // KEDUA endpoint edit baris gagal, mirror `returnTypeRowError` Purchase Return.
 export const itemRequisitionImportRoute = new Elysia()
@@ -312,7 +314,8 @@ export const itemRequisitionImportRoute = new Elysia()
         const value = excelColumn ? body.rawData[excelColumn] : undefined;
         return value === undefined || value === null || String(value).trim() === "";
       });
-      missing.push(...itemTransferTypeRowError(body.rawData, columnMapping));
+      missing.push(...requisitionTypeRowError(body.rawData, columnMapping));
+      missing.push(...saveAsStatusTypeRowError(body.rawData, columnMapping));
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -364,7 +367,8 @@ export const itemRequisitionImportRoute = new Elysia()
           const value = excelColumn ? item.rawData[excelColumn] : undefined;
           return value === undefined || value === null || String(value).trim() === "";
         });
-        missing.push(...itemTransferTypeRowError(item.rawData, columnMapping));
+        missing.push(...requisitionTypeRowError(item.rawData, columnMapping));
+        missing.push(...saveAsStatusTypeRowError(item.rawData, columnMapping));
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;

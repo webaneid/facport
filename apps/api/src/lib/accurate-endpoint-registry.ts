@@ -87,9 +87,10 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   // § Fase 158 — `GET sales-order/detail.do` ditambah untuk auto-resolve `salesOrderDetailId`
   // (§ `resolveSalesOrderDetailIds`, workers/index.ts) saat `itemNo` duplikat dalam 1 Sales Order.
   delivery_order: { endpoints: ["POST delivery-order/save.do", "GET sales-order/detail.do", ...CLASSIFICATION] },
-  // Item Transfer & Item Requisition: 1 endpoint Accurate yang sama (Fase 134-135).
   item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
-  item_requisition: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
+  // § Fase 164 — REBUILD TOTAL: dulu berbagi endpoint item-transfer.do dengan modul
+  // di atas (Fase 134-135), sekarang endpoint SENDIRI (draft client sebelumnya salah).
+  item_requisition: { endpoints: ["POST purchase-requisition/save.do", ...CLASSIFICATION] },
   inventory_adjustment: { endpoints: ["POST item-adjustment/save.do"] },
   // § Fase 159 — AutoProduksi reuse ENDPOINT YANG SAMA dengan Inventory Adjustment di atas (bukan integrasi
   // baru, § architecture-autoproduksi.md). `adjustmentAccountNo`/`branchName`/`warehouseName`/itemNo dikirim
