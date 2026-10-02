@@ -317,6 +317,9 @@
  "GET glaccount/list.do": [
   "glaccount_view"
  ],
+ "GET glaccount/mutation.do": [
+  "glaccount_view"
+ ],
  "GET item-adjustment/detail.do": [
   "item_adjustment_view"
  ],

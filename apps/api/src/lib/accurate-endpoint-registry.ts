@@ -58,40 +58,48 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
       ...CLASSIFICATION,
     ],
   },
-  sales_receipt: { endpoints: ["POST sales-receipt/save.do", ...TAX], extraScopes: [legacy("sales_receipt_view")] },
+  // § Fase 165 — DELETE *-delete.do ditambah ke 19 modul "sederhana" (1
+  // batch = 1 dokumen Accurate, tanpa merge lintas-batch) supaya "Batal
+  // Import" generalisasi dari purchase_invoice/sales_invoice. Koneksi yang
+  // SUDAH terhubung sebelum rilis ini belum punya scope baru ini — route
+  // cancel cek `checkSubscriptionScopes` dulu, user tinggal reconnect.
+  sales_receipt: {
+    endpoints: ["POST sales-receipt/save.do", "DELETE sales-receipt/delete.do", ...TAX],
+    extraScopes: [legacy("sales_receipt_view")],
+  },
   purchase_payment: {
-    endpoints: ["POST purchase-payment/save.do", ...TAX],
+    endpoints: ["POST purchase-payment/save.do", "DELETE purchase-payment/delete.do", ...TAX],
     extraScopes: [legacy("purchase_payment_view")],
   },
   // § Fase 98 — data_classification_* WAJIB (attribut1..10 → findOrCreateDataClassification).
   journal_voucher: {
-    endpoints: ["POST journal-voucher/save.do", ...CLASSIFICATION],
+    endpoints: ["POST journal-voucher/save.do", "DELETE journal-voucher/delete.do", ...CLASSIFICATION],
     extraScopes: [legacy("journal_voucher_view")],
   },
   other_payment: {
-    endpoints: ["POST other-payment/save.do", ...CLASSIFICATION],
+    endpoints: ["POST other-payment/save.do", "DELETE other-payment/delete.do", ...CLASSIFICATION],
     extraScopes: [legacy("other_payment_view")],
   },
   other_deposit: {
-    endpoints: ["POST other-deposit/save.do", ...CLASSIFICATION],
+    endpoints: ["POST other-deposit/save.do", "DELETE other-deposit/delete.do", ...CLASSIFICATION],
     extraScopes: [legacy("other_deposit_view")],
   },
-  purchase_order: { endpoints: ["POST purchase-order/save.do", ...VENDOR, ...ITEM, ...CLASSIFICATION] },
-  receive_item: { endpoints: ["POST receive-item/save.do", ...CLASSIFICATION] },
-  purchase_return: { endpoints: ["POST purchase-return/save.do", ...CLASSIFICATION] },
-  sales_quotation: { endpoints: ["POST sales-quotation/save.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
-  sales_order: { endpoints: ["POST sales-order/save.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
-  sales_return: { endpoints: ["POST sales-return/save.do", ...CLASSIFICATION] },
+  purchase_order: { endpoints: ["POST purchase-order/save.do", "DELETE purchase-order/delete.do", ...VENDOR, ...ITEM, ...CLASSIFICATION] },
+  receive_item: { endpoints: ["POST receive-item/save.do", "DELETE receive-item/delete.do", ...CLASSIFICATION] },
+  purchase_return: { endpoints: ["POST purchase-return/save.do", "DELETE purchase-return/delete.do", ...CLASSIFICATION] },
+  sales_quotation: { endpoints: ["POST sales-quotation/save.do", "DELETE sales-quotation/delete.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
+  sales_order: { endpoints: ["POST sales-order/save.do", "DELETE sales-order/delete.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
+  sales_return: { endpoints: ["POST sales-return/save.do", "DELETE sales-return/delete.do", ...CLASSIFICATION] },
   // § Fase 157 — Delivery Order: TIDAK auto-create customer/item (mirror `receive_item`,
   // dokumen fulfillment lanjutan — customerNo/itemNo dikirim apa adanya).
   // § Fase 158 — `GET sales-order/detail.do` ditambah untuk auto-resolve `salesOrderDetailId`
   // (§ `resolveSalesOrderDetailIds`, workers/index.ts) saat `itemNo` duplikat dalam 1 Sales Order.
-  delivery_order: { endpoints: ["POST delivery-order/save.do", "GET sales-order/detail.do", ...CLASSIFICATION] },
-  item_transfer: { endpoints: ["POST item-transfer/save.do", ...CLASSIFICATION] },
+  delivery_order: { endpoints: ["POST delivery-order/save.do", "DELETE delivery-order/delete.do", "GET sales-order/detail.do", ...CLASSIFICATION] },
+  item_transfer: { endpoints: ["POST item-transfer/save.do", "DELETE item-transfer/delete.do", ...CLASSIFICATION] },
   // § Fase 164 — REBUILD TOTAL: dulu berbagi endpoint item-transfer.do dengan modul
   // di atas (Fase 134-135), sekarang endpoint SENDIRI (draft client sebelumnya salah).
-  item_requisition: { endpoints: ["POST purchase-requisition/save.do", ...CLASSIFICATION] },
-  inventory_adjustment: { endpoints: ["POST item-adjustment/save.do"] },
+  item_requisition: { endpoints: ["POST purchase-requisition/save.do", "DELETE purchase-requisition/delete.do", ...CLASSIFICATION] },
+  inventory_adjustment: { endpoints: ["POST item-adjustment/save.do", "DELETE item-adjustment/delete.do"] },
   // § Fase 159 — AutoProduksi reuse ENDPOINT YANG SAMA dengan Inventory Adjustment di atas (bukan integrasi
   // baru, § architecture-autoproduksi.md). `adjustmentAccountNo`/`branchName`/`warehouseName`/itemNo dikirim
   // apa adanya (TIDAK ada lookup/GET glaccount|branch|warehouse — konsisten filosofi "Accurate validasi saat
@@ -107,16 +115,29 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   autoproduksi_production: { endpoints: ["POST item-adjustment/save.do", "GET glaccount/list.do", "GET warehouse/list.do"] },
   // § Fase 146 — Roll Over: 1 endpoint. TIDAK auto-create item & TIDAK ada lookup akun (Excel tidak punya nama barang; Fase 138/139),
   // jadi hanya Kategori Keuangan (10 slot) yang butuh scope tambahan. Tidak ada `glaccount_view` warisan di entry ini.
-  roll_over: { endpoints: ["POST roll-over/save.do", ...CLASSIFICATION] },
+  roll_over: { endpoints: ["POST roll-over/save.do", "DELETE roll-over/delete.do", ...CLASSIFICATION] },
   // § Fase 147 — Work Order: save + lookup cabang (`branchId` REQUIRED, tidak auto-create) + PIC (find-or-create). Tanpa item_save (tidak auto-create item).
   work_order: {
-    endpoints: ["POST work-order/save.do", "GET branch/list.do", "GET wo-pic/list.do", "POST wo-pic/save.do", ...CLASSIFICATION],
+    endpoints: [
+      "POST work-order/save.do",
+      "DELETE work-order/delete.do",
+      "GET branch/list.do",
+      "GET wo-pic/list.do",
+      "POST wo-pic/save.do",
+      ...CLASSIFICATION,
+    ],
   },
   // § Fase 148 — Material Slip. Cabang/gudang TIDAK di-lookup (§ architecture-material-slip.md "Quirk").
-  material_slip: { endpoints: ["POST material-slip/save.do", ...CLASSIFICATION] },
+  material_slip: { endpoints: ["POST material-slip/save.do", "DELETE material-slip/delete.do", ...CLASSIFICATION] },
   // § Fase 149 — Finished Good Slip. Cabang & gudang KEDUANYA di-lookup (§ architecture-finished-good-slip.md "Quirk").
   finished_good_slip: {
-    endpoints: ["POST finished-good-slip/save.do", "GET branch/list.do", "GET warehouse/list.do", ...CLASSIFICATION],
+    endpoints: [
+      "POST finished-good-slip/save.do",
+      "DELETE finished-good-slip/delete.do",
+      "GET branch/list.do",
+      "GET warehouse/list.do",
+      ...CLASSIFICATION,
+    ],
   },
   // § Fase 139 — 2 endpoint berurutan. RM item_save: scope disiapkan walau belum auto-create.
   job_costing: {

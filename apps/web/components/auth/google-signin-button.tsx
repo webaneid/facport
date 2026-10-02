@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
 import { getSafeRedirect } from "@/lib/safe-redirect";
+import { clearActiveDataUsahaCookie } from "@/lib/active-data-usaha-cookie";
 import { Button } from "@/components/ui/button";
 
 // § Fase 62 — logo resmi Google "G" (4 warna), inline SVG statis —
@@ -31,6 +32,12 @@ export function GoogleSignInButton() {
 
   async function handleClick() {
     setLoading(true);
+    // § diminta user 2026-10-02 — SETIAP login WAJIB lewat gerbang
+    // /pilih-usaha dulu, lihat komentar lengkap di `clearActiveDataUsahaCookie`.
+    // Dibersihkan DI SINI (sebelum redirect ke Google) karena callback
+    // OAuth mendarat langsung di `callbackURL` lewat full page load —
+    // tidak ada titik "sesudah signIn.social()" di client untuk kode ini.
+    clearActiveDataUsahaCookie();
     const redirect = searchParams.get("redirect");
     const callbackURL = `${window.location.origin}${getSafeRedirect(redirect)}`;
     await authClient.signIn.social({ provider: "google", callbackURL, errorCallbackURL: `${window.location.origin}/login?error=google` });

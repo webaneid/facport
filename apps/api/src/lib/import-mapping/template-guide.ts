@@ -675,7 +675,7 @@ export const purchaseOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "Trans No", required: true, example: "PO.2026.09.00001", description: "Nomor transaksi — WAJIB diisi, sekaligus kunci penggabungan baris jadi 1 Purchase Order (isi SAMA di beberapa baris untuk 1 PO berisi banyak barang)." },
   { column: "Vendor No", required: true, example: "V.0001", description: "Nomor/kode vendor PERSIS seperti di Accurate — kalau belum ada, dibuatkan otomatis (isi kolom \"Nama Vendor\" dkk di bawah)." },
   { column: "Pay Term Name", required: false, example: "", description: "Nama termin pembayaran, harus PERSIS terdaftar di Accurate." },
-  { column: "To Address", required: false, example: "", description: "Alamat pengiriman/tujuan." },
+  { column: "To Address", required: true, example: "Jl. Contoh No. 1, Jakarta", description: "Alamat pengiriman/tujuan — WAJIB diisi Alamat Perusahaan (diminta client)." },
   { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
   { column: "Description", required: false, example: "", description: "Catatan tambahan untuk transaksi ini." },
   { column: "Fill Price By Vendor", required: false, format: BOOLEAN_FORMAT, example: "", description: "Isi harga barang otomatis dari data vendor (bukan input manual)." },
@@ -832,6 +832,7 @@ export const receiveItemTemplateGuide: TemplateFieldGuide[] = [
   { column: "ITEM: Custom Number 10", required: false, example: "", description: "Atribut tambahan angka 10, sama catatan di atas." },
   { column: "ITEM: Custom Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 1 level barang." },
   { column: "ITEM: Custom Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 2, sama catatan di atas." },
+  { column: "Item Price", required: true, example: "50000", description: "Harga satuan barang — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
 ];
 
 // § Fase 122, architecture-purchase-return.md — retur terhadap
@@ -914,6 +915,7 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "EXPENSE: Finance Category 8", required: false, example: "", description: "Kategori Keuangan 8, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 9", required: false, example: "", description: "Kategori Keuangan 9, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 10", required: false, example: "", description: "Kategori Keuangan 10, sama catatan di atas." },
+  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
 ];
 
 // § Fase 123, architecture-sales-quotation.md — dokumen PALING AWAL
@@ -1300,13 +1302,13 @@ export const jobCostingTemplateGuide: TemplateFieldGuide[] = [
   { column: "Note", required: false, example: "", description: "Catatan untuk baris biaya tambahan ini." },
 ];
 
-// § Fase 146, architecture-roll-over.md. Penutup Job Costing. `Tipe Penyesuaian` menentukan array yang dipakai per DOKUMEN: Barang → baris jadi
+// § Fase 146, architecture-roll-over.md. Penutup Job Costing. `Tipe Penyelesaian` menentukan array yang dipakai per DOKUMEN: Barang → baris jadi
 // Finished Good; Akun → baris jadi alokasi biaya ke akun (kolom "Expense ..." perluasan Facport, bukan dari Excel client). TIDAK auto-create item.
 export const rollOverTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Roll Over." },
   { column: "No Trans", required: false, example: "RO-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 Roll Over (isi SAMA di beberapa baris untuk 1 dokumen berisi banyak barang jadi). Kosongkan untuk penomoran otomatis Accurate." },
   { column: "Job Order No", required: true, example: "JO-2026-0001", description: "Nomor Job Order (dari Job Costing) yang diselesaikan — harus SUDAH ADA di Accurate. Satu Roll Over hanya untuk satu Job Order." },
-  { column: "Tipe Penyesuaian", required: true, example: "Barang", description: "WAJIB diisi: Barang (biaya jadi barang jadi/Finished Good) atau Akun (biaya dialokasikan ke akun). Semua baris dalam 1 No Trans harus bertipe sama." },
+  { column: "Tipe Penyelesaian", required: true, example: "Barang", description: "WAJIB diisi: Barang (biaya jadi barang jadi/Finished Good) atau Akun (biaya dialokasikan ke akun). Semua baris dalam 1 No Trans harus bertipe sama." },
   { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
   { column: "Nama Cabang", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
   { column: "FG_Item No", required: false, example: "FG-001", description: "Kode barang jadi PERSIS seperti terdaftar di Accurate (WAJIB kalau Tipe = Barang) — TIDAK dibuatkan otomatis kalau belum ada." },

@@ -21,7 +21,11 @@ export const purchaseOrderMapping = {
   // validasi server TIDAK menolak upload tanpa Branch Name di-mapping,
   // baru gagal belakangan (kalau company client multi-cabang) dengan
   // error Accurate yang kurang jelas. Lihat `docs/lessons-learned.md`.
-  requiredFields: ["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
+  // § diminta client 2026-10-02 (evaluasi) — "toAddress" WAJIB diisi
+  // Alamat Perusahaan (bukan field wajib di spec Accurate sendiri, TAPI
+  // kebutuhan bisnis client: tiap PO harus eksplisit punya alamat
+  // pengiriman, sama kelas keputusan dengan "branchName" di atas).
+  requiredFields: ["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName", "toAddress"] as const,
   fieldToAccuratePath: {
     vendorNo: "vendorNo",
     transDate: "transDate",

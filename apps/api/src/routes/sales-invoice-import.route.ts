@@ -308,6 +308,14 @@ export const salesInvoiceImportRoute = new Elysia()
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
       }
+      // § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) — sama
+      // persis kasus purchase-invoice: "Batal Import" menghapus PERMANEN
+      // transaksi ASLI di Accurate, lebih berbahaya dari Delete (hapus
+      // lokal saja) yang sudah `DELETE_OWNER_ONLY` — disamakan sekarang.
+      if (!(await ownsDataUsaha(user.id, subscription.dataUsahaId))) {
+        set.status = 403;
+        return { code: "CANCEL_OWNER_ONLY" };
+      }
       if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
         set.status = 409;
         return { code: "BATCH_NOT_CANCELLABLE" };

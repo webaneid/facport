@@ -46,13 +46,16 @@ describe("buildJobOrderPayload", () => {
     "Difference Account No": "differenceAccountNo",
     Keterangan: "description",
     "Nama Cabang": "branchName",
+    "RM_Item No": "rmItemNo",
+    RM_Qty: "rmQty",
+    RM_Unit: "rmUnit",
     "Expense No": "expenseAccountNo",
     "Expense Name": "expenseName",
     "Expense Amount": "expenseAmount",
     Note: "expenseNotes",
   };
 
-  test("header dari baris PERTAMA, detailItem[] SELALU kosong (RM tidak di sini)", () => {
+  test("header dari baris PERTAMA", () => {
     const payload = buildJobOrderPayload(
       [{ Tanggal: "2026-09-17", "No. Job Order": "JO-001", "Job Account No": "1-2000", "Nama Cabang": "Kantor Pusat" }],
       columnMapping,
@@ -61,6 +64,32 @@ describe("buildJobOrderPayload", () => {
     expect(payload.number).toBe("JO-001");
     expect(payload.jobAccountNo).toBe("1-2000");
     expect(payload.branchName).toBe("Kantor Pusat");
+  });
+
+  // § BUG 2026-10-02 (data nyata client) — SEBELUM fix ini, detailItem[]
+  // job-order SELALU `[]` tidak peduli apa pun, Accurate tolak "Detail
+  // dari transaksi belum diisi!" begitu detailExpense[] JUGA kosong
+  // (kasus wajar: Job Order tanpa biaya tambahan). § architecture doc.
+  test("baris RM terisi (TANPA kolom Expense sama sekali) -> detailItem[] job-order TERISI dari RM, bukan kosong", () => {
+    const payload = buildJobOrderPayload(
+      [
+        { Tanggal: "2026-09-30", "No. Job Order": "Bibah-001", "Job Account No": "115.000-98", "Nama Cabang": "JAKARTA", "RM_Item No": 100012, RM_Qty: 1, RM_Unit: "KG" },
+        { Tanggal: "2026-09-30", "No. Job Order": "Bibah-001", "Job Account No": "115.000-98", "Nama Cabang": "JAKARTA", "RM_Item No": 100013, RM_Qty: 1, RM_Unit: "KG" },
+      ],
+      columnMapping,
+    );
+    expect(payload.detailItem).toEqual([
+      { itemNo: "100012", quantity: 1, itemUnitName: "KG" },
+      { itemNo: "100013", quantity: 1, itemUnitName: "KG" },
+    ]);
+    expect(payload.detailExpense).toEqual([]);
+  });
+
+  test("baris tanpa RM_Item No sama sekali (kolom tidak dimapping/tidak diisi) -> detailItem[] tetap kosong", () => {
+    const payload = buildJobOrderPayload(
+      [{ Tanggal: "2026-09-17", "No. Job Order": "JO-001", "Job Account No": "1-2000", "Nama Cabang": "Kantor Pusat" }],
+      columnMapping,
+    );
     expect(payload.detailItem).toEqual([]);
   });
 

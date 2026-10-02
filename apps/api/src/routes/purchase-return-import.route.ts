@@ -33,9 +33,8 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 }
 
 // § architecture-purchase-return.md — dokumen LANJUTAN (TIDAK
-// auto-create vendor/item, mirror Receive Item). TIDAK ADA "Batal
-// Import" — route ini sesederhana purchase-order-import.route.ts, tanpa
-// endpoint cancel. `returnTypeRowError` divalidasi TERPISAH dari
+// auto-create vendor/item, mirror Receive Item). "Batal Import" generic
+// sejak Fase 165 (§ `accurate-generic-delete.ts`). `returnTypeRowError` divalidasi TERPISAH dari
 // requiredFields generik (mirror `debitCreditRowError` Journal Voucher)
 // karena field companion-nya (invoiceNumber/receiveItemNumber) WAJIB
 // KONDISIONAL tergantung nilai returnType, bukan wajib mutlak.
@@ -386,6 +385,49 @@ export const purchaseReturnImportRoute = new Elysia()
         rows: t.Array(t.Object({ id: t.String({ format: "uuid" }), rawData: t.Record(t.String(), t.Union([t.String(), t.Number()])) })),
       }),
     },
+  )
+  // § Fase 165 — "Batal Import": generalisasi pola purchase_invoice/
+  // sales_invoice (ADR-0013/0014) ke modul ini. BEDA kunci: modul ini
+  // TIDAK pernah merge lintas-batch (1 batch = 1 dokumen Accurate, tidak
+  // ada append/findExisting seperti PI/SI) — job cukup hapus tiap dokumen
+  // sukses milik batch ini, tanpa cek `accurateDetailItemId`/blokir
+  // lintas-batch (§ `accurate-generic-delete.ts`, riset Fase 165).
+  // Owner-only SEJAK AWAL (bukan `permission: "import.create"` biasa) —
+  // pelajaran dari celah yang baru ketemu & diperbaiki di PI/SI
+  // (lessons-learned.md 2026-10-02): aksi ini MENGHAPUS PERMANEN transaksi
+  // ASLI di Accurate, bukan sekadar re-proses baris milik batch sendiri.
+  .post(
+    "/purchase-return/import/:batchId/cancel",
+    async ({ params, user, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      if (!(await ownsDataUsaha(user.id, subscription.dataUsahaId))) {
+        set.status = 403;
+        return { code: "CANCEL_OWNER_ONLY" };
+      }
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+        set.status = 409;
+        return { code: "BATCH_NOT_CANCELLABLE" };
+      }
+      // § scope `purchase_return_delete` BARU (Fase 165) — koneksi yang sudah
+      // terhubung SEBELUM fitur ini rilis belum tentu punya scope ini,
+      // cek dulu supaya error jelas (bukan gagal diam di job worker).
+      const scopeCheck = await checkSubscriptionScopes(subscription.id, "purchase_return");
+      if (!scopeCheck.ok) {
+        set.status = 409;
+        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
+      }
+      await db
+        .update(importBatches)
+        .set({ status: "cancelling", completedAt: null })
+        .where(eq(importBatches.id, batch.id));
+      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      return { batchId: batch.id, status: "cancelling" };
+    },
+    { permission: "import.create", moduleAccess: "purchase_return", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   .delete(
     "/purchase-return/import/:batchId",

@@ -23,7 +23,12 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
     const res = await api["sales-invoice"].import({ batchId: batch.id }).cancel.post();
     setSubmitting(false);
     if (res.error) {
-      toast.error("Gagal memulai Batal Import — coba lagi.");
+      const value = res.error.value as { code?: string } | undefined;
+      toast.error(
+        value?.code === "CANCEL_OWNER_ONLY"
+          ? "Cuma pemilik Data Usaha yang boleh Batal Import — aksi ini menghapus transaksi asli di Accurate."
+          : "Gagal memulai Batal Import — coba lagi.",
+      );
       return;
     }
     toast.success("Batal Import diproses — transaksi terkait akan dihapus dari Accurate.");
@@ -53,11 +58,18 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
       <DialogContent>
         <DialogTitle>Batal Import: {batch.fileName}</DialogTitle>
         <div className="mt-3 flex flex-col gap-3 text-sm">
-          <p className="text-muted-foreground">
-            Ini akan <strong className="text-destructive">menghapus permanen</strong> seluruh transaksi Faktur
-            Penjualan yang dibuat batch ini langsung di Accurate Online — bukan cuma menyembunyikan riwayat di
-            Facport. Tindakan ini <strong>tidak bisa dibatalkan lewat Facport</strong>.
-          </p>
+          <p className="font-medium text-destructive">Peringatan — tindakan ini permanen dan tidak bisa dibatalkan.</p>
+          <ul className="list-disc space-y-2 pl-5 text-muted-foreground">
+            <li>
+              Seluruh transaksi Faktur Penjualan yang dibuat batch ini akan{" "}
+              <strong className="text-destructive">dihapus permanen langsung di Accurate Online</strong> (lewat API) —
+              bukan cuma disembunyikan.
+            </li>
+            <li>
+              Baris batch ini di <strong className="text-destructive">Facport</strong> akan ditandai &ldquo;Dibatalkan&rdquo;
+              — tidak lagi dihitung sebagai baris sukses.
+            </li>
+          </ul>
           <p className="text-muted-foreground">
             Faktur yang gabungan dengan batch import lain (lewat fitur Retry) akan DILEWATI otomatis, bukan
             terhapus — Accurate tidak mendukung hapus sebagian item faktur, jadi faktur itu perlu dihapus manual

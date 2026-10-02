@@ -61,7 +61,7 @@ detailExpense[] (REQUIRED oleh spec, dipakai jika rollOverType=ACCOUNT):
 | Tanggal | transDate | header, REQUIRED |
 | No Trans | number | header, opsional (kunci grouping) |
 | Job Order No | jobOrderNumber | header, **REQUIRED**, referensi ke Job Costing |
-| Tipe Penyesuaian | rollOverType | header, **REQUIRED**, enum `ACCOUNT`/`ITEM` — **✅ label UI dikonfirmasi 2026-09-21 via portal developer live**: `ACCOUNT`="Akun", `ITEM`="Barang" — dictionary mapping ini kemungkinan besar cocok, TAPI tetap cek nilai literal kolom Excel client saat eksekusi (istilah client bisa beda dari label UI resmi) |
+| Tipe Penyelesaian | rollOverType | header, **REQUIRED**, enum `ACCOUNT`/`ITEM` — **✅ label UI dikonfirmasi 2026-09-21 via portal developer live**: `ACCOUNT`="Akun", `ITEM`="Barang" — dictionary mapping ini kemungkinan besar cocok, TAPI tetap cek nilai literal kolom Excel client saat eksekusi (istilah client bisa beda dari label UI resmi) |
 | Keterangan | description | header |
 | Nama Cabang | branchName | header, **WAJIB diisi** (§ Branch Wajib) |
 | FG_Item No | detailItem[].itemNo | Finished Good, per baris (relevan kalau `rollOverType=ITEM`) |
@@ -95,7 +95,7 @@ diterima di modul lain).
 2. **`rollOverType` menentukan array mana yang dipakai** — beda dari
    modul lain, di sini pilihan enum header MENENTUKAN apakah baris
    Excel masuk ke `detailItem[]` (ITEM) atau `detailExpense[]`
-   (ACCOUNT). Kalau client Excel selalu isi `Tipe Penyesuaian=Item`,
+   (ACCOUNT). Kalau client Excel selalu isi `Tipe Penyelesaian=Item`,
    `detailExpense` cukup dikirim `[]` — TAPI Facport tetap perlu
    validasi/percabangan logic ini, bukan asumsi selalu ITEM.
 3. **Grouping multi-baris** — `No Trans` (kalau diisi) jadi kunci,
@@ -126,7 +126,7 @@ Sama seperti modul baru lain — `Nama Cabang` WAJIB divalidasi non-kosong
 di Facport SEBELUM kirim ke Accurate.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
-- **Nilai literal kolom "Tipe Penyesuaian"** — SEBAGIAN RESOLVED
+- **Nilai literal kolom "Tipe Penyelesaian"** — SEBAGIAN RESOLVED
   (label UI resmi "Akun"/"Barang" dikonfirmasi via portal live,
   § tabel mapping di atas), TAPI tetap perlu contoh data Excel riil
   dari client untuk pastikan istilah mereka cocok dengan label UI ini

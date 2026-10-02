@@ -333,11 +333,20 @@ export const purchaseInvoiceImportRoute = new Elysia()
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
   // § Fase 09, ADR-0013 — "Batal Import": hapus/susutkan transaksi
-  // terkait dari Accurate (bukan cuma tandai lokal). Pola ownership check
-  // IDENTIK retry di atas. Cuma batch yang sudah SELESAI diproses yang
-  // boleh dibatalkan (bukan sedang diproses/belum dikonfirmasi/sudah
-  // dibatalkan) — mencegah race dengan job import/retry/cancel lain yang
-  // masih jalan untuk batch yang sama.
+  // terkait dari Accurate (bukan cuma tandai lokal). Cuma batch yang
+  // sudah SELESAI diproses yang boleh dibatalkan (bukan sedang diproses/
+  // belum dikonfirmasi/sudah dibatalkan) — mencegah race dengan job
+  // import/retry/cancel lain yang masih jalan untuk batch yang sama.
+  // § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) — endpoint
+  // ini SEBELUMNYA cuma gate `permission: "import.create"` (sama seperti
+  // retry, yang memang benar TIDAK owner-only karena cuma re-proses baris
+  // milik batch sendiri) — TAPI aksi ini jauh lebih berbahaya dari retry:
+  // MENGHAPUS PERMANEN transaksi ASLI di Accurate milik client. Anggota
+  // tim (seat) manapun yang punya akses modul ini bisa memicu hapus
+  // transaksi akuntansi nyata — padahal aksi yang JAUH lebih ringan
+  // (Delete, cuma hapus riwayat lokal, § route DELETE di bawah) sudah
+  // dibatasi `DELETE_OWNER_ONLY`. Terbalik — sekarang disamakan: cuma
+  // pemilik Data Usaha SAAT INI yang boleh Batal Import.
   .post(
     "/purchase-invoice/import/:batchId/cancel",
     async ({ params, user, subscription, set }) => {
@@ -345,6 +354,10 @@ export const purchaseInvoiceImportRoute = new Elysia()
       if (!batch || batch.subscriptionId !== subscription.id) {
         set.status = 404;
         return { code: "BATCH_NOT_FOUND" };
+      }
+      if (!(await ownsDataUsaha(user.id, subscription.dataUsahaId))) {
+        set.status = 403;
+        return { code: "CANCEL_OWNER_ONLY" };
       }
       if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
         set.status = 409;

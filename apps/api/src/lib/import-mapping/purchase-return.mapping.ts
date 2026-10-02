@@ -189,6 +189,17 @@ export const purchaseReturnMapping = {
     "EXPENSE: Finance Category 10": "expenseKategoriKeuangan10",
     // § "Item Warehouse"/"Expense Project" SENGAJA TIDAK dipetakan —
     // tidak ada field API untuk keduanya di endpoint ini.
+    // § diminta client 2026-10-02 (evaluasi) — "unitPrice" SUDAH ADA di
+    // `fieldToAccuratePath`/`requiredFields` sejak awal (field resmi
+    // `/api/purchase-return/save.do`, REQUIRED bersama itemNo di
+    // detailItem — dikonfirmasi ulang dari spec), TAPI TIDAK PERNAH dapat
+    // kolom Excel di sini — pola bug yang SAMA dengan Receive Item (§
+    // lessons-learned.md 2026-10-02). TIDAK butuh scope OAuth baru —
+    // endpoint `purchase-return/save.do` sudah terdaftar di
+    // `accurate-endpoint-registry.ts` sejak awal, field ini cuma nambah
+    // kolom untuk field yang SUDAH dikirim ke endpoint yang SAMA.
+    // Posisi PALING UJUNG diminta eksplisit client (§ screenshot).
+    "Unit Price": "unitPrice",
   } as Record<string, string>,
 };
 

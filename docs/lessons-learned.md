@@ -5645,3 +5645,191 @@ walau di luar task yang sedang dikerjakan saat itu. (3) Kalau ada 2 file
 client yang isinya BERBEDA untuk hal yang sama, JANGAN asumsikan salah
 satu benar dan yang lain usang — tanya eksplisit, karena jawabannya bisa
 jadi "gabungkan keduanya" (persis kasus ini), bukan "pilih salah satu".
+
+## 2026-10-02 — Job Costing: "Detail dari transaksi belum diisi!" — asumsi arsitektur "detailItem[] job-order aman kosong" ternyata salah, baru ketahuan dari data nyata client
+
+**Konteks**: Fase 139 (2026-09-21) mendesain Job Costing sebagai 2
+panggilan API berurutan — `job-order/save.do` (header + `detailExpense[]`)
+lalu `material-adjustment/save.do` (realisasi RM, `detailItem[]` REQUIRED
+minimal 1). Keputusan desain eksplisit saat itu: `detailItem[]` milik
+`job-order/save.do` sendiri "opsional secara spec" (OpenAPI `required`
+cuma `["transDate"]`), jadi SELALU dikirim kosong `[]` — RM dianggap
+cukup direpresentasikan di `material-adjustment` saja.
+
+**Ketahuan salahnya**: client upload `job-casting-template.xlsx` (2 baris,
+RM_Item No/RM_Qty/RM_Unit SEMUA terisi lengkap) — gagal 100% dengan pesan
+Accurate `"Detail dari transaksi belum diisi!"` di KEDUA baris. Root
+cause: baris client TIDAK punya data Expense sama sekali (Expense No/
+Name/Amount kosong — wajar, tidak semua Job Order punya biaya tambahan).
+Karena `detailItem[]` SELALU dipaksa `[]` dan `detailExpense[]` JUGA
+kosong (tidak ada data Expense), payload `job-order/save.do` yang
+terkirim py KEDUA array kosong sekaligus. Accurate menolak — ternyata ada
+aturan implisit "minimal 1 dari 2 array detail (Item ATAU Expense) harus
+terisi" yang TIDAK tertangkap di `required: ["transDate"]` OpenAPI spec.
+
+**Fix**: `buildJobOrderPayload` (`job-costing.mapping.ts`) sekarang
+mengisi `detailItem[]` dari baris RM yang SAMA dengan yang dikirim ke
+`material-adjustment` (itemNo/quantity/itemUnitName/projectNo/
+departmentName/detailNotes/dataClassification1-3Name — subset field yang
+memang ada di schema `job-order`, TIDAK termasuk warehouseName/serial
+yang cuma ada di `material-adjustment`). Detail: `apps/api/src/lib/
+import-mapping/job-costing.mapping.ts` `buildJobOrderDetailItems`,
+`docs/architecture/architecture-job-costing.md`.
+
+**Pelajaran**: ini kelas kejutan yang SAMA dengan rangkaian bug Satuan
+Item/Gudang/PPN minggu ini — `required` array di OpenAPI spec resmi
+Accurate TIDAK mewakili SELURUH aturan validasi yang sebenarnya dijalankan
+di server Accurate. Kali ini bukan field yang salah nama/struktur, tapi
+aturan ANTAR-FIELD ("minimal 1 dari N array harus terisi") yang memang
+secara fundamental TIDAK BISA diekspresikan oleh skema `required` flat
+OpenAPI — tidak ada cara mendeteksi ini dari baca spec saja, cuma ketahuan
+dari test call nyata/laporan client. Keputusan desain Fase 139 yang bilang
+"detailItem[] job-order TIDAK dipakai, aman kosong" BUKAN kesalahan baca
+spec (sudah benar: field itu genuinely opsional per OpenAPI) — kesalahannya
+adalah MENYIMPULKAN "opsional per spec" = "aman selalu kosong", padahal
+Accurate punya validasi silang yang tidak pernah bisa diketahui dari
+membaca JSON spec doang. Rule yang sudah ada ("re-verify dengan test call
+nyata sebelum anggap selesai") tetap berlaku, tapi kasus ini juga
+menunjukkan: SELESAI UNIT TEST ≠ SELESAI VERIFIKASI — modul ini sudah
+lolos security review & unit test sejak Fase 139 tanpa ketahuan bug ini,
+baru ketahuan 11 hari kemudian dari laporan client pakai data nyata.
+
+## 2026-10-02 — "Batal Import" (hapus transaksi ASLI di Accurate) TIDAK owner-only sejak Fase 09, padahal "Delete" (hapus lokal, jauh lebih ringan) sudah owner-only — ketahuan evaluasi user, bukan dari audit keamanan manapun
+
+**Konteks**: Arsip Import punya 2 aksi destruktif yang terlihat mirip tapi
+efeknya beda total — icon `Undo2` ("Batal Import", cuma ada di Purchase
+Invoice & Sales Invoice, § ADR-0013/0014) menghapus PERMANEN transaksi
+ASLI di Accurate Online milik client; icon `Trash2` ("Delete", ada di
+semua modul) cuma menghapus riwayat LOKAL di Facport, Accurate tidak
+tersentuh sama sekali. User minta diverifikasi "semua modul sudah benar"
+soal fitur restore/kembali ini, sekaligus laporan ada kerancuan user
+sendiri antara 2 icon ini.
+
+**Ketemu saat verifikasi**: endpoint `/cancel` (Batal Import) di KEDUA
+modul cuma di-gate `permission: "import.create"` — level yang SAMA dengan
+`/retry` (yang memang benar longgar, cuma re-proses baris sendiri).
+Endpoint `DELETE` (hapus lokal, aksi jauh lebih ringan) di modul yang
+SAMA sudah lama dibatasi `ownsDataUsaha`/`DELETE_OWNER_ONLY` (§ Fase 125).
+Jadi anggota tim/seat mana pun yang punya akses modul bisa memicu hapus
+transaksi akuntansi ASLI client — TERBALIK dari yang seharusnya (aksi
+lebih berbahaya harusnya lebih ketat, bukan lebih longgar). Baik
+`DeleteImportDialog` (lokal) maupun `CancelImportDialog` (Accurate) sudah
+ada sejak Fase 09/125, tapi TIDAK ADA satu pun security review/audit
+sebelumnya yang menangkap inkonsistensi ini — baru ketahuan dari
+pertanyaan user yang sekilas terdengar seperti permintaan fitur biasa
+("pastikan semua modul berfungsi dengan benar").
+
+**Fix**: endpoint `/cancel` purchase-invoice & sales-invoice sekarang
+sama-sama cek `ownsDataUsaha` (403 `CANCEL_OWNER_ONLY` kalau bukan
+pemilik), tombol UI ikut disembunyikan untuk non-pemilik di 3 tempat
+(tabel gabungan + 2 halaman Riwayat). Ditambah test regresi khusus (owner
+tetap bisa, member ditolak) karena endpoint ini TERNYATA tidak punya test
+coverage sama sekali sebelumnya.
+
+**Keputusan terpisah, SENGAJA DICATAT DI SINI biar gampang di-recall**:
+tombol "Delete" (hapus lokal) di tabel Arsip Import + kartu Dashboard
+(`components/import-archive/import-batch-table.tsx`, constant
+`SHOW_LOCAL_DELETE_BUTTON`) DISEMBUNYIKAN SEMENTARA mulai hari ini — BUKAN
+dihapus fungsinya, endpoint `DELETE` dan `DeleteImportDialog` tiap modul
+tetap ada apa adanya. Alasan user: kerancuan nyata antara 2 icon ini di
+mata user sendiri, dan Facport SUDAH punya retensi otomatis 2 hari (§
+`docs/architecture/architecture-subscription.md` § "Retensi Data
+Import") yang bikin tombol manual ini tidak urgent dipertahankan sekarang.
+Client BISA berubah pikiran nanti — untuk AKTIFKAN LAGI, ganti
+`SHOW_LOCAL_DELETE_BUTTON` dari `false` ke `true` di file itu, 1 baris,
+tidak ada migrasi/perubahan lain. Scope SENGAJA cuma tabel gabungan ini
+(Arsip Import + Dashboard) — 23 halaman "Riwayat" PER-MODUL (mis.
+`/delivery-order/import/riwayat`) TIDAK disentuh, tombol Delete-nya tetap
+tampil di sana (keputusan eksplisit user, scope lebih kecil dulu — kalau
+nanti mau disamakan, itu kerjaan terpisah, bukan bagian dari fase ini).
+
+**Pelajaran**: (1) 2 fitur yang kelihatan "sama-sama tombol hapus di baris
+yang sama" gampang luput dari asumsi "pasti sudah konsisten ownership-nya"
+kalau salah satu aspek (status icon, dialog konfirmasi) terlihat lengkap —
+inkonsistensi di LEVEL OTORISASI tidak kelihatan dari UI, cuma kelihatan
+kalau benar-benar baca kode route satu-satu. (2) Pertanyaan user yang
+terdengar seperti "tolong cek semua modul jalan dengan benar" bisa
+membuka temuan keamanan nyata yang tidak pernah ketangkep security review
+sebelumnya — jangan anggap itu basa-basi verifikasi, telusuri sampai ke
+level kode.
+
+## 2026-10-02 — Generalisasi "Batal Import" ke 19 modul (Fase 165): scope OAuth baru = customer existing TIDAK otomatis dapat akses, bukan hanya soal kode
+
+Menggeneralisasi "Batal Import" (§ entri di atas) dari 2 modul (Purchase
+Invoice/Sales Invoice) ke 19 modul lain (§
+`docs/architecture/architecture-batal-import-generic.md`, ADR-0040).
+Riset membuktikan kompleksitas asli PI/SI (merge lintas-batch,
+`accurateDetailItemId` tracking, blokir faktur gabungan) HANYA muncul
+karena fitur Retry Cerdas (append `save.do`) — 19 modul lain SELALU 1
+batch = 1 dokumen Accurate, jadi logic Cancel-nya jauh lebih sederhana
+(tidak perlu grep ulang kalau nambah modul baru lagi — tinggal cek apakah
+modul itu PERNAH append ke dokumen existing lewat Retry; kalau tidak,
+masuk kategori "sederhana").
+
+**Hal yang TIDAK kelihatan dari kode saja, baru kepikiran pas desain
+rollout**: endpoint `delete.do` tiap modul butuh scope OAuth BARU
+(`{module}_delete`) yang BELUM PERNAH diminta sebelumnya. Karena project
+ini pakai model 1 otorisasi per akun Accurate (ADR-0036/0037 — scope
+diberikan SEKALI saat consent, bukan bisa ditambah diam-diam oleh
+server), **customer yang SUDAH terhubung sebelum fase ini SAMA SEKALI
+TIDAK bisa pakai fitur baru ini sampai mereka reconnect Accurate** —
+walau kode sudah 100% benar dan dideploy. Ini BUKAN bug, tapi gampang
+disalahartikan sebagai bug kalau tidak dikomunikasikan ("kok tombol Batal
+Import-nya selalu gagal?"). Solusi yang diambil: endpoint cancel 19 modul
+ini sengaja tambah cek `checkSubscriptionScopes` SEBELUM enqueue job
+(409 `ACCURATE_SCOPE_MISSING`, toast jelas di frontend) — PI/SI yang
+scope delete-nya sudah ada sejak Fase 09 TIDAK butuh cek ini di endpoint
+cancel-nya.
+
+**Pelajaran**: kalau menambah endpoint baru yang BUTUH scope Accurate
+baru (bukan sekadar field/fungsi baru yang pakai scope yang sudah ada,
+beda dari Fase 78/98), SELALU tanya "apakah customer existing otomatis
+dapat scope ini?" — jawabannya di project 1-otorisasi-per-akun ini SELALU
+TIDAK, kecuali mereka reconnect. Desain endpoint supaya gagal jelas (409
++ pesan actionable), jangan diam-diam gagal di job worker (toast generik
+"gagal, coba lagi" yang bikin user kebingungan kenapa fitur yang katanya
+baru rilis tidak pernah berhasil).
+
+## 2026-10-02 — Security review Fase 165 (subagent `security-auditor`): 0 Critical/High, 1 Medium (fail-open lama bikin batch Cancel bisa macet tanpa alert) + 2 Low (diterima apa adanya)
+
+Hasil audit menyeluruh terhadap rollout "Batal Import" 19 modul (§ fase
+165, ADR-0040): **0 Critical, 0 High**. Semua 19 route baru diverifikasi
+owner-gated konsisten (`ownsDataUsaha` → 403 `CANCEL_OWNER_ONLY`, tenant
+isolation via cek `subscriptionId`, status batch, scope Accurate — SEMUA
+sebelum mutasi), job worker mutual-exclusive by construction
+(`GENERIC_CANCELLABLE_MODULES` tidak overlap PI/SI), tidak ada
+SQL injection/input mentah.
+
+**Medium — `checkSubscriptionScopes` fail-open kalau koneksi Accurate
+tidak ada / scope tidak diketahui** (`accurate-scope-check.ts:40-52`,
+PRA-EXISTING, dipakai ulang apa adanya dari fitur scope-checking lama,
+BUKAN regresi baru dari fase ini — fungsi yang sama juga dipakai
+confirm/retry). Konsekuensi khusus untuk Cancel: kalau koneksi
+terputus/belum pilih Data Usaha PERSIS di antara request cancel & job
+jalan, batch bisa macet SELAMANYA di status `cancelling` tanpa
+notifikasi ke siapa pun — cuma log Pino, tidak ada Sentry. **Fix
+parsial diterapkan**: titik di `workers/index.ts` (`if (!connection ||
+!accurateDbId)` di job `CANCEL_IMPORT`) sekarang juga panggil
+`Sentry.captureMessage` supaya kondisi stuck ini ketahuan ops — bukan
+fix penuh (shared function `checkSubscriptionScopes` SENGAJA tidak
+diubah semantiknya, dipakai puluhan call site lain yang mungkin memang
+benar fail-open untuk aksi read-only; mengubahnya jadi fail-closed
+global berisiko regresi lebih luas dari yang diminta fase ini).
+
+**Low (diterima, bukan dikerjakan)**: (1) non-atomicity antara delete
+Accurate + update status baris + decrement counter + update status batch
+final di branch generic (`workers/index.ts:3236-3292`) — kalau worker
+crash tepat di tengah loop, counter permanen bisa tidak ikut turun untuk
+baris yang sudah ter-cancel. Risiko rendah (butuh crash di jendela waktu
+sempit, bukan dieksploitasi via input user), DAN pola yang SAMA sudah ada
+di branch legacy PI/SI sejak Fase 09 — konsisten, bukan regresi baru,
+diterima sebagai technical debt kecil. (2) Konfirmasi (bukan temuan)
+bahwa `scopesForModules` sudah otomatis include baseline scope — dicatat
+cuma supaya reviewer berikutnya tidak perlu cek ulang.
+
+**Pelajaran**: security review yang didelegasikan ke subagent terisolasi
+(bukan di sesi utama) tetap menemukan nuansa yang MUDAH terlewat kalau
+cuma baca kode sendiri terburu-buru (kapan tepatnya batch bisa macet,
+bukan cuma "apakah ada celah otorisasi") — worth tetap didelegasikan
+untuk perubahan >3-4 file sesuai `docs/WORKFLOW-MODES.md`, bahkan kalau
+yakin polanya sudah benar dari awal.

@@ -91,7 +91,9 @@ export default function SalesInvoiceImportArchivePage() {
                           <Link href={`/sales-invoice/import/${batch.id}`} title="Detail" aria-label={`Detail untuk ${batch.fileName}`} className={buttonVariants("ghost", "h-8 w-8 p-0")}>
                             <Eye className="h-4 w-4" />
                           </Link>
-                          {CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} onCancelled={load} />}
+                          {/* § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) — dulu TIDAK
+                             digate `isOwner`, padahal Batal Import menghapus transaksi ASLI di Accurate. */}
+                          {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && <CancelImportDialog batch={batch} onCancelled={load} />}
                           {isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && <DeleteImportDialog batch={batch} onDeleted={load} />}
                         </div>
                       </TableCell>

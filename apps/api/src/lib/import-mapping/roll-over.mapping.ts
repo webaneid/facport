@@ -1,11 +1,23 @@
 // § architecture-roll-over.md — Fase 146. Roll Over = Penyelesaian Pesanan (penutup Job Costing), panggil `/api/roll-over/save.do`.
 //
+// § LABEL DIPERBAIKI 2026-10-02 (diminta client) — kolom ini dulu bernama
+// "Tipe Penyesuaian" (ikut draft awal client, 15 Sept) — SALAH TERJEMAHAN,
+// field API-nya `rollOverType` ("Roll Over Type") TIDAK ADA hubungannya
+// dengan "penyesuaian"/adjustment (konsep BEDA TOTAL, dipakai modul lain:
+// Inventory Adjustment `itemAdjustmentType`/"Tipe Adj", ADJUSTMENT_IN/
+// OUT/STOCK — enum beda, makna beda). "Tipe Penyesuaian" bikin rancu
+// seolah modul ini soal stok, padahal rollOverType cuma nentuin hasil
+// penyelesaian Job Order masuk ke BARANG (Finished Good) atau AKUN —
+// konsisten nama modul sendiri ("Roll Over" = "Penyelesaian Pesanan").
+// Diganti ke "Tipe Penyelesaian" di SEMUA tempat (kolom Excel, label UI,
+// pesan error) — field internal `rollOverType` TIDAK berubah.
+//
 // § `rollOverType` (enum REQUIRED API: ACCOUNT | ITEM) ditentukan PER DOKUMEN (baris pertama grup) dan MENENTUKAN array mana yang dipakai:
 //   ITEM    → tiap baris Excel = 1 entri `detailItem[]` (Finished Good: FG_Item No/FG_Qty/...); `detailExpense` = [].
 //   ACCOUNT → tiap baris Excel = 1 entri `detailExpense[]` (akun + nominal); `detailItem` = [].
 // Kolom expense (Expense Acc No/Amount/Name/Note) BUKAN dari Excel client (mereka hanya punya kolom Finished Good) — perluasan Facport
 // supaya tipe ACCOUNT bisa dipakai; opsional. Label UI resmi Accurate: ACCOUNT="Akun", ITEM="Barang" (dikonfirmasi via portal developer).
-// Nilai literal kolom "Tipe Penyesuaian" di Excel client belum diverifikasi ke data asli — dictionary di bawah TEBAKAN TERBAIK, baris yang
+// Nilai literal kolom "Tipe Penyelesaian" di Excel client belum diverifikasi ke data asli — dictionary di bawah TEBAKAN TERBAIK, baris yang
 // tidak cocok gagal dengan pesan jelas (bukan default diam-diam).
 //
 // § TIDAK auto-create item (Excel tidak punya kolom nama barang; `findOrCreateItem` mewajibkan nama — preseden Fase 138/139) dan TIDAK ada
@@ -81,7 +93,7 @@ export const rollOverMapping = {
     Tanggal: "transDate",
     "No Trans": "number",
     "Job Order No": "jobOrderNumber",
-    "Tipe Penyesuaian": "rollOverType",
+    "Tipe Penyelesaian": "rollOverType",
     Keterangan: "description",
     "Nama Cabang": "branchName",
     "FG_Item No": "itemNo",
@@ -201,7 +213,7 @@ export function validateGroupConsistency(group: RollOverGroup, columnMapping: Re
   const firstJob = String(valueOf(first.rawData, "jobOrderNumber", columnMapping) ?? "").trim().toLowerCase();
   for (const row of group.rows.slice(1)) {
     const type = resolveRollOverType(valueOf(row.rawData, "rollOverType", columnMapping));
-    if (type !== firstType) return `Tipe Penyesuaian tidak konsisten dalam satu No Trans (baris ${row.id}) — semua baris harus bertipe sama (Akun atau Barang).`;
+    if (type !== firstType) return `Tipe Penyelesaian tidak konsisten dalam satu No Trans (baris ${row.id}) — semua baris harus bertipe sama (Akun atau Barang).`;
     const job = String(valueOf(row.rawData, "jobOrderNumber", columnMapping) ?? "").trim().toLowerCase();
     if (job !== firstJob) return `Job Order No tidak konsisten dalam satu No Trans (baris ${row.id}) — satu Roll Over hanya untuk satu Job Order.`;
   }

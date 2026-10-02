@@ -18,7 +18,7 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
 
 // § architecture-roll-over.md, Fase 146 — Roll Over (Penyelesaian
-// Pesanan). "Tipe Penyesuaian" (Barang/Akun) menentukan baris masuk ke
+// Pesanan). "Tipe Penyelesaian" (Barang/Akun) menentukan baris masuk ke
 // detail barang jadi atau detail biaya. Barang/akun TIDAK dibuatkan
 // otomatis. Dictionary tipe lengkap di `roll-over.mapping.ts`.
 const ACCURATE_FIELDS = [
@@ -26,7 +26,7 @@ const ACCURATE_FIELDS = [
   { value: "transDate", label: "Tanggal (wajib)" },
   { value: "number", label: "No Trans (kunci gabung baris)" },
   { value: "jobOrderNumber", label: "Job Order No (wajib)" },
-  { value: "rollOverType", label: "Tipe Penyesuaian (wajib — Barang/Akun)" },
+  { value: "rollOverType", label: "Tipe Penyelesaian (wajib — Barang/Akun)" },
   { value: "description", label: "Keterangan" },
   { value: "branchName", label: "Cabang (wajib)" },
   { value: "itemNo", label: "FG Item No (wajib bila Barang)" },
