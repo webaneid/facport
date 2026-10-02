@@ -198,7 +198,9 @@ export const purchaseReturnMapping = {
     // endpoint `purchase-return/save.do` sudah terdaftar di
     // `accurate-endpoint-registry.ts` sejak awal, field ini cuma nambah
     // kolom untuk field yang SUDAH dikirim ke endpoint yang SAMA.
-    // Posisi PALING UJUNG diminta eksplisit client (§ screenshot).
+    // Posisi awal PALING UJUNG; 2026-10-03 client minta didekatkan ke kolom
+    // satuan — urutan kolom diatur di `purchaseReturnTemplateGuide`
+    // (template-guide.ts), BUKAN di sini (urutan key di map ini tidak berpengaruh).
     "Unit Price": "unitPrice",
   } as Record<string, string>,
 };

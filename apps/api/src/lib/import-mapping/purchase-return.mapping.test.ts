@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { purchaseReturnTemplateGuide } from "./template-guide";
 import {
   buildPurchaseReturnPayload,
   buildDetailItemFromRow,
@@ -369,5 +370,14 @@ describe("requiredFields — branchName WAJIB sejak awal (pelajaran Fase 120)", 
     expect(purchaseReturnMapping.requiredFields).toContain("taxNumber");
     expect(purchaseReturnMapping.requiredFields).not.toContain("invoiceNumber");
     expect(purchaseReturnMapping.requiredFields).not.toContain("receiveItemNumber");
+  });
+});
+
+describe("template Purchase Return — posisi kolom Unit Price", () => {
+  test("Unit Price tepat setelah Item Unit Name (bukan di pojok kanan), tetap wajib", () => {
+    const cols = purchaseReturnTemplateGuide.map((g) => g.column);
+    expect(cols[cols.indexOf("Item Unit Name") + 1]).toBe("Unit Price");
+    expect(purchaseReturnTemplateGuide.find((g) => g.column === "Unit Price")?.required).toBe(true);
+    expect(cols.at(-1)).not.toBe("Unit Price");
   });
 });

@@ -866,6 +866,7 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
   { column: "Item Qty", required: true, example: "5", description: "Jumlah barang yang diretur." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client; posisi dekat kolom satuan)." },
   { column: "Item Notes", required: false, example: "", description: "Catatan untuk baris barang ini." },
   { column: "Item Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
@@ -916,7 +917,6 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "EXPENSE: Finance Category 8", required: false, example: "", description: "Kategori Keuangan 8, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 9", required: false, example: "", description: "Kategori Keuangan 9, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 10", required: false, example: "", description: "Kategori Keuangan 10, sama catatan di atas." },
-  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
 ];
 
 // § Fase 123, architecture-sales-quotation.md — dokumen PALING AWAL
