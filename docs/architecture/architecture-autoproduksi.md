@@ -332,3 +332,7 @@ diminta.
   `docs/phases/phase-166-autoproduksi-import-formula-produksi.md` (Import Formula/Produksi)
 - Sumber kebutuhan (gitignored, cuma referensi lokal): `docs/referencehtml/facport/Autoproduksi.xlsx`,
   `Autoproduksi_Formula Produksi.xlsx`/`Autoproduksi_Barang Jadi.xlsx` (contoh nyata client, 2026-10-02, di luar repo)
+
+## Satuan ke-2..5 barang (evaluasi client 2026-10-03)
+Barang di Accurate bisa punya sampai 5 satuan (`unit1..5` + `ratio2..5` terhadap satuan 1) — contoh client: GULA `100028` = KG (satuan 1) dan Pouch (= 10 KG). Sebelumnya `GET /accurate/items/search` hanya membaca `unit1`, jadi form Formula hanya menawarkan satuan terkecil. Sekarang endpoint itu juga mengembalikan `units: {name, ratio}[]` (`lib/accurate-item-units.ts`, dibaca defensif: objek nested/string/flat), dan form Formula (Barang Jadi + tiap Bahan Baku) menampilkan `<Select>` satuan lewat `UnitField` kalau barang punya >1 satuan; selain itu tetap `Input` bebas. `itemUnitName` yang disimpan dikirim apa adanya ke `item-adjustment/save.do` — Accurate yang mengonversi kuantitas lewat rasio.
+⚠️ Nama field BACA `unit2..5`/`ratio2..5` di `item/list.do` belum diverifikasi test call nyata (hanya `unit1` yang pernah). Kalau Accurate menolak permintaan yang diperluas, route mengulang dengan field lama (pencarian tidak rusak, daftar satuan saja yang hilang). Verifikasi dengan barang 100028 di akun client setelah deploy.

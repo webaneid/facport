@@ -7,6 +7,7 @@ import { parseAccurateEnvelope, AccurateApiError } from "../lib/accurate";
 import { withAccurateRateLimit } from "../lib/accurate-rate-limiter";
 import { DATA_USAHA_HEADER } from "../lib/subscription-gate";
 import { logger } from "../lib/logger";
+import { extractItemUnits } from "../lib/accurate-item-units";
 
 // § Fase 163, ADR-0039 — endpoint PERTAMA di Facport yang panggil Accurate
 // SINKRON dari HTTP route (bukan job worker) — SENGAJA, search-as-you-type
@@ -75,7 +76,7 @@ async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, k
   });
 }
 
-type AccurateItemRecord = { no?: string; name?: string; unit1?: { name?: string } | null };
+type AccurateItemRecord = Record<string, unknown> & { no?: string; name?: string; unit1?: { name?: string } | null };
 type AccurateGlAccountRecord = { no?: string; name?: string };
 // § Gudang (warehouse) di Accurate TIDAK punya kode ("no") seperti
 // Item/Akun — cuma `name` (dikonfirmasi § warehouse/save.do spec resmi,
@@ -103,8 +104,21 @@ export const accurateLookupRoute = new Elysia()
         return session.error;
       }
       try {
-        const records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1");
-        return { items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1?.name ?? "" })) };
+        // § Satuan 2-5 + rasio (evaluasi client 2026-10-03, GULA: KG & Pouch =
+        // 10 KG). Nama field baca `unit2..5`/`ratio2..5` belum diverifikasi
+        // test call nyata — kalau Accurate menolak permintaan yang diperluas,
+        // ulangi dengan field lama supaya pencarian TIDAK PERNAH rusak (hanya
+        // kehilangan daftar satuan tambahan).
+        let records: AccurateItemRecord[];
+        try {
+          records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1,unit2,unit3,unit4,unit5,ratio2,ratio3,ratio4,ratio5");
+        } catch (extendedErr) {
+          logger.warn({ err: extendedErr, dataUsahaId: duResult.dataUsahaId }, "Pencarian Item dengan field satuan tambahan gagal, ulangi dengan field dasar");
+          records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1");
+        }
+        return {
+          items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1?.name ?? "", units: extractItemUnits(r) })),
+        };
       } catch (err) {
         logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal cari Item di Accurate");
         set.status = err instanceof AccurateApiError ? 502 : 500;
