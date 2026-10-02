@@ -1777,10 +1777,10 @@ export async function processRollOverGroup(
   for (const row of group.rows) {
     const errors = rollOverRowError(row.rawData, columnMapping);
     if (errors.includes("rollOverType")) {
-      throw new Error(`Tipe Penyesuaian tidak dikenali di baris ${row.id} — harus Barang atau Akun.`);
+      throw new Error(`Tipe Penyelesaian tidak dikenali di baris ${row.id} — harus Barang atau Akun.`);
     }
     if (errors.length > 0) {
-      throw new Error(`Kolom wajib kosong di baris ${row.id}: ${errors.join(", ")} (sesuai Tipe Penyesuaian).`);
+      throw new Error(`Kolom wajib kosong di baris ${row.id}: ${errors.join(", ")} (sesuai Tipe Penyelesaian).`);
     }
   }
   const consistencyError = validateRollOverGroupConsistency(group, columnMapping);

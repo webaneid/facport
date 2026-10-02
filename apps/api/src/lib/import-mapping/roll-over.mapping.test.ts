@@ -19,7 +19,7 @@ const itemRow = (over: Record<string, unknown> = {}) => ({
   Tanggal: "17/09/2026",
   "No Trans": "RO-1",
   "Job Order No": "JO-1",
-  "Tipe Penyesuaian": "Barang",
+  "Tipe Penyelesaian": "Barang",
   "Nama Cabang": "Pusat",
   "FG_Item No": "FG-1",
   FG_Qty: 10,
@@ -28,7 +28,7 @@ const itemRow = (over: Record<string, unknown> = {}) => ({
 const accountRow = (over: Record<string, unknown> = {}) => ({
   Tanggal: "17/09/2026",
   "Job Order No": "JO-1",
-  "Tipe Penyesuaian": "Akun",
+  "Tipe Penyelesaian": "Akun",
   "Nama Cabang": "Pusat",
   "Expense Acc No": "5-1001",
   "Expense Amount": 250000,
@@ -59,7 +59,7 @@ describe("rollOverRowError", () => {
     expect(rollOverRowError(accountRow({ "Expense Acc No": "" }), map)).toEqual(["accountNo"]);
   });
   test("tipe tidak dikenali → rollOverType (field lain tidak dilaporkan)", () => {
-    expect(rollOverRowError(itemRow({ "Tipe Penyesuaian": "zzz" }), map)).toEqual(["rollOverType"]);
+    expect(rollOverRowError(itemRow({ "Tipe Penyelesaian": "zzz" }), map)).toEqual(["rollOverType"]);
   });
   test("kolom Tipe tidak dipetakan → rollOverType", () => {
     expect(rollOverRowError(itemRow(), { Tanggal: "transDate" })).toEqual(["rollOverType"]);
@@ -83,8 +83,8 @@ describe("validateGroupConsistency", () => {
     expect(validateGroupConsistency({ groupKey: "RO-1", groupColumn: "No Trans", rows: [row("1", itemRow()), row("2", itemRow({ "Job Order No": "jo-1" }))] }, map)).toBeNull();
   });
   test("tipe berbeda dalam 1 grup → galat menyebut baris", () => {
-    const msg = validateGroupConsistency({ groupKey: "RO-1", groupColumn: "No Trans", rows: [row("1", itemRow()), row("2", itemRow({ "Tipe Penyesuaian": "Akun" }))] }, map);
-    expect(msg).toContain("Tipe Penyesuaian tidak konsisten");
+    const msg = validateGroupConsistency({ groupKey: "RO-1", groupColumn: "No Trans", rows: [row("1", itemRow()), row("2", itemRow({ "Tipe Penyelesaian": "Akun" }))] }, map);
+    expect(msg).toContain("Tipe Penyelesaian tidak konsisten");
     expect(msg).toContain("baris 2");
   });
   test("Job Order berbeda dalam 1 grup → galat", () => {
@@ -118,7 +118,7 @@ describe("buildRollOverPayload", () => {
   });
 
   test("tipe tidak dikenali → rollOverType kosong (route/worker sudah menolaknya lebih dulu)", () => {
-    expect(buildRollOverPayload([itemRow({ "Tipe Penyesuaian": "zzz" })], map).rollOverType).toBe("");
+    expect(buildRollOverPayload([itemRow({ "Tipe Penyelesaian": "zzz" })], map).rollOverType).toBe("");
   });
 });
 

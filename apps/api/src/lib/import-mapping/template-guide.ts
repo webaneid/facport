@@ -1301,13 +1301,13 @@ export const jobCostingTemplateGuide: TemplateFieldGuide[] = [
   { column: "Note", required: false, example: "", description: "Catatan untuk baris biaya tambahan ini." },
 ];
 
-// § Fase 146, architecture-roll-over.md. Penutup Job Costing. `Tipe Penyesuaian` menentukan array yang dipakai per DOKUMEN: Barang → baris jadi
+// § Fase 146, architecture-roll-over.md. Penutup Job Costing. `Tipe Penyelesaian` menentukan array yang dipakai per DOKUMEN: Barang → baris jadi
 // Finished Good; Akun → baris jadi alokasi biaya ke akun (kolom "Expense ..." perluasan Facport, bukan dari Excel client). TIDAK auto-create item.
 export const rollOverTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: DATE_FORMAT, example: "17/09/2026", description: "Tanggal transaksi Roll Over." },
   { column: "No Trans", required: false, example: "RO-2026-0001", description: "Nomor transaksi — kunci penggabungan baris jadi 1 Roll Over (isi SAMA di beberapa baris untuk 1 dokumen berisi banyak barang jadi). Kosongkan untuk penomoran otomatis Accurate." },
   { column: "Job Order No", required: true, example: "JO-2026-0001", description: "Nomor Job Order (dari Job Costing) yang diselesaikan — harus SUDAH ADA di Accurate. Satu Roll Over hanya untuk satu Job Order." },
-  { column: "Tipe Penyesuaian", required: true, example: "Barang", description: "WAJIB diisi: Barang (biaya jadi barang jadi/Finished Good) atau Akun (biaya dialokasikan ke akun). Semua baris dalam 1 No Trans harus bertipe sama." },
+  { column: "Tipe Penyelesaian", required: true, example: "Barang", description: "WAJIB diisi: Barang (biaya jadi barang jadi/Finished Good) atau Akun (biaya dialokasikan ke akun). Semua baris dalam 1 No Trans harus bertipe sama." },
   { column: "Keterangan", required: false, example: "", description: "Catatan/keterangan untuk transaksi ini." },
   { column: "Nama Cabang", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
   { column: "FG_Item No", required: false, example: "FG-001", description: "Kode barang jadi PERSIS seperti terdaftar di Accurate (WAJIB kalau Tipe = Barang) — TIDAK dibuatkan otomatis kalau belum ada." },

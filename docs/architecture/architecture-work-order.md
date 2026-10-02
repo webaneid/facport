@@ -163,7 +163,8 @@ Client mengonfirmasi langsung:
    API literal) — perlu dictionary/lookup mapping ("Kode Produk"→
    `PRODUCT`, "Nomor Formula"→`BILL_OF_MATERIAL`, "Nomor Rencana
    Produksi"→`MANUFACTURE_ORDER`), SAMA pola seperti `Tipe Adj` di
-   Inventory Adjustment atau `Tipe Penyesuaian` di Roll Over — nilai
+   Inventory Adjustment atau `Tipe Penyelesaian` di Roll Over (§ label
+   diperbaiki 2026-10-02, dulu salah terjemahan "Tipe Penyesuaian") — nilai
    literal 3 istilah ini perlu dicocokkan lagi ke isi Excel riil client
    saat eksekusi (istilah di atas dari penjelasan lisan client, bukan
    screenshot header Excel).
