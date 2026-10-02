@@ -1,3 +1,11 @@
+## 2.21.0 (2026-10-02)
+
+* Merge pull request #91 from webaneid/develop ([a247357](https://github.com/webaneid/facport/commit/a247357)), closes [#91](https://github.com/webaneid/facport/issues/91)
+* fix(api): gerbang koneksi Accurate kini memicu untuk Data Usaha AutoProduksi-only ([7ed5ee2](https://github.com/webaneid/facport/commit/7ed5ee2))
+* fix(web): dashboard crash untuk batch cancellable dari 19 modul baru ([5c6bffb](https://github.com/webaneid/facport/commit/5c6bffb))
+* docs: catat insiden produksi — antrean import-to-accurate tanpa concurrency ([91160ff](https://github.com/webaneid/facport/commit/91160ff))
+* feat(api web): AutoProduksi — Import Formula & Import Produksi via Excel ([1c2af57](https://github.com/webaneid/facport/commit/1c2af57)), closes [#79](https://github.com/webaneid/facport/issues/79)
+
 ## 2.20.0 (2026-10-02)
 
 * Merge pull request #90 from webaneid/develop ([c9bdeda](https://github.com/webaneid/facport/commit/c9bdeda)), closes [#90](https://github.com/webaneid/facport/issues/90)
