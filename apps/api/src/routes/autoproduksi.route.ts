@@ -233,6 +233,7 @@ export const autoproduksiRoute = new Elysia()
           transDate: autoproduksiProductionEntries.transDate,
           status: autoproduksiProductionEntries.status,
           accurateTransactionId: autoproduksiProductionEntries.accurateTransactionId,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
           errorMessage: autoproduksiProductionEntries.errorMessage,
           createdAt: autoproduksiProductionEntries.createdAt,
         })

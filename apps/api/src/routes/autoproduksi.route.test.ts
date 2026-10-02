@@ -622,3 +622,32 @@ describe("PUT /autoproduksi/formulas/:id (edit)", () => {
     expect(notMine.status).toBe(404);
   });
 });
+
+describe("GET /autoproduksi/production-entries — nomor transaksi Accurate", () => {
+  test("mengembalikan accurateTransactionNumber (nomor terbaca manusia) di samping id internal", async () => {
+    const owner = await createProvisionedUser(`ap-entries-number-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+    await db.insert(autoproduksiProductionEntries).values({
+      userId: owner.userId,
+      dataUsahaId: owner.dataUsahaId,
+      subscriptionId: owner.subscriptionId,
+      formulaId: formula.id,
+      producedQty: "2",
+      transDate: "2026-10-03",
+      status: "success",
+      accurateTransactionId: "1250",
+      accurateTransactionNumber: "ADJ.2026.10.00001",
+    });
+    const res = await testApp.handle(new Request("http://localhost/autoproduksi/production-entries", { headers: { cookie: owner.cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { accurateTransactionId: string; accurateTransactionNumber: string }[] };
+    expect(body.entries[0]).toMatchObject({ accurateTransactionId: "1250", accurateTransactionNumber: "ADJ.2026.10.00001" });
+  });
+});

@@ -184,6 +184,9 @@ export const autoproduksiProductionEntries = pgTable(
     departmentName: varchar("department_name", { length: 100 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending -> processing -> success | failed
     accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }),
+    // § evaluasi client 2026-10-03 — nomor penyesuaian yang terbaca manusia (`number` dari save.do),
+    // ditampilkan di Riwayat; `accurateTransactionId` tetap id internal numerik. NULL untuk entry lama.
+    accurateTransactionNumber: varchar("accurate_transaction_number", { length: 100 }),
     errorMessage: text("error_message"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

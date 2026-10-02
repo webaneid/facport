@@ -1887,7 +1887,7 @@ export async function processAutoproduksiProductionImportRow(
   dataUsahaId: string,
   rawRow: Record<string, unknown>,
   columnMapping: Record<string, string>,
-): Promise<{ accurateTransactionId: string }> {
+): Promise<{ accurateTransactionId: string; accurateTransactionNumber: string | null }> {
   const rowErrors = autoproduksiProductionRowError(rawRow, columnMapping);
   if (rowErrors.length > 0) {
     throw new Error(`Kolom tidak lengkap/valid: ${rowErrors.join(", ")} (Tanggal format YYYY-MM-DD/DD-MM-YYYY, Jumlah > 0).`);
@@ -1947,6 +1947,7 @@ export async function processAutoproduksiProductionImportRow(
   try {
     const result = await saveInventoryAdjustment(ctx, payload);
     const accurateTransactionId = String(result.id);
+    const accurateTransactionNumber = result.number ? String(result.number) : null;
     await db.insert(autoproduksiProductionEntries).values({
       userId: batch.userId,
       dataUsahaId,
@@ -1957,9 +1958,10 @@ export async function processAutoproduksiProductionImportRow(
       ...entryFields,
       status: "success",
       accurateTransactionId,
+      accurateTransactionNumber,
       errorMessage: null,
     });
-    return { accurateTransactionId };
+    return { accurateTransactionId, accurateTransactionNumber };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await db.insert(autoproduksiProductionEntries).values({
@@ -2434,7 +2436,12 @@ async function main() {
       const result = await saveInventoryAdjustment(session, payload);
       await db
         .update(autoproduksiProductionEntries)
-        .set({ status: "success", accurateTransactionId: String(result.id), errorMessage: null })
+        .set({
+          status: "success",
+          accurateTransactionId: String(result.id),
+          accurateTransactionNumber: result.number ? String(result.number) : null,
+          errorMessage: null,
+        })
         .where(eq(autoproduksiProductionEntries.id, entryId));
       logger.info({ entryId, accurateTransactionId: result.id }, "AutoProduksi: input produksi berhasil");
     } catch (err) {
@@ -3277,7 +3284,13 @@ async function main() {
           );
           await db
             .update(importBatchRows)
-            .set({ status: "success", accurateTransactionId: result.accurateTransactionId, errorMessage: null, processedAt: new Date() })
+            .set({
+              status: "success",
+              accurateTransactionId: result.accurateTransactionId,
+              accurateTransactionNumber: result.accurateTransactionNumber,
+              errorMessage: null,
+              processedAt: new Date(),
+            })
             .where(eq(importBatchRows.id, row.id));
         } catch (err) {
           await db

@@ -51,6 +51,7 @@ const baseEntry: ProductionEntry = {
   departmentName: null,
   status: "pending",
   accurateTransactionId: null,
+  accurateTransactionNumber: null,
   errorMessage: null,
   createdAt: new Date(),
 };

@@ -58,6 +58,10 @@ export const importBatchRows = pgTable(
     // status tambahan sejak Fase 09: "cancelled" (9 char, muat varchar(20))
     status: varchar("status", { length: 20 }).notNull().default("pending"),
     accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }), // id FAKTUR Accurate
+    // § evaluasi client 2026-10-03 — NOMOR transaksi yang terbaca manusia (mis. "ADJ.2026.10.00001",
+    // `number` dari respons save.do), BEDA dari `accurateTransactionId` di atas yang id internal numerik
+    // Accurate. Baru diisi modul AutoProduksi (Import Produksi); NULL untuk modul lain & baris lama.
+    accurateTransactionNumber: varchar("accurate_transaction_number", { length: 100 }),
     // § Fase 09, ADR-0013 — id detailItem Accurate (BEDA dari id faktur di
     // atas) — WAJIB ada supaya "Batal Import" tahu persis item mana milik
     // baris ini di faktur yang mungkin gabungan lintas-batch (Fase 08).
