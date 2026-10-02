@@ -15,6 +15,7 @@ import { api } from "@/lib/api-client";
 import { filterFormulas, type FormulaStatusFilter } from "@/lib/filter-formulas";
 import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { parseQuantityInput } from "@/lib/parse-quantity";
 import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
 import { SearchableField } from "@/components/autoproduksi/searchable-accurate-field";
 import { UnitField, type ItemUnit } from "@/components/autoproduksi/unit-field";
@@ -217,7 +218,18 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setError("Nama Formula, Barang Jadi, dan Akun Perantara wajib diisi.");
       return;
     }
-    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && Number(i.quantity) > 0);
+    // § Baris yang SAMA SEKALI kosong diabaikan; baris yang sebagian terisi
+    // tapi tidak valid diberi pesan (dulu dibuang diam-diam, § parse-quantity.ts).
+    const filledRows = items.map((item, index) => ({ item, index })).filter(({ item }) => item.itemNo.trim() || item.itemUnitName.trim() || item.quantity.trim());
+    const validItems: { item: FormulaItem; quantity: number }[] = [];
+    for (const { item, index } of filledRows) {
+      const quantity = parseQuantityInput(item.quantity);
+      if (!item.itemNo.trim() || !item.itemUnitName.trim() || quantity === null) {
+        setError(`Bahan Baku baris ${index + 1} belum lengkap — isi kode barang, satuan, dan takaran angka > 0 (mis. 0,5).`);
+        return;
+      }
+      validItems.push({ item, quantity });
+    }
     if (validItems.length === 0) {
       setError("Minimal 1 Bahan Baku (kode barang, satuan, dan takaran > 0).");
       return;
@@ -232,12 +244,11 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       ...(standardCost.trim() ? { standardCost: Number(standardCost) } : {}),
       adjustmentAccountNo: adjustmentAccountNo.trim(),
       ...(adjustmentAccountName.trim() ? { adjustmentAccountName: adjustmentAccountName.trim() } : {}),
-      items: validItems.map((i) => ({
-        itemNo: i.itemNo.trim(),
-        itemUnitName: i.itemUnitName.trim(),
-        ...(i.itemName?.trim() ? { itemName: i.itemName.trim() } : {}),
-        // § konversi ke number TEPAT DI SINI, 1 titik — § komentar tipe FormulaItem.
-        quantity: Number(i.quantity),
+      items: validItems.map(({ item, quantity }) => ({
+        itemNo: item.itemNo.trim(),
+        itemUnitName: item.itemUnitName.trim(),
+        ...(item.itemName?.trim() ? { itemName: item.itemName.trim() } : {}),
+        quantity,
       })),
     };
     const res = formulaId ? await api.autoproduksi.formulas({ id: formulaId }).put(body) : await api.autoproduksi.formulas.post(body);

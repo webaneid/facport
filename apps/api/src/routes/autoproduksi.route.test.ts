@@ -550,3 +550,75 @@ describe("CRUD /autoproduksi/accounts — Akun Perantara lokal", () => {
     expect(detail.formula.adjustmentAccountName).toBe("Perantara Produksi");
   });
 });
+
+// § evaluasi client 2026-10-03 ("tidak bisa edit ... gagal menyimpan formula")
+// — sebelumnya TIDAK ADA test untuk PUT edit Formula sama sekali.
+describe("PUT /autoproduksi/formulas/:id (edit)", () => {
+  async function createFormula(cookie: string) {
+    const res = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    return ((await res.json()) as { formula: { id: string } }).formula.id;
+  }
+
+  const put = (cookie: string, id: string, body: unknown) =>
+    testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${id}`, {
+        method: "PUT",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  test("200 — edit pakai body persis seperti UI (takaran dari GET berupa string numeric dikonversi ke number), item diganti total", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+
+    const detailRes = await testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${id}`, { headers: { cookie: owner.cookie } }));
+    const detail = (await detailRes.json()) as { items: { itemNo: string; itemUnitName: string; quantity: string | number }[] };
+    // Takaran dari DB (numeric) datang sebagai string — UI mengonversi dengan Number() sebelum kirim.
+    const body = {
+      ...validFormulaBody,
+      name: "Bolu Kukus SP (edit)",
+      items: [
+        ...detail.items.map((i) => ({ itemNo: i.itemNo, itemUnitName: i.itemUnitName, quantity: Number(i.quantity) })),
+        { itemNo: "100099", itemUnitName: "Pouch", quantity: 0.25 },
+      ],
+    };
+    const res = await put(owner.cookie, id, body);
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, id));
+    expect(row!.name).toBe("Bolu Kukus SP (edit)");
+    expect(row!.isActive).toBe(true);
+    const items = await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, id));
+    expect(items).toHaveLength(3);
+    expect(items.some((i) => i.itemNo === "100099" && i.itemUnitName === "Pouch")).toBe(true);
+  });
+
+  test("edit TIDAK mengubah status Non-aktif kalau isActive tidak dikirim (UI tidak mengirimnya)", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-inactive-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+    await db.update(autoproduksiFormulas).set({ isActive: false }).where(eq(autoproduksiFormulas.id, id));
+    const res = await put(owner.cookie, id, validFormulaBody);
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, id));
+    expect(row!.isActive).toBe(false);
+  });
+
+  test("422 — takaran berupa string (bukan number) ditolak validasi; 404 — formula milik subscription lain", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-bad-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-formula-edit-other-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+
+    const bad = await put(owner.cookie, id, { ...validFormulaBody, items: [{ itemNo: "100012", itemUnitName: "KG", quantity: "0.5" }] });
+    expect(bad.status).toBe(422);
+
+    const notMine = await put(other.cookie, id, validFormulaBody);
+    expect(notMine.status).toBe(404);
+  });
+});
