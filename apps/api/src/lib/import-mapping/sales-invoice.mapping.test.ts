@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import { salesInvoiceTemplateGuide } from "./template-guide";
 import {
   salesInvoiceMapping,
   buildSalesInvoicePayload,
@@ -846,5 +847,42 @@ describe("Expense Project No (detailExpense.projectNo) — Fase 80", () => {
 
   test("defaultColumnMap — nama kolom sesuai", () => {
     expect(salesInvoiceMapping.defaultColumnMap["Expense Project No"]).toBe("expenseProjectNo");
+  });
+});
+
+describe("ITEM: ID Salesman → detailItem.salesmanListNumber (array string)", () => {
+  const columnMapping = { "Kode Barang": "itemNo", "ITEM: ID Salesman": "salesmanListNumber" };
+
+  test("satu ID jadi array berisi 1 string", () => {
+    const detail = buildDetailItemFromRow({ "Kode Barang": "BRG-1", "ITEM: ID Salesman": "S-001" }, columnMapping);
+    expect(detail.salesmanListNumber).toEqual(["S-001"]);
+  });
+
+  test("beberapa ID dipisah koma/titik-koma, spasi di-trim", () => {
+    const detail = buildDetailItemFromRow({ "Kode Barang": "BRG-1", "ITEM: ID Salesman": " S-001, S-002 ;S-003 " }, columnMapping);
+    expect(detail.salesmanListNumber).toEqual(["S-001", "S-002", "S-003"]);
+  });
+
+  test("angka polos dari Excel jadi string", () => {
+    const detail = buildDetailItemFromRow({ "Kode Barang": "BRG-1", "ITEM: ID Salesman": 101 }, columnMapping);
+    expect(detail.salesmanListNumber).toEqual(["101"]);
+  });
+
+  test("sel kosong / hanya pemisah — field tidak dikirim", () => {
+    expect(buildDetailItemFromRow({ "Kode Barang": "BRG-1", "ITEM: ID Salesman": "" }, columnMapping)).not.toHaveProperty("salesmanListNumber");
+    expect(buildDetailItemFromRow({ "Kode Barang": "BRG-1", "ITEM: ID Salesman": " , ; " }, columnMapping)).not.toHaveProperty("salesmanListNumber");
+  });
+
+  test("masuk ke detailItem tiap baris (bukan root payload), dan header template ter-auto-map", () => {
+    const payload = buildSalesInvoicePayload([{ "Kode Barang": "BRG-1", "ITEM: ID Salesman": "S-001" }, { "Kode Barang": "BRG-2" }], columnMapping);
+    expect(payload).not.toHaveProperty("salesmanListNumber");
+    expect((payload.detailItem as Record<string, unknown>[])[0]!.salesmanListNumber).toEqual(["S-001"]);
+    expect((payload.detailItem as Record<string, unknown>[])[1]).not.toHaveProperty("salesmanListNumber");
+    expect(salesInvoiceMapping.defaultColumnMap["ITEM: ID Salesman"]).toBe("salesmanListNumber");
+  });
+
+  test("template: kolom tepat setelah PPH", () => {
+    const cols = salesInvoiceTemplateGuide.map((g) => g.column);
+    expect(cols[cols.indexOf("PPH") + 1]).toBe("ITEM: ID Salesman");
   });
 });

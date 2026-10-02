@@ -100,6 +100,8 @@ export default function JournalVoucherImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
+  // Kolom Excel yang dipetakan ke "Nomor Transaksi" (journalNumber) — null kalau user tidak memetakannya.
+  const journalNumberColumn = Object.entries(batch.columnMapping ?? {}).find(([, field]) => field === "journalNumber")?.[0] ?? null;
   const isProcessing = batch.status === "processing";
 
   return (
@@ -172,6 +174,7 @@ export default function JournalVoucherImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-36">Nomor Transaksi</TableHead>
                 <TableHead className="w-20">Baris</TableHead>
                 <TableHead className="w-28">Status</TableHead>
                 <TableHead>ID Jurnal Accurate / Error</TableHead>
@@ -183,6 +186,9 @@ export default function JournalVoucherImportResultPage() {
                 .sort((a, b) => a.rowNumber - b.rowNumber)
                 .map((row) => (
                   <TableRow key={row.id}>
+                    <TableCell className="font-medium text-foreground">
+                      <TruncateText>{journalNumberColumn ? String(row.rawData[journalNumberColumn] ?? "").trim() || "-" : "-"}</TruncateText>
+                    </TableCell>
                     <TableCell>{row.rowNumber}</TableCell>
                     <TableCell>
                       <StatusBadge status={row.status} />

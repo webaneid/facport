@@ -550,3 +550,155 @@ describe("CRUD /autoproduksi/accounts — Akun Perantara lokal", () => {
     expect(detail.formula.adjustmentAccountName).toBe("Perantara Produksi");
   });
 });
+
+// § evaluasi client 2026-10-03 ("tidak bisa edit ... gagal menyimpan formula")
+// — sebelumnya TIDAK ADA test untuk PUT edit Formula sama sekali.
+describe("PUT /autoproduksi/formulas/:id (edit)", () => {
+  async function createFormula(cookie: string) {
+    const res = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    return ((await res.json()) as { formula: { id: string } }).formula.id;
+  }
+
+  const put = (cookie: string, id: string, body: unknown) =>
+    testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${id}`, {
+        method: "PUT",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  test("200 — edit pakai body persis seperti UI (takaran dari GET berupa string numeric dikonversi ke number), item diganti total", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+
+    const detailRes = await testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${id}`, { headers: { cookie: owner.cookie } }));
+    const detail = (await detailRes.json()) as { items: { itemNo: string; itemUnitName: string; quantity: string | number }[] };
+    // Takaran dari DB (numeric) datang sebagai string — UI mengonversi dengan Number() sebelum kirim.
+    const body = {
+      ...validFormulaBody,
+      name: "Bolu Kukus SP (edit)",
+      items: [
+        ...detail.items.map((i) => ({ itemNo: i.itemNo, itemUnitName: i.itemUnitName, quantity: Number(i.quantity) })),
+        { itemNo: "100099", itemUnitName: "Pouch", quantity: 0.25 },
+      ],
+    };
+    const res = await put(owner.cookie, id, body);
+    expect(res.status).toBe(200);
+
+    const [row] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, id));
+    expect(row!.name).toBe("Bolu Kukus SP (edit)");
+    expect(row!.isActive).toBe(true);
+    const items = await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, id));
+    expect(items).toHaveLength(3);
+    expect(items.some((i) => i.itemNo === "100099" && i.itemUnitName === "Pouch")).toBe(true);
+  });
+
+  test("edit TIDAK mengubah status Non-aktif kalau isActive tidak dikirim (UI tidak mengirimnya)", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-inactive-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+    await db.update(autoproduksiFormulas).set({ isActive: false }).where(eq(autoproduksiFormulas.id, id));
+    const res = await put(owner.cookie, id, validFormulaBody);
+    expect(res.status).toBe(200);
+    const [row] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, id));
+    expect(row!.isActive).toBe(false);
+  });
+
+  test("422 — takaran berupa string (bukan number) ditolak validasi; 404 — formula milik subscription lain", async () => {
+    const owner = await createProvisionedUser(`ap-formula-edit-bad-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-formula-edit-other-${runId}@test.local`);
+    const id = await createFormula(owner.cookie);
+
+    const bad = await put(owner.cookie, id, { ...validFormulaBody, items: [{ itemNo: "100012", itemUnitName: "KG", quantity: "0.5" }] });
+    expect(bad.status).toBe(422);
+
+    const notMine = await put(other.cookie, id, validFormulaBody);
+    expect(notMine.status).toBe(404);
+  });
+});
+
+describe("GET /autoproduksi/production-entries — nomor transaksi Accurate", () => {
+  test("mengembalikan accurateTransactionNumber (nomor terbaca manusia) di samping id internal", async () => {
+    const owner = await createProvisionedUser(`ap-entries-number-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+    await db.insert(autoproduksiProductionEntries).values({
+      userId: owner.userId,
+      dataUsahaId: owner.dataUsahaId,
+      subscriptionId: owner.subscriptionId,
+      formulaId: formula.id,
+      producedQty: "2",
+      transDate: "2026-10-03",
+      status: "success",
+      accurateTransactionId: "1250",
+      accurateTransactionNumber: "ADJ.2026.10.00001",
+    });
+    const res = await testApp.handle(new Request("http://localhost/autoproduksi/production-entries", { headers: { cookie: owner.cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { entries: { accurateTransactionId: string; accurateTransactionNumber: string }[] };
+    expect(body.entries[0]).toMatchObject({ accurateTransactionId: "1250", accurateTransactionNumber: "ADJ.2026.10.00001" });
+  });
+});
+
+describe("default Cabang/Gudang (diminta client 2026-10-03)", () => {
+  const send = (cookie: string, method: string, path: string, body?: unknown) =>
+    testApp.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: { cookie, "Content-Type": "application/json" },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      }),
+    );
+
+  test("GET sebelum diatur → semua null; PUT menyimpan, kosong/spasi menghapus", async () => {
+    const owner = await createProvisionedUser(`ap-defaults-crud-${runId}@test.local`);
+    const before = (await (await send(owner.cookie, "GET", "/autoproduksi/defaults")).json()) as { defaults: Record<string, string | null> };
+    expect(before.defaults).toEqual({ branchName: null, warehouseName: null, rawMaterialWarehouseName: null });
+
+    const put = await send(owner.cookie, "PUT", "/autoproduksi/defaults", { branchName: " KANTOR PUSAT ", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+    expect(put.status).toBe(200);
+    const after = (await (await send(owner.cookie, "GET", "/autoproduksi/defaults")).json()) as { defaults: Record<string, string | null> };
+    expect(after.defaults).toEqual({ branchName: "KANTOR PUSAT", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+
+    await send(owner.cookie, "PUT", "/autoproduksi/defaults", { branchName: "  ", warehouseName: null, rawMaterialWarehouseName: "Gudang Bahan" });
+    const cleared = (await (await send(owner.cookie, "GET", "/autoproduksi/defaults")).json()) as { defaults: Record<string, string | null> };
+    expect(cleared.defaults).toEqual({ branchName: null, warehouseName: null, rawMaterialWarehouseName: "Gudang Bahan" });
+  });
+
+  test("422 kalau lebih panjang dari kolom; default tidak bocor antar subscription", async () => {
+    const a = await createProvisionedUser(`ap-defaults-a-${runId}@test.local`);
+    const b = await createProvisionedUser(`ap-defaults-b-${runId}@test.local`);
+    expect((await send(a.cookie, "PUT", "/autoproduksi/defaults", { branchName: "X".repeat(101) })).status).toBe(422);
+    await send(a.cookie, "PUT", "/autoproduksi/defaults", { branchName: "CABANG A" });
+    const forB = (await (await send(b.cookie, "GET", "/autoproduksi/defaults")).json()) as { defaults: Record<string, string | null> };
+    expect(forB.defaults.branchName).toBeNull();
+  });
+
+  test("Input Produksi: isian kosong terisi default & tersimpan di entry; isian user menang", async () => {
+    const owner = await createProvisionedUser(`ap-defaults-entry-${runId}@test.local`);
+    const formulaRes = await send(owner.cookie, "POST", "/autoproduksi/formulas", validFormulaBody);
+    const { formula } = (await formulaRes.json()) as { formula: { id: string } };
+    await send(owner.cookie, "PUT", "/autoproduksi/defaults", { branchName: "KANTOR PUSAT", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+
+    const empty = await send(owner.cookie, "POST", "/autoproduksi/production-entries", { formulaId: formula.id, producedQty: 2, transDate: "2026-10-03" });
+    expect(empty.status).toBe(200);
+    const e1 = ((await empty.json()) as { entry: { branchName: string; warehouseName: string; rawMaterialWarehouseName: string } }).entry;
+    expect(e1).toMatchObject({ branchName: "KANTOR PUSAT", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+
+    const own = await send(owner.cookie, "POST", "/autoproduksi/production-entries", { formulaId: formula.id, producedQty: 1, transDate: "2026-10-03", branchName: "SURABAYA" });
+    const e2 = ((await own.json()) as { entry: { branchName: string; warehouseName: string } }).entry;
+    expect(e2).toMatchObject({ branchName: "SURABAYA", warehouseName: "Gudang Utama" });
+  });
+});

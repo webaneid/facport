@@ -8,6 +8,7 @@ import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
+import { accurateResultText } from "@/lib/accurate-result-text";
 
 // § Fase 159 — riwayat "Input Produksi", polling 3 detik mirror pola
 // `[batchId]/page.tsx` 23 modul lain (status berubah async lewat job
@@ -19,6 +20,7 @@ type Entry = {
   transDate: string;
   status: "pending" | "processing" | "success" | "failed";
   accurateTransactionId: string | null;
+  accurateTransactionNumber: string | null;
   errorMessage: string | null;
   createdAt: string;
 };
@@ -58,9 +60,9 @@ export default function AutoProduksiRiwayatPage() {
     }),
     columnHelper.display({
       id: "result",
-      header: "No. Penyesuaian Accurate / Error",
+      header: "No. Transaksi Accurate / Error",
       meta: { width: "30%" },
-      cell: ({ row }) => <TruncateText className="text-muted-foreground">{row.original.accurateTransactionId ?? row.original.errorMessage ?? "-"}</TruncateText>,
+      cell: ({ row }) => <TruncateText className="text-muted-foreground">{accurateResultText(row.original)}</TruncateText>,
     }),
   ];
 

@@ -50,6 +50,12 @@ export const salesInvoiceMapping = {
     useTax1: "detailItem.useTax1", // PPN
     useTax2: "detailItem.useTax2", // PPnBM
     useTax3: "detailItem.useTax3", // PPh23
+    // § diminta client 2026-10-03 — "ITEM: ID Salesman". Field resmi
+    // `detailItem[].salesmanListNumber` di `sales-invoice/save.do`
+    // (diverifikasi ke accurate-openapi.json): ARRAY string nomor identitas
+    // tenaga penjual, BUKAN string tunggal — sel Excel dikonversi di
+    // `toSalesmanList` (pisah koma/titik-koma untuk >1 salesman).
+    salesmanListNumber: "detailItem.salesmanListNumber",
     // § Fase 55 — "Atribut Tambahan" Accurate (menu Rancangan Formulir
     // Faktur Penjualan, screenshot client) = fitur "Data Classification"
     // di API resmi (diverifikasi ke accurate-openapi.json). Per BARIS
@@ -262,6 +268,7 @@ export const salesInvoiceMapping = {
     PPN: "useTax1",
     PPnBM: "useTax2",
     PPH: "useTax3",
+    "ITEM: ID Salesman": "salesmanListNumber",
     // § Fase 65 — bug ditemukan (feedback client, "Unit Price belum
     // masuk" dkk): dibandingkan header ASLI Excel standar Accurate
     // (`format_sales_inv_v7 (PLAN).xlsx`), TERNYATA MAYORITAS tebakan
@@ -503,6 +510,15 @@ function toAccurateBoolean(value: unknown): unknown {
 // isi angka polos di Excel (mis. "5"), SheetJS baca sebagai JS number
 // — dikirim sebagai number ke field yang expect string, Accurate
 // reject dengan pesan generik yang sama.
+// § `salesmanListNumber` WAJIB array string (bukan string/number tunggal) —
+// sel "A01, A02" jadi ["A01","A02"]; angka polos dari Excel (mis. 101) jadi "101".
+function toSalesmanList(value: unknown): string[] {
+  return String(value)
+    .split(/[,;]/)
+    .map((part) => part.trim())
+    .filter((part) => part !== "");
+}
+
 const PERCENT_STRING_FIELDS = new Set<SalesInvoiceField>(["cashDiscPercent", "itemDiscPercent"]);
 
 function toAccurateDate(value: unknown): unknown {
@@ -534,6 +550,10 @@ function extractRowValues(
       if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
       else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
       else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
+      else if (f === "salesmanListNumber") {
+        const list = toSalesmanList(raw);
+        if (list.length > 0) values[f] = list;
+      }
       else values[f] = raw;
     }
   }

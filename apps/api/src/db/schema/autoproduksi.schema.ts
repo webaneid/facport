@@ -140,6 +140,30 @@ export const autoproduksiIntermediaryAccounts = pgTable(
   ],
 );
 
+// § diminta client 2026-10-03 — DEFAULT konteks produksi per subscription
+// (Data Usaha): dipakai kalau Cabang/Gudang Barang Jadi/Gudang Bahan Baku
+// DIKOSONGKAN di Input Produksi (manual maupun Excel). Accurate tidak punya
+// "cabang pusat"/"gudang utama" bawaan yang bisa dirujuk lewat API dan nama
+// keduanya beda tiap Data Usaha, jadi nilainya diatur sendiri di halaman
+// Pengaturan AutoProduksi. Semua kolom nullable (belum diatur = perilaku
+// lama: field di-omit dari payload). Nilai yang TERPAKAI disalin ke
+// `autoproduksi_production_entries` saat dikirim (Riwayat tetap akurat
+// walau default diganti kemudian) — tidak ada FK ke tabel ini.
+export const autoproduksiDefaults = pgTable("autoproduksi_defaults", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  dataUsahaId: uuid("data_usaha_id")
+    .notNull()
+    .references(() => dataUsaha.id),
+  subscriptionId: uuid("subscription_id")
+    .notNull()
+    .references(() => subscriptions.id)
+    .unique(),
+  branchName: varchar("branch_name", { length: 100 }),
+  warehouseName: varchar("warehouse_name", { length: 100 }),
+  rawMaterialWarehouseName: varchar("raw_material_warehouse_name", { length: 100 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Log tiap "Input Produksi" = 1 job worker = 1 transaksi Penyesuaian
 // Persediaan di Accurate. TIDAK reuse import_batches/import_batch_rows
 // (skema itu untuk Excel-row-based, § ADR-0033 alasan conversion_logs
@@ -184,6 +208,9 @@ export const autoproduksiProductionEntries = pgTable(
     departmentName: varchar("department_name", { length: 100 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending -> processing -> success | failed
     accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }),
+    // § evaluasi client 2026-10-03 — nomor penyesuaian yang terbaca manusia (`number` dari save.do),
+    // ditampilkan di Riwayat; `accurateTransactionId` tetap id internal numerik. NULL untuk entry lama.
+    accurateTransactionNumber: varchar("accurate_transaction_number", { length: 100 }),
     errorMessage: text("error_message"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },

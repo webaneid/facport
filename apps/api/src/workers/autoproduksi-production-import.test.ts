@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
-import { user as userTable, dataUsaha, plans, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries } from "../db/schema";
+import { user as userTable, dataUsaha, plans, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiDefaults } from "../db/schema";
 import { createTestDataUsaha } from "../lib/test-fixtures";
 import { processAutoproduksiProductionImportRow } from "./index";
 import type { AccurateSessionContext } from "../lib/accurate-session";
@@ -54,6 +54,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (!subscriptionId) return;
+  await db.delete(autoproduksiDefaults).where(eq(autoproduksiDefaults.subscriptionId, subscriptionId));
   // Test "duplikat tapi satu non-aktif" lolos sampai Accurate → tersisa entry failed.
   await db.delete(autoproduksiProductionEntries).where(eq(autoproduksiProductionEntries.subscriptionId, subscriptionId));
   await db.delete(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
@@ -95,5 +96,30 @@ describe("processAutoproduksiProductionImportRow — resolusi Formula", () => {
   test("nama Formula di DB berspasi ujung tetap ketemu", async () => {
     await insertFormula(`  Roti Spasi ${runId} `, false);
     await expect(run(`Roti Spasi ${runId}`)).rejects.toThrow("NON-AKTIF");
+  });
+});
+
+describe("default Cabang/Gudang di Import Produksi (diminta client 2026-10-03)", () => {
+  const rowWith = (name: string, extra: Record<string, unknown> = {}) => ({ ...row(name), ...extra });
+  const mappingWithBranch = { ...mapping, Cabang: "branchName", "Gudang Barang Jadi": "warehouseName" };
+
+  test("kolom Cabang/Gudang kosong diisi default; yang diisi di Excel menang (terlihat di entry tersimpan)", async () => {
+    await db.insert(autoproduksiDefaults).values({ dataUsahaId, subscriptionId, branchName: "KANTOR PUSAT", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+    await insertFormula(`Roti Default ${runId}`, true);
+
+    // ctx kosong → gagal DI panggilan Accurate; entry `failed` tetap menyimpan konteks yang sudah ter-resolve.
+    await processAutoproduksiProductionImportRow(ctx, { userId, subscriptionId }, dataUsahaId, rowWith(`Roti Default ${runId}`), mappingWithBranch).catch(() => {});
+    await processAutoproduksiProductionImportRow(
+      ctx,
+      { userId, subscriptionId },
+      dataUsahaId,
+      rowWith(`Roti Default ${runId}`, { Cabang: "SURABAYA" }),
+      mappingWithBranch,
+    ).catch(() => {});
+
+    const entries = await db.select().from(autoproduksiProductionEntries).where(eq(autoproduksiProductionEntries.subscriptionId, subscriptionId));
+    const byBranch = (b: string) => entries.find((e) => e.branchName === b);
+    expect(byBranch("KANTOR PUSAT")).toMatchObject({ warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" });
+    expect(byBranch("SURABAYA")).toMatchObject({ warehouseName: "Gudang Utama" });
   });
 });

@@ -15,8 +15,10 @@ import { api } from "@/lib/api-client";
 import { filterFormulas, type FormulaStatusFilter } from "@/lib/filter-formulas";
 import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { parseQuantityInput } from "@/lib/parse-quantity";
 import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
 import { SearchableField } from "@/components/autoproduksi/searchable-accurate-field";
+import { UnitField, type ItemUnit } from "@/components/autoproduksi/unit-field";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
 // form-based (BUKAN Excel-upload seperti 23 modul lain). Formula (BOM):
@@ -42,7 +44,7 @@ import { SearchableField } from "@/components/autoproduksi/searchable-accurate-f
 // (§ kolom "Status" di tabel List Formula) — non-aktif = tidak bisa
 // dipilih/dicari utk Input Produksi baru, tapi tetap tampil di sini
 // sebagai dokumentasi.
-type AccurateItemResult = { no: string; name: string; unitName: string };
+type AccurateItemResult = { no: string; name: string; unitName: string; units?: ItemUnit[] };
 
 // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (evaluasi client) — `quantity`
 // SENGAJA string (BUKAN number) di state form, sepanjang masa edit.
@@ -112,14 +114,24 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const [itemResults, setItemResults] = useState<AccurateItemResult[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // § evaluasi client 2026-10-03 — daftar satuan per kode barang (barang bisa
+  // punya >1 satuan, mis. KG & Pouch), diisi dari SETIAP hasil pencarian supaya
+  // baris yang sudah dipilih tetap punya pilihan satuan walau pencarian berganti.
+  const [unitsByItemNo, setUnitsByItemNo] = useState<Record<string, ItemUnit[]>>({});
+
+  function rememberUnits(results: AccurateItemResult[]): AccurateItemResult[] {
+    const found = results.filter((r) => r.units && r.units.length > 0);
+    if (found.length > 0) setUnitsByItemNo((prev) => ({ ...prev, ...Object.fromEntries(found.map((r) => [r.no, r.units!])) }));
+    return results;
+  }
 
   // § HOTFIX 2026-09-29 — WAJIB debounce (§ use-debounced-callback.ts):
   // ditemukan NYATA di production, ketik 4 huruf ("gula") tanpa debounce
   // langsung 429 dari Accurate (rate limit /accurate 60/menit per-IP,
   // dibagi bersama traffic Accurate lain). 350ms sama seperti default
   // `SearchForm` (§ ADR-0024) — konsisten timing debounce lintas project.
-  const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(await searchAccurateItems(q)), 350);
-  const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(await searchAccurateItems(q)), 350);
+  const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(rememberUnits(await searchAccurateItems(q))), 350);
+  const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(rememberUnits(await searchAccurateItems(q))), 350);
 
   async function openDialog() {
     setOpen(true);
@@ -161,6 +173,13 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       // (§ komentar tipe `FormulaItem` di atas) — `String(...)` membungkus
       // keduanya jadi representasi teks yang konsisten untuk state form.
       setItems(detail.items.length > 0 ? detail.items.map((i) => ({ ...i, quantity: String(i.quantity) })) : [{ ...EMPTY_ITEM }]);
+      // Muat daftar satuan barang yang SUDAH tersimpan (tanpa menunggu, tidak memblokir form) —
+      // cari pakai nama kalau ada (pencarian Accurate tidak selalu cocok ke kode), cocokkan hasil by kode.
+      const saved = [
+        { no: detail.formula.finishedGoodItemNo, name: detail.formula.finishedGoodItemName ?? "" },
+        ...detail.items.map((i) => ({ no: i.itemNo, name: i.itemName ?? "" })),
+      ].filter((x, idx, all) => x.no && all.findIndex((y) => y.no === x.no) === idx);
+      void Promise.all(saved.map(async (x) => rememberUnits((await searchAccurateItems(x.name || x.no)).filter((r) => r.no === x.no))));
     }
   }
 
@@ -199,7 +218,18 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setError("Nama Formula, Barang Jadi, dan Akun Perantara wajib diisi.");
       return;
     }
-    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && Number(i.quantity) > 0);
+    // § Baris yang SAMA SEKALI kosong diabaikan; baris yang sebagian terisi
+    // tapi tidak valid diberi pesan (dulu dibuang diam-diam, § parse-quantity.ts).
+    const filledRows = items.map((item, index) => ({ item, index })).filter(({ item }) => item.itemNo.trim() || item.itemUnitName.trim() || item.quantity.trim());
+    const validItems: { item: FormulaItem; quantity: number }[] = [];
+    for (const { item, index } of filledRows) {
+      const quantity = parseQuantityInput(item.quantity);
+      if (!item.itemNo.trim() || !item.itemUnitName.trim() || quantity === null) {
+        setError(`Bahan Baku baris ${index + 1} belum lengkap — isi kode barang, satuan, dan takaran angka > 0 (mis. 0,5).`);
+        return;
+      }
+      validItems.push({ item, quantity });
+    }
     if (validItems.length === 0) {
       setError("Minimal 1 Bahan Baku (kode barang, satuan, dan takaran > 0).");
       return;
@@ -214,18 +244,22 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       ...(standardCost.trim() ? { standardCost: Number(standardCost) } : {}),
       adjustmentAccountNo: adjustmentAccountNo.trim(),
       ...(adjustmentAccountName.trim() ? { adjustmentAccountName: adjustmentAccountName.trim() } : {}),
-      items: validItems.map((i) => ({
-        itemNo: i.itemNo.trim(),
-        itemUnitName: i.itemUnitName.trim(),
-        ...(i.itemName?.trim() ? { itemName: i.itemName.trim() } : {}),
-        // § konversi ke number TEPAT DI SINI, 1 titik — § komentar tipe FormulaItem.
-        quantity: Number(i.quantity),
+      items: validItems.map(({ item, quantity }) => ({
+        itemNo: item.itemNo.trim(),
+        itemUnitName: item.itemUnitName.trim(),
+        ...(item.itemName?.trim() ? { itemName: item.itemName.trim() } : {}),
+        quantity,
       })),
     };
     const res = formulaId ? await api.autoproduksi.formulas({ id: formulaId }).put(body) : await api.autoproduksi.formulas.post(body);
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal menyimpan formula — cek kembali isian.");
+      const value = res.error.value as { code?: string; itemNo?: string; unitName?: string; availableUnits?: string[] } | undefined;
+      setError(
+        value?.code === "UNIT_NOT_IN_ITEM"
+          ? `Satuan "${value.unitName}" tidak terdaftar di barang ${value.itemNo} di Accurate. Satuan yang tersedia: ${(value.availableUnits ?? []).join(", ")}.`
+          : "Gagal menyimpan formula — cek kembali isian.",
+      );
       return;
     }
     toast.success(formulaId ? "Formula diperbarui." : "Formula dibuat.");
@@ -263,8 +297,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Satuan (otomatis, atau isi manual)</span>
-              <Input value={finishedGoodItemUnitName} onChange={(e) => setFinishedGoodItemUnitName(e.target.value)} placeholder="Pilih barang dulu" />
+              <span className="text-xs text-muted-foreground">Satuan (otomatis; pilih kalau barang punya beberapa satuan)</span>
+              <UnitField value={finishedGoodItemUnitName} units={unitsByItemNo[finishedGoodItemNo]} onChange={setFinishedGoodItemUnitName} placeholder="Pilih barang dulu" />
             </label>
             <label className="col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
@@ -294,7 +328,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
                   placeholder="Cari Bahan Baku..."
                   options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
                 />
-                <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
+                <UnitField value={item.itemUnitName} units={unitsByItemNo[item.itemNo]} onChange={(unit) => updateItem(index, { itemUnitName: unit })} placeholder="Satuan" />
                 <Input
                   type="text"
                   inputMode="decimal"

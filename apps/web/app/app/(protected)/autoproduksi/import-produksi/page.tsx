@@ -29,9 +29,9 @@ const ACCURATE_FIELDS = [
   { value: "transDate", label: "Tanggal (wajib)" },
   { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada, AKTIF, & namanya unik)" },
   { value: "producedQty", label: "Jumlah (wajib)" },
-  { value: "branchName", label: "Cabang (opsional)" },
-  { value: "warehouseName", label: "Gudang Barang Jadi (opsional)" },
-  { value: "rawMaterialWarehouseName", label: "Gudang Bahan Baku (opsional — berlaku ke semua Bahan Baku resep)" },
+  { value: "branchName", label: "Cabang (opsional — kosong = default Pengaturan)" },
+  { value: "warehouseName", label: "Gudang Barang Jadi (opsional — kosong = default Pengaturan)" },
+  { value: "rawMaterialWarehouseName", label: "Gudang Bahan Baku (opsional — berlaku ke semua Bahan Baku resep; kosong = default Pengaturan)" },
   { value: "projectNo", label: "Proyek (opsional)" },
   { value: "departmentName", label: "Departemen (opsional)" },
 ] as const;

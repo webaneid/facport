@@ -64,6 +64,7 @@ const ACCURATE_FIELDS = [
   { value: "useTax1", label: "PPN (Y/N)" },
   { value: "useTax2", label: "PPnBM (Y/N)" },
   { value: "useTax3", label: "PPh23 (Y/N)" },
+  { value: "salesmanListNumber", label: "ID Salesman (barang)" },
   { value: "customerName", label: "Nama Customer Baru (isi kalau Customer belum ada)" },
   { value: "customerCategoryName", label: "Kategori Customer Baru (default: Umum)" },
   { value: "customerWorkPhone", label: "Telepon Bisnis Customer Baru" },

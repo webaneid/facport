@@ -224,6 +224,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
+  { column: "ITEM: ID Salesman", required: false, example: "S-001", description: "ID/nomor identitas salesman yang menangani barang ini (harus sudah terdaftar di Accurate). Lebih dari satu salesman: pisahkan dengan koma, mis. \"S-001, S-002\"." },
   // § Fase 71 (2026-09-08) — SEMPAT dikira "ITEM: CUSTOM CHARACTER N"
   // itu sinonim Kategori Keuangan (Fase 69, KELIRU), lalu sempat
   // dianggap TIDAK ADA field API-nya sama sekali setelah balasan
@@ -865,6 +866,7 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
   { column: "Item Qty", required: true, example: "5", description: "Jumlah barang yang diretur." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client; posisi dekat kolom satuan)." },
   { column: "Item Notes", required: false, example: "", description: "Catatan untuk baris barang ini." },
   { column: "Item Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
@@ -915,7 +917,6 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "EXPENSE: Finance Category 8", required: false, example: "", description: "Kategori Keuangan 8, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 9", required: false, example: "", description: "Kategori Keuangan 9, sama catatan di atas." },
   { column: "EXPENSE: Finance Category 10", required: false, example: "", description: "Kategori Keuangan 10, sama catatan di atas." },
-  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
 ];
 
 // § Fase 123, architecture-sales-quotation.md — dokumen PALING AWAL
@@ -1522,9 +1523,9 @@ export const autoproduksiProductionTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: "YYYY-MM-DD (mis. 2026-07-13) atau DD/MM/YYYY (mis. 13/07/2026)", example: "2026-07-13", description: "Tanggal produksi." },
   { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula PERSIS seperti di halaman List Formula — WAJIB sudah ada, AKTIF, dan namanya UNIK (kalau ada 2 Formula nama sama, baris ini akan gagal, ganti nama salah satu Formula dulu)." },
   { column: "Jumlah", required: true, example: "15", description: "Jumlah Barang Jadi yang diproduksi — kebutuhan Bahan Baku dihitung otomatis dari takaran Formula × Jumlah ini." },
-  { column: "Cabang", required: false, example: "JAKARTA", description: "Nama cabang transaksi — kosongkan untuk pakai default preferensi Accurate." },
-  { column: "Gudang Barang Jadi", required: false, example: "Utama", description: "Gudang tempat Barang Jadi hasil produksi masuk." },
-  { column: "Gudang Bahan Baku", required: false, example: "Utama", description: "Gudang tempat SEMUA Bahan Baku resep ini diambil (1 gudang untuk semua baris Bahan Baku)." },
+  { column: "Cabang", required: false, example: "JAKARTA", description: "Nama cabang transaksi — kosongkan untuk pakai Cabang default dari Pengaturan AutoProduksi (kalau belum diatur: default preferensi Accurate, yang DITOLAK untuk perusahaan multi-cabang)." },
+  { column: "Gudang Barang Jadi", required: false, example: "Utama", description: "Gudang tempat Barang Jadi hasil produksi masuk — kosongkan untuk pakai Gudang Barang Jadi default dari Pengaturan AutoProduksi." },
+  { column: "Gudang Bahan Baku", required: false, example: "Utama", description: "Gudang tempat SEMUA Bahan Baku resep ini diambil (1 gudang untuk semua baris Bahan Baku) — kosongkan untuk pakai Gudang Bahan Baku default dari Pengaturan AutoProduksi." },
   { column: "Proyek", required: false, example: "", description: "Kode proyek untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
   { column: "Departemen", required: false, example: "", description: "Nama departemen untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
 ];

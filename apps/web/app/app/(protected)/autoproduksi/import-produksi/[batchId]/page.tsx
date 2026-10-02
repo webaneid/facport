@@ -13,6 +13,7 @@ import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
 import { api } from "@/lib/api-client";
+import { accurateResultText } from "@/lib/accurate-result-text";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
@@ -21,6 +22,7 @@ type Row = {
   rowNumber: number;
   status: string;
   accurateTransactionId: string | null;
+  accurateTransactionNumber: string | null;
   errorMessage: string | null;
   rawData: Record<string, unknown>;
 };
@@ -166,7 +168,7 @@ export default function AutoproduksiProductionImportResultPage() {
               <TableRow>
                 <TableHead className="w-20">Baris</TableHead>
                 <TableHead className="w-28">Status</TableHead>
-                <TableHead>ID Penyesuaian Persediaan Accurate / Error</TableHead>
+                <TableHead>No. Transaksi Accurate / Error</TableHead>
                 <TableHead className="w-16 text-right">Aksi</TableHead>
               </TableRow>
             </TableHeader>
@@ -180,7 +182,7 @@ export default function AutoproduksiProductionImportResultPage() {
                       <StatusBadge status={row.status} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      <TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText>
+                      <TruncateText>{accurateResultText(row)}</TruncateText>
                     </TableCell>
                     <TableCell>
                       {row.status === "failed" && batch.columnMapping && (

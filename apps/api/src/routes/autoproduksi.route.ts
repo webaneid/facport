@@ -1,7 +1,10 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts } from "../db/schema";
+import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
+import { applyContextDefaults } from "../lib/autoproduksi";
+import { loadAutoproduksiDefaults } from "../lib/autoproduksi-defaults";
+import { checkFormulaUnits, unitTargetKey } from "../lib/autoproduksi-unit-check";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { boss, JOBS, startQueue } from "../lib/queue";
@@ -56,6 +59,31 @@ const formulaBodySchema = t.Object({
   items: t.Array(formulaItemSchema, { minItems: 1 }),
 });
 
+type FormulaBody = typeof formulaBodySchema.static;
+
+// § evaluasi client 2026-10-03 — satuan Barang Jadi & tiap Bahan Baku dicocokkan ke master barang
+// Accurate SEBELUM Formula disimpan (§ autoproduksi-unit-check.ts, FAIL-OPEN kalau tidak bisa dicek).
+// Salah satu tidak cocok → 422 UNIT_NOT_IN_ITEM; beda huruf besar/kecil diperbaiki ke ejaan master.
+async function validateFormulaUnits(
+  dataUsahaId: string,
+  body: FormulaBody,
+): Promise<{ error: { code: "UNIT_NOT_IN_ITEM"; itemNo: string; unitName: string; availableUnits: string[] } } | { body: FormulaBody }> {
+  const targets = [
+    { itemNo: body.finishedGoodItemNo, unitName: body.finishedGoodItemUnitName },
+    ...body.items.map((item) => ({ itemNo: item.itemNo, unitName: item.itemUnitName })),
+  ];
+  const result = await checkFormulaUnits(dataUsahaId, targets);
+  if (!result.ok) return { error: { code: "UNIT_NOT_IN_ITEM", itemNo: result.itemNo, unitName: result.unitName, availableUnits: result.available } };
+  const fix = (itemNo: string, unitName: string) => result.canonical[unitTargetKey({ itemNo, unitName })] ?? unitName;
+  return {
+    body: {
+      ...body,
+      finishedGoodItemUnitName: fix(body.finishedGoodItemNo, body.finishedGoodItemUnitName),
+      items: body.items.map((item) => ({ ...item, itemUnitName: fix(item.itemNo, item.itemUnitName) })),
+    },
+  };
+}
+
 async function loadFormulaWithItems(formulaId: string, subscriptionId: string) {
   const [formula] = await db
     .select()
@@ -99,7 +127,13 @@ export const autoproduksiRoute = new Elysia()
   )
   .post(
     "/autoproduksi/formulas",
-    async ({ body, user, subscription }) => {
+    async ({ body: rawBody, user, subscription, set }) => {
+      const checked = await validateFormulaUnits(subscription.dataUsahaId, rawBody);
+      if ("error" in checked) {
+        set.status = 422;
+        return checked.error;
+      }
+      const body = checked.body;
       const formula = await db.transaction(async (tx) => {
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
@@ -135,12 +169,18 @@ export const autoproduksiRoute = new Elysia()
   )
   .put(
     "/autoproduksi/formulas/:id",
-    async ({ params, body, subscription, set }) => {
+    async ({ params, body: rawBody, subscription, set }) => {
       const existing = await loadFormulaWithItems(params.id, subscription.id);
       if (!existing) {
         set.status = 404;
         return { code: "FORMULA_NOT_FOUND" };
       }
+      const checked = await validateFormulaUnits(subscription.dataUsahaId, rawBody);
+      if ("error" in checked) {
+        set.status = 422;
+        return checked.error;
+      }
+      const body = checked.body;
       await db.transaction(async (tx) => {
         await tx
           .update(autoproduksiFormulas)
@@ -233,6 +273,7 @@ export const autoproduksiRoute = new Elysia()
           transDate: autoproduksiProductionEntries.transDate,
           status: autoproduksiProductionEntries.status,
           accurateTransactionId: autoproduksiProductionEntries.accurateTransactionId,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
           errorMessage: autoproduksiProductionEntries.errorMessage,
           createdAt: autoproduksiProductionEntries.createdAt,
         })
@@ -265,6 +306,16 @@ export const autoproduksiRoute = new Elysia()
         set.status = 409;
         return { code: "FORMULA_INACTIVE" };
       }
+      // § diminta client 2026-10-03 — Cabang/Gudang yang dikosongkan diisi dari
+      // default Pengaturan AutoProduksi; nilai yang TERPAKAI disimpan di entry.
+      const context = applyContextDefaults(
+        {
+          branchName: body.branchName ?? null,
+          warehouseName: body.warehouseName ?? null,
+          rawMaterialWarehouseName: body.rawMaterialWarehouseName ?? null,
+        },
+        await loadAutoproduksiDefaults(subscription.id),
+      );
       const [entry] = await db
         .insert(autoproduksiProductionEntries)
         .values({
@@ -274,9 +325,7 @@ export const autoproduksiRoute = new Elysia()
           formulaId: body.formulaId,
           producedQty: String(body.producedQty),
           transDate: body.transDate,
-          branchName: body.branchName ?? null,
-          warehouseName: body.warehouseName ?? null,
-          rawMaterialWarehouseName: body.rawMaterialWarehouseName ?? null,
+          ...context,
           projectNo: body.projectNo ?? null,
           departmentName: body.departmentName ?? null,
           status: "pending",
@@ -303,6 +352,42 @@ export const autoproduksiRoute = new Elysia()
         rawMaterialWarehouseName: t.Optional(t.String({ maxLength: 100 })),
         projectNo: t.Optional(t.String({ maxLength: 50 })),
         departmentName: t.Optional(t.String({ maxLength: 100 })),
+      }),
+    },
+  )
+  // § diminta client 2026-10-03 — default Cabang/Gudang untuk Input Produksi
+  // yang dikosongkan (§ `applyContextDefaults`). 100% lokal, tanpa panggilan
+  // Accurate. String kosong/null = hapus default.
+  .get(
+    "/autoproduksi/defaults",
+    async ({ subscription }) => ({
+      defaults: (await loadAutoproduksiDefaults(subscription.id)) ?? { branchName: null, warehouseName: null, rawMaterialWarehouseName: null },
+    }),
+    { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  .put(
+    "/autoproduksi/defaults",
+    async ({ body, subscription }) => {
+      const clean = (v: string | null | undefined) => (v && v.trim() !== "" ? v.trim() : null);
+      const values = {
+        branchName: clean(body.branchName),
+        warehouseName: clean(body.warehouseName),
+        rawMaterialWarehouseName: clean(body.rawMaterialWarehouseName),
+        updatedAt: new Date(),
+      };
+      await db
+        .insert(autoproduksiDefaults)
+        .values({ dataUsahaId: subscription.dataUsahaId, subscriptionId: subscription.id, ...values })
+        .onConflictDoUpdate({ target: autoproduksiDefaults.subscriptionId, set: values });
+      return { defaults: { branchName: values.branchName, warehouseName: values.warehouseName, rawMaterialWarehouseName: values.rawMaterialWarehouseName } };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      body: t.Object({
+        branchName: t.Optional(t.Union([t.String({ maxLength: 100 }), t.Null()])),
+        warehouseName: t.Optional(t.Union([t.String({ maxLength: 100 }), t.Null()])),
+        rawMaterialWarehouseName: t.Optional(t.Union([t.String({ maxLength: 100 }), t.Null()])),
       }),
     },
   )

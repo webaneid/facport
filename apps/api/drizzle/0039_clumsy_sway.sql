@@ -1,0 +1,2 @@
+ALTER TABLE "autoproduksi_production_entries" ADD COLUMN "accurate_transaction_number" varchar(100);--> statement-breakpoint
+ALTER TABLE "import_batch_rows" ADD COLUMN "accurate_transaction_number" varchar(100);
