@@ -224,6 +224,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
+  { column: "ITEM: ID Salesman", required: false, example: "S-001", description: "ID/nomor identitas salesman yang menangani barang ini (harus sudah terdaftar di Accurate). Lebih dari satu salesman: pisahkan dengan koma, mis. \"S-001, S-002\"." },
   // § Fase 71 (2026-09-08) — SEMPAT dikira "ITEM: CUSTOM CHARACTER N"
   // itu sinonim Kategori Keuangan (Fase 69, KELIRU), lalu sempat
   // dianggap TIDAK ADA field API-nya sama sekali setelah balasan

@@ -103,6 +103,12 @@ siapa pun yang sudah mapping PO Number tanpa Trans No). Tipe
 literal) — lihat `groupSalesInvoiceRows` di `sales-invoice.mapping.ts`
 untuk prioritas per-baris lengkap.
 
+**Kolom "ITEM: ID Salesman" (diminta client 2026-10-03):** dipetakan ke `detailItem[].salesmanListNumber` — field resmi
+`sales-invoice/save.do` (diverifikasi ke `accurate-openapi.json`), tipe **array string** nomor identitas tenaga penjual, per baris
+barang. Sel Excel dikonversi ke array (`toSalesmanList`): pisah koma/titik-koma untuk >1 salesman, angka polos jadi string, sel
+kosong = field tidak dikirim. Posisi di template: tepat setelah kolom "PPH". Salesman harus sudah terdaftar di Accurate (kita tidak
+auto-create). Belum diuji ke akun Accurate sungguhan. Karena `sales-invoice.mapping.ts` di-import worker, rilis butuh runbook **Full**.
+
 ## Kolom Excel & UI — Fix "Fiscal Rate" (Kurs Pajak) hilang, 2026-09-22
 Client tanya "Rate Pajak kok tidak ada?" (dikira minta field persentase pajak baru — TIDAK ADA di API Accurate manapun,
 dikonfirmasi live portal developer). Setelah dibandingkan ke format Excel LAMA client (`docs/referencehtml/facport/format_sales_inv_v7.xlsx`,
