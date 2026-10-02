@@ -6038,3 +6038,72 @@ memory rendah) adalah sinyal cepat yang berguna buat bedakan "job
 genuinely masih jalan lambat" vs "job betulan deadlock/infinite-loop"
 SEBELUM mengambil tindakan drastis (restart paksa) yang bisa
 menyebabkan data tidak konsisten di tengah proses import yang sah.
+
+## 2026-10-02 — BUG PRODUKSI (regresi Fase 165): dashboard customer CRASH TOTAL kalau ada batch cancellable dari 19 modul baru — "Event handlers cannot be passed to Client Component props"
+
+**Gejala**: customer Untung Suroto (PT Maginet Indonesia) klik Data Usaha
+di `/pilih-usaha`, mendarat ke `app.facinstitute.id` dengan halaman error
+generik browser ("This page didn't load — A server error occurred").
+Log `facport-web-1` banjir error berulang:
+```
+Error: Event handlers cannot be passed to Client Component props.
+  {batch: ..., onConfirm: function onConfirm, onCancelled: ...}
+If you need interactivity, consider converting part of this to a Client Component.
+digest: '2594968111'
+```
+digest-nya PERSIS sama dengan yang tampil di screenshot customer —
+konfirmasi langsung, bukan kebetulan.
+
+**Akar masalah**: `components/import-archive/import-batch-table.tsx`
+dipakai DUA konteks — Dashboard (`app/app/(protected)/page.tsx`, SERVER
+COMPONENT, `<ImportBatchTable batches={...} timezone={...}
+isDataUsahaOwner={...} />` TANPA prop `onChanged`) dan halaman Arsip
+Import (Client Component). File ini SENDIRI TIDAK PERNAH ditandai
+`"use client"` — sebelum Fase 165 ini aman, karena SEMUA dialog Cancel
+yang ada (`PurchaseInvoiceCancelImportDialog`/`SalesInvoiceCancelImportDialog`)
+cuma terima prop `batch` (DATA murni, serializable lintas batas Server→
+Client React). Fase 165 menambah `GenericCancelImportDialog` yang
+SENGAJA terima prop `onConfirm` (FUNGSI, demi type-safety Eden Treaty
+per modul — § desain dicatat di `docs/architecture/architecture-batal-
+import-generic.md`) — begitu `import-batch-table.tsx` (yang jalan di
+SERVER karena dipanggil dari Dashboard Server Component, dan sendirinya
+tidak client-marked) merender dialog itu dengan `onConfirm={() => api[...].post()}`
+(closure baru), React MENOLAK KERAS mengirim fungsi itu lewat RSC
+payload — crash total, BUKAN cuma baris batch yang bermasalah, SELURUH
+halaman dashboard gagal render untuk customer MANA PUN yang kebetulan
+punya minimal 1 batch berstatus cancellable dari SALAH SATU 19 modul
+baru. Halaman Arsip Import (`/import/arsip`, Client Component) TIDAK
+kena karena parent-nya sendiri sudah client, jadi `import-batch-table.tsx`
+ikut dirender client-side walau tanpa direktif eksplisit — INI YANG
+BIKIN BUG LOLOS dari typecheck/lint/test/security-review/browser-test
+sesi itu (verifikasi waktu itu kemungkinan cuma lewat halaman Arsip
+Import, bukan Dashboard — atau akun test tidak punya batch cancellable
+saat dicoba).
+
+**Fix**: tambah `"use client";` eksplisit di baris pertama
+`import-batch-table.tsx`. Sekarang KONSISTEN client-side di KEDUA
+konteks pemanggil — tidak ada lagi fungsi yang perlu menyeberang batas
+serialisasi RSC, karena batas Server→Client sekarang ada di titik
+`<ImportBatchTable .../>` itu sendiri (props di situ murni data,
+`onChanged` tetap `undefined` dari Dashboard seperti sebelumnya — TIDAK
+ADA perubahan perilaku yang disengaja, murni perbaikan boundary).
+Typecheck+lint+build bersih setelah fix. Verifikasi browser langsung
+TIDAK dilakukan (dev server API lokal down saat insiden, § catatan
+sesi) — mengandalkan pemahaman akar masalah yang jelas (React error
+message eksplisit + digest cocok persis) + build sukses, direkomendasikan
+verifikasi cepat di production langsung dengan customer setelah deploy.
+
+**Pelajaran KRUSIAL**: komponen yang dipakai BAIK dari Server Component
+MAUPUN Client Component HARUS di-treat sebagai "boundary-sensitive" —
+setiap kali menambah prop FUNGSI baru ke komponen seperti ini (atau ke
+anak-anaknya), WAJIB cek SEMUA titik pemanggilnya, bukan cuma titik yang
+sedang disentuh. Security-review Fase 165 (via subagent) mengecek
+tenant-isolation/otorisasi dengan sangat teliti, tapi TIDAK dirancang
+untuk menangkap kelas bug INI (React Server Component boundary) — bug
+kelas ini butuh browser-test SUNGGUHAN pada halaman yang BENERAN
+server-rendered dengan data yang memicu kondisinya (bukan cuma
+assumsi "typecheck lolos = aman"), atau linting tambahan
+(`eslint-plugin-react-server-components` dkk, belum dipakai project
+ini) yang secara statis menangkap fungsi melewati boundary tanpa
+"use client". Dicatat sebagai kemungkinan perbaikan tooling ke depan,
+bukan dikerjakan sekarang.

@@ -1,3 +1,24 @@
+"use client";
+
+// § BUG PRODUKSI DITEMUKAN & DIPERBAIKI 2026-10-02 — komponen ini dipakai
+// dashboard (Server Component, `app/app/(protected)/page.tsx`) DAN halaman
+// Arsip Import (Client Component). Sebelum fase 165, semua dialog Cancel
+// (`PurchaseInvoiceCancelImportDialog`/`SalesInvoiceCancelImportDialog`)
+// cuma terima prop DATA (`batch`, serializable) — aman melewati batas
+// Server→Client walau file ini sendiri TIDAK ditandai "use client" (Next.js
+// render dia di server, lalu nested Client Component dialog di-hydrate di
+// browser). Fase 165 menambah `GenericCancelImportDialog` yang terima prop
+// `onConfirm` (FUNGSI, demi type-safety Eden per modul) — begitu file ini
+// (tanpa "use client") merender dialog itu dari konteks SERVER (dashboard),
+// React menolak keras: "Event handlers cannot be passed to Client Component
+// props" — dashboard customer manapun yang punya batch cancellable dari 19
+// modul baru CRASH TOTAL (500, digest acak tiap render). Ditemukan dari
+// laporan nyata customer (Untung Suroto, PT Maginet) via log
+// `facport-web-1`. Fix: tandai file ini "use client" eksplisit — SELURUH
+// subtree (termasuk dialog baru) jadi konsisten client-side di KEDUA
+// konteks pemanggil, tidak ada lagi fungsi yang perlu menyeberang batas
+// serialisasi RSC. `onChanged` (opsional) tetap `undefined` dari pemanggil
+// dashboard seperti sebelumnya — TIDAK berubah.
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
