@@ -21,11 +21,12 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 // batch SUDAH `completed`/`completed_with_errors` (bukan `processing`).
 // Duplikat Nama Resep/Formula DIBOLEHKAN (keputusan eksplisit user) —
 // setiap grup valid SELALU bikin Formula baru.
+// § Fase 168 (diminta client) — Cabang/Gudang/Nomor Project/Departemen
+// DIHAPUS dari modul ini (pindah ke Import Produksi) — Formula sekarang
+// murni resep, dipakai lintas cabang/gudang.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "formulaName", label: "Nama Resep/Formula (wajib — kunci penggabungan baris jadi 1 Formula)" },
-  { value: "branchName", label: "Cabang (wajib)" },
-  { value: "warehouseName", label: "Gudang (BB=Gudang Bahan Baku, BJ=Gudang Barang Jadi)" },
   { value: "adjustmentAccountNo", label: "Akun Perantara (wajib)" },
   { value: "itemType", label: "Tipe Barang: BB/BJ (wajib)" },
   { value: "itemNo", label: "Nomor Item (wajib)" },
@@ -33,8 +34,6 @@ const ACCURATE_FIELDS = [
   { value: "quantity", label: "Jumlah (wajib untuk baris BB)" },
   { value: "itemUnitName", label: "Nama Unit (wajib)" },
   { value: "unitCost", label: "Unit Cost (hanya baris BJ)" },
-  { value: "projectNo", label: "Nomor Project" },
-  { value: "departmentName", label: "Departemen" },
 ] as const;
 
 const uploadSchema = z.object({

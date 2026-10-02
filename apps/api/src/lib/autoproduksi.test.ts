@@ -7,6 +7,9 @@ import type { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProduc
 // Diverifikasi payload SAMA PERSIS field yang dikonfirmasi client via
 // screenshot Accurate asli (adjustmentAccountNo/description/branchName +
 // detailItem[] dengan itemAdjustmentType IN/OUT yang benar).
+// § Fase 168 — branchName/warehouseName/rawMaterialWarehouseName/projectNo/
+// departmentName PINDAH dari Formula/FormulaItem ke ProductionEntry (§
+// komentar schema) — test di bawah diperbarui mengikuti sumber field baru.
 type Formula = typeof autoproduksiFormulas.$inferSelect;
 type FormulaItem = typeof autoproduksiFormulaItems.$inferSelect;
 type ProductionEntry = typeof autoproduksiProductionEntries.$inferSelect;
@@ -23,17 +26,14 @@ const baseFormula: Formula = {
   standardCost: "20000",
   adjustmentAccountNo: "11078",
   adjustmentAccountName: null,
-  branchName: "JAKARTA",
-  warehouseName: null,
-  finishedGoodProjectNo: null,
-  finishedGoodDepartmentName: null,
+  isActive: true,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
 
 const formulaItems: FormulaItem[] = [
-  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, projectNo: null, departmentName: null, sortOrder: 0 },
-  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, projectNo: null, departmentName: null, sortOrder: 1 },
+  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", itemName: null, quantity: "0.5", sortOrder: 0 },
+  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", itemName: null, quantity: "0.5", sortOrder: 1 },
 ];
 
 const baseEntry: ProductionEntry = {
@@ -44,6 +44,11 @@ const baseEntry: ProductionEntry = {
   formulaId: "formula-1",
   producedQty: "1",
   transDate: "2026-09-28",
+  branchName: "JAKARTA",
+  warehouseName: null,
+  rawMaterialWarehouseName: null,
+  projectNo: null,
+  departmentName: null,
   status: "pending",
   accurateTransactionId: null,
   errorMessage: null,
@@ -90,22 +95,36 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     expect(detailItem[2]).toMatchObject({ itemNo: "100011", quantity: 10, itemAdjustmentType: "ADJUSTMENT_IN" });
   });
 
-  test("warehouseName per Bahan Baku disertakan kalau diisi (§ wishlist client, field API sudah support)", () => {
-    const itemsWithWarehouse: FormulaItem[] = [{ ...formulaItems[0]!, warehouseName: "Gudang Utama" }];
-    const payload = buildProductionEntryPayload(baseFormula, itemsWithWarehouse, baseEntry);
-    const detailItem = payload.detailItem as Record<string, unknown>[];
-    expect(detailItem[0]).toMatchObject({ warehouseName: "Gudang Utama" });
+  test("branchName KOSONG (null) -> field branchName tidak ikut terkirim sama sekali (Accurate pakai default preferensi)", () => {
+    const entryNoBranch = { ...baseEntry, branchName: null };
+    const payload = buildProductionEntryPayload(baseFormula, formulaItems, entryNoBranch);
+    expect("branchName" in payload).toBe(false);
   });
 
-  test("warehouseName KOSONG tidak ikut terkirim sebagai field (bukan string kosong/undefined literal)", () => {
+  // § Fase 168 — Gudang Barang Jadi vs Gudang Bahan Baku sekarang 2 field
+  // TERPISAH di level entry (konteks per-produksi), bukan lagi per-item
+  // Formula — rawMaterialWarehouseName berlaku SERAGAM ke SEMUA baris
+  // Bahan Baku, warehouseName khusus baris Barang Jadi.
+  test("gudang (Barang Jadi & Bahan Baku) dari entry disertakan ke baris yang sesuai kalau diisi", () => {
+    const entryWithWarehouse = { ...baseEntry, warehouseName: "Gudang Jadi", rawMaterialWarehouseName: "Gudang Bahan Baku" };
+    const payload = buildProductionEntryPayload(baseFormula, formulaItems, entryWithWarehouse);
+    const detailItem = payload.detailItem as Record<string, unknown>[];
+    expect(detailItem[0]).toMatchObject({ itemNo: "100012", warehouseName: "Gudang Bahan Baku" });
+    expect(detailItem[1]).toMatchObject({ itemNo: "100013", warehouseName: "Gudang Bahan Baku" });
+    expect(detailItem[2]).toMatchObject({ itemNo: "100011", warehouseName: "Gudang Jadi" });
+  });
+
+  test("gudang KOSONG tidak ikut terkirim sebagai field (bukan string kosong/undefined literal)", () => {
     const payload = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry);
     const detailItem = payload.detailItem as Record<string, unknown>[];
     expect("warehouseName" in detailItem[0]!).toBe(false);
+    expect("warehouseName" in detailItem[2]!).toBe(false);
   });
 
-  // § BUG DITEMUKAN 2026-10-02 — standardCost SUDAH ADA di skema sejak
-  // Fase 159 tapi TIDAK PERNAH dikirim sebagai unitCost. Ditemukan saat
-  // memetakan kolom "Unit Cost" di Excel Import Formula client.
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (rilis v2.21.0) — standardCost
+  // SUDAH ADA di skema sejak Fase 159 tapi SEMPAT TIDAK PERNAH dikirim
+  // sebagai unitCost. TIDAK tersentuh oleh perombakan Fase 168 — tetap
+  // bersumber dari Formula (resep), bukan konteks produksi.
   test("standardCost formula dikirim sebagai unitCost di baris Barang Jadi (ADJUSTMENT_IN)", () => {
     const payload = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry);
     const detailItem = payload.detailItem as Record<string, unknown>[];
@@ -121,15 +140,16 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     expect("unitCost" in detailItem[2]!).toBe(false);
   });
 
-  // § Import Formula (Excel) — "Nomor Project"/"Departemen", field resmi
-  // detailItem.projectNo/departmentName (dikonfirmasi accurate-openapi.json).
-  test("projectNo/departmentName disertakan per baris (Bahan Baku & Barang Jadi) kalau diisi", () => {
-    const itemsWithProject: FormulaItem[] = [{ ...formulaItems[0]!, projectNo: "PRJ-1", departmentName: "Produksi" }];
-    const formulaWithProject = { ...baseFormula, finishedGoodProjectNo: "PRJ-1", finishedGoodDepartmentName: "Produksi" };
-    const payload = buildProductionEntryPayload(formulaWithProject, itemsWithProject, baseEntry);
+  // § Fase 168 — Nomor Project/Departemen sekarang 1 pasang field di level
+  // entry, dipakai ULANG sama persis ke Barang Jadi MAUPUN semua baris
+  // Bahan Baku (bukan lagi per-baris Formula).
+  test("projectNo/departmentName dari entry disertakan ke SEMUA baris (Bahan Baku & Barang Jadi) kalau diisi", () => {
+    const entryWithProject = { ...baseEntry, projectNo: "PRJ-1", departmentName: "Produksi" };
+    const payload = buildProductionEntryPayload(baseFormula, formulaItems, entryWithProject);
     const detailItem = payload.detailItem as Record<string, unknown>[];
     expect(detailItem[0]).toMatchObject({ projectNo: "PRJ-1", departmentName: "Produksi" });
-    expect(detailItem[1]).toMatchObject({ itemNo: "100011", projectNo: "PRJ-1", departmentName: "Produksi" });
+    expect(detailItem[1]).toMatchObject({ projectNo: "PRJ-1", departmentName: "Produksi" });
+    expect(detailItem[2]).toMatchObject({ itemNo: "100011", projectNo: "PRJ-1", departmentName: "Produksi" });
   });
 
   test("projectNo/departmentName KOSONG tidak ikut terkirim sebagai field", () => {

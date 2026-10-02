@@ -65,13 +65,15 @@ async function createProvisionedUser(email: string) {
   return { userId, cookie, subscriptionId: subscription!.id, dataUsahaId };
 }
 
+// § Fase 168 (diminta client) — Cabang/Gudang/Nomor Project/Departemen
+// DIHAPUS dari Formula (pindah ke Input Produksi) — fixture ini TIDAK lagi
+// menyertakan field tersebut.
 const validFormulaBody = {
   name: "Bolu Kukus SP (Spesial BGT)",
   finishedGoodItemNo: "100011",
   finishedGoodItemUnitName: "Loyang",
   standardCost: 20000,
   adjustmentAccountNo: "11078",
-  branchName: "JAKARTA",
   items: [
     { itemNo: "100012", itemUnitName: "KG", quantity: 0.5 },
     { itemNo: "100013", itemUnitName: "KG", quantity: 0.5 },
@@ -95,6 +97,23 @@ describe("POST /autoproduksi/formulas", () => {
 
     const items = await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, body.formula.id));
     expect(items).toHaveLength(2);
+  });
+
+  // § Fase 168 (diminta client) — Formula TIDAK LAGI butuh Cabang (field
+  // ini DIHAPUS total, bukan sekadar jadi opsional) — body TANPA
+  // branchName harus tetap sukses, dan isActive default true.
+  test("Formula baru TANPA Cabang tetap sukses (field sudah dihapus), isActive default true", async () => {
+    const owner = await createProvisionedUser(`ap-formula-noabranch-${runId}@test.local`);
+    const res = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { formula: { isActive: boolean } };
+    expect(body.formula.isActive).toBe(true);
   });
 
   test("422 kalau itemNo lebih panjang dari batas kolom (§ security review — bukan 500 Postgres mentah)", async () => {
@@ -197,6 +216,66 @@ describe("GET/PUT/DELETE /autoproduksi/formulas/:id — ownership", () => {
   });
 });
 
+// § Fase 168 (diminta client) — toggle List Formula, endpoint TERPISAH
+// dari PUT (ubah 1 kolom tanpa kirim ulang Formula+items).
+describe("PATCH /autoproduksi/formulas/:id/active", () => {
+  test("200 — toggle jadi non-aktif lalu balik aktif", async () => {
+    const owner = await createProvisionedUser(`ap-formula-toggle-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+
+    const offRes = await testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${formula.id}/active`, {
+        method: "PATCH",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      }),
+    );
+    expect(offRes.status).toBe(200);
+    expect(((await offRes.json()) as { formula: { isActive: boolean } }).formula.isActive).toBe(false);
+
+    const [reloaded] = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.id, formula.id));
+    expect(reloaded!.isActive).toBe(false);
+
+    const onRes = await testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${formula.id}/active`, {
+        method: "PATCH",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: true }),
+      }),
+    );
+    expect(((await onRes.json()) as { formula: { isActive: boolean } }).formula.isActive).toBe(true);
+  });
+
+  test("404 kalau formula bukan milik subscription ini (tenant isolation)", async () => {
+    const owner = await createProvisionedUser(`ap-formula-toggle-owner-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-formula-toggle-other-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${formula.id}/active`, {
+        method: "PATCH",
+        headers: { cookie: other.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      }),
+    );
+    expect(res.status).toBe(404);
+  });
+});
+
 describe("POST /autoproduksi/production-entries", () => {
   test("200 — submit input produksi, insert status 'pending' (job dijadwalkan async)", async () => {
     const owner = await createProvisionedUser(`ap-entry-create-${runId}@test.local`);
@@ -245,6 +324,80 @@ describe("POST /autoproduksi/production-entries", () => {
     );
     expect(entryRes.status).toBe(404);
     expect(((await entryRes.json()) as { code: string }).code).toBe("FORMULA_NOT_FOUND");
+  });
+
+  // § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+  // Baku/Proyek/Departemen SEKARANG di sini (konteks per-produksi), bukan
+  // di Formula lagi.
+  test("200 — field konteks produksi baru (Cabang/Gudang/Proyek/Departemen) tersimpan ke entry", async () => {
+    const owner = await createProvisionedUser(`ap-entry-context-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+
+    const entryRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/production-entries", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          formulaId: formula.id,
+          producedQty: 5,
+          transDate: "2026-09-28",
+          branchName: "JAKARTA",
+          warehouseName: "Gudang Jadi",
+          rawMaterialWarehouseName: "Gudang Bahan Baku",
+          projectNo: "PRJ-1",
+          departmentName: "Produksi",
+        }),
+      }),
+    );
+    expect(entryRes.status).toBe(200);
+    const { entry } = (await entryRes.json()) as { entry: { id: string } };
+
+    const [reloaded] = await db.select().from(autoproduksiProductionEntries).where(eq(autoproduksiProductionEntries.id, entry.id));
+    expect(reloaded).toMatchObject({
+      branchName: "JAKARTA",
+      warehouseName: "Gudang Jadi",
+      rawMaterialWarehouseName: "Gudang Bahan Baku",
+      projectNo: "PRJ-1",
+      departmentName: "Produksi",
+    });
+  });
+
+  // § Fase 168 (diminta client) — defense-in-depth: Combobox frontend
+  // sudah menyaring Formula non-aktif, API tidak boleh percaya itu saja.
+  test("409 FORMULA_INACTIVE kalau Formula sedang non-aktif", async () => {
+    const owner = await createProvisionedUser(`ap-entry-inactive-${runId}@test.local`);
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify(validFormulaBody),
+      }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+    await testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${formula.id}/active`, {
+        method: "PATCH",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ isActive: false }),
+      }),
+    );
+
+    const entryRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/production-entries", {
+        method: "POST",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ formulaId: formula.id, producedQty: 5, transDate: "2026-09-28" }),
+      }),
+    );
+    expect(entryRes.status).toBe(409);
+    expect(((await entryRes.json()) as { code: string }).code).toBe("FORMULA_INACTIVE");
   });
 });
 

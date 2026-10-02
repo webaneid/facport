@@ -10,14 +10,11 @@
 // `autoproduksi_formulas`) + minimal 1 baris Tipe Barang=BB (Bahan Baku,
 // jadi baris `autoproduksi_formula_items`).
 //
-// § "Gudang" kolom TUNGGAL di Excel tapi artinya BEDA tergantung baris:
-// baris BB → Gudang Bahan Baku (`formula_items.warehouseName`), baris BJ →
-// Gudang Barang Jadi (`formulas.warehouseName`) — TIDAK pernah dicampur
-// jadi 1 field header, field API-nya memang beda per level.
-//
-// § "Nomor Project"/"Departemen" BARU (Fase di atas Fase 163) — field
-// resmi `detailItem.projectNo`/`departmentName` (dikonfirmasi ada di
-// accurate-openapi.json), sebelumnya tidak pernah dipetakan modul ini.
+// § Fase 168 (diminta client) — Cabang/Gudang/Nomor Project/Departemen
+// DIHAPUS TOTAL dari modul ini (header maupun per-item) — semuanya SEKARANG
+// konteks per-PRODUKSI, bukan bagian resep (pindah ke
+// `autoproduksi-production.mapping.ts`). Formula sekarang murni: Nama
+// Resep + Akun Perantara + daftar Barang Jadi/Bahan Baku + takaran.
 //
 // § Duplikat Nama Resep/Formula DIBOLEHKAN (keputusan eksplisit user
 // 2026-10-02) — setiap baris BJ yang cocok selalu INSERT formula BARU,
@@ -51,11 +48,9 @@ export function resolveAutoproduksiItemType(raw: unknown): AutoproduksiItemType 
 }
 
 export const autoproduksiFormulaMapping = {
-  requiredFields: ["formulaName", "branchName", "adjustmentAccountNo", "itemType", "itemNo", "itemUnitName"] as const,
+  requiredFields: ["formulaName", "adjustmentAccountNo", "itemType", "itemNo", "itemUnitName"] as const,
   fieldToAccuratePath: {
     formulaName: "name",
-    branchName: "branchName",
-    warehouseName: "warehouseName",
     adjustmentAccountNo: "adjustmentAccountNo",
     itemType: "itemType",
     itemNo: "itemNo",
@@ -63,13 +58,9 @@ export const autoproduksiFormulaMapping = {
     quantity: "quantity",
     itemUnitName: "itemUnitName",
     unitCost: "unitCost",
-    projectNo: "projectNo",
-    departmentName: "departmentName",
   } as Record<string, string>,
   defaultColumnMap: {
     "Nama Resep/Formula": "formulaName",
-    Cabang: "branchName",
-    Gudang: "warehouseName",
     "Akun Perantara": "adjustmentAccountNo",
     "Tipe Barang": "itemType",
     "Nomor Item": "itemNo",
@@ -77,8 +68,6 @@ export const autoproduksiFormulaMapping = {
     Jumlah: "quantity",
     "Nama Unit": "itemUnitName",
     "Unit Cost": "unitCost",
-    "Nomor Project": "projectNo",
-    Departemen: "departmentName",
   } as Record<string, string>,
 };
 
@@ -134,14 +123,10 @@ export function groupAutoproduksiFormulaRows(rows: ImportRowRecord[], columnMapp
 // Excel-nya). Limit HARUS cocok persis `autoproduksi.schema.ts`.
 const MAX_LENGTHS: Record<string, number> = {
   formulaName: 255,
-  branchName: 100,
-  warehouseName: 100,
   adjustmentAccountNo: 50,
   itemNo: 100,
   itemName: 255,
   itemUnitName: 50,
-  projectNo: 50,
-  departmentName: 100,
 };
 
 function fieldLengthErrors(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
@@ -183,18 +168,11 @@ export type AutoproduksiFormulaRecord = {
   finishedGoodItemName: string | null;
   standardCost: string | null;
   adjustmentAccountNo: string;
-  branchName: string;
-  warehouseName: string | null;
-  finishedGoodProjectNo: string | null;
-  finishedGoodDepartmentName: string | null;
   items: {
     itemNo: string;
     itemUnitName: string;
     itemName: string | null;
     quantity: string;
-    warehouseName: string | null;
-    projectNo: string | null;
-    departmentName: string | null;
   }[];
 };
 
@@ -202,9 +180,9 @@ export type AutoproduksiFormulaRecord = {
  * Susun 1 grup (sudah divalidasi `validateAutoproduksiFormulaGroup`) jadi
  * record siap-insert `autoproduksi_formulas`+`autoproduksi_formula_items`
  * — PURE, tanpa DB/network (bisa di-unit-test tanpa mock, § pola
- * `buildProductionEntryPayload`). `branchName`/`adjustmentAccountNo`
- * diambil dari baris BJ (header konseptual grup — di contoh client semua
- * baris repeat nilai yang sama, tapi BJ yang otoritatif bila beda).
+ * `buildProductionEntryPayload`). `adjustmentAccountNo` diambil dari baris
+ * BJ (header konseptual grup — di contoh client semua baris repeat nilai
+ * yang sama, tapi BJ yang otoritatif bila beda).
  */
 export function buildAutoproduksiFormulaRecord(group: AutoproduksiFormulaGroup, columnMapping: Record<string, string>): AutoproduksiFormulaRecord {
   const bjRow = group.rows.find((r) => resolveAutoproduksiItemType(valueOf(r.rawData, "itemType", columnMapping)) === "BJ")!;
@@ -217,18 +195,11 @@ export function buildAutoproduksiFormulaRecord(group: AutoproduksiFormulaGroup, 
     finishedGoodItemName: textOf(bjRow, columnMapping, "itemName"),
     standardCost: textOf(bjRow, columnMapping, "unitCost"),
     adjustmentAccountNo: textOf(bjRow, columnMapping, "adjustmentAccountNo") ?? "",
-    branchName: textOf(bjRow, columnMapping, "branchName") ?? "",
-    warehouseName: textOf(bjRow, columnMapping, "warehouseName"),
-    finishedGoodProjectNo: textOf(bjRow, columnMapping, "projectNo"),
-    finishedGoodDepartmentName: textOf(bjRow, columnMapping, "departmentName"),
     items: bbRows.map((row) => ({
       itemNo: textOf(row, columnMapping, "itemNo") ?? "",
       itemUnitName: textOf(row, columnMapping, "itemUnitName") ?? "",
       itemName: textOf(row, columnMapping, "itemName"),
       quantity: textOf(row, columnMapping, "quantity") ?? "0",
-      warehouseName: textOf(row, columnMapping, "warehouseName"),
-      projectNo: textOf(row, columnMapping, "projectNo"),
-      departmentName: textOf(row, columnMapping, "departmentName"),
     })),
   };
 }

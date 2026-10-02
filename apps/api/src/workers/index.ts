@@ -1907,6 +1907,13 @@ export async function processAutoproduksiProductionImportRow(
     );
   }
   const formula = matches[0]!;
+  // § Fase 168 (diminta client) — Formula non-aktif tidak bisa dipakai utk
+  // Input Produksi baru, Excel maupun manual. Pesan beda dari "tidak
+  // ditemukan" di atas supaya akar masalahnya jelas (formula ADA, cuma
+  // sedang dinonaktifkan).
+  if (!formula.isActive) {
+    throw new Error(`Formula "${formulaName}" sedang NON-AKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
+  }
   const formulaItems = await db
     .select()
     .from(autoproduksiFormulaItems)
@@ -1915,7 +1922,22 @@ export async function processAutoproduksiProductionImportRow(
 
   const transDate = parseAutoproduksiTransDate(autoproduksiProductionValueOf(rawRow, "transDate", columnMapping));
   const producedQty = String(autoproduksiProductionValueOf(rawRow, "producedQty", columnMapping) ?? "");
-  const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate! });
+  // § Fase 168 — Cabang/Gudang Barang Jadi/Gudang Bahan Baku/Proyek/
+  // Departemen SEKARANG kolom Excel opsional di modul Import Produksi ini
+  // (konteks per-produksi, § autoproduksi-production.mapping.ts).
+  const branchName = autoproduksiProductionValueOf(rawRow, "branchName", columnMapping);
+  const warehouseName = autoproduksiProductionValueOf(rawRow, "warehouseName", columnMapping);
+  const rawMaterialWarehouseName = autoproduksiProductionValueOf(rawRow, "rawMaterialWarehouseName", columnMapping);
+  const projectNo = autoproduksiProductionValueOf(rawRow, "projectNo", columnMapping);
+  const departmentName = autoproduksiProductionValueOf(rawRow, "departmentName", columnMapping);
+  const entryFields = {
+    branchName: branchName !== undefined ? String(branchName) : null,
+    warehouseName: warehouseName !== undefined ? String(warehouseName) : null,
+    rawMaterialWarehouseName: rawMaterialWarehouseName !== undefined ? String(rawMaterialWarehouseName) : null,
+    projectNo: projectNo !== undefined ? String(projectNo) : null,
+    departmentName: departmentName !== undefined ? String(departmentName) : null,
+  };
+  const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate!, ...entryFields });
 
   try {
     const result = await saveInventoryAdjustment(ctx, payload);
@@ -1927,6 +1949,7 @@ export async function processAutoproduksiProductionImportRow(
       formulaId: formula.id,
       producedQty,
       transDate: transDate!,
+      ...entryFields,
       status: "success",
       accurateTransactionId,
       errorMessage: null,
@@ -1941,6 +1964,7 @@ export async function processAutoproduksiProductionImportRow(
       formulaId: formula.id,
       producedQty,
       transDate: transDate!,
+      ...entryFields,
       status: "failed",
       accurateTransactionId: null,
       errorMessage: message,

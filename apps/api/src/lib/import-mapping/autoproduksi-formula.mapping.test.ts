@@ -10,10 +10,10 @@ import {
 
 // § kasus nyata dari Autoproduksi_Formula Produksi.xlsx (client, 2026-10-02):
 // "Bolu Kukus SP (Spesial)" = Telur 0.5kg + Tepung 0.2kg per 1 Loyang.
+// § Fase 168 — Cabang/Gudang/Nomor Project/Departemen DIHAPUS dari modul
+// ini (pindah ke Import Produksi), fixture diperbarui mengikuti.
 const columnMapping: Record<string, string> = {
   "Nama Resep/Formula": "formulaName",
-  Cabang: "branchName",
-  Gudang: "warehouseName",
   "Akun Perantara": "adjustmentAccountNo",
   "Tipe Barang": "itemType",
   "Nomor Item": "itemNo",
@@ -21,8 +21,6 @@ const columnMapping: Record<string, string> = {
   Jumlah: "quantity",
   "Nama Unit": "itemUnitName",
   "Unit Cost": "unitCost",
-  "Nomor Project": "projectNo",
-  Departemen: "departmentName",
 };
 
 const rows: ImportRowRecord[] = [
@@ -30,8 +28,6 @@ const rows: ImportRowRecord[] = [
     id: "r1",
     rawData: {
       "Nama Resep/Formula": "Bolu Kukus SP (Spesial)",
-      Cabang: "JAKARTA",
-      Gudang: "Utama",
       "Akun Perantara": 110501,
       "Tipe Barang": "BB",
       "Nomor Item": 100006,
@@ -44,8 +40,6 @@ const rows: ImportRowRecord[] = [
     id: "r2",
     rawData: {
       "Nama Resep/Formula": "Bolu Kukus SP (Spesial)",
-      Cabang: "JAKARTA",
-      Gudang: "Utama",
       "Akun Perantara": 110501,
       "Tipe Barang": "BB",
       "Nomor Item": 100007,
@@ -58,8 +52,6 @@ const rows: ImportRowRecord[] = [
     id: "r3",
     rawData: {
       "Nama Resep/Formula": "Bolu Kukus SP (Spesial)",
-      Cabang: "JAKARTA",
-      Gudang: "Utama",
       "Akun Perantara": 110501,
       "Tipe Barang": "BJ",
       "Nomor Item": 100005,
@@ -168,23 +160,9 @@ describe("buildAutoproduksiFormulaRecord — kasus nyata client", () => {
     expect(record.finishedGoodItemUnitName).toBe("Loyang");
     expect(record.standardCost).toBe("17000");
     expect(record.adjustmentAccountNo).toBe("110501");
-    expect(record.branchName).toBe("JAKARTA");
-    expect(record.warehouseName).toBe("Utama");
 
     expect(record.items).toHaveLength(2);
     expect(record.items[0]).toMatchObject({ itemNo: "100006", itemUnitName: "Kg", quantity: "0.5" });
     expect(record.items[1]).toMatchObject({ itemNo: "100007", itemUnitName: "Kg", quantity: "0.2" });
-  });
-
-  test("Nomor Project/Departemen disertakan kalau diisi (baris BB maupun BJ)", () => {
-    const rowsWithProject: ImportRowRecord[] = rows.map((r) => ({
-      ...r,
-      rawData: { ...r.rawData, "Nomor Project": "PRJ-1", Departemen: "Produksi" },
-    }));
-    const groups = groupAutoproduksiFormulaRows(rowsWithProject, columnMapping);
-    const record = buildAutoproduksiFormulaRecord(groups[0]!, columnMapping);
-    expect(record.finishedGoodProjectNo).toBe("PRJ-1");
-    expect(record.finishedGoodDepartmentName).toBe("Produksi");
-    expect(record.items[0]).toMatchObject({ projectNo: "PRJ-1", departmentName: "Produksi" });
   });
 });

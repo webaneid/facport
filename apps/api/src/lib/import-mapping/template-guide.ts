@@ -1499,10 +1499,11 @@ export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
 // field disimpan lokal apa adanya (§ autoproduksi-formula.mapping.ts).
 // Header kolom SAMA PERSIS dengan file contoh client (Autoproduksi_Formula
 // Produksi.xlsx) supaya auto-match `defaultColumnMap` langsung cocok.
+// § Fase 168 (diminta client) — Cabang/Gudang/Nomor Project/Departemen
+// DIHAPUS dari Formula (pindah ke Import Produksi di bawah) — Formula
+// sekarang murni resep, dipakai lintas cabang/gudang.
 export const autoproduksiFormulaTemplateGuide: TemplateFieldGuide[] = [
   { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula — baris dengan nama SAMA digabung jadi 1 Formula (header + Bahan Baku + Barang Jadi). Boleh ada Formula dengan nama sama di baris lain (selalu dibuat Formula baru, TIDAK menimpa yang lama)." },
-  { column: "Cabang", required: true, example: "JAKARTA", description: "Nama cabang, harus PERSIS terdaftar di Accurate." },
-  { column: "Gudang", required: false, example: "Utama", description: "Gudang — untuk baris Bahan Baku (BB) berarti Gudang Bahan Baku, untuk baris Barang Jadi (BJ) berarti Gudang Barang Jadi." },
   { column: "Akun Perantara", required: true, example: "110501", description: "Kode Akun Perantara (adjustment account) PERSIS seperti terdaftar di Accurate." },
   { column: "Tipe Barang", required: true, example: "BB", description: "BB = Bahan Baku, BJ = Barang Jadi. Setiap Formula WAJIB tepat 1 baris BJ dan minimal 1 baris BB." },
   { column: "Nomor Item", required: true, example: "100006", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
@@ -1510,14 +1511,20 @@ export const autoproduksiFormulaTemplateGuide: TemplateFieldGuide[] = [
   { column: "Jumlah", required: false, example: "0.5", description: "WAJIB diisi untuk baris Bahan Baku (BB) — takaran PER 1 unit Barang Jadi. Tidak dipakai untuk baris Barang Jadi (BJ), boleh dikosongkan." },
   { column: "Nama Unit", required: true, example: "Kg", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "Unit Cost", required: false, example: "17000", description: "Hanya berlaku di baris Barang Jadi (BJ) — biaya produksi per unit, dipakai saat Input Produksi diproses." },
-  { column: "Nomor Project", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
-  { column: "Departemen", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
 ];
 
 // § Import Produksi (AutoProduksi, Excel) — "Kirim Dengan Excel". Header
-// SAMA PERSIS dengan file contoh client (Autoproduksi_Barang Jadi.xlsx).
+// SAMA PERSIS dengan file contoh client (Autoproduksi_Barang Jadi.xlsx) +
+// kolom BARU Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang
+// Bahan Baku/Proyek/Departemen, semua opsional (konteks per-produksi,
+// pindahan dari Formula).
 export const autoproduksiProductionTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: "YYYY-MM-DD (mis. 2026-07-13) atau DD/MM/YYYY (mis. 13/07/2026)", example: "2026-07-13", description: "Tanggal produksi." },
-  { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula PERSIS seperti di halaman List Formula — WAJIB sudah ada dan namanya UNIK (kalau ada 2 Formula nama sama, baris ini akan gagal, ganti nama salah satu Formula dulu)." },
+  { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula PERSIS seperti di halaman List Formula — WAJIB sudah ada, AKTIF, dan namanya UNIK (kalau ada 2 Formula nama sama, baris ini akan gagal, ganti nama salah satu Formula dulu)." },
   { column: "Jumlah", required: true, example: "15", description: "Jumlah Barang Jadi yang diproduksi — kebutuhan Bahan Baku dihitung otomatis dari takaran Formula × Jumlah ini." },
+  { column: "Cabang", required: false, example: "JAKARTA", description: "Nama cabang transaksi — kosongkan untuk pakai default preferensi Accurate." },
+  { column: "Gudang Barang Jadi", required: false, example: "Utama", description: "Gudang tempat Barang Jadi hasil produksi masuk." },
+  { column: "Gudang Bahan Baku", required: false, example: "Utama", description: "Gudang tempat SEMUA Bahan Baku resep ini diambil (1 gudang untuk semua baris Bahan Baku)." },
+  { column: "Proyek", required: false, example: "", description: "Kode proyek untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
+  { column: "Departemen", required: false, example: "", description: "Nama departemen untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
 ];
