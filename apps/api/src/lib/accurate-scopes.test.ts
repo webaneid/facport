@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { ALL_ACCURATE_SCOPES, MODULE_ACCURATE_SCOPES, scopesForEndpoint, scopesForModules } from "./accurate-scopes";
 import { ACCURATE_ENDPOINT_REGISTRY, BASELINE_ENDPOINTS } from "./accurate-endpoint-registry";
 import snapshot from "./accurate-scope-snapshot.json";
-import { MODULE_CATALOG } from "./module-catalog";
+import { MODULE_CATALOG, PRODUCT_LINES_INTEGRATED_WITH_ACCURATE } from "./module-catalog";
 
 // § Fase 78 (2026-09-09) — BUG ditemukan lewat retest client (import
 // Purchase Invoice 403 di baris pertama SETIAP grup): ADR-0026 (commit
@@ -65,7 +65,10 @@ describe("MODULE_ACCURATE_SCOPES — Fase 98 fix", () => {
 // eksplisit (bukan sekadar exclude "konverter") — supaya Produk BARU nanti
 // yang genuinely tidak integrasi Accurate (kalau ada) TIDAK otomatis lolos
 // diam-diam, harus ditambah sadar ke daftar ini kalau memang perlu.
-const PRODUCT_LINES_INTEGRATED_WITH_ACCURATE = ["facport", "autoproduksi"];
+// § BUG DITEMUKAN 2026-10-02 — daftar ini DULU ditulis lokal di file ini,
+// terpisah dari `accurate-gate.ts` yang py salinan SENDIRI yang diam-diam
+// beda (cuma "facport") — sekarang SATU sumber kebenaran di
+// `module-catalog.ts`, diimpor di sini DAN di `accurate-gate.ts`.
 describe("MODULE_ACCURATE_SCOPES — konsolidasi katalog (Fase 117, diperbarui Fase 159)", () => {
   test("semua key MODULE_ACCURATE_SCOPES adalah Varian Produk yang integrasi Accurate di module-catalog.ts", () => {
     const accurateIntegratedKeys = new Set<string>(

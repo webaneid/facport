@@ -5833,3 +5833,48 @@ cuma baca kode sendiri terburu-buru (kapan tepatnya batch bisa macet,
 bukan cuma "apakah ada celah otorisasi") — worth tetap didelegasikan
 untuk perubahan >3-4 file sesuai `docs/WORKFLOW-MODES.md`, bahkan kalau
 yakin polanya sudah benar dari awal.
+
+## 2026-10-02 — Gerbang koneksi Accurate tidak pernah muncul untuk Data Usaha yang HANYA beli AutoProduksi — kelas bug SAMA dengan Fase 78/98 (dua tempat, dua daftar, diam-diam beda)
+
+Client lapor: daftar akun Facport baru, aktifkan AutoProduksi SAJA →
+Input Produksi tidak pernah bisa sinkron ke Accurate. Begitu salah satu
+modul Facport (bukan AutoProduksi) diaktifkan juga, baru bisa connect —
+client sendiri benar menyimpulkan "autoproduksi diaktifkan, data usaha
+harus disinkronkan/autentikasi juga" tapi gerbangnya tidak pernah minta.
+
+**Akar masalah**: `accurate-gate.ts` (`computeAccurateGate`, Fase 144)
+punya `FACPORT_MODULES` yang cuma filter `productLine === "facport"` untuk
+menentukan `requiresAccurate` — AutoProduksi (`productLine: "autoproduksi"`)
+IKUT DIANGGAP "tidak butuh Accurate" PADAHAL modulnya memanggil
+`item-adjustment/save.do` Accurate BENERAN sejak Fase 159 (reuse endpoint
+Inventory Adjustment). Yang GENUINELY tidak butuh Accurate cuma Konverter
+(100% client-side, ADR-0033). Daftar yang BENAR ("facport" + "autoproduksi")
+SUDAH ADA di tempat lain (`accurate-scopes.test.ts`,
+`PRODUCT_LINES_INTEGRATED_WITH_ACCURATE`, ditulis Fase 159 saat AutoProduksi
+dibangun) — tapi TIDAK PERNAH diimpor/dipakai ulang di `accurate-gate.ts`,
+jadi 2 tempat punya "daftar produk integrasi Accurate" SENDIRI-SENDIRI
+yang diam-diam melenceng. Test yang seharusnya menangkap ini
+(`accurate-gate.route.test.ts`, kasus "produk non-Accurate") ternyata
+pakai moduleKey PALSU (`"modul_non_accurate"`, tidak terdaftar di
+`MODULE_CATALOG` sama sekali) — lolos karena alasan yang salah (kunci
+tidak dikenal, bukan karena benar-benar Konverter/AutoProduksi diuji).
+
+**Fix**: `PRODUCT_LINES_INTEGRATED_WITH_ACCURATE` dipindah jadi SATU
+konstanta diekspor dari `module-catalog.ts` (source of truth tunggal),
+diimpor di `accurate-gate.ts` (ganti `FACPORT_MODULES` yang namanya sendiri
+sudah menyesatkan) DAN `accurate-scopes.test.ts`. Test lama diperbaiki
+pakai modul Konverter NYATA, ditambah test baru yang reproduce persis
+laporan client (subscribe HANYA `autoproduksi_production` →
+`requiresAccurate: true`, state `not_connected`).
+
+**Pelajaran**: ini kelas bug PERSIS SAMA dengan Fase 78 (`vendor_view`
+pindah scope, lupa 1 pemanggil) dan Fase 98 (`data_classification_*` lupa
+ditambah) — "2 tempat kode yang HARUS selalu sinkron, tapi tidak ada
+mekanisme yang MEMAKSA sinkron" (dulu scope per-modul, sekarang "daftar
+Produk yang butuh Accurate"). Setiap kali nambah Produk/Varian baru yang
+caranya "mirip tapi beda" dari yang sudah ada (AutoProduksi mirip
+Konverter — sama-sama bukan 23 modul Excel-import lama — tapi BEDA soal
+butuh-Accurate-atau-tidak), WAJIB grep literal `productLine ===`/daftar
+hardcoded produk di SELURUH `apps/api/src/lib/*.ts`, bukan cuma di file
+yang sedang disentuh — kalau ada 2+ tempat dengan logic serupa, SATUKAN
+jadi 1 konstanta diekspor, jangan biarkan 2 salinan.

@@ -31,8 +31,12 @@ Field tambahan: `isOwner`, `requiresAccurate`, `accountEmail` (HANYA pemilik), `
 `accounts` (akun Accurate milik pemilik yang sudah terhubung, untuk opsi "pakai akun yang sama", HANYA pemilik).
 
 Aturan turunan:
-- `requiresAccurate` = Data Usaha punya subscription aktif berproduk `facport` (butuh Accurate) ATAU belum punya subscription sama
-  sekali (Data Usaha baru). Data Usaha yang hanya berlangganan Konverter/AutoProduksi TIDAK memicu gerbang (`state: "ok"`).
+- `requiresAccurate` = Data Usaha punya subscription aktif berproduk yang genuinely integrasi Accurate (`facport` ATAU
+  `autoproduksi` — § `module-catalog.ts` `PRODUCT_LINES_INTEGRATED_WITH_ACCURATE`) ATAU belum punya subscription sama sekali
+  (Data Usaha baru). Data Usaha yang HANYA berlangganan Konverter (100% client-side, tidak pernah memanggil Accurate) TIDAK
+  memicu gerbang (`state: "ok"`). **BUG DITEMUKAN & DIPERBAIKI 2026-10-02**: sebelumnya cek ini cuma `productLine === "facport"`,
+  jadi Data Usaha yang HANYA beli AutoProduksi tidak pernah diminta connect Accurate walau modulnya memanggil
+  `item-adjustment/save.do` beneran sejak Fase 159 — § `docs/lessons-learned.md` 2026-10-02.
 - `update_permissions` dihitung dari modul yang **dibeli** Data Usaha ini (`missingScopes(granted, modulAktif)`), BUKAN seluruh
   katalog — customer tidak dinag soal fitur yang tidak dia pakai. Scope katalog yang bertambah tetap terkirim sebagai
   `catalogMissingScopes` (informasi, tanpa popup) supaya saat modul baru dibeli tidak ada kejutan.
@@ -148,8 +152,9 @@ menghubungkan Accurate sebelum import bisa dikirim."
 - Notifikasi (`lib/notification-routes.ts`) — tautan "Koneksi Accurate terputus" mengarah ke dashboard (popup `reconnect`).
 
 ## Pengujian
-- API: matriks `GET /accurate/gate` (tiap `state`, prioritas, `requiresAccurate` false untuk Konverter/AutoProduksi, member seat
-  tanpa `accountEmail`/`accounts`, `importRunning`, `update_permissions` hanya untuk modul yang dibeli); `confirm`/`reset`
+- API: matriks `GET /accurate/gate` (tiap `state`, prioritas, `requiresAccurate` false HANYA untuk Konverter (`requiresAccurate`
+  TRUE untuk AutoProduksi — § bug 2026-10-02 di atas), member seat tanpa `accountEmail`/`accounts`, `importRunning`,
+  `update_permissions` hanya untuk modul yang dibeli); `confirm`/`reset`
   (owner-only, riwayat import memblokir reset); callback redirect + kode galat.
 - Web: tes unit `gateCopy` (semua state × varian, label tombol tepat), logika "Nanti" (sessionStorage), pemetaan kode galat; verifikasi
   visual manual di Chrome (glass, mobile, tanpa `backdrop-filter`) pada akun DEV dengan izin eksplisit untuk tiap "Beri Akses".
