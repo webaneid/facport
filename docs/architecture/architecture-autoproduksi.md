@@ -56,6 +56,10 @@ diisi lewat form web langsung), bukan upload Excel. Konsekuensi desain:
   dari route request sinkron) — menambah live-lookup akan jadi pola
   arsitektur baru yang butuh desain sendiri (sesi Accurate per-request,
   bukan per-job), di luar scope Fase 1.
+  **§ Fase 168** — `branchName`/`warehouseName` di atas sudah tidak lagi
+  milik Formula (pindah ke Input Produksi, lihat "Skema Database" di
+  bawah) — paragraf ini tetap benar untuk `itemNo`/`adjustmentAccountNo`
+  Formula dan untuk field konteks produksi yang baru.
 - Kalau kode barang/akun/cabang salah, gagalnya baru ketahuan saat "Input
   Produksi" diproses (pesan error jelas dari Accurate, ditampilkan di
   Riwayat) — BUKAN saat setup Formula. Sama filosofi persis modul Excel
@@ -67,20 +71,36 @@ diisi lewat form web langsung), bukan upload Excel. Konsekuensi desain:
 Data Usaha (`dataUsahaId`) + subscription (`subscriptionId`, menentukan
 `accurate_connections` mana yang dipakai — pola sama SEMUA modul lain):
 
-- **`autoproduksi_formulas`** — 1 baris = 1 resep. `standardCost` diisi
-  MANUAL (bukan hitung otomatis dari harga beli Accurate — lihat "Di Luar
-  Scope" di bawah).
+- **`autoproduksi_formulas`** — 1 baris = 1 resep: Nama + Barang Jadi +
+  Akun Perantara + `standardCost` (diisi MANUAL, bukan hitung otomatis
+  dari harga beli Accurate — lihat "Di Luar Scope" di bawah) + `isActive`
+  (§ Fase 168, toggle List Formula — non-aktif = tidak bisa dipilih/dicari
+  utk Input Produksi baru, tapi tetap tampil sebagai dokumentasi).
+  **§ Fase 168** — Cabang/Gudang Barang Jadi/Nomor Project/Departemen
+  DIHAPUS TOTAL dari tabel ini (pindah ke `autoproduksi_production_entries`
+  di bawah) — alasan client: customer dengan banyak cabang terpaksa bikin
+  Formula terpisah per cabang padahal resepnya identik; sekarang 1 Formula
+  dipakai lintas cabang/gudang, dipilih ulang tiap kali produksi.
 - **`autoproduksi_formula_items`** — Bahan Baku per formula (FK cascade
-  delete dari formula). `warehouseName` per baris SUDAH diakomodasi (field
-  API `detailItem.warehouseName` memang ada di spec) — mengatasi "Catatan
-  #1" client sendiri di simulasi ("seharusnya bisa input gudang pada
-  setiap barang").
+  delete dari formula): `itemNo`/`itemUnitName`/`quantity` (takaran per 1
+  unit Barang Jadi) saja. **§ Fase 168** — `warehouseName`/`projectNo`/
+  `departmentName` per baris (sempat ditambah Fase 162/166) DIHAPUS —
+  Gudang Bahan Baku sekarang SATU pilihan di level Input Produksi, berlaku
+  seragam ke SEMUA baris Bahan Baku (bukan per-item lagi).
 - **`autoproduksi_production_entries`** — log tiap "Input Produksi" = 1 job
   worker = 1 transaksi Accurate. TIDAK reuse `import_batches`/
   `import_batch_rows` (skema itu untuk Excel-row-based; di sini 1 baris =
   1 dokumen Accurate langsung, tanpa parsing file) — pola desain sama
   seperti `conversion_logs` Konverter yang juga sengaja tabel sendiri (§
-  ADR-0033 Alternatif).
+  ADR-0033 Alternatif). **§ Fase 168** — tabel ini sekarang JUGA menyimpan
+  konteks per-produksi (semua nullable/opsional): `branchName`,
+  `warehouseName` (Gudang Barang Jadi), `rawMaterialWarehouseName` (Gudang
+  Bahan Baku, seragam semua baris Bahan Baku), `projectNo`/`departmentName`
+  (dipakai ulang sama persis ke Barang Jadi maupun semua baris Bahan Baku)
+  — pindahan dari `autoproduksi_formulas`/`autoproduksi_formula_items` di
+  atas. `branchName` kosong = field di-omit dari payload, Accurate pakai
+  default preferensi (dikonfirmasi `accurate-openapi.json`: `branchName`
+  TIDAK required di top-level `item-adjustment/save.do`).
 
 ## Job Queue
 
@@ -172,6 +192,35 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
   proxy `warehouse/list.do`) sekarang search-pilih juga (bukan ketik
   bebas), diminta sekalian oleh client untuk minimalkan siklus deploy.
 
+### Fase 168 (2026-10-02, evaluasi client — perubahan fundamental) — Selesai
+Client menemukan masalah desain: Cabang/Gudang Barang Jadi/Gudang Bahan
+Baku melekat ke Formula memaksa customer multi-cabang bikin Formula
+terpisah per cabang padahal resepnya identik. Perubahan:
+- Cabang/Gudang Barang Jadi/Gudang Bahan Baku/Nomor Project/Departemen
+  DIPINDAH dari Formula (`autoproduksi_formulas`/`autoproduksi_formula_items`)
+  ke Input Produksi (`autoproduksi_production_entries`), semua OPSIONAL —
+  Formula sekarang murni resep, 1 Formula dipakai lintas cabang/gudang.
+  Gudang Bahan Baku & Proyek/Departemen jadi SATU pilihan per transaksi
+  (bukan per-Bahan-Baku lagi seperti Fase 162/166) — reduksi granularitas
+  yang DISENGAJA, sesuai literal permintaan client.
+- `buildProductionEntryPayload()` (`lib/autoproduksi.ts`) dirombak:
+  `branchName`/gudang/proyek/departemen sekarang dari parameter `entry`
+  (konteks produksi), BUKAN dari `formula` lagi. `unitCost` (dari
+  `formula.standardCost`) TIDAK disentuh — fix Fase 166 tetap berlaku.
+- Toggle Aktif/Non-aktif BARU (`autoproduksi_formulas.isActive`,
+  `PATCH /autoproduksi/formulas/:id/active`) — non-aktif = tidak bisa
+  dipilih/dicari utk Input Produksi baru (manual: 409 `FORMULA_INACTIVE`;
+  Excel: baris gagal pesan jelas di worker), tapi tetap tampil di List
+  Formula sebagai dokumentasi & tetap bisa diedit.
+- Import Formula (Excel) kehilangan kolom Cabang/Gudang/Nomor
+  Project/Departemen; Import Produksi (Excel) mendapat 5 kolom baru
+  opsional yang sama (lihat "Import Formula & Import Produksi" di bawah).
+- Laporan client "Standard Cost tidak terkirim ke Accurate" dikonfirmasi
+  SEBELUM rilis v2.21.0 (yang sudah berisi fix Fase 166) — bukan bug baru,
+  tidak ada perubahan tambahan di luar memastikan logic `unitCost` tetap
+  benar setelah payload builder dirombak.
+- Detail → `docs/phases/phase-168-autoproduksi-formula-lintas-cabang-toggle-aktif.md`.
+
 ## Import Formula & Import Produksi (Excel) — "Kirim Dengan Excel"
 
 > Dieksekusi setelah Fase 160 ("Planned" sejak itu, GitHub #79). Sumber
@@ -200,8 +249,6 @@ endpoint cancel (tidak ada transaksi Accurate untuk dibatalkan).
 Baris Excel dikelompokkan by "Nama Resep/Formula" (ADR-0011), tiap grup
 WAJIB tepat 1 baris `Tipe Barang=BJ` (jadi header `autoproduksi_formulas`)
 + minimal 1 baris `Tipe Barang=BB` (jadi `autoproduksi_formula_items`).
-Kolom "Gudang" TUNGGAL tapi artinya beda per baris: BB = Gudang Bahan
-Baku, BJ = Gudang Barang Jadi (field API memang beda level).
 
 **Keputusan eksplisit user (ditanya langsung, bukan diasumsikan)**: Nama
 Resep/Formula yang SUDAH ADA → **selalu insert Formula BARU** (duplikat
@@ -212,13 +259,10 @@ masih pending/failed** (grouping dihitung ulang dari situ) — grup yang
 SUDAH sukses tidak pernah diproses lagi, supaya retry tidak diam-diam
 membuat Formula duplikat tambahan.
 
-**Field baru** (migrasi 0036, aditif nullable): `autoproduksi_formulas.
-finished_good_project_no`/`finished_good_department_name`,
-`autoproduksi_formula_items.project_no`/`department_name` — field resmi
-`detailItem.projectNo`/`departmentName` (dikonfirmasi ada di
-accurate-openapi.json), terekspos juga di form manual (bukan cuma Excel)
-supaya edit Formula hasil import lewat form tidak diam-diam menghapusnya
-(PUT mengganti seluruh Formula).
+**§ Fase 168** — kolom "Cabang"/"Gudang"/"Nomor Project"/"Departemen"
+DIHAPUS dari modul ini total (pindah ke Import Produksi, § bawah) —
+Formula sekarang murni: Nama Resep + Akun Perantara + Tipe Barang/Item/
+Jumlah/Satuan/Unit Cost.
 
 ### B. Import Produksi — reuse module key `autoproduksi_production`, ASYNC seperti biasa
 `import_batches.module = "autoproduksi_production"` (key yang SAMA
@@ -231,16 +275,25 @@ Worker (`processAutoproduksiProductionImportRow`, workers/index.ts)
 resolve "Nama Resep/Formula" ke `autoproduksi_formulas` LOKAL (bukan
 Accurate) dulu: 0 match → baris gagal `Formula tidak ditemukan`; **2+
 match (duplikat nama, § keputusan di atas) → baris gagal eksplisit,
-TIDAK PERNAH menebak salah satu** (aman di atas cakupan, ADR-0013); 1
-match → reuse `buildProductionEntryPayload()` (lib/autoproduksi.ts, SAMA
-PERSIS fungsi yang dipakai flow manual single-entry) lalu
-`saveInventoryAdjustment()`. Hasil (sukses/gagal) JUGA diinsert sebagai
-baris `autoproduksi_production_entries` biasa — entry dari Excel tampil
+TIDAK PERNAH menebak salah satu** (aman di atas cakupan, ADR-0013);
+match tapi `isActive = false` (§ Fase 168) → baris gagal pesan jelas
+("sedang NON-AKTIF"), beda dari "tidak ditemukan"; 1 match aktif → reuse
+`buildProductionEntryPayload()` (lib/autoproduksi.ts, SAMA PERSIS fungsi
+yang dipakai flow manual single-entry) lalu `saveInventoryAdjustment()`.
+Hasil (sukses/gagal) JUGA diinsert sebagai baris
+`autoproduksi_production_entries` biasa — entry dari Excel tampil
 di `/autoproduksi/riwayat` PERSIS seperti entry manual, tanpa kolom FK
 baru yang menghubungkan 2 tabel (2 audit trail independen dari hasil
 yang sama). **Job `PROCESS_AUTOPRODUKSI_ENTRY`/route single-entry manual
 TIDAK disentuh sama sekali** — reuse murni via pemanggilan fungsi, bukan
 modifikasi.
+
+**§ Fase 168** — modul ini mendapat 5 kolom BARU opsional: Cabang, Gudang
+Barang Jadi, Gudang Bahan Baku (berlaku seragam ke SEMUA baris Bahan Baku
+resep yang dipakai), Proyek, Departemen (Proyek/Departemen dipakai ulang
+sama persis ke Barang Jadi maupun Bahan Baku) — pindahan dari Import
+Formula (§ di atas), divalidasi panjangnya (`MAX_LENGTHS`) sama pola
+Import Formula karena insert langsung ke kolom `varchar` kita sendiri.
 
 Tidak ada scope Accurate baru (endpoint `item-adjustment/save.do` sudah
 terdaftar untuk `autoproduksi_production` sejak Fase 159).

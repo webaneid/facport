@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Trash2, Boxes } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
@@ -11,32 +12,54 @@ import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
-import { filterFormulas } from "@/lib/filter-formulas";
-import { itemComboboxOptions, warehouseComboboxOptions } from "@/lib/accurate-combobox-options";
+import { filterFormulas, type FormulaStatusFilter } from "@/lib/filter-formulas";
+import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
+import { SearchableField } from "@/components/autoproduksi/searchable-accurate-field";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
 // form-based (BUKAN Excel-upload seperti 23 modul lain). Formula (BOM):
 // 1 Barang Jadi = kombinasi N Bahan Baku + takaran.
-// § Fase 163, ADR-0039 (evaluasi client) — Barang Jadi/Bahan Baku/Akun
-// Perantara SEKARANG dicari live ke Accurate (`GET /accurate/items/search`,
-// `GET /accurate/glaccounts/search`, § accurate-lookup.route.ts) lewat
-// `Combobox` yang sudah ada, BUKAN diketik manual lagi — kode+satuan+nama
-// otomatis terisi begitu dipilih. `branchName` TETAP diketik manual
-// (Accurate tidak punya endpoint search Cabang yang relevan di sini).
-// § Fase 162 (evaluasi client) — kolom "Gudang" per baris Bahan Baku.
-// § HOTFIX 2026-09-30 (evaluasi client) — Gudang (Barang Jadi & Bahan
-// Baku) SEKARANG juga search-pilih ke Accurate (`GET /accurate/warehouses/search`)
-// BUKAN ketik bebas lagi, supaya nama gudang konsisten dengan data ASLI
-// Accurate (bukan typo). CATATAN: ini BUKAN "auto-fill" seperti Satuan —
-// Accurate tidak punya konsep "gudang default" per Barang (stok tersebar
-// di banyak gudang), jadi user tetap harus PILIH gudangnya sendiri, cuma
-// dari daftar asli (bukan ketik manual).
+// § Fase 163, ADR-0039 (evaluasi client) — Barang Jadi/Bahan Baku
+// SEKARANG dicari live ke Accurate (`GET /accurate/items/search`,
+// § accurate-lookup.route.ts) lewat `Combobox` yang sudah ada, BUKAN
+// diketik manual lagi — kode+satuan+nama otomatis terisi begitu dipilih.
+// § DIUBAH TOTAL 2026-10-02 (diminta client) — Akun Perantara BUKAN
+// LAGI live-search Accurate (`glaccounts/search` dihapus dari alur
+// ini): bagian produksi yang isi Formula sering tidak paham akun, jadi
+// sekarang pilih dari daftar MASTER DATA LOKAL yang dikelola sendiri di
+// halaman Settings (`/autoproduksi/settings`, §
+// `autoproduksi_intermediary_accounts`), atau bikin baru langsung dari
+// sini lewat `IntermediaryAccountFormDialog` (dialog kecil, Kode+Nama).
+// § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+// Baku/Nomor Project/Departemen DIHAPUS TOTAL dari Formula (pindah ke
+// Input Produksi, § `input/page.tsx`) — alasan client: customer dengan
+// banyak cabang terpaksa bikin Formula terpisah per cabang padahal
+// resepnya identik, sekarang 1 Formula dipakai lintas cabang/gudang.
+// Formula sekarang MURNI resep: Nama + Barang Jadi + Bahan Baku + takaran
+// + Akun Perantara. Fase ini juga menambahkan toggle Aktif/Non-aktif
+// (§ kolom "Status" di tabel List Formula) — non-aktif = tidak bisa
+// dipilih/dicari utk Input Produksi baru, tapi tetap tampil di sini
+// sebagai dokumentasi.
 type AccurateItemResult = { no: string; name: string; unitName: string };
-type AccurateAccountResult = { no: string; name: string };
-type AccurateWarehouseResult = { name: string };
 
-type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: number; warehouseName?: string; projectNo?: string; departmentName?: string };
+// § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (evaluasi client) — `quantity`
+// SENGAJA string (BUKAN number) di state form, sepanjang masa edit.
+// Akar masalah: kolom DB `numeric` SELALU datang dari API sebagai STRING
+// (mis. "0.8000", postgres.js tidak otomatis jadi JS number) — field yang
+// TIDAK disentuh user tetap string itu, dikonversi ke number CUMA kalau
+// field itu di-klik-ulang. Dulu disimpan sebagai `number` + `value={item.
+// quantity || ""}` — DUA bug sekaligus: (1) field yang tidak disentuh
+// terkirim ke server sebagai string, DITOLAK validasi (pesan generik
+// "Gagal menyimpan formula", client harus klik-ulang SEMUA baris biar
+// kekonversi); (2) `0 || ""` di JS true untuk angka 0 (falsy) — ketik "0"
+// sebagai awalan desimal (mis. "0,5") bikin kotak kelihatan kosong lagi,
+// client produksi terbiasa menulis "0" di depan koma. String SELAMA edit
+// (apa adanya, tanpa round-trip ke number tiap keystroke) menghilangkan
+// AKAR kedua masalah — konversi `Number(...)` cuma di 1 titik, pas kirim
+// ke server (§ `handleSave`).
+type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: string };
 type Formula = {
   id: string;
   name: string;
@@ -46,70 +69,25 @@ type Formula = {
   standardCost: string | null;
   adjustmentAccountNo: string;
   adjustmentAccountName: string | null;
-  branchName: string;
-  warehouseName: string | null;
-  finishedGoodProjectNo: string | null;
-  finishedGoodDepartmentName: string | null;
+  isActive: boolean;
 };
 type FormulaDetail = { formula: Formula; items: FormulaItem[] };
 
-const EMPTY_ITEM: FormulaItem = { itemNo: "", itemUnitName: "", quantity: 0 };
+const EMPTY_ITEM: FormulaItem = { itemNo: "", itemUnitName: "", quantity: "" };
 
-// § diminta client 2026-09-30 — search Accurate (Barang/Akun/Gudang) TIDAK
-// selalu ketemu (mis. search Akun Perantara ternyata cuma cocok ke NAMA,
-// bukan kode "no" — dikonfirmasi manual oleh client, § lessons-learned.md).
-// `Combobox` sendiri TIDAK diubah (dipakai lintas project, § architecture
-// doc "WAJIB dipakai ulang") — toggle manual ini LOKAL ke halaman ini
-// saja: swap ke `Input` polos kalau user klik "Isi manual", supaya kode
-// yang tidak ketemu di search tetap bisa diisi tangan sebagai fallback.
-function SearchableField({
-  value,
-  onChange,
-  onSearch,
-  options,
-  placeholder,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  onSearch: (query: string) => void;
-  options: { value: string; label: string }[];
-  placeholder: string;
-}) {
-  const [manual, setManual] = useState(false);
-  return (
-    <div className="flex flex-col gap-1">
-      {manual ? (
-        <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Ketik kode manual..." />
-      ) : (
-        <Combobox value={value} onChange={onChange} onSearch={onSearch} placeholder={placeholder} options={options} />
-      )}
-      <button
-        type="button"
-        onClick={() => setManual((m) => !m)}
-        className="self-start text-[11px] text-muted-foreground underline decoration-dotted hover:text-foreground"
-      >
-        {manual ? "Cari di Accurate lagi" : "Tidak ketemu? Isi manual"}
-      </button>
-    </div>
-  );
+// § diminta client 2026-10-02 — pemisah ribuan di Standard Cost supaya
+// gampang hitung jumlah digit. State TETAP digit polos (mis. "20000"),
+// formatter ini CUMA untuk tampilan — konversi ke Number() tetap di 1
+// titik (`handleSave`), sama pola `quantity` di atas.
+function formatThousands(digits: string): string {
+  if (!digits) return "";
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
 }
 
 async function searchAccurateItems(q: string): Promise<AccurateItemResult[]> {
   if (!q.trim()) return [];
   const res = await api.accurate.items.search.get({ query: { q } });
   return res.data ? (res.data as unknown as { items: AccurateItemResult[] }).items : [];
-}
-
-async function searchAccurateAccounts(q: string): Promise<AccurateAccountResult[]> {
-  if (!q.trim()) return [];
-  const res = await api.accurate.glaccounts.search.get({ query: { q } });
-  return res.data ? (res.data as unknown as { accounts: AccurateAccountResult[] }).accounts : [];
-}
-
-async function searchAccurateWarehouses(q: string): Promise<AccurateWarehouseResult[]> {
-  if (!q.trim()) return [];
-  const res = await api.accurate.warehouses.search.get({ query: { q } });
-  return res.data ? (res.data as unknown as { warehouses: AccurateWarehouseResult[] }).warehouses : [];
 }
 
 function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved: () => void }) {
@@ -122,14 +100,9 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const [standardCost, setStandardCost] = useState("");
   const [adjustmentAccountNo, setAdjustmentAccountNo] = useState("");
   const [adjustmentAccountName, setAdjustmentAccountName] = useState("");
-  const [accountResults, setAccountResults] = useState<AccurateAccountResult[]>([]);
-  const [branchName, setBranchName] = useState("");
-  const [warehouseName, setWarehouseName] = useState("");
-  // § Import Formula (Excel) — "Nomor Project"/"Departemen", ditambah di
-  // form manual JUGA supaya edit Formula hasil import lewat form TIDAK
-  // diam-diam menghapus field ini (PUT mengganti seluruh Formula).
-  const [finishedGoodProjectNo, setFinishedGoodProjectNo] = useState("");
-  const [finishedGoodDepartmentName, setFinishedGoodDepartmentName] = useState("");
+  // § diminta client 2026-10-02 — daftar Akun Perantara LOKAL (bukan hasil
+  // search Accurate lagi), di-fetch sekali tiap dialog Formula dibuka.
+  const [intermediaryAccounts, setIntermediaryAccounts] = useState<IntermediaryAccount[]>([]);
   const [items, setItems] = useState<FormulaItem[]>([{ ...EMPTY_ITEM }]);
   // § Bahan Baku pakai endpoint search yang SAMA (`item/list.do` mencakup
   // Barang Jadi & Bahan Baku, sama-sama "Item" di Accurate) — 1 state hasil
@@ -137,13 +110,6 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   // dalam satu waktu), fallback per-baris (§ `itemComboboxOptions`) yang
   // menjaga baris LAIN tetap tampil benar walau state ini berubah.
   const [itemResults, setItemResults] = useState<AccurateItemResult[]>([]);
-  // § Gudang Barang Jadi vs Gudang per-baris Bahan Baku dipisah jadi 2 state
-  // hasil pencarian (bukan digabung 1 seperti Item) karena keduanya sering
-  // dicari BERSAMAAN di layar yang sama (1 field Gudang Barang Jadi + N
-  // baris Gudang Bahan Baku) — kalau digabung 1 state, hasil salah satu
-  // bisa "menimpa" tampilan yang lain.
-  const [finishedGoodWarehouseResults, setFinishedGoodWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
-  const [itemWarehouseResults, setItemWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -154,18 +120,17 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   // `SearchForm` (§ ADR-0024) — konsisten timing debounce lintas project.
   const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(await searchAccurateItems(q)), 350);
   const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(await searchAccurateItems(q)), 350);
-  const debouncedAccountSearch = useDebouncedCallback(async (q: string) => setAccountResults(await searchAccurateAccounts(q)), 350);
-  const debouncedFinishedGoodWarehouseSearch = useDebouncedCallback(async (q: string) => setFinishedGoodWarehouseResults(await searchAccurateWarehouses(q)), 350);
-  const debouncedItemWarehouseSearch = useDebouncedCallback(async (q: string) => setItemWarehouseResults(await searchAccurateWarehouses(q)), 350);
 
   async function openDialog() {
     setOpen(true);
     setError(null);
     setFinishedGoodResults([]);
-    setAccountResults([]);
     setItemResults([]);
-    setFinishedGoodWarehouseResults([]);
-    setItemWarehouseResults([]);
+    // § diminta client 2026-10-02 — Akun Perantara LOKAL, bukan Accurate
+    // search lagi: fetch sekali tiap dialog dibuka (dibutuhkan baik mode
+    // Tambah maupun Edit, jadi di luar percabangan `formulaId` di bawah).
+    const accountsRes = await api.autoproduksi.accounts.get();
+    if (accountsRes.data) setIntermediaryAccounts((accountsRes.data as unknown as { accounts: IntermediaryAccount[] }).accounts);
     if (!formulaId) {
       setName("");
       setFinishedGoodItemNo("");
@@ -174,10 +139,6 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setStandardCost("");
       setAdjustmentAccountNo("");
       setAdjustmentAccountName("");
-      setBranchName("");
-      setWarehouseName("");
-      setFinishedGoodProjectNo("");
-      setFinishedGoodDepartmentName("");
       setItems([{ ...EMPTY_ITEM }]);
       return;
     }
@@ -188,14 +149,18 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setFinishedGoodItemNo(detail.formula.finishedGoodItemNo);
       setFinishedGoodItemUnitName(detail.formula.finishedGoodItemUnitName);
       setFinishedGoodItemName(detail.formula.finishedGoodItemName ?? "");
-      setStandardCost(detail.formula.standardCost ?? "");
+      // § standardCost dari DB bisa punya ".00" (kolom numeric(18,2)) —
+      // Standard Cost di sini selalu bilangan bulat Rupiah di praktiknya
+      // (sama seperti contoh client, tidak pernah pakai sen), jadi
+      // dibulatkan ke string digit polos supaya formatter ribuan di bawah
+      // bekerja benar (bukan karena sengaja buang presisi desimal).
+      setStandardCost(detail.formula.standardCost ? String(Math.trunc(Number(detail.formula.standardCost))) : "");
       setAdjustmentAccountNo(detail.formula.adjustmentAccountNo);
       setAdjustmentAccountName(detail.formula.adjustmentAccountName ?? "");
-      setBranchName(detail.formula.branchName);
-      setWarehouseName(detail.formula.warehouseName ?? "");
-      setFinishedGoodProjectNo(detail.formula.finishedGoodProjectNo ?? "");
-      setFinishedGoodDepartmentName(detail.formula.finishedGoodDepartmentName ?? "");
-      setItems(detail.items.length > 0 ? detail.items : [{ ...EMPTY_ITEM }]);
+      // § `quantity` dari API bisa number ATAU string tergantung serialisasi
+      // (§ komentar tipe `FormulaItem` di atas) — `String(...)` membungkus
+      // keduanya jadi representasi teks yang konsisten untuk state form.
+      setItems(detail.items.length > 0 ? detail.items.map((i) => ({ ...i, quantity: String(i.quantity) })) : [{ ...EMPTY_ITEM }]);
     }
   }
 
@@ -212,10 +177,16 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
     }
   }
 
-  function selectAccount(no: string) {
-    const record = accountResults.find((r) => r.no === no);
+  function selectLocalAccount(no: string) {
+    const record = intermediaryAccounts.find((a) => a.accountNo === no);
     setAdjustmentAccountNo(no);
-    if (record) setAdjustmentAccountName(record.name);
+    if (record) setAdjustmentAccountName(record.accountName);
+  }
+
+  function handleAccountCreated(account: IntermediaryAccount) {
+    setIntermediaryAccounts((prev) => [...prev, account]);
+    setAdjustmentAccountNo(account.accountNo);
+    setAdjustmentAccountName(account.accountName);
   }
 
   function selectItemForRow(index: number, no: string) {
@@ -224,11 +195,11 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   }
 
   async function handleSave() {
-    if (!name.trim() || !finishedGoodItemNo.trim() || !finishedGoodItemUnitName.trim() || !adjustmentAccountNo.trim() || !branchName.trim()) {
-      setError("Nama Formula, Barang Jadi, Akun Perantara, dan Cabang wajib diisi.");
+    if (!name.trim() || !finishedGoodItemNo.trim() || !finishedGoodItemUnitName.trim() || !adjustmentAccountNo.trim()) {
+      setError("Nama Formula, Barang Jadi, dan Akun Perantara wajib diisi.");
       return;
     }
-    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && i.quantity > 0);
+    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && Number(i.quantity) > 0);
     if (validItems.length === 0) {
       setError("Minimal 1 Bahan Baku (kode barang, satuan, dan takaran > 0).");
       return;
@@ -243,18 +214,12 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       ...(standardCost.trim() ? { standardCost: Number(standardCost) } : {}),
       adjustmentAccountNo: adjustmentAccountNo.trim(),
       ...(adjustmentAccountName.trim() ? { adjustmentAccountName: adjustmentAccountName.trim() } : {}),
-      branchName: branchName.trim(),
-      ...(warehouseName.trim() ? { warehouseName: warehouseName.trim() } : {}),
-      ...(finishedGoodProjectNo.trim() ? { finishedGoodProjectNo: finishedGoodProjectNo.trim() } : {}),
-      ...(finishedGoodDepartmentName.trim() ? { finishedGoodDepartmentName: finishedGoodDepartmentName.trim() } : {}),
       items: validItems.map((i) => ({
         itemNo: i.itemNo.trim(),
         itemUnitName: i.itemUnitName.trim(),
         ...(i.itemName?.trim() ? { itemName: i.itemName.trim() } : {}),
-        quantity: i.quantity,
-        ...(i.warehouseName?.trim() ? { warehouseName: i.warehouseName.trim() } : {}),
-        ...(i.projectNo?.trim() ? { projectNo: i.projectNo.trim() } : {}),
-        ...(i.departmentName?.trim() ? { departmentName: i.departmentName.trim() } : {}),
+        // § konversi ke number TEPAT DI SINI, 1 titik — § komentar tipe FormulaItem.
+        quantity: Number(i.quantity),
       })),
     };
     const res = formulaId ? await api.autoproduksi.formulas({ id: formulaId }).put(body) : await api.autoproduksi.formulas.post(body);
@@ -303,15 +268,13 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             </label>
             <label className="col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
-              <Input type="number" value={standardCost} onChange={(e) => setStandardCost(e.target.value)} placeholder="20000" />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Nomor Project (opsional)</span>
-              <Input value={finishedGoodProjectNo} onChange={(e) => setFinishedGoodProjectNo(e.target.value)} placeholder="Kode proyek" />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Departemen (opsional)</span>
-              <Input value={finishedGoodDepartmentName} onChange={(e) => setFinishedGoodDepartmentName(e.target.value)} placeholder="Nama departemen" />
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={formatThousands(standardCost)}
+                onChange={(e) => setStandardCost(e.target.value.replace(/\D/g, ""))}
+                placeholder="20.000"
+              />
             </label>
           </div>
 
@@ -323,73 +286,47 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               </button>
             </div>
             {items.map((item, index) => (
-              <div key={index} className="flex flex-col gap-1 rounded-md border border-border/40 p-2">
-                <div className="grid grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr_auto] gap-2">
-                  <SearchableField
-                    value={item.itemNo}
-                    onChange={(no) => selectItemForRow(index, no)}
-                    onSearch={debouncedItemSearch}
-                    placeholder="Cari Bahan Baku..."
-                    options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
-                  />
-                  <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
-                  <Input
-                    type="number"
-                    value={item.quantity || ""}
-                    onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
-                    placeholder="Takaran, 0.5"
-                  />
-                  <SearchableField
-                    value={item.warehouseName ?? ""}
-                    onChange={(name) => updateItem(index, { warehouseName: name })}
-                    onSearch={debouncedItemWarehouseSearch}
-                    placeholder="Gudang (opsional)"
-                    options={warehouseComboboxOptions(item.warehouseName, itemWarehouseResults)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
-                    disabled={items.length === 1}
-                    className={buttonVariants("ghost", "h-9 w-9 p-0 text-destructive disabled:opacity-30")}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-                {/* § Import Formula (Excel) — Nomor Project/Departemen per Bahan Baku, baris sekunder supaya grid utama tidak terlalu padat. */}
-                <div className="grid grid-cols-2 gap-2">
-                  <Input value={item.projectNo ?? ""} onChange={(e) => updateItem(index, { projectNo: e.target.value })} placeholder="Nomor Project (opsional)" className="h-7 text-xs" />
-                  <Input value={item.departmentName ?? ""} onChange={(e) => updateItem(index, { departmentName: e.target.value })} placeholder="Departemen (opsional)" className="h-7 text-xs" />
-                </div>
+              <div key={index} className="grid grid-cols-[1.6fr_0.8fr_0.8fr_auto] gap-2">
+                <SearchableField
+                  value={item.itemNo}
+                  onChange={(no) => selectItemForRow(index, no)}
+                  onSearch={debouncedItemSearch}
+                  placeholder="Cari Bahan Baku..."
+                  options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
+                />
+                <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
+                <Input
+                  type="text"
+                  inputMode="decimal"
+                  value={item.quantity}
+                  onChange={(e) => updateItem(index, { quantity: e.target.value })}
+                  placeholder="Takaran, 0.5"
+                />
+                <button
+                  type="button"
+                  onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                  disabled={items.length === 1}
+                  className={buttonVariants("ghost", "h-9 w-9 p-0 text-destructive disabled:opacity-30")}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
             ))}
           </div>
 
-          <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/60 p-3">
-            <span className="col-span-2 text-xs font-medium text-foreground">Konfigurasi Lainnya</span>
-            <label className="col-span-2 flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Akun Perantara (cari di Accurate)</span>
-              <SearchableField
-                value={adjustmentAccountNo}
-                onChange={selectAccount}
-                onSearch={debouncedAccountSearch}
-                placeholder="Ketik kode/nama akun..."
-                options={itemComboboxOptions(adjustmentAccountNo, adjustmentAccountName, accountResults)}
-              />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Cabang</span>
-              <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} placeholder="JAKARTA" />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Gudang Barang Jadi (opsional)</span>
-              <SearchableField
-                value={warehouseName}
-                onChange={setWarehouseName}
-                onSearch={debouncedFinishedGoodWarehouseSearch}
-                placeholder="Cari Gudang..."
-                options={warehouseComboboxOptions(warehouseName, finishedGoodWarehouseResults)}
-              />
-            </label>
+          <div className="flex flex-col gap-1.5 rounded-lg border border-border/60 p-3">
+            <span className="text-xs font-medium text-foreground">Akun Perantara</span>
+            <div className="flex items-center gap-2">
+              <div className="flex-1">
+                <Combobox
+                  value={adjustmentAccountNo}
+                  onChange={selectLocalAccount}
+                  placeholder="Pilih Akun Perantara..."
+                  options={intermediaryAccounts.map((a) => ({ value: a.accountNo, label: `${a.accountName} (${a.accountNo})` }))}
+                />
+              </div>
+              <IntermediaryAccountFormDialog trigger="icon" onSaved={handleAccountCreated} />
+            </div>
           </div>
 
           {error && <p className="text-destructive">{error}</p>}
@@ -406,11 +343,13 @@ const columnHelper = createDataTableColumns<Formula>();
 
 export default function AutoProduksiFormulasPage() {
   const [formulas, setFormulas] = useState<Formula[] | null>(null);
-  // § Fase 162 (evaluasi client) — search nama Formula + filter Cabang,
-  // client-side (dataset per Data Usaha kecil, § plan file). Fungsi
-  // filter diekstrak ke `lib/filter-formulas.ts` supaya testable.
+  // § Fase 162 (evaluasi client) — search nama Formula, client-side
+  // (dataset per Data Usaha kecil, § plan file). Fungsi filter diekstrak
+  // ke `lib/filter-formulas.ts` supaya testable.
+  // § Fase 168 — filter Cabang DIGANTI filter Status (Aktif/Non-aktif),
+  // karena Cabang sudah tidak lagi jadi field Formula.
   const [search, setSearch] = useState("");
-  const [branchFilter, setBranchFilter] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<FormulaStatusFilter>("all");
 
   async function load() {
     const res = await api.autoproduksi.formulas.get();
@@ -429,6 +368,19 @@ export default function AutoProduksiFormulasPage() {
       return;
     }
     toast.success("Formula dihapus.");
+    load();
+  }
+
+  // § Fase 168 (diminta client) — toggle Aktif/Non-aktif, endpoint
+  // TERPISAH dari PUT (§ autoproduksi.route.ts) supaya tidak perlu kirim
+  // ulang Formula+items cuma utk ubah 1 boolean.
+  async function handleToggleActive(formula: Formula) {
+    const res = await api.autoproduksi.formulas({ id: formula.id }).active.patch({ isActive: !formula.isActive });
+    if (res.error) {
+      toast.error("Gagal mengubah status formula.");
+      return;
+    }
+    toast.success(formula.isActive ? "Formula dinonaktifkan." : "Formula diaktifkan.");
     load();
   }
 
@@ -454,12 +406,18 @@ export default function AutoProduksiFormulasPage() {
         </span>
       ),
     }),
+    // § Fase 168 (diminta client) — kolom Cabang DIHILANGKAN (field-nya
+    // sudah dihapus dari Formula total, pindah ke Input Produksi) —
+    // digantikan kolom Status (toggle Aktif/Non-aktif).
     columnHelper.display({
-      id: "adjustmentAccount",
-      header: "Akun Perantara",
-      cell: ({ row }) => (row.original.adjustmentAccountName ? `${row.original.adjustmentAccountName} (${row.original.adjustmentAccountNo})` : row.original.adjustmentAccountNo),
+      id: "status",
+      header: "Status",
+      cell: ({ row }) => (
+        <button type="button" onClick={() => handleToggleActive(row.original)} title="Klik untuk ubah status">
+          <Badge variant={row.original.isActive ? "success" : "default"}>{row.original.isActive ? "Aktif" : "Non-aktif"}</Badge>
+        </button>
+      ),
     }),
-    columnHelper.accessor("branchName", { header: "Cabang" }),
     columnHelper.display({
       id: "actions",
       header: "Aksi",
@@ -481,11 +439,7 @@ export default function AutoProduksiFormulasPage() {
     }),
   ];
 
-  // § Fase 162 — opsi filter Cabang diambil dari data Formula yang SUDAH
-  // ada (tidak perlu fetch daftar Cabang dari Accurate, cukup Cabang yang
-  // benar-benar dipakai di Formula Data Usaha ini).
-  const branchOptions = formulas ? [...new Set(formulas.map((f) => f.branchName))].sort() : [];
-  const filteredFormulas = formulas ? filterFormulas(formulas, { search, branch: branchFilter }) : null;
+  const filteredFormulas = formulas ? filterFormulas(formulas, { search, status: statusFilter }) : null;
 
   return (
     <div className="flex flex-col gap-6">
@@ -500,7 +454,10 @@ export default function AutoProduksiFormulasPage() {
       <Card>
         <CardHeader>
           <CardTitle>Daftar Formula</CardTitle>
-          <CardDescription>Barang/Akun dicari langsung ke Accurate — kode & nama otomatis terisi saat dipilih.</CardDescription>
+          <CardDescription>
+            Barang Jadi/Bahan Baku dicari langsung ke Accurate (kode & nama otomatis terisi saat dipilih) — Akun Perantara dari daftar lokal (kelola di
+            &quot;Pengaturan&quot;). Cabang/Gudang dipilih saat Input Produksi, bukan di sini — 1 Formula dipakai lintas cabang.
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {formulas && formulas.length > 0 && (
@@ -508,10 +465,14 @@ export default function AutoProduksiFormulasPage() {
               <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama Formula..." className="max-w-xs" />
               <div className="w-48">
                 <Combobox
-                  value={branchFilter ?? ""}
-                  onChange={(v) => setBranchFilter(v || null)}
-                  placeholder="Semua Cabang"
-                  options={[{ value: "", label: "Semua Cabang" }, ...branchOptions.map((b) => ({ value: b, label: b }))]}
+                  value={statusFilter === "all" ? "" : statusFilter}
+                  onChange={(v) => setStatusFilter((v || "all") as FormulaStatusFilter)}
+                  placeholder="Semua Status"
+                  options={[
+                    { value: "", label: "Semua Status" },
+                    { value: "active", label: "Aktif" },
+                    { value: "inactive", label: "Non-aktif" },
+                  ]}
                 />
               </div>
             </div>
@@ -524,9 +485,7 @@ export default function AutoProduksiFormulasPage() {
               data={filteredFormulas}
               emptyIcon={Boxes}
               emptyTitle={formulas && formulas.length > 0 ? "Tidak ada Formula yang cocok" : "Belum ada formula"}
-              emptyDescription={
-                formulas && formulas.length > 0 ? "Coba ubah kata pencarian atau filter Cabang." : 'Klik "Tambah Formula" untuk bikin resep pertama.'
-              }
+              emptyDescription={formulas && formulas.length > 0 ? "Coba ubah kata pencarian atau filter Status." : 'Klik "Tambah Formula" untuk bikin resep pertama.'}
             />
           )}
         </CardContent>

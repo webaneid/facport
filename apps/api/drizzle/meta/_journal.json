@@ -260,6 +260,20 @@
       "when": 1790930632599,
       "tag": "0036_fresh_baron_strucker",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1790942476013,
+      "tag": "0037_pretty_morgan_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1790958027509,
+      "tag": "0038_special_microchip",
+      "breakpoints": true
     }
   ]
 }

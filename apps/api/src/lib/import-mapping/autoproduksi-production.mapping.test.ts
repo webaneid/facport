@@ -51,3 +51,39 @@ describe("autoproduksiProductionRowError", () => {
     expect(autoproduksiProductionRowError({ ...validRow, Jumlah: "lima belas" }, columnMapping)).toContain("producedQty");
   });
 });
+
+// § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+// Baku/Proyek/Departemen BARU, semua opsional, pindahan dari Import
+// Formula (§ autoproduksi.schema.ts). Insert LANGSUNG ke kolom varchar
+// kita sendiri (autoproduksi_production_entries) — sama kelas bug security
+// review Fase 166, WAJIB divalidasi panjangnya.
+describe("autoproduksiProductionRowError — kolom baru Fase 168 (opsional)", () => {
+  const extendedMapping: Record<string, string> = {
+    ...columnMapping,
+    Cabang: "branchName",
+    "Gudang Barang Jadi": "warehouseName",
+    "Gudang Bahan Baku": "rawMaterialWarehouseName",
+    Proyek: "projectNo",
+    Departemen: "departmentName",
+  };
+  const validRow = { Tanggal: "2026-07-13", "Nama Resep/Formula": "Bolu Kukus SP (Spesial)", Jumlah: "15" };
+
+  test("kolom baru KOSONG semua -> tetap valid (opsional)", () => {
+    expect(autoproduksiProductionRowError(validRow, extendedMapping)).toEqual([]);
+  });
+
+  test("kolom baru TERISI wajar -> tetap valid", () => {
+    const row = { ...validRow, Cabang: "JAKARTA", "Gudang Barang Jadi": "Utama", "Gudang Bahan Baku": "Utama", Proyek: "PRJ-1", Departemen: "Produksi" };
+    expect(autoproduksiProductionRowError(row, extendedMapping)).toEqual([]);
+  });
+
+  test("Cabang lebih panjang dari varchar(100) -> error branchName, bukan nge-insert lalu gagal", () => {
+    const row = { ...validRow, Cabang: "X".repeat(101) };
+    expect(autoproduksiProductionRowError(row, extendedMapping)).toContain("branchName");
+  });
+
+  test("Proyek lebih panjang dari varchar(50) -> error projectNo", () => {
+    const row = { ...validRow, Proyek: "X".repeat(51) };
+    expect(autoproduksiProductionRowError(row, extendedMapping)).toContain("projectNo");
+  });
+});

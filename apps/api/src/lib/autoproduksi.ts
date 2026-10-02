@@ -14,10 +14,16 @@ type ProductionEntry = typeof autoproduksiProductionEntries.$inferSelect;
 // § Import Produksi (Excel) — worker resolve formula by name lalu panggil
 // fungsi ini TANPA baris `autoproduksi_production_entries` (dibuat
 // SETELAH, bukan sebelum — § `processAutoproduksiProductionImportRow`,
-// workers/index.ts). Dipersempit ke 2 field yang BENERAN dipakai di bawah
+// workers/index.ts). Dipersempit ke field yang BENERAN dipakai di bawah
 // (bukan `ProductionEntry` utuh) supaya pemanggil tidak perlu construct
-// row DB palsu cuma untuk 2 nilai ini.
-type ProductionEntryInput = Pick<ProductionEntry, "producedQty" | "transDate">;
+// row DB palsu cuma untuk nilai-nilai ini.
+// § Fase 168 — `branchName`/`warehouseName`/`rawMaterialWarehouseName`/
+// `projectNo`/`departmentName` PINDAH KE SINI dari Formula/FormulaItem
+// (konteks per-PRODUKSI, bukan bagian resep — § komentar schema).
+type ProductionEntryInput = Pick<
+  ProductionEntry,
+  "producedQty" | "transDate" | "branchName" | "warehouseName" | "rawMaterialWarehouseName" | "projectNo" | "departmentName"
+>;
 
 // § transDate disimpan "YYYY-MM-DD" (dari <input type="date"> polos, §
 // autoproduksi.route.ts schema) — Accurate API expect "DD/MM/YYYY" (sama
@@ -43,6 +49,11 @@ const AUTOPRODUKSI_DESCRIPTION = "Input Dari AutoProduksi";
 export function buildProductionEntryPayload(formula: Formula, formulaItems: FormulaItem[], entry: ProductionEntryInput): Record<string, unknown> {
   const producedQty = Number(entry.producedQty);
 
+  // § Fase 168 — Gudang Bahan Baku/Proyek/Departemen SEKARANG datang dari
+  // `entry` (konteks per-produksi, dipilih user tiap kali input), BUKAN
+  // lagi per-item Formula — SATU nilai berlaku SERAGAM ke SEMUA baris
+  // Bahan Baku dalam 1x produksi (sesuai permintaan client, bukan per-item
+  // lagi seperti desain lama).
   const rawMaterialLines = formulaItems.map((item) => ({
     itemNo: item.itemNo,
     itemUnitName: item.itemUnitName,
@@ -52,11 +63,9 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     // sesuai kebutuhan yang diproduksi".
     quantity: Number(item.quantity) * producedQty,
     itemAdjustmentType: "ADJUSTMENT_OUT" satisfies ItemAdjustmentType,
-    ...(item.warehouseName ? { warehouseName: item.warehouseName } : {}),
-    // § Import Formula (Excel) — "Nomor Project"/"Departemen" per Bahan
-    // Baku, field resmi `detailItem.projectNo`/`departmentName`.
-    ...(item.projectNo ? { projectNo: item.projectNo } : {}),
-    ...(item.departmentName ? { departmentName: item.departmentName } : {}),
+    ...(entry.rawMaterialWarehouseName ? { warehouseName: entry.rawMaterialWarehouseName } : {}),
+    ...(entry.projectNo ? { projectNo: entry.projectNo } : {}),
+    ...(entry.departmentName ? { departmentName: entry.departmentName } : {}),
   }));
 
   const finishedGoodLine = {
@@ -65,22 +74,30 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     // § Barang Jadi BERTAMBAH — qty produksi APA ADANYA (bukan dikali apa pun).
     quantity: producedQty,
     itemAdjustmentType: "ADJUSTMENT_IN" satisfies ItemAdjustmentType,
-    ...(formula.warehouseName ? { warehouseName: formula.warehouseName } : {}),
-    ...(formula.finishedGoodProjectNo ? { projectNo: formula.finishedGoodProjectNo } : {}),
-    ...(formula.finishedGoodDepartmentName ? { departmentName: formula.finishedGoodDepartmentName } : {}),
-    // § BUG DITEMUKAN 2026-10-02 — `standardCost` SUDAH ADA di skema sejak
-    // Fase 159 ("Nilai dimasukan manual", contoh client) TAPI TIDAK PERNAH
-    // dikirim ke Accurate. Spec resmi `item-adjustment/save.do` cantumkan
-    // `unitCost` wajib utk baris ADJUSTMENT_IN ("diisi hanya jika
-    // penambahan kuantitas barang") — ditemukan saat memetakan kolom
-    // "Unit Cost" di Excel Import Formula client, bukan sengaja ditunda.
+    // § Gudang Barang Jadi (`entry.warehouseName`) — field terpisah dari
+    // `entry.rawMaterialWarehouseName` di atas, karena baris Barang Jadi
+    // vs Bahan Baku butuh gudang yang berbeda.
+    ...(entry.warehouseName ? { warehouseName: entry.warehouseName } : {}),
+    ...(entry.projectNo ? { projectNo: entry.projectNo } : {}),
+    ...(entry.departmentName ? { departmentName: entry.departmentName } : {}),
+    // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (rilis v2.21.0) — `standardCost`
+    // SUDAH ADA di skema sejak Fase 159 ("Nilai dimasukan manual", contoh
+    // client) TAPI SEMPAT TIDAK PERNAH dikirim ke Accurate. Spec resmi
+    // `item-adjustment/save.do` cantumkan `unitCost` wajib utk baris
+    // ADJUSTMENT_IN ("diisi hanya jika penambahan kuantitas barang") — TIDAK
+    // tersentuh oleh perombakan Fase 168 (tetap dari `formula.standardCost`,
+    // sumbernya resep bukan konteks produksi).
     ...(formula.standardCost != null ? { unitCost: Number(formula.standardCost) } : {}),
   };
 
   return {
     transDate: formatTransDateForAccurate(entry.transDate),
     adjustmentAccountNo: formula.adjustmentAccountNo,
-    branchName: formula.branchName,
+    // § Fase 168 — Cabang sekarang OPSIONAL (dulu wajib dari Formula) —
+    // kosong = field di-omit total, Accurate pakai default preferensi
+    // (dikonfirmasi `accurate-openapi.json`: `branchName` TIDAK required
+    // di top-level `item-adjustment/save.do`).
+    ...(entry.branchName ? { branchName: entry.branchName } : {}),
     description: AUTOPRODUKSI_DESCRIPTION,
     detailItem: [...rawMaterialLines, finishedGoodLine],
   };

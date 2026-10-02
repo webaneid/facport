@@ -8,25 +8,41 @@
 // sebelum payload bisa disusun (§ `buildProductionEntryPayload`,
 // lib/autoproduksi.ts, direuse APA ADANYA dari flow manual).
 //
-// § Sumber: `Autoproduksi_Barang Jadi.xlsx` (client, 2026-10-02) — cuma 3
-// kolom: Tanggal, Nama Resep/Formula, Jumlah.
+// § Sumber: `Autoproduksi_Barang Jadi.xlsx` (client, 2026-10-02) — awalnya
+// cuma 3 kolom: Tanggal, Nama Resep/Formula, Jumlah.
+//
+// § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+// Baku/Proyek/Departemen PINDAH KE SINI dari Import Formula (BUKAN lagi
+// bagian resep, § autoproduksi.schema.ts) — SEMUA opsional, kolom Excel
+// baru. `rawMaterialWarehouseName` berlaku SERAGAM ke SEMUA baris Bahan
+// Baku formula yang dipakai (bukan per-Bahan-Baku lagi).
 //
 // § Resolusi nama Formula AMBIGU (duplikat nama DIBOLEHKAN di Import
 // Formula, keputusan eksplisit user) ditangani di WORKER
 // (`processAutoproduksiProductionImportRow`, workers/index.ts) — butuh
 // akses DB, bukan di file pure ini. File ini CUMA validasi bentuk baris
-// (tanggal valid, qty > 0, nama tidak kosong).
+// (tanggal valid, qty > 0, nama tidak kosong, kolom tidak kepanjangan).
 export const autoproduksiProductionMapping = {
   requiredFields: ["transDate", "formulaName", "producedQty"] as const,
   fieldToAccuratePath: {
     transDate: "transDate",
     formulaName: "formulaName",
     producedQty: "producedQty",
+    branchName: "branchName",
+    warehouseName: "warehouseName",
+    rawMaterialWarehouseName: "rawMaterialWarehouseName",
+    projectNo: "projectNo",
+    departmentName: "departmentName",
   } as Record<string, string>,
   defaultColumnMap: {
     Tanggal: "transDate",
     "Nama Resep/Formula": "formulaName",
     Jumlah: "producedQty",
+    Cabang: "branchName",
+    "Gudang Barang Jadi": "warehouseName",
+    "Gudang Bahan Baku": "rawMaterialWarehouseName",
+    Proyek: "projectNo",
+    Departemen: "departmentName",
   } as Record<string, string>,
 };
 
@@ -76,7 +92,28 @@ export function parseAutoproduksiTransDate(value: unknown): string | null {
   return null;
 }
 
-/** Validasi SATU baris: tanggal tidak terparse, Nama Resep kosong, atau Jumlah bukan angka > 0. */
+// § Fase 168 — field baru di sini insert LANGSUNG ke kolom `varchar` kita
+// sendiri (`autoproduksi_production_entries`), sama kelas bug yang pernah
+// ditemukan security review Fase 166 (`autoproduksi-formula.mapping.ts`)
+// — WAJIB divalidasi panjangnya DULU, bukan andalkan error Postgres mentah.
+const MAX_LENGTHS: Record<string, number> = {
+  branchName: 100,
+  warehouseName: 100,
+  rawMaterialWarehouseName: 100,
+  projectNo: 50,
+  departmentName: 100,
+};
+
+function fieldLengthErrors(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
+  const errors: string[] = [];
+  for (const [field, max] of Object.entries(MAX_LENGTHS)) {
+    const value = valueOf(rawRow, field, columnMapping);
+    if (value !== undefined && String(value).length > max) errors.push(field);
+  }
+  return errors;
+}
+
+/** Validasi SATU baris: tanggal tidak terparse, Nama Resep kosong, Jumlah bukan angka > 0, atau ADA field opsional yang lebih panjang dari batas kolom DB. */
 export function autoproduksiProductionRowError(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
   const errors: string[] = [];
   if (parseAutoproduksiTransDate(valueOf(rawRow, "transDate", columnMapping)) === null) errors.push("transDate");
@@ -85,5 +122,6 @@ export function autoproduksiProductionRowError(rawRow: Record<string, unknown>, 
   const qty = valueOf(rawRow, "producedQty", columnMapping);
   const qtyNum = qty === undefined ? NaN : Number(qty);
   if (!Number.isFinite(qtyNum) || qtyNum <= 0) errors.push("producedQty");
+  errors.push(...fieldLengthErrors(rawRow, columnMapping));
   return errors;
 }

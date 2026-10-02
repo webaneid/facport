@@ -26,10 +26,10 @@ import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 // grup (tepat 1 BJ), dan retry TIDAK duplikat grup yang sudah sukses.
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(autoproduksiFormulaImportRoute);
+// § Fase 168 (diminta client) — Cabang/Gudang DIHAPUS dari modul ini
+// (pindah ke Import Produksi) — fixture diperbarui mengikuti.
 const columnMapping = {
   "Nama Resep/Formula": "formulaName",
-  Cabang: "branchName",
-  Gudang: "warehouseName",
   "Akun Perantara": "adjustmentAccountNo",
   "Tipe Barang": "itemType",
   "Nomor Item": "itemNo",
@@ -47,13 +47,13 @@ function buildExcelFile(rows: (string | number)[][], filename = "formula.xlsx"):
   return new File([new Uint8Array(buffer)], filename, { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
-const HEADER = ["Nama Resep/Formula", "Cabang", "Gudang", "Akun Perantara", "Tipe Barang", "Nomor Item", "Nama Item", "Jumlah", "Nama Unit", "Unit Cost"];
+const HEADER = ["Nama Resep/Formula", "Akun Perantara", "Tipe Barang", "Nomor Item", "Nama Item", "Jumlah", "Nama Unit", "Unit Cost"];
 function validFormulaRows(name = "Bolu Kukus SP"): (string | number)[][] {
   return [
     HEADER,
-    [name, "JAKARTA", "Utama", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
-    [name, "JAKARTA", "Utama", "110501", "BB", "100007", "Tepung", 0.2, "Kg", ""],
-    [name, "JAKARTA", "Utama", "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000],
+    [name, "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
+    [name, "110501", "BB", "100007", "Tepung", 0.2, "Kg", ""],
+    [name, "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000],
   ];
 }
 
@@ -143,7 +143,7 @@ describe("POST /autoproduksi/import-formula/upload + confirm — happy path SYNC
 
   test("grup TANPA baris BJ -> baris gagal, batch completed_with_errors, TIDAK ADA Formula tersimpan", async () => {
     const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-nobj-${runId}@test.local`);
-    const rowsNoBj = [HEADER, ["Resep Gagal", "JAKARTA", "Utama", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""]];
+    const rowsNoBj = [HEADER, ["Resep Gagal", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""]];
     const { batchId, confirmRes } = await uploadAndConfirm(cookie, rowsNoBj);
 
     expect((await confirmRes.json()) as { status: string }).toMatchObject({ status: "completed_with_errors" });
@@ -170,9 +170,9 @@ describe("POST /autoproduksi/import-formula/:batchId/retry — tidak duplikat gr
     const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-retry-${runId}@test.local`);
     const mixedRows = [
       HEADER,
-      ["Resep OK", "JAKARTA", "Utama", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
-      ["Resep OK", "JAKARTA", "Utama", "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000],
-      ["Resep Rusak", "JAKARTA", "Utama", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
+      ["Resep OK", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
+      ["Resep OK", "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000],
+      ["Resep Rusak", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
       // § Resep Rusak sengaja TANPA baris BJ -> gagal di confirm pertama.
     ];
     const { batchId, confirmRes } = await uploadAndConfirm(cookie, mixedRows);

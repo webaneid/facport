@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, numeric, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, numeric, text, timestamp, index, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { subscriptions } from "./subscription.schema";
 import { dataUsaha } from "./data-usaha.schema";
@@ -28,6 +28,14 @@ import { dataUsaha } from "./data-usaha.schema";
 // Nullable & additive: Formula lama (sebelum Fase 163, kode diketik
 // manual) tetap valid, cuma nama-nya kosong sampai admin edit ulang lewat
 // Combobox baru.
+//
+// § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+// Baku/Nomor Project/Departemen DIHAPUS TOTAL dari Formula (DAN dari
+// `autoproduksiFormulaItems` di bawah) — semuanya SEKARANG konteks per
+// PRODUKSI, bukan bagian resep (§ `autoproduksiProductionEntries`,
+// kolom baru di bawah). Alasan client: customer dengan banyak cabang
+// terpaksa bikin Formula terpisah per cabang padahal resepnya identik —
+// 1 Formula sekarang dipakai lintas cabang/gudang/proyek.
 
 export const autoproduksiFormulas = pgTable(
   "autoproduksi_formulas",
@@ -56,14 +64,12 @@ export const autoproduksiFormulas = pgTable(
     adjustmentAccountNo: varchar("adjustment_account_no", { length: 50 }).notNull(), // "Akun Perantara" / adjustmentAccountNo API
     // § Fase 163 — nama Akun Perantara hasil live-search, sama pola di atas.
     adjustmentAccountName: varchar("adjustment_account_name", { length: 255 }),
-    branchName: varchar("branch_name", { length: 100 }).notNull(),
-    warehouseName: varchar("warehouse_name", { length: 100 }), // opsional, gudang barang jadi
-    // § Import Formula (Excel) — "Nomor Project"/"Departemen" pada baris
-    // Barang Jadi di file client. Field API resmi `detailItem.projectNo`/
-    // `detailItem.departmentName` (dikonfirmasi ada di accurate-openapi.json),
-    // belum pernah dipetakan sebelumnya di form manual — opsional, aditif.
-    finishedGoodProjectNo: varchar("finished_good_project_no", { length: 50 }),
-    finishedGoodDepartmentName: varchar("finished_good_department_name", { length: 100 }),
+    // § Fase 168 (diminta client) — toggle List Formula: non-aktif = tidak
+    // bisa dipilih/dicari utk Input Produksi baru (manual maupun Excel),
+    // TAPI tetap tampil di List Formula sebagai dokumentasi (tidak
+    // dihapus, tetap bisa diedit). Default true — Formula lama & baru
+    // otomatis aktif.
+    isActive: boolean("is_active").default(true).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -86,19 +92,52 @@ export const autoproduksiFormulaItems = pgTable(
     // Takaran PER 1 unit barang jadi (dikalikan qty produksi saat entry) —
     // contoh client: Telur 0.5kg untuk 1 Loyang Bolu.
     quantity: numeric("quantity", { precision: 18, scale: 4 }).notNull(),
-    // § Catatan #1 client sendiri di simulasi: "seharusnya bisa input
-    // gudang pada setiap barang" — field API `detailItem.warehouseName`
-    // SUDAH ada di spec resmi, langsung diakomodasi di Fase 1 (bukan
-    // ditunda, biayanya murah).
-    warehouseName: varchar("warehouse_name", { length: 100 }),
-    // § Import Formula (Excel) — "Nomor Project"/"Departemen" per baris
-    // Bahan Baku, sama alasan dengan `autoproduksiFormulas.finishedGood*`
-    // di atas (field `detailItem.projectNo`/`departmentName` resmi).
-    projectNo: varchar("project_no", { length: 50 }),
-    departmentName: varchar("department_name", { length: 100 }),
+    // § Fase 168 — Gudang Bahan Baku/Nomor Project/Departemen per-item
+    // DIHAPUS (pindah ke `autoproduksiProductionEntries.rawMaterialWarehouseName`/
+    // `projectNo`/`departmentName`, SATU nilai berlaku ke SEMUA baris
+    // Bahan Baku dalam 1x produksi — bukan per-item lagi, sesuai
+    // permintaan client).
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("autoproduksi_formula_items_formula_idx").on(t.formulaId)],
+);
+
+// § diminta client 2026-10-02 — Akun Perantara DIUBAH TOTAL dari live-search
+// Accurate jadi MASTER DATA LOKAL: bagian produksi yang isi Formula sering
+// tidak paham akun (domain akunting), jadi sekarang mereka pelihara daftar
+// sendiri di halaman "Settings" AutoProduksi, pilih dari situ (atau buat
+// baru langsung) di form Formula — TIDAK PERNAH cari ke Accurate lagi untuk
+// field ini. `accountName` WAJIB (beda dari `adjustmentAccountName` di
+// `autoproduksiFormulas` yang opsional) — ini record yang SENGAJA dibuat
+// user sendiri, bukan snapshot pasif hasil search.
+// § `autoproduksiFormulas.adjustmentAccountNo`/`adjustmentAccountName` TETAP
+// snapshot string independen (BUKAN foreign key ke sini) — edit/hapus akun
+// di sini TIDAK PERNAH mengubah Formula yang sudah pernah pakai nilainya.
+export const autoproduksiIntermediaryAccounts = pgTable(
+  "autoproduksi_intermediary_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    dataUsahaId: uuid("data_usaha_id")
+      .notNull()
+      .references(() => dataUsaha.id),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id),
+    accountNo: varchar("account_no", { length: 50 }).notNull(),
+    accountName: varchar("account_name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // § diminta user 2026-10-02 (ditanya eksplisit) — kode WAJIB unik per
+    // subscription, tolak duplikat (bukan diizinkan) supaya daftar pilihan
+    // di form Formula tetap bersih/tidak ambigu.
+    uniqueIndex("autoproduksi_intermediary_accounts_subscription_no_uidx").on(t.subscriptionId, t.accountNo),
+    index("autoproduksi_intermediary_accounts_subscription_idx").on(t.subscriptionId),
+  ],
 );
 
 // Log tiap "Input Produksi" = 1 job worker = 1 transaksi Penyesuaian
@@ -124,6 +163,25 @@ export const autoproduksiProductionEntries = pgTable(
       .references(() => autoproduksiFormulas.id),
     producedQty: numeric("produced_qty", { precision: 18, scale: 4 }).notNull(),
     transDate: varchar("trans_date", { length: 10 }).notNull(), // "YYYY-MM-DD", dikonversi ke DD/MM/YYYY saat kirim ke Accurate
+    // § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+    // Baku/Nomor Project/Departemen PINDAH KE SINI dari `autoproduksiFormulas`/
+    // `autoproduksiFormulaItems` (semuanya konteks per-PRODUKSI, bukan
+    // bagian resep — 1 Formula sekarang dipakai lintas cabang/gudang).
+    // SEMUA opsional (`branchName` kosong = Accurate pakai default
+    // preferensi, dikonfirmasi `accurate-openapi.json` item-adjustment/
+    // save.do: `branchName` TIDAK required di top-level).
+    // `rawMaterialWarehouseName`/`projectNo`/`departmentName` berlaku
+    // SERAGAM ke SEMUA baris Bahan Baku dalam 1x produksi (bukan per-item
+    // lagi) — `warehouseName` di sini KHUSUS Gudang Barang Jadi (beda dari
+    // `rawMaterialWarehouseName`, karena baris Barang Jadi vs Bahan Baku
+    // butuh gudang yang beda). `projectNo`/`departmentName` dipakai ulang
+    // sama persis utk baris Barang Jadi MAUPUN Bahan Baku (1 pilihan utk
+    // seluruh transaksi, § `buildProductionEntryPayload`).
+    branchName: varchar("branch_name", { length: 100 }),
+    warehouseName: varchar("warehouse_name", { length: 100 }), // Gudang Barang Jadi
+    rawMaterialWarehouseName: varchar("raw_material_warehouse_name", { length: 100 }), // Gudang Bahan Baku
+    projectNo: varchar("project_no", { length: 50 }),
+    departmentName: varchar("department_name", { length: 100 }),
     status: varchar("status", { length: 20 }).notNull().default("pending"), // pending -> processing -> success | failed
     accurateTransactionId: varchar("accurate_transaction_id", { length: 100 }),
     errorMessage: text("error_message"),

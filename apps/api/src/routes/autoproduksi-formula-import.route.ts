@@ -87,10 +87,6 @@ async function processFormulaBatchRows(
             finishedGoodItemName: record.finishedGoodItemName,
             standardCost: record.standardCost,
             adjustmentAccountNo: record.adjustmentAccountNo,
-            branchName: record.branchName,
-            warehouseName: record.warehouseName,
-            finishedGoodProjectNo: record.finishedGoodProjectNo,
-            finishedGoodDepartmentName: record.finishedGoodDepartmentName,
           })
           .returning();
         await tx.insert(autoproduksiFormulaItems).values(
@@ -100,9 +96,6 @@ async function processFormulaBatchRows(
             itemUnitName: item.itemUnitName,
             itemName: item.itemName,
             quantity: item.quantity,
-            warehouseName: item.warehouseName,
-            projectNo: item.projectNo,
-            departmentName: item.departmentName,
             sortOrder: index,
           })),
         );

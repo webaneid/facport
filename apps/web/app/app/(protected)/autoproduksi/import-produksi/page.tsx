@@ -21,11 +21,19 @@ import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-prov
 // ditunda, dieksekusi sekarang). 1 baris = 1 Input Produksi (TIDAK ADA
 // grouping) — "Nama Resep/Formula" di-resolve ke Formula yang SUDAH ADA
 // (dibuat manual atau via Import Formula terpisah), BUKAN dibuat di sini.
+// § Fase 168 (diminta client) — Cabang/Gudang Barang Jadi/Gudang Bahan
+// Baku/Proyek/Departemen BARU, semua opsional (konteks per-produksi,
+// pindahan dari Import Formula).
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "transDate", label: "Tanggal (wajib)" },
-  { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada & namanya unik)" },
+  { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada, AKTIF, & namanya unik)" },
   { value: "producedQty", label: "Jumlah (wajib)" },
+  { value: "branchName", label: "Cabang (opsional)" },
+  { value: "warehouseName", label: "Gudang Barang Jadi (opsional)" },
+  { value: "rawMaterialWarehouseName", label: "Gudang Bahan Baku (opsional — berlaku ke semua Bahan Baku resep)" },
+  { value: "projectNo", label: "Proyek (opsional)" },
+  { value: "departmentName", label: "Departemen (opsional)" },
 ] as const;
 
 const uploadSchema = z.object({
