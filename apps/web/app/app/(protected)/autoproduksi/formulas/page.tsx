@@ -36,7 +36,22 @@ type AccurateItemResult = { no: string; name: string; unitName: string };
 type AccurateAccountResult = { no: string; name: string };
 type AccurateWarehouseResult = { name: string };
 
-type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: number; warehouseName?: string; projectNo?: string; departmentName?: string };
+// § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (evaluasi client) — `quantity`
+// SENGAJA string (BUKAN number) di state form, sepanjang masa edit.
+// Akar masalah: kolom DB `numeric` SELALU datang dari API sebagai STRING
+// (mis. "0.8000", postgres.js tidak otomatis jadi JS number) — field yang
+// TIDAK disentuh user tetap string itu, dikonversi ke number CUMA kalau
+// field itu di-klik-ulang. Dulu disimpan sebagai `number` + `value={item.
+// quantity || ""}` — DUA bug sekaligus: (1) field yang tidak disentuh
+// terkirim ke server sebagai string, DITOLAK validasi (pesan generik
+// "Gagal menyimpan formula", client harus klik-ulang SEMUA baris biar
+// kekonversi); (2) `0 || ""` di JS true untuk angka 0 (falsy) — ketik "0"
+// sebagai awalan desimal (mis. "0,5") bikin kotak kelihatan kosong lagi,
+// client produksi terbiasa menulis "0" di depan koma. String SELAMA edit
+// (apa adanya, tanpa round-trip ke number tiap keystroke) menghilangkan
+// AKAR kedua masalah — konversi `Number(...)` cuma di 1 titik, pas kirim
+// ke server (§ `handleSave`).
+type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: string; warehouseName?: string; projectNo?: string; departmentName?: string };
 type Formula = {
   id: string;
   name: string;
@@ -53,7 +68,16 @@ type Formula = {
 };
 type FormulaDetail = { formula: Formula; items: FormulaItem[] };
 
-const EMPTY_ITEM: FormulaItem = { itemNo: "", itemUnitName: "", quantity: 0 };
+const EMPTY_ITEM: FormulaItem = { itemNo: "", itemUnitName: "", quantity: "" };
+
+// § diminta client 2026-10-02 — pemisah ribuan di Standard Cost supaya
+// gampang hitung jumlah digit. State TETAP digit polos (mis. "20000"),
+// formatter ini CUMA untuk tampilan — konversi ke Number() tetap di 1
+// titik (`handleSave`), sama pola `quantity` di atas.
+function formatThousands(digits: string): string {
+  if (!digits) return "";
+  return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
 
 // § diminta client 2026-09-30 — search Accurate (Barang/Akun/Gudang) TIDAK
 // selalu ketemu (mis. search Akun Perantara ternyata cuma cocok ke NAMA,
@@ -188,14 +212,22 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setFinishedGoodItemNo(detail.formula.finishedGoodItemNo);
       setFinishedGoodItemUnitName(detail.formula.finishedGoodItemUnitName);
       setFinishedGoodItemName(detail.formula.finishedGoodItemName ?? "");
-      setStandardCost(detail.formula.standardCost ?? "");
+      // § standardCost dari DB bisa punya ".00" (kolom numeric(18,2)) —
+      // Standard Cost di sini selalu bilangan bulat Rupiah di praktiknya
+      // (sama seperti contoh client, tidak pernah pakai sen), jadi
+      // dibulatkan ke string digit polos supaya formatter ribuan di bawah
+      // bekerja benar (bukan karena sengaja buang presisi desimal).
+      setStandardCost(detail.formula.standardCost ? String(Math.trunc(Number(detail.formula.standardCost))) : "");
       setAdjustmentAccountNo(detail.formula.adjustmentAccountNo);
       setAdjustmentAccountName(detail.formula.adjustmentAccountName ?? "");
       setBranchName(detail.formula.branchName);
       setWarehouseName(detail.formula.warehouseName ?? "");
       setFinishedGoodProjectNo(detail.formula.finishedGoodProjectNo ?? "");
       setFinishedGoodDepartmentName(detail.formula.finishedGoodDepartmentName ?? "");
-      setItems(detail.items.length > 0 ? detail.items : [{ ...EMPTY_ITEM }]);
+      // § `quantity` dari API bisa number ATAU string tergantung serialisasi
+      // (§ komentar tipe `FormulaItem` di atas) — `String(...)` membungkus
+      // keduanya jadi representasi teks yang konsisten untuk state form.
+      setItems(detail.items.length > 0 ? detail.items.map((i) => ({ ...i, quantity: String(i.quantity) })) : [{ ...EMPTY_ITEM }]);
     }
   }
 
@@ -228,7 +260,7 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setError("Nama Formula, Barang Jadi, Akun Perantara, dan Cabang wajib diisi.");
       return;
     }
-    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && i.quantity > 0);
+    const validItems = items.filter((i) => i.itemNo.trim() && i.itemUnitName.trim() && Number(i.quantity) > 0);
     if (validItems.length === 0) {
       setError("Minimal 1 Bahan Baku (kode barang, satuan, dan takaran > 0).");
       return;
@@ -251,7 +283,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
         itemNo: i.itemNo.trim(),
         itemUnitName: i.itemUnitName.trim(),
         ...(i.itemName?.trim() ? { itemName: i.itemName.trim() } : {}),
-        quantity: i.quantity,
+        // § konversi ke number TEPAT DI SINI, 1 titik — § komentar tipe FormulaItem.
+        quantity: Number(i.quantity),
         ...(i.warehouseName?.trim() ? { warehouseName: i.warehouseName.trim() } : {}),
         ...(i.projectNo?.trim() ? { projectNo: i.projectNo.trim() } : {}),
         ...(i.departmentName?.trim() ? { departmentName: i.departmentName.trim() } : {}),
@@ -303,7 +336,13 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
             </label>
             <label className="col-span-2 flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
-              <Input type="number" value={standardCost} onChange={(e) => setStandardCost(e.target.value)} placeholder="20000" />
+              <Input
+                type="text"
+                inputMode="numeric"
+                value={formatThousands(standardCost)}
+                onChange={(e) => setStandardCost(e.target.value.replace(/\D/g, ""))}
+                placeholder="20.000"
+              />
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Nomor Project (opsional)</span>
@@ -334,9 +373,10 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
                   />
                   <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
                   <Input
-                    type="number"
-                    value={item.quantity || ""}
-                    onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
+                    type="text"
+                    inputMode="decimal"
+                    value={item.quantity}
+                    onChange={(e) => updateItem(index, { quantity: e.target.value })}
                     placeholder="Takaran, 0.5"
                   />
                   <SearchableField
@@ -454,11 +494,10 @@ export default function AutoProduksiFormulasPage() {
         </span>
       ),
     }),
-    columnHelper.display({
-      id: "adjustmentAccount",
-      header: "Akun Perantara",
-      cell: ({ row }) => (row.original.adjustmentAccountName ? `${row.original.adjustmentAccountName} (${row.original.adjustmentAccountNo})` : row.original.adjustmentAccountNo),
-    }),
+    // § diminta client 2026-10-02 — Akun Perantara DIHILANGKAN dari tabel
+    // List Formula (bagian produksi tidak paham akun, cuma relevan untuk
+    // akunting) — field-nya TETAP ada di form Tambah/Edit (masih WAJIB
+    // dikirim ke Accurate), cuma tidak ditampilkan di kolom tabel ini.
     columnHelper.accessor("branchName", { header: "Cabang" }),
     columnHelper.display({
       id: "actions",
