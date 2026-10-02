@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, integer, numeric, text, timestamp, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, integer, numeric, text, timestamp, index, uniqueIndex } from "drizzle-orm/pg-core";
 import { user } from "./auth.schema";
 import { subscriptions } from "./subscription.schema";
 import { dataUsaha } from "./data-usaha.schema";
@@ -99,6 +99,44 @@ export const autoproduksiFormulaItems = pgTable(
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("autoproduksi_formula_items_formula_idx").on(t.formulaId)],
+);
+
+// § diminta client 2026-10-02 — Akun Perantara DIUBAH TOTAL dari live-search
+// Accurate jadi MASTER DATA LOKAL: bagian produksi yang isi Formula sering
+// tidak paham akun (domain akunting), jadi sekarang mereka pelihara daftar
+// sendiri di halaman "Settings" AutoProduksi, pilih dari situ (atau buat
+// baru langsung) di form Formula — TIDAK PERNAH cari ke Accurate lagi untuk
+// field ini. `accountName` WAJIB (beda dari `adjustmentAccountName` di
+// `autoproduksiFormulas` yang opsional) — ini record yang SENGAJA dibuat
+// user sendiri, bukan snapshot pasif hasil search.
+// § `autoproduksiFormulas.adjustmentAccountNo`/`adjustmentAccountName` TETAP
+// snapshot string independen (BUKAN foreign key ke sini) — edit/hapus akun
+// di sini TIDAK PERNAH mengubah Formula yang sudah pernah pakai nilainya.
+export const autoproduksiIntermediaryAccounts = pgTable(
+  "autoproduksi_intermediary_accounts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id),
+    dataUsahaId: uuid("data_usaha_id")
+      .notNull()
+      .references(() => dataUsaha.id),
+    subscriptionId: uuid("subscription_id")
+      .notNull()
+      .references(() => subscriptions.id),
+    accountNo: varchar("account_no", { length: 50 }).notNull(),
+    accountName: varchar("account_name", { length: 255 }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    // § diminta user 2026-10-02 (ditanya eksplisit) — kode WAJIB unik per
+    // subscription, tolak duplikat (bukan diizinkan) supaya daftar pilihan
+    // di form Formula tetap bersih/tidak ambigu.
+    uniqueIndex("autoproduksi_intermediary_accounts_subscription_no_uidx").on(t.subscriptionId, t.accountNo),
+    index("autoproduksi_intermediary_accounts_subscription_idx").on(t.subscriptionId),
+  ],
 );
 
 // Log tiap "Input Produksi" = 1 job worker = 1 transaksi Penyesuaian

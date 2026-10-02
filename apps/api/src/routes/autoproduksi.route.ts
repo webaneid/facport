@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries } from "../db/schema";
+import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { boss, JOBS, startQueue } from "../lib/queue";
@@ -275,4 +275,109 @@ export const autoproduksiRoute = new Elysia()
         transDate: t.String({ pattern: "^\\d{4}-\\d{2}-\\d{2}$" }),
       }),
     },
+  )
+  // § diminta client 2026-10-02 — Akun Perantara jadi MASTER DATA LOKAL
+  // (bukan live-search Accurate lagi, § komentar `autoproduksi.schema.ts`
+  // di atas `autoproduksiIntermediaryAccounts`). 100% CRUD lokal — TIDAK
+  // ADA panggilan Accurate di 4 endpoint ini, TIDAK ADA scope baru.
+  .get(
+    "/autoproduksi/accounts",
+    async ({ subscription }) => {
+      const accounts = await db
+        .select()
+        .from(autoproduksiIntermediaryAccounts)
+        .where(eq(autoproduksiIntermediaryAccounts.subscriptionId, subscription.id))
+        .orderBy(autoproduksiIntermediaryAccounts.accountName);
+      return { accounts };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  .post(
+    "/autoproduksi/accounts",
+    async ({ body, user, subscription, set }) => {
+      const [existing] = await db
+        .select({ id: autoproduksiIntermediaryAccounts.id })
+        .from(autoproduksiIntermediaryAccounts)
+        .where(and(eq(autoproduksiIntermediaryAccounts.subscriptionId, subscription.id), eq(autoproduksiIntermediaryAccounts.accountNo, body.accountNo)));
+      if (existing) {
+        set.status = 409;
+        return { code: "ACCOUNT_NO_DUPLICATE" };
+      }
+      const [account] = await db
+        .insert(autoproduksiIntermediaryAccounts)
+        .values({
+          userId: user.id,
+          dataUsahaId: subscription.dataUsahaId,
+          subscriptionId: subscription.id,
+          accountNo: body.accountNo,
+          accountName: body.accountName,
+        })
+        .returning();
+      return { account };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      body: t.Object({
+        accountNo: t.String({ minLength: 1, maxLength: 50 }),
+        accountName: t.String({ minLength: 1, maxLength: 255 }),
+      }),
+    },
+  )
+  .put(
+    "/autoproduksi/accounts/:id",
+    async ({ params, body, subscription, set }) => {
+      const [existing] = await db
+        .select()
+        .from(autoproduksiIntermediaryAccounts)
+        .where(and(eq(autoproduksiIntermediaryAccounts.id, params.id), eq(autoproduksiIntermediaryAccounts.subscriptionId, subscription.id)));
+      if (!existing) {
+        set.status = 404;
+        return { code: "ACCOUNT_NOT_FOUND" };
+      }
+      if (body.accountNo !== existing.accountNo) {
+        const [duplicate] = await db
+          .select({ id: autoproduksiIntermediaryAccounts.id })
+          .from(autoproduksiIntermediaryAccounts)
+          .where(and(eq(autoproduksiIntermediaryAccounts.subscriptionId, subscription.id), eq(autoproduksiIntermediaryAccounts.accountNo, body.accountNo)));
+        if (duplicate) {
+          set.status = 409;
+          return { code: "ACCOUNT_NO_DUPLICATE" };
+        }
+      }
+      const [account] = await db
+        .update(autoproduksiIntermediaryAccounts)
+        .set({ accountNo: body.accountNo, accountName: body.accountName, updatedAt: new Date() })
+        .where(eq(autoproduksiIntermediaryAccounts.id, params.id))
+        .returning();
+      return { account };
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({
+        accountNo: t.String({ minLength: 1, maxLength: 50 }),
+        accountName: t.String({ minLength: 1, maxLength: 255 }),
+      }),
+    },
+  )
+  .delete(
+    "/autoproduksi/accounts/:id",
+    async ({ params, subscription, set }) => {
+      const [existing] = await db
+        .select({ id: autoproduksiIntermediaryAccounts.id })
+        .from(autoproduksiIntermediaryAccounts)
+        .where(and(eq(autoproduksiIntermediaryAccounts.id, params.id), eq(autoproduksiIntermediaryAccounts.subscriptionId, subscription.id)));
+      if (!existing) {
+        set.status = 404;
+        return { code: "ACCOUNT_NOT_FOUND" };
+      }
+      // § TIDAK ada FK dari autoproduksi_formulas ke tabel ini (snapshot
+      // string independen, § komentar schema) — hapus di sini TIDAK PERNAH
+      // menyentuh Formula yang sudah pernah pakai akun ini.
+      await db.delete(autoproduksiIntermediaryAccounts).where(eq(autoproduksiIntermediaryAccounts.id, params.id));
+      return { ok: true };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production", params: t.Object({ id: t.String({ format: "uuid" }) }) },
   );

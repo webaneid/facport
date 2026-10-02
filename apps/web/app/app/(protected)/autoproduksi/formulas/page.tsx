@@ -14,16 +14,24 @@ import { api } from "@/lib/api-client";
 import { filterFormulas } from "@/lib/filter-formulas";
 import { itemComboboxOptions, warehouseComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
+import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Facport yang
 // form-based (BUKAN Excel-upload seperti 23 modul lain). Formula (BOM):
 // 1 Barang Jadi = kombinasi N Bahan Baku + takaran.
-// § Fase 163, ADR-0039 (evaluasi client) — Barang Jadi/Bahan Baku/Akun
-// Perantara SEKARANG dicari live ke Accurate (`GET /accurate/items/search`,
-// `GET /accurate/glaccounts/search`, § accurate-lookup.route.ts) lewat
-// `Combobox` yang sudah ada, BUKAN diketik manual lagi — kode+satuan+nama
-// otomatis terisi begitu dipilih. `branchName` TETAP diketik manual
-// (Accurate tidak punya endpoint search Cabang yang relevan di sini).
+// § Fase 163, ADR-0039 (evaluasi client) — Barang Jadi/Bahan Baku
+// SEKARANG dicari live ke Accurate (`GET /accurate/items/search`,
+// § accurate-lookup.route.ts) lewat `Combobox` yang sudah ada, BUKAN
+// diketik manual lagi — kode+satuan+nama otomatis terisi begitu dipilih.
+// `branchName` TETAP diketik manual (Accurate tidak punya endpoint
+// search Cabang yang relevan di sini).
+// § DIUBAH TOTAL 2026-10-02 (diminta client) — Akun Perantara BUKAN
+// LAGI live-search Accurate (`glaccounts/search` dihapus dari alur
+// ini): bagian produksi yang isi Formula sering tidak paham akun, jadi
+// sekarang pilih dari daftar MASTER DATA LOKAL yang dikelola sendiri di
+// halaman Settings (`/autoproduksi/settings`, §
+// `autoproduksi_intermediary_accounts`), atau bikin baru langsung dari
+// sini lewat `IntermediaryAccountFormDialog` (dialog kecil, Kode+Nama).
 // § Fase 162 (evaluasi client) — kolom "Gudang" per baris Bahan Baku.
 // § HOTFIX 2026-09-30 (evaluasi client) — Gudang (Barang Jadi & Bahan
 // Baku) SEKARANG juga search-pilih ke Accurate (`GET /accurate/warehouses/search`)
@@ -33,7 +41,6 @@ import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 // di banyak gudang), jadi user tetap harus PILIH gudangnya sendiri, cuma
 // dari daftar asli (bukan ketik manual).
 type AccurateItemResult = { no: string; name: string; unitName: string };
-type AccurateAccountResult = { no: string; name: string };
 type AccurateWarehouseResult = { name: string };
 
 // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (evaluasi client) — `quantity`
@@ -124,12 +131,6 @@ async function searchAccurateItems(q: string): Promise<AccurateItemResult[]> {
   return res.data ? (res.data as unknown as { items: AccurateItemResult[] }).items : [];
 }
 
-async function searchAccurateAccounts(q: string): Promise<AccurateAccountResult[]> {
-  if (!q.trim()) return [];
-  const res = await api.accurate.glaccounts.search.get({ query: { q } });
-  return res.data ? (res.data as unknown as { accounts: AccurateAccountResult[] }).accounts : [];
-}
-
 async function searchAccurateWarehouses(q: string): Promise<AccurateWarehouseResult[]> {
   if (!q.trim()) return [];
   const res = await api.accurate.warehouses.search.get({ query: { q } });
@@ -146,7 +147,9 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const [standardCost, setStandardCost] = useState("");
   const [adjustmentAccountNo, setAdjustmentAccountNo] = useState("");
   const [adjustmentAccountName, setAdjustmentAccountName] = useState("");
-  const [accountResults, setAccountResults] = useState<AccurateAccountResult[]>([]);
+  // § diminta client 2026-10-02 — daftar Akun Perantara LOKAL (bukan hasil
+  // search Accurate lagi), di-fetch sekali tiap dialog Formula dibuka.
+  const [intermediaryAccounts, setIntermediaryAccounts] = useState<IntermediaryAccount[]>([]);
   const [branchName, setBranchName] = useState("");
   const [warehouseName, setWarehouseName] = useState("");
   // § Import Formula (Excel) — "Nomor Project"/"Departemen", ditambah di
@@ -178,7 +181,6 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   // `SearchForm` (§ ADR-0024) — konsisten timing debounce lintas project.
   const debouncedFinishedGoodSearch = useDebouncedCallback(async (q: string) => setFinishedGoodResults(await searchAccurateItems(q)), 350);
   const debouncedItemSearch = useDebouncedCallback(async (q: string) => setItemResults(await searchAccurateItems(q)), 350);
-  const debouncedAccountSearch = useDebouncedCallback(async (q: string) => setAccountResults(await searchAccurateAccounts(q)), 350);
   const debouncedFinishedGoodWarehouseSearch = useDebouncedCallback(async (q: string) => setFinishedGoodWarehouseResults(await searchAccurateWarehouses(q)), 350);
   const debouncedItemWarehouseSearch = useDebouncedCallback(async (q: string) => setItemWarehouseResults(await searchAccurateWarehouses(q)), 350);
 
@@ -186,10 +188,14 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
     setOpen(true);
     setError(null);
     setFinishedGoodResults([]);
-    setAccountResults([]);
     setItemResults([]);
     setFinishedGoodWarehouseResults([]);
     setItemWarehouseResults([]);
+    // § diminta client 2026-10-02 — Akun Perantara LOKAL, bukan Accurate
+    // search lagi: fetch sekali tiap dialog dibuka (dibutuhkan baik mode
+    // Tambah maupun Edit, jadi di luar percabangan `formulaId` di bawah).
+    const accountsRes = await api.autoproduksi.accounts.get();
+    if (accountsRes.data) setIntermediaryAccounts((accountsRes.data as unknown as { accounts: IntermediaryAccount[] }).accounts);
     if (!formulaId) {
       setName("");
       setFinishedGoodItemNo("");
@@ -244,10 +250,16 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
     }
   }
 
-  function selectAccount(no: string) {
-    const record = accountResults.find((r) => r.no === no);
+  function selectLocalAccount(no: string) {
+    const record = intermediaryAccounts.find((a) => a.accountNo === no);
     setAdjustmentAccountNo(no);
-    if (record) setAdjustmentAccountName(record.name);
+    if (record) setAdjustmentAccountName(record.accountName);
+  }
+
+  function handleAccountCreated(account: IntermediaryAccount) {
+    setIntermediaryAccounts((prev) => [...prev, account]);
+    setAdjustmentAccountNo(account.accountNo);
+    setAdjustmentAccountName(account.accountName);
   }
 
   function selectItemForRow(index: number, no: string) {
@@ -407,14 +419,18 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
           <div className="grid grid-cols-2 gap-3 rounded-lg border border-border/60 p-3">
             <span className="col-span-2 text-xs font-medium text-foreground">Konfigurasi Lainnya</span>
             <label className="col-span-2 flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Akun Perantara (cari di Accurate)</span>
-              <SearchableField
-                value={adjustmentAccountNo}
-                onChange={selectAccount}
-                onSearch={debouncedAccountSearch}
-                placeholder="Ketik kode/nama akun..."
-                options={itemComboboxOptions(adjustmentAccountNo, adjustmentAccountName, accountResults)}
-              />
+              <span className="text-xs text-muted-foreground">Akun Perantara (daftar lokal)</span>
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <Combobox
+                    value={adjustmentAccountNo}
+                    onChange={selectLocalAccount}
+                    placeholder="Pilih Akun Perantara..."
+                    options={intermediaryAccounts.map((a) => ({ value: a.accountNo, label: `${a.accountName} (${a.accountNo})` }))}
+                  />
+                </div>
+                <IntermediaryAccountFormDialog trigger="icon" onSaved={handleAccountCreated} />
+              </div>
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-xs text-muted-foreground">Cabang</span>
@@ -539,7 +555,7 @@ export default function AutoProduksiFormulasPage() {
       <Card>
         <CardHeader>
           <CardTitle>Daftar Formula</CardTitle>
-          <CardDescription>Barang/Akun dicari langsung ke Accurate — kode & nama otomatis terisi saat dipilih.</CardDescription>
+          <CardDescription>Barang Jadi/Bahan Baku dicari langsung ke Accurate (kode & nama otomatis terisi saat dipilih) — Akun Perantara dari daftar lokal (kelola di &quot;Pengaturan&quot;).</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {formulas && formulas.length > 0 && (

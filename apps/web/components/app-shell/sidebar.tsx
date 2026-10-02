@@ -229,6 +229,9 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/autoproduksi/import-formula", label: "Import Formula (Excel)", icon: FileSpreadsheet, moduleKey: "autoproduksi_production" },
         { href: "/autoproduksi/import-produksi", label: "Import Produksi (Excel)", icon: FileSpreadsheet, moduleKey: "autoproduksi_production" },
         { href: "/autoproduksi/riwayat", label: "Riwayat Produksi", icon: History, moduleKey: "autoproduksi_production" },
+        // § diminta client 2026-10-02 — Akun Perantara jadi master data
+        // lokal, dikelola di sini (bukan live-search Accurate lagi).
+        { href: "/autoproduksi/settings", label: "Pengaturan", icon: Cog, moduleKey: "autoproduksi_production" },
       ],
     },
     {
