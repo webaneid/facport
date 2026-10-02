@@ -355,8 +355,9 @@ export default function SalesInvoiceImportPage() {
                 </AccordionItem>
               </Accordion>
               <p className="text-xs text-muted-foreground">
-                💡 Baris dengan <strong>Nomor PO Customer</strong> yang SAMA akan digabung jadi 1 faktur (banyak barang)
-                — pastikan tiap faktur yang berbeda pakai nomor yang berbeda juga.
+                💡 Baris dengan <strong>Nomor Transaksi (No SI)</strong> yang SAMA akan digabung jadi 1 faktur (banyak
+                barang) — pastikan tiap faktur yang berbeda pakai nomor yang berbeda juga. Kalau kolom &ldquo;Nomor
+                Transaksi&rdquo; tidak dipetakan, sistem pakai <strong>PO No</strong> sebagai cadangan.
               </p>
               <Button type="submit" disabled={confirming} className="self-start">
                 {confirming ? "Memulai import..." : "Mulai Import"}

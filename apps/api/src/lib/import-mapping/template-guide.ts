@@ -675,7 +675,7 @@ export const purchaseOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "Trans No", required: true, example: "PO.2026.09.00001", description: "Nomor transaksi — WAJIB diisi, sekaligus kunci penggabungan baris jadi 1 Purchase Order (isi SAMA di beberapa baris untuk 1 PO berisi banyak barang)." },
   { column: "Vendor No", required: true, example: "V.0001", description: "Nomor/kode vendor PERSIS seperti di Accurate — kalau belum ada, dibuatkan otomatis (isi kolom \"Nama Vendor\" dkk di bawah)." },
   { column: "Pay Term Name", required: false, example: "", description: "Nama termin pembayaran, harus PERSIS terdaftar di Accurate." },
-  { column: "To Address", required: false, example: "", description: "Alamat pengiriman/tujuan." },
+  { column: "To Address", required: true, example: "Jl. Contoh No. 1, Jakarta", description: "Alamat pengiriman/tujuan — WAJIB diisi Alamat Perusahaan (diminta client)." },
   { column: "Branch Name", required: true, example: "Kantor Pusat", description: "Nama cabang PERSIS seperti terdaftar di Accurate — WAJIB DIISI (perusahaan multi-cabang ditolak Accurate kalau kosong)." },
   { column: "Description", required: false, example: "", description: "Catatan tambahan untuk transaksi ini." },
   { column: "Fill Price By Vendor", required: false, format: BOOLEAN_FORMAT, example: "", description: "Isi harga barang otomatis dari data vendor (bukan input manual)." },
@@ -832,6 +832,7 @@ export const receiveItemTemplateGuide: TemplateFieldGuide[] = [
   { column: "ITEM: Custom Number 10", required: false, example: "", description: "Atribut tambahan angka 10, sama catatan di atas." },
   { column: "ITEM: Custom Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 1 level barang." },
   { column: "ITEM: Custom Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 2, sama catatan di atas." },
+  { column: "Item Price", required: true, example: "50000", description: "Harga satuan barang — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
 ];
 
 // § Fase 122, architecture-purchase-return.md — retur terhadap

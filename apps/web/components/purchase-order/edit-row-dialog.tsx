@@ -25,7 +25,7 @@ type EditableRow = {
 // `apps/api/src/lib/import-mapping/purchase-order.mapping.ts`.
 export const DATE_INTERNAL_FIELDS = new Set(["transDate", "shipDate", "attributItemTanggal1", "attributItemTanggal2"]);
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-export const REQUIRED_INTERNAL_FIELDS = new Set(["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"]);
+export const REQUIRED_INTERNAL_FIELDS = new Set(["vendorNo", "transDate", "number", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName", "toAddress"]);
 
 const FIELD_HINTS: Record<string, string> = {
   vendorNo: "Kode Vendor di Accurate, contoh: V.0001 — dibuatkan otomatis kalau belum ada",

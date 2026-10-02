@@ -22,6 +22,7 @@ const columnMapping = {
   Qty: "quantity",
   "Unit Name": "itemUnitName",
   "Branch Name": "branchName",
+  "To Address": "toAddress",
 };
 
 async function signUp(email: string) {
@@ -186,6 +187,7 @@ describe("POST /purchase-order/import/:batchId/confirm — validasi mapping", ()
     expect(body.fields).toContain("quantity");
     expect(body.fields).toContain("itemUnitName");
     expect(body.fields).toContain("branchName");
+    expect(body.fields).toContain("toAddress");
   });
 
   test("400 INVALID_MAPPING_FIELD kalau ada kolom di-mapping ke field yang tidak dikenal", async () => {
@@ -385,7 +387,7 @@ describe("PUT /purchase-order/import/:batchId/rows/:rowId — Edit Baris", () =>
       new Request(`http://localhost/purchase-order/import/${batch!.id}/rows/${row!.id}`, {
         method: "PUT",
         headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ rawData: { "Vendor No": "V.0001", "Trans Date": "05/09/2026", "Trans No": "PO-001", "Item No": "BRG-1", "Item Price": "1000", Qty: "1", "Unit Name": "Unit", "Branch Name": "JAKARTA" } }),
+        body: JSON.stringify({ rawData: { "Vendor No": "V.0001", "Trans Date": "05/09/2026", "Trans No": "PO-001", "Item No": "BRG-1", "Item Price": "1000", Qty: "1", "Unit Name": "Unit", "Branch Name": "JAKARTA", "To Address": "Jl. Contoh No. 1" } }),
       }),
     );
     expect(okRes.status).toBe(200);
@@ -458,7 +460,7 @@ describe("PUT /purchase-order/import/:batchId/rows — Edit Bulk (Grid)", () => 
       ])
       .returning();
 
-    const validRawData = { "Vendor No": "V.0001", "Trans Date": "05/09/2026", "Trans No": "PO-001", "Item No": "BRG-1", "Item Price": "1000", Qty: "1", "Unit Name": "Unit", "Branch Name": "JAKARTA" };
+    const validRawData = { "Vendor No": "V.0001", "Trans Date": "05/09/2026", "Trans No": "PO-001", "Item No": "BRG-1", "Item Price": "1000", Qty: "1", "Unit Name": "Unit", "Branch Name": "JAKARTA", "To Address": "Jl. Contoh No. 1" };
     const missingRawData = { ...validRawData, "Trans No": "PO-002", "Vendor No": "" };
 
     const res = await testApp.handle(

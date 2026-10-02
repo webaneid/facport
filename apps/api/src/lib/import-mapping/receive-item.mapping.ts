@@ -190,6 +190,14 @@ export const receiveItemMapping = {
     "ITEM: Custom Number 10": "attributItemAngka10",
     "ITEM: Custom Date 1": "attributItemTanggal1",
     "ITEM: Custom Date 2": "attributItemTanggal2",
+    // § diminta client 2026-10-02 (evaluasi) — "unitPrice" SUDAH ADA di
+    // `fieldToAccuratePath`/`requiredFields` sejak Fase 121 (field resmi
+    // Accurate, `detailItem.unitPrice`, § spec `receive-item/save.do`),
+    // TAPI TIDAK PERNAH dapat kolom Excel di `defaultColumnMap`/template
+    // — artinya upload TIDAK PERNAH bisa lolos `MISSING_REQUIRED_FIELDS`
+    // kecuali user cocokkan manual sendiri. Ditambah di PALING UJUNG
+    // (posisi diminta eksplisit client, § screenshot template mereka).
+    "Item Price": "unitPrice",
   } as Record<string, string>,
 };
 

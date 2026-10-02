@@ -28,7 +28,7 @@ const ACCURATE_FIELDS = [
   { value: "number", label: "Trans No (wajib — kunci gabung baris jadi 1 PO)" },
   { value: "vendorNo", label: "Vendor No (wajib)" },
   { value: "paymentTermName", label: "Pay Term Name" },
-  { value: "toAddress", label: "To Address" },
+  { value: "toAddress", label: "To Address (wajib)" },
   { value: "branchName", label: "Branch Name (wajib)" },
   { value: "description", label: "Description" },
   { value: "fillPriceByVendorPrice", label: "Fill Price By Vendor (isi TRUE/FALSE)" },
