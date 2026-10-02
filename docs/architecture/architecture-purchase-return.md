@@ -107,6 +107,20 @@ detailExpense[] tiap baris:
 | Expense Department | departmentName | detailExpense[] |
 | Expense Project | **TIDAK ADA field API** — lihat koreksi di bawah | detailExpense[] tidak punya `projectNo` |
 | EXPENSE: Finance Category 1-10 | dataClassification1Name..10Name | detailExpense[] |
+| Unit Price (paling ujung, **ditambah 2026-10-02**) | detailItem[].unitPrice | detailItem[], **REQUIRED bersama itemNo** (§ koreksi di bawah) |
+
+**Koreksi 2026-10-02 (evaluasi client)**: `unitPrice` SUDAH ADA di
+`fieldToAccuratePath`/`requiredFields` sejak modul ini dibangun (field
+resmi `detailItem[].unitPrice`, REQUIRED bersama `itemNo` per spec
+`purchase-return/save.do`), TAPI TIDAK PERNAH dapat kolom Excel di
+`defaultColumnMap`/template — pola bug yang SAMA dengan Receive Item (§
+`docs/lessons-learned.md` 2026-10-02): field wajib yang secara teknis
+sudah bisa dikirim, tapi user tidak pernah diberi kolom untuk mengisinya
+kecuali cocokkan manual sendiri. Sekarang kolomnya tersedia di posisi
+paling ujung template (diminta eksplisit client). **TIDAK butuh scope
+OAuth baru** — endpoint `purchase-return/save.do` sudah terdaftar sejak
+awal di `accurate-endpoint-registry.ts`, field ini cuma melengkapi
+payload yang sudah dikirim ke endpoint yang sama.
 
 **Koreksi 2026-09-15 (ditemukan saat eksekusi Fase 122)**: klaim
 sebelumnya "Excel client TIDAK punya kolom Item Warehouse" TERNYATA
