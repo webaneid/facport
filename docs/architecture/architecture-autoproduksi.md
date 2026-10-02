@@ -348,3 +348,11 @@ Permintaan client: Cabang/Gudang Barang Jadi/Gudang Bahan Baku yang dikosongkan 
 - Proyek/Departemen TIDAK punya default (tidak diminta).
 - Tidak ada pemaksaan "wajib diatur" — UI hanya menyarankan mengisi Cabang default untuk perusahaan multi-cabang.
 ⚠️ Belum diuji ke Accurate sungguhan: efek mengirim `warehouseName` default ke baris Bahan Baku & Barang Jadi (nama gudang harus persis ada di Accurate; salah ketik → ditolak Accurate dengan pesan jelas di Riwayat).
+
+## Validasi satuan Formula terhadap master barang Accurate (evaluasi client 2026-10-03)
+Keluhan: Formula bisa disimpan dengan satuan yang tidak ada di master barang Accurate (mis. "pcs" untuk barang berisi KG/Pouch), errornya baru muncul saat Input Produksi ("satuan barang pcs tidak ditemukan"); satuan juga sering harus diketik manual (rawan salah). Sekarang `POST`/`PUT /autoproduksi/formulas` mencocokkan satuan Barang Jadi + tiap Bahan Baku ke master Accurate (`item/list.do` filter `no` persis, `lib/autoproduksi-unit-check.ts`) SEBELUM menyimpan:
+- tidak ada di master → `422 {code:"UNIT_NOT_IN_ITEM", itemNo, unitName, availableUnits}` (form menampilkan "Satuan "pcs" tidak terdaftar di barang X. Satuan yang tersedia: …");
+- beda huruf besar/kecil/spasi ("pcs" vs "Pcs") → diperbaiki otomatis ke ejaan master, tidak ditolak.
+**FAIL-OPEN** (Formula tetap disimpan seperti dulu): tidak terkoneksi Accurate, sesi gagal/timeout, barang tidak ketemu, atau daftar satuan tidak lengkap (Accurate tidak mengembalikan kunci `unit2` → field satuan tambahan tidak dikenali, jadi tidak boleh menolak satuan ke-2 yang sah). Saklar darurat: env `AUTOPRODUKSI_UNIT_VALIDATION=off`.
+**Belum dicakup (tindak lanjut)**: Import Formula (Excel) — sengaja lokal & sinkron tanpa Accurate (bisa 10.000 baris), jadi belum divalidasi; satuan salah di jalur itu masih baru ketahuan saat Input Produksi. Perlu desain batas panggilan Accurate (distinct itemNo × rate limit) sebelum ditambahkan.
+⚠️ Nama field baca `unit2..5` belum diverifikasi test call nyata — verifikasi dengan barang 100028 (KG & Pouch) setelah deploy.

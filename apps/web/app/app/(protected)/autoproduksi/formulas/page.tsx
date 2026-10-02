@@ -254,7 +254,12 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
     const res = formulaId ? await api.autoproduksi.formulas({ id: formulaId }).put(body) : await api.autoproduksi.formulas.post(body);
     setSubmitting(false);
     if (res.error) {
-      setError("Gagal menyimpan formula — cek kembali isian.");
+      const value = res.error.value as { code?: string; itemNo?: string; unitName?: string; availableUnits?: string[] } | undefined;
+      setError(
+        value?.code === "UNIT_NOT_IN_ITEM"
+          ? `Satuan "${value.unitName}" tidak terdaftar di barang ${value.itemNo} di Accurate. Satuan yang tersedia: ${(value.availableUnits ?? []).join(", ")}.`
+          : "Gagal menyimpan formula — cek kembali isian.",
+      );
       return;
     }
     toast.success(formulaId ? "Formula diperbarui." : "Formula dibuat.");

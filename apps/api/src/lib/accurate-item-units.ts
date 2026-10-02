@@ -28,3 +28,14 @@ export function extractItemUnits(record: Record<string, unknown>): ItemUnit[] {
   }
   return units;
 }
+
+export type UnitMatch = { status: "ok"; canonical: string } | { status: "invalid"; available: string[] };
+
+// § Pencocokan tidak membedakan huruf besar/kecil ("pcs" = "Pcs") dan mengabaikan spasi ujung —
+// hasil "ok" membawa nama KANONIK persis seperti di master Accurate, supaya yang tersimpan di
+// Formula (dan dikirim ke item-adjustment) selalu ejaan yang benar.
+export function matchItemUnit(units: ItemUnit[], unitName: string): UnitMatch {
+  const wanted = unitName.trim().toLowerCase();
+  const found = units.find((u) => u.name.trim().toLowerCase() === wanted);
+  return found ? { status: "ok", canonical: found.name } : { status: "invalid", available: units.map((u) => u.name) };
+}
