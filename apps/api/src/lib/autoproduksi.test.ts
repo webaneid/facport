@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildProductionEntryPayload, formatTransDateForAccurate } from "./autoproduksi";
+import { buildProductionEntryPayload, formatTransDateForAccurate, applyContextDefaults, type ContextDefaults } from "./autoproduksi";
 import type { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries } from "../db/schema";
 
 // § Fase 159 — kasus contoh dari simulasi client (Autoproduksi.xlsx):
@@ -158,5 +158,31 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     const detailItem = payload.detailItem as Record<string, unknown>[];
     expect("projectNo" in detailItem[0]!).toBe(false);
     expect("departmentName" in detailItem[0]!).toBe(false);
+  });
+});
+
+describe("applyContextDefaults", () => {
+  const defaults: ContextDefaults = { branchName: "KANTOR PUSAT", warehouseName: "Gudang Utama", rawMaterialWarehouseName: "Gudang Bahan" };
+  const empty: ContextDefaults = { branchName: null, warehouseName: null, rawMaterialWarehouseName: null };
+
+  test("isian kosong diisi dari default", () => {
+    expect(applyContextDefaults(empty, defaults)).toEqual(defaults);
+  });
+
+  test("nilai yang diisi user selalu menang; hanya yang kosong dari default", () => {
+    expect(applyContextDefaults({ ...empty, branchName: "JAKARTA", warehouseName: "  " }, defaults)).toEqual({
+      branchName: "JAKARTA",
+      warehouseName: "Gudang Utama",
+      rawMaterialWarehouseName: "Gudang Bahan",
+    });
+  });
+
+  test("default belum diatur (null) atau kosong — tetap null (perilaku lama, field di-omit)", () => {
+    expect(applyContextDefaults(empty, null)).toEqual(empty);
+    expect(applyContextDefaults(empty, { branchName: " ", warehouseName: null, rawMaterialWarehouseName: "" })).toEqual(empty);
+  });
+
+  test("field lain di entry tidak tersentuh", () => {
+    expect(applyContextDefaults({ ...empty, projectNo: "PRJ-1" }, defaults).projectNo).toBe("PRJ-1");
   });
 });

@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
+import { ContextDefaultsCard } from "@/components/autoproduksi/context-defaults-card";
 import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
 
 // § diminta client 2026-10-02 — Akun Perantara jadi master data lokal
@@ -70,11 +71,13 @@ export default function AutoProduksiSettingsPage() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight text-foreground">Pengaturan AutoProduksi</h1>
           <p className="text-sm text-muted-foreground">
-            Daftar Akun Perantara yang dipakai saat bikin Formula — dikelola sendiri di sini, tidak lagi dicari langsung ke Accurate.
+            Default Cabang & Gudang, dan daftar Akun Perantara yang dipakai saat bikin Formula — dikelola sendiri di sini.
           </p>
         </div>
         <IntermediaryAccountFormDialog onSaved={load} />
       </div>
+
+      <ContextDefaultsCard />
 
       <Card>
         <CardHeader>

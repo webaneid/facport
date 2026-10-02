@@ -281,6 +281,13 @@
       "when": 1790973768430,
       "tag": "0039_clumsy_sway",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1790974014796,
+      "tag": "0040_panoramic_vengeance",
+      "breakpoints": true
     }
   ]
 }

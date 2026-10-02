@@ -21,7 +21,8 @@ import {
   autoproduksiFormulaItems,
   autoproduksiProductionEntries,
 } from "../db/schema";
-import { buildProductionEntryPayload } from "../lib/autoproduksi";
+import { buildProductionEntryPayload, applyContextDefaults } from "../lib/autoproduksi";
+import { loadAutoproduksiDefaults } from "../lib/autoproduksi-defaults";
 import {
   autoproduksiProductionRowError,
   parseAutoproduksiTransDate,
@@ -1942,7 +1943,9 @@ export async function processAutoproduksiProductionImportRow(
     projectNo: textOrNull(projectNo),
     departmentName: textOrNull(departmentName),
   };
-  const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate!, ...entryFields });
+  // § diminta client 2026-10-03 — kolom Cabang/Gudang yang kosong di Excel diisi dari default Pengaturan AutoProduksi.
+  const resolvedFields = { ...entryFields, ...applyContextDefaults(entryFields, await loadAutoproduksiDefaults(batch.subscriptionId)) };
+  const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate!, ...resolvedFields });
 
   try {
     const result = await saveInventoryAdjustment(ctx, payload);
@@ -1955,7 +1958,7 @@ export async function processAutoproduksiProductionImportRow(
       formulaId: formula.id,
       producedQty,
       transDate: transDate!,
-      ...entryFields,
+      ...resolvedFields,
       status: "success",
       accurateTransactionId,
       accurateTransactionNumber,
@@ -1971,7 +1974,7 @@ export async function processAutoproduksiProductionImportRow(
       formulaId: formula.id,
       producedQty,
       transDate: transDate!,
-      ...entryFields,
+      ...resolvedFields,
       status: "failed",
       accurateTransactionId: null,
       errorMessage: message,

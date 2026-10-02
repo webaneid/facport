@@ -142,6 +142,13 @@ export default function AutoProduksiInputPage() {
 
               <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
                 <span className="text-xs font-medium text-foreground">Konteks Produksi (opsional)</span>
+                <span className="-mt-2 text-[11px] text-muted-foreground">
+                  Cabang/Gudang yang dikosongkan memakai default dari{" "}
+                  <Link href="/autoproduksi/settings" className="text-primary underline">
+                    Pengaturan AutoProduksi
+                  </Link>{" "}
+                  (kalau sudah diatur).
+                </span>
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="text-xs text-muted-foreground">Cabang</span>
                   <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} placeholder="JAKARTA" />

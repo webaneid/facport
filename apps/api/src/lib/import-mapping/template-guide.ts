@@ -1523,9 +1523,9 @@ export const autoproduksiProductionTemplateGuide: TemplateFieldGuide[] = [
   { column: "Tanggal", required: true, format: "YYYY-MM-DD (mis. 2026-07-13) atau DD/MM/YYYY (mis. 13/07/2026)", example: "2026-07-13", description: "Tanggal produksi." },
   { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula PERSIS seperti di halaman List Formula — WAJIB sudah ada, AKTIF, dan namanya UNIK (kalau ada 2 Formula nama sama, baris ini akan gagal, ganti nama salah satu Formula dulu)." },
   { column: "Jumlah", required: true, example: "15", description: "Jumlah Barang Jadi yang diproduksi — kebutuhan Bahan Baku dihitung otomatis dari takaran Formula × Jumlah ini." },
-  { column: "Cabang", required: false, example: "JAKARTA", description: "Nama cabang transaksi — kosongkan untuk pakai default preferensi Accurate." },
-  { column: "Gudang Barang Jadi", required: false, example: "Utama", description: "Gudang tempat Barang Jadi hasil produksi masuk." },
-  { column: "Gudang Bahan Baku", required: false, example: "Utama", description: "Gudang tempat SEMUA Bahan Baku resep ini diambil (1 gudang untuk semua baris Bahan Baku)." },
+  { column: "Cabang", required: false, example: "JAKARTA", description: "Nama cabang transaksi — kosongkan untuk pakai Cabang default dari Pengaturan AutoProduksi (kalau belum diatur: default preferensi Accurate, yang DITOLAK untuk perusahaan multi-cabang)." },
+  { column: "Gudang Barang Jadi", required: false, example: "Utama", description: "Gudang tempat Barang Jadi hasil produksi masuk — kosongkan untuk pakai Gudang Barang Jadi default dari Pengaturan AutoProduksi." },
+  { column: "Gudang Bahan Baku", required: false, example: "Utama", description: "Gudang tempat SEMUA Bahan Baku resep ini diambil (1 gudang untuk semua baris Bahan Baku) — kosongkan untuk pakai Gudang Bahan Baku default dari Pengaturan AutoProduksi." },
   { column: "Proyek", required: false, example: "", description: "Kode proyek untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
   { column: "Departemen", required: false, example: "", description: "Nama departemen untuk transaksi ini (berlaku ke Barang Jadi maupun semua Bahan Baku), harus PERSIS terdaftar di Accurate." },
 ];

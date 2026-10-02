@@ -102,3 +102,22 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     detailItem: [...rawMaterialLines, finishedGoodLine],
   };
 }
+
+// § diminta client 2026-10-03 — Cabang/Gudang Barang Jadi/Gudang Bahan Baku
+// yang DIKOSONGKAN di Input Produksi diisi dari default per subscription
+// (`autoproduksi_defaults`, diatur di halaman Pengaturan AutoProduksi).
+// Nilai yang diisi user SELALU menang; default belum diatur + isian kosong =
+// tetap null (perilaku lama: field di-omit dari payload). Murni (tanpa DB)
+// supaya bisa dites langsung — pemuat DB ada di `autoproduksi-defaults.ts`.
+type ContextDefaultFields = "branchName" | "warehouseName" | "rawMaterialWarehouseName";
+export type ContextDefaults = Record<ContextDefaultFields, string | null>;
+
+export function applyContextDefaults<T extends ContextDefaults>(entry: T, defaults: ContextDefaults | null): T {
+  const pick = (value: string | null, fallback: string | null | undefined) => (value && value.trim() !== "" ? value : fallback && fallback.trim() !== "" ? fallback : null);
+  return {
+    ...entry,
+    branchName: pick(entry.branchName, defaults?.branchName),
+    warehouseName: pick(entry.warehouseName, defaults?.warehouseName),
+    rawMaterialWarehouseName: pick(entry.rawMaterialWarehouseName, defaults?.rawMaterialWarehouseName),
+  };
+}
