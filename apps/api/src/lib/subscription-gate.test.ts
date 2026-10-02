@@ -22,7 +22,9 @@ const testApp = new Elysia()
   .get("/gate-test", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
   .get("/gate-which", ({ subscription }) => ({ dataUsahaId: subscription.dataUsahaId }), { moduleAccess: "purchase_invoice" })
   .get("/gate-mod/import/template", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
-  .post("/gate-mod/import/upload", () => ({ ok: true }), { moduleAccess: "purchase_invoice" });
+  .post("/gate-mod/import/upload", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
+  // § security review Fase 166 — path TIDAK berakhiran "/import/template" (pola 2 route baru AutoProduksi).
+  .get("/gate-mod/import-formula/template", () => ({ ok: true }), { moduleAccess: "purchase_invoice" });
 
 async function signUp(email: string) {
   const res = await testApp.handle(
@@ -454,6 +456,16 @@ describe("moduleAccess — kasus tepi Data Usaha aktif", () => {
   test("unduh template (GET .../import/template) TIDAK ditolak 409 untuk user multi-Data-Usaha", async () => {
     const { cookie } = await twoDU("template");
     const res = await testApp.handle(new Request("http://localhost/gate-mod/import/template", { headers: { cookie } }));
+    expect(res.status).toBe(200);
+  });
+
+  // § security review Fase 166 — regresi bug: path yang TIDAK berakhiran
+  // "/import/template" (2 route baru AutoProduksi, § `autoproduksi-{formula,
+  // production}-import.route.ts`) sebelumnya TETAP kena 409 untuk user
+  // multi-Data-Usaha karena matcher lama cuma cocok 1 pola path persis.
+  test("unduh template dengan path BEDA pola (.../import-formula/template) JUGA tidak ditolak 409", async () => {
+    const { cookie } = await twoDU("template-altpath");
+    const res = await testApp.handle(new Request("http://localhost/gate-mod/import-formula/template", { headers: { cookie } }));
     expect(res.status).toBe(200);
   });
 

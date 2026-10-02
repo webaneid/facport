@@ -36,7 +36,7 @@ type AccurateItemResult = { no: string; name: string; unitName: string };
 type AccurateAccountResult = { no: string; name: string };
 type AccurateWarehouseResult = { name: string };
 
-type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: number; warehouseName?: string };
+type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: number; warehouseName?: string; projectNo?: string; departmentName?: string };
 type Formula = {
   id: string;
   name: string;
@@ -48,6 +48,8 @@ type Formula = {
   adjustmentAccountName: string | null;
   branchName: string;
   warehouseName: string | null;
+  finishedGoodProjectNo: string | null;
+  finishedGoodDepartmentName: string | null;
 };
 type FormulaDetail = { formula: Formula; items: FormulaItem[] };
 
@@ -123,6 +125,11 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
   const [accountResults, setAccountResults] = useState<AccurateAccountResult[]>([]);
   const [branchName, setBranchName] = useState("");
   const [warehouseName, setWarehouseName] = useState("");
+  // § Import Formula (Excel) — "Nomor Project"/"Departemen", ditambah di
+  // form manual JUGA supaya edit Formula hasil import lewat form TIDAK
+  // diam-diam menghapus field ini (PUT mengganti seluruh Formula).
+  const [finishedGoodProjectNo, setFinishedGoodProjectNo] = useState("");
+  const [finishedGoodDepartmentName, setFinishedGoodDepartmentName] = useState("");
   const [items, setItems] = useState<FormulaItem[]>([{ ...EMPTY_ITEM }]);
   // § Bahan Baku pakai endpoint search yang SAMA (`item/list.do` mencakup
   // Barang Jadi & Bahan Baku, sama-sama "Item" di Accurate) — 1 state hasil
@@ -169,6 +176,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setAdjustmentAccountName("");
       setBranchName("");
       setWarehouseName("");
+      setFinishedGoodProjectNo("");
+      setFinishedGoodDepartmentName("");
       setItems([{ ...EMPTY_ITEM }]);
       return;
     }
@@ -184,6 +193,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setAdjustmentAccountName(detail.formula.adjustmentAccountName ?? "");
       setBranchName(detail.formula.branchName);
       setWarehouseName(detail.formula.warehouseName ?? "");
+      setFinishedGoodProjectNo(detail.formula.finishedGoodProjectNo ?? "");
+      setFinishedGoodDepartmentName(detail.formula.finishedGoodDepartmentName ?? "");
       setItems(detail.items.length > 0 ? detail.items : [{ ...EMPTY_ITEM }]);
     }
   }
@@ -234,12 +245,16 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       ...(adjustmentAccountName.trim() ? { adjustmentAccountName: adjustmentAccountName.trim() } : {}),
       branchName: branchName.trim(),
       ...(warehouseName.trim() ? { warehouseName: warehouseName.trim() } : {}),
+      ...(finishedGoodProjectNo.trim() ? { finishedGoodProjectNo: finishedGoodProjectNo.trim() } : {}),
+      ...(finishedGoodDepartmentName.trim() ? { finishedGoodDepartmentName: finishedGoodDepartmentName.trim() } : {}),
       items: validItems.map((i) => ({
         itemNo: i.itemNo.trim(),
         itemUnitName: i.itemUnitName.trim(),
         ...(i.itemName?.trim() ? { itemName: i.itemName.trim() } : {}),
         quantity: i.quantity,
         ...(i.warehouseName?.trim() ? { warehouseName: i.warehouseName.trim() } : {}),
+        ...(i.projectNo?.trim() ? { projectNo: i.projectNo.trim() } : {}),
+        ...(i.departmentName?.trim() ? { departmentName: i.departmentName.trim() } : {}),
       })),
     };
     const res = formulaId ? await api.autoproduksi.formulas({ id: formulaId }).put(body) : await api.autoproduksi.formulas.post(body);
@@ -290,6 +305,14 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
               <Input type="number" value={standardCost} onChange={(e) => setStandardCost(e.target.value)} placeholder="20000" />
             </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Nomor Project (opsional)</span>
+              <Input value={finishedGoodProjectNo} onChange={(e) => setFinishedGoodProjectNo(e.target.value)} placeholder="Kode proyek" />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-muted-foreground">Departemen (opsional)</span>
+              <Input value={finishedGoodDepartmentName} onChange={(e) => setFinishedGoodDepartmentName(e.target.value)} placeholder="Nama departemen" />
+            </label>
           </div>
 
           <div className="flex flex-col gap-2 rounded-lg border border-border/60 p-3">
@@ -300,36 +323,43 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               </button>
             </div>
             {items.map((item, index) => (
-              <div key={index} className="grid grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr_auto] gap-2">
-                <SearchableField
-                  value={item.itemNo}
-                  onChange={(no) => selectItemForRow(index, no)}
-                  onSearch={debouncedItemSearch}
-                  placeholder="Cari Bahan Baku..."
-                  options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
-                />
-                <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
-                <Input
-                  type="number"
-                  value={item.quantity || ""}
-                  onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
-                  placeholder="Takaran, 0.5"
-                />
-                <SearchableField
-                  value={item.warehouseName ?? ""}
-                  onChange={(name) => updateItem(index, { warehouseName: name })}
-                  onSearch={debouncedItemWarehouseSearch}
-                  placeholder="Gudang (opsional)"
-                  options={warehouseComboboxOptions(item.warehouseName, itemWarehouseResults)}
-                />
-                <button
-                  type="button"
-                  onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
-                  disabled={items.length === 1}
-                  className={buttonVariants("ghost", "h-9 w-9 p-0 text-destructive disabled:opacity-30")}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </button>
+              <div key={index} className="flex flex-col gap-1 rounded-md border border-border/40 p-2">
+                <div className="grid grid-cols-[1.6fr_0.8fr_0.8fr_1.2fr_auto] gap-2">
+                  <SearchableField
+                    value={item.itemNo}
+                    onChange={(no) => selectItemForRow(index, no)}
+                    onSearch={debouncedItemSearch}
+                    placeholder="Cari Bahan Baku..."
+                    options={itemComboboxOptions(item.itemNo, item.itemName, itemResults)}
+                  />
+                  <Input value={item.itemUnitName} onChange={(e) => updateItem(index, { itemUnitName: e.target.value })} placeholder="Satuan" />
+                  <Input
+                    type="number"
+                    value={item.quantity || ""}
+                    onChange={(e) => updateItem(index, { quantity: Number(e.target.value) })}
+                    placeholder="Takaran, 0.5"
+                  />
+                  <SearchableField
+                    value={item.warehouseName ?? ""}
+                    onChange={(name) => updateItem(index, { warehouseName: name })}
+                    onSearch={debouncedItemWarehouseSearch}
+                    placeholder="Gudang (opsional)"
+                    options={warehouseComboboxOptions(item.warehouseName, itemWarehouseResults)}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setItems((prev) => prev.filter((_, i) => i !== index))}
+                    disabled={items.length === 1}
+                    className={buttonVariants("ghost", "h-9 w-9 p-0 text-destructive disabled:opacity-30")}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+                {/* § Import Formula (Excel) — Nomor Project/Departemen per Bahan Baku, baris sekunder supaya grid utama tidak terlalu padat. */}
+                <div className="grid grid-cols-2 gap-2">
+                  <Input value={item.projectNo ?? ""} onChange={(e) => updateItem(index, { projectNo: e.target.value })} placeholder="Nomor Project (opsional)" className="h-7 text-xs" />
+                  <Input value={item.departmentName ?? ""} onChange={(e) => updateItem(index, { departmentName: e.target.value })} placeholder="Departemen (opsional)" className="h-7 text-xs" />
+                </div>
               </div>
             ))}
           </div>

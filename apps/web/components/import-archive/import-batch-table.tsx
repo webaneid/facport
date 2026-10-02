@@ -5,7 +5,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
-import { MODULE_IMPORT_BASE_PATH } from "@/lib/module-import-routes";
+import { MODULE_IMPORT_BASE_PATH, MODULE_DISPLAY_LABEL_OVERRIDES } from "@/lib/module-import-routes";
 import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
 import { formatDate } from "@/lib/utils";
 import { CancelImportDialog as PurchaseInvoiceCancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
@@ -47,6 +47,13 @@ import { DeleteImportDialog as FinishedGoodSlipDeleteImportDialog } from "@/comp
 // § Fase 157 — Delivery Order, ditemukan KELEWAT (§ checklist modul baru,
 // architecture-accurate-integration.md § 3b poin 10) saat audit tabel ini 2026-09-24.
 import { DeleteImportDialog as DeliveryOrderDeleteImportDialog } from "@/components/delivery-order/delete-import-dialog";
+// § Import Formula/Produksi (Excel, AutoProduksi) — HANYA Delete (lokal),
+// TIDAK ADA Cancel: Import Formula tidak pernah menyentuh Accurate sama
+// sekali (master data lokal); Cancel untuk Import Produksi sengaja
+// ditunda (§ architecture-autoproduksi.md Known Limitations — flow
+// manual single-entry juga belum punya Cancel, supaya tidak asimetris).
+import { FormulaImportDeleteDialog } from "@/components/autoproduksi/formula-import-delete-dialog";
+import { ProductionImportDeleteDialog } from "@/components/autoproduksi/production-import-delete-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -163,7 +170,7 @@ export function ImportBatchTable({
                 <TruncateText>{batch.fileName}</TruncateText>
               </TableCell>
               <TableCell className="text-muted-foreground">
-                <TruncateText>{moduleLabel(batch.module)}</TruncateText>
+                <TruncateText>{MODULE_DISPLAY_LABEL_OVERRIDES[batch.module] ?? moduleLabel(batch.module)}</TruncateText>
               </TableCell>
               <TableCell className="text-muted-foreground">
                 <TruncateText>{batch.uploadedByYou ? "Anda" : (batch.uploadedByName ?? "-")}</TruncateText>
@@ -316,6 +323,12 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "delivery_order" && (
                     <DeliveryOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "autoproduksi_formula" && (
+                    <FormulaImportDeleteDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "autoproduksi_production" && (
+                    <ProductionImportDeleteDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

@@ -5878,3 +5878,82 @@ butuh-Accurate-atau-tidak), WAJIB grep literal `productLine ===`/daftar
 hardcoded produk di SELURUH `apps/api/src/lib/*.ts`, bukan cuma di file
 yang sedang disentuh — kalau ada 2+ tempat dengan logic serupa, SATUKAN
 jadi 1 konstanta diekspor, jangan biarkan 2 salinan.
+
+## 2026-10-02 — Fase 166, AutoProduksi Import Formula/Produksi: bug lama `standardCost` tidak pernah terkirim, + desain modul import SYNCHRONOUS pertama di Facport
+
+Saat memetakan kolom "Unit Cost" di file Excel Import Formula client,
+ditemukan `autoproduksiFormulas.standardCost` (ada sejak Fase 159, contoh
+client sendiri "Nilai dimasukan manual") TIDAK PERNAH dikirim sebagai
+`unitCost` ke `item-adjustment/save.do` — field tersimpan di DB, dipakai
+di form, tapi hilang di `buildProductionEntryPayload()`. Spec resmi
+Accurate cantumkan `unitCost` "wajib diisi hanya jika penambahan
+kuantitas barang" (baris ADJUSTMENT_IN, persis baris Barang Jadi modul
+ini) — bug sudah ada 1+ bulan, tidak ketahuan karena Accurate TIDAK
+menolak request tanpa `unitCost` (constraint "wajib" di level deskripsi
+spec, bukan validasi runtime keras — pola yang SAMA pernah ketemu di
+modul lain, Item Requisition dkk). Fix dibundel ke fase ini (field yang
+sama persis jadi fokus kerja), bukan fase terpisah.
+
+**Pelajaran**: field yang disimpan di DB tapi "kelihatannya tidak dipakai
+di mana-mana" pantas dicurigai SETIAP KALI menyentuh kode terkait —
+`standardCost` punya kolom, form input, DAN komentar arsitektur yang
+menjelaskan maksudnya, tapi tidak ada yang pernah MEMVERIFIKASI dia
+benar-benar sampai ke payload API. Test `autoproduksi.test.ts` yang ada
+sebelum fase ini juga TIDAK PERNAH assert field ini di payload — gap
+ganda (kode + test) yang baru ketahuan karena kebetulan Excel client
+punya kolom yang memaksa baca ulang fungsi itu baris per baris.
+
+**Desain baru dicatat**: Import Formula adalah modul import SYNCHRONOUS
+PERTAMA di Facport (confirm diproses langsung di request handler, bukan
+lewat pg-boss job) — keputusan sadar karena modul ini TIDAK PERNAH
+memanggil Accurate (beda dari 24+1 modul lain yang semua butuh job queue
+untuk toleran rate-limit/gangguan Accurate). Kalau ada modul BARU lagi
+nanti yang juga 100% lokal (tidak memanggil API eksternal), pola ini
+(synchronous confirm, `import_batches.status` langsung final, tanpa
+Cancel) adalah precedent yang sah untuk dipakai ulang — JANGAN otomatis
+asumsikan SEMUA modul import harus lewat job queue, itu cuma benar untuk
+modul yang benar-benar memanggil API eksternal.
+
+## 2026-10-02 — Security review Fase 166 (subagent `security-auditor`): 1 Medium (sudah diperbaiki duluan), 1 Low BARU (gerbang multi-Data-Usaha lupa pola path baru) ditemukan & diperbaiki
+
+Audit Import Formula/Produksi (§ entri Fase 166 di atas): **0 Critical, 0
+High**.
+
+**Medium — Import Formula tidak validasi panjang string vs kolom
+`varchar(N)` sebelum insert**: modul ini SATU-SATUNYA yang insert nilai
+Excel LANGSUNG ke kolom Postgres kita sendiri (24 modul lain cuma
+meneruskan ke Accurate, yang validasi panjangnya sendiri) — kolom Excel
+kepanjangan bisa bikin `db.transaction` throw error Postgres mentah
+("value too long for type character varying(N)"), tertangkap try/catch
+(TIDAK crash) tapi pesan ke user jadi pesan Postgres asli, bukan pesan
+validasi jelas. **Sudah diperbaiki SEBELUM laporan audit selesai**
+(disadari sendiri saat menulis prompt audit) — ditambah `MAX_LENGTHS` map
++ `fieldLengthErrors()` di `autoproduksi-formula.mapping.ts`, dipanggil
+dari `autoproduksiFormulaRowError` (otomatis berlaku di confirm/retry
+MAUPUN endpoint edit baris gagal, karena semuanya lewat fungsi yang
+sama) + test regresi (`"X".repeat(101)` pada kolom varchar(100) → error
+`itemNo`, BUKAN insert lalu gagal).
+
+**Low — BARU ditemukan, diperbaiki**: gerbang "boleh download template
+tanpa header Data Usaha walau customer punya >1 Data Usaha aktif"
+(`subscription-gate.ts`, § ADR-0035) cuma cocok untuk pola path
+`.../import/template` (24 modul lama) — 2 route BARU AutoProduksi pakai
+pola path BEDA (`/autoproduksi/import-formula/template`,
+`/autoproduksi/import-produksi/template`, TIDAK ada `/import/` di
+tengah) — customer dengan 2+ Data Usaha aktif akan kena 409 salah saat
+klik link download template (bukan celah keamanan, murni UX rusak, gagal
+CLOSED bukan OPEN). Fix: matcher diperlebar dari `endsWith("/import/
+template")` ke `endsWith("/template")` (dicek dulu via grep — TIDAK ADA
+endpoint `/template` lain di luar konteks import yang bisa ikut
+ter-exempt salah) + test regresi path baru.
+
+**Pelajaran**: pola "exact path suffix match" untuk pengecualian lintas-
+modul (`isStaticTemplateDownload` di sini, mungkin ada pola serupa di
+tempat lain) RAPUH terhadap struktur path yang SEDIKIT beda dari asumsi
+awal — setiap kali bikin route dengan struktur path yang TIDAK mengikuti
+pola `/{module}/import/*` 24 modul lama (seperti 2 route AutoProduksi
+ini, atau Konverter yang punya pola sendiri), WAJIB grep semua tempat
+yang melakukan path-matching berbasis string literal/suffix (bukan
+regex generik), bukan cuma modul-registry checklist biasa (§
+architecture-accurate-integration.md § 3b) yang fokusnya ke scope/label,
+bukan ke middleware path-matching seperti ini.
