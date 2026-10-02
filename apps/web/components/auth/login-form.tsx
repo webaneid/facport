@@ -9,6 +9,7 @@ import { z } from "zod";
 import { Mail } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
 import { getSafeRedirect } from "@/lib/safe-redirect";
+import { clearActiveDataUsahaCookie } from "@/lib/active-data-usaha-cookie";
 import { Button } from "@/components/ui/button";
 import { IconInput } from "@/components/auth/icon-input";
 import { PasswordInput } from "@/components/auth/password-input";
@@ -47,6 +48,9 @@ function LoginFormInner() {
       setError("Email atau password salah.");
       return;
     }
+    // § diminta user 2026-10-02 — SETIAP login WAJIB lewat gerbang
+    // /pilih-usaha dulu, lihat komentar lengkap di `clearActiveDataUsahaCookie`.
+    clearActiveDataUsahaCookie();
     router.push(getSafeRedirect(searchParams.get("redirect")));
     router.refresh();
   }
