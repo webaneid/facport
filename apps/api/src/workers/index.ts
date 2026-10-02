@@ -22,6 +22,11 @@ import {
   autoproduksiProductionEntries,
 } from "../db/schema";
 import { buildProductionEntryPayload } from "../lib/autoproduksi";
+import {
+  autoproduksiProductionRowError,
+  parseAutoproduksiTransDate,
+  valueOf as autoproduksiProductionValueOf,
+} from "../lib/import-mapping/autoproduksi-production.mapping";
 import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
@@ -1855,6 +1860,96 @@ export async function processFinishedGoodSlipGroup(
 }
 
 // ============================================================
+// § Import Produksi (Excel) — "Kirim Dengan Excel" (Fase 160 ditunda,
+// dieksekusi sekarang). BEDA dari SEMUA modul di atas: TIDAK ADA grouping
+// (1 baris = 1 Input Produksi), dan baris Excel TIDAK langsung berisi
+// field Accurate — "Nama Resep/Formula" di-resolve dulu ke
+// `autoproduksi_formulas` lokal (lookup DB, BUKAN Accurate) sebelum
+// payload bisa disusun lewat `buildProductionEntryPayload` (lib/
+// autoproduksi.ts, DIREUSE APA ADANYA dari flow manual single-entry —
+// TIDAK ADA logic Accurate baru ditulis di sini).
+//
+// § Duplikat Nama Resep/Formula DIBOLEHKAN di Import Formula (keputusan
+// eksplisit user) — 2+ match DITOLAK di sini (bukan ditebak salah satu),
+// konsisten "aman di atas cakupan" (ADR-0013).
+//
+// § Entry `autoproduksi_production_entries` DIBUAT DI SINI (bukan di
+// route confirm) — SETELAH formula berhasil di-resolve, dengan status
+// akhir LANGSUNG (success/failed, bukan "pending" lalu job terpisah
+// seperti flow manual) karena panggilan Accurate-nya sudah selesai SAAT
+// fungsi ini return — supaya baris bulk-import JUGA tampil di
+// `/autoproduksi/riwayat` sama seperti entry manual, tanpa kolom FK baru
+// yang menghubungkan `import_batch_rows` <-> `autoproduksi_production_
+// entries` (2 audit trail independen dari hasil yang sama).
+export async function processAutoproduksiProductionImportRow(
+  ctx: AccurateSessionContext,
+  batch: { userId: string; subscriptionId: string },
+  dataUsahaId: string,
+  rawRow: Record<string, unknown>,
+  columnMapping: Record<string, string>,
+): Promise<{ accurateTransactionId: string }> {
+  const rowErrors = autoproduksiProductionRowError(rawRow, columnMapping);
+  if (rowErrors.length > 0) {
+    throw new Error(`Kolom tidak lengkap/valid: ${rowErrors.join(", ")} (Tanggal format YYYY-MM-DD/DD-MM-YYYY, Jumlah > 0).`);
+  }
+
+  const formulaName = String(autoproduksiProductionValueOf(rawRow, "formulaName", columnMapping) ?? "").trim();
+  const matches = await db
+    .select()
+    .from(autoproduksiFormulas)
+    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), eq(autoproduksiFormulas.name, formulaName)));
+  if (matches.length === 0) {
+    throw new Error(`Formula "${formulaName}" tidak ditemukan — cek ejaan Nama Resep/Formula, atau buat Formula-nya dulu.`);
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `Nama Formula "${formulaName}" ganda (${matches.length} Formula dengan nama sama) — tidak bisa diproses otomatis, ganti nama salah satu Formula dulu baru impor ulang.`,
+    );
+  }
+  const formula = matches[0]!;
+  const formulaItems = await db
+    .select()
+    .from(autoproduksiFormulaItems)
+    .where(eq(autoproduksiFormulaItems.formulaId, formula.id))
+    .orderBy(autoproduksiFormulaItems.sortOrder);
+
+  const transDate = parseAutoproduksiTransDate(autoproduksiProductionValueOf(rawRow, "transDate", columnMapping));
+  const producedQty = String(autoproduksiProductionValueOf(rawRow, "producedQty", columnMapping) ?? "");
+  const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate! });
+
+  try {
+    const result = await saveInventoryAdjustment(ctx, payload);
+    const accurateTransactionId = String(result.id);
+    await db.insert(autoproduksiProductionEntries).values({
+      userId: batch.userId,
+      dataUsahaId,
+      subscriptionId: batch.subscriptionId,
+      formulaId: formula.id,
+      producedQty,
+      transDate: transDate!,
+      status: "success",
+      accurateTransactionId,
+      errorMessage: null,
+    });
+    return { accurateTransactionId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    await db.insert(autoproduksiProductionEntries).values({
+      userId: batch.userId,
+      dataUsahaId,
+      subscriptionId: batch.subscriptionId,
+      formulaId: formula.id,
+      producedQty,
+      transDate: transDate!,
+      status: "failed",
+      accurateTransactionId: null,
+      errorMessage: message,
+    });
+    throw err;
+  }
+}
+
+// ============================================================
 // § Fase 148 — Material Slip: 1 panggilan `material-slip/save.do` per grup. Validasi SEBELUM kirim: tiap baris ITEM
 // (bukan lanjutan serial) lolos `materialSlipRowError` (tipe dikenali bila kolomnya terisi, itemNo wajib), header
 // dokumen (tanggal, Work Order No, tipe) lengkap di baris pertama.
@@ -3134,6 +3229,32 @@ async function main() {
             .update(importBatchRows)
             .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
+        }
+      }
+      // § Import Produksi (Excel) — TIDAK ADA grouping (1 baris = 1
+      // entry), § `processAutoproduksiProductionImportRow` di atas.
+      // dataUsahaId di-resolve SEKALI per batch (dipakai tiap baris utk
+      // insert `autoproduksi_production_entries`).
+    } else if (batch.module === "autoproduksi_production") {
+      const [sub] = await db.select({ dataUsahaId: subscriptions.dataUsahaId }).from(subscriptions).where(eq(subscriptions.id, batch.subscriptionId));
+      for (const row of rows) {
+        try {
+          const result = await processAutoproduksiProductionImportRow(
+            session,
+            batch,
+            sub!.dataUsahaId,
+            row.rawData as Record<string, unknown>,
+            columnMapping,
+          );
+          await db
+            .update(importBatchRows)
+            .set({ status: "success", accurateTransactionId: result.accurateTransactionId, errorMessage: null, processedAt: new Date() })
+            .where(eq(importBatchRows.id, row.id));
+        } catch (err) {
+          await db
+            .update(importBatchRows)
+            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .where(eq(importBatchRows.id, row.id));
         }
       }
     } else {

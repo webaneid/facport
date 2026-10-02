@@ -181,6 +181,65 @@ function VendorPayableAccountView({ rows }: { rows: Row[] }) {
   );
 }
 
+// § Import Formula (Excel, AutoProduksi) — TIDAK PERNAH memanggil
+// Accurate (§ architecture-autoproduksi.md), jadi TIDAK ADA
+// `accurateTransactionId` sama sekali — cuma status + error.
+function AutoproduksiFormulaView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+// § Import Produksi (Excel, AutoProduksi) — mirror VendorPayableAccountView
+// (tidak ada grouping, 1 baris = 1 Input Produksi).
+function AutoproduksiProductionView({ rows }: { rows: Row[] }) {
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-20">Baris</TableHead>
+          <TableHead className="w-28">Status</TableHead>
+          <TableHead>ID Penyesuaian Persediaan Accurate / Error</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {[...rows]
+          .sort((a, b) => a.rowNumber - b.rowNumber)
+          .map((row) => (
+            <TableRow key={row.id}>
+              <TableCell className="w-20">{row.rowNumber}</TableCell>
+              <TableCell>
+                <RowStatusBadge status={row.status} />
+              </TableCell>
+              <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+            </TableRow>
+          ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 // § mirror `purchase-payment/import/[batchId]/page.tsx` — TANPA
 // ekstraksi kolom, sama seperti VendorPayableAccountView (tidak ada
 // grouping per Nomor Faktur di modul ini, § architecture-purchase-payment.md).
@@ -789,6 +848,8 @@ const MODULE_TITLE: Record<string, string> = {
   material_slip: "Hasil Import Material Slip",
   finished_good_slip: "Hasil Import Finished Good Slip",
   delivery_order: "Hasil Import Delivery Order",
+  autoproduksi_formula: "Hasil Import Formula (AutoProduksi)",
+  autoproduksi_production: "Hasil Import Produksi (AutoProduksi)",
 };
 
 export default function AdminImportBatchDetailPage() {
@@ -872,6 +933,8 @@ export default function AdminImportBatchDetailPage() {
           {batch.module === "material_slip" && <MaterialSlipView rows={rows} />}
           {batch.module === "finished_good_slip" && <FinishedGoodSlipView rows={rows} />}
           {batch.module === "delivery_order" && <DeliveryOrderView rows={rows} />}
+          {batch.module === "autoproduksi_formula" && <AutoproduksiFormulaView rows={rows} />}
+          {batch.module === "autoproduksi_production" && <AutoproduksiProductionView rows={rows} />}
         </CardContent>
       </Card>
     </div>

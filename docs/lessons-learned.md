@@ -5833,3 +5833,277 @@ cuma baca kode sendiri terburu-buru (kapan tepatnya batch bisa macet,
 bukan cuma "apakah ada celah otorisasi") — worth tetap didelegasikan
 untuk perubahan >3-4 file sesuai `docs/WORKFLOW-MODES.md`, bahkan kalau
 yakin polanya sudah benar dari awal.
+
+## 2026-10-02 — Gerbang koneksi Accurate tidak pernah muncul untuk Data Usaha yang HANYA beli AutoProduksi — kelas bug SAMA dengan Fase 78/98 (dua tempat, dua daftar, diam-diam beda)
+
+Client lapor: daftar akun Facport baru, aktifkan AutoProduksi SAJA →
+Input Produksi tidak pernah bisa sinkron ke Accurate. Begitu salah satu
+modul Facport (bukan AutoProduksi) diaktifkan juga, baru bisa connect —
+client sendiri benar menyimpulkan "autoproduksi diaktifkan, data usaha
+harus disinkronkan/autentikasi juga" tapi gerbangnya tidak pernah minta.
+
+**Akar masalah**: `accurate-gate.ts` (`computeAccurateGate`, Fase 144)
+punya `FACPORT_MODULES` yang cuma filter `productLine === "facport"` untuk
+menentukan `requiresAccurate` — AutoProduksi (`productLine: "autoproduksi"`)
+IKUT DIANGGAP "tidak butuh Accurate" PADAHAL modulnya memanggil
+`item-adjustment/save.do` Accurate BENERAN sejak Fase 159 (reuse endpoint
+Inventory Adjustment). Yang GENUINELY tidak butuh Accurate cuma Konverter
+(100% client-side, ADR-0033). Daftar yang BENAR ("facport" + "autoproduksi")
+SUDAH ADA di tempat lain (`accurate-scopes.test.ts`,
+`PRODUCT_LINES_INTEGRATED_WITH_ACCURATE`, ditulis Fase 159 saat AutoProduksi
+dibangun) — tapi TIDAK PERNAH diimpor/dipakai ulang di `accurate-gate.ts`,
+jadi 2 tempat punya "daftar produk integrasi Accurate" SENDIRI-SENDIRI
+yang diam-diam melenceng. Test yang seharusnya menangkap ini
+(`accurate-gate.route.test.ts`, kasus "produk non-Accurate") ternyata
+pakai moduleKey PALSU (`"modul_non_accurate"`, tidak terdaftar di
+`MODULE_CATALOG` sama sekali) — lolos karena alasan yang salah (kunci
+tidak dikenal, bukan karena benar-benar Konverter/AutoProduksi diuji).
+
+**Fix**: `PRODUCT_LINES_INTEGRATED_WITH_ACCURATE` dipindah jadi SATU
+konstanta diekspor dari `module-catalog.ts` (source of truth tunggal),
+diimpor di `accurate-gate.ts` (ganti `FACPORT_MODULES` yang namanya sendiri
+sudah menyesatkan) DAN `accurate-scopes.test.ts`. Test lama diperbaiki
+pakai modul Konverter NYATA, ditambah test baru yang reproduce persis
+laporan client (subscribe HANYA `autoproduksi_production` →
+`requiresAccurate: true`, state `not_connected`).
+
+**Pelajaran**: ini kelas bug PERSIS SAMA dengan Fase 78 (`vendor_view`
+pindah scope, lupa 1 pemanggil) dan Fase 98 (`data_classification_*` lupa
+ditambah) — "2 tempat kode yang HARUS selalu sinkron, tapi tidak ada
+mekanisme yang MEMAKSA sinkron" (dulu scope per-modul, sekarang "daftar
+Produk yang butuh Accurate"). Setiap kali nambah Produk/Varian baru yang
+caranya "mirip tapi beda" dari yang sudah ada (AutoProduksi mirip
+Konverter — sama-sama bukan 23 modul Excel-import lama — tapi BEDA soal
+butuh-Accurate-atau-tidak), WAJIB grep literal `productLine ===`/daftar
+hardcoded produk di SELURUH `apps/api/src/lib/*.ts`, bukan cuma di file
+yang sedang disentuh — kalau ada 2+ tempat dengan logic serupa, SATUKAN
+jadi 1 konstanta diekspor, jangan biarkan 2 salinan.
+
+## 2026-10-02 — Fase 166, AutoProduksi Import Formula/Produksi: bug lama `standardCost` tidak pernah terkirim, + desain modul import SYNCHRONOUS pertama di Facport
+
+Saat memetakan kolom "Unit Cost" di file Excel Import Formula client,
+ditemukan `autoproduksiFormulas.standardCost` (ada sejak Fase 159, contoh
+client sendiri "Nilai dimasukan manual") TIDAK PERNAH dikirim sebagai
+`unitCost` ke `item-adjustment/save.do` — field tersimpan di DB, dipakai
+di form, tapi hilang di `buildProductionEntryPayload()`. Spec resmi
+Accurate cantumkan `unitCost` "wajib diisi hanya jika penambahan
+kuantitas barang" (baris ADJUSTMENT_IN, persis baris Barang Jadi modul
+ini) — bug sudah ada 1+ bulan, tidak ketahuan karena Accurate TIDAK
+menolak request tanpa `unitCost` (constraint "wajib" di level deskripsi
+spec, bukan validasi runtime keras — pola yang SAMA pernah ketemu di
+modul lain, Item Requisition dkk). Fix dibundel ke fase ini (field yang
+sama persis jadi fokus kerja), bukan fase terpisah.
+
+**Pelajaran**: field yang disimpan di DB tapi "kelihatannya tidak dipakai
+di mana-mana" pantas dicurigai SETIAP KALI menyentuh kode terkait —
+`standardCost` punya kolom, form input, DAN komentar arsitektur yang
+menjelaskan maksudnya, tapi tidak ada yang pernah MEMVERIFIKASI dia
+benar-benar sampai ke payload API. Test `autoproduksi.test.ts` yang ada
+sebelum fase ini juga TIDAK PERNAH assert field ini di payload — gap
+ganda (kode + test) yang baru ketahuan karena kebetulan Excel client
+punya kolom yang memaksa baca ulang fungsi itu baris per baris.
+
+**Desain baru dicatat**: Import Formula adalah modul import SYNCHRONOUS
+PERTAMA di Facport (confirm diproses langsung di request handler, bukan
+lewat pg-boss job) — keputusan sadar karena modul ini TIDAK PERNAH
+memanggil Accurate (beda dari 24+1 modul lain yang semua butuh job queue
+untuk toleran rate-limit/gangguan Accurate). Kalau ada modul BARU lagi
+nanti yang juga 100% lokal (tidak memanggil API eksternal), pola ini
+(synchronous confirm, `import_batches.status` langsung final, tanpa
+Cancel) adalah precedent yang sah untuk dipakai ulang — JANGAN otomatis
+asumsikan SEMUA modul import harus lewat job queue, itu cuma benar untuk
+modul yang benar-benar memanggil API eksternal.
+
+## 2026-10-02 — Security review Fase 166 (subagent `security-auditor`): 1 Medium (sudah diperbaiki duluan), 1 Low BARU (gerbang multi-Data-Usaha lupa pola path baru) ditemukan & diperbaiki
+
+Audit Import Formula/Produksi (§ entri Fase 166 di atas): **0 Critical, 0
+High**.
+
+**Medium — Import Formula tidak validasi panjang string vs kolom
+`varchar(N)` sebelum insert**: modul ini SATU-SATUNYA yang insert nilai
+Excel LANGSUNG ke kolom Postgres kita sendiri (24 modul lain cuma
+meneruskan ke Accurate, yang validasi panjangnya sendiri) — kolom Excel
+kepanjangan bisa bikin `db.transaction` throw error Postgres mentah
+("value too long for type character varying(N)"), tertangkap try/catch
+(TIDAK crash) tapi pesan ke user jadi pesan Postgres asli, bukan pesan
+validasi jelas. **Sudah diperbaiki SEBELUM laporan audit selesai**
+(disadari sendiri saat menulis prompt audit) — ditambah `MAX_LENGTHS` map
++ `fieldLengthErrors()` di `autoproduksi-formula.mapping.ts`, dipanggil
+dari `autoproduksiFormulaRowError` (otomatis berlaku di confirm/retry
+MAUPUN endpoint edit baris gagal, karena semuanya lewat fungsi yang
+sama) + test regresi (`"X".repeat(101)` pada kolom varchar(100) → error
+`itemNo`, BUKAN insert lalu gagal).
+
+**Low — BARU ditemukan, diperbaiki**: gerbang "boleh download template
+tanpa header Data Usaha walau customer punya >1 Data Usaha aktif"
+(`subscription-gate.ts`, § ADR-0035) cuma cocok untuk pola path
+`.../import/template` (24 modul lama) — 2 route BARU AutoProduksi pakai
+pola path BEDA (`/autoproduksi/import-formula/template`,
+`/autoproduksi/import-produksi/template`, TIDAK ada `/import/` di
+tengah) — customer dengan 2+ Data Usaha aktif akan kena 409 salah saat
+klik link download template (bukan celah keamanan, murni UX rusak, gagal
+CLOSED bukan OPEN). Fix: matcher diperlebar dari `endsWith("/import/
+template")` ke `endsWith("/template")` (dicek dulu via grep — TIDAK ADA
+endpoint `/template` lain di luar konteks import yang bisa ikut
+ter-exempt salah) + test regresi path baru.
+
+**Pelajaran**: pola "exact path suffix match" untuk pengecualian lintas-
+modul (`isStaticTemplateDownload` di sini, mungkin ada pola serupa di
+tempat lain) RAPUH terhadap struktur path yang SEDIKIT beda dari asumsi
+awal — setiap kali bikin route dengan struktur path yang TIDAK mengikuti
+pola `/{module}/import/*` 24 modul lama (seperti 2 route AutoProduksi
+ini, atau Konverter yang punya pola sendiri), WAJIB grep semua tempat
+yang melakukan path-matching berbasis string literal/suffix (bukan
+regex generik), bukan cuma modul-registry checklist biasa (§
+architecture-accurate-integration.md § 3b) yang fokusnya ke scope/label,
+bukan ke middleware path-matching seperti ini.
+
+## 2026-10-02 — INSIDEN PRODUKSI: import 1 baris (Sales Invoice, PT Futura Maju) nyangkut "Memproses" — akar masalah: batch 4000 baris customer LAIN memblokir seluruh antrean (1 worker, tanpa concurrency/fairness)
+
+**Gejala**: customer (firdausfacinstitute@gmail.com, PT Futura Maju) upload
+Sales Invoice 1 baris, status batch tetap "Memproses" / baris tetap
+"Menunggu" — tidak bergerak sama sekali.
+
+**Diagnosa** (lewat SQL read-only + log Docker, bukan tebakan):
+1. `import_batches`/`import_batch_rows` customer ini: batch `processing`,
+   baris `pending`, tidak ada error — bukan gagal, cuma belum pernah diproses.
+2. `pgboss.job` utk batch ini: `state = 'created'`, `started_on` NULL —
+   job-nya BELUM PERNAH diambil worker sama sekali (bukan macet
+   mid-eksekusi, bukan expired/retry).
+3. Query agregat `pgboss.job` (12 jam terakhir, group by name+state)
+   menemukan 1 job `import-to-accurate` LAIN berstatus `active` sejak
+   jauh sebelum batch customer ini dibuat — worker CUMA proses 1 job
+   `import-to-accurate` dalam satu waktu (tidak ada `teamSize`/
+   concurrency di `boss.work()`, § `lib/queue.ts`), jadi job baru APAPUN
+   di antrean yang sama ikut nunggu sampai job yang sedang aktif selesai
+   — URUTAN FIFO POLOS, TANPA PRIORITAS/FAIRNESS berbasis ukuran batch.
+4. Job yang `active` itu: Sales Quotation, **4000 baris**, milik
+   customer LAIN (file `template-sales-quotation.xlsx`). `docker stats`
+   nunjukkan CPU 1.81%/memory rendah (bukan infinite-loop/deadlock) —
+   dikonfirmasi BENERAN masih jalan (progres `import_batch_rows` naik
+   dari baca ulang 2x berjarak ~1 menit, 1930→lebih tinggi). Rate limit
+   resmi Accurate (8 request/detik, § `accurate-rate-limiter.ts`) + tiap
+   baris bisa butuh beberapa panggilan sekuensial (auto-create
+   customer/item dkk) bikin 4000 baris realistis makan waktu SANGAT
+   lama kalau diproses satu per satu.
+5. Log worker SEMPAT terlihat "diam" 10 menit penuh (tidak ada baris log
+   baru sama sekali, LINTAS SEMUA jenis job) — awalnya dikira seluruh
+   worker hang, TERNYATA cuma karena job besar itu TIDAK PERNAH log
+   progres parsial (cuma log 1 baris "Import batch selesai" di AKHIR
+   batch) DAN kebetulan tidak ada job jenis lain yang masuk di jendela
+   waktu itu — bukan tanda proses mati.
+
+**Mitigasi darurat yang diterapkan (operasional, TANPA deploy kode)**:
+scale worker jadi 2 replika (`docker compose ... up -d --scale worker=2
+worker`) — pg-boss aman dijalankan multi-instance (row-level locking
+bawaan), worker ke-2 langsung ambil job yang nunggu. Batch 1-baris
+customer selesai dalam hitungan detik setelah itu. **Scale balik ke 1
+worker setelah batch 4000-baris selesai** (jangan dibiarkan 2 selamanya
+tanpa alasan, § instruksi user).
+
+**Akar masalah ARSITEKTURAL (BELUM diperbaiki, sengaja dicatat dulu —
+diminta user, direncanakan terpisah)**: antrean `import-to-accurate`
+TIDAK PUNYA concurrency (`teamSize`) MAUPUN prioritas/fairness
+berbasis ukuran batch — 1 customer upload file sangat besar BISA TANPA
+SENGAJA memblokir SEMUA customer lain yang mau import (kecil ATAUPUN
+besar) sampai batch itu selesai, karena semuanya antre FIFO di 1
+worker. User eksplisit khawatir ini akan jadi masalah nyata kalau
+BANYAK customer upload bersamaan ("kemungkinan ada banyak yg upload
+dalam 1 waktu... kalau mengandalkan 1 worker apa mungkin?"). Opsi yang
+BELUM dievaluasi, perlu direncanakan (bukan diputuskan sekarang):
+- Tambah `teamSize`/concurrency di `boss.work(JOBS.IMPORT_TO_ACCURATE, ...)`
+  (§ `lib/queue.ts`/`workers/index.ts`) — risiko: perlu pastikan limit
+  rate Accurate (8 request/detik GLOBAL per token, § `accurate-rate-
+  limiter.ts`) tetap dihormati walau banyak job jalan bersamaan (limiter
+  sudah in-memory per-PROCESS, kalau nambah concurrency TANPA ubah
+  limiter kemungkinan sudah otomatis aman karena limiter-nya shared
+  within 1 process — perlu verifikasi, BUKAN asumsi).
+- Prioritas job berbasis ukuran batch (job kecil didahulukan dari job
+  besar) — pg-boss punya kolom `priority` bawaan, belum pernah dipakai
+  project ini.
+- Pecah batch BESAR jadi beberapa job lebih kecil (mis. per 100-500
+  baris) supaya tidak "memonopoli" 1 slot worker selama berjam-jam.
+- Scale worker permanen jadi >1 replika sebagai standing config (bukan
+  cuma mitigasi darurat) — trade-off resource server (tiap worker
+  384MB/0.5 CPU, host saat ini `free -h` nunjukkan ~5.3GiB available,
+  jadi ada ruang, tapi perlu dipikirkan growth customer ke depan).
+
+**Pelajaran**: (1) "batch nyangkut 'Memproses' selamanya" historis
+pernah disebabkan bug varchar(20) overflow (§ entri 2026-08-27 di atas,
+SUDAH diperbaiki) — kali ini gejala SAMA tapi AKAR MASALAH BEDA TOTAL
+(antrean, bukan bug update status) — JANGAN asumsikan penyebab lama
+otomatis berlaku lagi, selalu diagnosa ulang dari data nyata (SQL +
+log), bukan dari ingatan insiden sebelumnya. (2) `docker stats` (CPU/
+memory rendah) adalah sinyal cepat yang berguna buat bedakan "job
+genuinely masih jalan lambat" vs "job betulan deadlock/infinite-loop"
+SEBELUM mengambil tindakan drastis (restart paksa) yang bisa
+menyebabkan data tidak konsisten di tengah proses import yang sah.
+
+## 2026-10-02 — BUG PRODUKSI (regresi Fase 165): dashboard customer CRASH TOTAL kalau ada batch cancellable dari 19 modul baru — "Event handlers cannot be passed to Client Component props"
+
+**Gejala**: customer Untung Suroto (PT Maginet Indonesia) klik Data Usaha
+di `/pilih-usaha`, mendarat ke `app.facinstitute.id` dengan halaman error
+generik browser ("This page didn't load — A server error occurred").
+Log `facport-web-1` banjir error berulang:
+```
+Error: Event handlers cannot be passed to Client Component props.
+  {batch: ..., onConfirm: function onConfirm, onCancelled: ...}
+If you need interactivity, consider converting part of this to a Client Component.
+digest: '2594968111'
+```
+digest-nya PERSIS sama dengan yang tampil di screenshot customer —
+konfirmasi langsung, bukan kebetulan.
+
+**Akar masalah**: `components/import-archive/import-batch-table.tsx`
+dipakai DUA konteks — Dashboard (`app/app/(protected)/page.tsx`, SERVER
+COMPONENT, `<ImportBatchTable batches={...} timezone={...}
+isDataUsahaOwner={...} />` TANPA prop `onChanged`) dan halaman Arsip
+Import (Client Component). File ini SENDIRI TIDAK PERNAH ditandai
+`"use client"` — sebelum Fase 165 ini aman, karena SEMUA dialog Cancel
+yang ada (`PurchaseInvoiceCancelImportDialog`/`SalesInvoiceCancelImportDialog`)
+cuma terima prop `batch` (DATA murni, serializable lintas batas Server→
+Client React). Fase 165 menambah `GenericCancelImportDialog` yang
+SENGAJA terima prop `onConfirm` (FUNGSI, demi type-safety Eden Treaty
+per modul — § desain dicatat di `docs/architecture/architecture-batal-
+import-generic.md`) — begitu `import-batch-table.tsx` (yang jalan di
+SERVER karena dipanggil dari Dashboard Server Component, dan sendirinya
+tidak client-marked) merender dialog itu dengan `onConfirm={() => api[...].post()}`
+(closure baru), React MENOLAK KERAS mengirim fungsi itu lewat RSC
+payload — crash total, BUKAN cuma baris batch yang bermasalah, SELURUH
+halaman dashboard gagal render untuk customer MANA PUN yang kebetulan
+punya minimal 1 batch berstatus cancellable dari SALAH SATU 19 modul
+baru. Halaman Arsip Import (`/import/arsip`, Client Component) TIDAK
+kena karena parent-nya sendiri sudah client, jadi `import-batch-table.tsx`
+ikut dirender client-side walau tanpa direktif eksplisit — INI YANG
+BIKIN BUG LOLOS dari typecheck/lint/test/security-review/browser-test
+sesi itu (verifikasi waktu itu kemungkinan cuma lewat halaman Arsip
+Import, bukan Dashboard — atau akun test tidak punya batch cancellable
+saat dicoba).
+
+**Fix**: tambah `"use client";` eksplisit di baris pertama
+`import-batch-table.tsx`. Sekarang KONSISTEN client-side di KEDUA
+konteks pemanggil — tidak ada lagi fungsi yang perlu menyeberang batas
+serialisasi RSC, karena batas Server→Client sekarang ada di titik
+`<ImportBatchTable .../>` itu sendiri (props di situ murni data,
+`onChanged` tetap `undefined` dari Dashboard seperti sebelumnya — TIDAK
+ADA perubahan perilaku yang disengaja, murni perbaikan boundary).
+Typecheck+lint+build bersih setelah fix. Verifikasi browser langsung
+TIDAK dilakukan (dev server API lokal down saat insiden, § catatan
+sesi) — mengandalkan pemahaman akar masalah yang jelas (React error
+message eksplisit + digest cocok persis) + build sukses, direkomendasikan
+verifikasi cepat di production langsung dengan customer setelah deploy.
+
+**Pelajaran KRUSIAL**: komponen yang dipakai BAIK dari Server Component
+MAUPUN Client Component HARUS di-treat sebagai "boundary-sensitive" —
+setiap kali menambah prop FUNGSI baru ke komponen seperti ini (atau ke
+anak-anaknya), WAJIB cek SEMUA titik pemanggilnya, bukan cuma titik yang
+sedang disentuh. Security-review Fase 165 (via subagent) mengecek
+tenant-isolation/otorisasi dengan sangat teliti, tapi TIDAK dirancang
+untuk menangkap kelas bug INI (React Server Component boundary) — bug
+kelas ini butuh browser-test SUNGGUHAN pada halaman yang BENERAN
+server-rendered dengan data yang memicu kondisinya (bukan cuma
+assumsi "typecheck lolos = aman"), atau linting tambahan
+(`eslint-plugin-react-server-components` dkk, belum dipakai project
+ini) yang secara statis menangkap fungsi melewati boundary tanpa
+"use client". Dicatat sebagai kemungkinan perbaikan tooling ke depan,
+bukan dikerjakan sekarang.

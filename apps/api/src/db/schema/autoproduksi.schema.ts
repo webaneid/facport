@@ -58,6 +58,12 @@ export const autoproduksiFormulas = pgTable(
     adjustmentAccountName: varchar("adjustment_account_name", { length: 255 }),
     branchName: varchar("branch_name", { length: 100 }).notNull(),
     warehouseName: varchar("warehouse_name", { length: 100 }), // opsional, gudang barang jadi
+    // § Import Formula (Excel) — "Nomor Project"/"Departemen" pada baris
+    // Barang Jadi di file client. Field API resmi `detailItem.projectNo`/
+    // `detailItem.departmentName` (dikonfirmasi ada di accurate-openapi.json),
+    // belum pernah dipetakan sebelumnya di form manual — opsional, aditif.
+    finishedGoodProjectNo: varchar("finished_good_project_no", { length: 50 }),
+    finishedGoodDepartmentName: varchar("finished_good_department_name", { length: 100 }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
@@ -85,6 +91,11 @@ export const autoproduksiFormulaItems = pgTable(
     // SUDAH ada di spec resmi, langsung diakomodasi di Fase 1 (bukan
     // ditunda, biayanya murah).
     warehouseName: varchar("warehouse_name", { length: 100 }),
+    // § Import Formula (Excel) — "Nomor Project"/"Departemen" per baris
+    // Bahan Baku, sama alasan dengan `autoproduksiFormulas.finishedGood*`
+    // di atas (field `detailItem.projectNo`/`departmentName` resmi).
+    projectNo: varchar("project_no", { length: 50 }),
+    departmentName: varchar("department_name", { length: 100 }),
     sortOrder: integer("sort_order").notNull().default(0),
   },
   (t) => [index("autoproduksi_formula_items_formula_idx").on(t.formulaId)],

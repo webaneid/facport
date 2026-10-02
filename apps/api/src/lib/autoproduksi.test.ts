@@ -25,13 +25,15 @@ const baseFormula: Formula = {
   adjustmentAccountName: null,
   branchName: "JAKARTA",
   warehouseName: null,
+  finishedGoodProjectNo: null,
+  finishedGoodDepartmentName: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 };
 
 const formulaItems: FormulaItem[] = [
-  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, sortOrder: 0 },
-  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, sortOrder: 1 },
+  { id: "fi-1", formulaId: "formula-1", itemNo: "100012", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, projectNo: null, departmentName: null, sortOrder: 0 },
+  { id: "fi-2", formulaId: "formula-1", itemNo: "100013", itemUnitName: "KG", itemName: null, quantity: "0.5", warehouseName: null, projectNo: null, departmentName: null, sortOrder: 1 },
 ];
 
 const baseEntry: ProductionEntry = {
@@ -99,5 +101,41 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     const payload = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry);
     const detailItem = payload.detailItem as Record<string, unknown>[];
     expect("warehouseName" in detailItem[0]!).toBe(false);
+  });
+
+  // § BUG DITEMUKAN 2026-10-02 — standardCost SUDAH ADA di skema sejak
+  // Fase 159 tapi TIDAK PERNAH dikirim sebagai unitCost. Ditemukan saat
+  // memetakan kolom "Unit Cost" di Excel Import Formula client.
+  test("standardCost formula dikirim sebagai unitCost di baris Barang Jadi (ADJUSTMENT_IN)", () => {
+    const payload = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry);
+    const detailItem = payload.detailItem as Record<string, unknown>[];
+    expect(detailItem[2]).toMatchObject({ itemNo: "100011", unitCost: 20000 });
+    // § unitCost TIDAK dikirim di baris Bahan Baku (ADJUSTMENT_OUT) — field ini spesifik utk penambahan kuantitas.
+    expect("unitCost" in detailItem[0]!).toBe(false);
+  });
+
+  test("standardCost KOSONG (null) -> unitCost tidak ikut terkirim sebagai field", () => {
+    const formulaNoCost = { ...baseFormula, standardCost: null };
+    const payload = buildProductionEntryPayload(formulaNoCost, formulaItems, baseEntry);
+    const detailItem = payload.detailItem as Record<string, unknown>[];
+    expect("unitCost" in detailItem[2]!).toBe(false);
+  });
+
+  // § Import Formula (Excel) — "Nomor Project"/"Departemen", field resmi
+  // detailItem.projectNo/departmentName (dikonfirmasi accurate-openapi.json).
+  test("projectNo/departmentName disertakan per baris (Bahan Baku & Barang Jadi) kalau diisi", () => {
+    const itemsWithProject: FormulaItem[] = [{ ...formulaItems[0]!, projectNo: "PRJ-1", departmentName: "Produksi" }];
+    const formulaWithProject = { ...baseFormula, finishedGoodProjectNo: "PRJ-1", finishedGoodDepartmentName: "Produksi" };
+    const payload = buildProductionEntryPayload(formulaWithProject, itemsWithProject, baseEntry);
+    const detailItem = payload.detailItem as Record<string, unknown>[];
+    expect(detailItem[0]).toMatchObject({ projectNo: "PRJ-1", departmentName: "Produksi" });
+    expect(detailItem[1]).toMatchObject({ itemNo: "100011", projectNo: "PRJ-1", departmentName: "Produksi" });
+  });
+
+  test("projectNo/departmentName KOSONG tidak ikut terkirim sebagai field", () => {
+    const payload = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry);
+    const detailItem = payload.detailItem as Record<string, unknown>[];
+    expect("projectNo" in detailItem[0]!).toBe(false);
+    expect("departmentName" in detailItem[0]!).toBe(false);
   });
 });

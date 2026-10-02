@@ -224,6 +224,10 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
       items: [
         { href: "/autoproduksi/formulas", label: "List Formula", icon: ListChecks, moduleKey: "autoproduksi_production" },
         { href: "/autoproduksi/input", label: "Input Produksi", icon: ChefHat, moduleKey: "autoproduksi_production" },
+        // § Import Formula/Produksi (Excel) — "Kirim Dengan Excel" (Fase 160
+        // ditunda, dieksekusi sekarang). moduleKey SAMA (1 SKU bundel, § komentar atas).
+        { href: "/autoproduksi/import-formula", label: "Import Formula (Excel)", icon: FileSpreadsheet, moduleKey: "autoproduksi_production" },
+        { href: "/autoproduksi/import-produksi", label: "Import Produksi (Excel)", icon: FileSpreadsheet, moduleKey: "autoproduksi_production" },
         { href: "/autoproduksi/riwayat", label: "Riwayat Produksi", icon: History, moduleKey: "autoproduksi_production" },
       ],
     },

@@ -1,3 +1,24 @@
+"use client";
+
+// § BUG PRODUKSI DITEMUKAN & DIPERBAIKI 2026-10-02 — komponen ini dipakai
+// dashboard (Server Component, `app/app/(protected)/page.tsx`) DAN halaman
+// Arsip Import (Client Component). Sebelum fase 165, semua dialog Cancel
+// (`PurchaseInvoiceCancelImportDialog`/`SalesInvoiceCancelImportDialog`)
+// cuma terima prop DATA (`batch`, serializable) — aman melewati batas
+// Server→Client walau file ini sendiri TIDAK ditandai "use client" (Next.js
+// render dia di server, lalu nested Client Component dialog di-hydrate di
+// browser). Fase 165 menambah `GenericCancelImportDialog` yang terima prop
+// `onConfirm` (FUNGSI, demi type-safety Eden per modul) — begitu file ini
+// (tanpa "use client") merender dialog itu dari konteks SERVER (dashboard),
+// React menolak keras: "Event handlers cannot be passed to Client Component
+// props" — dashboard customer manapun yang punya batch cancellable dari 19
+// modul baru CRASH TOTAL (500, digest acak tiap render). Ditemukan dari
+// laporan nyata customer (Untung Suroto, PT Maginet) via log
+// `facport-web-1`. Fix: tandai file ini "use client" eksplisit — SELURUH
+// subtree (termasuk dialog baru) jadi konsisten client-side di KEDUA
+// konteks pemanggil, tidak ada lagi fungsi yang perlu menyeberang batas
+// serialisasi RSC. `onChanged` (opsional) tetap `undefined` dari pemanggil
+// dashboard seperti sebelumnya — TIDAK berubah.
 import Link from "next/link";
 import { Eye } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
@@ -5,7 +26,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { moduleLabel } from "@/lib/module-options";
-import { MODULE_IMPORT_BASE_PATH } from "@/lib/module-import-routes";
+import { MODULE_IMPORT_BASE_PATH, MODULE_DISPLAY_LABEL_OVERRIDES } from "@/lib/module-import-routes";
 import { CANCELLABLE_BATCH_STATUS, DELETE_BLOCKED_BATCH_STATUS } from "@/lib/import-batch-status";
 import { formatDate } from "@/lib/utils";
 import { CancelImportDialog as PurchaseInvoiceCancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
@@ -47,6 +68,13 @@ import { DeleteImportDialog as FinishedGoodSlipDeleteImportDialog } from "@/comp
 // § Fase 157 — Delivery Order, ditemukan KELEWAT (§ checklist modul baru,
 // architecture-accurate-integration.md § 3b poin 10) saat audit tabel ini 2026-09-24.
 import { DeleteImportDialog as DeliveryOrderDeleteImportDialog } from "@/components/delivery-order/delete-import-dialog";
+// § Import Formula/Produksi (Excel, AutoProduksi) — HANYA Delete (lokal),
+// TIDAK ADA Cancel: Import Formula tidak pernah menyentuh Accurate sama
+// sekali (master data lokal); Cancel untuk Import Produksi sengaja
+// ditunda (§ architecture-autoproduksi.md Known Limitations — flow
+// manual single-entry juga belum punya Cancel, supaya tidak asimetris).
+import { FormulaImportDeleteDialog } from "@/components/autoproduksi/formula-import-delete-dialog";
+import { ProductionImportDeleteDialog } from "@/components/autoproduksi/production-import-delete-dialog";
 
 export type UnifiedImportBatch = {
   id: string;
@@ -163,7 +191,7 @@ export function ImportBatchTable({
                 <TruncateText>{batch.fileName}</TruncateText>
               </TableCell>
               <TableCell className="text-muted-foreground">
-                <TruncateText>{moduleLabel(batch.module)}</TruncateText>
+                <TruncateText>{MODULE_DISPLAY_LABEL_OVERRIDES[batch.module] ?? moduleLabel(batch.module)}</TruncateText>
               </TableCell>
               <TableCell className="text-muted-foreground">
                 <TruncateText>{batch.uploadedByYou ? "Anda" : (batch.uploadedByName ?? "-")}</TruncateText>
@@ -316,6 +344,12 @@ export function ImportBatchTable({
                   )}
                   {canDelete && batch.module === "delivery_order" && (
                     <DeliveryOrderDeleteImportDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "autoproduksi_formula" && (
+                    <FormulaImportDeleteDialog batch={batch} onDeleted={onChanged} />
+                  )}
+                  {canDelete && batch.module === "autoproduksi_production" && (
+                    <ProductionImportDeleteDialog batch={batch} onDeleted={onChanged} />
                   )}
                 </div>
               </TableCell>

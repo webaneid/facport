@@ -64,11 +64,32 @@ describe("GET /accurate/gate — mesin status", () => {
     expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", migrated: false, requiresAccurate: true, isOwner: true, accounts: [], hasNoSubscriptionYet: true });
   });
 
-  test("Data Usaha yang hanya memakai produk NON-Accurate → ok, requiresAccurate false (tidak ada gerbang), hasNoSubscriptionYet false (sudah beli sesuatu)", async () => {
-    const { userId, cookie } = await newUser("nonaccurate");
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (laporan client) — test ini
+  // SEBELUMNYA pakai moduleKey PALSU ("modul_non_accurate", tidak ada di
+  // MODULE_CATALOG sama sekali) yang lolos cuma karena filter `m in
+  // MODULE_ACCURATE_SCOPES` otomatis gagal untuk kunci yang tidak
+  // terdaftar — TIDAK benar-benar menguji perilaku Konverter asli. Modul
+  // Konverter NYATA sekarang dipakai supaya test ini jujur menguji produk
+  // yang genuinely tidak integrasi Accurate (100% client-side, ADR-0033).
+  test("Data Usaha yang hanya memakai produk Konverter (100% client-side) → ok, requiresAccurate false, hasNoSubscriptionYet false", async () => {
+    const { userId, cookie } = await newUser("konverter");
     const du = await createTestDataUsaha(userId);
-    await subscribe(userId, du, "modul_non_accurate", "na");
+    await subscribe(userId, du, "konverter_sales_invoice", "kv");
     expect(await gateOf(cookie, du)).toMatchObject({ state: "ok", requiresAccurate: false, hasNoSubscriptionYet: false });
+  });
+
+  // § Regresi bug 2026-10-02: Data Usaha yang HANYA beli AutoProduksi
+  // SEBELUMNYA dianggap `requiresAccurate: false` (sama seperti Konverter)
+  // — popup/gerbang koneksi tidak pernah muncul, padahal AutoProduksi
+  // memanggil `item-adjustment/save.do` Accurate BENERAN sejak Fase 159.
+  // Akibat nyata: akun client baru yang HANYA aktifkan AutoProduksi tidak
+  // pernah diminta connect Accurate, Input Produksi gagal sinkron sampai
+  // mereka (tidak sengaja) mengaktifkan modul Facport lain juga.
+  test("Data Usaha yang HANYA memakai produk AutoProduksi → requiresAccurate TRUE, not_connected (bukan ok) — regresi bug client 2026-10-02", async () => {
+    const { userId, cookie } = await newUser("autoproduksi");
+    const du = await createTestDataUsaha(userId);
+    await subscribe(userId, du, "autoproduksi_production", "ap");
+    expect(await gateOf(cookie, du)).toMatchObject({ state: "not_connected", requiresAccurate: true, hasNoSubscriptionYet: false });
   });
 
   test("not_connected varian `migrated`: Data Usaha yang dulu terhubung lewat model LAMA (pointer lama di subscription) & belum terhubung lagi", async () => {

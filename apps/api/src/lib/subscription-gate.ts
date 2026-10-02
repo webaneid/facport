@@ -123,8 +123,16 @@ export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).
       // Unduh template Excel = `<a href>` biasa (tidak bisa bawa header), isinya
       // STATIS per modul dan tidak menyentuh data tenant — jangan ditolak 409
       // untuk user multi-Data-Usaha (tetap wajib berlangganan modulnya).
-      const isStaticTemplateDownload =
-        request.method === "GET" && new URL(request.url).pathname.endsWith("/import/template");
+      // § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (security review Fase 166)
+      // — cek sebelumnya `endsWith("/import/template")` COCOK untuk 24
+      // modul lama (`/{module}/import/template`) TAPI TIDAK untuk 2 route
+      // baru AutoProduksi (`/autoproduksi/import-formula/template`,
+      // `/autoproduksi/import-produksi/template` — prefix beda, bukan
+      // `/import/`). Diperlebar ke `endsWith("/template")` (TIDAK ADA
+      // endpoint `/template` lain di luar konteks import, dicek via grep)
+      // supaya pola path baru manapun otomatis ikut ter-cover, tidak perlu
+      // hardcode per-modul lagi tiap kali ada struktur path baru.
+      const isStaticTemplateDownload = request.method === "GET" && new URL(request.url).pathname.endsWith("/template");
       let candidates = activeSubs.filter((s) => s.plan.modules.includes(moduleKey));
       if (requested) {
         if (!UUID_RE.test(requested) || !(await hasAccessToDataUsaha(session.user.id, requested))) {

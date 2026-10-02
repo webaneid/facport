@@ -35,6 +35,12 @@ const formulaItemSchema = t.Object({
   itemName: t.Optional(t.String({ maxLength: 255 })),
   quantity: t.Number({ exclusiveMinimum: 0 }),
   warehouseName: t.Optional(t.String({ maxLength: 100 })),
+  // § Import Formula (Excel) — "Nomor Project"/"Departemen" per Bahan
+  // Baku. Ditambah di form manual JUGA (bukan cuma jalur Excel) supaya
+  // edit Formula hasil import lewat form TIDAK diam-diam menghapus field
+  // ini (PUT mengganti seluruh items).
+  projectNo: t.Optional(t.String({ maxLength: 50 })),
+  departmentName: t.Optional(t.String({ maxLength: 100 })),
 });
 
 const formulaBodySchema = t.Object({
@@ -47,6 +53,8 @@ const formulaBodySchema = t.Object({
   adjustmentAccountName: t.Optional(t.String({ maxLength: 255 })),
   branchName: t.String({ minLength: 1, maxLength: 100 }),
   warehouseName: t.Optional(t.String({ maxLength: 100 })),
+  finishedGoodProjectNo: t.Optional(t.String({ maxLength: 50 })),
+  finishedGoodDepartmentName: t.Optional(t.String({ maxLength: 100 })),
   items: t.Array(formulaItemSchema, { minItems: 1 }),
 });
 
@@ -110,6 +118,8 @@ export const autoproduksiRoute = new Elysia()
             adjustmentAccountName: body.adjustmentAccountName ?? null,
             branchName: body.branchName,
             warehouseName: body.warehouseName ?? null,
+            finishedGoodProjectNo: body.finishedGoodProjectNo ?? null,
+            finishedGoodDepartmentName: body.finishedGoodDepartmentName ?? null,
           })
           .returning();
         await tx.insert(autoproduksiFormulaItems).values(
@@ -120,6 +130,8 @@ export const autoproduksiRoute = new Elysia()
             itemName: item.itemName ?? null,
             quantity: String(item.quantity),
             warehouseName: item.warehouseName ?? null,
+            projectNo: item.projectNo ?? null,
+            departmentName: item.departmentName ?? null,
             sortOrder: index,
           })),
         );
@@ -150,6 +162,8 @@ export const autoproduksiRoute = new Elysia()
             adjustmentAccountName: body.adjustmentAccountName ?? null,
             branchName: body.branchName,
             warehouseName: body.warehouseName ?? null,
+            finishedGoodProjectNo: body.finishedGoodProjectNo ?? null,
+            finishedGoodDepartmentName: body.finishedGoodDepartmentName ?? null,
             updatedAt: new Date(),
           })
           .where(eq(autoproduksiFormulas.id, params.id));
@@ -165,6 +179,8 @@ export const autoproduksiRoute = new Elysia()
             itemName: item.itemName ?? null,
             quantity: String(item.quantity),
             warehouseName: item.warehouseName ?? null,
+            projectNo: item.projectNo ?? null,
+            departmentName: item.departmentName ?? null,
             sortOrder: index,
           })),
         );

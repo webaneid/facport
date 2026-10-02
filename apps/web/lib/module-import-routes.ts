@@ -33,4 +33,21 @@ export const MODULE_IMPORT_BASE_PATH: Record<string, string> = {
   work_order: "/work-order/import",
   material_slip: "/material-slip/import",
   finished_good_slip: "/finished-good-slip/import",
+  // § Import Formula/Produksi (Excel, AutoProduksi) — moduleAccess tetap
+  // gate ke "autoproduksi_production" (1 SKU bundel, § sidebar.tsx), tapi
+  // `import_batches.module` 2 flow ini BEDA (supaya Arsip Import bisa
+  // bedakan) — "autoproduksi_formula" BUKAN SKU terpisah, sengaja TIDAK
+  // didaftarkan di MODULE_CATALOG (hindari muncul sebagai opsi "jual
+  // terpisah" di dropdown admin/plans), labelnya lewat
+  // `MODULE_DISPLAY_LABEL_OVERRIDES` di bawah.
+  autoproduksi_formula: "/autoproduksi/import-formula",
+  autoproduksi_production: "/autoproduksi/import-produksi",
+};
+
+// § label tampilan untuk `import_batches.module` yang BUKAN entri
+// MODULE_CATALOG (§ komentar di atas) — dicek SEBELUM `moduleLabel()`
+// (yang fallback ke raw key kalau tidak ketemu). Satu-satunya pemakai:
+// kolom "Fitur" tabel Arsip Import (`import-batch-table.tsx`).
+export const MODULE_DISPLAY_LABEL_OVERRIDES: Record<string, string> = {
+  autoproduksi_formula: "Import Formula",
 };

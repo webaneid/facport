@@ -253,6 +253,13 @@
       "when": 1790670263929,
       "tag": "0035_right_madame_masque",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1790930632599,
+      "tag": "0036_fresh_baron_strucker",
+      "breakpoints": true
     }
   ]
 }

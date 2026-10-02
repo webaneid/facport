@@ -9,7 +9,7 @@ import { resolveConnectionForDataUsaha } from "./accurate-connection";
 import { missingScopes, resolveGrantedScopes } from "./accurate-scope-check";
 import { ALL_ACCURATE_SCOPES, MODULE_ACCURATE_SCOPES } from "./accurate-scopes";
 import { hasRunningBatch } from "./accurate-token";
-import { MODULE_CATALOG } from "./module-catalog";
+import { MODULE_CATALOG, PRODUCT_LINES_INTEGRATED_WITH_ACCURATE } from "./module-catalog";
 
 export type GateState = "ok" | "not_connected" | "reconnect" | "update_permissions" | "select_database" | "confirm_database";
 
@@ -18,7 +18,7 @@ export type AccurateGate = {
   /** true = Data Usaha ini dulu terhubung lewat model LAMA (subscription menunjuk koneksi lama) & belum terhubung lagi: narasi "hubungkan ulang sekali". */
   migrated: boolean;
   isOwner: boolean;
-  /** false = Data Usaha ini hanya memakai produk yang tidak butuh Accurate (Konverter/AutoProduksi) → tidak ada gerbang. */
+  /** false = Data Usaha ini hanya memakai produk yang tidak butuh Accurate (Konverter — 100% client-side) → tidak ada gerbang. */
   requiresAccurate: boolean;
   accountEmail: string | null;
   accurateDbAlias: string | null;
@@ -40,7 +40,16 @@ export type AccurateGate = {
 };
 
 const LABELS = new Map<string, string>(MODULE_CATALOG.map((m) => [m.key, m.label]));
-const FACPORT_MODULES = new Set<string>(MODULE_CATALOG.filter((m) => m.productLine === "facport").map((m) => m.key));
+// § BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (§ module-catalog.ts komentar
+// di atas `PRODUCT_LINES_INTEGRATED_WITH_ACCURATE`) — SEBELUMNYA cuma
+// `productLine === "facport"`, jadi Data Usaha yang HANYA beli AutoProduksi
+// tidak pernah dianggap "butuh Accurate" (`requiresAccurate` palsu false),
+// popup/gerbang koneksi tidak pernah muncul walau modulnya memanggil
+// Accurate beneran. Nama variabel TETAP `ACCURATE_INTEGRATED_MODULES`
+// (bukan `FACPORT_MODULES` lagi) supaya tidak menyesatkan pembaca berikutnya.
+const ACCURATE_INTEGRATED_MODULES = new Set<string>(
+  MODULE_CATALOG.filter((m) => (PRODUCT_LINES_INTEGRATED_WITH_ACCURATE as readonly string[]).includes(m.productLine)).map((m) => m.key),
+);
 
 /** `null` = user tidak punya akses ke Data Usaha ini (pemanggil balas 404). */
 export async function computeAccurateGate(userId: string, dataUsahaId: string): Promise<AccurateGate | null> {
@@ -54,7 +63,7 @@ export async function computeAccurateGate(userId: string, dataUsahaId: string): 
   // Modul yang DIBELI Data Usaha ini (bukan seluruh katalog).
   const activeSubs = (await getAccessibleSubscriptionsWithPlans(userId)).filter((s) => s.subscription.dataUsahaId === dataUsahaId);
   const boughtModules = [...new Set(activeSubs.flatMap((s) => s.plan.modules))];
-  const accurateModules = boughtModules.filter((m) => FACPORT_MODULES.has(m) && m in MODULE_ACCURATE_SCOPES);
+  const accurateModules = boughtModules.filter((m) => ACCURATE_INTEGRATED_MODULES.has(m) && m in MODULE_ACCURATE_SCOPES);
   // Data Usaha baru (belum beli apa pun) tetap diarahkan menghubungkan; yang hanya memakai produk non-Accurate tidak.
   const requiresAccurate = boughtModules.length === 0 || accurateModules.length > 0;
 

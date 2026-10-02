@@ -126,7 +126,7 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
   Dicatat sebagai known limitation, follow-up terpisah kalau dibutuhkan.
 
 ## Known Limitations (di luar scope Fase 1, dicatat sengaja)
-- Excel bulk input ("Kirim Dengan Excel") — fase terpisah.
+- ~~Excel bulk input ("Kirim Dengan Excel")~~ — **Done, § "Import Formula & Import Produksi (Excel)" di bawah.**
 - Harga Beli bahan baku otomatis dari Accurate (`item/list.do` sudah
   endpoint baseline, gampang ditambah) — enhancement lanjutan.
 - Trial row budget belum ditegakkan (lihat di atas) — evaluasi ditunda
@@ -172,9 +172,110 @@ benar-benar dibangun — dikoreksi juga di dokumen itu).
   proxy `warehouse/list.do`) sekarang search-pilih juga (bukan ketik
   bebas), diminta sekalian oleh client untuk minimalkan siklus deploy.
 
+## Import Formula & Import Produksi (Excel) — "Kirim Dengan Excel"
+
+> Dieksekusi setelah Fase 160 ("Planned" sejak itu, GitHub #79). Sumber
+> kebutuhan: 2 file Excel NYATA dari client (`Autoproduksi_Formula
+> Produksi.xlsx`, `Autoproduksi_Barang Jadi.xlsx`, 2026-10-02, gitignored).
+
+Dua flow BARU, keduanya reuse infrastruktur `import_batches`/
+`import_batch_rows` yang sama dengan 24 modul Excel-import lain (upload →
+cocokkan kolom → riwayat → retry → edit baris gagal) — BUKAN mekanisme
+bulk-upload terpisah. Tapi KEDUANYA beda secara struktural dari 24 modul
+itu, dengan cara yang BERBEDA satu sama lain:
+
+### A. Import Formula — SATU-SATUNYA modul import SYNCHRONOUS di Facport
+`import_batches.module = "autoproduksi_formula"` (moduleAccess TETAP
+`autoproduksi_production`, 1 SKU bundel — key ini SENGAJA tidak masuk
+`module-catalog.ts` supaya tidak muncul sebagai opsi "jual terpisah" di
+dropdown admin/plans, § `module-import-routes.ts` `MODULE_DISPLAY_LABEL_
+OVERRIDES` untuk label tampilan).
+
+Formula TIDAK PERNAH memanggil Accurate (data lokal murni) — jadi confirm
+diproses LANGSUNG di request handler (`autoproduksi-formula-import.route.ts`),
+TANPA pg-boss job. `import_batches.status` langsung `completed`/
+`completed_with_errors`, TIDAK PERNAH singgah di `processing`. TIDAK ADA
+endpoint cancel (tidak ada transaksi Accurate untuk dibatalkan).
+
+Baris Excel dikelompokkan by "Nama Resep/Formula" (ADR-0011), tiap grup
+WAJIB tepat 1 baris `Tipe Barang=BJ` (jadi header `autoproduksi_formulas`)
++ minimal 1 baris `Tipe Barang=BB` (jadi `autoproduksi_formula_items`).
+Kolom "Gudang" TUNGGAL tapi artinya beda per baris: BB = Gudang Bahan
+Baku, BJ = Gudang Barang Jadi (field API memang beda level).
+
+**Keputusan eksplisit user (ditanya langsung, bukan diasumsikan)**: Nama
+Resep/Formula yang SUDAH ADA → **selalu insert Formula BARU** (duplikat
+nama DIBOLEHKAN), BUKAN update/timpa. Konsekuensi: Import Produksi (lihat
+di bawah) WAJIB menolak baris yang nama Formula-nya ganda, bukan menebak
+salah satu. Konsekuensi lain: **retry HANYA memproses ulang baris yang
+masih pending/failed** (grouping dihitung ulang dari situ) — grup yang
+SUDAH sukses tidak pernah diproses lagi, supaya retry tidak diam-diam
+membuat Formula duplikat tambahan.
+
+**Field baru** (migrasi 0036, aditif nullable): `autoproduksi_formulas.
+finished_good_project_no`/`finished_good_department_name`,
+`autoproduksi_formula_items.project_no`/`department_name` — field resmi
+`detailItem.projectNo`/`departmentName` (dikonfirmasi ada di
+accurate-openapi.json), terekspos juga di form manual (bukan cuma Excel)
+supaya edit Formula hasil import lewat form tidak diam-diam menghapusnya
+(PUT mengganti seluruh Formula).
+
+### B. Import Produksi — reuse module key `autoproduksi_production`, ASYNC seperti biasa
+`import_batches.module = "autoproduksi_production"` (key yang SAMA
+dengan moduleAccess-nya — first-time registration, tidak pernah ada
+batch dengan module ini sebelumnya karena flow manual tidak pakai
+`import_batches` sama sekali). 1 baris Excel = 1 Input Produksi (TIDAK
+ADA grouping) — struktural identik dengan 19 modul "sederhana" Fase 165.
+
+Worker (`processAutoproduksiProductionImportRow`, workers/index.ts)
+resolve "Nama Resep/Formula" ke `autoproduksi_formulas` LOKAL (bukan
+Accurate) dulu: 0 match → baris gagal `Formula tidak ditemukan`; **2+
+match (duplikat nama, § keputusan di atas) → baris gagal eksplisit,
+TIDAK PERNAH menebak salah satu** (aman di atas cakupan, ADR-0013); 1
+match → reuse `buildProductionEntryPayload()` (lib/autoproduksi.ts, SAMA
+PERSIS fungsi yang dipakai flow manual single-entry) lalu
+`saveInventoryAdjustment()`. Hasil (sukses/gagal) JUGA diinsert sebagai
+baris `autoproduksi_production_entries` biasa — entry dari Excel tampil
+di `/autoproduksi/riwayat` PERSIS seperti entry manual, tanpa kolom FK
+baru yang menghubungkan 2 tabel (2 audit trail independen dari hasil
+yang sama). **Job `PROCESS_AUTOPRODUKSI_ENTRY`/route single-entry manual
+TIDAK disentuh sama sekali** — reuse murni via pemanggilan fungsi, bukan
+modifikasi.
+
+Tidak ada scope Accurate baru (endpoint `item-adjustment/save.do` sudah
+terdaftar untuk `autoproduksi_production` sejak Fase 159).
+
+**Batal Import untuk Import Produksi SENGAJA BELUM ADA** — walau
+struktural memenuhi syarat "modul sederhana" Fase 165 (1 baris = 1
+dokumen Accurate, tanpa merge lintas-batch), flow manual single-entry
+JUGA belum punya Cancel — menambahkannya HANYA untuk entry hasil bulk
+import akan jadi asimetri yang membingungkan. Follow-up terpisah kalau
+diminta.
+
+### Checklist registrasi (§ architecture-accurate-integration.md § 3b)
+- Backend: `import-mapping/autoproduksi-{formula,production}.mapping.ts`
+  (+`.test.ts`), `routes/autoproduksi-{formula,production}-import.route.ts`
+  (+`.test.ts`), dispatch worker (HANYA untuk Produksi — Formula
+  synchronous), `template-guide.ts` (2 entri BARU, header SAMA PERSIS
+  file Excel client).
+- Frontend: `app/.../autoproduksi/import-{formula,produksi}/{page,[batchId]/page,riwayat/page}.tsx`,
+  `components/autoproduksi/{formula,production}-import-{delete,edit-row}-dialog.tsx`,
+  `sidebar.tsx` (2 NavItem baru, moduleKey SAMA `autoproduksi_production`),
+  `module-import-routes.ts` (2 entri BARU + `MODULE_DISPLAY_LABEL_OVERRIDES`),
+  `import-batch-table.tsx` (Delete dispatch, TANPA Cancel), admin batch-view
+  (`{Module}View` + `MODULE_TITLE` × 2).
+- `module-catalog.ts`: **TIDAK ADA entri baru** — `autoproduksi_formula`
+  sengaja TIDAK didaftarkan (bukan SKU terpisah, § "Import Formula" di
+  atas); `autoproduksi_production` reuse entri yang sudah ada.
+- `accurate-endpoint-registry.ts`: **TIDAK ADA perubahan** — Formula tidak
+  memanggil Accurate, Produksi reuse endpoint yang sudah terdaftar.
+- `admin/plans.route.ts`: **TIDAK disentuh** — tidak ada SKU baru.
+
 ## Referensi
 - ADR: `docs/decisions/adr-0033-ekspansi-multi-produk-facport.md`
 - Katalog Produk: `docs/architecture/architecture-product-lines.md`
 - Modul yang di-reuse endpoint-nya: `docs/architecture/architecture-inventory-adjustment.md`
-- Phase doc: `docs/phases/phase-159-autoproduksi-formula-input-produksi.md`
-- Sumber kebutuhan (gitignored, cuma referensi lokal): `docs/referencehtml/facport/Autoproduksi.xlsx`
+- Phase doc: `docs/phases/phase-159-autoproduksi-formula-input-produksi.md`,
+  `docs/phases/phase-166-autoproduksi-import-formula-produksi.md` (Import Formula/Produksi)
+- Sumber kebutuhan (gitignored, cuma referensi lokal): `docs/referencehtml/facport/Autoproduksi.xlsx`,
+  `Autoproduksi_Formula Produksi.xlsx`/`Autoproduksi_Barang Jadi.xlsx` (contoh nyata client, 2026-10-02, di luar repo)

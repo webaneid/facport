@@ -29,6 +29,21 @@ export const PRODUCT_LINES = [
 
 export type ProductLineKey = (typeof PRODUCT_LINES)[number]["key"];
 
+// § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, laporan client: akun baru
+// isi AutoProduksi SAJA tidak pernah diminta connect Accurate) — SATU-
+// SATUNYA sumber kebenaran "Produk mana yang genuinely butuh koneksi
+// Accurate", dipakai `accurate-gate.ts` (gerbang koneksi) DAN
+// `accurate-scopes.test.ts` (guard konsolidasi katalog scope). Sebelum
+// fix ini, 2 tempat itu py daftar SENDIRI-SENDIRI yang diam-diam beda:
+// `accurate-gate.ts` cuma cek `productLine === "facport"` (AutoProduksi
+// ikut dianggap "tidak butuh Accurate", padahal modulnya memanggil
+// `item-adjustment/save.do` BENERAN sejak Fase 159) — kelas bug yang
+// SAMA PERSIS dengan Fase 78/98 (scope/pengecekan ditulis terpisah dari
+// kode yang menentukan kebutuhan aslinya, lalu diam-diam melenceng).
+// **Konverter TIDAK PERNAH masuk sini** — 100% konversi Excel→XML
+// client-side, tidak pernah memanggil Accurate sama sekali (ADR-0033).
+export const PRODUCT_LINES_INTEGRATED_WITH_ACCURATE: readonly ProductLineKey[] = ["facport", "autoproduksi"];
+
 // § Fase 126 — label `category` diseragamkan ke Bahasa Inggris (diminta
 // user 2026-09-15) supaya konsisten dengan nama fitur/modul yang memang
 // sudah Inggris (Purchase Order, Sales Invoice, dst — istilah Accurate
