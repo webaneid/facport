@@ -96,6 +96,8 @@ export default function OtherPaymentImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
+  // Kolom Excel yang dipetakan ke "Nomor Transaksi" (transNo) — null kalau user tidak memetakannya.
+  const transNoColumn = Object.entries(batch.columnMapping ?? {}).find(([, field]) => field === "transNo")?.[0] ?? null;
   const isProcessing = batch.status === "processing";
 
   return (
@@ -168,6 +170,7 @@ export default function OtherPaymentImportResultPage() {
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead className="w-36">Nomor Transaksi</TableHead>
                 <TableHead className="w-20">Baris</TableHead>
                 <TableHead className="w-28">Status</TableHead>
                 <TableHead>ID Other Payment Accurate / Error</TableHead>
@@ -179,6 +182,9 @@ export default function OtherPaymentImportResultPage() {
                 .sort((a, b) => a.rowNumber - b.rowNumber)
                 .map((row) => (
                   <TableRow key={row.id}>
+                    <TableCell className="font-medium text-foreground">
+                      <TruncateText>{transNoColumn ? String(row.rawData[transNoColumn] ?? "").trim() || "-" : "-"}</TruncateText>
+                    </TableCell>
                     <TableCell>{row.rowNumber}</TableCell>
                     <TableCell>
                       <StatusBadge status={row.status} />
