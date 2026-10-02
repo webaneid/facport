@@ -174,6 +174,7 @@
 | 164  | Item Requisition — Rebuild Total ke Purchase Requisition (`/api/purchase-requisition/save.do`), draft client sebelumnya (bentuk item-transfer) terbukti salah, subscriber existing sengaja tidak dimigrasikan | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-164-item-requisition-rebuild-purchase-requisition.md` |
 | 165  | Batal Import Generik untuk 19 Modul — generalisasi ADR-0013/0014 dari 2 modul (PI/SI) ke 19 modul tanpa merge lintas-batch, 1 fungsi delete + 1 dialog generic, Job Costing sengaja ditunda | Done | `docs/architecture/architecture-batal-import-generic.md` | `docs/phases/phase-165-batal-import-generik-19-modul.md` |
 | 166  | AutoProduksi — Import Formula (Excel, synchronous, tanpa Accurate) & Import Produksi (Excel, reuse flow manual) — "Kirim Dengan Excel" ditunda sejak Fase 160 | Done | `docs/architecture/architecture-autoproduksi.md` § "Import Formula & Import Produksi (Excel)" | `docs/phases/phase-166-autoproduksi-import-formula-produksi.md` |
+| 167  | Antrean `import-to-accurate` — concurrency/fairness worker (batch besar 1 customer memblokir SEMUA customer lain, insiden produksi 2026-10-02, PT Futura Maju) — belum direncanakan, sengaja ditunda | Planned | - | - |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

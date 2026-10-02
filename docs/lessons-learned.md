@@ -5957,3 +5957,84 @@ yang melakukan path-matching berbasis string literal/suffix (bukan
 regex generik), bukan cuma modul-registry checklist biasa (§
 architecture-accurate-integration.md § 3b) yang fokusnya ke scope/label,
 bukan ke middleware path-matching seperti ini.
+
+## 2026-10-02 — INSIDEN PRODUKSI: import 1 baris (Sales Invoice, PT Futura Maju) nyangkut "Memproses" — akar masalah: batch 4000 baris customer LAIN memblokir seluruh antrean (1 worker, tanpa concurrency/fairness)
+
+**Gejala**: customer (firdausfacinstitute@gmail.com, PT Futura Maju) upload
+Sales Invoice 1 baris, status batch tetap "Memproses" / baris tetap
+"Menunggu" — tidak bergerak sama sekali.
+
+**Diagnosa** (lewat SQL read-only + log Docker, bukan tebakan):
+1. `import_batches`/`import_batch_rows` customer ini: batch `processing`,
+   baris `pending`, tidak ada error — bukan gagal, cuma belum pernah diproses.
+2. `pgboss.job` utk batch ini: `state = 'created'`, `started_on` NULL —
+   job-nya BELUM PERNAH diambil worker sama sekali (bukan macet
+   mid-eksekusi, bukan expired/retry).
+3. Query agregat `pgboss.job` (12 jam terakhir, group by name+state)
+   menemukan 1 job `import-to-accurate` LAIN berstatus `active` sejak
+   jauh sebelum batch customer ini dibuat — worker CUMA proses 1 job
+   `import-to-accurate` dalam satu waktu (tidak ada `teamSize`/
+   concurrency di `boss.work()`, § `lib/queue.ts`), jadi job baru APAPUN
+   di antrean yang sama ikut nunggu sampai job yang sedang aktif selesai
+   — URUTAN FIFO POLOS, TANPA PRIORITAS/FAIRNESS berbasis ukuran batch.
+4. Job yang `active` itu: Sales Quotation, **4000 baris**, milik
+   customer LAIN (file `template-sales-quotation.xlsx`). `docker stats`
+   nunjukkan CPU 1.81%/memory rendah (bukan infinite-loop/deadlock) —
+   dikonfirmasi BENERAN masih jalan (progres `import_batch_rows` naik
+   dari baca ulang 2x berjarak ~1 menit, 1930→lebih tinggi). Rate limit
+   resmi Accurate (8 request/detik, § `accurate-rate-limiter.ts`) + tiap
+   baris bisa butuh beberapa panggilan sekuensial (auto-create
+   customer/item dkk) bikin 4000 baris realistis makan waktu SANGAT
+   lama kalau diproses satu per satu.
+5. Log worker SEMPAT terlihat "diam" 10 menit penuh (tidak ada baris log
+   baru sama sekali, LINTAS SEMUA jenis job) — awalnya dikira seluruh
+   worker hang, TERNYATA cuma karena job besar itu TIDAK PERNAH log
+   progres parsial (cuma log 1 baris "Import batch selesai" di AKHIR
+   batch) DAN kebetulan tidak ada job jenis lain yang masuk di jendela
+   waktu itu — bukan tanda proses mati.
+
+**Mitigasi darurat yang diterapkan (operasional, TANPA deploy kode)**:
+scale worker jadi 2 replika (`docker compose ... up -d --scale worker=2
+worker`) — pg-boss aman dijalankan multi-instance (row-level locking
+bawaan), worker ke-2 langsung ambil job yang nunggu. Batch 1-baris
+customer selesai dalam hitungan detik setelah itu. **Scale balik ke 1
+worker setelah batch 4000-baris selesai** (jangan dibiarkan 2 selamanya
+tanpa alasan, § instruksi user).
+
+**Akar masalah ARSITEKTURAL (BELUM diperbaiki, sengaja dicatat dulu —
+diminta user, direncanakan terpisah)**: antrean `import-to-accurate`
+TIDAK PUNYA concurrency (`teamSize`) MAUPUN prioritas/fairness
+berbasis ukuran batch — 1 customer upload file sangat besar BISA TANPA
+SENGAJA memblokir SEMUA customer lain yang mau import (kecil ATAUPUN
+besar) sampai batch itu selesai, karena semuanya antre FIFO di 1
+worker. User eksplisit khawatir ini akan jadi masalah nyata kalau
+BANYAK customer upload bersamaan ("kemungkinan ada banyak yg upload
+dalam 1 waktu... kalau mengandalkan 1 worker apa mungkin?"). Opsi yang
+BELUM dievaluasi, perlu direncanakan (bukan diputuskan sekarang):
+- Tambah `teamSize`/concurrency di `boss.work(JOBS.IMPORT_TO_ACCURATE, ...)`
+  (§ `lib/queue.ts`/`workers/index.ts`) — risiko: perlu pastikan limit
+  rate Accurate (8 request/detik GLOBAL per token, § `accurate-rate-
+  limiter.ts`) tetap dihormati walau banyak job jalan bersamaan (limiter
+  sudah in-memory per-PROCESS, kalau nambah concurrency TANPA ubah
+  limiter kemungkinan sudah otomatis aman karena limiter-nya shared
+  within 1 process — perlu verifikasi, BUKAN asumsi).
+- Prioritas job berbasis ukuran batch (job kecil didahulukan dari job
+  besar) — pg-boss punya kolom `priority` bawaan, belum pernah dipakai
+  project ini.
+- Pecah batch BESAR jadi beberapa job lebih kecil (mis. per 100-500
+  baris) supaya tidak "memonopoli" 1 slot worker selama berjam-jam.
+- Scale worker permanen jadi >1 replika sebagai standing config (bukan
+  cuma mitigasi darurat) — trade-off resource server (tiap worker
+  384MB/0.5 CPU, host saat ini `free -h` nunjukkan ~5.3GiB available,
+  jadi ada ruang, tapi perlu dipikirkan growth customer ke depan).
+
+**Pelajaran**: (1) "batch nyangkut 'Memproses' selamanya" historis
+pernah disebabkan bug varchar(20) overflow (§ entri 2026-08-27 di atas,
+SUDAH diperbaiki) — kali ini gejala SAMA tapi AKAR MASALAH BEDA TOTAL
+(antrean, bukan bug update status) — JANGAN asumsikan penyebab lama
+otomatis berlaku lagi, selalu diagnosa ulang dari data nyata (SQL +
+log), bukan dari ingatan insiden sebelumnya. (2) `docker stats` (CPU/
+memory rendah) adalah sinyal cepat yang berguna buat bedakan "job
+genuinely masih jalan lambat" vs "job betulan deadlock/infinite-loop"
+SEBELUM mengambil tindakan drastis (restart paksa) yang bisa
+menyebabkan data tidak konsisten di tengah proses import yang sah.
