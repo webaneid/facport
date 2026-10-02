@@ -72,12 +72,13 @@ sebagai dokumentasi).
 - [x] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- Worker-level guard `isActive` di `processAutoproduksiProductionImportRow`
-  (Import Produksi Excel) divalidasi via code review saja, bukan test
-  otomatis terisolasi — konsisten dengan 2 cabang error LAIN di fungsi
-  yang sama (0 match/2+ match nama Formula) yang juga belum punya test
-  langsung (fungsi ini butuh koneksi Accurate nyata/mock untuk dites
-  end-to-end, di luar scope fase ini untuk membangun harness barunya).
+- ~~Worker-level guard `isActive` tanpa test~~ — DITUTUP (review pasca-rilis
+  lokal, 2026-10-03): `src/workers/autoproduksi-production-import.test.ts`
+  menutup jalur resolusi Formula (tidak ditemukan, non-aktif, ganda, nama
+  berspasi). Bersamaan itu diperbaiki: (1) duplikat nama dihitung hanya di
+  antara Formula AKTIF — menonaktifkan salah satu duplikat kini menyelesaikan
+  ambiguitas; (2) nama Formula dicocokkan dengan trim di sisi DB; (3) nilai
+  Cabang/Gudang/Proyek/Departemen dari Excel di-trim.
 - Tidak ada backfill/migrasi data historis — Formula lama kehilangan nilai
   Cabang/Gudang/Project/Departemen yang pernah tersimpan (kolom DROP,
   bukan dipindah) karena field itu sudah tidak dipakai di mana pun lagi;

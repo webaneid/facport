@@ -1894,26 +1894,29 @@ export async function processAutoproduksiProductionImportRow(
   }
 
   const formulaName = String(autoproduksiProductionValueOf(rawRow, "formulaName", columnMapping) ?? "").trim();
+  // § trim() di sisi DB juga — nama Formula lama bisa tersimpan dengan spasi
+  // ujung (input manual/Excel Import Formula), jangan sampai tidak ketemu.
   const matches = await db
     .select()
     .from(autoproduksiFormulas)
-    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), eq(autoproduksiFormulas.name, formulaName)));
+    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), sql`trim(${autoproduksiFormulas.name}) = ${formulaName}`));
   if (matches.length === 0) {
     throw new Error(`Formula "${formulaName}" tidak ditemukan — cek ejaan Nama Resep/Formula, atau buat Formula-nya dulu.`);
   }
-  if (matches.length > 1) {
-    throw new Error(
-      `Nama Formula "${formulaName}" ganda (${matches.length} Formula dengan nama sama) — tidak bisa diproses otomatis, ganti nama salah satu Formula dulu baru impor ulang.`,
-    );
-  }
-  const formula = matches[0]!;
-  // § Fase 168 (diminta client) — Formula non-aktif tidak bisa dipakai utk
-  // Input Produksi baru, Excel maupun manual. Pesan beda dari "tidak
-  // ditemukan" di atas supaya akar masalahnya jelas (formula ADA, cuma
-  // sedang dinonaktifkan).
-  if (!formula.isActive) {
+  // § Fase 168 — duplikat nama dihitung HANYA di antara Formula AKTIF:
+  // menonaktifkan salah satu duplikat harus menyelesaikan ambiguitas.
+  // Formula non-aktif tidak bisa dipakai untuk Input Produksi baru
+  // (pesan beda dari "tidak ditemukan" supaya akar masalahnya jelas).
+  const activeMatches = matches.filter((m) => m.isActive);
+  if (activeMatches.length === 0) {
     throw new Error(`Formula "${formulaName}" sedang NON-AKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
   }
+  if (activeMatches.length > 1) {
+    throw new Error(
+      `Nama Formula "${formulaName}" ganda (${activeMatches.length} Formula aktif dengan nama sama) — tidak bisa diproses otomatis, ganti nama atau nonaktifkan salah satu Formula dulu baru impor ulang.`,
+    );
+  }
+  const formula = activeMatches[0]!;
   const formulaItems = await db
     .select()
     .from(autoproduksiFormulaItems)
@@ -1930,12 +1933,14 @@ export async function processAutoproduksiProductionImportRow(
   const rawMaterialWarehouseName = autoproduksiProductionValueOf(rawRow, "rawMaterialWarehouseName", columnMapping);
   const projectNo = autoproduksiProductionValueOf(rawRow, "projectNo", columnMapping);
   const departmentName = autoproduksiProductionValueOf(rawRow, "departmentName", columnMapping);
+  // § trim — sama seperti form manual; spasi ujung bisa ditolak Accurate.
+  const textOrNull = (v: unknown) => (v !== undefined && String(v).trim() !== "" ? String(v).trim() : null);
   const entryFields = {
-    branchName: branchName !== undefined ? String(branchName) : null,
-    warehouseName: warehouseName !== undefined ? String(warehouseName) : null,
-    rawMaterialWarehouseName: rawMaterialWarehouseName !== undefined ? String(rawMaterialWarehouseName) : null,
-    projectNo: projectNo !== undefined ? String(projectNo) : null,
-    departmentName: departmentName !== undefined ? String(departmentName) : null,
+    branchName: textOrNull(branchName),
+    warehouseName: textOrNull(warehouseName),
+    rawMaterialWarehouseName: textOrNull(rawMaterialWarehouseName),
+    projectNo: textOrNull(projectNo),
+    departmentName: textOrNull(departmentName),
   };
   const payload = buildProductionEntryPayload(formula, formulaItems, { producedQty, transDate: transDate!, ...entryFields });
 
