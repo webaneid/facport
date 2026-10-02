@@ -36,6 +36,7 @@ import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, format
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
 import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
+import { deleteAccurateDocument, GENERIC_CANCELLABLE_MODULES } from "../lib/accurate-generic-delete";
 import {
   buildPurchaseInvoicePayload,
   buildDetailItemFromRow,
@@ -3210,7 +3211,14 @@ async function main() {
     const accurateDbId = resolved?.accurateDbId ?? null;
 
     if (!connection || !accurateDbId) {
+      // § security review Fase 165 — kondisi ini sebelumnya HANYA log Pino,
+      // tidak ada alert: batch diam-diam MACET selamanya di status
+      // "cancelling" (user klik Batal Import, tidak ada progres, tidak ada
+      // notifikasi error) kalau koneksi terputus/Data Usaha belum dipilih
+      // PERSIS di antara request cancel & job ini jalan. Sentry supaya
+      // kondisi stuck ini ketahuan ops, bukan cuma nongkrong di log.
       logger.error({ batchId }, "Cancel import gagal: koneksi Accurate belum ada/belum pilih Data Usaha");
+      Sentry.captureMessage("Cancel import macet: koneksi Accurate tidak ditemukan saat job jalan", { extra: { batchId } });
       return; // status batch TETAP "cancelling" — bukan ditandai gagal permanen, user bisa coba lagi
     }
 
@@ -3221,6 +3229,76 @@ async function main() {
       logger.error({ err, batchId }, "Cancel import gagal: tidak bisa buka sesi Data Usaha Accurate");
       Sentry.captureException(err);
       if (isAccurateAuthFailure(err)) await markConnectionExpired(connection); // § Fase 91; hanya 401 (Fase 143, lihat import di atas)
+      return;
+    }
+
+    // § Fase 165 — 19 modul "sederhana" (1 batch = 1 dokumen Accurate,
+    // TIDAK ada merge lintas-batch seperti purchase_invoice/sales_invoice,
+    // § riset Fase 165: grep "findExisting" cuma ketemu di 2 modul itu).
+    // Logic JAUH lebih simpel: tiap `accurateTransactionId` unik dalam
+    // batch ini pasti 100% milik batch ini — tidak perlu cek
+    // `accurateDetailItemId`/blokir lintas-batch seperti di bawah.
+    const genericAccuratePath = GENERIC_CANCELLABLE_MODULES[batch.module];
+    if (genericAccuratePath) {
+      const successRowsGeneric = await db
+        .select()
+        .from(importBatchRows)
+        .where(and(eq(importBatchRows.batchId, batch.id), eq(importBatchRows.status, "success")));
+
+      const byDocument = new Map<string, typeof successRowsGeneric>();
+      for (const row of successRowsGeneric) {
+        if (!row.accurateTransactionId) continue;
+        const list = byDocument.get(row.accurateTransactionId) ?? [];
+        list.push(row);
+        byDocument.set(row.accurateTransactionId, list);
+      }
+
+      const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[] };
+      let cancelledRowCount = 0;
+
+      for (const [docIdStr, rows] of byDocument) {
+        const docId = Number(docIdStr);
+        if (!Number.isFinite(docId)) continue;
+        try {
+          await deleteAccurateDocument(session, genericAccuratePath, docId);
+          await db
+            .update(importBatchRows)
+            .set({ status: "cancelled", cancelledAt: new Date() })
+            .where(
+              inArray(
+                importBatchRows.id,
+                rows.map((r) => r.id),
+              ),
+            );
+          cancelledRowCount += rows.length;
+          summary.deleted.push(docIdStr);
+        } catch (err) {
+          // § dokumen mungkin sudah direferensikan transaksi lain di
+          // Accurate (mis. Receive Item yang sudah dibuatkan Purchase
+          // Invoice) — Accurate menolak hapus. TIDAK abort seluruh job,
+          // lanjut ke dokumen berikutnya, batch berakhir `cancelled_partial`.
+          logger.error({ err, batchId, docId }, "Cancel import (generic): gagal membatalkan 1 dokumen, lanjut ke dokumen berikutnya");
+          summary.failed.push(docIdStr);
+        }
+      }
+
+      if (cancelledRowCount > 0) {
+        const [sub] = await db.select({ dataUsahaId: subscriptions.dataUsahaId }).from(subscriptions).where(eq(subscriptions.id, batch.subscriptionId));
+        if (sub) await addCumulativeSuccessfulRows(sub.dataUsahaId, -cancelledRowCount);
+      }
+
+      await db.insert(auditLogs).values({
+        entityType: "import_batch",
+        entityId: batch.id,
+        action: "delete",
+        changes: summary,
+        actorId,
+      });
+
+      const finalStatus = summary.deleted.length === byDocument.size ? "cancelled" : "cancelled_partial";
+      await db.update(importBatches).set({ status: finalStatus, completedAt: new Date() }).where(eq(importBatches.id, batch.id));
+
+      logger.info({ batchId, summary, finalStatus }, "Cancel import (generic) selesai");
       return;
     }
 

@@ -172,6 +172,7 @@
 | 162  | AutoProduksi — Evaluasi Client Bagian 1: Search Formula, Filter Cabang, Gudang Bahan Baku di UI (quick-win, tanpa arsitektur baru) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-162-autoproduksi-quick-win-formulas-ui.md` |
 | 163  | AutoProduksi — Evaluasi Client Bagian 2: Live-Search Accurate (Item/Bahan Baku/Akun Perantara) di Form Formula | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-163-autoproduksi-live-search-accurate.md` |
 | 164  | Item Requisition — Rebuild Total ke Purchase Requisition (`/api/purchase-requisition/save.do`), draft client sebelumnya (bentuk item-transfer) terbukti salah, subscriber existing sengaja tidak dimigrasikan | Done | `docs/architecture/architecture-item-requisition.md` | `docs/phases/phase-164-item-requisition-rebuild-purchase-requisition.md` |
+| 165  | Batal Import Generik untuk 19 Modul — generalisasi ADR-0013/0014 dari 2 modul (PI/SI) ke 19 modul tanpa merge lintas-batch, 1 fungsi delete + 1 dialog generic, Job Costing sengaja ditunda | Done | `docs/architecture/architecture-batal-import-generic.md` | `docs/phases/phase-165-batal-import-generik-19-modul.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

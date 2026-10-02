@@ -37,8 +37,8 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 // § architecture-other-deposit.md — penerimaan bank/kas TANPA faktur/
 // customer (kebalikan Other Payment). Baris dengan "Trans No" sama
 // digabung jadi 1 transaksi (N akun), diproses PER GRUP (pola sama
-// Jurnal Umum/Other Payment), bukan per-baris. TIDAK ADA fitur "Batal
-// Import" (konsisten pola modul serupa, § architecture doc).
+// Jurnal Umum/Other Payment), bukan per-baris. "Batal Import" generic
+// sejak Fase 165 (§ `accurate-generic-delete.ts`).
 export const otherDepositImportRoute = new Elysia()
   .use(permissionPlugin)
   .use(subscriptionGatePlugin)
@@ -397,6 +397,49 @@ export const otherDepositImportRoute = new Elysia()
   )
   // § "Delete": hapus batch+baris LOKAL saja, TIDAK PERNAH memanggil
   // Accurate — pola sama `journal-voucher-import.route.ts`.
+  // § Fase 165 — "Batal Import": generalisasi pola purchase_invoice/
+  // sales_invoice (ADR-0013/0014) ke modul ini. BEDA kunci: modul ini
+  // TIDAK pernah merge lintas-batch (1 batch = 1 dokumen Accurate, tidak
+  // ada append/findExisting seperti PI/SI) — job cukup hapus tiap dokumen
+  // sukses milik batch ini, tanpa cek `accurateDetailItemId`/blokir
+  // lintas-batch (§ `accurate-generic-delete.ts`, riset Fase 165).
+  // Owner-only SEJAK AWAL (bukan `permission: "import.create"` biasa) —
+  // pelajaran dari celah yang baru ketemu & diperbaiki di PI/SI
+  // (lessons-learned.md 2026-10-02): aksi ini MENGHAPUS PERMANEN transaksi
+  // ASLI di Accurate, bukan sekadar re-proses baris milik batch sendiri.
+  .post(
+    "/other-deposit/import/:batchId/cancel",
+    async ({ params, user, subscription, set }) => {
+      const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, params.batchId));
+      if (!batch || batch.subscriptionId !== subscription.id) {
+        set.status = 404;
+        return { code: "BATCH_NOT_FOUND" };
+      }
+      if (!(await ownsDataUsaha(user.id, subscription.dataUsahaId))) {
+        set.status = 403;
+        return { code: "CANCEL_OWNER_ONLY" };
+      }
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+        set.status = 409;
+        return { code: "BATCH_NOT_CANCELLABLE" };
+      }
+      // § scope `other_deposit_delete` BARU (Fase 165) — koneksi yang sudah
+      // terhubung SEBELUM fitur ini rilis belum tentu punya scope ini,
+      // cek dulu supaya error jelas (bukan gagal diam di job worker).
+      const scopeCheck = await checkSubscriptionScopes(subscription.id, "other_deposit");
+      if (!scopeCheck.ok) {
+        set.status = 409;
+        return { code: "ACCURATE_SCOPE_MISSING", missing: scopeCheck.missing };
+      }
+      await db
+        .update(importBatches)
+        .set({ status: "cancelling", completedAt: null })
+        .where(eq(importBatches.id, batch.id));
+      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      return { batchId: batch.id, status: "cancelling" };
+    },
+    { permission: "import.create", moduleAccess: "other_deposit", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
+  )
   .delete(
     "/other-deposit/import/:batchId",
     async ({ params, user, subscription, set }) => {

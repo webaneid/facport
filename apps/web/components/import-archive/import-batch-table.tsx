@@ -12,6 +12,11 @@ import { CancelImportDialog as PurchaseInvoiceCancelImportDialog } from "@/compo
 import { DeleteImportDialog as PurchaseInvoiceDeleteImportDialog } from "@/components/purchase-invoice/delete-import-dialog";
 import { CancelImportDialog as SalesInvoiceCancelImportDialog } from "@/components/sales-invoice/cancel-import-dialog";
 import { DeleteImportDialog as SalesInvoiceDeleteImportDialog } from "@/components/sales-invoice/delete-import-dialog";
+// § Fase 165 — "Batal Import" generalisasi ke 19 modul "sederhana" (1
+// batch = 1 dokumen Accurate, tanpa merge lintas-batch seperti PI/SI di
+// atas) lewat SATU dialog generic, bukan 19 file dialog nyaris identik.
+import { GenericCancelImportDialog } from "@/components/import-archive/generic-cancel-import-dialog";
+import { api } from "@/lib/api-client";
 import { DeleteImportDialog as VendorPayableAccountDeleteImportDialog } from "@/components/vendor-payable-account/delete-import-dialog";
 import { DeleteImportDialog as PurchasePaymentDeleteImportDialog } from "@/components/purchase-payment/delete-import-dialog";
 import { DeleteImportDialog as SalesReceiptDeleteImportDialog } from "@/components/sales-receipt/delete-import-dialog";
@@ -65,8 +70,12 @@ export type UnifiedImportBatch = {
 // (+ `lib/module-import-routes.ts`), bukan di 2 tempat terpisah lagi
 // (§ lessons-learned.md 2026-09-06 — pelajaran dari bug admin batch-view
 // yang lupa di-backfill pas modul baru ditambah).
-// Cancel HANYA untuk purchase_invoice/sales_invoice (satu-satunya 2 modul
-// yang punya fitur itu, § architecture masing-masing modul).
+// § Fase 165 — Cancel ("Batal Import") sekarang berlaku 21 modul: 2 modul
+// kompleks (purchase_invoice/sales_invoice, dialog sendiri — merge
+// lintas-batch) + 19 modul sederhana (dialog generic, § `generic-cancel-
+// import-dialog.tsx`). `job_costing` (2 dokumen Accurate berurutan) &
+// `vendor_payable_account` (sync master data, bukan transaksi) SENGAJA
+// belum dapat Cancel — lihat architecture-batal-import-generic.md.
 // § Fase 43 (audit timezone 2026-09-06) — komponen ini dipakai dari
 // Server Component (`app/(protected)/page.tsx`) MAUPUN Client Component
 // (`import/arsip/page.tsx`) — `timezone` WAJIB dikirim sebagai prop
@@ -181,6 +190,63 @@ export function ImportBatchTable({
                   )}
                   {batch.module === "sales_invoice" && canCancel && (
                     <SalesInvoiceCancelImportDialog batch={batch} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "sales_receipt" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["sales-receipt"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "purchase_payment" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["purchase-payment"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "journal_voucher" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["journal-voucher"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "other_payment" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["other-payment"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "other_deposit" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["other-deposit"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "purchase_order" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["purchase-order"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "receive_item" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["receive-item"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "purchase_return" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["purchase-return"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "sales_quotation" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["sales-quotation"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "sales_order" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["sales-order"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "sales_return" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["sales-return"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "delivery_order" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["delivery-order"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "item_transfer" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["item-transfer"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "item_requisition" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["item-requisition"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "inventory_adjustment" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["inventory-adjustment"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "roll_over" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["roll-over"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "work_order" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["work-order"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "material_slip" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["material-slip"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
+                  )}
+                  {batch.module === "finished_good_slip" && canCancel && (
+                    <GenericCancelImportDialog batch={batch} onConfirm={() => api["finished-good-slip"].import({ batchId: batch.id }).cancel.post()} onCancelled={onChanged} />
                   )}
                   {canDelete && batch.module === "purchase_invoice" && (
                     <PurchaseInvoiceDeleteImportDialog batch={batch} onDeleted={onChanged} />

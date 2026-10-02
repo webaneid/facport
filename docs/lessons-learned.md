@@ -5752,3 +5752,84 @@ terdengar seperti "tolong cek semua modul jalan dengan benar" bisa
 membuka temuan keamanan nyata yang tidak pernah ketangkep security review
 sebelumnya — jangan anggap itu basa-basi verifikasi, telusuri sampai ke
 level kode.
+
+## 2026-10-02 — Generalisasi "Batal Import" ke 19 modul (Fase 165): scope OAuth baru = customer existing TIDAK otomatis dapat akses, bukan hanya soal kode
+
+Menggeneralisasi "Batal Import" (§ entri di atas) dari 2 modul (Purchase
+Invoice/Sales Invoice) ke 19 modul lain (§
+`docs/architecture/architecture-batal-import-generic.md`, ADR-0040).
+Riset membuktikan kompleksitas asli PI/SI (merge lintas-batch,
+`accurateDetailItemId` tracking, blokir faktur gabungan) HANYA muncul
+karena fitur Retry Cerdas (append `save.do`) — 19 modul lain SELALU 1
+batch = 1 dokumen Accurate, jadi logic Cancel-nya jauh lebih sederhana
+(tidak perlu grep ulang kalau nambah modul baru lagi — tinggal cek apakah
+modul itu PERNAH append ke dokumen existing lewat Retry; kalau tidak,
+masuk kategori "sederhana").
+
+**Hal yang TIDAK kelihatan dari kode saja, baru kepikiran pas desain
+rollout**: endpoint `delete.do` tiap modul butuh scope OAuth BARU
+(`{module}_delete`) yang BELUM PERNAH diminta sebelumnya. Karena project
+ini pakai model 1 otorisasi per akun Accurate (ADR-0036/0037 — scope
+diberikan SEKALI saat consent, bukan bisa ditambah diam-diam oleh
+server), **customer yang SUDAH terhubung sebelum fase ini SAMA SEKALI
+TIDAK bisa pakai fitur baru ini sampai mereka reconnect Accurate** —
+walau kode sudah 100% benar dan dideploy. Ini BUKAN bug, tapi gampang
+disalahartikan sebagai bug kalau tidak dikomunikasikan ("kok tombol Batal
+Import-nya selalu gagal?"). Solusi yang diambil: endpoint cancel 19 modul
+ini sengaja tambah cek `checkSubscriptionScopes` SEBELUM enqueue job
+(409 `ACCURATE_SCOPE_MISSING`, toast jelas di frontend) — PI/SI yang
+scope delete-nya sudah ada sejak Fase 09 TIDAK butuh cek ini di endpoint
+cancel-nya.
+
+**Pelajaran**: kalau menambah endpoint baru yang BUTUH scope Accurate
+baru (bukan sekadar field/fungsi baru yang pakai scope yang sudah ada,
+beda dari Fase 78/98), SELALU tanya "apakah customer existing otomatis
+dapat scope ini?" — jawabannya di project 1-otorisasi-per-akun ini SELALU
+TIDAK, kecuali mereka reconnect. Desain endpoint supaya gagal jelas (409
++ pesan actionable), jangan diam-diam gagal di job worker (toast generik
+"gagal, coba lagi" yang bikin user kebingungan kenapa fitur yang katanya
+baru rilis tidak pernah berhasil).
+
+## 2026-10-02 — Security review Fase 165 (subagent `security-auditor`): 0 Critical/High, 1 Medium (fail-open lama bikin batch Cancel bisa macet tanpa alert) + 2 Low (diterima apa adanya)
+
+Hasil audit menyeluruh terhadap rollout "Batal Import" 19 modul (§ fase
+165, ADR-0040): **0 Critical, 0 High**. Semua 19 route baru diverifikasi
+owner-gated konsisten (`ownsDataUsaha` → 403 `CANCEL_OWNER_ONLY`, tenant
+isolation via cek `subscriptionId`, status batch, scope Accurate — SEMUA
+sebelum mutasi), job worker mutual-exclusive by construction
+(`GENERIC_CANCELLABLE_MODULES` tidak overlap PI/SI), tidak ada
+SQL injection/input mentah.
+
+**Medium — `checkSubscriptionScopes` fail-open kalau koneksi Accurate
+tidak ada / scope tidak diketahui** (`accurate-scope-check.ts:40-52`,
+PRA-EXISTING, dipakai ulang apa adanya dari fitur scope-checking lama,
+BUKAN regresi baru dari fase ini — fungsi yang sama juga dipakai
+confirm/retry). Konsekuensi khusus untuk Cancel: kalau koneksi
+terputus/belum pilih Data Usaha PERSIS di antara request cancel & job
+jalan, batch bisa macet SELAMANYA di status `cancelling` tanpa
+notifikasi ke siapa pun — cuma log Pino, tidak ada Sentry. **Fix
+parsial diterapkan**: titik di `workers/index.ts` (`if (!connection ||
+!accurateDbId)` di job `CANCEL_IMPORT`) sekarang juga panggil
+`Sentry.captureMessage` supaya kondisi stuck ini ketahuan ops — bukan
+fix penuh (shared function `checkSubscriptionScopes` SENGAJA tidak
+diubah semantiknya, dipakai puluhan call site lain yang mungkin memang
+benar fail-open untuk aksi read-only; mengubahnya jadi fail-closed
+global berisiko regresi lebih luas dari yang diminta fase ini).
+
+**Low (diterima, bukan dikerjakan)**: (1) non-atomicity antara delete
+Accurate + update status baris + decrement counter + update status batch
+final di branch generic (`workers/index.ts:3236-3292`) — kalau worker
+crash tepat di tengah loop, counter permanen bisa tidak ikut turun untuk
+baris yang sudah ter-cancel. Risiko rendah (butuh crash di jendela waktu
+sempit, bukan dieksploitasi via input user), DAN pola yang SAMA sudah ada
+di branch legacy PI/SI sejak Fase 09 — konsisten, bukan regresi baru,
+diterima sebagai technical debt kecil. (2) Konfirmasi (bukan temuan)
+bahwa `scopesForModules` sudah otomatis include baseline scope — dicatat
+cuma supaya reviewer berikutnya tidak perlu cek ulang.
+
+**Pelajaran**: security review yang didelegasikan ke subagent terisolasi
+(bukan di sesi utama) tetap menemukan nuansa yang MUDAH terlewat kalau
+cuma baca kode sendiri terburu-buru (kapan tepatnya batch bisa macet,
+bukan cuma "apakah ada celah otorisasi") — worth tetap didelegasikan
+untuk perubahan >3-4 file sesuai `docs/WORKFLOW-MODES.md`, bahkan kalau
+yakin polanya sudah benar dari awal.
