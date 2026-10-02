@@ -1,3 +1,14 @@
+## 2.20.0 (2026-10-02)
+
+* Merge pull request #90 from webaneid/develop ([c9bdeda](https://github.com/webaneid/facport/commit/c9bdeda)), closes [#90](https://github.com/webaneid/facport/issues/90)
+* feat(api web): generalisasi Batal Import ke 19 modul sederhana (Fase 165) ([3a9b921](https://github.com/webaneid/facport/commit/3a9b921))
+* fix(api web): 3 evaluasi client — PO To Address wajib, Receive Item tambah Item Price, label Sales I ([6daaae1](https://github.com/webaneid/facport/commit/6daaae1))
+* fix(api web): Batal Import kini owner-only (bug akses lama) + sembunyikan tombol Delete lokal di Ars ([31d0d93](https://github.com/webaneid/facport/commit/31d0d93))
+* fix(api web): Roll Over — perbaiki label kolom "Tipe Penyesuaian" jadi "Tipe Penyelesaian", salah te ([52e3768](https://github.com/webaneid/facport/commit/52e3768))
+* fix(api): Job Costing — detailItem[] job-order diisi dari RM, Accurate tolak kalau detailItem+detail ([241ef83](https://github.com/webaneid/facport/commit/241ef83))
+* fix(api): Purchase Return — tambah kolom Unit Price, field sudah ada tapi tidak pernah dapat kolom E ([2bbd1df](https://github.com/webaneid/facport/commit/2bbd1df))
+* fix(web): setiap login wajib lewat gerbang /pilih-usaha, cegah user dilempar langsung ke Data Usaha  ([df99d3b](https://github.com/webaneid/facport/commit/df99d3b))
+
 ## 2.19.0 (2026-09-30)
 
 * Merge pull request #89 from webaneid/develop ([97f015b](https://github.com/webaneid/facport/commit/97f015b)), closes [#89](https://github.com/webaneid/facport/issues/89)
