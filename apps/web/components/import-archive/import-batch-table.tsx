@@ -78,6 +78,32 @@ export type UnifiedImportBatch = {
 // Data Usaha (backend `DELETE_OWNER_ONLY`, § phase-125). `undefined` =
 // anggap owner (kompatibilitas pemanggil lama yang belum kirim prop ini)
 // — kedua pemanggil SEKARANG selalu kirim eksplisit, lihat masing-masing.
+// § diminta user 2026-10-02 — tombol "Delete" (hapus RIWAYAT LOKAL
+// Facport saja, § `delete-import-dialog.tsx` tiap modul — TIDAK pernah
+// menyentuh Accurate, beda total dari "Batal Import"/Undo2 di atas yang
+// menghapus transaksi ASLI) DISEMBUNYIKAN SEMENTARA di sini — BUKAN
+// dihapus fungsinya. Alasan: dari sisi user ada kerancuan nyata antara
+// 2 tombol ini ("kembali"/Undo2 vs "tong sampah"/Trash2) — gampang
+// salah pencet padahal efeknya beda jauh (1 cuma hapus histori lokal,
+// 1 lagi hapus data akuntansi ASLI client). Karena sudah ada sistem
+// hapus OTOMATIS riwayat lokal (retensi 2 hari, § `lib/import-retention.ts`,
+// `docs/architecture/architecture-subscription.md` § "Retensi Data
+// Import"), tombol manual ini dianggap TIDAK URGENT dipertahankan
+// sekarang — client BISA berubah pikiran nanti, makanya endpoint
+// `DELETE .../import/:batchId` DAN komponen `DeleteImportDialog` tiap
+// modul TETAP ADA APA ADANYA, TIDAK disentuh — cuma di-skip rendernya
+// DI SINI. Scope SENGAJA cuma tabel gabungan ini (dipakai "Arsip Import"
+// `/import/arsip` DAN kartu ringkas Dashboard `/` — keduanya ikut
+// tersembunyi otomatis) — 23 halaman "Riwayat" PER-MODUL (mis.
+// `/delivery-order/import/riwayat`) SENGAJA TIDAK disentuh, tombol
+// Delete di sana TETAP tampil (keputusan eksplisit, scope lebih kecil
+// dulu). Untuk AKTIFKAN LAGI: ganti `false` jadi `true` di bawah ini,
+// satu baris, tidak ada perubahan lain yang diperlukan. § dicatat juga
+// di memory sesi (`project_...arsip_import_delete_hidden`, kalau ada)
+// dan `docs/lessons-learned.md` 2026-10-02 — baca itu dulu kalau mau
+// mengaktifkan lagi, ada konteks kenapa ini sempat disembunyikan.
+const SHOW_LOCAL_DELETE_BUTTON = false;
+
 export function ImportBatchTable({
   batches,
   onChanged,
@@ -89,7 +115,8 @@ export function ImportBatchTable({
   timezone: string;
   isDataUsahaOwner?: boolean;
 }) {
-  const canDeleteAtAll = isDataUsahaOwner !== false;
+  const isOwner = isDataUsahaOwner !== false;
+  const canDeleteAtAll = SHOW_LOCAL_DELETE_BUTTON && isOwner;
   return (
     <Table>
       <TableHeader>
@@ -112,7 +139,15 @@ export function ImportBatchTable({
         {batches.map((batch) => {
           const basePath = MODULE_IMPORT_BASE_PATH[batch.module];
           const canDelete = canDeleteAtAll && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status);
-          const canCancel = CANCELLABLE_BATCH_STATUS.has(batch.status);
+          // § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) —
+          // "Batal Import" (hapus transaksi ASLI di Accurate) dulu TIDAK
+          // dibatasi pemilik Data Usaha sama sekali di sisi server (sudah
+          // diperbaiki, § route `/cancel`) — tombolnya di sini JUGA ikut
+          // digate `isOwner` (BUKAN `canDeleteAtAll` — itu field terpisah
+          // yang JUGA memeriksa `SHOW_LOCAL_DELETE_BUTTON`, flag yang
+          // TIDAK relevan untuk Cancel), supaya anggota tim non-pemilik
+          // tidak lihat tombol yang ujung-ujungnya cuma gagal 403.
+          const canCancel = isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status);
           return (
             <TableRow key={batch.id}>
               <TableCell className="font-medium text-foreground">

@@ -28,7 +28,12 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
     const res = await api["purchase-invoice"].import({ batchId: batch.id }).cancel.post();
     setSubmitting(false);
     if (res.error) {
-      toast.error("Gagal memulai Batal Import — coba lagi.");
+      const value = res.error.value as { code?: string } | undefined;
+      toast.error(
+        value?.code === "CANCEL_OWNER_ONLY"
+          ? "Cuma pemilik Data Usaha yang boleh Batal Import — aksi ini menghapus transaksi asli di Accurate."
+          : "Gagal memulai Batal Import — coba lagi.",
+      );
       return;
     }
     toast.success("Batal Import diproses — transaksi terkait akan dihapus dari Accurate.");

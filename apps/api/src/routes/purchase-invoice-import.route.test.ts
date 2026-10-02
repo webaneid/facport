@@ -427,3 +427,49 @@ describe("DELETE /purchase-invoice/import/:batchId — ownership (pemilik vs mem
     expect(stillThere).toBeDefined();
   });
 });
+
+// § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) — "Batal Import"
+// (hapus transaksi ASLI di Accurate, jauh lebih berbahaya dari DELETE yang
+// cuma hapus riwayat lokal) SEBELUMNYA TIDAK ownership-checked sama sekali
+// (gate-nya cuma `permission: "import.create"`, sama kelonggaran dengan
+// retry — padahal efeknya SANGAT beda). Mirror pola test DELETE di atas.
+describe("POST /purchase-invoice/import/:batchId/cancel — ownership (pemilik vs member)", () => {
+  test("200 pemilik Data Usaha BISA Batal Import batch miliknya sendiri", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-owner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "batal-saya.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; status: string }).toEqual({ batchId: batch!.id, status: "cancelling" });
+  });
+
+  test("403 CANCEL_OWNER_ONLY kalau yang Batal Import MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-memberowner-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "test.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const memberEmail = `pi-cancel-member-${runId}@test.local`;
+    const memberId = await signUp(memberEmail);
+    const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
+    await db.insert(userRoles).values({ userId: memberId, roleId: customerRole!.id }).onConflictDoNothing();
+    const memberCookie = await signIn(memberEmail);
+    const seatId = await createTestSeat(owner.userId, owner.dataUsahaId);
+    await db.update(memberSeats).set({ memberUserId: memberId, status: "active" }).where(eq(memberSeats.id, seatId));
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: memberCookie } }),
+    );
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("CANCEL_OWNER_ONLY");
+
+    const [stillThere] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+    expect(stillThere!.status).toBe("completed");
+  });
+});

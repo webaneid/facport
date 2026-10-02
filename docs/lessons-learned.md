@@ -5693,3 +5693,62 @@ nyata sebelum anggap selesai") tetap berlaku, tapi kasus ini juga
 menunjukkan: SELESAI UNIT TEST ≠ SELESAI VERIFIKASI — modul ini sudah
 lolos security review & unit test sejak Fase 139 tanpa ketahuan bug ini,
 baru ketahuan 11 hari kemudian dari laporan client pakai data nyata.
+
+## 2026-10-02 — "Batal Import" (hapus transaksi ASLI di Accurate) TIDAK owner-only sejak Fase 09, padahal "Delete" (hapus lokal, jauh lebih ringan) sudah owner-only — ketahuan evaluasi user, bukan dari audit keamanan manapun
+
+**Konteks**: Arsip Import punya 2 aksi destruktif yang terlihat mirip tapi
+efeknya beda total — icon `Undo2` ("Batal Import", cuma ada di Purchase
+Invoice & Sales Invoice, § ADR-0013/0014) menghapus PERMANEN transaksi
+ASLI di Accurate Online milik client; icon `Trash2` ("Delete", ada di
+semua modul) cuma menghapus riwayat LOKAL di Facport, Accurate tidak
+tersentuh sama sekali. User minta diverifikasi "semua modul sudah benar"
+soal fitur restore/kembali ini, sekaligus laporan ada kerancuan user
+sendiri antara 2 icon ini.
+
+**Ketemu saat verifikasi**: endpoint `/cancel` (Batal Import) di KEDUA
+modul cuma di-gate `permission: "import.create"` — level yang SAMA dengan
+`/retry` (yang memang benar longgar, cuma re-proses baris sendiri).
+Endpoint `DELETE` (hapus lokal, aksi jauh lebih ringan) di modul yang
+SAMA sudah lama dibatasi `ownsDataUsaha`/`DELETE_OWNER_ONLY` (§ Fase 125).
+Jadi anggota tim/seat mana pun yang punya akses modul bisa memicu hapus
+transaksi akuntansi ASLI client — TERBALIK dari yang seharusnya (aksi
+lebih berbahaya harusnya lebih ketat, bukan lebih longgar). Baik
+`DeleteImportDialog` (lokal) maupun `CancelImportDialog` (Accurate) sudah
+ada sejak Fase 09/125, tapi TIDAK ADA satu pun security review/audit
+sebelumnya yang menangkap inkonsistensi ini — baru ketahuan dari
+pertanyaan user yang sekilas terdengar seperti permintaan fitur biasa
+("pastikan semua modul berfungsi dengan benar").
+
+**Fix**: endpoint `/cancel` purchase-invoice & sales-invoice sekarang
+sama-sama cek `ownsDataUsaha` (403 `CANCEL_OWNER_ONLY` kalau bukan
+pemilik), tombol UI ikut disembunyikan untuk non-pemilik di 3 tempat
+(tabel gabungan + 2 halaman Riwayat). Ditambah test regresi khusus (owner
+tetap bisa, member ditolak) karena endpoint ini TERNYATA tidak punya test
+coverage sama sekali sebelumnya.
+
+**Keputusan terpisah, SENGAJA DICATAT DI SINI biar gampang di-recall**:
+tombol "Delete" (hapus lokal) di tabel Arsip Import + kartu Dashboard
+(`components/import-archive/import-batch-table.tsx`, constant
+`SHOW_LOCAL_DELETE_BUTTON`) DISEMBUNYIKAN SEMENTARA mulai hari ini — BUKAN
+dihapus fungsinya, endpoint `DELETE` dan `DeleteImportDialog` tiap modul
+tetap ada apa adanya. Alasan user: kerancuan nyata antara 2 icon ini di
+mata user sendiri, dan Facport SUDAH punya retensi otomatis 2 hari (§
+`docs/architecture/architecture-subscription.md` § "Retensi Data
+Import") yang bikin tombol manual ini tidak urgent dipertahankan sekarang.
+Client BISA berubah pikiran nanti — untuk AKTIFKAN LAGI, ganti
+`SHOW_LOCAL_DELETE_BUTTON` dari `false` ke `true` di file itu, 1 baris,
+tidak ada migrasi/perubahan lain. Scope SENGAJA cuma tabel gabungan ini
+(Arsip Import + Dashboard) — 23 halaman "Riwayat" PER-MODUL (mis.
+`/delivery-order/import/riwayat`) TIDAK disentuh, tombol Delete-nya tetap
+tampil di sana (keputusan eksplisit user, scope lebih kecil dulu — kalau
+nanti mau disamakan, itu kerjaan terpisah, bukan bagian dari fase ini).
+
+**Pelajaran**: (1) 2 fitur yang kelihatan "sama-sama tombol hapus di baris
+yang sama" gampang luput dari asumsi "pasti sudah konsisten ownership-nya"
+kalau salah satu aspek (status icon, dialog konfirmasi) terlihat lengkap —
+inkonsistensi di LEVEL OTORISASI tidak kelihatan dari UI, cuma kelihatan
+kalau benar-benar baca kode route satu-satu. (2) Pertanyaan user yang
+terdengar seperti "tolong cek semua modul jalan dengan benar" bisa
+membuka temuan keamanan nyata yang tidak pernah ketangkep security review
+sebelumnya — jangan anggap itu basa-basi verifikasi, telusuri sampai ke
+level kode.

@@ -100,7 +100,10 @@ export default function PurchaseInvoiceImportArchivePage() {
                           >
                             <Eye className="h-4 w-4" />
                           </Link>
-                          {CANCELLABLE_BATCH_STATUS.has(batch.status) && (
+                          {/* § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi user) — dulu TIDAK
+                             digate `isOwner`, padahal Batal Import menghapus transaksi ASLI di Accurate
+                             (jauh lebih berbahaya dari Delete di bawah yang sudah owner-only). */}
+                          {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && (
                             <CancelImportDialog batch={batch} onCancelled={load} />
                           )}
                           {isOwner && !DELETE_BLOCKED_BATCH_STATUS.has(batch.status) && (
