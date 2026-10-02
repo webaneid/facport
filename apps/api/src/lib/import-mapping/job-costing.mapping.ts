@@ -184,10 +184,66 @@ export function extractDataClassificationValues(
   return result;
 }
 
-// § Payload job-order/save.do — header + detailExpense[] SAJA.
-// `detailItem[]` di endpoint ini TIDAK dipakai untuk RM (§ komentar atas),
-// dikirim kosong `[]`. Baris tanpa data Expense (kolom "Expense No"
-// kosong) TIDAK berkontribusi ke detailExpense[].
+// § detailItem[] job-order (§ komentar bug di bawah) — subset field dari
+// RM yang memang ada di schema job-order (TANPA warehouseName/serial,
+// cuma ada di material-adjustment). Baris tanpa RM_Item No di-skip, sama
+// pola `buildMaterialAdjustmentDetailItems`.
+function buildJobOrderDetailItems(rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Record<string, unknown>[] {
+  const rmItemNoColumn = columnOf(columnMapping, "rmItemNo");
+  const rmQtyColumn = columnOf(columnMapping, "rmQty");
+  const rmUnitColumn = columnOf(columnMapping, "rmUnit");
+  const projectNoColumn = columnOf(columnMapping, "projectNo");
+  const deptNameColumn = columnOf(columnMapping, "deptName");
+  const rmNotesColumn = columnOf(columnMapping, "rmNotes");
+
+  const items: Record<string, unknown>[] = [];
+  for (const rawRow of rawRows) {
+    const itemNo = valueOf(rawRow, rmItemNoColumn);
+    if (itemNo === undefined) continue;
+
+    const item: Record<string, unknown> = {
+      itemNo: String(itemNo),
+      quantity: Number(valueOf(rawRow, rmQtyColumn) ?? 0),
+    };
+    const unit = valueOf(rawRow, rmUnitColumn);
+    const projectNo = valueOf(rawRow, projectNoColumn);
+    const deptName = valueOf(rawRow, deptNameColumn);
+    const notes = valueOf(rawRow, rmNotesColumn);
+    if (unit !== undefined) item.itemUnitName = String(unit);
+    if (projectNo !== undefined) item.projectNo = String(projectNo);
+    if (deptName !== undefined) item.departmentName = String(deptName);
+    if (notes !== undefined) item.detailNotes = String(notes);
+
+    for (let index = 1; index <= 3; index++) {
+      const column = columnOf(columnMapping, `rmCls${index}`);
+      const value = valueOf(rawRow, column);
+      if (value !== undefined) item[`dataClassification${index}Name`] = String(value);
+    }
+
+    items.push(item);
+  }
+  return items;
+}
+
+// § BUG DITEMUKAN & DIPERBAIKI (2026-10-02, evaluasi client, data nyata
+// `job-casting-template.xlsx`) — asumsi arsitektur awal ("detailItem[]
+// di job-order TIDAK dipakai untuk RM, aman dikirim kosong `[]`") TERNYATA
+// SALAH DI PRAKTIK: client upload 2 baris RM lengkap (RM_Item No/RM_Qty/
+// RM_Unit semua terisi) TANPA kolom Expense sama sekali (wajar — tidak
+// semua Job Order punya biaya tambahan) → payload job-order/save.do yang
+// terkirim py KEDUA array kosong (`detailItem: []` dipaksa, `detailExpense: []`
+// karena memang tidak ada data Expense di baris manapun) → Accurate tolak
+// "Detail dari transaksi belum diisi!". Spec OpenAPI `required: ["transDate"]`
+// di root TIDAK menangkap aturan implisit ini (sama kelas kejutan dengan
+// field custom/boolean yang sudah beberapa kali ketemu di project ini) —
+// Job Order butuh MINIMAL 1 baris detail (Item ATAU Expense), tidak bisa
+// dua-duanya kosong. Fix: `detailItem[]` job-order SEKARANG diisi dari
+// baris RM yang SAMA (itemNo/quantity/itemUnitName/projectNo/departmentName/
+// detailNotes/dataClassification1-3Name — field yang memang ada di schema
+// job-order, TIDAK termasuk warehouseName/serial yang cuma ada di
+// material-adjustment) — representasi "estimasi" RM job order, SELARAS
+// realisasi yang dikirim `material-adjustment/save.do` setelahnya (job-order
+// WAJIB sukses dulu sebelum material-adjustment dipanggil, § worker).
 export function buildJobOrderPayload(rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): Record<string, unknown> {
   const firstRow = rawRows[0] ?? {};
   const transDateColumn = columnOf(columnMapping, "transDate");
@@ -195,7 +251,7 @@ export function buildJobOrderPayload(rawRows: Record<string, unknown>[], columnM
 
   const payload: Record<string, unknown> = {
     transDate: String(toAccurateDate(valueOf(firstRow, transDateColumn)) ?? ""),
-    detailItem: [],
+    detailItem: buildJobOrderDetailItems(rawRows, columnMapping),
     detailExpense: [] as Record<string, unknown>[],
   };
 

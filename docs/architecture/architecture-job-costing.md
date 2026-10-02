@@ -70,10 +70,10 @@ detailItem[] (REQUIRED, minimal 1, itemNo REQUIRED per baris):
 **2 panggilan berurutan per grup Excel**:
 1. `job-order/save.do` — bikin/update SHELL Job Order (header:
    `jobAccountNo`, `differenceAccountNo`, `branchName`, `description`,
-   `number`) + `detailExpense[]` (Expense No/Name/Amount).
-   `detailItem[]` di endpoint ini TIDAK dipakai untuk RM (lihat poin 2)
-   — cukup dikirim kosong `[]` kalau memang tidak ada kebutuhan RM
-   level "estimasi" terpisah dari realisasi.
+   `number`) + `detailExpense[]` (Expense No/Name/Amount) + `detailItem[]`
+   (RM level "estimasi", § **BUG 2026-10-02** di bawah — awalnya dikirim
+   kosong `[]`, TERNYATA Accurate tolak kalau `detailItem[]` DAN
+   `detailExpense[]` dua-duanya kosong sekaligus).
 2. `material-adjustment/save.do` — catat REALISASI pemakaian Raw
    Material (`ITEM_PICK`) TERHADAP Job Order dari langkah 1, pakai
    `jobOrderNumber` = nilai "No. Job Order" yang sama. **Field
@@ -100,7 +100,9 @@ transDate: string REQUIRED
 branchId / branchName, customerNo, description, number, typeAutoNumber
 jobAccountNo, differenceAccountNo, manualClosed (boolean)
 
-detailItem[] (opsional secara spec — TIDAK dipakai untuk RM Excel, § di atas):
+detailItem[] (opsional secara SPEC OpenAPI murni — TAPI di praktik WAJIB
+  terisi kalau detailExpense[] kosong, § BUG 2026-10-02 di bawah — SEKARANG
+  diisi dari baris RM yang sama dengan material-adjustment):
   itemNo, quantity, itemUnitName, detailName, detailNotes,
   departmentName, projectNo, dataClassification1Name..10Name
 
@@ -191,6 +193,22 @@ di Facport SEBELUM kirim ke Accurate. Verifikasi ulang via test call
 nyata saat eksekusi.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
+- **BUG DITEMUKAN & DIPERBAIKI 2026-10-02 (evaluasi client, data nyata
+  `job-casting-template.xlsx`)**: asumsi awal "`detailItem[]` job-order
+  aman dikirim kosong `[]`" TERNYATA SALAH di praktik — client upload 2
+  baris RM lengkap TANPA kolom Expense sama sekali (wajar, tidak semua
+  Job Order punya biaya tambahan), payload job-order/save.do jadi py
+  KEDUA array (`detailItem`+`detailExpense`) kosong, Accurate tolak
+  `"Detail dari transaksi belum diisi!"`. Spec OpenAPI `required:
+  ["transDate"]` TIDAK menangkap aturan implisit "minimal 1 dari 2 array
+  detail harus terisi" ini. **Fix**: `buildJobOrderPayload` sekarang
+  mengisi `detailItem[]` dari baris RM yang sama (itemNo/quantity/
+  itemUnitName/projectNo/departmentName/detailNotes/dataClassification1-3Name
+  — field yang memang ada di schema job-order, bukan warehouseName/serial
+  yang cuma di material-adjustment), § `job-costing.mapping.ts`
+  `buildJobOrderDetailItems`. **Belum diverifikasi test call nyata
+  pasca-fix** — baru lolos unit test, client perlu coba upload ulang file
+  yang sama untuk konfirmasi.
 - **RESOLVED 2026-09-21**: `warehouseName`/`detailSerialNumber[]`
   BUKAN field job-order yang undocumented — itu field RESMI di
   endpoint KEDUA (`material-adjustment/save.do`) yang ketemu via

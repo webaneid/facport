@@ -5645,3 +5645,51 @@ walau di luar task yang sedang dikerjakan saat itu. (3) Kalau ada 2 file
 client yang isinya BERBEDA untuk hal yang sama, JANGAN asumsikan salah
 satu benar dan yang lain usang — tanya eksplisit, karena jawabannya bisa
 jadi "gabungkan keduanya" (persis kasus ini), bukan "pilih salah satu".
+
+## 2026-10-02 — Job Costing: "Detail dari transaksi belum diisi!" — asumsi arsitektur "detailItem[] job-order aman kosong" ternyata salah, baru ketahuan dari data nyata client
+
+**Konteks**: Fase 139 (2026-09-21) mendesain Job Costing sebagai 2
+panggilan API berurutan — `job-order/save.do` (header + `detailExpense[]`)
+lalu `material-adjustment/save.do` (realisasi RM, `detailItem[]` REQUIRED
+minimal 1). Keputusan desain eksplisit saat itu: `detailItem[]` milik
+`job-order/save.do` sendiri "opsional secara spec" (OpenAPI `required`
+cuma `["transDate"]`), jadi SELALU dikirim kosong `[]` — RM dianggap
+cukup direpresentasikan di `material-adjustment` saja.
+
+**Ketahuan salahnya**: client upload `job-casting-template.xlsx` (2 baris,
+RM_Item No/RM_Qty/RM_Unit SEMUA terisi lengkap) — gagal 100% dengan pesan
+Accurate `"Detail dari transaksi belum diisi!"` di KEDUA baris. Root
+cause: baris client TIDAK punya data Expense sama sekali (Expense No/
+Name/Amount kosong — wajar, tidak semua Job Order punya biaya tambahan).
+Karena `detailItem[]` SELALU dipaksa `[]` dan `detailExpense[]` JUGA
+kosong (tidak ada data Expense), payload `job-order/save.do` yang
+terkirim py KEDUA array kosong sekaligus. Accurate menolak — ternyata ada
+aturan implisit "minimal 1 dari 2 array detail (Item ATAU Expense) harus
+terisi" yang TIDAK tertangkap di `required: ["transDate"]` OpenAPI spec.
+
+**Fix**: `buildJobOrderPayload` (`job-costing.mapping.ts`) sekarang
+mengisi `detailItem[]` dari baris RM yang SAMA dengan yang dikirim ke
+`material-adjustment` (itemNo/quantity/itemUnitName/projectNo/
+departmentName/detailNotes/dataClassification1-3Name — subset field yang
+memang ada di schema `job-order`, TIDAK termasuk warehouseName/serial
+yang cuma ada di `material-adjustment`). Detail: `apps/api/src/lib/
+import-mapping/job-costing.mapping.ts` `buildJobOrderDetailItems`,
+`docs/architecture/architecture-job-costing.md`.
+
+**Pelajaran**: ini kelas kejutan yang SAMA dengan rangkaian bug Satuan
+Item/Gudang/PPN minggu ini — `required` array di OpenAPI spec resmi
+Accurate TIDAK mewakili SELURUH aturan validasi yang sebenarnya dijalankan
+di server Accurate. Kali ini bukan field yang salah nama/struktur, tapi
+aturan ANTAR-FIELD ("minimal 1 dari N array harus terisi") yang memang
+secara fundamental TIDAK BISA diekspresikan oleh skema `required` flat
+OpenAPI — tidak ada cara mendeteksi ini dari baca spec saja, cuma ketahuan
+dari test call nyata/laporan client. Keputusan desain Fase 139 yang bilang
+"detailItem[] job-order TIDAK dipakai, aman kosong" BUKAN kesalahan baca
+spec (sudah benar: field itu genuinely opsional per OpenAPI) — kesalahannya
+adalah MENYIMPULKAN "opsional per spec" = "aman selalu kosong", padahal
+Accurate punya validasi silang yang tidak pernah bisa diketahui dari
+membaca JSON spec doang. Rule yang sudah ada ("re-verify dengan test call
+nyata sebelum anggap selesai") tetap berlaku, tapi kasus ini juga
+menunjukkan: SELESAI UNIT TEST ≠ SELESAI VERIFIKASI — modul ini sudah
+lolos security review & unit test sejak Fase 139 tanpa ketahuan bug ini,
+baru ketahuan 11 hari kemudian dari laporan client pakai data nyata.
