@@ -1,3 +1,16 @@
+## 2.23.0 (2026-10-02)
+
+* release: merge develop ke main (AutoProduksi satuan/default/nomor transaksi, Sales Invoice ID Salesm ([5fae5c8](https://github.com/webaneid/facport/commit/5fae5c8))
+* feat(api web): AutoProduksi — default Cabang & Gudang per Data Usaha untuk Input/Import Produksi yan ([d5c60b3](https://github.com/webaneid/facport/commit/d5c60b3))
+* feat(api web): AutoProduksi — pilih satuan ke-2..5 barang di form Formula (mis. GULA: KG & Pouch) ([8a36e8a](https://github.com/webaneid/facport/commit/8a36e8a))
+* feat(api web): AutoProduksi — satuan Formula divalidasi ke master barang Accurate saat disimpan (fai ([83372c0](https://github.com/webaneid/facport/commit/83372c0))
+* feat(api web): AutoProduksi — tampilkan nomor transaksi Accurate (bukan id internal) di Riwayat & ba ([ff5ab1e](https://github.com/webaneid/facport/commit/ff5ab1e))
+* feat(api web): Sales Invoice — kolom ITEM: ID Salesman (detailItem.salesmanListNumber) ([a40d561](https://github.com/webaneid/facport/commit/a40d561))
+* feat(api): Purchase Return — kolom Unit Price di template didekatkan ke Item Unit Name ([1d18aa7](https://github.com/webaneid/facport/commit/1d18aa7))
+* feat(web): Journal Voucher — kolom Nomor Transaksi di Detail per Baris batch import ([e6d1067](https://github.com/webaneid/facport/commit/e6d1067))
+* feat(web): Other Payment — kolom Nomor Transaksi di Detail per Baris batch import ([9f485d0](https://github.com/webaneid/facport/commit/9f485d0))
+* fix(web api): AutoProduksi — takaran koma desimal tidak lagi membuang baris Bahan Baku diam-diam + t ([7e9a02a](https://github.com/webaneid/facport/commit/7e9a02a))
+
 ## 2.22.0 (2026-10-02)
 
 * release: merge develop ke main (AutoProduksi Fase 168) ([d361e54](https://github.com/webaneid/facport/commit/d361e54))
