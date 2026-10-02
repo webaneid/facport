@@ -1,3 +1,11 @@
+## 2.22.0 (2026-10-02)
+
+* release: merge develop ke main (AutoProduksi Fase 168) ([d361e54](https://github.com/webaneid/facport/commit/d361e54))
+* fix(api): Import Produksi AutoProduksi — duplikat nama hanya hitung Formula aktif, trim nama & konte ([3dc31f7](https://github.com/webaneid/facport/commit/3dc31f7))
+* fix(web): 4 evaluasi client List Formula AutoProduksi ([054a194](https://github.com/webaneid/facport/commit/054a194))
+* feat(api web): AutoProduksi — Akun Perantara jadi master data lokal ([0efab71](https://github.com/webaneid/facport/commit/0efab71))
+* feat(api web): AutoProduksi — Formula jadi resep lintas-cabang (Fase 168) ([5269328](https://github.com/webaneid/facport/commit/5269328))
+
 ## 2.21.0 (2026-10-02)
 
 * Merge pull request #91 from webaneid/develop ([a247357](https://github.com/webaneid/facport/commit/a247357)), closes [#91](https://github.com/webaneid/facport/issues/91)
