@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { dataUsaha, user as userTable, auditLogs, ownershipTransfers } from "../../db/schema";
+import { dataUsaha, user as userTable, auditLogs, ownershipTransfers, accurateConnections, subscriptions, importBatches } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 
@@ -27,12 +27,20 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
     { permission: "users.manage", query: t.Object({ userId: t.String({ minLength: 1 }) }) },
   )
   // § Fase 144 — "Putuskan Koneksi" oleh admin di level DATA USAHA (koneksi Accurate dipegang Data Usaha, ADR-0037): SATU aksi
-  // memutus SEMUA fitur di Data Usaha itu. Menggantikan `POST /admin/subscriptions/:id/disconnect-accurate` (per subscription;
-  // menyesatkan karena semua subscription di Data Usaha yang sama ikut terputus). Baris `accurate_connections` TIDAK dihapus
-  // (bisa dipakai Data Usaha lain milik akun yang sama); pemilik diberi notifikasi. Permission sama dengan endpoint lama.
+  // memutus SEMUA fitur di Data Usaha itu. Menggantikan `POST /admin/subscriptions/:id/disconnect-accurate`.
+  // § DIUBAH 2026-10-03 (diminta client — banyak user salah memilih Data Usaha/email Accurate): putus sekarang BERSIH.
+  // Sebelumnya hanya pointer koneksi yang dikosongkan, database Accurate terakhir TETAP tersimpan di Data Usaha sehingga
+  // saat user menyambung lagi `pointDataUsahaToConnection` otomatis memakai database yang sama (kesalahan pilih tak
+  // pernah terkoreksi), dan baris `accurate_connections` yang masih aktif membuat popup menawarkan "Pakai akun {email}"
+  // tanpa OAuth. Sekarang:
+  //   • selalu: pointer koneksi + database terpilih (id/alias/konfirmasi) dikosongkan → user WAJIB memilih database lagi;
+  //   • `removeAccount: true`: koneksi akun Accurate itu dihapus (token dibuang) dan SEMUA Data Usaha yang memakainya ikut
+  //     diputus bersih → user WAJIB OAuth dari nol (untuk kasus salah email/akun Accurate).
+  // Ditolak 409 IMPORT_RUNNING kalau ada import yang sedang berjalan di Data Usaha terdampak (token dicabut di tengah batch
+  // = batch gagal 401). Pemilik diberi notifikasi.
   .post(
     "/:id/disconnect-accurate",
-    async ({ params, user, set }) => {
+    async ({ params, body, user, set }) => {
       const [du] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, params.id));
       if (!du) {
         set.status = 404;
@@ -42,29 +50,69 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
         set.status = 400;
         return { code: "NOT_CONNECTED" };
       }
+      const connectionId = du.accurateConnectionId;
+      const removeAccount = body?.removeAccount === true;
 
-      await db.update(dataUsaha).set({ accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, du.id));
+      // Data Usaha yang terdampak: hanya ini, atau SEMUA yang memakai koneksi akun yang sama (removeAccount).
+      const affected = removeAccount
+        ? await db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.accurateConnectionId, connectionId))
+        : [{ id: du.id, name: du.name }];
+      const affectedIds = affected.map((a) => a.id);
 
-      await db.insert(auditLogs).values({
-        entityType: "data_usaha",
-        entityId: du.id,
-        action: "disconnect_accurate",
-        changes: { previousConnectionId: du.accurateConnectionId, previousAccurateDbAlias: du.accurateDbAlias ?? null },
-        actorId: user.id,
+      const [running] = await db
+        .select({ id: importBatches.id })
+        .from(importBatches)
+        .innerJoin(subscriptions, eq(subscriptions.id, importBatches.subscriptionId))
+        .where(and(inArray(subscriptions.dataUsahaId, affectedIds), inArray(importBatches.status, ["processing", "cancelling"])))
+        .limit(1);
+      if (running) {
+        set.status = 409;
+        return { code: "IMPORT_RUNNING" };
+      }
+
+      await db.transaction(async (tx) => {
+        await tx
+          .update(dataUsaha)
+          .set({ accurateConnectionId: null, accurateDbId: null, accurateDbAlias: null, accurateDbConfirmedAt: null, updatedAt: new Date() })
+          .where(inArray(dataUsaha.id, affectedIds));
+        if (removeAccount) {
+          // Pointer lama per-subscription (model sebelum ADR-0037) juga menunjuk baris ini — lepas dulu sebelum dihapus.
+          await tx.update(subscriptions).set({ accurateConnectionId: null }).where(eq(subscriptions.accurateConnectionId, connectionId));
+          await tx.delete(accurateConnections).where(eq(accurateConnections.id, connectionId));
+        }
+        await tx.insert(auditLogs).values({
+          entityType: "data_usaha",
+          entityId: du.id,
+          action: "disconnect_accurate",
+          changes: {
+            previousConnectionId: connectionId,
+            previousAccurateDbId: du.accurateDbId ?? null,
+            previousAccurateDbAlias: du.accurateDbAlias ?? null,
+            removedAccount: removeAccount,
+            affectedDataUsahaIds: affectedIds,
+          },
+          actorId: user.id,
+        });
       });
 
       await createNotification({
         userId: du.userId,
         type: NOTIFICATION_TYPES.ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN,
         title: "Koneksi Accurate diputuskan admin",
-        body: `Koneksi Accurate untuk Data Usaha ${du.name}${du.accurateDbAlias ? ` (${du.accurateDbAlias})` : ""} diputuskan oleh admin — hubungkan ulang untuk lanjut import.`,
+        body: removeAccount
+          ? `Koneksi akun Accurate untuk Data Usaha ${affected.map((a) => a.name).join(", ")} diputuskan oleh admin — hubungkan ulang dari awal (login Accurate lalu pilih database) untuk lanjut import.`
+          : `Koneksi Accurate untuk Data Usaha ${du.name}${du.accurateDbAlias ? ` (${du.accurateDbAlias})` : ""} diputuskan oleh admin — hubungkan ulang dan pilih database Accurate lagi untuk lanjut import.`,
         entityType: "data_usaha",
         entityId: du.id,
       });
 
-      return { dataUsahaId: du.id, disconnected: true };
+      return { dataUsahaId: du.id, disconnected: true, removedAccount: removeAccount, affectedDataUsaha: affectedIds.length };
     },
-    { permission: "subscriptions.manage", params: t.Object({ id: t.String({ format: "uuid" }) }) },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Optional(t.Object({ removeAccount: t.Optional(t.Boolean()) })),
+    },
   )
   .post(
     "/:id/transfer-ownership",

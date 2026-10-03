@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, inArray, desc } from "drizzle-orm";
+import { eq, inArray, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { subscriptions, plans, accurateConnections, user as userTable, dataUsaha } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
@@ -73,6 +73,19 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
             .where(inArray(dataUsaha.id, dataUsahaIds))
         : [];
 
+      // § 2026-10-03 — berapa Data Usaha (lintas semua) yang memakai koneksi akun Accurate yang sama; dipakai dialog "Putuskan"
+      // untuk memperingatkan admin sebelum memilih "hapus akun Accurate" (memutus SEMUA Data Usaha itu sekaligus).
+      const connectionIds = [...new Set(duRows.map((r) => r.du.accurateConnectionId).filter((id): id is string => !!id))];
+      const sharedCounts = new Map<string, number>();
+      if (connectionIds.length) {
+        const counts = await db
+          .select({ connectionId: dataUsaha.accurateConnectionId, n: sql<number>`count(*)::int` })
+          .from(dataUsaha)
+          .where(inArray(dataUsaha.accurateConnectionId, connectionIds))
+          .groupBy(dataUsaha.accurateConnectionId);
+        for (const c of counts) if (c.connectionId) sharedCounts.set(c.connectionId, c.n);
+      }
+
       return {
         user: { id: targetUser.id, name: targetUser.name, email: targetUser.email },
         dataUsaha: duRows.map(({ du, connection: found }) => {
@@ -86,6 +99,7 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
             connectionStatus: connection?.status ?? null,
             accountEmail: connection?.accurateUserEmail ?? null,
             accurateDbAlias: du.accurateDbAlias,
+            accountDataUsahaCount: du.accurateConnectionId ? (sharedCounts.get(du.accurateConnectionId) ?? 1) : 0,
           };
         }),
         subscriptions: rows.map((r) => ({

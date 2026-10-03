@@ -92,10 +92,10 @@ describe("GET /admin/users/:id/subscriptions", () => {
       subscriptions: Record<string, unknown>[];
     };
     const du = (id: string) => body.dataUsaha.find((d) => d.id === id)!;
-    expect(du(duHealthy)).toMatchObject({ isOwner: true, connected: true, connectionStatus: "active", accountEmail: "akun@accurate.test", accurateDbAlias: "PT Sehat" });
-    expect(du(duBroken)).toMatchObject({ connected: false, connectionStatus: "expired", accurateDbAlias: "PT Bermasalah" });
+    expect(du(duHealthy)).toMatchObject({ isOwner: true, connected: true, connectionStatus: "active", accountEmail: "akun@accurate.test", accurateDbAlias: "PT Sehat", accountDataUsahaCount: 1 });
+    expect(du(duBroken)).toMatchObject({ connected: false, connectionStatus: "expired", accurateDbAlias: "PT Bermasalah", accountDataUsahaCount: 1 });
     expect(du(duLegacy)).toMatchObject({ connected: false, connectionStatus: null });
-    expect(du(duEmpty)).toMatchObject({ connected: false, connectionStatus: null });
+    expect(du(duEmpty)).toMatchObject({ connected: false, connectionStatus: null, accountDataUsahaCount: 0 });
 
     // baris subscription TIDAK membawa kolom koneksi lagi; tetap membawa Data Usaha-nya
     expect(body.subscriptions.length).toBe(4);

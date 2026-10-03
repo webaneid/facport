@@ -25,6 +25,7 @@ import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
 import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
+import { plansAvailableForDataUsaha } from "@/lib/available-plans";
 
 const PAGE_SIZE = 20;
 
@@ -427,6 +428,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     }
   }
 
+  // § diminta user 2026-10-03 — paket/modul yang SUDAH aktif di Data Usaha tujuan tidak ditawarkan lagi (cegah dobel; memperpanjang
+  // lewat edit tanggal di detail user). Dihitung dari Data Usaha yang dipilih; belum dipilih → semua paket tampil.
+  const { available: assignablePlans, hidden: hiddenPlans } = plansAvailableForDataUsaha(plans ?? [], history ?? [], selectedDataUsahaId);
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <button
@@ -523,13 +528,20 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <Skeleton className="h-9 w-full" />
             ) : plans.length === 0 ? (
               <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
+            ) : assignablePlans.length === 0 ? (
+              <p className="text-muted-foreground">Semua paket yang tersedia sudah aktif di Data Usaha ini.</p>
             ) : (
               <Combobox
-                options={plans.map((p) => ({ value: p.id, label: `${p.name}${planProductLineSuffix(p.modules)} — ${p.durationDays} hari` }))}
+                options={assignablePlans.map((p) => ({ value: p.id, label: `${p.name}${planProductLineSuffix(p.modules)} — ${p.durationDays} hari` }))}
                 value={selectedPlanId}
                 onChange={handleSelectPlan}
                 placeholder="(pilih paket)"
               />
+            )}
+            {hiddenPlans.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {hiddenPlans.length} paket disembunyikan karena modulnya sudah aktif di Data Usaha ini. Untuk memperpanjang, ubah tanggal expired di detail user.
+              </p>
             )}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">
@@ -543,7 +555,12 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 <Combobox
                   options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
                   value={selectedDataUsahaId}
-                  onChange={setSelectedDataUsahaId}
+                  onChange={(id) => {
+                    setSelectedDataUsahaId(id);
+                    // paket yang sudah terpilih tapi ternyata sudah aktif di Data Usaha baru → kosongkan pilihan
+                    const chosen = plans?.find((p) => p.id === selectedPlanId);
+                    if (chosen && plansAvailableForDataUsaha([chosen], history ?? [], id).hidden.length > 0) setSelectedPlanId("");
+                  }}
                   placeholder="(pilih Data Usaha)"
                 />
               )}
@@ -553,7 +570,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
             </label>
             {error && <p className="text-destructive">{error}</p>}
-            <Button onClick={handleAssign} disabled={submitting || !plans?.length} className="self-end">
+            <Button onClick={handleAssign} disabled={submitting || !assignablePlans.length} className="self-end">
               {submitting ? "Memproses..." : "Assign Paket"}
             </Button>
           </div>
