@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { Fragment, useEffect, useState, useCallback } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { Building2, Eye, Inbox, Link2 } from "lucide-react";
@@ -19,6 +19,8 @@ import { formatDuration } from "@/lib/duration";
 import { TruncateText } from "@/components/ui/truncate-text";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate-dialog";
+import { EditSubscriptionEndDialog } from "@/components/admin/edit-subscription-end-dialog";
+import { groupByMenu } from "@/lib/group-subscriptions-by-menu";
 import { api } from "@/lib/api-client";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
@@ -59,6 +61,7 @@ type DataUsahaRow = {
   connectionStatus: string | null;
   accountEmail: string | null;
   accurateDbAlias: string | null;
+  accountDataUsahaCount: number;
 };
 
 export default function AdminUserDetailPage() {
@@ -176,7 +179,7 @@ export default function AdminUserDetailPage() {
                       </span>
                       {group.du.connectionStatus !== null && (
                         <DisconnectAccurateDialog
-                          dataUsaha={{ id: group.du.id, name: group.du.name, accurateDbAlias: group.du.accurateDbAlias }}
+                          dataUsaha={{ id: group.du.id, name: group.du.name, accurateDbAlias: group.du.accurateDbAlias, accountEmail: group.du.accountEmail, accountDataUsahaCount: group.du.accountDataUsahaCount }}
                           onDisconnected={loadSubscriptions}
                         />
                       )}
@@ -185,43 +188,62 @@ export default function AdminUserDetailPage() {
                       <TableHeader>
                         <TableRow>
                           <TableHead className="w-[26%]">Fitur</TableHead>
-                          <TableHead className="w-[28%]">Paket</TableHead>
-                          {/* § ADR-0034 (2026-09-17) — "Durasi"+"Berlaku" (2
-                              kolom terpisah, Fase 130) DIGABUNG jadi 1: cuma
-                              tanggal AKHIR yang ditampilkan langsung (info
-                              paling actionable — "kapan expired"), tanggal
-                              mulai+durasi dipindah ke `title` attribute
-                              (hover) via `TruncateText` — tetap ada, tidak
-                              hilang, cuma tidak WAJIB selalu terlihat. */}
-                          <TableHead className="w-[24%]">Berlaku</TableHead>
-                          <TableHead className="w-[22%]">Status Langganan</TableHead>
+                          <TableHead className="w-[26%]">Paket</TableHead>
+                          {/* § ADR-0034 (2026-09-17) — "Durasi"+"Berlaku" DIGABUNG jadi 1: cuma tanggal AKHIR yang ditampilkan
+                              langsung, tanggal mulai+durasi di `title` (hover) via `TruncateText`. */}
+                          <TableHead className="w-[22%]">Berlaku</TableHead>
+                          <TableHead className="w-[18%]">Status Langganan</TableHead>
+                          {/* § diminta user 2026-10-03 — kolom Aksi: ubah/perpanjang masa aktif langsung dari sini. */}
+                          <TableHead className="w-[8%] text-right">Aksi</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {group.subs.map((sub) => {
-                          const berlakuTitle = [
-                            sub.startAt ? `Mulai ${formatDate(sub.startAt, companyTimezone)}` : null,
-                            sub.durationDays !== null ? `Durasi ${formatDuration(sub.durationDays)}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ");
-                          return (
-                            <TableRow key={sub.subscriptionId}>
-                              <TableCell className="text-muted-foreground">
-                                <TruncateText>{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TruncateText>
-                              </TableCell>
-                              <TableCell className="font-medium text-foreground">
-                                <TruncateText>{sub.planName}</TruncateText>
-                              </TableCell>
-                              <TableCell className="text-muted-foreground">
-                                <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
-                              </TableCell>
-                              <TableCell>
-                                <StatusBadge domain="subscription" status={sub.status} />
+                        {/* § diminta user 2026-10-03 — fitur dikelompokkan seperti menu yang dilihat user di sidebar
+                            (Produk · Kategori), urutan mengikuti katalog modul. */}
+                        {groupByMenu(group.subs).map((menuGroup) => (
+                          <Fragment key={menuGroup.key}>
+                            <TableRow className="bg-muted/40 hover:bg-muted/40">
+                              <TableCell colSpan={5} className="py-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                                {menuGroup.label} <span className="font-normal normal-case">({menuGroup.items.length})</span>
                               </TableCell>
                             </TableRow>
-                          );
-                        })}
+                            {menuGroup.items.map((sub) => {
+                              const berlakuTitle = [
+                                sub.startAt ? `Mulai ${formatDate(sub.startAt, companyTimezone)}` : null,
+                                sub.durationDays !== null ? `Durasi ${formatDuration(sub.durationDays)}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ");
+                              return (
+                                <TableRow key={sub.subscriptionId}>
+                                  <TableCell className="text-muted-foreground">
+                                    <TruncateText>{sub.moduleKey ? moduleLabel(sub.moduleKey) : "-"}</TruncateText>
+                                  </TableCell>
+                                  <TableCell className="font-medium text-foreground">
+                                    <TruncateText>{sub.planName}</TruncateText>
+                                  </TableCell>
+                                  <TableCell className="text-muted-foreground">
+                                    <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
+                                  </TableCell>
+                                  <TableCell>
+                                    <StatusBadge domain="subscription" status={sub.status} />
+                                  </TableCell>
+                                  <TableCell>
+                                    <div className="flex justify-end">
+                                      <EditSubscriptionEndDialog
+                                        subscriptionId={sub.subscriptionId}
+                                        planName={sub.planName}
+                                        status={sub.status}
+                                        endAt={sub.endAt}
+                                        onSaved={loadSubscriptions}
+                                      />
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </Fragment>
+                        ))}
                       </TableBody>
                     </Table>
                   </AccordionContent>

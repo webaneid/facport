@@ -25,6 +25,8 @@ import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
 import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
+import { plansAvailableForDataUsaha } from "@/lib/available-plans";
+import { PLAN_PRODUCT_FILTERS, countPlansByFilter, filterPlansByProduct, planOptionLabel, sortPlansByCatalog } from "@/lib/classify-plans";
 
 const PAGE_SIZE = 20;
 
@@ -39,7 +41,7 @@ type UserRow = {
   roles: string[];
   activeSubscriptions: ActiveSubscription[];
 };
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
+type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
 
 // § diminta user 2026-09-24 — "Delivery Order 30 hari" (Facport) vs
 // "Delivery Order 30 hari" (Konverter) SAMA PERSIS teksnya di checkbox
@@ -269,6 +271,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [history, setHistory] = useState<SubscriptionHistoryItem[] | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState("");
+  const [productFilter, setProductFilter] = useState("all");
   const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
   const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
   const [endAt, setEndAt] = useState("");
@@ -295,6 +298,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   function openDialog() {
     setOpen(true);
     setSelectedPlanId("");
+    setProductFilter("all");
     setSelectedDataUsahaId("");
     setEndAt("");
     setError(null);
@@ -427,6 +431,14 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     }
   }
 
+  // § diminta user 2026-10-03 — paket/modul yang SUDAH aktif di Data Usaha tujuan tidak ditawarkan lagi (cegah dobel; memperpanjang
+  // lewat edit tanggal di detail user). Dihitung dari Data Usaha yang dipilih; belum dipilih → semua paket tampil.
+  const { available: assignablePlans, hidden: hiddenPlans } = plansAvailableForDataUsaha(plans ?? [], history ?? [], selectedDataUsahaId);
+  // § diminta user 2026-10-03 — filter Produk (Facport/Konverter/AutoProduksi/Tambah User) + opsi terurut menurut katalog, supaya paket
+  // bernama sama di Facport vs Konverter tidak tertukar (§ lib/classify-plans.ts).
+  const planCounts = countPlansByFilter(assignablePlans);
+  const planOptions = sortPlansByCatalog(filterPlansByProduct(assignablePlans, productFilter)).map((p) => ({ value: p.id, label: planOptionLabel(p) }));
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <button
@@ -523,13 +535,45 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <Skeleton className="h-9 w-full" />
             ) : plans.length === 0 ? (
               <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
+            ) : assignablePlans.length === 0 ? (
+              <p className="text-muted-foreground">Semua paket yang tersedia sudah aktif di Data Usaha ini.</p>
             ) : (
-              <Combobox
-                options={plans.map((p) => ({ value: p.id, label: `${p.name}${planProductLineSuffix(p.modules)} — ${p.durationDays} hari` }))}
-                value={selectedPlanId}
-                onChange={handleSelectPlan}
-                placeholder="(pilih paket)"
-              />
+              <>
+                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter produk">
+                  {[{ key: "all", label: "Semua" }, ...PLAN_PRODUCT_FILTERS].map((f) => {
+                    const active = productFilter === f.key;
+                    return (
+                      <button
+                        key={f.key}
+                        type="button"
+                        aria-pressed={active}
+                        onClick={() => {
+                          setProductFilter(f.key);
+                          // paket yang sudah terpilih tapi di luar filter baru → kosongkan pilihan
+                          if (selectedPlanId && !filterPlansByProduct(assignablePlans, f.key).some((p) => p.id === selectedPlanId)) setSelectedPlanId("");
+                        }}
+                        className={
+                          active
+                            ? "rounded-full border border-primary-500 bg-primary-500 px-3 py-1 text-xs font-medium text-white"
+                            : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
+                        }
+                      >
+                        {f.label} <span className={active ? "opacity-80" : "opacity-60"}>({planCounts[f.key] ?? 0})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                {planOptions.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Tidak ada paket untuk filter ini.</p>
+                ) : (
+                  <Combobox options={planOptions} value={selectedPlanId} onChange={handleSelectPlan} placeholder="(pilih paket — bisa diketik untuk mencari)" />
+                )}
+              </>
+            )}
+            {hiddenPlans.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {hiddenPlans.length} paket disembunyikan karena modulnya sudah aktif di Data Usaha ini. Untuk memperpanjang, ubah tanggal expired di detail user.
+              </p>
             )}
             <label className="flex flex-col gap-1.5">
               <span className="text-xs font-medium text-foreground">
@@ -543,7 +587,12 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 <Combobox
                   options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
                   value={selectedDataUsahaId}
-                  onChange={setSelectedDataUsahaId}
+                  onChange={(id) => {
+                    setSelectedDataUsahaId(id);
+                    // paket yang sudah terpilih tapi ternyata sudah aktif di Data Usaha baru → kosongkan pilihan
+                    const chosen = plans?.find((p) => p.id === selectedPlanId);
+                    if (chosen && plansAvailableForDataUsaha([chosen], history ?? [], id).hidden.length > 0) setSelectedPlanId("");
+                  }}
                   placeholder="(pilih Data Usaha)"
                 />
               )}
@@ -553,7 +602,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
             </label>
             {error && <p className="text-destructive">{error}</p>}
-            <Button onClick={handleAssign} disabled={submitting || !plans?.length} className="self-end">
+            <Button onClick={handleAssign} disabled={submitting || !assignablePlans.length} className="self-end">
               {submitting ? "Memproses..." : "Assign Paket"}
             </Button>
           </div>

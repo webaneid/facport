@@ -161,3 +161,12 @@ menghubungkan Accurate sebelum import bisa dikirim."
 
 ## Yang sengaja tidak dikerjakan di fase ini
 Email/pengumuman ke customer, skrip health-check token, carry-over koneksi hidup, penghapusan kolom legacy (Fase 145).
+
+## Putuskan Koneksi oleh Admin — putus BERSIH (2026-10-03, diminta client)
+Latar: banyak user punya beberapa Data Usaha lalu salah memilih database Accurate, atau salah memilih email login Accurate. "Putuskan" versi lama (Fase 144) hanya mengosongkan `data_usaha.accurate_connection_id`; **database terakhir (`accurate_db_id/alias/confirmed_at`) tetap tersimpan** dan baris `accurate_connections` tetap aktif. Akibatnya (a) saat user menyambung lagi, `pointDataUsahaToConnection` mempertahankan database yang tersimpan selama masih ada di akun itu → kesalahan pilih tidak pernah terkoreksi; (b) popup menawarkan "Pakai akun {email}" (`POST /accurate/attach`, tanpa OAuth) → tidak pernah OAuth dari nol.
+`POST /admin/data-usaha/:id/disconnect-accurate` sekarang:
+- **selalu** mengosongkan pointer koneksi DAN database terpilih (id, alias, konfirmasi) → user wajib memilih database lagi. Baris koneksi akun tetap ada (dipakai Data Usaha lain milik akun yang sama) → popup masih menawarkan "Pakai akun" tapi tanpa database terpilih.
+- body `{ removeAccount: true }` (checkbox di dialog admin, untuk kasus salah email/akun): koneksi akun **dihapus** (token dibuang; pointer lama `subscriptions.accurate_connection_id` dilepas), SEMUA Data Usaha yang memakainya ikut diputus bersih → user wajib OAuth dari nol. Dialog memperingatkan jumlah Data Usaha terdampak (`accountDataUsahaCount` di `GET /admin/users/:id/subscriptions`).
+- ditolak `409 IMPORT_RUNNING` kalau ada import `processing`/`cancelling` di Data Usaha terdampak (mencabut token di tengah batch = batch gagal 401).
+- audit log `disconnect_accurate` memuat `previousAccurateDbId/Alias`, `removedAccount`, `affectedDataUsahaIds`; pemilik dinotifikasi (teks berbeda untuk dua mode).
+⚠️ Batas yang tidak bisa dikendalikan Facport: OAuth Accurate memakai sesi login browser user di Accurate sendiri — kalau browser masih login ke email yang salah, Accurate bisa langsung memakainya. Minta user logout dari Accurate / pakai jendela incognito sebelum menghubungkan ulang. Tidak ada endpoint revoke token Accurate yang dipakai: token dibuang di sisi Facport, otorisasi di sisi Accurate baru gugur saat otorisasi baru dibuat untuk akun yang sama (Fase 141 E2).
