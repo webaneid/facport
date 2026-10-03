@@ -3,13 +3,13 @@
 import { useEffect, useState } from "react";
 import { Trash2, Boxes } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Switch } from "@/components/ui/switch";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
 import { filterFormulas, type FormulaStatusFilter } from "@/lib/filter-formulas";
@@ -377,6 +377,7 @@ const columnHelper = createDataTableColumns<Formula>();
 
 export default function AutoProduksiFormulasPage() {
   const [formulas, setFormulas] = useState<Formula[] | null>(null);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
   // § Fase 162 (evaluasi client) — search nama Formula, client-side
   // (dataset per Data Usaha kecil, § plan file). Fungsi filter diekstrak
   // ke `lib/filter-formulas.ts` supaya testable.
@@ -409,7 +410,9 @@ export default function AutoProduksiFormulasPage() {
   // TERPISAH dari PUT (§ autoproduksi.route.ts) supaya tidak perlu kirim
   // ulang Formula+items cuma utk ubah 1 boolean.
   async function handleToggleActive(formula: Formula) {
+    setTogglingId(formula.id);
     const res = await api.autoproduksi.formulas({ id: formula.id }).active.patch({ isActive: !formula.isActive });
+    setTogglingId(null);
     if (res.error) {
       toast.error("Gagal mengubah status formula.");
       return;
@@ -447,9 +450,19 @@ export default function AutoProduksiFormulasPage() {
       id: "status",
       header: "Status",
       cell: ({ row }) => (
-        <button type="button" onClick={() => handleToggleActive(row.original)} title="Klik untuk ubah status">
-          <Badge variant={row.original.isActive ? "success" : "default"}>{row.original.isActive ? "Aktif" : "Non-aktif"}</Badge>
-        </button>
+        // § Toggle terlihat jelas (bukan badge yang bisa diklik tersembunyi — client tidak menemukannya, 2026-10-03).
+        <div className="flex items-center gap-2">
+          <Switch
+            checked={row.original.isActive}
+            disabled={togglingId === row.original.id}
+            onCheckedChange={() => handleToggleActive(row.original)}
+            aria-label={`${row.original.isActive ? "Nonaktifkan" : "Aktifkan"} formula ${row.original.name}`}
+            title={row.original.isActive ? "Klik untuk nonaktifkan" : "Klik untuk aktifkan"}
+          />
+          <span className={row.original.isActive ? "text-xs font-medium text-green-700" : "text-xs text-muted-foreground"}>
+            {row.original.isActive ? "Aktif" : "Non-aktif"}
+          </span>
+        </div>
       ),
     }),
     columnHelper.display({
