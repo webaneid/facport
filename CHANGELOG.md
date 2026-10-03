@@ -1,3 +1,10 @@
+## 2.24.0 (2026-10-03)
+
+* release: merge develop ke main (toggle Formula, admin users: putus koneksi bersih, edit masa aktif,  ([d345370](https://github.com/webaneid/facport/commit/d345370))
+* feat(api web): admin /users — putus koneksi Accurate bersih (+ opsi hapus akun), filter paket aktif  ([700ec7e](https://github.com/webaneid/facport/commit/700ec7e))
+* feat(web): admin /users — Assign Paket Baru difilter & diurutkan per Produk (Facport, Konverter, Aut ([48d3fc5](https://github.com/webaneid/facport/commit/48d3fc5))
+* feat(web): List Formula — toggle Aktif/Non-aktif berupa switch yang terlihat jelas (sebelumnya badge ([6428163](https://github.com/webaneid/facport/commit/6428163))
+
 ## 2.23.0 (2026-10-02)
 
 * release: merge develop ke main (AutoProduksi satuan/default/nomor transaksi, Sales Invoice ID Salesm ([5fae5c8](https://github.com/webaneid/facport/commit/5fae5c8))
