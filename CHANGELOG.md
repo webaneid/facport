@@ -1,3 +1,9 @@
+## <small>2.24.1 (2026-10-04)</small>
+
+* release: merge develop ke main (fix produk paket AutoProduksi di admin & invoice) ([ba05422](https://github.com/webaneid/facport/commit/ba05422))
+* fix(api): snapshot Produk di item invoice diturunkan dari modul (paket AutoProduksi tidak lagi berla ([aa040b0](https://github.com/webaneid/facport/commit/aa040b0))
+* fix(web): admin /users — produk paket diturunkan dari modul (AutoProduksi tidak lagi 0), pesan jelas ([e484dc7](https://github.com/webaneid/facport/commit/e484dc7))
+
 ## 2.24.0 (2026-10-03)
 
 * release: merge develop ke main (toggle Formula, admin users: putus koneksi bersih, edit masa aktif,  ([d345370](https://github.com/webaneid/facport/commit/d345370))
