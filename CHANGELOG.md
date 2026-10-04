@@ -1,3 +1,11 @@
+## <small>2.24.2 (2026-10-04)</small>
+
+* release: merge develop ke main (rapihan UI: Pengaturan AutoProduksi, admin invoices/orders, header/b ([20dda5f](https://github.com/webaneid/facport/commit/20dda5f))
+* fix(web): admin /invoices — hapus kolom Data Usaha/Paket; /orders — kolom tidak melewati batas, Konf ([8614f13](https://github.com/webaneid/facport/commit/8614f13))
+* fix(web): admin /invoices & /orders — status badge dipotong dengan titik-titik di layar kecil (semua ([4cf3660](https://github.com/webaneid/facport/commit/4cf3660))
+* fix(web): header — breadcrumb tidak lagi menumpuk ke logo tengah (grid 3 kolom, crumb dibatasi lebar ([3647918](https://github.com/webaneid/facport/commit/3647918))
+* fix(web): Pengaturan AutoProduksi — tiap bagian punya header & tombol sendiri (Buat Akun Baru dipind ([69a29ec](https://github.com/webaneid/facport/commit/69a29ec))
+
 ## <small>2.24.1 (2026-10-04)</small>
 
 * release: merge develop ke main (fix produk paket AutoProduksi di admin & invoice) ([ba05422](https://github.com/webaneid/facport/commit/ba05422))
