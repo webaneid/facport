@@ -1,6 +1,7 @@
 import { db } from "./db";
 import { invoices, invoiceItems, orders } from "../db/schema";
 import { generateInvoiceNumber } from "./invoice-number";
+import { moduleProductLine } from "./module-catalog";
 
 const INVOICE_DUE_DAYS = 3;
 
@@ -64,7 +65,10 @@ export async function createInvoiceAndOrder(
       moduleKey: p.modules[0] ?? "seat_addon",
       // § Fase 117, ADR-0033 — denormalisasi dari plan.productLine, pola
       // sama moduleKey di atas.
-      productLine: p.productLine,
+      // § 2026-10-03 — Produk DITURUNKAN dari modul di katalog (sumber kebenaran tunggal), kolom `plans.product_line`
+      // hanya fallback: kolom itu default "facport" dan terbukti bisa tidak sinkron (paket AutoProduksi berlabel Facport
+      // di admin & invoice). Tanpa ini snapshot invoice ikut salah label.
+      productLine: (p.modules[0] ? moduleProductLine(p.modules[0]) : null) ?? p.productLine,
       label: p.name,
       price: p.price,
       // § Fase 131 — snapshot durasi paket, pola sama label/price di atas.

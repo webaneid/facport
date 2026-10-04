@@ -26,7 +26,7 @@ import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
 import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
 import { plansAvailableForDataUsaha } from "@/lib/available-plans";
-import { PLAN_PRODUCT_FILTERS, countPlansByFilter, filterPlansByProduct, planOptionLabel, sortPlansByCatalog } from "@/lib/classify-plans";
+import { PLAN_PRODUCT_FILTERS, countPlansByFilter, filterPlansByProduct, planOptionLabel, sortPlansByCatalog, summarizeHiddenPlans } from "@/lib/classify-plans";
 
 const PAGE_SIZE = 20;
 
@@ -437,6 +437,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   // § diminta user 2026-10-03 — filter Produk (Facport/Konverter/AutoProduksi/Tambah User) + opsi terurut menurut katalog, supaya paket
   // bernama sama di Facport vs Konverter tidak tertukar (§ lib/classify-plans.ts).
   const planCounts = countPlansByFilter(assignablePlans);
+  const hiddenCounts = countPlansByFilter(hiddenPlans);
   const planOptions = sortPlansByCatalog(filterPlansByProduct(assignablePlans, productFilter)).map((p) => ({ value: p.id, label: planOptionLabel(p) }));
 
   return (
@@ -564,7 +565,11 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                   })}
                 </div>
                 {planOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">Tidak ada paket untuk filter ini.</p>
+                  <p className="text-xs text-muted-foreground">
+                    {(hiddenCounts[productFilter] ?? 0) > 0
+                      ? "Semua paket untuk filter ini sudah aktif di Data Usaha ini — untuk memperpanjang, ubah tanggal expired di detail user."
+                      : "Tidak ada paket untuk filter ini."}
+                  </p>
                 ) : (
                   <Combobox options={planOptions} value={selectedPlanId} onChange={handleSelectPlan} placeholder="(pilih paket — bisa diketik untuk mencari)" />
                 )}
@@ -572,7 +577,8 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
             )}
             {hiddenPlans.length > 0 && (
               <p className="text-xs text-muted-foreground">
-                {hiddenPlans.length} paket disembunyikan karena modulnya sudah aktif di Data Usaha ini. Untuk memperpanjang, ubah tanggal expired di detail user.
+                Disembunyikan karena modulnya sudah aktif di Data Usaha ini: {summarizeHiddenPlans(hiddenPlans).join("; ")}. Untuk memperpanjang, ubah tanggal
+                expired di detail user.
               </p>
             )}
             <label className="flex flex-col gap-1.5">
