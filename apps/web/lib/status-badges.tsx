@@ -1,4 +1,5 @@
 import { Badge, type BadgeProps } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 
 // § ADR-0023 — sumber TUNGGAL label+warna status di seluruh app,
 // menggantikan 6 mapping lokal yang sebelumnya duplikat/beda nama utk
@@ -81,8 +82,11 @@ export function getStatusMeta(domain: StatusDomain, status: string): StatusMeta 
 export function StatusBadge({ domain, status, className }: { domain: StatusDomain; status: string; className?: string }) {
   const meta = getStatusMeta(domain, status);
   return (
-    <Badge variant={meta.variant} className={className}>
-      {meta.label}
+    // § diminta user 2026-10-03 — di layar kecil label status panjang ("Menunggu Verifikasi") melewati batas kolom tabel. Badge sekarang
+    // dibatasi lebar induknya (`max-w-full min-w-0`) dan teksnya dipotong dengan "…" (`truncate`) seperti kolom teks lain; label lengkap
+    // tersedia lewat `title` (hover). Berlaku di SEMUA halaman yang memakai StatusBadge.
+    <Badge variant={meta.variant} className={cn("max-w-full min-w-0", className)} title={meta.label}>
+      <span className="truncate">{meta.label}</span>
     </Badge>
   );
 }

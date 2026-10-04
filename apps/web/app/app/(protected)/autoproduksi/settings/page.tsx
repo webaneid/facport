@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Trash2, Settings as SettingsIcon } from "lucide-react";
+import { Trash2, Settings as SettingsIcon, Landmark } from "lucide-react";
 import { toast } from "sonner";
 import { buttonVariants } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { api } from "@/lib/api-client";
+import { SettingsSectionHeader } from "@/components/autoproduksi/settings-section-header";
 import { ContextDefaultsCard } from "@/components/autoproduksi/context-defaults-card";
 import { IntermediaryAccountFormDialog, type IntermediaryAccount } from "@/components/autoproduksi/intermediary-account-form-dialog";
 
@@ -67,24 +68,29 @@ export default function AutoProduksiSettingsPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">Pengaturan AutoProduksi</h1>
-          <p className="text-sm text-muted-foreground">
-            Default Cabang & Gudang, dan daftar Akun Perantara yang dipakai saat bikin Formula — dikelola sendiri di sini.
-          </p>
-        </div>
-        <IntermediaryAccountFormDialog onSaved={load} />
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Pengaturan AutoProduksi</h1>
+        <p className="text-sm text-muted-foreground">Dua pengaturan yang dipakai saat membuat Formula dan menjalankan Input Produksi.</p>
+        {/* Pintasan ke tiap bagian — tombol aksi ada di dalam kartu masing-masing, bukan di judul halaman ini. */}
+        <nav aria-label="Bagian pengaturan" className="mt-3 flex flex-wrap gap-2 text-xs">
+          <a href="#akun-perantara" className="rounded-full border border-border px-3 py-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            1. Akun Perantara
+          </a>
+          <a href="#default-cabang-gudang" className="rounded-full border border-border px-3 py-1 text-muted-foreground hover:bg-muted hover:text-foreground">
+            2. Default Cabang &amp; Gudang
+          </a>
+        </nav>
       </div>
 
-      <ContextDefaultsCard />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Akun Perantara</CardTitle>
-          <CardDescription>Dipilih saat bikin/edit Formula — bisa juga bikin baru langsung dari form Formula.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      {/* Bagian 1 — Akun Perantara (dipakai saat bikin Formula, jadi di atas). Tombol "Buat Akun Baru" milik bagian ini. */}
+      <Card id="akun-perantara" className="scroll-mt-6">
+        <SettingsSectionHeader
+          icon={Landmark}
+          title="Akun Perantara"
+          description="Akun yang dipakai saat bikin atau edit Formula. Bisa juga bikin baru langsung dari form Formula."
+          action={<IntermediaryAccountFormDialog onSaved={load} />}
+        />
+        <CardContent className="pt-4">
           {!accounts ? (
             <Skeleton className="h-40 w-full" />
           ) : (
@@ -93,11 +99,14 @@ export default function AutoProduksiSettingsPage() {
               data={accounts}
               emptyIcon={SettingsIcon}
               emptyTitle="Belum ada Akun Perantara"
-              emptyDescription='Klik "Buat Akun Baru" untuk tambah akun pertama.'
+              emptyDescription='Klik "Buat Akun Baru" di kanan atas kartu ini untuk menambah akun pertama.'
             />
           )}
         </CardContent>
       </Card>
+
+      {/* Bagian 2 — Default Cabang & Gudang, tombol Simpan ada di dalam kartunya sendiri. */}
+      <ContextDefaultsCard id="default-cabang-gudang" />
     </div>
   );
 }
