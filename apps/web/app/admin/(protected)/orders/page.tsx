@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Eye, CreditCard, Ban } from "lucide-react";
+import { Eye, CreditCard, Ban, Check } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -117,48 +117,51 @@ export default function AdminOrdersPage() {
       columnHelper.accessor((row) => row.invoice.invoiceNumber, {
         id: "invoiceNumber",
         header: "Invoice",
-        meta: { width: "13%" },
-        cell: (ctx) => <span className="font-medium text-foreground">{ctx.getValue()}</span>,
+        meta: { width: "18%" },
+        // § diminta user 2026-10-03 — nomor invoice panjang melewati batas kolom: pakai TruncateText (overflow-hidden) + kolom lebih lebar.
+        cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
       }),
       columnHelper.accessor((row) => row.invoice.billToName, {
         id: "billToName",
         header: "Customer",
-        meta: { width: "18%" },
+        meta: { width: "17%" },
         cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText>,
       }),
+      // § diminta user 2026-10-03 — kode unik tidak ditampilkan terpisah lagi; kolom ini langsung TOTAL yang harus ditransfer
+      // customer (`amountDue`, sudah termasuk kode unik) — angka yang dicocokkan admin dengan mutasi bank.
       columnHelper.display({
         id: "amountDue",
-        header: "Nominal (+kode unik)",
+        header: "Total Bayar",
         meta: { width: "16%" },
-        cell: ({ row }) => (
-          <>
-            {currencyFormatter.format(row.original.amountDue)}
-            <span className="ml-1 text-xs text-muted-foreground">(+{row.original.uniqueCode})</span>
-          </>
-        ),
+        cell: ({ row }) => <TruncateText title="Sudah termasuk kode unik">{currencyFormatter.format(row.original.amountDue)}</TruncateText>,
       }),
       columnHelper.display({
         id: "status",
         header: "Status",
-        meta: { width: "10%" },
-        cell: ({ row }) => <StatusBadge domain="order" status={row.original.status} />,
+        meta: { width: "16%" },
+        // overflow-hidden: badge status yang panjang ("Menunggu Verifikasi") tidak boleh melewati batas kolom.
+        cell: ({ row }) => (
+          <div className="overflow-hidden">
+            <StatusBadge domain="order" status={row.original.status} />
+          </div>
+        ),
       }),
       columnHelper.display({
         id: "method",
         header: "Metode",
-        meta: { width: "12%" },
+        meta: { width: "13%" },
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.method === "qris" ? "QRIS" : row.original.method === "bank_transfer" ? "Transfer Bank" : "-"}</span>,
       }),
       columnHelper.display({
         id: "submittedAt",
         header: "Diupload",
-        meta: { width: "11%" },
+        meta: { width: "12%" },
         cell: ({ row }) => <span className="text-muted-foreground">{row.original.submittedAt ? formatDate(row.original.submittedAt, companyTimezone) : "-"}</span>,
       }),
       columnHelper.display({
         id: "actions",
         header: "Aksi",
-        meta: { width: "180px" },
+        meta: { width: "120px" },
         cell: ({ row }) => {
           const order = row.original;
           const canAct = order.status === "submitted";
@@ -177,9 +180,16 @@ export default function AdminOrdersPage() {
               )}
               {canAct && (
                 <>
-                  <Button onClick={() => handleConfirm(order.id)} disabled={busyId === order.id} className="h-8">
-                    Konfirmasi
-                  </Button>
+                  <button
+                    type="button"
+                    onClick={() => handleConfirm(order.id)}
+                    disabled={busyId === order.id}
+                    title="Konfirmasi Pembayaran"
+                    aria-label={`Konfirmasi pembayaran ${order.invoice.invoiceNumber}`}
+                    className={buttonVariants("ghost", "h-8 w-8 p-0 text-green-700 hover:bg-green-50 disabled:opacity-40")}
+                  >
+                    <Check className="h-4 w-4" />
+                  </button>
                   <button
                     type="button"
                     onClick={() => setRejectingId(order.id)}

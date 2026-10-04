@@ -22,7 +22,6 @@ import { formatDate, currencyFormatter } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { moduleLabel, moduleCategory, productLineLabel } from "@/lib/module-options";
-import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
 
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:6209";
 
@@ -477,34 +476,22 @@ export default function AdminInvoicesPage() {
   const columns = [
     columnHelper.accessor("invoiceNumber", {
       header: "Nomor",
-      meta: { width: "17%" },
+      meta: { width: "22%" },
       cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
     }),
-    columnHelper.accessor("billToName", { header: "Ditagihkan Ke", meta: { width: "15%" }, cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText> }),
-    // § Fase 118 — Data Usaha, supaya admin langsung tahu di layar list
-    // tanpa buka dialog detail (§ ADR-0033). Digabung 1 kolom dengan
-    // "Paket" (2026-09-22, § komentar di atas).
-    columnHelper.display({
-      id: "dataUsahaAndPlan",
-      header: "Data Usaha / Paket",
-      meta: { width: "28%" },
-      cell: ({ row }) => (
-        <div className="flex flex-col gap-0.5">
-          <TruncateText className="text-foreground">{row.original.dataUsahaName ?? "-"}</TruncateText>
-          <TruncateText className="text-xs text-muted-foreground">{groupInvoiceItemLabels(row.original.items) || "-"}</TruncateText>
-        </div>
-      ),
-    }),
-    columnHelper.accessor("total", { header: "Total", meta: { width: "14%" }, cell: (ctx) => <TruncateText>{currencyFormatter.format(ctx.getValue())}</TruncateText> }),
+    columnHelper.accessor("billToName", { header: "Ditagihkan Ke", meta: { width: "26%" }, cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText> }),
+    // § diminta user 2026-10-03 — kolom "Data Usaha / Paket" DIHAPUS dari tabel list (terlalu padat). Data Usaha & rincian paket tetap
+    // ada lengkap di dialog "Detail Invoice" (ikon mata di kolom Aksi); lebar kolom lain dilonggarkan.
+    columnHelper.accessor("total", { header: "Total", meta: { width: "17%" }, cell: (ctx) => <TruncateText>{currencyFormatter.format(ctx.getValue())}</TruncateText> }),
     columnHelper.accessor("dueDate", {
       header: "Jatuh Tempo",
-      meta: { width: "11%" },
+      meta: { width: "16%" },
       cell: (ctx) => <TruncateText className="text-muted-foreground">{formatDate(ctx.getValue(), companyTimezone)}</TruncateText>,
     }),
     columnHelper.display({
       id: "status",
       header: "Status",
-      meta: { width: "8%" },
+      meta: { width: "13%" },
       cell: ({ row }) => <StatusBadge domain="invoice" status={row.original.status} />,
     }),
     columnHelper.display({
