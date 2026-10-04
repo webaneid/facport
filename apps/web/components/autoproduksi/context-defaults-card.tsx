@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Warehouse } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
@@ -11,6 +12,7 @@ import { warehouseComboboxOptions } from "@/lib/accurate-combobox-options";
 import { searchAccurateWarehouses, type AccurateWarehouseResult } from "@/lib/accurate-warehouse-search";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { SearchableField } from "@/components/autoproduksi/searchable-accurate-field";
+import { SettingsSectionHeader } from "@/components/autoproduksi/settings-section-header";
 
 // § diminta client 2026-10-03 — default Cabang/Gudang untuk Input Produksi yang
 // DIKOSONGKAN (manual maupun Excel). Accurate tidak punya "cabang pusat"/"gudang
@@ -18,7 +20,7 @@ import { SearchableField } from "@/components/autoproduksi/searchable-accurate-f
 // sini (§ `autoproduksi_defaults`). Kosong semua = perilaku lama (field tidak dikirim).
 type Defaults = { branchName: string | null; warehouseName: string | null; rawMaterialWarehouseName: string | null };
 
-export function ContextDefaultsCard() {
+export function ContextDefaultsCard({ id }: { id?: string }) {
   const [loaded, setLoaded] = useState(false);
   const [branchName, setBranchName] = useState("");
   const [warehouseName, setWarehouseName] = useState("");
@@ -59,15 +61,13 @@ export function ContextDefaultsCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Default Cabang &amp; Gudang</CardTitle>
-        <CardDescription>
-          Dipakai otomatis kalau Cabang/Gudang dikosongkan saat Input Produksi atau Import Produksi (Excel). Yang diisi langsung di transaksi tetap
-          didahulukan. Kosongkan semua kalau tidak mau memakai default.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="flex max-w-lg flex-col gap-4">
+    <Card id={id} className="scroll-mt-6">
+      <SettingsSectionHeader
+        icon={Warehouse}
+        title="Default Cabang & Gudang"
+        description="Dipakai otomatis kalau Cabang/Gudang dikosongkan saat Input Produksi atau Import Produksi (Excel). Yang diisi langsung di transaksi tetap didahulukan."
+      />
+      <CardContent className="flex max-w-lg flex-col gap-4 pt-4">
         {!loaded ? (
           <Skeleton className="h-40 w-full" />
         ) : (
