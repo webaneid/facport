@@ -497,7 +497,7 @@ export default function AdminInvoicesPage() {
     columnHelper.display({
       id: "actions",
       header: "Aksi",
-      meta: { width: "112px" },
+      meta: { width: "144px" },
       cell: ({ row }) => {
         const invoice = row.original;
         return (

@@ -139,29 +139,29 @@ export default function AdminOrdersPage() {
         id: "status",
         header: "Status",
         meta: { width: "16%" },
-        // overflow-hidden: badge status yang panjang ("Menunggu Verifikasi") tidak boleh melewati batas kolom.
-        cell: ({ row }) => (
-          <div className="overflow-hidden">
-            <StatusBadge domain="order" status={row.original.status} />
-          </div>
-        ),
+        // StatusBadge sendiri memotong label panjang dengan "…" di batas kolom (§ lib/status-badges.tsx).
+        cell: ({ row }) => <StatusBadge domain="order" status={row.original.status} />,
       }),
       columnHelper.display({
         id: "method",
         header: "Metode",
         meta: { width: "13%" },
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.method === "qris" ? "QRIS" : row.original.method === "bank_transfer" ? "Transfer Bank" : "-"}</span>,
+        cell: ({ row }) => (
+          <TruncateText className="text-muted-foreground">{row.original.method === "qris" ? "QRIS" : row.original.method === "bank_transfer" ? "Transfer Bank" : "-"}</TruncateText>
+        ),
       }),
       columnHelper.display({
         id: "submittedAt",
         header: "Diupload",
         meta: { width: "12%" },
-        cell: ({ row }) => <span className="text-muted-foreground">{row.original.submittedAt ? formatDate(row.original.submittedAt, companyTimezone) : "-"}</span>,
+        cell: ({ row }) => (
+          <TruncateText className="text-muted-foreground">{row.original.submittedAt ? formatDate(row.original.submittedAt, companyTimezone) : "-"}</TruncateText>
+        ),
       }),
       columnHelper.display({
         id: "actions",
         header: "Aksi",
-        meta: { width: "120px" },
+        meta: { width: "144px" },
         cell: ({ row }) => {
           const order = row.original;
           const canAct = order.status === "submitted";
