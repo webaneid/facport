@@ -76,49 +76,47 @@ export function Topbar({
 
   return (
     <header className="sticky top-0 z-30 border-b border-admin-line bg-admin-panel backdrop-blur-xl">
-      <div className="relative flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
+      {/* § diminta user 2026-10-03 — di layar md+ header memakai GRID 3 kolom `minmax(0,1fr) auto minmax(0,1fr)` (kiri | logo | kanan),
+          BUKAN logo `absolute` di atas segalanya seperti sebelumnya: kolom kiri/kanan sama lebar (logo tetap tepat di tengah) dan
+          isinya dipotong di batas kolom sendiri, jadi breadcrumb panjang (ID user/invoice) tidak bisa menumpuk ke logo. Di bawah md
+          (logo disembunyikan) tetap flex biasa. */}
+      <div className={`flex items-center justify-between gap-4 px-4 py-3 sm:px-6 ${headerLogoUrl ? "md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]" : ""}`}>
         <div className="flex min-w-0 items-center gap-2">
-          <Button variant="ghost" className="px-2 lg:hidden" onClick={onMenuClick} aria-label="Buka menu">
+          <Button variant="ghost" className="shrink-0 px-2 lg:hidden" onClick={onMenuClick} aria-label="Buka menu">
             <Menu className="h-5 w-5" />
           </Button>
           <Breadcrumbs surface={surface} />
         </div>
 
         {headerLogoUrl && (
-          <div className="pointer-events-none absolute inset-0 hidden items-center justify-center md:flex">
+          <div className="hidden items-center justify-center md:flex">
             {headerLogoLinkUrl ? (
-              <a
-                href={headerLogoLinkUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="pointer-events-auto"
-                title="Kunjungi situs perusahaan"
-              >
+              <a href={headerLogoLinkUrl} target="_blank" rel="noopener noreferrer" title="Kunjungi situs perusahaan">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={headerLogoUrl} alt="Logo Perusahaan" className="h-8 w-auto object-contain" />
+                <img src={headerLogoUrl} alt="Logo Perusahaan" className="h-8 w-auto max-w-[12rem] object-contain" />
               </a>
             ) : (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={headerLogoUrl} alt="Logo Perusahaan" className="pointer-events-auto h-8 w-auto object-contain" />
+              <img src={headerLogoUrl} alt="Logo Perusahaan" className="h-8 w-auto max-w-[12rem] object-contain" />
             )}
           </div>
         )}
 
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 items-center justify-end gap-2 md:justify-self-end">
           <NotificationBell surface={surface} />
 
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2.5 rounded-full outline-none">
+              <button className="flex min-w-0 items-center gap-2.5 rounded-full outline-none">
                 {activeDataUsahaName && (
-                  <span className="hidden text-right sm:block">
-                    <span className="block max-w-[14rem] truncate text-sm font-medium leading-tight text-admin-ink">
+                  <span className="hidden min-w-0 text-right sm:block">
+                    <span className="block max-w-[14rem] truncate text-sm font-medium leading-tight text-admin-ink" title={activeDataUsahaName}>
                       {activeDataUsahaName}
                     </span>
                     <span className="block text-xs leading-tight text-admin-muted">Data Usaha Aktif</span>
                   </span>
                 )}
-                <Avatar>
+                <Avatar className="shrink-0">
                   <AvatarFallback>{getInitials(user.name, user.email)}</AvatarFallback>
                 </Avatar>
               </button>
