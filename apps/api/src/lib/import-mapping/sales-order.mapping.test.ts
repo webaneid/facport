@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import type { SalesQuotationLine } from "../accurate-sales-quotation";
+import type { SalesQuotationDetail, SalesQuotationLine } from "../accurate-sales-quotation";
 import {
   buildSalesOrderPayload,
   buildDetailItemFromRow,
@@ -421,7 +421,7 @@ describe("Fase 169 — baris perluasan Sales Quotation", () => {
   test("expandQuotationRowsInPayload: 1 baris → semua baris penawaran; kolom lain berlaku ke SEMUA baris hasil; tiap baris membawa Sales Quot No", async () => {
     const rawRows = [{ ...header, "Sales Quot No": "SQ-1", "Item Dept": "Penjualan", PPN: "Y" }];
     const payload = buildSalesOrderPayload(rawRows, mapping);
-    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => quotation);
+    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => ({ header: {}, lines: quotation, expenses: [] }));
     expect(payload.detailItem).toEqual([
       { salesQuotationNumber: "SQ-1", departmentName: "Penjualan", useTax1: true, itemNo: "A-1", unitPrice: 5000, quantity: 10, itemUnitName: "PCS", detailName: "Barang A", detailNotes: "catatan A" },
       { salesQuotationNumber: "SQ-1", departmentName: "Penjualan", useTax1: true, itemNo: "B-2", unitPrice: 7500, quantity: 3, itemUnitName: "KG" },
@@ -434,7 +434,7 @@ describe("Fase 169 — baris perluasan Sales Quotation", () => {
     let fetched = 0;
     await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => {
       fetched++;
-      return quotation;
+      return { header: {}, lines: quotation, expenses: [] };
     });
     expect(fetched).toBe(0);
     expect(payload.detailItem).toEqual([{ salesQuotationNumber: "SQ-1", itemNo: "A-1", unitPrice: 5000, quantity: 5, itemUnitName: "PCS" }]);
@@ -450,10 +450,76 @@ describe("Fase 169 — baris perluasan Sales Quotation", () => {
     let fetched = 0;
     await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => {
       fetched++;
-      return quotation;
+      return { header: {}, lines: quotation, expenses: [] };
     });
     expect(fetched).toBe(1);
     expect((payload.detailItem as Record<string, unknown>[]).map((d) => d.itemNo)).toEqual(["Z-9", "A-1", "B-2", "A-1", "B-2"]);
+  });
+
+  // § Fase 172 — header/atribut baris/Beban ikut ditarik; isian Excel menang.
+  const richQuotation: SalesQuotationDetail = {
+    header: { paymentTermName: "net 30", toAddress: "Jl. Mawar 1", description: "Penawaran Q3", cashDiscount: 1000, cashDiscPercent: "5", currencyCode: "IDR" },
+    lines: [
+      { itemNo: "A-1", itemName: "Barang A", unitPrice: 5000, quantity: 10, unitName: "PCS", notes: null, itemCashDiscount: 250, itemDiscPercent: "2", departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], useTax1: true, useTax3: false },
+      { itemNo: "B-2", itemName: null, unitPrice: 7500, quantity: 3, unitName: "KG", notes: null },
+    ],
+    expenses: [{ accountNo: "6101", expenseName: "Ongkir", expenseAmount: 15000, expenseNotes: "kirim" }],
+  };
+  const richMapping: Record<string, string> = {
+    ...mapping,
+    "Pay Term Name": "paymentTermName",
+    "To Address": "toAddress",
+    "Currency Code": "currencyCode",
+    "Cash Discount": "cashDiscount",
+    "Item Project No": "projectNo",
+    "Item Disc Percent": "itemDiscPercent",
+    "Expense Acc No": "expenseAccountNo",
+    "Expense Amount": "expenseAmount",
+  };
+
+  test("Fase 172: kolom header, diskon/dept/proyek/penjual/PPN/PPh baris kosong → diisi dari penawaran; baris tanpa data itu tidak dikarang", async () => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-1" }];
+    const payload = buildSalesOrderPayload(rawRows, richMapping);
+    await expandQuotationRowsInPayload(payload, rawRows, richMapping, async () => richQuotation);
+    expect(payload).toMatchObject({ paymentTermName: "net 30", toAddress: "Jl. Mawar 1", description: "Penawaran Q3", cashDiscount: 1000, cashDiscPercent: "5", currencyCode: "IDR" }) // fixture langsung (parser yang memilih salah satu);
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items[0]).toMatchObject({ itemCashDiscount: 250, itemDiscPercent: "2", departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], useTax1: true, useTax3: false });
+    expect(Object.keys(items[1]!)).not.toContain("departmentName");
+    expect(Object.keys(items[1]!)).not.toContain("useTax1");
+  });
+
+  test("Fase 172: isian Excel MENANG atas penawaran (header, atribut baris, dan Beban)", async () => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-1", "Pay Term Name": "cash", Description: "dari excel", "Item Dept": "Gudang", "Item Project No": "PRJ-9", PPN: "N", "Expense Acc No": "7000", "Expense Amount": 1 }];
+    const payload = buildSalesOrderPayload(rawRows, richMapping);
+    await expandQuotationRowsInPayload(payload, rawRows, richMapping, async () => richQuotation);
+    expect(payload.paymentTermName).toBe("cash");
+    expect(payload.description).toBe("dari excel");
+    expect(payload.toAddress).toBe("Jl. Mawar 1"); // yang kosong tetap ditarik
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items[0]).toMatchObject({ departmentName: "Gudang", projectNo: "PRJ-9", useTax1: false });
+    // Excel punya baris Beban → Beban penawaran TIDAK ditarik (tidak digandakan)
+    expect(payload.detailExpense).toEqual([{ accountNo: "7000", expenseAmount: 1 }]);
+  });
+
+  test("Fase 172: Beban penawaran ditarik bila Excel tidak punya Beban; membawa nomor penawaran; dua penawaran → Beban keduanya", async () => {
+    const rawRows = [
+      { ...header, "Sales Quot No": "SQ-1" },
+      { ...header, "Sales Quot No": "SQ-2" },
+    ];
+    const payload = buildSalesOrderPayload(rawRows, richMapping);
+    await expandQuotationRowsInPayload(payload, rawRows, richMapping, async () => richQuotation);
+    expect(payload.detailExpense).toEqual([
+      { accountNo: "6101", expenseAmount: 15000, salesQuotationNumber: "SQ-1", expenseName: "Ongkir", expenseNotes: "kirim" },
+      { accountNo: "6101", expenseAmount: 15000, salesQuotationNumber: "SQ-2", expenseName: "Ongkir", expenseNotes: "kirim" },
+    ]);
+  });
+
+  test("Fase 172: tanpa baris perluasan header & Beban tidak disentuh", async () => {
+    const rawRows = [{ ...header, "Item No": "Z-9", "Item Price": 100, Qty: 1, "Unit Name": "PCS" }];
+    const payload = buildSalesOrderPayload(rawRows, richMapping);
+    await expandQuotationRowsInPayload(payload, rawRows, richMapping, async () => richQuotation);
+    expect(payload.paymentTermName).toBeUndefined();
+    expect(payload.detailExpense).toBeUndefined();
   });
 
   test("penawaran tidak ketemu/tidak terbaca → error dari fetcher diteruskan apa adanya (baris gagal dengan pesan jelas)", async () => {

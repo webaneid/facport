@@ -173,7 +173,7 @@ import {
 // auto-create customer+item (mirror Purchase Order's create-only
 // pattern, TANPA findExisting/append seperti Sales Invoice — tidak ada
 // dampak GL/stok, 2 quotation nominal sama bukan duplikat).
-import { saveSalesQuotation, getSalesQuotationLinesByNumber } from "../lib/accurate-sales-quotation";
+import { saveSalesQuotation, getSalesQuotationByNumber } from "../lib/accurate-sales-quotation";
 import {
   buildSalesQuotationPayload,
   groupSalesQuotationRows,
@@ -1414,7 +1414,7 @@ export async function processSalesOrderGroup(
   // § Fase 169 — baris dengan "Sales Quot No" terisi dan kolom item kosong diperluas dari isi penawaran di Accurate (gagal jelas kalau
   // penawaran tidak ketemu/tidak terbaca — tidak pernah mengirim baris setengah). Barang hasil perluasan sudah ada di Accurate, jadi
   // loop auto-create item di bawah (berbasis kolom Excel) otomatis melewatinya.
-  await expandQuotationRowsInPayload(payload, rawRows, columnMapping, (number) => getSalesQuotationLinesByNumber(ctx, number));
+  await expandQuotationRowsInPayload(payload, rawRows, columnMapping, (number) => getSalesQuotationByNumber(ctx, number));
 
   const customerNo = String(payload.customerNo ?? "");
   if (customerNo) {
