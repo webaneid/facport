@@ -41,7 +41,8 @@ import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
-import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
+import { fillReturnPricesFromInvoice } from "../lib/import-mapping/return-from-invoice";
+import { savePurchaseInvoice, getPurchaseInvoiceDetail, getPurchaseInvoiceLinesByNumber, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
 import { deleteAccurateDocument, GENERIC_CANCELLABLE_MODULES } from "../lib/accurate-generic-delete";
 import {
   buildPurchaseInvoicePayload,
@@ -113,7 +114,7 @@ import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guar
 // baik dari abstraksi prematur"). `ImportRowRecord` TIDAK diimpor ulang
 // dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
 // impor di atas, reuse type yang sama.
-import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
+import { saveSalesInvoice, getSalesInvoiceDetail, getSalesInvoiceLinesByNumber, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
@@ -1338,6 +1339,8 @@ export async function processPurchaseReturnGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildPurchaseReturnPayload(rawRows, columnMapping);
+  // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Pembelian asal, termasuk diskon baris; tipe lain → error jelas.
+  await fillReturnPricesFromInvoice(payload, (number) => getPurchaseInvoiceLinesByNumber(ctx, number));
 
   await ensurePurchaseReturnDataClassifications(ctx, rawRows, columnMapping);
 
@@ -1464,6 +1467,8 @@ export async function processSalesReturnGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesReturnPayload(rawRows, columnMapping);
+  // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Penjualan asal, termasuk diskon baris; tipe lain → error jelas.
+  await fillReturnPricesFromInvoice(payload, (number) => getSalesInvoiceLinesByNumber(ctx, number));
 
   await ensureSalesReturnDataClassifications(ctx, rawRows, columnMapping);
 

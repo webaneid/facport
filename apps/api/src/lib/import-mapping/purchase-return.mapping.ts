@@ -24,6 +24,8 @@
 export const RETURN_TYPES = ["INVOICE", "INVOICE_DP", "RECEIVE", "NO_INVOICE"] as const;
 export type PurchaseReturnType = (typeof RETURN_TYPES)[number];
 
+import { missingRequiredFieldsForReturnRow } from "./return-from-invoice";
+
 export const purchaseReturnMapping = {
   requiredFields: ["vendorNo", "transDate", "taxDate", "taxNumber", "returnType", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
   fieldToAccuratePath: {
@@ -51,6 +53,10 @@ export const purchaseReturnMapping = {
     // detailItem — TIDAK ADA warehouseName (dikonfirmasi tidak ada di API).
     itemNo: "detailItem.itemNo",
     unitPrice: "detailItem.unitPrice",
+    // § Fase 170 — diskon baris (field API sudah ada di spec `purchase-return/save.do`, belum pernah dipetakan): dibutuhkan agar diskon baris
+    // faktur asal ikut disalin saat Unit Price diisi otomatis dari faktur (§ return-from-invoice.ts).
+    itemCashDiscount: "detailItem.itemCashDiscount",
+    itemDiscPercent: "detailItem.itemDiscPercent",
     quantity: "detailItem.quantity",
     itemUnitName: "detailItem.itemUnitName",
     itemName: "detailItem.detailName",
@@ -202,6 +208,11 @@ export const purchaseReturnMapping = {
     // satuan — urutan kolom diatur di `purchaseReturnTemplateGuide`
     // (template-guide.ts), BUKAN di sini (urutan key di map ini tidak berpengaruh).
     "Unit Price": "unitPrice",
+    // § Fase 170 — nama utama = keluarga Return (Sales Return: "Item Cash Discount"/"Item Cash Disc Percent"); nama Purchase Invoice sebagai alias.
+    "Item Cash Discount": "itemCashDiscount",
+    "Item Cash Disc Percent": "itemDiscPercent",
+    "Item Cash Disc": "itemCashDiscount",
+    "Item Disc (%)": "itemDiscPercent",
   } as Record<string, string>,
 };
 
@@ -211,7 +222,7 @@ const DATE_FIELDS = new Set<PurchaseReturnField>(["transDate", "taxDate", "attri
 const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 const BOOLEAN_FIELDS = new Set<PurchaseReturnField>(["taxable", "inclusiveTax"]);
 const TRUE_TEXT_VALUES = new Set(["true", "y", "yes", "1", "ya"]);
-const PERCENT_STRING_FIELDS = new Set<PurchaseReturnField>(["cashDiscPercent"]);
+const PERCENT_STRING_FIELDS = new Set<PurchaseReturnField>(["cashDiscPercent", "itemDiscPercent"]);
 
 function toAccurateBoolean(value: unknown): unknown {
   if (typeof value === "boolean") return value;
@@ -393,4 +404,11 @@ export function extractExpenseDataClassificationValues(rawRow: Record<string, un
     if (name !== "") result.push({ index, name });
   }
   return result;
+}
+
+// § Fase 170 — validasi "wajib" per baris: "Unit Price" dikecualikan untuk baris retur-faktur (INVOICE/INVOICE_DP + Invoice No terisi), harganya
+// diisi dari faktur asal saat dikirim. Aturan SAMA dipakai API (edit baris) dan web (dialog/grid) lewat fungsi ini.
+export { isInvoiceReturnRow } from "./return-from-invoice";
+export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
+  return missingRequiredFieldsForReturnRow(purchaseReturnMapping.requiredFields, rawRow, columnMapping);
 }

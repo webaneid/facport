@@ -1,5 +1,6 @@
-import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
+import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFound } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
+import { parseInvoiceLines, type InvoiceLine } from "./import-mapping/return-from-invoice";
 import type { AccurateSessionContext } from "./accurate-session";
 
 // § architecture-accurate-integration.md § 3 — Purchase Invoice VERIFIED.
@@ -101,5 +102,24 @@ export async function deletePurchaseInvoice(ctx: AccurateSessionContext, id: num
       },
     });
     await parseAccurateEnvelope<unknown>(res);
+  });
+}
+
+// § Fase 170 — baris Faktur Pembelian untuk mengisi harga/diskon retur (§ import-mapping/return-from-invoice.ts). `detail.do` mendukung param `number`.
+// Nama field mengikuti `getXxxInvoiceDetail` di atas (`item.no`, `unitPrice`, `quantity` — dipakai di produksi untuk "tambah ke faktur") + `itemDiscPercent`/
+// `itemCashDiscount` (nama sama dengan field save.do). ⚠️ Respons diskon belum diverifikasi dengan respons asli — parser KETAT (tidak pernah harga 0 diam-diam).
+export async function getPurchaseInvoiceLinesByNumber(ctx: AccurateSessionContext, number: string): Promise<InvoiceLine[]> {
+  return withAccurateRateLimit(async () => {
+    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ number })}`, {
+      headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
+    });
+    let raw: Parameters<typeof parseInvoiceLines>[0];
+    try {
+      raw = await parseAccurateEnvelope<NonNullable<Parameters<typeof parseInvoiceLines>[0]>>(res);
+    } catch (err) {
+      if (isAccurateRecordNotFound(err)) throw new Error(`Faktur Pembelian "${number}" tidak ditemukan di Accurate — cek kolom "Invoice No".`);
+      throw err;
+    }
+    return parseInvoiceLines(raw, number);
   });
 }

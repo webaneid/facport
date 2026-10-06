@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { isInvoiceReturnRow } from "@/lib/return-price-from-invoice";
 
 // § mirror `components/purchase-return/edit-row-dialog.tsx` — modul ini
 // juga create-only, grouping DEFAULT ADR-0011 by "Retur No" (opsional).
@@ -92,8 +93,11 @@ export function EditRowDialog({
     if (error) scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [error]);
 
+  // § Fase 170 — baris retur-faktur (INVOICE/INVOICE_DP + Invoice No terisi) tidak diwajibkan mengisi Unit Price: harga (dan diskon baris) diambil
+  // dari faktur asal saat dikirim. Aturan SAMA dengan server (`missingRequiredFieldsForRow`).
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    const priceFromInvoice = isInvoiceReturnRow(vals, columnMapping);
+    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === "" && !(priceFromInvoice && columnMapping[col] === "unitPrice")));
   }
 
   function openDialog() {

@@ -86,12 +86,14 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   },
   purchase_order: { endpoints: ["POST purchase-order/save.do", "DELETE purchase-order/delete.do", ...VENDOR, ...ITEM, ...CLASSIFICATION] },
   receive_item: { endpoints: ["POST receive-item/save.do", "DELETE receive-item/delete.do", ...CLASSIFICATION] },
-  purchase_return: { endpoints: ["POST purchase-return/save.do", "DELETE purchase-return/delete.do", ...CLASSIFICATION] },
+  // § Fase 170 — `GET purchase-invoice/detail.do` BARU: Unit Price (dan diskon baris) retur diambil dari faktur asal bila dikosongkan.
+  purchase_return: { endpoints: ["POST purchase-return/save.do", "DELETE purchase-return/delete.do", "GET purchase-invoice/detail.do", ...CLASSIFICATION] },
   sales_quotation: { endpoints: ["POST sales-quotation/save.do", "DELETE sales-quotation/delete.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
   // § Fase 169 — `GET sales-quotation/detail.do` BARU: baris Sales Order dengan "Sales Quot No" terisi dan kolom item kosong diperluas dari
   // isi penawaran (§ architecture-sales-order.md § Fase 169). Scope `sales_quotation_view` WAJIB (keputusan user, bukan opsional).
   sales_order: { endpoints: ["POST sales-order/save.do", "DELETE sales-order/delete.do", "GET sales-quotation/detail.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },
-  sales_return: { endpoints: ["POST sales-return/save.do", "DELETE sales-return/delete.do", ...CLASSIFICATION] },
+  // § Fase 170 — `GET sales-invoice/detail.do` BARU: Unit Price (dan diskon baris) retur diambil dari faktur asal bila dikosongkan.
+  sales_return: { endpoints: ["POST sales-return/save.do", "DELETE sales-return/delete.do", "GET sales-invoice/detail.do", ...CLASSIFICATION] },
   // § Fase 157 — Delivery Order: TIDAK auto-create customer/item (mirror `receive_item`,
   // dokumen fulfillment lanjutan — customerNo/itemNo dikirim apa adanya).
   // § Fase 158 — `GET sales-order/detail.do` ditambah untuk auto-resolve `salesOrderDetailId`

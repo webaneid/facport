@@ -843,7 +843,7 @@ export const receiveItemTemplateGuide: TemplateFieldGuide[] = [
 export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Date", required: true, format: DATE_FORMAT, example: "15/09/2026", description: "Tanggal transaksi Purchase Return." },
   { column: "TransNo", required: false, example: "", description: "Nomor transaksi INTERNAL Accurate — opsional, sekaligus kunci penggabungan baris kalau diisi (isi SAMA di beberapa baris untuk 1 retur berisi banyak barang). Kosongkan untuk auto-number, tiap baris jadi retur sendiri-sendiri." },
-  { column: "Invoice No", required: false, example: "", description: "Nomor Faktur Pembelian yang diretur — WAJIB diisi kalau \"Return Type\" = INVOICE atau INVOICE_DP." },
+  { column: "Invoice No", required: false, example: "", description: "Nomor Faktur Pembelian yang diretur — WAJIB diisi kalau \"Return Type\" = INVOICE atau INVOICE_DP. Juga menjadi sumber harga & diskon baris kalau \"Unit Price\" dikosongkan (butuh izin Accurate \"baca Faktur Pembelian\", diminta sekali saat Hubungkan/Perbarui Izin)." },
   { column: "Receive Item No", required: false, example: "", description: "Nomor Receive Item yang diretur — WAJIB diisi kalau \"Return Type\" = RECEIVE." },
   { column: "Vendor No", required: true, example: "V.0001", description: "Nomor/kode vendor PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
   { column: "Return Type", required: true, example: "NO_INVOICE", description: "Jenis retur — isi salah satu: INVOICE (retur ke Faktur Pembelian), INVOICE_DP (retur ke Faktur Pembelian Uang Muka), RECEIVE (retur ke Receive Item), atau NO_INVOICE (retur tanpa acuan dokumen)." },
@@ -866,7 +866,9 @@ export const purchaseReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
   { column: "Item Qty", required: true, example: "5", description: "Jumlah barang yang diretur." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
-  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client; posisi dekat kolom satuan)." },
+  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur (posisi dekat kolom satuan). WAJIB diisi KECUALI Return Type = INVOICE/INVOICE_DP dengan \"Invoice No\" terisi: kosongkan kolom ini untuk mengambil harga DAN diskon baris dari faktur asal di Accurate (barang dicocokkan lewat Item No; gagal jelas kalau barang tidak ada di faktur, atau muncul beberapa kali dengan harga/diskon berbeda). Untuk Return Type lain (DELIVERY/RECEIVE/NO_INVOICE) harga WAJIB diisi manual. Kalau diisi, nilai Anda dipakai apa adanya. Diskon baris faktur ikut disalin hanya kalau kolom diskon di bawah juga kosong (diskon nominal dihitung proporsional dengan qty retur)." },
+  { column: "Item Cash Discount", required: false, example: "", description: "Diskon nominal untuk baris barang ini (untuk qty penuh baris). Kosongkan kalau tidak ada; kalau \"Unit Price\" dikosongkan dan Return Type INVOICE/INVOICE_DP, diisi otomatis dari faktur asal." },
+  { column: "Item Cash Disc Percent", required: false, example: "", description: "Diskon persen untuk baris barang ini (mendukung bertingkat, mis. \"5 + 2\"). Kosongkan kalau tidak ada; kalau \"Unit Price\" dikosongkan dan Return Type INVOICE/INVOICE_DP, diisi otomatis dari faktur asal." },
   { column: "Item Notes", required: false, example: "", description: "Catatan untuk baris barang ini." },
   { column: "Item Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
@@ -1080,7 +1082,7 @@ export const salesOrderTemplateGuide: TemplateFieldGuide[] = [
 // auto-create customer/item.
 export const salesReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Transaction Date", required: true, format: DATE_FORMAT, example: "15/09/2026", description: "Tanggal transaksi Sales Return." },
-  { column: "Invoice No", required: false, example: "", description: "Nomor Faktur Penjualan yang diretur — WAJIB diisi kalau \"Return Type\" = INVOICE atau INVOICE_DP." },
+  { column: "Invoice No", required: false, example: "", description: "Nomor Faktur Penjualan yang diretur — WAJIB diisi kalau \"Return Type\" = INVOICE atau INVOICE_DP. Juga menjadi sumber harga & diskon baris kalau \"Item Unit Price\" dikosongkan (butuh izin Accurate \"baca Faktur Penjualan\", diminta sekali saat Hubungkan/Perbarui Izin)." },
   { column: "Retur No", required: false, example: "", description: "Nomor transaksi INTERNAL Accurate — opsional, sekaligus kunci penggabungan baris kalau diisi. Kosongkan untuk auto-number." },
   { column: "Customer No", required: true, example: "C.0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
   { column: "Return Type", required: true, example: "NO_INVOICE", description: "Jenis retur — isi salah satu: DELIVERY (retur ke Delivery Order), INVOICE (retur ke Faktur Penjualan), INVOICE_DP (retur ke Faktur Penjualan Uang Muka), atau NO_INVOICE (retur tanpa acuan dokumen)." },
@@ -1108,7 +1110,7 @@ export const salesReturnTemplateGuide: TemplateFieldGuide[] = [
   { column: "Header - DF2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 2, sama catatan di atas." },
   { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
   { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
-  { column: "Item Unit Price", required: true, example: "50000", description: "Harga satuan barang." },
+  { column: "Item Unit Price", required: true, example: "50000", description: "Harga satuan barang yang diretur. WAJIB diisi KECUALI Return Type = INVOICE/INVOICE_DP dengan \"Invoice No\" terisi: kosongkan kolom ini untuk mengambil harga DAN diskon baris dari faktur asal di Accurate (barang dicocokkan lewat Item No; gagal jelas kalau barang tidak ada di faktur, atau muncul beberapa kali dengan harga/diskon berbeda). Untuk Return Type lain (DELIVERY/RECEIVE/NO_INVOICE) harga WAJIB diisi manual. Kalau diisi, nilai Anda dipakai apa adanya. Diskon baris faktur ikut disalin hanya kalau kolom diskon di bawah juga kosong (diskon nominal dihitung proporsional dengan qty retur)." },
   { column: "Item Qty", required: true, example: "5", description: "Jumlah barang yang diretur." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "Item Note", required: false, example: "", description: "Catatan untuk baris barang ini." },
