@@ -228,8 +228,8 @@ export const salesInvoiceMapping = {
   } as const,
   defaultColumnMap: {
     // § diminta client 2026-10-06 (template Rev1) — nama kolom DIUBAH mengikuti referensi mereka (lihat `salesInvoiceTemplateGuide`). Nama LAMA
-    // (di bawah tiap pasangan) TETAP diterima sebagai alias supaya file Excel lama client masih ter-map otomatis. "Item Item Dept" = tulisan di
-    // referensi client (kemungkinan salah ketik "Item Dept"); keduanya diterima.
+    // (di bawah tiap pasangan) TETAP diterima sebagai alias supaya file Excel lama client masih ter-map otomatis. "Item Item Dept" ditulis
+    // PERSIS begitu di referensi client dan memang yang mereka inginkan (dikonfirmasi 2026-10-06); "Item Dept" tetap diterima sebagai alias.
     "Trans Date": "transDate",
     Tanggal: "transDate",
     // § Fase 77 (2026-09-09) — "PO No" jadi judul kolom BARU/UTAMA (client
@@ -277,8 +277,8 @@ export const salesInvoiceMapping = {
     "Item Cash Disc": "itemCashDiscount",
     "Item Cash Disc Percent": "itemDiscPercent",
     "Item Disc (%)": "itemDiscPercent",
+    "Item Item Dept": "departmentName", // nama di template Rev1 — penulisan "Item" dua kali ADALAH kemauan client (bukan salah ketik)
     "Item Dept": "departmentName",
-    "Item Item Dept": "departmentName",
     "Item - Department": "departmentName",
     "Item Project No": "projectNo",
     "Item Prj No": "projectNo",

@@ -219,7 +219,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Notes", required: false, example: "", description: "Catatan khusus untuk baris barang ini." },
   { column: "Item Cash Discount", required: false, example: "0", description: "Nominal diskon tunai khusus barang ini (Rupiah)." },
   { column: "Item Cash Disc Percent", required: false, example: "0", description: "Persentase diskon khusus barang ini." },
-  { column: "Item Dept", required: false, example: "", description: "Nama departemen (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Item Item Dept", required: false, example: "", description: "Nama departemen (kalau akun Accurate pakai tracking departemen)." },
   { column: "Item Project No", required: false, example: "", description: "Nomor proyek (kalau akun Accurate pakai tracking proyek)." },
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },

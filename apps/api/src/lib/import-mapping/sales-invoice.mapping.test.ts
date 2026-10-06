@@ -912,7 +912,7 @@ describe("Template Sales Invoice — nama kolom Rev1 (nama baru) + alias nama la
     ["Unit Price", "Item Unit Price", "unitPrice"],
     ["Item Cash Disc", "Item Cash Discount", "itemCashDiscount"],
     ["Item Disc (%)", "Item Cash Disc Percent", "itemDiscPercent"],
-    ["Item - Department", "Item Dept", "departmentName"],
+    ["Item - Department", "Item Item Dept", "departmentName"],
     ["Item Prj No", "Item Project No", "projectNo"],
     ["ITEM: ID Salesman", "Salesman No", "salesmanListNumber"],
     ["Akun Piutang", "Account Receivable", "customerReceivableAccountListNo"],
@@ -923,7 +923,7 @@ describe("Template Sales Invoice — nama kolom Rev1 (nama baru) + alias nama la
       expect(suggest(newName)).toBe(field);
       expect(suggest(oldName)).toBe(field);
     }
-    expect(suggest("Item Item Dept")).toBe("departmentName"); // tulisan di referensi client (kemungkinan salah ketik "Item Dept") juga diterima
+    expect(suggest("Item Dept")).toBe("departmentName"); // alias: penulisan "Item Dept" tetap diterima (nama template = "Item Item Dept", kemauan client)
   });
 
   test("template yang diunduh memakai nama BARU (nama lama tidak ada lagi); jumlah kolom tidak berubah", () => {
