@@ -102,7 +102,9 @@ export default function AutoProduksiInputPage() {
         </p>
       </div>
 
-      <Card className="max-w-lg">
+      {/* § diminta client 2026-10-06 — form lebih ringkas supaya 1 layar terlihat semua: kartu lebih lebar di desktop (3/4 di lg, 1/2 di xl+),
+          Qty Produksi sebelum Tanggal dan keduanya 1 baris, Gudang Barang Jadi & Gudang Bahan Baku 1 baris. Hanya tata letak. */}
+      <Card className="w-full lg:w-3/4 xl:w-1/2">
         <CardHeader>
           <CardTitle>Form Input Produksi</CardTitle>
           <CardDescription>Belum ada formula? Buat dulu di halaman List Formula.</CardDescription>
@@ -129,16 +131,18 @@ export default function AutoProduksiInputPage() {
                   placeholder="Pilih formula..."
                 />
               </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-xs font-medium text-foreground">Tanggal Transaksi</span>
-                <Input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} />
-              </label>
-              <label className="flex flex-col gap-1.5 text-sm">
-                <span className="text-xs font-medium text-foreground">
-                  Qty Produksi {selectedFormula ? `(${selectedFormula.finishedGoodItemUnitName})` : ""}
-                </span>
-                <Input type="number" value={producedQty} onChange={(e) => setProducedQty(e.target.value)} placeholder="1" />
-              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="flex min-w-0 flex-col gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-foreground">
+                    Qty Produksi {selectedFormula ? `(${selectedFormula.finishedGoodItemUnitName})` : ""}
+                  </span>
+                  <Input type="number" value={producedQty} onChange={(e) => setProducedQty(e.target.value)} placeholder="1" />
+                </label>
+                <label className="flex min-w-0 flex-col gap-1.5 text-sm">
+                  <span className="text-xs font-medium text-foreground">Tanggal Transaksi</span>
+                  <Input type="date" value={transDate} onChange={(e) => setTransDate(e.target.value)} />
+                </label>
+              </div>
 
               <div className="flex flex-col gap-3 rounded-lg border border-border/60 p-3">
                 <span className="text-xs font-medium text-foreground">Konteks Produksi (opsional)</span>
@@ -147,34 +151,36 @@ export default function AutoProduksiInputPage() {
                   <Link href="/autoproduksi/settings" className="text-primary underline">
                     Pengaturan AutoProduksi
                   </Link>{" "}
-                  (kalau sudah diatur).
+                  (kalau sudah diatur). Gudang Bahan Baku berlaku ke semua Bahan Baku resep ini.
                 </span>
                 <label className="flex flex-col gap-1.5 text-sm">
                   <span className="text-xs text-muted-foreground">Cabang</span>
                   <Input value={branchName} onChange={(e) => setBranchName(e.target.value)} placeholder="JAKARTA" />
                 </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="text-xs text-muted-foreground">Gudang Barang Jadi</span>
-                  <SearchableField
-                    value={warehouseName}
-                    onChange={setWarehouseName}
-                    onSearch={debouncedFinishedGoodWarehouseSearch}
-                    placeholder="Cari Gudang..."
-                    options={warehouseComboboxOptions(warehouseName, finishedGoodWarehouseResults)}
-                  />
-                </label>
-                <label className="flex flex-col gap-1.5 text-sm">
-                  <span className="text-xs text-muted-foreground">Gudang Bahan Baku (berlaku ke semua Bahan Baku resep ini)</span>
-                  <SearchableField
-                    value={rawMaterialWarehouseName}
-                    onChange={setRawMaterialWarehouseName}
-                    onSearch={debouncedRawMaterialWarehouseSearch}
-                    placeholder="Cari Gudang..."
-                    options={warehouseComboboxOptions(rawMaterialWarehouseName, rawMaterialWarehouseResults)}
-                  />
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <label className="flex flex-col gap-1.5 text-sm">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <label className="flex min-w-0 flex-col gap-1.5 text-sm">
+                    <span className="text-xs text-muted-foreground">Gudang Barang Jadi</span>
+                    <SearchableField
+                      value={warehouseName}
+                      onChange={setWarehouseName}
+                      onSearch={debouncedFinishedGoodWarehouseSearch}
+                      placeholder="Cari Gudang..."
+                      options={warehouseComboboxOptions(warehouseName, finishedGoodWarehouseResults)}
+                    />
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-1.5 text-sm" title="Berlaku ke semua Bahan Baku resep ini">
+                    <span className="text-xs text-muted-foreground">Gudang Bahan Baku</span>
+                    <SearchableField
+                      value={rawMaterialWarehouseName}
+                      onChange={setRawMaterialWarehouseName}
+                      onSearch={debouncedRawMaterialWarehouseSearch}
+                      placeholder="Cari Gudang..."
+                      options={warehouseComboboxOptions(rawMaterialWarehouseName, rawMaterialWarehouseResults)}
+                    />
+                  </label>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="flex min-w-0 flex-col gap-1.5 text-sm">
                     <span className="text-xs text-muted-foreground">Proyek</span>
                     <Input value={projectNo} onChange={(e) => setProjectNo(e.target.value)} placeholder="Kode proyek" />
                   </label>

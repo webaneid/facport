@@ -223,7 +223,7 @@ import {
   groupDeliveryOrderRows,
   validateGroupCustomerConsistency as validateGroupCustomerConsistencyForDO,
   extractDataClassificationValues as extractDataClassificationValuesDO,
-  resolveSalesOrderDetailId,
+  resolveSalesOrderDetailIdsInPayload,
   type DeliveryOrderGroup,
 } from "../lib/import-mapping/delivery-order.mapping";
 // § Fase 134, architecture-item-transfer.md — Item Transfer. TIDAK
@@ -1520,49 +1520,8 @@ export async function processDeliveryOrderGroup(
 // diam-diam lewatkan tanpa `salesOrderDetailId` (itu justru bug yang mau
 // dicegah fitur ini).
 async function resolveSalesOrderDetailIds(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<void> {
-  const detailItems = payload.detailItem as Record<string, unknown>[] | undefined;
-  if (!detailItems) return;
-
-  const cache = new Map<string, Awaited<ReturnType<typeof getSalesOrderDetailByNumber>>>();
-  async function detailsFor(soNumber: string) {
-    let cached = cache.get(soNumber);
-    if (!cached) {
-      cached = await getSalesOrderDetailByNumber(ctx, soNumber);
-      cache.set(soNumber, cached);
-    }
-    return cached;
-  }
-
-  for (const item of detailItems) {
-    const soNumber = item.salesOrderNumber as string | undefined;
-    if (!soNumber) continue;
-    if (item.salesOrderDetailId !== undefined) continue; // § user isi manual, jangan ditimpa
-
-    const itemNo = item.itemNo as string | undefined;
-    const candidates = (await detailsFor(soNumber)).filter((d) => d.itemNo === itemNo);
-
-    if (candidates.length === 0) {
-      throw new Error(`Item "${itemNo}" tidak ditemukan di Sales Order "${soNumber}" — cek kembali No SO atau kode barang.`);
-    }
-    if (candidates.length === 1) {
-      item.salesOrderDetailId = candidates[0]!.id;
-      continue;
-    }
-
-    const week = item.dataClassification5Name as string | undefined;
-    if (!week) {
-      throw new Error(
-        `Item "${itemNo}" muncul ${candidates.length}× di Sales Order "${soNumber}" dengan kode sama — isi kolom CLS5 (Week) untuk membedakan baris mana yang dimaksud.`,
-      );
-    }
-    const matched = candidates.filter((d) => d.dataClassification5Name === week);
-    if (matched.length !== 1) {
-      throw new Error(
-        `Item "${itemNo}" dengan CLS5 "${week}" di Sales Order "${soNumber}" ${matched.length === 0 ? "tidak ditemukan" : `masih ambigu (${matched.length} baris cocok)`} — cek kembali nilainya.`,
-      );
-    }
-    item.salesOrderDetailId = matched[0]!.id;
-  }
+  // § Fase 171 — aturan pencocokan SATU sumber (fungsi murni di delivery-order.mapping.ts, sebelumnya ada salinan inline di sini).
+  await resolveSalesOrderDetailIdsInPayload(payload, (soNumber) => getSalesOrderDetailByNumber(ctx, soNumber));
 }
 
 // ============================================================

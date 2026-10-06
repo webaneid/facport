@@ -31,6 +31,10 @@
 // bisa isi sendiri kalau mau, mis. hasil dari tool lama) — auto-resolve
 // HANYA jalan kalau kolom ini TIDAK dipetakan/kosong.
 //
+// § KOREKSI Fase 171 (2026-10-06): asumsi di atas ("Week" = CLS5) KELIRU untuk SO client — label "Week N" ada di Atribut Tambahan 1 / Custom
+// Character 1 (`charField1`) baris SO, dan client mengetiknya di kolom DO "Item Notes". Pembeda Item No kembar sekarang = Item Notes DO ↔
+// `charField1` SO (CLS5 tetap dicocokkan HANYA bila baris SO punya data CLS5). Lihat `resolveSalesOrderDetailId` di bawah.
+//
 // § CLS2/CLS5 versi HEADER (posisi Excel SEBELUM "Item No") — dicek
 // MENYELURUH ke SEMUA endpoint `save.do` di spec resmi Accurate: TIDAK
 // ADA SATU PUN endpoint yang punya Kategori Keuangan level header. TIDAK
@@ -129,13 +133,24 @@ function toAccurateDate(value: unknown): unknown {
   return `${dd}/${mm}/${date.getUTCFullYear()}`;
 }
 
+// § Fase 171 (2026-10-06) — nilai teks DIBERSIHKAN: spasi/baris baru di ujung dibuang; Item No & No Sales Order juga spasi di dalam (satu baris).
+// Temuan dari file contoh client: Item No `"\n9900016"` (baris baru terbawa saat copy dari aplikasi bantu) membuat pencocokan persis ke baris
+// Sales Order gagal ("Item tidak ditemukan") dan kode barang salah terkirim ke Accurate. Sel yang hanya berisi spasi/baris baru dianggap kosong.
+const SINGLE_LINE_FIELDS = new Set<DeliveryOrderField>(["itemNo", "salesOrderNumber"]);
+
+function cleanValue(field: DeliveryOrderField, raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  return SINGLE_LINE_FIELDS.has(field) ? raw.replace(/\s+/g, " ").trim() : raw.trim();
+}
+
 function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): Partial<Record<DeliveryOrderField, unknown>> {
   const values: Partial<Record<DeliveryOrderField, unknown>> = {};
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
     if (rawRow[excelColumn] !== undefined && rawRow[excelColumn] !== "") {
       const f = field as DeliveryOrderField;
-      const raw = rawRow[excelColumn];
-      values[f] = DATE_FIELDS.has(f) ? toAccurateDate(raw) : raw;
+      const raw = DATE_FIELDS.has(f) ? toAccurateDate(rawRow[excelColumn]) : cleanValue(f, rawRow[excelColumn]);
+      if (raw === "") continue;
+      values[f] = raw;
     }
   }
   return values;
@@ -242,28 +257,83 @@ export function extractDataClassificationValues(rawRow: Record<string, unknown>,
 // keputusan/matching-nya yang ditest unit di sini). Dipanggil dari
 // `resolveSalesOrderDetailIds` (workers/index.ts) SETELAH fetch detail
 // Sales Order dari Accurate.
-export type SalesOrderDetailCandidate = { id: number; itemNo: string; dataClassification5Name: string | null };
+export type SalesOrderDetailCandidate = { id: number; itemNo: string; dataClassification5Name: string | null; charField1?: string | null };
 
-export function resolveSalesOrderDetailId(candidates: SalesOrderDetailCandidate[], itemNo: string, soNumber: string, week: string | undefined): number {
-  const byItemNo = candidates.filter((d) => d.itemNo === itemNo);
+// Pembanding tidak peka huruf besar/kecil dan spasi berlebih.
+const norm = (value: string) => value.replace(/\s+/g, " ").trim().toLowerCase();
+
+/**
+ * Cari `salesOrderDetailId` baris SO untuk 1 baris pengiriman. Item No hanya sekali di SO → langsung. Item No KEMBAR → disaring: CLS5
+ * (`week`, hanya kalau baris SO memang punya data CLS5) lalu **Item Notes** DO (`notes`) = **Atribut Tambahan 1 / Custom Character 1** baris SO
+ * (`charField1`, label "Week N" milik client — Fase 171; asumsi lama "Week = CLS5" Fase 158 keliru). Sisa ≠ 1 → error jelas, TIDAK menebak.
+ */
+export function resolveSalesOrderDetailId(
+  candidates: SalesOrderDetailCandidate[],
+  itemNo: string,
+  soNumber: string,
+  week: string | undefined,
+  notes?: string,
+): number {
+  const byItemNo = candidates.filter((d) => norm(d.itemNo) === norm(itemNo));
 
   if (byItemNo.length === 0) {
     throw new Error(`Item "${itemNo}" tidak ditemukan di Sales Order "${soNumber}" — cek kembali No SO atau kode barang.`);
   }
   if (byItemNo.length === 1) return byItemNo[0]!.id;
 
-  // § itemNo duplikat dalam 1 SO — WAJIB disambiguasi via CLS5 ("Week N",
-  // § lessons-learned 2026-09-24), TIDAK BOLEH tebak (mirror ADR-0013).
-  if (!week) {
+  const weekGiven = week !== undefined && week.trim() !== "";
+  const notesGiven = notes !== undefined && notes.trim() !== "";
+  if (!weekGiven && !notesGiven) {
     throw new Error(
-      `Item "${itemNo}" muncul ${byItemNo.length}× di Sales Order "${soNumber}" dengan kode sama — isi kolom CLS5 (Week) untuk membedakan baris mana yang dimaksud.`,
+      `Item "${itemNo}" muncul ${byItemNo.length}× di Sales Order "${soNumber}" dengan kode sama — isi kolom "Item Notes" dengan nilai Atribut Tambahan 1 (Custom Character 1, mis. "Week 1") baris SO yang dimaksud, atau kolom CLS5 kalau SO memakainya, untuk membedakan baris mana yang dimaksud.`,
     );
   }
-  const matched = byItemNo.filter((d) => d.dataClassification5Name === week);
-  if (matched.length !== 1) {
+
+  let pool = byItemNo;
+  const used: string[] = [];
+  // CLS5 hanya menyaring kalau baris SO ini memang punya data CLS5 (kalau tidak, CLS5 di Excel tidak punya lawan bandingnya — diabaikan, bukan pemblokir).
+  if (weekGiven && pool.some((d) => d.dataClassification5Name !== null)) {
+    pool = pool.filter((d) => d.dataClassification5Name !== null && norm(d.dataClassification5Name) === norm(week!));
+    used.push(`CLS5 "${week!.trim()}"`);
+  }
+  if (notesGiven && pool.length !== 1) {
+    pool = pool.filter((d) => d.charField1 != null && norm(d.charField1) === norm(notes!));
+    used.push(`Atribut Tambahan 1 "${notes!.trim()}"`);
+  }
+  if (pool.length !== 1) {
     throw new Error(
-      `Item "${itemNo}" dengan CLS5 "${week}" di Sales Order "${soNumber}" ${matched.length === 0 ? "tidak ditemukan" : `masih ambigu (${matched.length} baris cocok)`} — cek kembali nilainya.`,
+      `Item "${itemNo}" dengan ${used.join(" & ") || "nilai pembeda yang diisi"} di Sales Order "${soNumber}" ${pool.length === 0 ? "tidak ditemukan" : `masih ambigu (${pool.length} baris cocok)`} — cek kembali nilainya.`,
     );
   }
-  return matched[0]!.id;
+  return pool[0]!.id;
+}
+
+/**
+ * Isi `salesOrderDetailId` semua baris `payload.detailItem` yang punya `salesOrderNumber` tapi belum punya ID (isi manual tidak ditimpa).
+ * `fetchCandidates` disuntikkan (worker: baca Accurate; test: palsu), di-cache per nomor SO. Mengubah `payload.detailItem` di tempat.
+ */
+export async function resolveSalesOrderDetailIdsInPayload(
+  payload: Record<string, unknown>,
+  fetchCandidates: (soNumber: string) => Promise<SalesOrderDetailCandidate[]>,
+): Promise<void> {
+  const items = payload.detailItem as Record<string, unknown>[] | undefined;
+  if (!items) return;
+  const cache = new Map<string, SalesOrderDetailCandidate[]>();
+  for (const item of items) {
+    const soNumber = item.salesOrderNumber as string | undefined;
+    if (!soNumber) continue;
+    if (item.salesOrderDetailId !== undefined) continue; // isi manual, jangan ditimpa
+    let candidates = cache.get(soNumber);
+    if (!candidates) {
+      candidates = await fetchCandidates(soNumber);
+      cache.set(soNumber, candidates);
+    }
+    item.salesOrderDetailId = resolveSalesOrderDetailId(
+      candidates,
+      String(item.itemNo ?? ""),
+      soNumber,
+      item.dataClassification5Name as string | undefined,
+      item.detailNotes as string | undefined,
+    );
+  }
 }

@@ -174,7 +174,7 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
 // "Customer" pengganti "Vendor". § Fase 70 — judul kolom Excel disamakan
 // jadi "Bill No" juga (sebelumnya "PO Number", client minta konsisten).
 export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
-  { column: "Tanggal", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Penjualan." },
+  { column: "Trans Date", required: true, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal transaksi Faktur Penjualan." },
   // § Fase 70 (2026-09-08) — client minta judul kolom diganti "PO
   // Number" -> "Bill No" (konsisten dengan istilah "Bill No" di modul
   // Purchase Invoice) — field API TETAP `poNumber` (§ ADR/komentar
@@ -184,7 +184,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // "Bill No"/"PO Number"/"PURCHASE ORDER NO" TETAP didukung di
   // `defaultColumnMap`.
   { column: "PO No", required: false, example: "PO-CUST-001", description: "Nomor PO/referensi dari customer (field API poNumber). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item — dipakai HANYA kalau kolom Trans No di bawah tidak diisi." },
-  { column: "Customer No", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
+  { column: "CUST NO", required: true, example: "C-0001", description: "Nomor/kode customer PERSIS seperti terdaftar di Accurate Online." },
   // § Fase 61/64 — WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
   // resmi client) — SEBELUMNYA opsional/"kosongkan supaya otomatis",
   // KELIRU. Trans No JUGA kunci grouping multi-item (Fase 49, DIUTAMAKAN
@@ -192,24 +192,24 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // No yang boleh sama walau beda transaksi (§ feedback client, Fase 63).
   { column: "Trans No", required: true, example: "SI-2026-0001", description: "Nomor transaksi — WAJIB DIISI dan UNIK per transaksi (beda dari PO Number yang boleh sama). Isi SAMA di beberapa baris untuk menggabungkannya jadi 1 faktur multi-item." },
   { column: "Branch Name", required: false, example: "Cabang Jakarta", description: "Nama cabang — isi kalau akun Accurate kamu multi-cabang." },
-  { column: "Note", required: false, example: "Penjualan barang Agustus", description: "Catatan/keterangan bebas untuk transaksi ini." },
+  { column: "Description", required: false, example: "Penjualan barang Agustus", description: "Catatan/keterangan bebas untuk transaksi ini." },
   { column: "Currency Code", required: false, example: "IDR", description: "Kode mata uang — kosongkan kalau transaksi dalam Rupiah." },
   { column: "Rate", required: false, example: "1", description: "Kurs mata uang — isi kalau Currency Code bukan IDR." },
   { column: "Fiscal Rate", required: false, example: "", description: "Kurs pajak (fiskal) — isi kalau transaksi pakai mata uang asing dan kurs pajaknya beda dari kurs Rate di atas. Ada di format Excel lama sebagai \"Fiscal Rate\"/\"Nilai Tukar Pajak\"." },
-  { column: "Pay Term", required: false, example: "COD", description: "Nama termin pembayaran PERSIS seperti di Accurate (mis. COD, Net 30)." },
+  { column: "Payment Term Name", required: false, example: "COD", description: "Nama termin pembayaran PERSIS seperti di Accurate (mis. COD, Net 30)." },
   { column: "Taxable", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Apakah transaksi kena pajak." },
   { column: "Inclusive Tax", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Apakah harga barang sudah termasuk pajak." },
   { column: "Tax No", required: false, example: "", description: "Nomor faktur pajak (kalau ada)." },
   { column: "Tax Date", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal faktur pajak (kalau ada)." },
   { column: "Reverse Inv", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Tandai transaksi sebagai reverse invoice." },
-  { column: "Cash Discount", required: false, example: "0", description: "Nominal diskon tunai (Rupiah)." },
-  { column: "Cash Disc (%)", required: false, example: "0", description: "Persentase diskon tunai." },
+  { column: "Cash Disc", required: false, example: "0", description: "Nominal diskon tunai (Rupiah)." },
+  { column: "Cash Disc Percent", required: false, example: "0", description: "Persentase diskon tunai." },
   { column: "Document Code", required: false, example: "", description: "Kode dokumen internal (kalau dipakai)." },
   { column: "Document Transaction Type", required: false, example: "", description: "Tipe transaksi dokumen (kalau dipakai)." },
   { column: "Shipment Name", required: false, example: "", description: "Nama pengiriman/ekspedisi (kalau relevan)." },
   { column: "Shipment Date", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal pengiriman (kalau relevan)." },
   { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Unit Price", required: true, example: "50000", description: "Harga jual barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000)." },
+  { column: "Item Unit Price", required: true, example: "50000", description: "Harga jual barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000)." },
   { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dijual." },
   // § Fase 61 — TIDAK WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
   // resmi client) — SEBELUMNYA diwajibkan di sini, KELIRU.
@@ -217,14 +217,14 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Warehouse", required: true, example: "Gudang Utama", description: "Nama gudang asal barang PERSIS seperti di Accurate." },
   { column: "Item Name", required: false, example: "Kertas A4 80gsm", description: "Nama barang — dipakai untuk BIKIN barang baru otomatis kalau Item No belum terdaftar di Accurate." },
   { column: "Item Notes", required: false, example: "", description: "Catatan khusus untuk baris barang ini." },
-  { column: "Item Cash Disc", required: false, example: "0", description: "Nominal diskon tunai khusus barang ini (Rupiah)." },
-  { column: "Item Disc (%)", required: false, example: "0", description: "Persentase diskon khusus barang ini." },
-  { column: "Item - Department", required: false, example: "", description: "Nama departemen (kalau akun Accurate pakai tracking departemen)." },
-  { column: "Item Prj No", required: false, example: "", description: "Nomor proyek (kalau akun Accurate pakai tracking proyek)." },
+  { column: "Item Cash Discount", required: false, example: "0", description: "Nominal diskon tunai khusus barang ini (Rupiah)." },
+  { column: "Item Cash Disc Percent", required: false, example: "0", description: "Persentase diskon khusus barang ini." },
+  { column: "Item Dept", required: false, example: "", description: "Nama departemen (kalau akun Accurate pakai tracking departemen)." },
+  { column: "Item Project No", required: false, example: "", description: "Nomor proyek (kalau akun Accurate pakai tracking proyek)." },
   { column: "PPN", required: false, format: BOOLEAN_FORMAT, example: "TRUE", description: "Kenakan PPN pada barang ini." },
   { column: "PPnBM", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPnBM pada barang ini." },
   { column: "PPH", required: false, format: BOOLEAN_FORMAT, example: "FALSE", description: "Kenakan PPh 23 pada barang ini." },
-  { column: "ITEM: ID Salesman", required: false, example: "S-001", description: "ID/nomor identitas salesman yang menangani barang ini (harus sudah terdaftar di Accurate). Lebih dari satu salesman: pisahkan dengan koma, mis. \"S-001, S-002\"." },
+  { column: "Salesman No", required: false, example: "S-001", description: "ID/nomor identitas salesman yang menangani barang ini (harus sudah terdaftar di Accurate). Lebih dari satu salesman: pisahkan dengan koma, mis. \"S-001, S-002\"." },
   // § Fase 71 (2026-09-08) — SEMPAT dikira "ITEM: CUSTOM CHARACTER N"
   // itu sinonim Kategori Keuangan (Fase 69, KELIRU), lalu sempat
   // dianggap TIDAK ADA field API-nya sama sekali setelah balasan
@@ -303,7 +303,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Email Customer", required: false, example: "customer@contoh.com", description: "Alamat email customer baru." },
   { column: "Alamat Customer", required: false, example: "Jl. Contoh No. 1, Jakarta", description: "Alamat customer baru." },
   { column: "Negara Customer", required: false, example: "Indonesia", description: "Negara customer baru." },
-  { column: "Akun Piutang", required: false, example: "1-10500", description: "Kode Akun Piutang (COA) — kalau diisi, akan meng-update akun piutang customer (berlaku untuk customer baru MAUPUN yang sudah ada)." },
+  { column: "Account Receivable", required: false, example: "1-10500", description: "Kode Akun Piutang (COA) — kalau diisi, akan meng-update akun piutang customer (berlaku untuk customer baru MAUPUN yang sudah ada)." },
   { column: "Kategori Barang", required: false, example: "Umum", description: "Kategori barang baru — dipakai HANYA kalau Item No belum terdaftar di Accurate, kosongkan untuk pakai default \"Umum\"." },
   // § Fase 55, nama kolom dikoreksi Fase 61 ("Karakter N" -> "ITEM:CUSTOM
   // CHARACTER N" setelah Excel asli client diterima), dikoreksi LAGI
@@ -1484,11 +1484,11 @@ export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Qty", required: true, example: "10", description: "Jumlah barang yang dikirim." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "Item Detail Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
-  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini." },
+  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini. JUGA dipakai untuk membedakan barang yang SAMA muncul lebih dari 1× di Sales Order yang sama: isi dengan nilai Atribut Tambahan 1 (Custom Character 1, mis. \"Week 1\") baris Sales Order yang dimaksud — Facport mencocokkannya otomatis (kolom \"Sales Order Detail ID\" tidak perlu diisi/VLOOKUP)." },
   { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "Item Warehouse", required: false, example: "", description: "Nama gudang asal barang, harus PERSIS terdaftar di Accurate." },
   { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
-  { column: "Item Sales Order No", required: false, example: "", description: "Nomor transaksi Sales Order terkait, kalau barang ini mengirim pesanan tertentu (prioritas di atas Sales Quot No kalau keduanya diisi)." },
+  { column: "Item Sales Order No", required: false, example: "", description: "Nomor transaksi Sales Order terkait, kalau barang ini mengirim pesanan tertentu (prioritas di atas Sales Quot No kalau keduanya diisi). Facport mencari baris Sales Order-nya otomatis lewat Item No (dan Item Notes = Atribut Tambahan 1 kalau Item No kembar di SO itu)." },
   { column: "Item Sales Quot No", required: false, example: "", description: "Nomor transaksi Sales Quotation terkait." },
   { column: "Item Reverse Invoice", required: false, example: "", description: "Nomor Faktur Penjualan, kalau memakai fitur Faktur Dimuka (mendahului pengiriman)." },
   { column: "CLS2", required: false, example: "", description: "Kategori Keuangan slot 2, level barang." },
