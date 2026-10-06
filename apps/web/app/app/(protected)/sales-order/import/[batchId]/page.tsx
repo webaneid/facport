@@ -9,6 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/sales-order/edit-row-dialog";
+import { isQuotationExpansionRow, EXPANSION_EXEMPT_REQUIRED } from "@/lib/sales-order-expansion";
 import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
@@ -150,6 +151,10 @@ export default function SalesOrderImportResultPage() {
               columnMapping={batch.columnMapping}
               requiredInternalFields={REQUIRED_INTERNAL_FIELDS}
               dateInternalFields={DATE_INTERNAL_FIELDS}
+              // § Fase 169 — baris perluasan penawaran tidak diwajibkan mengisi Item No/Harga/Qty/Satuan (aturan sama dengan server).
+              isRequiredExempt={(rowValues, internalField) =>
+                EXPANSION_EXEMPT_REQUIRED.has(internalField) && isQuotationExpansionRow(rowValues, batch.columnMapping ?? {})
+              }
               onSave={handleGridSave}
               onSaved={load}
             />

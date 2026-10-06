@@ -7,7 +7,7 @@ import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
-import { salesOrderMapping } from "../lib/import-mapping/sales-order.mapping";
+import { salesOrderMapping, missingRequiredFieldsForRow } from "../lib/import-mapping/sales-order.mapping";
 import { salesOrderTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -305,11 +305,8 @@ export const salesOrderImportRoute = new Elysia()
       }
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      const missing = salesOrderMapping.requiredFields.filter((field) => {
-        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-        const value = excelColumn ? body.rawData[excelColumn] : undefined;
-        return value === undefined || value === null || String(value).trim() === "";
-      });
+      // § Fase 169 — baris perluasan penawaran tidak diwajibkan mengisi Item No/Harga/Qty/Satuan (`missingRequiredFieldsForRow`).
+      const missing = missingRequiredFieldsForRow(body.rawData, columnMapping);
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -356,11 +353,7 @@ export const salesOrderImportRoute = new Elysia()
           continue;
         }
 
-        const missing = salesOrderMapping.requiredFields.filter((field) => {
-          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-          const value = excelColumn ? item.rawData[excelColumn] : undefined;
-          return value === undefined || value === null || String(value).trim() === "";
-        });
+        const missing = missingRequiredFieldsForRow(item.rawData, columnMapping);
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;

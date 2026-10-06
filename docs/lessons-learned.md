@@ -6107,3 +6107,8 @@ assumsi "typecheck lolos = aman"), atau linting tambahan
 ini) yang secara statis menangkap fungsi melewati boundary tanpa
 "use client". Dicatat sebagai kemungkinan perbaikan tooling ke depan,
 bukan dikerjakan sekarang.
+
+## 2026-10-06 — Fitur "tarik data dokumen asal" butuh scope baca baru DAN bentuk respons yang diverifikasi (Sales Order ← Sales Quotation, Fase 169)
+**Konteks:** `salesQuotationNumber` di `detailItem` hanya MENAUTKAN, tidak menarik isi (spec mewajibkan `itemNo`+`unitPrice`). Menarik isi berarti memanggil endpoint BACA dokumen asal → scope baru (`sales_quotation_view`) yang untuk customer lama berarti "Perbarui izin" (otorisasi ulang, mematikan token lama) — keputusan user: wajib, bukan opsional.
+**Pelajaran:** (1) cek dulu apakah ada endpoint baca + respons-nya terdokumentasi — di sini TIDAK (spec cuma bilang "Success"), jadi parser dibuat KETAT (gagal jelas, tidak pernah kirim harga/qty setengah) dan wajib diverifikasi dengan respons asli; (2) aturan "wajib per baris" tersebar di API dan UI — satu fungsi sumber tunggal dipakai ulang web (pola `module-options.ts`) mencegah keduanya berbeda; (3) jumlah baris hasil tarikan harus dibatasi (security review).
+**Pola ini bisa dipakai ulang** untuk Delivery Order ← Sales Order, Receive Item ← Purchase Order, dst (Fase 158 sudah membaca `sales-order/detail.do` untuk `salesOrderDetailId`).

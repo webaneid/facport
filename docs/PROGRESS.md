@@ -176,7 +176,7 @@
 | 166  | AutoProduksi — Import Formula (Excel, synchronous, tanpa Accurate) & Import Produksi (Excel, reuse flow manual) — "Kirim Dengan Excel" ditunda sejak Fase 160 | Done | `docs/architecture/architecture-autoproduksi.md` § "Import Formula & Import Produksi (Excel)" | `docs/phases/phase-166-autoproduksi-import-formula-produksi.md` |
 | 167  | Antrean `import-to-accurate` — concurrency/fairness worker (batch besar 1 customer memblokir SEMUA customer lain, insiden produksi 2026-10-02, PT Futura Maju) — belum direncanakan, sengaja ditunda | Planned | - | - |
 | 168  | AutoProduksi — Formula jadi resep lintas-cabang: Cabang/Gudang Barang Jadi/Gudang Bahan Baku/Proyek/Departemen pindah dari Formula ke Input Produksi (opsional), tambah toggle Aktif/Non-aktif per Formula | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-168-autoproduksi-formula-lintas-cabang-toggle-aktif.md` |
-| 169  | Sales Order — ambil baris item otomatis dari Sales Quotation (Sales Quot No terisi + kolom item kosong → diperluas dari penawaran; scope `sales_quotation_view` wajib) | In Progress | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-169-sales-order-ambil-data-dari-sales-quotation.md` |
+| 169  | Sales Order — ambil baris item otomatis dari Sales Quotation (Sales Quot No terisi + kolom item kosong → diperluas dari penawaran; scope `sales_quotation_view` wajib) | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-169-sales-order-ambil-data-dari-sales-quotation.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
