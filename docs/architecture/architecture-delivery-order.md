@@ -186,3 +186,10 @@ kolom ini (murni internal atau ada maksud lain yang belum kita tangkap).
 - Modul terkait dalam rantai: `architecture-sales-order.md`,
   `architecture-sales-quotation.md`, `architecture-sales-invoice.md`
 - ADR rujukan: ADR-0011 (grouping default), ADR-0019 (SKU per sub-modul)
+
+## Fase 171 (2026-10-06) — Sales Order Detail ID otomatis via Atribut Tambahan 1 ("Week")
+**Koreksi asumsi Fase 158:** label "Week N" client TIDAK ada di CLS5, melainkan di **Atribut Tambahan 1 / Custom Character 1** (`charField1`) baris Sales Order; di Excel DO client mengetiknya di kolom **Item Notes**. `delivery-order/save.do` tidak punya field `charField*`, jadi nilai Week hanya kunci pencarian (tidak dikirim).
+**Aturan resolver** (`resolveSalesOrderDetailId`, fungsi murni; dipakai worker lewat `resolveSalesOrderDetailIdsInPayload`): Item No hanya sekali di SO → langsung; kembar → saring CLS5 (HANYA bila baris SO punya data CLS5; perilaku Fase 158) lalu **Item Notes ↔ `charField1`** (tanpa beda huruf besar-kecil/spasi berlebih); sisa ≠ 1 → error jelas. "Sales Order Detail ID" manual tetap override.
+**Pembersihan sel:** spasi/baris baru di ujung semua nilai teks dibuang; Item No & No SO juga spasi di dalam (file client: Item No `"\n9900016"` dari copy-paste membuat pencocokan persis gagal). Sel berisi hanya spasi/baris baru dianggap kosong.
+**Pengganti proses manual client:** sheet bantu (SO, Item No, Item Name, Qty, Description, kunci `SO&Description`) + VLOOKUP ke kolom "Sales Order Detail ID" tidak diperlukan lagi. Catatan: kunci lama `SO&Description` tanpa Item No bentrok bila dua barang berbeda di 1 SO punya Week sama; resolver baru mencocokkan Item No + Week.
+⚠️ Nama field BACA `charField1` di respons `sales-order/detail.do` belum diverifikasi respons asli.

@@ -8,6 +8,7 @@ import {
   validateGroupCustomerConsistency,
   resolveSalesOrderDetailId,
   type ImportRowRecord,
+  resolveSalesOrderDetailIdsInPayload,
 } from "./delivery-order.mapping";
 
 // § Fase 157-158 — mirror `receive-item.mapping.test.ts`, disesuaikan
@@ -233,5 +234,83 @@ describe("resolveSalesOrderDetailId", () => {
 
   test("itemNo duplikat + week diisi TAPI tidak cocok satu pun -> lempar error", () => {
     expect(() => resolveSalesOrderDetailId(dup, "9900014", "SO-IDR-01", "Week 99")).toThrow(/tidak ditemukan/i);
+  });
+});
+
+// § Fase 171 — Sales Order Detail ID otomatis via Atribut Tambahan 1 ("Week", charField1 baris SO) + bersihkan sel. Data = file contoh client
+// (`Sample_Format_DO_v8`): SO `SOTES_EKA01`, Item 9900016 di 2 baris SO (Week 1 → 102950, Week 2 → 102901), Item No di Excel `"\n9900016"`.
+describe("Fase 171 — resolve Sales Order Detail ID via Item Notes ↔ charField1", () => {
+  const so = [
+    { id: 102950, itemNo: "9900016", dataClassification5Name: null, charField1: "Week 1" },
+    { id: 102901, itemNo: "9900016", dataClassification5Name: null, charField1: "Week 2" },
+  ];
+  const mapping = {
+    "Cust No": "customerNo",
+    "Trans Date": "transDate",
+    "Item No": "itemNo",
+    "Item Qty": "quantity",
+    "Item Unit Name": "itemUnitName",
+    "Item Notes": "itemNotes",
+    "Item Sales Order No": "salesOrderNumber",
+    "Sales Order Detail ID": "salesOrderDetailId",
+    CLS5: "attribut5",
+  };
+  const rowOf = (extra: Record<string, unknown>) => ({ "Cust No": "CSBY-0005", "Trans Date": "06/10/2026", "Item No": "\n9900016", "Item Qty": 1, "Item Unit Name": "PCS", "Item Sales Order No": "SOTES_EKA01", ...extra });
+
+  test("Item Notes cocok dengan Atribut Tambahan 1 → ID baris SO yang benar (tanpa beda huruf besar-kecil/spasi berlebih)", () => {
+    expect(resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, "Week 1")).toBe(102950);
+    expect(resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, "  week   2 ")).toBe(102901);
+  });
+
+  test("end-to-end data client: 2 baris DO, Item No berbaris-baru dibersihkan, tiap baris dapat ID-nya sendiri, SO dibaca SEKALI", async () => {
+    const payload = buildDeliveryOrderPayload([rowOf({ "Item Notes": "Week 1" }), rowOf({ "Item Notes": "Week 2" })], mapping);
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items.map((i) => i.itemNo)).toEqual(["9900016", "9900016"]); // "\n9900016" dibersihkan
+    let fetched = 0;
+    await resolveSalesOrderDetailIdsInPayload(payload, async (n) => {
+      fetched++;
+      expect(n).toBe("SOTES_EKA01");
+      return so;
+    });
+    expect(fetched).toBe(1);
+    expect(items.map((i) => i.salesOrderDetailId)).toEqual([102950, 102901]);
+  });
+
+  test("ID manual di kolom Sales Order Detail ID TIDAK ditimpa dan SO tidak dibaca; baris tanpa No SO dilewati", async () => {
+    const payload = buildDeliveryOrderPayload([rowOf({ "Sales Order Detail ID": 555 }), rowOf({ "Item Sales Order No": "" })], mapping);
+    let fetched = 0;
+    await resolveSalesOrderDetailIdsInPayload(payload, async () => {
+      fetched++;
+      return so;
+    });
+    expect(fetched).toBe(0);
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items[0]!.salesOrderDetailId).toBe(555);
+    expect(items[1]!.salesOrderDetailId).toBeUndefined();
+  });
+
+  test("gagal jelas: Item No kembar tanpa Item Notes/CLS5; Item Notes tidak cocok; dua baris SO ber-Week sama (ambigu)", () => {
+    expect(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, undefined)).toThrow(/Item Notes.*Atribut Tambahan 1/s);
+    expect(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, "Week 9")).toThrow(/tidak ditemukan/);
+    const same = [{ ...so[0]! }, { ...so[1]!, charField1: "Week 1" }];
+    expect(() => resolveSalesOrderDetailId(same, "9900016", "SOTES_EKA01", undefined, "Week 1")).toThrow(/ambigu \(2 baris cocok\)/);
+  });
+
+  test("CLS5 di Excel diabaikan kalau baris SO tidak punya data CLS5 (bukan pemblokir); kalau SO memakai CLS5, perilaku lama tetap (dicocokkan ke CLS5)", () => {
+    expect(resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", "Apa saja", "Week 2")).toBe(102901);
+    const withCls = [
+      { id: 1, itemNo: "X", dataClassification5Name: "Week 37", charField1: null },
+      { id: 2, itemNo: "X", dataClassification5Name: "Week 38", charField1: null },
+    ];
+    expect(resolveSalesOrderDetailId(withCls, "X", "SO", "Week 38")).toBe(2);
+  });
+
+  test("pembersihan sel: spasi/baris baru di ujung semua teks dibuang; sel hanya spasi/baris baru dianggap kosong", () => {
+    const payload = buildDeliveryOrderPayload([rowOf({ "Item Notes": "  Week 1\n", "Item Sales Order No": " SOTES_EKA01 \n" })], mapping);
+    const item = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(item.detailNotes).toBe("Week 1");
+    expect(item.salesOrderNumber).toBe("SOTES_EKA01");
+    const blank = buildDeliveryOrderPayload([rowOf({ "Item Notes": " \n " })], mapping);
+    expect((blank.detailItem as Record<string, unknown>[])[0]!.detailNotes).toBeUndefined();
   });
 });

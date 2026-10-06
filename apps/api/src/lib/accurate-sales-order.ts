@@ -56,6 +56,9 @@ type RawSalesOrderDetail = {
     quantity?: number;
     item?: { no?: string };
     dataClassification5?: { name?: string } | null;
+    // § Fase 171 — Atribut Tambahan 1 / Custom Character 1 baris SO (label "Week N" milik client, 2026-10-06). Field TULIS-nya `charField1`
+    // (dipetakan di modul lain); nama field BACA diasumsikan sama (string datar, bukan objek relasi) — ⚠️ belum diverifikasi respons asli.
+    charField1?: string | null;
   }[];
 };
 
@@ -64,6 +67,7 @@ export type SalesOrderDetailItem = {
   itemNo: string;
   quantity: number;
   dataClassification5Name: string | null;
+  charField1: string | null;
 };
 
 export async function getSalesOrderDetailByNumber(ctx: AccurateSessionContext, number: string): Promise<SalesOrderDetailItem[]> {
@@ -80,6 +84,7 @@ export async function getSalesOrderDetailByNumber(ctx: AccurateSessionContext, n
       itemNo: it.item?.no ?? "",
       quantity: Number(it.quantity ?? 0),
       dataClassification5Name: it.dataClassification5?.name ?? null,
+      charField1: typeof it.charField1 === "string" && it.charField1.trim() !== "" ? it.charField1 : null,
     }));
   });
 }
