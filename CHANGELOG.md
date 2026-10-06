@@ -1,3 +1,11 @@
+## 2.26.0 (2026-10-06)
+
+* release: merge develop ke main (Delivery Order SO detail via Atribut Tambahan, nama kolom Sales Invo ([fe5bb22](https://github.com/webaneid/facport/commit/fe5bb22))
+* feat(api): Delivery Order — Sales Order Detail ID otomatis via Item Notes ↔ Atribut Tambahan 1 (Week ([9fc7df0](https://github.com/webaneid/facport/commit/9fc7df0))
+* feat(api): Sales Invoice — 13 nama kolom template diubah mengikuti referensi client (Rev1); nama lam ([afb6bfc](https://github.com/webaneid/facport/commit/afb6bfc))
+* feat(web): Input Produksi — form lebih ringkas (Qty sebelum Tanggal satu baris, dua gudang satu bari ([96bfc59](https://github.com/webaneid/facport/commit/96bfc59))
+* docs: rencana Fase 171 — Delivery Order SO detail via Atribut Tambahan 1 ([eb27503](https://github.com/webaneid/facport/commit/eb27503))
+
 ## 2.25.0 (2026-10-06)
 
 * release: merge develop ke main (PPh/diskon Sales Receipt & Purchase Payment, Sales Order dari Sales  ([694d030](https://github.com/webaneid/facport/commit/694d030))
