@@ -1,3 +1,9 @@
+## 2.28.0 (2026-10-06)
+
+* chore: merge develop ke main (rilis Sales Order tarik header/atribut/Expense dari Sales Quotation) ([ff07167](https://github.com/webaneid/facport/commit/ff07167))
+* fix(api): tarik dari Sales Quotation — diskon persen & nominal bersamaan hanya persen; field baca te ([476a975](https://github.com/webaneid/facport/commit/476a975))
+* feat(api): Sales Order — kolom header, atribut baris & Expense ikut ditarik dari Sales Quotation (is ([a736b05](https://github.com/webaneid/facport/commit/a736b05))
+
 ## 2.27.0 (2026-10-06)
 
 * release: merge develop ke main (daftar email ganda 409, pesan error Delivery Order ramah, nama kolom ([324676e](https://github.com/webaneid/facport/commit/324676e))
