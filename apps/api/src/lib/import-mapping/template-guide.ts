@@ -1484,7 +1484,7 @@ export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item Qty", required: true, example: "10", description: "Jumlah barang yang dikirim." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "Item Detail Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
-  { column: "Item Notes", required: false, example: "", description: "Catatan tambahan untuk baris barang ini. JUGA dipakai untuk membedakan barang yang SAMA muncul lebih dari 1× di Sales Order yang sama: isi dengan nilai Atribut Tambahan 1 (Custom Character 1, mis. \"Week 1\") baris Sales Order yang dimaksud — Facport mencocokkannya otomatis (kolom \"Sales Order Detail ID\" tidak perlu diisi/VLOOKUP)." },
+  { column: "Item Notes", required: false, example: "", description: "Catatan untuk baris barang ini. KHUSUS bila barang yang SAMA ada lebih dari 1× di Sales Order yang sama: isi kolom ini dengan label pembeda baris Sales Order-nya, mis. \"Week 1\" (tulisannya sama persis dengan isi Atribut Tambahan 1 / Custom Character 1 di Sales Order). Facport lalu memilih baris Sales Order yang benar secara otomatis — kolom Sales Order Detail ID tidak perlu diisi atau di-VLOOKUP." },
   { column: "Item Dept", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "Item Warehouse", required: false, example: "", description: "Nama gudang asal barang, harus PERSIS terdaftar di Accurate." },
   { column: "Item Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
