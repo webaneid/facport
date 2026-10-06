@@ -1,16 +1,15 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable, dataUsaha } from "../db/schema";
+import { plans, subscriptions, user as userTable, dataUsaha } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
-import { createInvoiceAndOrder } from "../lib/invoice-order";
+import { createInvoiceAndOrder, inFlightModuleKeys } from "../lib/invoice-order";
 import { createTrialSubscription } from "../lib/trial";
 import { createNotification, formatNotificationDate, NOTIFICATION_TYPES } from "../lib/notifications";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { ownsDataUsaha } from "../lib/data-usaha";
 
-const NON_TERMINAL_ORDER_STATUSES = ["pending", "submitted"] as const;
 
 export const subscriptionsRoute = new Elysia()
   .use(permissionPlugin)
@@ -151,34 +150,14 @@ export const subscriptionsRoute = new Elysia()
           // `ownsDataUsaha(user.id, body.dataUsahaId)` di atas, jadi ini
           // murni "modul apa yang sudah aktif di Data Usaha yang aku
           // MILIKI" — akses lewat seat tidak relevan di sini sama sekali.
-          const activeSubs = await getOwnedSubscriptionsWithPlans(user.id);
-          // § Fase 43 — trial TIDAK memblokir pembelian paket ASLI modul
-          // yang sama, supaya user bisa upgrade kapan saja tanpa nunggu
-          // trial habis/expired. Guard "modul sudah aktif" cuma berlaku
-          // untuk subscription NON-trial.
-          const activeModules = new Set(
-            activeSubs
-              .filter((s) => !s.subscription.isTrial && s.subscription.dataUsahaId === body.dataUsahaId)
-              .flatMap((s) => s.plan.modules),
-          );
-
-          const inFlightRows = await tx
-            .select({ moduleKey: invoiceItems.moduleKey })
-            .from(orders)
-            .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
-            .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
-            .where(
-              and(
-                eq(invoices.userId, user.id),
-                eq(orders.dataUsahaId, body.dataUsahaId),
-                inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES]),
-              ),
-            );
-          const inFlightModules = new Set(inFlightRows.map((r) => r.moduleKey));
+          // § Fase 176, ADR-0041 poin 4 — modul yang MASIH AKTIF (non-trial) BOLEH dibeli lagi: itu PERPANJANGAN DINI (saat pembayaran disetujui,
+          // `end_at` diperpanjang dari akhir lama, tidak ada hari yang hilang — § admin/orders.route.ts confirm). Yang tetap diblokir hanya modul yang
+          // masih punya pesanan BELUM SELESAI (in-flight) — mencegah dobel/perpanjangan ganda. (Dulu guard "modul sudah aktif" memblokir juga di sini.)
+          const inFlightModules = await inFlightModuleKeys(tx, { userId: user.id, dataUsahaId: body.dataUsahaId });
 
           const cartModules = planRows.flatMap((p) => p.modules);
-          const alreadySubscribed = cartModules.find((m) => activeModules.has(m) || inFlightModules.has(m));
-          if (alreadySubscribed) throw new Error(`MODULE_ALREADY_SUBSCRIBED:${alreadySubscribed}`);
+          const orderInProgress = cartModules.find((m) => inFlightModules.has(m));
+          if (orderInProgress) throw new Error(`MODULE_ORDER_IN_PROGRESS:${orderInProgress}`);
 
           // § Fase 18 — logic bikin invoice+items+order diekstrak ke
           // `lib/invoice-order.ts` (dipakai ulang di `admin/users.route.ts`
@@ -207,9 +186,9 @@ export const subscriptionsRoute = new Elysia()
         return result;
       } catch (err) {
         const message = err instanceof Error ? err.message : "CHECKOUT_FAILED";
-        if (message.startsWith("MODULE_ALREADY_SUBSCRIBED:")) {
+        if (message.startsWith("MODULE_ORDER_IN_PROGRESS:")) {
           set.status = 400;
-          return { code: "MODULE_ALREADY_SUBSCRIBED", moduleKey: message.split(":")[1] };
+          return { code: "MODULE_ORDER_IN_PROGRESS", moduleKey: message.split(":")[1] };
         }
         if (message === "USER_NOT_FOUND") {
           set.status = 404;

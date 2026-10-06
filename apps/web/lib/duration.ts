@@ -9,6 +9,8 @@
 // "1 Tahun" (`LEGACY_YEAR_DAYS`) supaya riwayat tidak berubah jadi "360 Hari";
 // paket yang diedit & disimpan ulang otomatis menjadi 365 hari (migration 0041
 // juga menggeser paket lama di database).
+import type { SubscriptionInterval } from "./subscription-period";
+
 export type DurationUnit = "hari" | "bulan" | "tahun";
 
 export const DURATION_UNIT_TO_DAYS: Record<DurationUnit, number> = {
@@ -53,4 +55,14 @@ export function inferDurationUnit(days: number): { amount: number; unit: Duratio
 export function formatDuration(days: number): string {
   const { amount, unit } = inferDurationUnit(days);
   return `${amount} ${DURATION_UNIT_LABELS[unit]}`;
+}
+
+// § Fase 173, ADR-0041 — paket kini berperiode "monthly"/"yearly" (bukan hitungan hari). Label form & kolom Durasi paket.
+export const INTERVAL_LABELS: Record<SubscriptionInterval, string> = { monthly: "Bulanan", yearly: "Tahunan" };
+
+/** "1 Bulan" / "1 Tahun" untuk tabel paket. Tanpa `interval` (data/klien lama) jatuh ke tebakan dari jumlah hari. */
+export function formatPeriod(interval: SubscriptionInterval | undefined, fallbackDays: number): string {
+  if (interval === "monthly") return "1 Bulan";
+  if (interval === "yearly") return "1 Tahun";
+  return formatDuration(fallbackDays);
 }

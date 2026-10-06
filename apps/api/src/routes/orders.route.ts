@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { orders } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { logger } from "../lib/logger";
+import { cancelOrder, CUSTOMER_CANCELLABLE_STATUSES } from "../lib/order-cancel";
 import {
   ALLOWED_PROOF_MIME,
   MAX_PROOF_SIZE_MB,
@@ -29,6 +30,40 @@ async function getOwnedOrder(userId: string, orderId: string) {
 
 export const ordersRoute = new Elysia()
   .use(permissionPlugin)
+  // § Fase 178 — customer membatalkan pesanannya sendiri selama BELUM ada bukti yang menunggu admin (pending) atau setelah ditolak (rejected). Order `cancelled` +
+  // invoice `void` → membuka blokir pembelian/perpanjangan modul yang sama. Order orang lain = 404 (tidak membocorkan keberadaannya).
+  .post(
+    "/orders/:id/cancel",
+    async ({ user, params, set }) => {
+      try {
+        const result = await db.transaction((tx) =>
+          cancelOrder(tx, {
+            orderId: params.id,
+            actorId: user.id,
+            reason: "Dibatalkan oleh pelanggan",
+            allowedStatuses: CUSTOMER_CANCELLABLE_STATUSES,
+            requireOwnerId: user.id,
+            notifyCustomer: false,
+          }),
+        );
+        return { orderId: result.orderId };
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "CANCEL_FAILED";
+        if (code === "ORDER_NOT_FOUND" || code === "INVOICE_NOT_FOUND") {
+          set.status = 404;
+          return { code: "ORDER_NOT_FOUND" };
+        }
+        if (code === "ORDER_NOT_CANCELLABLE" || code === "INVOICE_ALREADY_PAID") {
+          set.status = 400;
+          return { code };
+        }
+        logger.error({ err, orderId: params.id }, "Gagal membatalkan order (customer)");
+        set.status = 500;
+        return { code: "CANCEL_FAILED" };
+      }
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
   .get(
     "/orders/:id",
     async ({ user, params, set }) => {
@@ -126,7 +161,16 @@ export const ordersRoute = new Elysia()
         return { code: "INVALID_IMAGE_FILE" };
       }
 
-      await saveProofAndMarkSubmitted(params.id, webpBuffer, new Date(body.transferDate), body.payerNote ?? null);
+      try {
+        await saveProofAndMarkSubmitted(params.id, webpBuffer, new Date(body.transferDate), body.payerNote ?? null);
+      } catch (err) {
+        // § Fase 178 — order dibatalkan/kedaluwarsa tepat saat bukti diunggah: update bersyarat menolak (bukan menghidupkan order itu lagi).
+        if (err instanceof Error && err.message === "ORDER_NOT_EDITABLE") {
+          set.status = 400;
+          return { code: "ORDER_NOT_EDITABLE" };
+        }
+        throw err;
+      }
       return { ok: true };
     },
     {

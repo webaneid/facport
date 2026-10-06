@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { intervalCompatDays, inferIntervalFromDays, type SubscriptionInterval } from "../../lib/subscription-period";
 import { eq, ilike, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, auditLogs } from "../../db/schema";
@@ -29,7 +30,10 @@ import { moduleProductLine } from "../../lib/module-catalog";
 const planBody = t.Object({
   name: t.String({ minLength: 1, maxLength: 100 }),
   price: t.Integer({ minimum: 0 }),
-  durationDays: t.Integer({ minimum: 1 }),
+  // § Fase 173, ADR-0041 — periode: kirim `interval` ("monthly"|"yearly", form admin sekarang); `durationDays` (klien lama) TETAP diterima
+  // dan dipetakan ke periode lewat `inferIntervalFromDays`. Salah satu WAJIB ada (`resolvePlanPeriod`).
+  durationDays: t.Optional(t.Integer({ minimum: 1 })),
+  interval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])),
   modules: t.Array(
     t.Union([
       t.Literal("sales_invoice"),
@@ -128,6 +132,14 @@ function planProductLine(body: { kind?: string; modules: string[] }): string | u
   return moduleKey ? moduleProductLine(moduleKey) ?? undefined : undefined;
 }
 
+// § Fase 173, ADR-0041 — `interval` adalah sumber kebenaran; `durationDays` diturunkan (30/365) untuk kompatibilitas/tampilan lama. Klien lama yang
+// hanya kirim `durationDays` dipetakan (>= 360 → tahunan). Dipanggil dari POST & PUT.
+function resolvePlanPeriod(body: { interval?: SubscriptionInterval; durationDays?: number }): { interval: SubscriptionInterval; durationDays: number } | null {
+  if (body.interval) return { interval: body.interval, durationDays: intervalCompatDays(body.interval) };
+  if (body.durationDays !== undefined) return { interval: inferIntervalFromDays(body.durationDays), durationDays: body.durationDays };
+  return null;
+}
+
 export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
   .use(permissionPlugin)
   .get(
@@ -151,11 +163,16 @@ export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
         set.status = 400;
         return validationError;
       }
+      const period = resolvePlanPeriod(body);
+      if (!period) {
+        set.status = 400;
+        return { code: "PLAN_PERIOD_REQUIRED" };
+      }
       // § seat_addon TIDAK PERNAH trial (§ subscriptions.route.ts guard
       // yang sama) — dipaksa di sini juga supaya data konsisten sejak
       // dibuat, bukan cuma ditolak belakangan saat customer coba trial.
       const productLine = planProductLine(body);
-      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...(productLine ? { productLine } : {}) };
+      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...period, ...(productLine ? { productLine } : {}) };
       const [plan] = await db.insert(plans).values(values).returning();
       await db.insert(auditLogs).values({
         entityType: "plan",
@@ -181,8 +198,13 @@ export const adminPlansRoute = new Elysia({ prefix: "/admin/plans" })
         set.status = 400;
         return validationError;
       }
+      const period = resolvePlanPeriod(body);
+      if (!period) {
+        set.status = 400;
+        return { code: "PLAN_PERIOD_REQUIRED" };
+      }
       const productLine = planProductLine(body);
-      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...(productLine ? { productLine } : {}) };
+      const values = { ...(body.kind === "seat_addon" ? { ...body, trialEligible: false } : body), ...period, ...(productLine ? { productLine } : {}) };
       const [updated] = await db
         .update(plans)
         .set({ ...values, updatedAt: new Date() })

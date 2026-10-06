@@ -32,7 +32,8 @@ export const JOBS = {
   SEND_EMAIL: "send-email",
   IMPORT_TO_ACCURATE: "import-to-accurate", // proses bulk import Excel→Accurate per baris (generik lintas modul: Purchase Invoice, Vendor Akun Hutang, dst — dibedakan field `module` di `import_batches`), lihat architecture-accurate-integration.md
   REFRESH_ACCURATE_TOKEN: "refresh-accurate-token", // refresh OAuth token proaktif sebelum expired
-  EXPIRE_SUBSCRIPTIONS: "expire-subscriptions", // job terjadwal harian, lihat architecture-subscription.md
+  EXPIRE_SUBSCRIPTIONS: "expire-subscriptions", // job terjadwal tiap 10 menit (Fase 175), lihat architecture-subscription.md
+  EXPIRE_UNPAID_ORDERS: "expire-unpaid-orders", // tiap jam menit ke-5 (Fase 178): order pending lewat jatuh tempo → expired (`EXPIRE_UNPAID_ORDERS_CRON`, lib/job-schedules.ts)
 } as const;
 
 // ⚠️ pg-boss v12: `createQueue()` WAJIB dipanggil untuk tiap queue SEBELUM
@@ -164,7 +165,7 @@ kode di file ini fase 117.
 untuk job yang jalan berkala tanpa trigger user, mis.:
 ```ts
 // apps/api/src/workers/index.ts
-await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *"); // tiap jam 1 pagi
+await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, EXPIRE_SUBSCRIPTIONS_CRON); // "*/10 * * * *" (Fase 175, lib/job-schedules.ts) — dulu harian 01:00 UTC
 await boss.schedule(JOBS.REFRESH_ACCURATE_TOKEN, "0 2 * * *"); // tiap hari jam 2 pagi — access token Accurate expire 15 hari, tidak perlu sesering ini (terverifikasi § architecture-accurate-integration.md §1)
 ```
 

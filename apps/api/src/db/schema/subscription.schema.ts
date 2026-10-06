@@ -16,6 +16,9 @@ export const plans = pgTable("plans", {
   // dengan harga nyata).
   price: integer("price").notNull(), // Rupiah, integer
   durationDays: integer("duration_days").notNull(),
+  // § Fase 173, ADR-0041 — periode langganan: "monthly" | "yearly" (satu-satunya yang menentukan akhir langganan; `durationDays` tinggal
+  // kompatibilitas/tampilan lama, 30/365). Default "monthly" supaya insert lama tanpa kolom ini tetap valid; backfill migrasi 0042.
+  interval: varchar("interval", { length: 10 }).notNull().default("monthly"),
   // § konvensi Fase 14: cuma 1 elemen per plan (1 SKU = 1 sub-modul).
   // Tipe TETAP array (hindari migration breaking untuk data lama).
   modules: jsonb("modules").$type<string[]>().notNull(),
@@ -96,6 +99,10 @@ export const subscriptions = pgTable(
     // subscription asli, 3/1 utk trial) — cegah reminder terkirim dobel
     // tiap kali job harian jalan. Nullable — NULL = belum pernah diingatkan.
     lastReminderThresholdDays: integer("last_reminder_threshold_days"),
+    // § Fase 173, ADR-0041 — jangkar anti-geser tanggal: `endAt` = `periodAnchorAt` + `periodMonths` bulan kalender (zona perusahaan saat itu).
+    // NULL = langganan lama / admin mengubah tanggal manual → perpanjangan berikutnya menetapkan jangkar baru di `endAt` saat itu. Diisi Fase 174.
+    periodAnchorAt: timestamp("period_anchor_at", { withTimezone: true }),
+    periodMonths: integer("period_months"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — 54
@@ -112,5 +119,30 @@ export const subscriptions = pgTable(
     index("subscriptions_status_idx").on(t.status),
     // § FK, defensif — belum ada query eksplisit ditemukan tapi index FK tetap wajar untuk JOIN/cascade.
     index("subscriptions_accurate_connection_id_idx").on(t.accurateConnectionId),
+  ],
+);
+
+// § Fase 176, ADR-0041 poin 4 — riwayat PERPANJANGAN DINI: langganan modul yang masih aktif diperpanjang DI TEMPAT (baris `subscriptions` yang sama,
+// `end_at` diperpanjang dari akhir lama), jadi invoice perpanjangan tidak punya baris `subscriptions` sendiri untuk di-link (`subscriptions.invoice_item_id`
+// 1:1 ke pembelian awal). Tabel ini mencatat tiap perpanjangan (akhir lama → akhir baru) dan menautkannya ke invoice item/order — dibaca `attachSubscriptionDates`
+// supaya invoice perpanjangan tetap menampilkan masa berlakunya.
+export const subscriptionRenewals = pgTable(
+  "subscription_renewals",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    subscriptionId: uuid("subscription_id").notNull().references(() => subscriptions.id),
+    orderId: uuid("order_id").references(() => orders.id), // null kalau diperpanjang admin tanpa order
+    invoiceItemId: uuid("invoice_item_id").references(() => invoiceItems.id),
+    source: varchar("source", { length: 10 }).notNull(), // "order" | "admin"
+    previousEndAt: timestamp("previous_end_at", { withTimezone: true }).notNull(),
+    newEndAt: timestamp("new_end_at", { withTimezone: true }).notNull(),
+    // periode yang DITAMBAH ("monthly" | "yearly") — snapshot, bukan dihitung ulang dari plan.
+    interval: varchar("interval", { length: 10 }).notNull(),
+    actorId: text("actor_id").references(() => user.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("subscription_renewals_subscription_id_idx").on(t.subscriptionId),
+    index("subscription_renewals_invoice_item_id_idx").on(t.invoiceItemId),
   ],
 );

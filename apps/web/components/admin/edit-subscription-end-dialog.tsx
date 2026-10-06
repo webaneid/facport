@@ -5,19 +5,24 @@ import { Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { DateTimeField } from "@/components/ui/date-time-field";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
-import { addDaysToDateString, endOfDayInTimezone } from "@/lib/timezone";
+import { timezoneAbbreviation } from "@/lib/timezone";
+import { addCalendarMonths } from "@/lib/subscription-period";
+import { formatDate } from "@/lib/utils";
 
 // § diminta user 2026-10-03 — ubah/perpanjang masa aktif langganan langsung dari halaman detail user (kolom "Aksi"),
 // bukan cuma dari dialog "Kelola Langganan" di daftar user. Memakai endpoint yang sama (`PATCH /admin/subscriptions/:id`,
 // hanya untuk langganan AKTIF, tanggal baru harus di masa depan). Tombol cepat menambah hari dari tanggal expired SAAT INI
 // (bukan dari hari ini) — perpanjangan tidak memotong sisa masa aktif.
-function dateInTimezone(iso: string | null, timezone: string): string {
-  if (!iso) return "";
-  return new Date(iso).toLocaleDateString("en-CA", { timeZone: timezone }); // YYYY-MM-DD
-}
+// § Fase 174, ADR-0041 — tanggal AKHIR kini tanggal + JAM (zona perusahaan), tombol cepat memakai bulan/tahun KALENDER (jam tetap, dari akhir saat ini),
+// dan nilai yang tidak diubah tidak pernah dikirim ulang (detik pelanggan tidak terpotong). Mengubah tanggal manual mengosongkan jangkar periode di server.
+const QUICK_EXTENSIONS = [
+  { months: 1, label: "+1 bulan" },
+  { months: 3, label: "+3 bulan" },
+  { months: 12, label: "+1 tahun" },
+];
 
 export function EditSubscriptionEndDialog({
   subscriptionId,
@@ -37,12 +42,13 @@ export function EditSubscriptionEndDialog({
   const [value, setValue] = useState("");
   const [saving, setSaving] = useState(false);
   const editable = status === "active";
-  const currentDate = dateInTimezone(endAt, timezone);
+  const currentLabel = endAt ? `${formatDate(endAt, timezone)} ${timezoneAbbreviation(timezone)}` : "";
+  const changed = value !== "" && value !== endAt;
 
   async function handleSave() {
-    if (!value) return;
+    if (!changed) return;
     setSaving(true);
-    const res = await api.admin.subscriptions({ id: subscriptionId }).patch({ endAt: endOfDayInTimezone(value, timezone).toISOString() });
+    const res = await api.admin.subscriptions({ id: subscriptionId }).patch({ endAt: value });
     setSaving(false);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
@@ -66,7 +72,7 @@ export function EditSubscriptionEndDialog({
         type="button"
         disabled={!editable}
         onClick={() => {
-          setValue(currentDate);
+          setValue(endAt ?? "");
           setOpen(true);
         }}
         title={editable ? "Ubah / perpanjang masa aktif" : "Hanya langganan aktif yang bisa diubah — untuk yang sudah berakhir, assign paket baru"}
@@ -80,29 +86,29 @@ export function EditSubscriptionEndDialog({
         <div className="mt-3 flex flex-col gap-3 text-sm">
           <p className="text-muted-foreground">
             Paket <strong className="text-foreground">{planName}</strong>
-            {currentDate && (
+            {currentLabel && (
               <>
                 {" "}
-                — berlaku sampai <strong className="text-foreground">{currentDate}</strong>
+                — berlaku sampai <strong className="text-foreground">{currentLabel}</strong>
               </>
             )}
             .
           </p>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-foreground">Tanggal Expired Baru</span>
-            <Input type="date" value={value} onChange={(e) => setValue(e.target.value)} />
+            <span className="text-xs font-medium text-foreground">Tanggal &amp; Jam Expired Baru</span>
+            <DateTimeField value={value} onChange={setValue} timeZone={timezone} ariaLabel="Expired baru" />
           </label>
-          {currentDate && (
+          {endAt && (
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-muted-foreground">Perpanjang dari tanggal sekarang:</span>
-              {[30, 90, 365].map((days) => (
-                <Button key={days} variant="outline" onClick={() => setValue(addDaysToDateString(currentDate, days))} className="h-7 px-2.5 py-0 text-xs">
-                  +{days} hari
+              <span className="text-xs text-muted-foreground">Perpanjang dari tanggal &amp; jam berakhir saat ini:</span>
+              {QUICK_EXTENSIONS.map(({ months, label }) => (
+                <Button key={months} variant="outline" onClick={() => setValue(addCalendarMonths(new Date(endAt), months, timezone).toISOString())} className="h-7 px-2.5 py-0 text-xs">
+                  {label}
                 </Button>
               ))}
             </div>
           )}
-          <Button onClick={handleSave} disabled={saving || !value} className="self-end">
+          <Button onClick={handleSave} disabled={saving || !changed} className="self-end">
             {saving ? "Menyimpan..." : "Simpan"}
           </Button>
         </div>

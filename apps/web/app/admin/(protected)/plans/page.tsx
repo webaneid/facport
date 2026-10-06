@@ -18,7 +18,8 @@ import { StatusBadge } from "@/lib/status-badges";
 import { api } from "@/lib/api-client";
 import { currencyFormatter } from "@/lib/utils";
 import { MODULE_OPTIONS, MODULE_CATEGORIES, PRODUCT_LINES, productLineLabel, moduleProductLine, type ModuleKey } from "@/lib/module-options";
-import { DURATION_UNIT_LABELS, formatDuration, inferDurationUnit, toDurationDays, type DurationUnit } from "@/lib/duration";
+import { INTERVAL_LABELS, formatPeriod } from "@/lib/duration";
+import { SUBSCRIPTION_INTERVALS, inferIntervalFromDays, type SubscriptionInterval } from "@/lib/subscription-period";
 
 type PlanKind = "module" | "seat_addon";
 // § diminta user 2026-09-23 — Produk yang PUNYA modul saja boleh jadi pilihan "Jenis Paket" (Konverter/
@@ -30,6 +31,7 @@ type Plan = {
   name: string;
   price: number;
   durationDays: number;
+  interval?: SubscriptionInterval;
   modules: string[];
   isActive: boolean;
   trialEligible: boolean;
@@ -40,12 +42,9 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(plan?.name ?? "");
   const [price, setPrice] = useState(String(plan?.price ?? ""));
-  // § Fase 43 — input "Jumlah" + unit (Hari/Bulan/Tahun), bukan hari mentah.
-  // Infer unit dari `durationDays` existing saat edit (§ lib/duration.ts),
-  // supaya paket "1 Tahun" tetap tampil "1"+"Tahun", bukan "365"+"Hari".
-  const inferred = plan ? inferDurationUnit(plan.durationDays) : { amount: 30, unit: "hari" as const };
-  const [durationAmount, setDurationAmount] = useState(String(inferred.amount));
-  const [durationUnit, setDurationUnit] = useState<DurationUnit>(inferred.unit);
+  // § Fase 173, ADR-0041 — paket hanya punya 2 periode: Bulanan/Tahunan (akhir langganan dihitung kalender, bukan jumlah hari). Paket dengan
+  // tanggal khusus ditangani admin lewat override tanggal saat assign, bukan lewat paket lain.
+  const [period, setPeriod] = useState<SubscriptionInterval>(plan ? (plan.interval ?? inferIntervalFromDays(plan.durationDays)) : "monthly");
   // § 1 plan = 1 sub-modul (radio, bukan checkbox lagi sejak Fase 14)
   const [moduleKey, setModuleKey] = useState<ModuleKey | "">((plan?.modules[0] as ModuleKey) ?? "");
   // § diminta user 2026-09-23 — "Jenis Paket" SEKARANG jadi gerbang tunggal: Produk (Facport/Konverter/dst,
@@ -74,12 +73,6 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
       setError("Harga harus angka bulat, minimal 0.");
       return;
     }
-    const amount = Number(durationAmount);
-    if (!Number.isInteger(amount) || amount < 1) {
-      setError("Jumlah durasi harus angka bulat, minimal 1.");
-      return;
-    }
-    const days = toDurationDays(amount, durationUnit);
     if (kind === "module" && !moduleKey) {
       setError("Pilih fitur untuk paket ini.");
       return;
@@ -90,7 +83,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     const body = {
       name: name.trim(),
       price: priceValue,
-      durationDays: days,
+      interval: period,
       modules,
       isActive: true,
       // § seat_addon TIDAK PERNAH trial (§ subscriptions.route.ts guard) —
@@ -127,8 +120,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
     if (!plan) {
       setName("");
       setPrice("");
-      setDurationAmount("30");
-      setDurationUnit("hari");
+      setPeriod("monthly");
       setModuleKey("");
       setPackageType(PRODUCT_LINES_WITH_MODULES[0]?.key ?? "seat_addon");
       setTrialEligible(false);
@@ -205,17 +197,15 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
             )}
           </div>
           <div className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium text-foreground">Durasi</span>
-            <div className="flex gap-2">
-              <Input type="number" min={1} className="flex-1" value={durationAmount} onChange={(e) => setDurationAmount(e.target.value)} />
-              <Select className="flex-1" value={durationUnit} onChange={(e) => setDurationUnit(e.target.value as DurationUnit)}>
-                {(Object.keys(DURATION_UNIT_LABELS) as DurationUnit[]).map((unit) => (
-                  <option key={unit} value={unit}>
-                    {DURATION_UNIT_LABELS[unit]}
-                  </option>
-                ))}
-              </Select>
-            </div>
+            <span className="text-xs font-medium text-foreground">Periode</span>
+            <Select value={period} onChange={(e) => setPeriod(e.target.value as SubscriptionInterval)}>
+              {SUBSCRIPTION_INTERVALS.map((value) => (
+                <option key={value} value={value}>
+                  {INTERVAL_LABELS[value]}
+                </option>
+              ))}
+            </Select>
+            <span className="text-xs text-muted-foreground">Langganan berakhir di tanggal dan jam yang sama bulan/tahun berikutnya sejak pembayaran disetujui.</span>
           </div>
           {kind === "module" && (
             <div className="flex flex-col gap-3">
@@ -306,7 +296,7 @@ export default function AdminPlansPage() {
       cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
     }),
     columnHelper.accessor("price", { header: "Harga", meta: { width: "13%" }, cell: (ctx) => currencyFormatter.format(ctx.getValue()) }),
-    columnHelper.accessor("durationDays", { header: "Durasi", meta: { width: "10%" }, cell: (ctx) => formatDuration(ctx.getValue()) }),
+    columnHelper.accessor("durationDays", { header: "Durasi", meta: { width: "10%" }, cell: (ctx) => formatPeriod(ctx.row.original.interval, ctx.getValue()) }),
     columnHelper.display({
       id: "modules",
       header: "Fitur",

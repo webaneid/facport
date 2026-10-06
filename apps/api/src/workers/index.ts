@@ -30,6 +30,8 @@ import {
 } from "../lib/import-mapping/autoproduksi-production.mapping";
 import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
+import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON, EXPIRE_UNPAID_ORDERS_CRON } from "../lib/job-schedules";
+import { expireOverdueOrders } from "../lib/order-cancel";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
@@ -2144,7 +2146,8 @@ async function main() {
 
   // § architecture-subscription.md — downgrade otomatis, harian (bukan
   // real-time check saja) supaya status konsisten di DB kapan pun dilihat.
-  await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
+  // § Fase 175, ADR-0041 — tiap 10 menit (bukan harian 01:00 UTC): notifikasi/email "langganan berakhir" datang tepat waktu; akses sudah dijaga gerbang.
+  await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, EXPIRE_SUBSCRIPTIONS_CRON);
   await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
     // § Fase 45 — ikut ambil userId+isTrial (bukan cuma id) supaya bisa
     // bikin notifikasi "trial_expired"/"subscription_expired" yang tepat.
@@ -2208,11 +2211,19 @@ async function main() {
     logger.info({ count: expired.length }, "Subscriptions expired");
   });
 
+  // § Fase 178 — invoice belum dibayar (order "pending", belum ada bukti) yang lewat jatuh tempo → expired (membuka blokir pembelian modul yang sama).
+  await boss.schedule(JOBS.EXPIRE_UNPAID_ORDERS, EXPIRE_UNPAID_ORDERS_CRON);
+  await boss.work(JOBS.EXPIRE_UNPAID_ORDERS, async () => {
+    const count = await expireOverdueOrders();
+    logger.info({ count }, "Unpaid orders expired");
+  });
+
   // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir,
   // TERPISAH dari job expire di atas (yang FLIP status, bukan cuma
   // ingatkan). Threshold BEDA untuk trial (durasi pendek, cukup H-3/H-1)
   // vs subscription asli (H-7/H-3/H-1) — § lib/subscription-reminders.ts.
-  await boss.schedule(JOBS.NOTIFY_EXPIRING_SOON, "0 0 * * *");
+  // § Fase 175 — jam 09:00 di zona perusahaan (dulu 00:00 UTC = 07:00 WIB, jam tidak eksplisit).
+  await boss.schedule(JOBS.NOTIFY_EXPIRING_SOON, NOTIFY_EXPIRING_SOON_CRON, null, { tz: await getCompanyTimezone() });
   await boss.work(JOBS.NOTIFY_EXPIRING_SOON, async () => {
     const now = Date.now();
     // § Fase 131 — ikut `planId`/`dataUsahaId`, sama alasan job

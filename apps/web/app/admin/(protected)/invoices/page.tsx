@@ -8,7 +8,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
 import { Combobox } from "@/components/ui/combobox";
-import { Checkbox } from "@/components/ui/checkbox";
 import { FormField } from "@/components/ui/form-field";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
@@ -21,6 +20,10 @@ import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { formatDuration } from "@/lib/duration";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { SubscriptionPicker } from "@/components/subscription/subscription-picker";
+import { buildPickerRows, summarizeSelection } from "@/lib/subscription-picker";
+import { type SubscriptionInterval } from "@/lib/subscription-period";
+import { CancelOrderDialog, ADMIN_CANCELLABLE } from "@/components/billing/cancel-order-dialog";
 import { moduleLabel, moduleCategory, productLineLabel } from "@/lib/module-options";
 
 const LANDING_URL = process.env.NEXT_PUBLIC_LANDING_URL ?? "http://localhost:6209";
@@ -39,6 +42,8 @@ type InvoiceItem = {
   durationDays: number;
   subscriptionStartAt: string | null;
   subscriptionEndAt: string | null;
+  // § Fase 176 — item ini memperpanjang langganan yang sudah aktif (tanggal = akhir lama → akhir baru).
+  isRenewal?: boolean;
 };
 type InvoiceRow = {
   id: string;
@@ -62,7 +67,7 @@ type InvoiceRow = {
   orderStatus: string | null;
   hasProof: boolean;
 };
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean };
+type Plan = { id: string; name: string; price: number; durationDays: number; interval?: SubscriptionInterval; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
 type UserOption = { id: string; name: string; email: string };
 type DataUsahaOption = { id: string; name: string };
 type CreatedInvoiceResult = { invoiceId: string; orderId: string; amountDue: number };
@@ -82,7 +87,7 @@ async function copyToClipboard(text: string) {
 
 // § Fase 27, ADR-0025 — admin bikin invoice BARU untuk user EXISTING
 // (bukan bersamaan pembuatan user seperti Fase 18), boleh >1 paket
-// sekaligus. Pola Combobox (cari user) + Checkbox (pilih paket) SAMA
+// sekaligus. Pola Combobox (cari user) + SubscriptionPicker (pilih fitur, § Fase 178) SAMA
 // dengan `AddUserDialog` (`admin/users/page.tsx`) — sengaja konsisten,
 // bukan didesain ulang.
 function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
@@ -93,7 +98,10 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
   const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
   const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
   const [plans, setPlans] = useState<Plan[] | null>(null);
-  const [selectedPlanIds, setSelectedPlanIds] = useState<Set<string>>(new Set());
+  // § Fase 178 — pilih fitur lewat `SubscriptionPicker` (banyak sekaligus, satu periode untuk semua) — menggantikan daftar checkbox paket per paket.
+  const companyTimezone = useCompanyTimezone();
+  const [interval, setPeriod] = useState<SubscriptionInterval>("monthly");
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedInvoiceResult | null>(null);
@@ -141,22 +149,13 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
     });
   }, [selectedUserId]);
 
-  function togglePlan(planId: string) {
-    setSelectedPlanIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(planId)) next.delete(planId);
-      else next.add(planId);
-      return next;
-    });
-  }
-
   async function handleCreate() {
     if (!selectedUserId) {
       setError("Pilih user dulu.");
       return;
     }
-    if (selectedPlanIds.size === 0) {
-      setError("Pilih minimal 1 paket.");
+    if (summary.planIds.length === 0) {
+      setError("Pilih minimal 1 fitur.");
       return;
     }
     // § kalau customer PUNYA Data Usaha, admin WAJIB pilih eksplisit —
@@ -172,7 +171,7 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
     setError(null);
     const res = await api.admin.invoices.post({
       userId: selectedUserId,
-      planIds: [...selectedPlanIds],
+      planIds: summary.planIds,
       dataUsahaId: selectedDataUsahaId || undefined,
     });
     setSubmitting(false);
@@ -183,7 +182,9 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
           ? "User tidak ditemukan."
           : code === "PLAN_NOT_ACTIVE"
             ? "Salah satu paket sudah tidak aktif."
-            : "Gagal membuat invoice — coba lagi.",
+            : code === "MODULE_ORDER_IN_PROGRESS"
+              ? "Ada fitur yang masih punya invoice belum selesai untuk Data Usaha ini — batalkan invoice lamanya dulu."
+              : "Gagal membuat invoice — coba lagi.",
       );
       return;
     }
@@ -199,20 +200,20 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
       setSelectedUserId("");
       setDataUsahaOptions(null);
       setSelectedDataUsahaId("");
-      setSelectedPlanIds(new Set());
+      setSelectedKeys(new Set());
+      setPeriod("monthly");
       setCreated(null);
       setError(null);
       setSearchDenied(false);
     }
   }
 
-  const selectedPlans = plans?.filter((p) => selectedPlanIds.has(p.id)) ?? [];
-  const total = selectedPlans.reduce((sum, p) => sum + p.price, 0);
+  const summary = summarizeSelection(buildPickerRows(plans ?? [], { interval }), selectedKeys, new Date(), companyTimezone);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <Button onClick={openDialog}>Buat Invoice</Button>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogTitle>Buat Invoice</DialogTitle>
         {created ? (
           <div className="mt-3 flex flex-col gap-3 text-sm">
@@ -274,27 +275,23 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
             )}
 
             <div className="flex flex-col gap-2 border-t border-border pt-3">
-              <span className="text-xs font-medium text-foreground">Paket (pilih 1 atau lebih)</span>
+              <span className="text-xs font-medium text-foreground">Fitur (pilih 1 atau lebih)</span>
               {!plans ? (
                 <Skeleton className="h-16 w-full" />
               ) : plans.length === 0 ? (
                 <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
               ) : (
-                <div className="flex flex-col gap-1.5">
-                  {plans.map((p) => (
-                    <label key={p.id} className="flex items-center gap-2">
-                      <Checkbox checked={selectedPlanIds.has(p.id)} onCheckedChange={() => togglePlan(p.id)} />
-                      <span className="text-foreground">{p.name}</span>
-                      <span className="text-xs text-muted-foreground">
-                        ({p.modules.map(moduleLabel).join(", ")}, {currencyFormatter.format(p.price)})
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                <SubscriptionPicker
+                  plans={plans}
+                  interval={interval}
+                  onIntervalChange={setPeriod}
+                  selectedKeys={selectedKeys}
+                  onSelectedKeysChange={setSelectedKeys}
+                  timeZone={companyTimezone}
+                  startsAt="on-approval"
+                />
               )}
             </div>
-
-            {selectedPlanIds.size > 0 && <p className="text-xs text-muted-foreground">Total: {currencyFormatter.format(total)}</p>}
 
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleCreate} loading={submitting} className="self-end">
@@ -383,7 +380,7 @@ function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
                 // (invoice sudah dibayar).
                 const berlakuText =
                   item.subscriptionStartAt && item.subscriptionEndAt
-                    ? `Berlaku: ${formatDate(item.subscriptionStartAt, companyTimezone)} – ${formatDate(item.subscriptionEndAt, companyTimezone)}`
+                    ? `${item.isRenewal ? "Perpanjangan" : "Berlaku"}: ${formatDate(item.subscriptionStartAt, companyTimezone)} – ${formatDate(item.subscriptionEndAt, companyTimezone)}`
                     : "Berlaku: menunggu pembayaran";
                 return (
                   <div key={item.id} className="flex items-center justify-between gap-3">
@@ -503,6 +500,12 @@ export default function AdminInvoicesPage() {
         return (
           <div className="flex items-center justify-end gap-1">
             <InvoiceDetailDialog invoice={invoice} />
+            {/* § Fase 178 — batalkan invoice yang BELUM lunas (order pending/submitted/rejected); izin `invoices.manage`+`orders.manage` diperiksa backend. */}
+            {invoice.orderId && invoice.orderStatus && ADMIN_CANCELLABLE.includes(invoice.orderStatus) && (
+              <Can permission="orders.manage">
+                <CancelOrderDialog mode="admin" orderId={invoice.orderId} invoiceNumber={invoice.invoiceNumber} onCancelled={load} />
+              </Can>
+            )}
             {invoice.orderId && (
               <button
                 type="button"

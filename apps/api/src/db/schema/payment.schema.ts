@@ -43,6 +43,10 @@ export const orders = pgTable("orders", {
   rejectedBy: text("rejected_by").references(() => user.id),
   rejectedAt: timestamp("rejected_at", { withTimezone: true }),
   rejectionNote: text("rejection_note"),
+  // § Fase 178 — pembatalan (admin atau customer sendiri) pada order yang BELUM lunas: order `cancelled` + invoice `void`, alasan tampil ke customer.
+  cancelledBy: text("cancelled_by").references(() => user.id),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  cancelReason: text("cancel_reason"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -115,7 +115,8 @@ describe("POST /subscriptions/checkout", () => {
     expect(body.moduleKey).toBe("sales_invoice");
   });
 
-  test("400 MODULE_ALREADY_SUBSCRIBED kalau user sudah punya subscription aktif untuk modul yang sama", async () => {
+  // § Fase 176, ADR-0041 poin 4 — modul yang MASIH AKTIF boleh dibeli lagi (perpanjangan dini); dulu ditolak MODULE_ALREADY_SUBSCRIBED.
+  test("200 checkout modul yang masih aktif = PERPANJANGAN dini diizinkan (invoice+order dibuat; langganan baru terjadi saat admin menyetujui)", async () => {
     const email = `checkout-dup-${runId}@test.local`;
     const userId = await signUp(email);
     const cookie = await signIn(email);
@@ -140,10 +141,14 @@ describe("POST /subscriptions/checkout", () => {
       .returning();
 
     const res = await postCheckout(cookie, [newPlan!.id], dataUsahaId);
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { code: string; moduleKey: string };
-    expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
-    expect(body.moduleKey).toBe("purchase_invoice");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invoiceId: string; orderId: string };
+    expect(body.invoiceId).toBeTruthy();
+    expect(body.orderId).toBeTruthy();
+    // checkout TIDAK menyentuh langganan yang berjalan (perpanjangan baru terjadi saat pembayaran disetujui)
+    const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    expect(subs).toHaveLength(1);
+    expect(subs[0]!.status).toBe("active");
   });
 
   // § security review 2026-09-04 (High) — guard SEBELUMNYA cuma cek
@@ -153,7 +158,7 @@ describe("POST /subscriptions/checkout", () => {
   // reproduksi skenario "2 tab checkout modul sama sebelum bayar sama
   // sekali" — checkout KEDUA WAJIB ditolak walau checkout PERTAMA belum
   // pernah dikonfirmasi admin (belum ada subscription sama sekali).
-  test("400 MODULE_ALREADY_SUBSCRIBED kalau modul yang sama masih ada di invoice/order PENDING lain (belum tentu ada subscription aktif)", async () => {
+  test("400 MODULE_ORDER_IN_PROGRESS kalau modul yang sama masih ada di invoice/order PENDING lain (belum tentu ada subscription aktif)", async () => {
     const email = `checkout-inflight-${runId}@test.local`;
     const userId = await signUp(email);
     const cookie = await signIn(email);
@@ -173,7 +178,7 @@ describe("POST /subscriptions/checkout", () => {
     const secondRes = await postCheckout(cookie, [planB!.id], dataUsahaId);
     expect(secondRes.status).toBe(400);
     const body = (await secondRes.json()) as { code: string; moduleKey: string };
-    expect(body.code).toBe("MODULE_ALREADY_SUBSCRIBED");
+    expect(body.code).toBe("MODULE_ORDER_IN_PROGRESS");
     expect(body.moduleKey).toBe("sales_invoice");
   });
 

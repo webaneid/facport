@@ -26,6 +26,8 @@ export type InvoicePdfItem = {
   durationDays: number;
   subscriptionStartAt: Date | null;
   subscriptionEndAt: Date | null;
+  // § Fase 176 — item memperpanjang langganan aktif (tanggal = akhir lama → akhir baru).
+  isRenewal?: boolean;
 };
 
 export type InvoicePdfData = {
@@ -259,7 +261,7 @@ function InvoiceDocument({ data }: { data: InvoicePdfData }) {
             const durasiText = `Durasi: ${formatDurasiPdf(item.durationDays)}`;
             const berlakuText =
               item.subscriptionStartAt && item.subscriptionEndAt
-                ? `Berlaku: ${formatTanggal(item.subscriptionStartAt, data.timezone)} – ${formatTanggal(item.subscriptionEndAt, data.timezone)}`
+                ? `${item.isRenewal ? "Perpanjangan" : "Berlaku"}: ${formatTanggal(item.subscriptionStartAt, data.timezone)} – ${formatTanggal(item.subscriptionEndAt, data.timezone)}`
                 : "Berlaku: menunggu pembayaran";
             return (
               // eslint-disable-next-line react/no-array-index-key -- baris invoice immutable/snapshot, tidak pernah reorder

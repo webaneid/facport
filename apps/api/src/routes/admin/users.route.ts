@@ -4,7 +4,8 @@ import { eq, and, or, ilike, inArray, desc, count } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { roles, userRoles, auditLogs, subscriptions, plans, user as userTable, session } from "../../db/schema";
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
-import { createInvoiceAndOrder } from "../../lib/invoice-order";
+import { createInvoiceAndOrder, createPaidInvoiceAndOrder } from "../../lib/invoice-order";
+import { getCompanyTimezone } from "../../lib/company-timezone";
 import { createManualSubscriptions } from "../../lib/manual-subscription";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { boss, JOBS, startQueue } from "../../lib/queue";
@@ -137,7 +138,10 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
       // (sebelum bikin user sama sekali), bukan cuma sebelum manggil
       // createManualSubscriptions — permintaan yang ditolak TIDAK BOLEH
       // sempat bikin user "setengah jalan".
-      if (body.markAsPaid && !(await userHasPermission(user.id, "subscriptions.manage"))) {
+      // § Fase 178 — mode pembayaran: `payment` ("invoice" | "paid_invoice" | "free"); `markAsPaid` lama = "free" (tanpa invoice). "paid_invoice" (invoice
+      // lunas otomatis) & "free" melewati pembayaran → keduanya butuh `subscriptions.manage`, sama seperti `markAsPaid` sebelumnya.
+      const paymentMode = body.payment ?? (body.markAsPaid ? "free" : "invoice");
+      if (paymentMode !== "invoice" && !(await userHasPermission(user.id, "subscriptions.manage"))) {
         set.status = 403;
         return { code: "FORBIDDEN_MARK_AS_PAID" };
       }
@@ -208,8 +212,17 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         // spesifik di alur provisioning ini — UI itu menyusul Fase
         // 109/110, dicatat sebagai Known Limitation phase doc).
         const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
-        if (body.markAsPaid) {
+        if (paymentMode === "free") {
           subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId }));
+        } else if (paymentMode === "paid_invoice") {
+          // § Fase 178 — invoice dibuat OTOMATIS LUNAS + langganan aktif & tertaut ke invoice (catatan/PDF untuk pembukuan).
+          const timeZone = await getCompanyTimezone();
+          const paid = await db.transaction((tx) =>
+            createPaidInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, actorId: user.id, now: new Date(), timeZone }),
+          );
+          invoiceId = paid.invoiceId;
+          orderId = paid.orderId;
+          subscriptionIds = paid.subscriptionIds;
         } else {
           const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId }));
           invoiceId = created.invoiceId;
@@ -260,6 +273,8 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         name: t.String({ minLength: 1, maxLength: 100 }),
         planIds: t.Optional(t.Array(t.String({ format: "uuid" }))),
         markAsPaid: t.Optional(t.Boolean()),
+        // § Fase 178 — menggantikan `markAsPaid` (tetap diterima: true = "free"): "invoice" kirim invoice | "paid_invoice" invoice otomatis lunas | "free" tanpa invoice.
+        payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
       }),
     },
   )

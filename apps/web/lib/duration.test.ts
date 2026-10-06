@@ -30,3 +30,18 @@ describe("durasi paket — 1 Tahun = 365 hari", () => {
     expect(inferDurationUnit(45)).toEqual({ amount: 45, unit: "hari" });
   });
 });
+
+// § Fase 173, ADR-0041
+import { INTERVAL_LABELS, formatPeriod } from "./duration";
+describe("periode paket (bulanan/tahunan)", () => {
+  test("formatPeriod: periode eksplisit menang atas hitungan hari; tanpa periode jatuh ke tebakan hari", () => {
+    expect(formatPeriod("monthly", 30)).toBe("1 Bulan");
+    expect(formatPeriod("yearly", 365)).toBe("1 Tahun");
+    expect(formatPeriod("yearly", 360)).toBe("1 Tahun");
+    expect(formatPeriod(undefined, 365)).toBe("1 Tahun");
+    expect(formatPeriod(undefined, 30)).toBe("1 Bulan");
+  });
+  test("label periode", () => {
+    expect(INTERVAL_LABELS).toEqual({ monthly: "Bulanan", yearly: "Tahunan" });
+  });
+});

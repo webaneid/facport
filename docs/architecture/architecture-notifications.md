@@ -147,6 +147,8 @@ Satu sumber kebenaran: `apps/api/src/lib/notifications.ts` `NOTIFICATION_TYPES`.
 | `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal, ATAU `openAccurateSession()` gagal saat import (⚠️ diperluas Fase 91 — dulu cuma job terjadwal) | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` | ❌ pending |
 | `accurate_connection_disconnected_by_admin` | `POST /admin/subscriptions/:id/disconnect-accurate` (Fase 92) | Customer (pemilik koneksi) | `/accurate` | ❌ pending |
 | `admin_payment_proof_submitted` | `PATCH /orders/:id/proof` | SEMUA user dengan permission `orders.manage` | `/admin/orders` | ❌ pending |
+| `order_cancelled` | `POST /admin/orders/:id/cancel` (admin; pembatalan oleh customer sendiri TIDAK memberi notifikasi) | pemilik invoice | `/billing` | ✅ in-app |
+| `order_expired` | job `EXPIRE_UNPAID_ORDERS` (order pending lewat jatuh tempo) | pemilik invoice | `/billing` | ✅ in-app |
 | `announcement` | Broadcast admin (`POST /admin/announcements`) | Sesuai target | Beda per surface | ❌ pending |
 
 Link resolusi tipe→halaman: `apps/web/lib/notification-routes.ts`

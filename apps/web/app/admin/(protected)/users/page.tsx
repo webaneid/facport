@@ -23,10 +23,13 @@ import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
-import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
-import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
-import { plansAvailableForDataUsaha } from "@/lib/available-plans";
-import { PLAN_PRODUCT_FILTERS, countPlansByFilter, filterPlansByProduct, planOptionLabel, sortPlansByCatalog, summarizeHiddenPlans } from "@/lib/classify-plans";
+import { timezoneAbbreviation } from "@/lib/timezone";
+import { type SubscriptionInterval } from "@/lib/subscription-period";
+import { buildPickerRows, summarizeSelection, type ActiveSubscriptionInfo } from "@/lib/subscription-picker";
+import { DateTimeField } from "@/components/ui/date-time-field";
+import { PaymentModeField, type PaymentMode } from "@/components/subscription/payment-mode-field";
+import { usePermissions } from "@/lib/use-permissions";
+import { SubscriptionPicker } from "@/components/subscription/subscription-picker";
 
 const PAGE_SIZE = 20;
 
@@ -41,20 +44,8 @@ type UserRow = {
   roles: string[];
   activeSubscriptions: ActiveSubscription[];
 };
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
+type Plan = { id: string; name: string; price: number; durationDays: number; interval?: SubscriptionInterval; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
 
-// § diminta user 2026-09-24 — "Delivery Order 30 hari" (Facport) vs
-// "Delivery Order 30 hari" (Konverter) SAMA PERSIS teksnya di checkbox
-// "Fitur" & dropdown "Assign Paket Baru" (nama plan cuma dari `p.name`
-// bebas ketik admin, § label modul yang ambigu lintas Produk) — admin
-// tidak bisa bedakan mana yang mau di-assign. Mirror pola yang sudah ada
-// di `admin/plans/page.tsx` kolom "Fitur" (`${label} (${productLineLabel})`),
-// cuma di sini sebagai suffix pendek supaya tidak duplikat nama plan.
-function planProductLineSuffix(modules: string[]): string {
-  const key = modules[0];
-  const found = key ? MODULE_OPTIONS.find((o) => o.key === key) : undefined;
-  return found ? ` (${productLineLabel(found.productLine)})` : "";
-}
 // § Fase 115 — field SEKARANG match response `GET /admin/users/:id/subscriptions`
 // (`apps/api/src/routes/admin/user-subscriptions.route.ts`, sudah JOIN
 // `dataUsaha` sejak 2026-09-12) — ganti dari `GET /admin/subscriptions?userId=`
@@ -64,6 +55,10 @@ type SubscriptionHistoryItem = {
   subscriptionId: string;
   status: string;
   endAt: string | null;
+  // § Fase 177 — dipakai SubscriptionPicker (mode Perpanjang: akhir saat ini + jangkar → pratinjau akhir baru).
+  isTrial?: boolean;
+  periodAnchorAt?: string | null;
+  periodMonths?: number | null;
   moduleKey: string | null;
   planName: string;
   dataUsahaId: string;
@@ -90,12 +85,17 @@ type CreatedUserResult = {
 // dikirim OTOMATIS oleh backend (job queue) — dialog ini TIDAK perlu
 // kirim email sendiri, cukup tampilkan konfirmasi hasil.
 function AddUserDialog({ onCreated }: { onCreated: () => void }) {
+  const companyTimezone = useCompanyTimezone();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [plans, setPlans] = useState<Plan[] | null>(null);
-  const [selectedPlanIds, setSelectedPlanIds] = useState<Set<string>>(new Set());
-  const [markAsPaid, setMarkAsPaid] = useState(false);
+  // § Fase 177, ADR-0041 — pilih fitur lewat `SubscriptionPicker` (banyak sekaligus, satu periode untuk semua); paket diturunkan dari fitur+periode.
+  const [interval, setPeriod] = useState<SubscriptionInterval>("monthly");
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  // § Fase 178 — mode pembayaran (menggantikan checkbox "Tandai Sudah Dibayar"): kirim invoice | sudah dibayar (invoice otomatis lunas) | gratis (tanpa invoice).
+  const [payment, setPayment] = useState<PaymentMode>("invoice");
+  const canBypassPayment = usePermissions().includes("subscriptions.manage");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedUserResult | null>(null);
@@ -109,15 +109,6 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     }
   }
 
-  function togglePlan(planId: string) {
-    setSelectedPlanIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(planId)) next.delete(planId);
-      else next.add(planId);
-      return next;
-    });
-  }
-
   async function handleCreate() {
     if (!name.trim() || !email.trim()) {
       setError("Nama dan email wajib diisi.");
@@ -128,8 +119,8 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     const res = await api.admin.users.post({
       name: name.trim(),
       email: email.trim(),
-      planIds: selectedPlanIds.size > 0 ? [...selectedPlanIds] : undefined,
-      markAsPaid: selectedPlanIds.size > 0 ? markAsPaid : undefined,
+      planIds: summary.planIds.length > 0 ? summary.planIds : undefined,
+      payment: summary.planIds.length > 0 ? payment : undefined,
     });
     setSubmitting(false);
     if (res.error) {
@@ -154,20 +145,20 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
     if (!next) {
       setName("");
       setEmail("");
-      setSelectedPlanIds(new Set());
-      setMarkAsPaid(false);
+      setSelectedKeys(new Set());
+      setPeriod("monthly");
+      setPayment("invoice");
       setCreated(null);
       setError(null);
     }
   }
 
-  const selectedPlans = plans?.filter((p) => selectedPlanIds.has(p.id)) ?? [];
-  const total = selectedPlans.reduce((sum, p) => sum + p.price, 0);
+  const summary = summarizeSelection(buildPickerRows(plans ?? [], { interval }), selectedKeys, new Date(), companyTimezone);
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <Button onClick={openDialog}>Tambah User</Button>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogTitle>Tambah User</DialogTitle>
         {created ? (
           <div className="mt-3 flex flex-col gap-3 text-sm">
@@ -180,7 +171,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             <p>
               Password sementara: <code className="text-foreground">{created.tempPassword}</code>
             </p>
-            {created.orderId && (
+            {created.orderId && !created.subscriptionIds && (
               <p className="text-muted-foreground">
                 Invoice dibuat (total {currencyFormatter.format(created.amountDue ?? 0)}) — customer bisa login lalu bayar di{" "}
                 <code className="text-foreground">/billing/{created.orderId}/pay</code>. Email undangan otomatis terkirim.
@@ -188,7 +179,8 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             )}
             {created.subscriptionIds && (
               <p className="text-muted-foreground">
-                {created.subscriptionIds.length} fitur langsung AKTIF (ditandai sudah dibayar). Email undangan otomatis terkirim.
+                {created.subscriptionIds.length} fitur langsung AKTIF
+                {created.invoiceId ? " — invoice dibuat otomatis berstatus LUNAS (tercatat di halaman Invoice)" : " (tanpa invoice)"}. Email undangan otomatis terkirim.
               </p>
             )}
             <Button onClick={() => handleClose(false)} className="self-end">
@@ -213,45 +205,22 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
               ) : plans.length === 0 ? (
                 <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
               ) : (
-                <div className="flex flex-col gap-1.5">
-                  {plans.map((p) => (
-                    <label key={p.id} className="flex items-center gap-2">
-                      <Checkbox checked={selectedPlanIds.has(p.id)} onCheckedChange={() => togglePlan(p.id)} />
-                      <span className="text-foreground">
-                        {p.name}
-                        {planProductLineSuffix(p.modules)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">
-                        ({p.modules.map(moduleLabel).join(", ")}, {currencyFormatter.format(p.price)})
-                      </span>
-                    </label>
-                  ))}
-                </div>
+                <SubscriptionPicker
+                  plans={plans}
+                  interval={interval}
+                  onIntervalChange={setPeriod}
+                  selectedKeys={selectedKeys}
+                  onSelectedKeysChange={setSelectedKeys}
+                  timeZone={companyTimezone}
+                  startsAt={payment === "invoice" ? "on-approval" : "exact"}
+                />
               )}
             </div>
 
-            {selectedPlanIds.size > 0 && (
-              <div className="flex flex-col gap-2 rounded-md bg-muted p-3">
-                <p className="text-xs text-muted-foreground">Total: {currencyFormatter.format(total)}</p>
-                {/* § Fase 26, ADR-0024 — `markAsPaid` PERSIS aksi yang
-                    digerbangi `subscriptions.manage` di backend (§
-                    security review Fase 18, HIGH bypass fix) — role
-                    yang cuma punya `users.manage` (mis. "staf
-                    onboarding") tidak PERLU lihat opsi yang toh akan
-                    ditolak 403 kalau dipilih. UI hint saja, backend
-                    TETAP jadi penjaga sesungguhnya. */}
-                <Can permission="subscriptions.manage">
-                  <label className="flex items-center gap-2">
-                    <Checkbox checked={markAsPaid} onCheckedChange={(checked) => setMarkAsPaid(checked === true)} />
-                    <span className="text-foreground">Tandai Sudah Dibayar (aktifkan langsung, tanpa invoice)</span>
-                  </label>
-                </Can>
-                {!markAsPaid && (
-                  <p className="text-xs text-muted-foreground">
-                    Invoice dibuat, customer bayar sendiri (transfer bank/QRIS) lewat halaman tagihan setelah login.
-                  </p>
-                )}
-              </div>
+            {summary.count > 0 && (
+              // § Fase 26, ADR-0024 — "sudah dibayar"/"gratis" melewati pembayaran = aksi yang digerbangi `subscriptions.manage` di backend (security review Fase 18);
+              // role tanpa izin itu (mis. "staf onboarding") hanya melihat "Kirim invoice". UI hint saja — backend TETAP penjaga sesungguhnya.
+              <PaymentModeField value={payment} onChange={setPayment} allowed={canBypassPayment ? ["invoice", "paid_invoice", "free"] : ["invoice"]} />
             )}
 
             {error && <p className="text-destructive">{error}</p>}
@@ -270,10 +239,18 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [open, setOpen] = useState(false);
   const [plans, setPlans] = useState<Plan[] | null>(null);
   const [history, setHistory] = useState<SubscriptionHistoryItem[] | null>(null);
-  const [selectedPlanId, setSelectedPlanId] = useState("");
-  const [productFilter, setProductFilter] = useState("all");
+  // § Fase 177, ADR-0041 — pilih BANYAK fitur sekaligus lewat `SubscriptionPicker`: satu periode (bulanan/tahunan) untuk semua, paket diturunkan dari fitur+periode.
+  const [interval, setPeriod] = useState<SubscriptionInterval>("monthly");
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
   const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
+  // § Fase 174, ADR-0041 — default: akhir dihitung SERVER dari periode paket saat tombol Assign ditekan (tanggal & jam sama bulan/tahun
+  // berikutnya). `manualEnd` = admin memilih tanggal+jam sendiri (`endAt` ISO, kontrak khusus/custom, tidak terikat bulanan/tahunan).
+  // § Fase 178 — mode pembayaran: default "sudah dibayar" (invoice otomatis lunas → ada catatan/PDF untuk pembukuan); "kirim invoice" (customer bayar sendiri,
+  // butuh izin invoices.manage); "gratis" (tanpa invoice, hadiah/kontrak khusus — satu-satunya mode yang boleh atur tanggal expired sendiri).
+  const [payment, setPayment] = useState<PaymentMode>("paid_invoice");
+  const canSendInvoice = usePermissions().includes("invoices.manage");
+  const [manualEnd, setManualEnd] = useState(false);
   const [endAt, setEndAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -297,89 +274,84 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
 
   function openDialog() {
     setOpen(true);
-    setSelectedPlanId("");
-    setProductFilter("all");
+    setSelectedKeys(new Set());
+    setPeriod("monthly");
+    setPayment("paid_invoice");
     setSelectedDataUsahaId("");
+    setManualEnd(false);
     setEndAt("");
     setError(null);
     setEditingId(null);
     load();
   }
 
-  // § Fase 115 — auto-suggest tanggal expired dari `plan.durationDays`
-  // begitu admin pilih paket, TIDAK melanggar ADR-0016 (endAt TETAP field
-  // manual di backend & TETAP fully-editable di sini — cuma nilai
-  // AWALNYA tidak lagi kosong). § docs/decisions/adr-0016-...md "Update
-  // 2026-09-14". Dihitung LANGSUNG di event handler pilih paket (bukan
-  // `useEffect`) — konsisten aturan project "derived state dihitung saat
-  // event terjadi, bukan react ke perubahan state via effect".
-  function handleSelectPlan(planId: string) {
-    setSelectedPlanId(planId);
-    const plan = plans?.find((p) => p.id === planId);
-    if (plan) setEndAt(addDaysToDateString(todayInTimezone(companyTimezone), plan.durationDays));
-  }
-
   async function handleAssign() {
-    if (!selectedPlanId) {
-      setError("Pilih paket dulu.");
+    if (summary.planIds.length === 0) {
+      setError("Pilih minimal satu fitur dulu.");
       return;
     }
-    // § diminta user 2026-09-12 — gap ditemukan re-audit alur admin: dialog
-    // ini SEBELUMNYA tidak pernah kirim `dataUsahaId` sama sekali walau
-    // backend (`admin/subscriptions.route.ts`) sudah mendukungnya sejak
-    // Fase 107/108 — assign paket SELALU nyasar ke "Data Usaha Utama"
-    // default. Sama seperti `CreateInvoiceDialog`: WAJIB pilih eksplisit
-    // kalau customer punya Data Usaha, biarkan default kalau belum py sama sekali.
+    // § diminta user 2026-09-12 — WAJIB pilih Data Usaha eksplisit kalau customer punya Data Usaha (tanpa itu assign nyasar ke "Data Usaha Utama").
     if (dataUsahaOptions && dataUsahaOptions.length > 0 && !selectedDataUsahaId) {
       setError("Pilih Data Usaha tujuan paket ini dulu.");
       return;
     }
-    // § ADR-0016 — endAt WAJIB diisi admin secara manual, tidak lagi
-    // dihitung otomatis dari plan.durationDays.
-    if (!endAt) {
-      setError("Tanggal expired wajib diisi.");
+    // § Fase 174 — tanpa mode manual, server menghitung akhir dari periode paket (atau memperpanjang dari akhir lama bila fitur masih aktif, § Fase 176);
+    // mode manual WAJIB mengisi tanggal+jam dan berlaku sama untuk semua fitur yang dipilih.
+    const customEnd = payment === "free" && manualEnd;
+    if (customEnd && !endAt) {
+      setError("Tanggal & jam expired wajib diisi.");
       return;
     }
     setSubmitting(true);
     setError(null);
-    // § BUG ditemukan 2026-09-06 (audit timezone menyeluruh, diminta user)
-    // — `new Date(endAt).toISOString()` mem-parse tanggal date-picker
-    // ("YYYY-MM-DD") sebagai UTC MIDNIGHT, BUKAN akhir hari di timezone
-    // perusahaan. Admin pilih "31 Desember" bermaksud "berlaku SAMPAI
-    // akhir tanggal itu", tapi versi lama bikin subscription expired
-    // mulai jam 07:00 WIB tanggal itu juga (UTC+7 midnight = 07:00 WIB)
-    // — masa aktif TERAKHIR terpotong ~17 jam tanpa admin sadari. Fix:
-    // `endOfDayInTimezone` (§ lib/timezone.ts) konversi ke instant UTC
-    // yang benar-benar merepresentasikan 23:59:59.999 di timezone
-    // perusahaan.
-    const res = await api.admin.subscriptions.post({
+    // § Fase 177 — SATU permintaan untuk semua fitur (atomik, satu `now`), bukan satu-satu. § Fase 178 — `payment` menentukan invoice (kirim / otomatis lunas / tanpa).
+    const res = await api.admin.subscriptions.bulk.post({
       userId: user.id,
-      planId: selectedPlanId,
-      endAt: endOfDayInTimezone(endAt, companyTimezone).toISOString(),
+      planIds: summary.planIds,
+      endAt: customEnd ? endAt : undefined,
       dataUsahaId: selectedDataUsahaId || undefined,
+      payment,
     });
     setSubmitting(false);
     if (res.error) {
-      // § bug dilaporkan user 2026-09-27 — pesan generik ini SELALU
-      // muncul apa pun kode error asli (`PLAN_NOT_FOUND`,
-      // `DATA_USAHA_NOT_FOUND`, `END_AT_MUST_BE_FUTURE`), termasuk saat
-      // tanggal SUDAH benar di masa depan tapi penyebab sebenarnya beda
-      // (mis. Data Usaha tidak valid) — sekarang tampilkan pesan sesuai
-      // kode asli dari backend. § docs/lessons-learned.md.
+      // § bug dilaporkan user 2026-09-27 — tampilkan pesan sesuai kode asli dari backend, bukan satu pesan generik.
       const code = (res.error.value as { code?: string } | undefined)?.code;
       setError(
         code === "PLAN_NOT_FOUND"
-          ? "Paket tidak ditemukan."
-          : code === "DATA_USAHA_NOT_FOUND"
-            ? "Data Usaha tujuan tidak ditemukan."
-            : code === "END_AT_MUST_BE_FUTURE"
-              ? "Tanggal expired harus di masa depan."
-              : "Gagal assign paket — coba lagi.",
+          ? "Salah satu paket tidak ditemukan."
+          : code === "PLAN_NOT_ACTIVE"
+            ? "Salah satu paket sudah tidak aktif."
+            : code === "DATA_USAHA_NOT_FOUND"
+              ? "Data Usaha tujuan tidak ditemukan."
+              : code === "END_AT_MUST_BE_FUTURE"
+                ? "Tanggal expired harus di masa depan."
+                : code === "DUPLICATE_MODULE_IN_REQUEST"
+                  ? "Ada fitur yang dipilih dua kali — periksa pilihan."
+                  : code === "MODULE_ORDER_IN_PROGRESS"
+                    ? "Ada fitur yang masih punya invoice belum selesai — batalkan invoice lamanya dulu (halaman Invoice), lalu coba lagi."
+                    : code === "FORBIDDEN_INVOICE"
+                      ? "Kamu tidak punya izin membuat invoice."
+                      : "Gagal assign paket — coba lagi.",
       );
       return;
     }
-    toast.success(`Paket berhasil di-assign ke ${user.name || user.email}.`);
-    setSelectedPlanId("");
+    const data = res.data as unknown as { payment: PaymentMode; results?: { renewed: boolean }[]; orderId?: string; amountDue?: number; subscriptionsCreated?: number; subscriptionsRenewed?: number };
+    if (data.payment === "invoice") {
+      toast.success(`Invoice dibuat untuk ${user.name || user.email} (total ${currencyFormatter.format(data.amountDue ?? 0)}) — customer membayar lewat halaman tagihan.`);
+    } else if (data.payment === "paid_invoice") {
+      const renewed = data.subscriptionsRenewed ?? 0;
+      toast.success(
+        `${(data.subscriptionsCreated ?? 0) + renewed} paket aktif untuk ${user.name || user.email}${renewed > 0 ? ` (${renewed} diperpanjang dari tanggal berakhirnya)` : ""} — invoice lunas tercatat.`,
+      );
+    } else {
+      const results = data.results ?? [];
+      const renewed = results.filter((r) => r.renewed).length;
+      toast.success(
+        `${results.length} paket berhasil di-assign ke ${user.name || user.email}${renewed > 0 ? ` (${renewed} diperpanjang dari tanggal berakhirnya)` : ""}.`,
+      );
+    }
+    setSelectedKeys(new Set());
+    setManualEnd(false);
     setEndAt("");
     load();
     onAssigned();
@@ -387,14 +359,14 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
 
   function startEdit(h: SubscriptionHistoryItem) {
     setEditingId(h.subscriptionId);
-    setEditEndAt(h.endAt ? h.endAt.slice(0, 10) : "");
+    setEditEndAt(h.endAt ?? "");
   }
 
-  async function handleSaveEdit(id: string) {
-    if (!editEndAt) return;
+  async function handleSaveEdit(id: string, originalEndAt: string | null) {
+    // § Fase 174 — hanya kirim bila tanggal/jam benar-benar DIUBAH (detik pelanggan tidak terpotong); nilai dikirim sebagai instant persis.
+    if (!editEndAt || editEndAt === originalEndAt) return;
     setEditSubmitting(true);
-    // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
-    const res = await api.admin.subscriptions({ id }).patch({ endAt: endOfDayInTimezone(editEndAt, companyTimezone).toISOString() });
+    const res = await api.admin.subscriptions({ id }).patch({ endAt: editEndAt });
     setEditSubmitting(false);
     if (res.error) {
       // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
@@ -433,12 +405,17 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
 
   // § diminta user 2026-10-03 — paket/modul yang SUDAH aktif di Data Usaha tujuan tidak ditawarkan lagi (cegah dobel; memperpanjang
   // lewat edit tanggal di detail user). Dihitung dari Data Usaha yang dipilih; belum dipilih → semua paket tampil.
-  const { available: assignablePlans, hidden: hiddenPlans } = plansAvailableForDataUsaha(plans ?? [], history ?? [], selectedDataUsahaId);
-  // § diminta user 2026-10-03 — filter Produk (Facport/Konverter/AutoProduksi/Tambah User) + opsi terurut menurut katalog, supaya paket
-  // bernama sama di Facport vs Konverter tidak tertukar (§ lib/classify-plans.ts).
-  const planCounts = countPlansByFilter(assignablePlans);
-  const hiddenCounts = countPlansByFilter(hiddenPlans);
-  const planOptions = sortPlansByCatalog(filterPlansByProduct(assignablePlans, productFilter)).map((p) => ({ value: p.id, label: planOptionLabel(p) }));
+  // § Fase 177 — langganan aktif per fitur di Data Usaha tujuan (dasar mode Perpanjang di picker): hanya yang status "active" & belum lewat; bila ada lebih
+  // dari satu untuk fitur yang sama, yang berakhir paling akhir dipakai.
+  const activeByModule = new Map<string, ActiveSubscriptionInfo>();
+  for (const h of history ?? []) {
+    if (h.status !== "active" || !h.moduleKey || !h.endAt) continue;
+    if (selectedDataUsahaId && h.dataUsahaId !== selectedDataUsahaId) continue;
+    const current = activeByModule.get(h.moduleKey);
+    if (current?.endAt && new Date(current.endAt).getTime() >= new Date(h.endAt).getTime()) continue;
+    activeByModule.set(h.moduleKey, { endAt: h.endAt, isTrial: h.isTrial ?? false, periodAnchorAt: h.periodAnchorAt, periodMonths: h.periodMonths });
+  }
+  const summary = summarizeSelection(buildPickerRows(plans ?? [], { interval, activeByModule }), selectedKeys, new Date(), companyTimezone);
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -451,7 +428,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       >
         <CreditCard className="h-4 w-4" />
       </button>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-2xl">
         <DialogTitle>Langganan: {user.name || user.email}</DialogTitle>
         <div className="mt-3 flex flex-col gap-4 text-sm">
           <div className="flex flex-col gap-2">
@@ -482,15 +459,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                             <span className="text-foreground">{h.planName}</span>
                             {editingId === h.subscriptionId ? (
                               <div className="flex items-center gap-2">
-                                <Input
-                                  type="date"
-                                  value={editEndAt}
-                                  onChange={(e) => setEditEndAt(e.target.value)}
-                                  className="h-8 w-36"
-                                />
+                                <DateTimeField value={editEndAt} onChange={setEditEndAt} timeZone={companyTimezone} ariaLabel="Expired baru" />
                                 <Button
-                                  onClick={() => handleSaveEdit(h.subscriptionId)}
-                                  disabled={editSubmitting || !editEndAt}
+                                  onClick={() => handleSaveEdit(h.subscriptionId, h.endAt)}
+                                  disabled={editSubmitting || !editEndAt || editEndAt === h.endAt}
                                   className="h-8 px-2.5 py-0 text-xs"
                                 >
                                   {editSubmitting ? "..." : "Simpan"}
@@ -530,61 +502,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               </Accordion>
             )}
           </div>
-          <div className="flex flex-col gap-2 border-t border-border pt-3">
+          <div className="flex flex-col gap-3 border-t border-border pt-3">
             <span className="text-xs font-medium text-foreground">Assign Paket Baru</span>
-            {!plans ? (
-              <Skeleton className="h-9 w-full" />
-            ) : plans.length === 0 ? (
-              <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
-            ) : assignablePlans.length === 0 ? (
-              <p className="text-muted-foreground">Semua paket yang tersedia sudah aktif di Data Usaha ini.</p>
-            ) : (
-              <>
-                <div className="flex flex-wrap gap-1.5" role="group" aria-label="Filter produk">
-                  {[{ key: "all", label: "Semua" }, ...PLAN_PRODUCT_FILTERS].map((f) => {
-                    const active = productFilter === f.key;
-                    return (
-                      <button
-                        key={f.key}
-                        type="button"
-                        aria-pressed={active}
-                        onClick={() => {
-                          setProductFilter(f.key);
-                          // paket yang sudah terpilih tapi di luar filter baru → kosongkan pilihan
-                          if (selectedPlanId && !filterPlansByProduct(assignablePlans, f.key).some((p) => p.id === selectedPlanId)) setSelectedPlanId("");
-                        }}
-                        className={
-                          active
-                            ? "rounded-full border border-primary-500 bg-primary-500 px-3 py-1 text-xs font-medium text-white"
-                            : "rounded-full border border-border px-3 py-1 text-xs text-muted-foreground hover:bg-muted"
-                        }
-                      >
-                        {f.label} <span className={active ? "opacity-80" : "opacity-60"}>({planCounts[f.key] ?? 0})</span>
-                      </button>
-                    );
-                  })}
-                </div>
-                {planOptions.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    {(hiddenCounts[productFilter] ?? 0) > 0
-                      ? "Semua paket untuk filter ini sudah aktif di Data Usaha ini — untuk memperpanjang, ubah tanggal expired di detail user."
-                      : "Tidak ada paket untuk filter ini."}
-                  </p>
-                ) : (
-                  <Combobox options={planOptions} value={selectedPlanId} onChange={handleSelectPlan} placeholder="(pilih paket — bisa diketik untuk mencari)" />
-                )}
-              </>
-            )}
-            {hiddenPlans.length > 0 && (
-              <p className="text-xs text-muted-foreground">
-                Disembunyikan karena modulnya sudah aktif di Data Usaha ini: {summarizeHiddenPlans(hiddenPlans).join("; ")}. Untuk memperpanjang, ubah tanggal
-                expired di detail user.
-              </p>
-            )}
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-foreground">
-                Data Usaha Tujuan{dataUsahaOptions?.length ? " *" : ""}
-              </span>
+              <span className="text-xs font-medium text-foreground">Data Usaha Tujuan{dataUsahaOptions?.length ? " *" : ""}</span>
               {!dataUsahaOptions ? (
                 <Skeleton className="h-9 w-full" />
               ) : dataUsahaOptions.length === 0 ? (
@@ -593,23 +514,41 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 <Combobox
                   options={dataUsahaOptions.map((d) => ({ value: d.id, label: d.name }))}
                   value={selectedDataUsahaId}
-                  onChange={(id) => {
-                    setSelectedDataUsahaId(id);
-                    // paket yang sudah terpilih tapi ternyata sudah aktif di Data Usaha baru → kosongkan pilihan
-                    const chosen = plans?.find((p) => p.id === selectedPlanId);
-                    if (chosen && plansAvailableForDataUsaha([chosen], history ?? [], id).hidden.length > 0) setSelectedPlanId("");
-                  }}
+                  onChange={setSelectedDataUsahaId}
                   placeholder="(pilih Data Usaha)"
                 />
               )}
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-foreground">Tanggal Expired</span>
-              <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-            </label>
+            {!plans ? (
+              <Skeleton className="h-16 w-full" />
+            ) : plans.length === 0 ? (
+              <p className="text-muted-foreground">Belum ada paket aktif — buat dulu di halaman Paket.</p>
+            ) : (
+              <SubscriptionPicker
+                plans={plans}
+                activeByModule={activeByModule}
+                interval={interval}
+                onIntervalChange={setPeriod}
+                selectedKeys={selectedKeys}
+                onSelectedKeysChange={setSelectedKeys}
+                timeZone={companyTimezone}
+                startsAt={payment === "invoice" ? "on-approval" : "exact"}
+              />
+            )}
+            <PaymentModeField value={payment} onChange={setPayment} allowed={canSendInvoice ? ["paid_invoice", "invoice", "free"] : ["paid_invoice", "free"]} />
+            {payment === "free" && (
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <Checkbox checked={manualEnd} onCheckedChange={(checked) => setManualEnd(checked === true)} />
+                  <span className="text-foreground">Atur tanggal &amp; jam expired sendiri (kontrak khusus, berlaku sama untuk semua fitur terpilih)</span>
+                </label>
+                {manualEnd && <DateTimeField value={endAt} onChange={setEndAt} timeZone={companyTimezone} ariaLabel="Expired" />}
+                {manualEnd && <p className="text-xs text-muted-foreground">Dengan tanggal sendiri, langganan aktif fitur yang sama diganti (bukan diperpanjang).</p>}
+              </div>
+            )}
             {error && <p className="text-destructive">{error}</p>}
-            <Button onClick={handleAssign} disabled={submitting || !assignablePlans.length} className="self-end">
-              {submitting ? "Memproses..." : "Assign Paket"}
+            <Button onClick={handleAssign} disabled={submitting || summary.count === 0} className="self-end">
+              {submitting ? "Memproses..." : payment === "invoice" ? `Kirim Invoice${summary.count > 0 ? ` (${summary.count} Paket)` : ""}` : `Assign ${summary.count > 0 ? `${summary.count} Paket` : "Paket"}`}
             </Button>
           </div>
         </div>

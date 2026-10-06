@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Eye, CreditCard, Ban, Check } from "lucide-react";
+import { CancelOrderDialog, ADMIN_CANCELLABLE } from "@/components/billing/cancel-order-dialog";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -38,6 +39,8 @@ type OrderRow = {
 // status langka (pending/cancelled/expired) tanpa perlu 1 tab per status.
 const QUEUE_TABS = [
   { value: "submitted", label: "Menunggu Verifikasi" },
+  // § Fase 178 — invoice yang belum dibayar sama sekali (belum ada bukti): bisa dibatalkan admin; kedaluwarsa otomatis setelah jatuh tempo.
+  { value: "pending", label: "Belum Dibayar" },
   { value: "paid", label: "Lunas" },
   { value: "rejected", label: "Ditolak" },
   { value: "all", label: "Semua" },
@@ -85,8 +88,13 @@ export default function AdminOrdersPage() {
       toast.error(code === "ORDER_NOT_SUBMITTED" ? "Order sudah diproses sebelumnya." : "Gagal konfirmasi pembayaran.");
       return;
     }
-    const data = res.data as { subscriptionsCreated: number };
-    toast.success(`Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan.`);
+    const data = res.data as { subscriptionsCreated: number; subscriptionsRenewed?: number };
+    const renewed = data.subscriptionsRenewed ?? 0;
+    toast.success(
+      renewed > 0
+        ? `Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan, ${renewed} diperpanjang.`
+        : `Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan.`,
+    );
     load(queue, search);
   }
 
@@ -161,7 +169,7 @@ export default function AdminOrdersPage() {
       columnHelper.display({
         id: "actions",
         header: "Aksi",
-        meta: { width: "144px" },
+        meta: { width: "176px" },
         cell: ({ row }) => {
           const order = row.original;
           const canAct = order.status === "submitted";
@@ -177,6 +185,9 @@ export default function AdminOrdersPage() {
                 >
                   <Eye className="h-4 w-4" />
                 </button>
+              )}
+              {ADMIN_CANCELLABLE.includes(order.status) && (
+                <CancelOrderDialog mode="admin" orderId={order.id} invoiceNumber={order.invoice.invoiceNumber} onCancelled={() => load(queue, search)} />
               )}
               {canAct && (
                 <>

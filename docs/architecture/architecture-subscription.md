@@ -419,7 +419,7 @@ export async function getActiveSubscriptionsWithPlans(userId: string) {
     // konsisten ambil baris yang SAMA tiap request kalau somehow ada 2
     // subscription aktif yang cover modul yang sama.
     .orderBy(desc(subscriptions.createdAt));
-  // § endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
+  // § [Sebelum Fase 175] endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
   // (jalan tiap hari) yang jaga `status` selalu konsisten, pola yang
   // SUDAH ada sejak sebelum Fase 14, tidak berubah.
 }
@@ -464,7 +464,7 @@ Terpisah, Bukan di Request Handler)"):
 
 ```ts
 // apps/api/src/workers/index.ts
-await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
+await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, EXPIRE_SUBSCRIPTIONS_CRON); // Fase 175: "*/10 * * * *" (dulu "0 1 * * *")
 await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
   const expired = await db
     .update(subscriptions)
@@ -578,4 +578,20 @@ resmi manapun**, tapi **tidak ada unique constraint DB** yang menjaminnya
 Keputusan kecil Fase 43 ("1 Bulan = 30 hari, 1 Tahun = 360 hari = 12×30") dikoreksi atas permintaan user: pelanggan yang membeli "1 tahun" hanya mendapat 360 hari. Sekarang `DURATION_UNIT_TO_DAYS.tahun = 365` (`apps/web/lib/duration.ts`; 1 Bulan tetap 30 hari).
 - **Data lama tetap terbaca:** paket/invoice yang tersimpan 360 hari (kelipatan: 720, 1080...) tetap ditampilkan sebagai "N Tahun" (web `inferDurationUnit`/`formatDuration` dan salinannya di PDF `formatDurasiPdf`, keduanya mengenali 365 dan `LEGACY_YEAR_DAYS = 360`). Paket lama yang dibuka di form admin tampil "1 Tahun"; kalau disimpan ulang menjadi 365.
 - **Migration 0041 (data):** `plans.duration_days` kelipatan 360 → kelipatan 365 (`(d/360)*365`). Hanya paket yang dipakai pembelian BERIKUTNYA. TIDAK mengubah subscription yang sedang berjalan (`end_at` sudah dihitung) maupun snapshot `invoice_items.duration_days` (riwayat).
-- **Keputusan bisnis yang terbuka:** pelanggan yang SUDAH membeli paket "1 tahun" mendapat 360 hari — apakah diberi tambahan 5 hari (perpanjangan `end_at` +5 hari untuk subscription aktif ber-paket 360 hari) belum diputuskan/tidak dilakukan otomatis.
+- **Keputusan bisnis (DITUTUP 2026-10-07, Fase 179 — diberi koreksi):** pelanggan yang SUDAH membeli paket "1 tahun" mendapat 360 hari — apakah diberi tambahan 5 hari (perpanjangan `end_at` +5 hari untuk subscription aktif ber-paket 360 hari) belum diputuskan/tidak dilakukan otomatis.
+
+## Periode Langganan — Bulanan/Tahunan Kalender (ADR-0041, Fase 173–178)
+Aturan lengkap & alasan: `docs/decisions/adr-0041-periode-langganan-kalender.md`. Ringkas:
+- **Dua periode saja:** `plans.interval` = `monthly` | `yearly` (snapshot ke `invoice_items.interval`). `duration_days` (30/365) tinggal kompatibilitas/tampilan lama — BUKAN dipakai menghitung akhir langganan.
+- **Mulai = saat pembayaran disetujui; akhir = tanggal & jam dinding yang sama** di bulan/tahun berikutnya dalam zona `company.timezone` (satu zona, default Asia/Jakarta). Tanggal yang tidak ada di bulan tujuan dijepit ke hari terakhir bulan itu.
+- **SATU fungsi:** `apps/api/src/lib/subscription-period.ts` (`addCalendarMonths`/`addCalendarPeriod`, murni, `Intl`, dipakai web via re-export `apps/web/lib/subscription-period.ts`). JANGAN menghitung tanggal akhir langganan di tempat lain.
+- **Jangkar:** `subscriptions.period_anchor_at` + `period_months` (NULL untuk data lama/override manual) — akhir = jangkar + total bulan, anti-geser tanggal. Diisi mulai Fase 174.
+- **Trial TIDAK berubah** (hari). Seat memakai logika yang sama; perpanjangan dini seat ditunda.
+- **Perpanjangan dini (Fase 176):** masih aktif saat disetujui → `end_at` diperpanjang di tempat dari akhir lama; sudah habis → mulai dari saat disetujui. Admin boleh override tanggal+jam.
+- **Penegakan akses (Fase 175):** gerbang (`getOwnedSubscriptionsWithPlans`/`getAccessibleSubscriptionsWithPlans`) mengecek `end_at > sekarang` langsung di query (`end_at` NULL pada baris aktif tetap berlaku) — akses berhenti TEPAT di jam akhir, tidak menunggu job. Job `EXPIRE_SUBSCRIPTIONS` tiap 10 menit (flip status + notifikasi/email "berakhir" tepat waktu); `NOTIFY_EXPIRING_SOON` sekali sehari 09:00 di zona perusahaan (`tz` pg-boss; ganti zona di setting → restart worker). Fitur kedaluwarsa terkunci tetapi Data Usaha tetap bisa diakses pemilik (akses Data Usaha tidak bergantung langganan).
+- **Perpanjangan dini (Fase 176):** langganan modul NON-trial yang masih aktif (status active DAN `end_at` > sekarang) pada Data Usaha yang sama diperpanjang DI TEMPAT saat pembayaran disetujui (`admin/orders.route.ts` confirm) atau admin assign tanpa `endAt` (`admin/subscriptions.route.ts`): akhir baru = `computeRenewalEnd` (jangkar + total bulan bila selaras, jika tidak jangkar baru di akhir saat ini). Baris `subscriptions` yang sama (tidak ada baris baru, tidak dibatalkan); riwayat di `subscription_renewals` (akhir lama→baru, invoice item/order, source `order`|`admin`); `lastReminderThresholdDays` direset; row lock `FOR UPDATE`. Sudah lewat `end_at` saat disetujui → ditandai `expired` + langganan baru dari saat disetujui. Trial tetap digantikan (supersede). Checkout: modul aktif boleh dibeli lagi; hanya pesanan in-flight yang memblokir (`MODULE_ORDER_IN_PROGRESS`; `MODULE_ALREADY_SUBSCRIBED` tinggal jalur trial). Invoice perpanjangan menampilkan "Perpanjangan: akhir lama – akhir baru" (`attachSubscriptionDates` → `isRenewal`). Seat: ditunda.
+- **Komponen pemilih (Fase 177):** `SubscriptionPicker` (`docs/architecture/components/architecture-component-subscription-picker.md`) — pilih banyak fitur + satu periode + pratinjau tanggal/jam akhir + mode Perpanjang; dialog admin Tambah User & Kelola Langganan memakainya. Assign banyak paket: `POST /admin/subscriptions/bulk` (atomik, `lib/admin-assign.ts`, aturan sama dengan `POST /`).
+- **Mode pembayaran & batalkan invoice (Fase 178):** admin memberi paket dengan 3 mode — kirim invoice / sudah dibayar (invoice OTOMATIS LUNAS + aktivasi tertaut) / gratis tanpa invoice; invoice belum lunas bisa dibatalkan (admin & customer) dan kedaluwarsa otomatis. Detail: `architecture-payment.md` § "Mode Pembayaran, Batalkan Invoice & Kedaluwarsa".
+- **Koreksi tahun 360 hari (Fase 179):** langganan tahunan lama yang dihitung 360 hari digenapi menjadi N×12 bulan kalender lewat skrip `src/scripts/correct-legacy-year-subscriptions.ts` (default dry-run, `--commit` menerapkan; runbook di `docs/phases/phase-179-koreksi-langganan-360-hari.md`). Hanya menambah, idempoten, diaudit.
+- **Status per fase:** 173 (fungsi + kolom + form paket) dan 174 (konsolidasi jalur aktivasi: konfirmasi order, Tambah User "sudah dibayar" termasuk seat, assign admin — `endAt` opsional, override mengosongkan jangkar; PATCH tanggal manual mengosongkan jangkar) selesai; 175 (penegakan akses tepat di `end_at`, jadwal job) selesai; 176 (perpanjangan dini; seat ditunda) selesai; 177 (komponen picker) – 179 (koreksi 360 hari) berikutnya. Trial tetap memakai hari.
+- **Form paket admin** hanya memilih Bulanan/Tahunan; API menerima `interval` (sumber) atau `durationDays` (klien lama, dipetakan; ≥360 hari = tahunan).

@@ -17,6 +17,7 @@
     "db:seed": "bun run src/db/seed.ts",
     "db:backfill-data-usaha": "bun run src/scripts/backfill-data-usaha.ts",
     "db:cleanup-test-data": "bun run src/scripts/cleanup-test-data.ts",
+    "db:correct-legacy-year": "bun run src/scripts/correct-legacy-year-subscriptions.ts",
     "scopes:sync": "bun run src/scripts/sync-accurate-scopes.ts"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { randomUUID } from "crypto";
 import sharp from "sharp";
 import { db } from "./db";
@@ -150,7 +150,9 @@ export async function saveProofAndMarkSubmitted(orderId: string, webpBuffer: Buf
   const key = `orders/${orderId}/${randomUUID()}.webp`;
   await minioClient.putObject(PAYMENT_PROOF_BUCKET, key, webpBuffer);
 
-  await db
+  // § Fase 178 — update BERSYARAT status: hanya order yang masih bisa dibayar (pending/rejected). Tanpa ini, unggah bukti yang bersamaan dengan pembatalan
+  // admin / kedaluwarsa otomatis bisa MENGHIDUPKAN LAGI order yang sudah `cancelled`/`expired` (status ditimpa jadi "submitted" sementara invoice sudah void).
+  const updated = await db
     .update(orders)
     .set({
       proofUrl: key,
@@ -164,7 +166,9 @@ export async function saveProofAndMarkSubmitted(orderId: string, webpBuffer: Buf
       rejectionNote: null,
       updatedAt: new Date(),
     })
-    .where(eq(orders.id, orderId));
+    .where(and(eq(orders.id, orderId), inArray(orders.status, ["pending", "rejected"])))
+    .returning({ id: orders.id });
+  if (updated.length === 0) throw new Error("ORDER_NOT_EDITABLE");
 
   const owned = await getOrderById(orderId);
   if (!owned) return; // tidak seharusnya terjadi (order baru saja di-update), defensif saja

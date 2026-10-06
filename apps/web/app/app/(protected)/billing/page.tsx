@@ -15,6 +15,7 @@ import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
 import { InvoiceDetailDialog, type BillingInvoice } from "@/components/billing/invoice-detail-dialog";
+import { CancelOrderDialog, CUSTOMER_CANCELLABLE } from "@/components/billing/cancel-order-dialog";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 type Invoice = BillingInvoice;
@@ -26,11 +27,13 @@ export default function BillingPage() {
   const companyTimezone = useCompanyTimezone();
   const [invoices, setInvoices] = useState<Invoice[] | null>(null);
 
+  async function load() {
+    const res = await api.me.invoices.get();
+    if (res.data) setInvoices((res.data as unknown as { invoices: Invoice[] }).invoices);
+  }
+
   useEffect(() => {
-    async function load() {
-      const res = await api.me.invoices.get();
-      if (res.data) setInvoices((res.data as unknown as { invoices: Invoice[] }).invoices);
-    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch data awal, pola standar
     load();
   }, []);
 
@@ -41,7 +44,7 @@ export default function BillingPage() {
       <Card>
         <CardHeader>
           <CardTitle>Semua Invoice</CardTitle>
-          <CardDescription>Ikon di kolom Aksi: mata = lihat detail invoice, uang = bayar sekarang, dokumen = unduh PDF invoice resmi.</CardDescription>
+          <CardDescription>Ikon di kolom Aksi: mata = lihat detail invoice, silang = batalkan pesanan (selama belum dibayar), uang = bayar sekarang, dokumen = unduh PDF invoice resmi.</CardDescription>
         </CardHeader>
         <CardContent>
           {!invoices ? (
@@ -76,6 +79,9 @@ export default function BillingPage() {
                       {/* § diminta user 2026-10-06 — semua aksi berupa ikon saja (tooltip + label akses menjelaskan fungsinya). */}
                       <div className="flex items-center justify-end gap-1">
                         <InvoiceDetailDialog invoice={inv} />
+                        {inv.status === "unpaid" && inv.orderId && inv.orderStatus && CUSTOMER_CANCELLABLE.includes(inv.orderStatus) && (
+                          <CancelOrderDialog mode="customer" orderId={inv.orderId} invoiceNumber={inv.invoiceNumber} onCancelled={load} />
+                        )}
                         {inv.status === "unpaid" && inv.orderId && (
                           <Link
                             href={`/billing/${inv.orderId}/pay`}

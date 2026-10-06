@@ -14,6 +14,11 @@ export function formatNotificationDate(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeZone: timezone }).format(date);
 }
 
+// § Fase 176, ADR-0041 — tanggal DAN jam (mis. "6 Desember 2026 pukul 14.35") untuk pemberitahuan perpanjangan: masa berlaku kini presisi sampai jam.
+export function formatNotificationDateTime(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short", timeZone: timezone }).format(date);
+}
+
 // § Fase 45, ADR-0029 — daftar LENGKAP tipe notifikasi yang valid, satu
 // sumber kebenaran (dipakai backend saat insert DAN referensi untuk
 // frontend `lib/notification-routes.ts` resolve link tujuan). Lihat
@@ -37,6 +42,9 @@ export const NOTIFICATION_TYPES = {
   ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN: "accurate_connection_disconnected_by_admin",
   ANNOUNCEMENT: "announcement",
   ADMIN_PAYMENT_PROOF_SUBMITTED: "admin_payment_proof_submitted",
+  // § Fase 178 — invoice/pesanan belum dibayar dibatalkan admin / kedaluwarsa otomatis (tujuan: /billing).
+  ORDER_CANCELLED: "order_cancelled",
+  ORDER_EXPIRED: "order_expired",
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
 

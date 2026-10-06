@@ -4,7 +4,7 @@ import { db } from "../../lib/db";
 import { invoices, orders, plans, user as userTable, dataUsaha } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { attachInvoiceItems, attachSubscriptionDates } from "../../lib/invoice-helpers";
-import { createInvoiceAndOrder } from "../../lib/invoice-order";
+import { createInvoiceAndOrder, inFlightModuleKeys } from "../../lib/invoice-order";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
 // § architecture-invoice.md § API — SEMUA invoice lintas user, admin-only
@@ -121,11 +121,23 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
       const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(targetUser.id));
-      const result = await db.transaction((tx) =>
-        createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId }),
-      );
-
-      return result;
+      // § Fase 178 — sama seperti checkout customer & mode "Kirim invoice": fitur yang masih punya pesanan belum selesai tidak boleh dibuatkan invoice lagi
+      // (batalkan dulu invoice lamanya) — cegah dobel/perpanjangan ganda.
+      try {
+        return await db.transaction(async (tx) => {
+          const inFlight = await inFlightModuleKeys(tx, { userId: targetUser.id, dataUsahaId });
+          const blocked = planRows.map((p) => p.modules[0]).find((m): m is string => !!m && inFlight.has(m));
+          if (blocked) throw new Error(`MODULE_ORDER_IN_PROGRESS:${blocked}`);
+          return createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId });
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "";
+        if (message.startsWith("MODULE_ORDER_IN_PROGRESS:")) {
+          set.status = 400;
+          return { code: "MODULE_ORDER_IN_PROGRESS", moduleKey: message.split(":")[1] };
+        }
+        throw err;
+      }
     },
     {
       permission: "invoices.manage",

@@ -6128,3 +6128,8 @@ Fase 158 mengasumsikan label "Week" client = CLS5 (disimpulkan dari reverse-engi
 
 ## 2026-10-06 — "1 Tahun" = 360 hari adalah kesalahan produk yang tertanam di konstanta UI (Fase 43 → koreksi)
 Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu diam-diam menjadi harga yang dibayar pelanggan: 5 hari/tahun hilang. Pelajaran: satuan waktu yang dijual harus mengikuti kalender (365), bukan kemudahan hitung internal; dan konstanta konversi yang berujung ke uang/hak akses perlu ditinjau bisnis, bukan keputusan kecil. Koreksi: konstanta 365 + data lama tetap terbaca (360 dikenali sebagai 1 Tahun) + migration data paket; subscription berjalan tidak diubah.
+
+## 2026-10-07 — Unggah bukti yang bersamaan dengan pembatalan bisa menghidupkan lagi order yang sudah dibatalkan (Fase 178, dicegah sebelum rilis)
+**Temuan (saat menambah "batalkan invoice"):** `saveProofAndMarkSubmitted` meng-update `orders.status = "submitted"` TANPA syarat status. Pengecekan "order masih bisa dibayar" hanya ada di handler SEBELUM proses gambar & unggah MinIO, jadi pembatalan admin / kedaluwarsa otomatis yang terjadi di jeda itu akan DITIMPA jadi `submitted` (invoice `void` tapi order hidup lagi — admin bisa menyetujui invoice yang sudah dibatalkan).
+**Perbaikan:** update dibuat bersyarat (`WHERE status IN ('pending','rejected')` + `RETURNING`); tidak ada baris yang berubah → galat `ORDER_NOT_EDITABLE` (400). Berlaku untuk jalur login dan link publik.
+**Pelajaran:** setiap fitur yang menambah status terminal baru (cancelled/expired) harus ditelusuri ke SEMUA penulis `status` lama — pengecekan di awal handler bukan pengganti syarat di UPDATE-nya. Cek-lalu-tulis tanpa kunci/syarat = race.

@@ -1,6 +1,6 @@
 import { inArray } from "drizzle-orm";
 import { db } from "./db";
-import { invoiceItems, subscriptions } from "../db/schema";
+import { invoiceItems, subscriptions, subscriptionRenewals } from "../db/schema";
 
 // § Fase 15 — dipakai `invoices.route.ts` (GET /me/invoices) DAN
 // `admin/invoices.route.ts` (GET /admin/invoices), logic SAMA PERSIS,
@@ -28,7 +28,7 @@ export async function attachInvoiceItems<T extends { id: string }>(rows: T[]) {
 // belum tercipta) balik `null` utk item itu, BUKAN error.
 export async function attachSubscriptionDates<T extends { id: string }>(
   items: T[],
-): Promise<(T & { subscriptionStartAt: Date | null; subscriptionEndAt: Date | null })[]> {
+): Promise<(T & { subscriptionStartAt: Date | null; subscriptionEndAt: Date | null; isRenewal: boolean })[]> {
   const itemIds = items.map((i) => i.id);
   const subRows = itemIds.length
     ? await db
@@ -36,10 +36,21 @@ export async function attachSubscriptionDates<T extends { id: string }>(
         .from(subscriptions)
         .where(inArray(subscriptions.invoiceItemId, itemIds))
     : [];
+  // § Fase 176, ADR-0041 — item invoice yang MEMPERPANJANG langganan yang sudah aktif tidak punya baris `subscriptions` sendiri (perpanjangan di tempat);
+  // masa berlakunya dibaca dari `subscription_renewals`: mulai = akhir lama, akhir = akhir baru (periode TAMBAHAN yang dibeli invoice ini).
+  const renewalRows = itemIds.length
+    ? await db
+        .select({ invoiceItemId: subscriptionRenewals.invoiceItemId, startAt: subscriptionRenewals.previousEndAt, endAt: subscriptionRenewals.newEndAt })
+        .from(subscriptionRenewals)
+        .where(inArray(subscriptionRenewals.invoiceItemId, itemIds))
+    : [];
   const byInvoiceItemId = new Map(subRows.filter((s) => s.invoiceItemId !== null).map((s) => [s.invoiceItemId!, s]));
+  const renewalByInvoiceItemId = new Map(renewalRows.filter((r) => r.invoiceItemId !== null).map((r) => [r.invoiceItemId!, r]));
   return items.map((item) => {
+    const renewal = renewalByInvoiceItemId.get(item.id);
+    if (renewal) return { ...item, subscriptionStartAt: renewal.startAt, subscriptionEndAt: renewal.endAt, isRenewal: true };
     const sub = byInvoiceItemId.get(item.id);
-    return { ...item, subscriptionStartAt: sub?.startAt ?? null, subscriptionEndAt: sub?.endAt ?? null };
+    return { ...item, subscriptionStartAt: sub?.startAt ?? null, subscriptionEndAt: sub?.endAt ?? null, isRenewal: false };
   });
 }
 

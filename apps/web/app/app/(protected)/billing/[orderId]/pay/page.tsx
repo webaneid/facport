@@ -13,5 +13,5 @@ export default function PayOrderPage() {
   const params = useParams<{ orderId: string }>();
   const orderId = params.orderId;
 
-  return <OrderPayFlow orderApi={api.orders({ id: orderId })} backHref="/billing" />;
+  return <OrderPayFlow orderApi={api.orders({ id: orderId })} backHref="/billing" allowCancel />;
 }

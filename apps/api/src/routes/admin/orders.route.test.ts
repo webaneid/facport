@@ -1,10 +1,13 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
+import { addCalendarMonths, computeRenewalEnd, computeSubscriptionPeriod, intervalMonths, inferIntervalFromDays } from "../../lib/subscription-period";
+import { attachSubscriptionDates } from "../../lib/invoice-helpers";
+import { getCompanyTimezone } from "../../lib/company-timezone";
 import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminOrdersRoute } from "./orders.route";
 import { db } from "../../lib/db";
-import { plans, invoices, invoiceItems, orders, subscriptions, notifications, roles, userRoles, user as userTable, memberSeats, dataUsaha } from "../../db/schema";
+import { plans, invoices, invoiceItems, orders, subscriptions, subscriptionRenewals, notifications, roles, userRoles, user as userTable, memberSeats, dataUsaha } from "../../db/schema";
 import { env } from "../../lib/env";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 
@@ -63,7 +66,7 @@ async function createSubmittedOrder(userId: string, planSpecs: { moduleKey: stri
   for (const spec of planSpecs) {
     const [plan] = await db
       .insert(plans)
-      .values({ name: `AdminOrders Plan ${spec.moduleKey} ${runId}-${Math.random()}`, price: spec.price, durationDays: spec.durationDays, modules: [spec.moduleKey] })
+      .values({ name: `AdminOrders Plan ${spec.moduleKey} ${runId}-${Math.random()}`, price: spec.price, durationDays: spec.durationDays, interval: inferIntervalFromDays(spec.durationDays), modules: [spec.moduleKey] })
       .returning();
     planRows.push(plan!);
   }
@@ -81,7 +84,7 @@ async function createSubmittedOrder(userId: string, planSpecs: { moduleKey: stri
     })
     .returning();
   for (const plan of planRows) {
-    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price, durationDays: plan.durationDays });
+    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price, durationDays: plan.durationDays, interval: plan.interval });
   }
   const [order] = await db
     .insert(orders)
@@ -203,11 +206,15 @@ describe("POST /admin/orders/:id/confirm", () => {
       expect(sub.status).toBe("active");
       expect(sub.userId).toBe(customerId);
       const matchingPlan = createdPlans.find((p) => p.id === sub.planId)!;
-      const expectedDurationMs = matchingPlan.durationDays * 24 * 60 * 60 * 1000;
-      const actualDurationMs = sub.endAt!.getTime() - sub.startAt!.getTime();
-      // toleransi 5 detik (waktu eksekusi test), bukan exact millisecond match
-      expect(Math.abs(actualDurationMs - expectedDurationMs)).toBeLessThan(5000);
+      // § Fase 174, ADR-0041 — akhir = tanggal & jam dinding SAMA bulan/tahun berikutnya sejak waktu disetujui (kalender, bukan N×24 jam);
+      // satu `now` per order. Jangkar tercatat.
+      const months = intervalMonths(matchingPlan.interval as "monthly" | "yearly");
+      expect(sub.endAt!.getTime()).toBe(addCalendarMonths(sub.startAt!, months, await getCompanyTimezone()).getTime());
+      expect(sub.periodMonths).toBe(months);
+      expect(sub.periodAnchorAt!.getTime()).toBe(sub.startAt!.getTime());
     }
+    // semua fitur dalam 1 order mulai di instan yang SAMA
+    expect(new Set(subs.map((s) => s.startAt!.getTime())).size).toBe(1);
 
     // § Fase 45 — customer dapat notifikasi "payment_verified"
     const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));
@@ -456,5 +463,130 @@ describe("GET /admin/orders/:id/proof-url", () => {
     const expectedOrigin = new URL(env.MINIO_PUBLIC_URL).origin;
     expect(returnedOrigin).toBe(expectedOrigin);
     expect(body.expiresInSeconds).toBe(600);
+  });
+});
+
+// § Fase 176, ADR-0041 poin 4 — PERPANJANGAN DINI: langganan modul yang masih aktif diperpanjang DI TEMPAT dari akhir lamanya saat pembayaran disetujui;
+// sudah habis → langganan baru dari saat disetujui. Trial tetap digantikan.
+describe("POST /admin/orders/:id/confirm — perpanjangan dini (Fase 176)", () => {
+  async function seedActiveSub(customerId: string, moduleKey: string, opts: { endAt: Date; aligned?: boolean; isTrial?: boolean; lastReminder?: number | null }) {
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(customerId);
+    const [plan] = await db.insert(plans).values({ name: `Renew Existing ${moduleKey} ${runId}-${Math.random()}`, price: 1000, durationDays: 30, interval: "monthly", modules: [moduleKey] }).returning();
+    const startAt = new Date(opts.endAt.getTime() - 20 * 24 * 60 * 60 * 1000);
+    const anchored = opts.aligned ? { periodAnchorAt: startAt, periodMonths: 1 } : {};
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId: customerId, planId: plan!.id, status: "active", startAt, endAt: opts.endAt, isTrial: opts.isTrial ?? false, lastReminderThresholdDays: opts.lastReminder ?? null, dataUsahaId, ...anchored })
+      .returning();
+    return sub!;
+  }
+  async function confirm(adminCookie: string, orderId: string) {
+    const res = await testApp.handle(new Request(`http://localhost/admin/orders/${orderId}/confirm`, { method: "POST", headers: { cookie: adminCookie } }));
+    return { res, body: (await res.json()) as { subscriptionsCreated: number; subscriptionsRenewed: number } };
+  }
+
+  test("masih aktif → end_at diperpanjang dari AKHIR LAMA (bukan dari waktu disetujui), baris yang sama, riwayat + reminder direset + notifikasi menyebut tanggal", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-renew-${runId}@test.local`);
+    const tz = await getCompanyTimezone();
+    const oldEnd = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000 + 987); // akhir 20 hari lagi
+    const sub = await seedActiveSub(customerId, "sales_order", { endAt: oldEnd, aligned: false, lastReminder: 7 });
+    const { order, invoice } = await createSubmittedOrder(customerId, [{ moduleKey: "sales_order", price: 100000, durationDays: 30 }]);
+
+    const { res, body } = await confirm(adminCookie, order.id);
+    expect(res.status).toBe(200);
+    expect(body.subscriptionsRenewed).toBe(1);
+    expect(body.subscriptionsCreated).toBe(0);
+
+    const all = await db.select().from(subscriptions).where(eq(subscriptions.userId, customerId));
+    expect(all).toHaveLength(1); // TIDAK ada baris baru, TIDAK dibatalkan
+    const [after] = all;
+    expect(after!.id).toBe(sub.id);
+    expect(after!.status).toBe("active");
+    expect(after!.endAt!.getTime()).toBe(addCalendarMonths(oldEnd, 1, tz).getTime()); // akhir lama + 1 bulan kalender, bukan sekarang + 1 bulan
+    expect(after!.startAt!.getTime()).toBe(sub.startAt!.getTime()); // mulai tidak berubah
+    expect(after!.lastReminderThresholdDays).toBeNull(); // pengingat berlaku lagi untuk akhir baru
+
+    const [renewal] = await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, sub.id));
+    expect(renewal!.source).toBe("order");
+    expect(renewal!.orderId).toBe(order.id);
+    expect(renewal!.previousEndAt.getTime()).toBe(oldEnd.getTime());
+    expect(renewal!.newEndAt.getTime()).toBe(after!.endAt!.getTime());
+    expect(renewal!.interval).toBe("monthly");
+
+    const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));
+    expect(notif!.body).toContain("perpanjangan langganan berhasil");
+
+    // invoice perpanjangan menampilkan masa berlaku: akhir lama → akhir baru
+    const [item] = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoice.id));
+    const [dated] = await attachSubscriptionDates([item!]);
+    expect(dated!.isRenewal).toBe(true);
+    expect(dated!.subscriptionStartAt!.getTime()).toBe(oldEnd.getTime());
+    expect(dated!.subscriptionEndAt!.getTime()).toBe(after!.endAt!.getTime());
+  });
+
+  test("selaras jangkar: perpanjang berantai tidak menggeser tanggal (jangkar + total bulan bertambah)", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-renew-anchor-${runId}@test.local`);
+    const tz = await getCompanyTimezone();
+    const first = computeSubscriptionPeriod(new Date(Date.now() - 5 * 24 * 60 * 60 * 1000), "monthly", tz);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(customerId);
+    const [plan] = await db.insert(plans).values({ name: `Renew Anchor ${runId}`, price: 1000, durationDays: 30, interval: "monthly", modules: ["sales_quotation"] }).returning();
+    await db.insert(subscriptions).values({ userId: customerId, planId: plan!.id, status: "active", startAt: first.startAt, endAt: first.endAt, periodAnchorAt: first.periodAnchorAt, periodMonths: first.periodMonths, dataUsahaId });
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "sales_quotation", price: 100000, durationDays: 365 }]); // beli TAHUNAN
+
+    await confirm(adminCookie, order.id);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.userId, customerId));
+    const expected = computeRenewalEnd({ endAt: first.endAt, periodAnchorAt: first.periodAnchorAt, periodMonths: first.periodMonths }, "yearly", tz);
+    expect(after!.endAt!.getTime()).toBe(expected.endAt.getTime());
+    expect(after!.periodMonths).toBe(13); // 1 bulan + 12 bulan dari jangkar yang sama
+    expect(after!.periodAnchorAt!.getTime()).toBe(first.periodAnchorAt.getTime());
+  });
+
+  test("sudah lewat end_at (status masih 'active', job belum jalan) → ditandai expired dan langganan BARU dari saat disetujui, tanpa riwayat perpanjangan", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-renew-late-${runId}@test.local`);
+    const tz = await getCompanyTimezone();
+    const stale = await seedActiveSub(customerId, "purchase_return", { endAt: new Date(Date.now() - 60 * 1000) });
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "purchase_return", price: 100000, durationDays: 30 }]);
+
+    const { body } = await confirm(adminCookie, order.id);
+    expect(body.subscriptionsCreated).toBe(1);
+    expect(body.subscriptionsRenewed).toBe(0);
+    const [old] = await db.select().from(subscriptions).where(eq(subscriptions.id, stale.id));
+    expect(old!.status).toBe("expired");
+    const fresh = (await db.select().from(subscriptions).where(eq(subscriptions.orderId, order.id)))[0]!;
+    expect(fresh.status).toBe("active");
+    expect(fresh.endAt!.getTime()).toBe(addCalendarMonths(fresh.startAt!, 1, tz).getTime());
+    expect(await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, stale.id))).toHaveLength(0);
+  });
+
+  test("trial aktif tetap DIGANTIKAN (cancelled) dan paket asli mulai dari saat disetujui — bukan diperpanjang", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-renew-trial-${runId}@test.local`);
+    const trial = await seedActiveSub(customerId, "receive_item", { endAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), isTrial: true });
+    const { order } = await createSubmittedOrder(customerId, [{ moduleKey: "receive_item", price: 100000, durationDays: 30 }]);
+
+    const { body } = await confirm(adminCookie, order.id);
+    expect(body.subscriptionsCreated).toBe(1);
+    expect(body.subscriptionsRenewed).toBe(0);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, trial.id));
+    expect(after!.status).toBe("cancelled");
+  });
+
+  test("order campuran: 1 fitur diperpanjang + 1 fitur baru dalam satu pembayaran", async () => {
+    const adminCookie = await makeAdmin();
+    const customerId = await signUp(`admin-orders-renew-mixed-${runId}@test.local`);
+    const oldEnd = new Date(Date.now() + 15 * 24 * 60 * 60 * 1000);
+    await seedActiveSub(customerId, "other_deposit", { endAt: oldEnd });
+    const { order } = await createSubmittedOrder(customerId, [
+      { moduleKey: "other_deposit", price: 100000, durationDays: 30 },
+      { moduleKey: "other_payment", price: 100000, durationDays: 30 },
+    ]);
+    const { body } = await confirm(adminCookie, order.id);
+    expect(body.subscriptionsRenewed).toBe(1);
+    expect(body.subscriptionsCreated).toBe(1);
+    const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));
+    expect(notif!.body).toContain("1 langganan baru sudah aktif dan perpanjangan langganan berhasil");
   });
 });

@@ -29,3 +29,24 @@ describe("endOfDayInTimezone", () => {
     expect(fixed.getTime()).toBeGreaterThan(oldBuggyBehavior.getTime());
   });
 });
+
+// § Fase 174
+import { zonedDateTimeToUtc, dateTimeFieldsInTimezone, timezoneAbbreviation } from "./timezone";
+describe("tanggal+jam akhir langganan (WIB)", () => {
+  test("zonedDateTimeToUtc: 6 Nov 14:35 WIB = 07:35 UTC; round-trip lewat dateTimeFieldsInTimezone", () => {
+    const d = zonedDateTimeToUtc("2026-11-06", "14:35", "Asia/Jakarta");
+    expect(d.toISOString()).toBe("2026-11-06T07:35:00.000Z");
+    expect(dateTimeFieldsInTimezone(d, "Asia/Jakarta")).toEqual({ date: "2026-11-06", time: "14:35" });
+  });
+  test("tengah malam WIB: 00:30 WIB tanggal 1 = tanggal sebelumnya di UTC, tetap tampil tanggal 1", () => {
+    const d = zonedDateTimeToUtc("2026-03-01", "00:30", "Asia/Jakarta");
+    expect(d.toISOString()).toBe("2026-02-28T17:30:00.000Z");
+    expect(dateTimeFieldsInTimezone(d, "Asia/Jakarta")).toEqual({ date: "2026-03-01", time: "00:30" });
+  });
+  test("singkatan zona", () => {
+    expect(timezoneAbbreviation("Asia/Jakarta")).toBe("WIB");
+    expect(timezoneAbbreviation("Asia/Makassar")).toBe("WITA");
+    expect(timezoneAbbreviation("Asia/Jayapura")).toBe("WIT");
+    expect(timezoneAbbreviation("UTC")).toBe("UTC");
+  });
+});

@@ -49,6 +49,12 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           // atau kapan MULAI-nya — dua-duanya dibutuhkan biar "Detail
           // User" benar-benar berguna buat support (§ komentar file ini).
           durationDays: plans.durationDays,
+          // § Fase 177, ADR-0041 — dipakai `SubscriptionPicker` (mode Perpanjang): periode paket, trial/bukan, dan jangkar untuk pratinjau akhir baru
+          // (`computeRenewalEnd`, fungsi yang sama dengan server).
+          interval: plans.interval,
+          isTrial: subscriptions.isTrial,
+          periodAnchorAt: subscriptions.periodAnchorAt,
+          periodMonths: subscriptions.periodMonths,
           planName: plans.name,
           moduleKey: plans.modules,
           dataUsahaId: dataUsaha.id,
@@ -108,6 +114,10 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           startAt: r.startAt,
           endAt: r.endAt,
           durationDays: r.durationDays,
+          interval: r.interval,
+          isTrial: r.isTrial,
+          periodAnchorAt: r.periodAnchorAt,
+          periodMonths: r.periodMonths,
           moduleKey: r.moduleKey[0] ?? null,
           planName: r.planName,
           dataUsahaId: r.dataUsahaId,

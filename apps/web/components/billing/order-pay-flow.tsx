@@ -13,6 +13,7 @@ import { StatusBadge } from "@/lib/status-badges";
 import { currencyFormatter } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { middayInTimezone } from "@/lib/timezone";
+import { CancelOrderDialog } from "@/components/billing/cancel-order-dialog";
 
 type BankAccount = { id: string; bankName: string; accountNumber: string; accountName: string };
 type QrisAccountPublic = { id: string; name: string; imageUrl: string };
@@ -43,7 +44,8 @@ export type OrderApiBinding = {
 // unik) -> upload bukti. KEDUA versi endpoint (login/publik) menjaga
 // guard status yang SAMA di backend (`lib/order-payment.ts`) — komponen
 // ini murni presentasi + orkestrasi call, tidak menduplikasi guard.
-export function OrderPayFlow({ orderApi, backHref }: { orderApi: OrderApiBinding; backHref?: string }) {
+// § Fase 178 — `allowCancel`: tombol "Batalkan Pesanan" (HANYA halaman pembayaran customer yang login; versi publik tanpa login tidak boleh membatalkan).
+export function OrderPayFlow({ orderApi, backHref, allowCancel = false }: { orderApi: OrderApiBinding; backHref?: string; allowCancel?: boolean }) {
   const router = useRouter();
   const companyTimezone = useCompanyTimezone();
   const [detail, setDetail] = useState<OrderDetail | null | "not-found">(null);
@@ -178,7 +180,8 @@ export function OrderPayFlow({ orderApi, backHref }: { orderApi: OrderApiBinding
           <CardContent className="py-6">
             <StatusBadge domain="order" status={order.status} className="mb-2" />
             <p className="text-sm text-muted-foreground">
-              {order.status === "cancelled" ? "Order ini sudah dibatalkan." : "Order ini sudah kedaluwarsa."} Hubungi admin kalau masih ingin melanjutkan.
+              {order.status === "cancelled" ? "Order ini sudah dibatalkan." : "Order ini melewati jatuh tempo tanpa pembayaran dan sudah kedaluwarsa."} Kamu bisa membuat pesanan baru lewat
+              halaman Berlangganan, atau hubungi admin kalau butuh bantuan.
             </p>
           </CardContent>
         </Card>
@@ -186,6 +189,11 @@ export function OrderPayFlow({ orderApi, backHref }: { orderApi: OrderApiBinding
 
       {(order.status === "pending" || order.status === "rejected") && (
         <>
+          {allowCancel && (
+            <div className="flex justify-end">
+              <CancelOrderDialog mode="customer" trigger="button" orderId={order.id} invoiceNumber={invoice.invoiceNumber} onCancelled={() => load()} />
+            </div>
+          )}
           {order.status === "rejected" && order.rejectionNote && (
             <Card>
               <CardContent className="py-4">

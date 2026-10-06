@@ -105,4 +105,28 @@ describe("GET /admin/users/:id/subscriptions", () => {
       expect(s).toHaveProperty("dataUsahaId");
     }
   });
+
+  // § Fase 177, ADR-0041 — field yang dibutuhkan SubscriptionPicker (mode Perpanjang): periode paket, trial, jangkar.
+  test("200 — baris langganan membawa interval paket, isTrial, dan jangkar (periodAnchorAt/periodMonths) untuk pratinjau perpanjangan", async () => {
+    const adminCookie = await makeAdminCookie();
+    const userId = await signUp(`usersubs-fields-${runId}@test.local`);
+    const dataUsahaId = await createTestDataUsaha(userId, `UserSubs Fields ${runId}`);
+    const [plan] = await db.insert(plans).values({ name: `UserSubs Fields Plan ${runId}`, price: 1000, durationDays: 365, interval: "yearly", modules: ["journal_voucher"] }).returning();
+    const anchor = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    await db.insert(subscriptions).values({
+      userId, planId: plan!.id, status: "active", startAt: anchor, endAt: new Date(Date.now() + 100 * 24 * 60 * 60 * 1000),
+      isTrial: false, periodAnchorAt: anchor, periodMonths: 12, dataUsahaId,
+    });
+    const [trialPlan] = await db.insert(plans).values({ name: `UserSubs Fields Trial ${runId}`, price: 0, durationDays: 30, interval: "monthly", modules: ["sales_order"] }).returning();
+    await db.insert(subscriptions).values({ userId, planId: trialPlan!.id, status: "active", startAt: anchor, endAt: new Date(Date.now() + 10 * 24 * 60 * 60 * 1000), isTrial: true, dataUsahaId });
+
+    const res = await testApp.handle(new Request(`http://localhost/admin/users/${userId}/subscriptions`, { headers: { cookie: adminCookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { subscriptions: { moduleKey: string; interval: string; isTrial: boolean; periodAnchorAt: string | null; periodMonths: number | null }[] };
+    const paid = body.subscriptions.find((x) => x.moduleKey === "journal_voucher")!;
+    expect(paid).toMatchObject({ interval: "yearly", isTrial: false, periodMonths: 12 });
+    expect(new Date(paid.periodAnchorAt!).getTime()).toBe(anchor.getTime());
+    const trial = body.subscriptions.find((x) => x.moduleKey === "sales_order")!;
+    expect(trial).toMatchObject({ interval: "monthly", isTrial: true, periodAnchorAt: null, periodMonths: null });
+  });
 });

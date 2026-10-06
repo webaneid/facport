@@ -1,7 +1,7 @@
-import { MODULE_OPTIONS, PRODUCT_LINES, moduleLabel, moduleProductLine, productLineLabel } from "./module-options";
+import { PRODUCT_LINES, moduleProductLine, productLineLabel } from "./module-options";
 
-// § diminta user 2026-10-03 — popup "Assign Paket Baru" diurutkan & difilter per Produk: Facport, Konverter, AutoProduksi,
-// lalu Tambah User (paket seat add-on). Nama paket Facport dan Konverter sering SAMA PERSIS ("Delivery Order 30 hari"),
+// § diminta user 2026-10-03 — klasifikasi Produk paket: Facport, Konverter, AutoProduksi, lalu Tambah User (paket seat add-on). § Fase 177 — dipakai
+// `SubscriptionPicker` (filter Produk); urutan/filter/ringkasan lama dipindah ke `lib/subscription-picker.ts` (fungsi `planOptionLabel`/`sortPlansByCatalog`/dst dihapus). Nama paket Facport dan Konverter sering SAMA PERSIS ("Delivery Order 30 hari"),
 // admin sering tertukar → tiap opsi diberi awalan produk, urutan mengikuti katalog (Produk → Kategori → Modul), dan ada
 // filter Produk. Combobox yang dipakai tetap Combobox bersama (teks awalan produk ikut tercari).
 export type ClassifiablePlan = { id: string; name: string; durationDays: number; modules: string[]; productLine?: string; kind?: string };
@@ -26,40 +26,4 @@ export function planFilterKey(plan: ClassifiablePlan): string {
 
 export function planProductLabel(plan: ClassifiablePlan): string {
   return plan.kind === "seat_addon" ? "Tambah User" : productLineLabel(planProduct(plan));
-}
-
-export function planOptionLabel(plan: ClassifiablePlan): string {
-  return `${planProductLabel(plan)} · ${plan.name} — ${plan.durationDays} hari`;
-}
-
-export function sortPlansByCatalog<P extends ClassifiablePlan>(plans: P[]): P[] {
-  const filterRank = (p: P) => PLAN_PRODUCT_FILTERS.findIndex((f) => f.key === planFilterKey(p));
-  const moduleRank = (p: P) => {
-    const i = MODULE_OPTIONS.findIndex((m) => m.key === p.modules[0]);
-    return i === -1 ? 9999 : i;
-  };
-  return [...plans].sort((a, b) => filterRank(a) - filterRank(b) || moduleRank(a) - moduleRank(b) || a.name.localeCompare(b.name) || a.durationDays - b.durationDays);
-}
-
-export function filterPlansByProduct<P extends ClassifiablePlan>(plans: P[], filterKey: string): P[] {
-  return filterKey === "all" ? plans : plans.filter((p) => planFilterKey(p) === filterKey);
-}
-
-export function countPlansByFilter(plans: ClassifiablePlan[]): Record<string, number> {
-  const counts: Record<string, number> = { all: plans.length };
-  for (const p of plans) counts[planFilterKey(p)] = (counts[planFilterKey(p)] ?? 0) + 1;
-  return counts;
-}
-
-// Ringkasan paket yang disembunyikan karena modulnya sudah aktif, mis. "AutoProduksi · Input Produksi (2 paket)" — supaya admin tahu
-// PERSIS fitur mana yang menyebabkan paket tak muncul (bukan sekadar "N paket disembunyikan").
-export function summarizeHiddenPlans(hidden: ClassifiablePlan[]): string[] {
-  const byModule = new Map<string, { label: string; count: number }>();
-  for (const p of hidden) {
-    const key = p.modules[0] ?? p.id;
-    const entry = byModule.get(key) ?? { label: `${planProductLabel(p)} · ${p.modules[0] ? moduleLabel(p.modules[0]) : p.name}`, count: 0 };
-    entry.count += 1;
-    byModule.set(key, entry);
-  }
-  return [...byModule.values()].map((e) => `${e.label} (${e.count} paket)`);
 }

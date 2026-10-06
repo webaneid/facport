@@ -6,6 +6,7 @@ import { eq } from "drizzle-orm";
 import { db } from "./db";
 import { plans, subscriptions, memberSeats, dataUsaha, user as userTable } from "../db/schema";
 import { createTestDataUsaha, createTestSeat } from "./test-fixtures";
+import { hasAccessToDataUsaha } from "./data-usaha";
 
 // § architecture-subscription.md — belum dipakai route manapun di Fase 01
 // (Fase 02 yang pakai), tapi WAJIB ada test sendiri sesuai rencana eksekusi.
@@ -518,5 +519,49 @@ describe("moduleAccess — kasus tepi Data Usaha aktif", () => {
     );
     expect(res.status).toBe(403);
     expect(((await res.json()) as { code: string }).code).toBe("DATA_USAHA_FORBIDDEN");
+  });
+});
+
+// § Fase 175, ADR-0041 — akses diputus TEPAT di `end_at`, tidak menunggu job flip status; Data Usaha tetap bisa diakses saat fitur kedaluwarsa.
+describe("akses tepat di end_at (Fase 175)", () => {
+  async function makeActiveSub(userId: string, endAt: Date | null, moduleKey = "purchase_invoice") {
+    const [plan] = await db.insert(plans).values({ name: `Plan EndAt ${runId}-${Math.random()}`, price: 1000, durationDays: 30, modules: [moduleKey] }).returning();
+    const dataUsahaId = await createTestDataUsaha(userId);
+    await db.insert(subscriptions).values({ userId, planId: plan!.id, status: "active", startAt: new Date(Date.now() - 40 * 24 * 60 * 60 * 1000), endAt, dataUsahaId });
+    return dataUsahaId;
+  }
+
+  test("status masih 'active' tapi end_at sudah lewat → 403 (job belum jalan tidak membuka celah)", async () => {
+    const email = `gate-endat-past-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    await makeActiveSub(userId, new Date(Date.now() - 1000));
+    const res = await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie } }));
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as { code: string }).code).toBe("MODULE_NOT_SUBSCRIBED");
+    expect(await getOwnedSubscriptionsWithPlans(userId)).toHaveLength(0);
+    expect(await getAccessibleSubscriptionsWithPlans(userId)).toHaveLength(0);
+  });
+
+  test("end_at 1 menit lagi → masih 200; end_at NULL pada baris aktif tetap berlaku (data lama tidak memutus akses)", async () => {
+    const emailSoon = `gate-endat-soon-${runId}@test.local`;
+    const soonUser = await signUp(emailSoon);
+    const soonCookie = await signIn(emailSoon);
+    await makeActiveSub(soonUser, new Date(Date.now() + 60 * 1000));
+    expect((await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie: soonCookie } }))).status).toBe(200);
+
+    const emailNull = `gate-endat-null-${runId}@test.local`;
+    const nullUser = await signUp(emailNull);
+    const nullCookie = await signIn(emailNull);
+    await makeActiveSub(nullUser, null);
+    expect((await testApp.handle(new Request("http://localhost/gate-test", { headers: { cookie: nullCookie } }))).status).toBe(200);
+  });
+
+  test("fitur kedaluwarsa → fitur terkunci TAPI Data Usaha tetap bisa diakses pemiliknya", async () => {
+    const email = `gate-endat-du-${runId}@test.local`;
+    const userId = await signUp(email);
+    const dataUsahaId = await makeActiveSub(userId, new Date(Date.now() - 60 * 1000));
+    expect(await getOwnedSubscriptionsWithPlans(userId)).toHaveLength(0);
+    expect(await hasAccessToDataUsaha(userId, dataUsahaId)).toBe(true);
   });
 });
