@@ -9,6 +9,7 @@ export {
   addCalendarMonths,
   addCalendarPeriod,
   computeRenewalEnd,
+  computeSubscriptionPeriod,
   type RenewableSubscription,
   type SubscriptionInterval,
 } from "../../api/src/lib/subscription-period";

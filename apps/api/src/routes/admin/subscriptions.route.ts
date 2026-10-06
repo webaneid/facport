@@ -1,10 +1,9 @@
 import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
-import { findRenewableSubscription, renewSubscriptionInPlace } from "../../lib/subscription-renewal";
-import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
-import { eq, and, desc } from "drizzle-orm";
+import { assignPlanToDataUsaha } from "../../lib/admin-assign";
+import { eq, desc, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { plans, subscriptions, auditLogs, memberSeats } from "../../db/schema";
+import { plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
@@ -44,104 +43,100 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         return { code: "PLAN_NOT_FOUND" };
       }
 
-      const startAt = new Date();
-      // § ADR-0016 + § Fase 174 (ADR-0041) — `endAt` OPSIONAL: tanpa `endAt` akhir dihitung dari periode paket (tanggal & jam sama bulan/tahun
-      // berikutnya sejak sekarang, zona perusahaan) dan jangkar dicatat. Dengan `endAt` = override admin (kontrak khusus, tanggal+jam bebas, tidak
-      // terikat bulanan/tahunan) → jangkar dikosongkan (perpanjangan berikutnya menetapkan jangkar baru).
-      let endAt: Date;
-      let periodAnchorAt: Date | null = null;
-      let periodMonths: number | null = null;
-      if (body.endAt) {
-        endAt = new Date(body.endAt);
-        if (endAt.getTime() <= startAt.getTime()) {
-          set.status = 400;
-          return { code: "END_AT_MUST_BE_FUTURE" };
-        }
-      } else {
-        const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
-        ({ endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(startAt, interval, await getCompanyTimezone()));
+      const now = new Date();
+      // § ADR-0016 + § Fase 174 (ADR-0041) — `endAt` OPSIONAL: tanpa `endAt` akhir dihitung dari periode paket (atau perpanjangan bila modul masih aktif,
+      // § Fase 176); dengan `endAt` = override admin (kontrak khusus, tanggal+jam bebas, tidak terikat bulanan/tahunan).
+      const customEnd = body.endAt ? new Date(body.endAt) : null;
+      if (customEnd && customEnd.getTime() <= now.getTime()) {
+        set.status = 400;
+        return { code: "END_AT_MUST_BE_FUTURE" };
       }
 
-      // § Fase 108, architecture-user-tambahan.md § Fase B1 — admin
-      // belum pilih Data Usaha spesifik lewat body di sebagian besar
-      // pemanggilan endpoint ini (UI itu menyusul Fase 109/110) — kalau
-      // tidak dikirim, reuse/buat "Data Usaha Utama" default.
-      // § security review Fase 107/108 — kalau admin KIRIM dataUsahaId
-      // eksplisit, WAJIB divalidasi itu benar milik body.userId (target
-      // user), bukan cuma divalidasi format UUID — tanpa ini admin bisa
-      // (sengaja/keliru) bikin subscription userId A menempel ke
-      // data_usaha milik user B, merusak invariant 1 data_usaha = 1
-      // pemilik yang jadi dasar guard checkout/trial (`ownsDataUsaha`).
+      // § Fase 108 — kalau admin KIRIM dataUsahaId eksplisit, WAJIB divalidasi benar milik body.userId (security review Fase 107/108); tanpa itu,
+      // reuse/buat "Data Usaha Utama" default.
       if (body.dataUsahaId && !(await ownsDataUsaha(body.userId, body.dataUsahaId))) {
         set.status = 404;
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
       const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(body.userId));
+      const timeZone = await getCompanyTimezone();
 
-      // § Fase 176, ADR-0041 poin 4 — assign TANPA `endAt` untuk modul yang SUDAH aktif (non-trial, end_at masih di masa depan) = PERPANJANGAN: langganan itu
-      // diperpanjang di tempat dari akhir lamanya (sisa waktu tidak hilang). Dengan `endAt` eksplisit = override admin → alur lama (tutup yang lama, buat baru).
-      if (!body.endAt && plan.modules[0]) {
-        const renewable = await findRenewableSubscription(db, { dataUsahaId, moduleKey: plan.modules[0], now: startAt });
-        if (renewable) {
-          const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
-          const timeZone = await getCompanyTimezone();
-          const renewal = await db.transaction((tx) => renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "admin", actorId: user.id }));
-          const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, renewal.subscriptionId));
-          return { ...row!, renewed: true, previousEndAt: renewal.previousEndAt.toISOString() };
-        }
-      }
-
-      // § ditemukan 2026-09-07 — sama fix-nya seperti admin/orders.route.ts
-      // POST /:id/confirm: tutup subscription aktif LAIN utk modul yang
-      // sama SEBELUM insert baru (mis. user punya trial aktif, admin
-      // assign manual paket asli) — cegah 2 subscription "active"
-      // bersamaan utk 1 modul yang sama. § Fase 108 — di-SCOPE PER DATA
-      // USAHA (bukan lagi per akun) — modul yang sama BOLEH aktif di
-      // Data Usaha LAIN, konsisten guard checkout/trial customer.
-      const moduleKey = plan.modules[0];
-      // § Fase 110 — supersede CUMA relevan untuk plan `module` (moduleKey
-      // ada). `seat_addon` (`modules: []`) TIDAK pernah masuk sini — tanpa
-      // guard ini, filter `s.modules[0] === moduleKey` (keduanya undefined)
-      // akan cocok SEMUA subscription seat_addon LAIN yang sudah aktif dan
-      // diam-diam membatalkan seat yang sudah dibeli sebelumnya.
-      if (moduleKey) {
-        const existingActive = await db
-          .select({ id: subscriptions.id, modules: plans.modules })
-          .from(subscriptions)
-          .innerJoin(plans, eq(plans.id, subscriptions.planId))
-          .where(and(eq(subscriptions.userId, body.userId), eq(subscriptions.status, "active"), eq(subscriptions.dataUsahaId, dataUsahaId)));
-        for (const s of existingActive.filter((s) => s.modules[0] === moduleKey)) {
-          await db.update(subscriptions).set({ status: "cancelled", endAt: startAt }).where(eq(subscriptions.id, s.id));
-        }
-      }
-
-      // orderId = null — dianggap sudah dibayar di luar sistem (invoice
-      // manual/kontrak korporat), § architecture-subscription.md
-      const [subscription] = await db
-        .insert(subscriptions)
-        .values({ userId: body.userId, planId: plan.id, status: "active", startAt, endAt, periodAnchorAt, periodMonths, dataUsahaId })
-        .returning();
-
-      await db.insert(auditLogs).values({
-        entityType: "subscription",
-        entityId: subscription!.id,
-        action: "create",
-        changes: { userId: body.userId, planId: plan.id, endAt: endAt.toISOString(), provisionedBy: "admin" },
-        actorId: user.id,
-      });
-
-      // § Fase 110 — sama seperti admin/orders.route.ts confirm & § lib/manual-subscription.ts.
-      if (plan.kind === "seat_addon") {
-        await db.insert(memberSeats).values({ primaryUserId: body.userId, dataUsahaId, seatSubscriptionId: subscription!.id });
-      }
-
-      return subscription;
+      const result = await db.transaction((tx) => assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id }));
+      // Bentuk respons lama dipertahankan: baris langganan (+ `renewed`/`previousEndAt` bila perpanjangan, § Fase 176).
+      return result.renewed ? { ...result.subscription, renewed: true, previousEndAt: result.previousEndAt!.toISOString() } : result.subscription;
     },
     {
       permission: "subscriptions.manage",
       body: t.Object({
         userId: t.String(),
         planId: t.String({ format: "uuid" }),
+        endAt: t.Optional(t.String({ format: "date-time" })),
+        dataUsahaId: t.Optional(t.String({ format: "uuid" })),
+      }),
+    },
+  )
+  // § Fase 177, ADR-0041 — assign BANYAK paket sekaligus (komponen `SubscriptionPicker`, dialog Kelola Langganan): satu transaksi (semua atau tidak sama
+  // sekali), satu `now` untuk semuanya (fitur baru berakhir di instan yang sama), aturan per paket sama dengan `POST /` (`assignPlanToDataUsaha`):
+  // modul aktif → diperpanjang, selain itu baru. `endAt` (opsional) = override yang SAMA untuk semua paket.
+  .post(
+    "/bulk",
+    async ({ body, user, set }) => {
+      const planIds = [...new Set(body.planIds)];
+      const planRows = await db.select().from(plans).where(inArray(plans.id, planIds));
+      if (planRows.length !== planIds.length) {
+        set.status = 404;
+        return { code: "PLAN_NOT_FOUND" };
+      }
+      if (planRows.some((p) => !p.isActive)) {
+        set.status = 400;
+        return { code: "PLAN_NOT_ACTIVE" };
+      }
+      // 2 paket modul yang sama dalam 1 permintaan (mis. bulanan + tahunan) = ambigu → ditolak, bukan dipilih diam-diam. Seat (tanpa modul) boleh banyak.
+      const seenModules = new Set<string>();
+      for (const p of planRows) {
+        const moduleKey = p.modules[0];
+        if (!moduleKey) continue;
+        if (seenModules.has(moduleKey)) {
+          set.status = 400;
+          return { code: "DUPLICATE_MODULE_IN_REQUEST", moduleKey };
+        }
+        seenModules.add(moduleKey);
+      }
+
+      const now = new Date();
+      const customEnd = body.endAt ? new Date(body.endAt) : null;
+      if (customEnd && customEnd.getTime() <= now.getTime()) {
+        set.status = 400;
+        return { code: "END_AT_MUST_BE_FUTURE" };
+      }
+      if (body.dataUsahaId && !(await ownsDataUsaha(body.userId, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(body.userId));
+      const timeZone = await getCompanyTimezone();
+
+      const results = await db.transaction(async (tx) => {
+        const out = [];
+        for (const plan of planRows) {
+          const r = await assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id });
+          out.push({
+            planId: plan.id,
+            subscriptionId: r.subscription.id,
+            renewed: r.renewed,
+            previousEndAt: r.previousEndAt?.toISOString() ?? null,
+            endAt: r.subscription.endAt?.toISOString() ?? null,
+          });
+        }
+        return out;
+      });
+      return { dataUsahaId, results };
+    },
+    {
+      permission: "subscriptions.manage",
+      body: t.Object({
+        userId: t.String(),
+        planIds: t.Array(t.String({ format: "uuid" }), { minItems: 1, maxItems: 60 }),
         endAt: t.Optional(t.String({ format: "date-time" })),
         dataUsahaId: t.Optional(t.String({ format: "uuid" })),
       }),

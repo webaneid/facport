@@ -23,6 +23,7 @@ dan itu sendiri jadi sumber inkonsistensi/hardcode yang susah dibenahi belakanga
 | Rich Text Editor | `components/architecture-component-editor.md` | Konten halaman bantuan/dokumentasi internal, dll — TIDAK dipakai untuk konten publik (project ini tidak punya landing page/blog) |
 | Media Library | `components/architecture-component-media-library.md` | Semua upload gambar/file — logo perusahaan, avatar user |
 | Image Processing (autocrop/resize) | `components/architecture-component-image-processing.md` | Otomatis jalan saat upload lewat Media Library |
+| SubscriptionPicker (pilih paket langganan) | `components/architecture-component-subscription-picker.md` | Semua tempat yang memilih/meng-assign paket langganan — banyak fitur sekaligus, satu periode, pratinjau tanggal+jam akhir WIB, mode Perpanjang (admin /users; kandidat app pelanggan) |
 
 ## Komponen Lain yang Terkait (Bukan di Folder Ini)
 - **Settings Page** (nama perusahaan, logo, favicon, timezone, integrasi

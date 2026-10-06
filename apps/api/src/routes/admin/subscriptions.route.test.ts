@@ -183,3 +183,107 @@ describe("POST /admin/subscriptions — perpanjangan dini (Fase 176)", () => {
     expect(fresh[0]!.endAt!.getTime()).toBe(expected.endAt.getTime());
   });
 });
+
+// § Fase 177, ADR-0041 — assign BANYAK paket sekaligus (SubscriptionPicker): atomik, satu `now`, aturan per paket sama dengan POST /.
+describe("POST /admin/subscriptions/bulk (Fase 177)", () => {
+  async function bulk(cookie: string, body: Record<string, unknown>) {
+    return testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  }
+  type BulkBody = { dataUsahaId: string; results: { planId: string; subscriptionId: string; renewed: boolean; previousEndAt: string | null; endAt: string }[] };
+
+  test("N paket baru sekaligus: semua mulai di instan yang sama, akhir kalender sesuai periode masing-masing (bulanan +1, tahunan +12), jangkar tercatat", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-new-${runId}@test.local`);
+    const a = await makePlan("monthly", "sales_invoice");
+    const b = await makePlan("yearly", "purchase_invoice");
+    const c = await makePlan("monthly", "journal_voucher");
+    const res = await bulk(cookie, { userId, planIds: [a.id, b.id, c.id] });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as BulkBody;
+    expect(body.results).toHaveLength(3);
+    expect(body.results.every((r) => r.renewed === false)).toBe(true);
+
+    const tz = await getCompanyTimezone();
+    const rows = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    expect(rows).toHaveLength(3);
+    expect(new Set(rows.map((r) => r.startAt!.getTime())).size).toBe(1);
+    const byPlan = new Map(rows.map((r) => [r.planId, r]));
+    expect(byPlan.get(a.id)!.endAt!.getTime()).toBe(addCalendarMonths(byPlan.get(a.id)!.startAt!, 1, tz).getTime());
+    expect(byPlan.get(b.id)!.endAt!.getTime()).toBe(addCalendarMonths(byPlan.get(b.id)!.startAt!, 12, tz).getTime());
+    expect(byPlan.get(b.id)!.periodMonths).toBe(12);
+    // semua di Data Usaha yang sama
+    expect(new Set(rows.map((r) => r.dataUsahaId)).size).toBe(1);
+  });
+
+  test("campuran: modul yang masih aktif DIPERPANJANG dari akhir lama, modul lain baru — dalam satu permintaan", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-mixed-${runId}@test.local`);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const renewPlan = await makePlan("monthly", "other_deposit");
+    const newPlan = await makePlan("yearly", "other_payment");
+    const oldEnd = new Date(Date.now() + 12 * 24 * 60 * 60 * 1000 + 321);
+    const [existing] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: renewPlan.id, status: "active", startAt: new Date(oldEnd.getTime() - 5 * 24 * 60 * 60 * 1000), endAt: oldEnd, dataUsahaId })
+      .returning();
+
+    const res = await bulk(cookie, { userId, planIds: [renewPlan.id, newPlan.id], dataUsahaId });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as BulkBody;
+    const renewed = body.results.find((r) => r.planId === renewPlan.id)!;
+    expect(renewed.renewed).toBe(true);
+    expect(renewed.subscriptionId).toBe(existing!.id);
+    expect(new Date(renewed.previousEndAt!).getTime()).toBe(oldEnd.getTime());
+    expect(body.results.find((r) => r.planId === newPlan.id)!.renewed).toBe(false);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, existing!.id));
+    expect(after!.endAt!.getTime()).toBe(addCalendarMonths(oldEnd, 1, await getCompanyTimezone()).getTime());
+  });
+
+  test("endAt override berlaku sama untuk semua paket (jangkar kosong)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-custom-${runId}@test.local`);
+    const a = await makePlan("monthly", "sales_quotation");
+    const b = await makePlan("monthly", "receive_item");
+    const custom = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000 + 4242);
+    const res = await bulk(cookie, { userId, planIds: [a.id, b.id], endAt: custom.toISOString() });
+    expect(res.status).toBe(200);
+    const rows = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    expect(rows.every((r) => r.endAt!.getTime() === custom.getTime() && r.periodAnchorAt === null)).toBe(true);
+  });
+
+  test("ATOMIK: satu paket tidak ditemukan → 404 dan TIDAK ada langganan yang terbuat; paket nonaktif → 400; 2 paket modul sama → 400 DUPLICATE_MODULE_IN_REQUEST", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-invalid-${runId}@test.local`);
+    const ok = await makePlan("monthly", "item_transfer");
+    const missing = await bulk(cookie, { userId, planIds: [ok.id, crypto.randomUUID()] });
+    expect(missing.status).toBe(404);
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, userId))).toHaveLength(0);
+
+    const inactive = await makePlan("monthly", "item_requisition");
+    await db.update(plans).set({ isActive: false }).where(eq(plans.id, inactive.id));
+    const inactiveRes = await bulk(cookie, { userId, planIds: [ok.id, inactive.id] });
+    expect(inactiveRes.status).toBe(400);
+    expect(((await inactiveRes.json()) as { code: string }).code).toBe("PLAN_NOT_ACTIVE");
+
+    const monthlyDup = await makePlan("monthly", "inventory_adjustment");
+    const yearlyDup = await makePlan("yearly", "inventory_adjustment");
+    const dup = await bulk(cookie, { userId, planIds: [monthlyDup.id, yearlyDup.id] });
+    expect(dup.status).toBe(400);
+    expect(((await dup.json()) as { code: string }).code).toBe("DUPLICATE_MODULE_IN_REQUEST");
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, userId))).toHaveLength(0);
+  });
+
+  test("endAt masa lalu → 400; Data Usaha milik orang lain → 404; tanpa izin subscriptions.manage → ditolak", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-guard-${runId}@test.local`);
+    const otherId = await signUp(`admin-bulk-guard-other-${runId}@test.local`);
+    const plan = await makePlan("monthly", "work_order");
+    const past = await bulk(cookie, { userId, planIds: [plan.id], endAt: new Date(Date.now() - 1000).toISOString() });
+    expect(past.status).toBe(400);
+    const foreignDu = await getOrCreateDefaultDataUsaha(otherId);
+    const foreign = await bulk(cookie, { userId, planIds: [plan.id], dataUsahaId: foreignDu });
+    expect(foreign.status).toBe(404);
+    const noAuth = await testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, planIds: [plan.id] }) }));
+    expect([401, 403]).toContain(noAuth.status);
+  });
+});
