@@ -573,3 +573,9 @@ resmi manapun**, tapi **tidak ada unique constraint DB** yang menjaminnya
 - RBAC & permission → `docs/architecture/architecture-auth.md`
 - Job terjadwal → `docs/architecture/architecture-jobs.md`
 - Daftar modul → `docs/glossary.md`
+
+## Update 2026-10-06 — 1 Tahun = 365 hari (sebelumnya 360)
+Keputusan kecil Fase 43 ("1 Bulan = 30 hari, 1 Tahun = 360 hari = 12×30") dikoreksi atas permintaan user: pelanggan yang membeli "1 tahun" hanya mendapat 360 hari. Sekarang `DURATION_UNIT_TO_DAYS.tahun = 365` (`apps/web/lib/duration.ts`; 1 Bulan tetap 30 hari).
+- **Data lama tetap terbaca:** paket/invoice yang tersimpan 360 hari (kelipatan: 720, 1080...) tetap ditampilkan sebagai "N Tahun" (web `inferDurationUnit`/`formatDuration` dan salinannya di PDF `formatDurasiPdf`, keduanya mengenali 365 dan `LEGACY_YEAR_DAYS = 360`). Paket lama yang dibuka di form admin tampil "1 Tahun"; kalau disimpan ulang menjadi 365.
+- **Migration 0041 (data):** `plans.duration_days` kelipatan 360 → kelipatan 365 (`(d/360)*365`). Hanya paket yang dipakai pembelian BERIKUTNYA. TIDAK mengubah subscription yang sedang berjalan (`end_at` sudah dihitung) maupun snapshot `invoice_items.duration_days` (riwayat).
+- **Keputusan bisnis yang terbuka:** pelanggan yang SUDAH membeli paket "1 tahun" mendapat 360 hari — apakah diberi tambahan 5 hari (perpanjangan `end_at` +5 hari untuk subscription aktif ber-paket 360 hari) belum diputuskan/tidak dilakukan otomatis.

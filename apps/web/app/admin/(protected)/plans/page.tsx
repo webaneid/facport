@@ -42,7 +42,7 @@ function PlanFormDialog({ plan, onSaved }: { plan?: Plan; onSaved: () => void })
   const [price, setPrice] = useState(String(plan?.price ?? ""));
   // § Fase 43 — input "Jumlah" + unit (Hari/Bulan/Tahun), bukan hari mentah.
   // Infer unit dari `durationDays` existing saat edit (§ lib/duration.ts),
-  // supaya paket "1 Tahun" tetap tampil "1"+"Tahun", bukan "360"+"Hari".
+  // supaya paket "1 Tahun" tetap tampil "1"+"Tahun", bukan "365"+"Hari".
   const inferred = plan ? inferDurationUnit(plan.durationDays) : { amount: 30, unit: "hari" as const };
   const [durationAmount, setDurationAmount] = useState(String(inferred.amount));
   const [durationUnit, setDurationUnit] = useState<DurationUnit>(inferred.unit);
