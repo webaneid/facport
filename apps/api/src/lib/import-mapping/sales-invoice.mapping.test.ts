@@ -13,6 +13,8 @@ import {
   groupSalesInvoiceRows,
   validateGroupCustomerConsistency,
   type ImportRowRecord,
+  customerAutoCreateMapping,
+  itemAutoCreateMapping,
 } from "./sales-invoice.mapping";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice.mapping.test.ts` (customerNo↔
@@ -883,6 +885,66 @@ describe("ITEM: ID Salesman → detailItem.salesmanListNumber (array string)", (
 
   test("template: kolom tepat setelah PPH", () => {
     const cols = salesInvoiceTemplateGuide.map((g) => g.column);
-    expect(cols[cols.indexOf("PPH") + 1]).toBe("ITEM: ID Salesman");
+    expect(cols[cols.indexOf("PPH") + 1]).toBe("Salesman No");
+  });
+});
+
+
+// § diminta client 2026-10-06 (template Rev1) — 13 nama kolom template diubah mengikuti referensi mereka; nama LAMA tetap diterima sebagai alias.
+describe("Template Sales Invoice — nama kolom Rev1 (nama baru) + alias nama lama", () => {
+  // Persis sama dengan `suggestMapping` di route: cocokkan tanpa peduli huruf besar-kecil ke gabungan semua peta bawaan.
+  const maps = [salesInvoiceMapping.defaultColumnMap, customerAutoCreateMapping.defaultColumnMap, itemAutoCreateMapping.defaultColumnMap];
+  const suggest = (header: string) => {
+    for (const map of maps) {
+      const key = Object.keys(map).find((k) => k.toLowerCase() === header.trim().toLowerCase());
+      if (key) return map[key];
+    }
+    return undefined;
+  };
+
+  const renames: [string, string, string][] = [
+    ["Tanggal", "Trans Date", "transDate"],
+    ["Customer No", "CUST NO", "customerNo"],
+    ["Note", "Description", "description"],
+    ["Pay Term", "Payment Term Name", "paymentTermName"],
+    ["Cash Discount", "Cash Disc", "cashDiscount"],
+    ["Cash Disc (%)", "Cash Disc Percent", "cashDiscPercent"],
+    ["Unit Price", "Item Unit Price", "unitPrice"],
+    ["Item Cash Disc", "Item Cash Discount", "itemCashDiscount"],
+    ["Item Disc (%)", "Item Cash Disc Percent", "itemDiscPercent"],
+    ["Item - Department", "Item Dept", "departmentName"],
+    ["Item Prj No", "Item Project No", "projectNo"],
+    ["ITEM: ID Salesman", "Salesman No", "salesmanListNumber"],
+    ["Akun Piutang", "Account Receivable", "customerReceivableAccountListNo"],
+  ];
+
+  test("tiap nama baru ter-map otomatis ke field yang sama dengan nama lamanya; nama lama tetap ter-map (file Excel lama client aman)", () => {
+    for (const [oldName, newName, field] of renames) {
+      expect(suggest(newName)).toBe(field);
+      expect(suggest(oldName)).toBe(field);
+    }
+    expect(suggest("Item Item Dept")).toBe("departmentName"); // tulisan di referensi client (kemungkinan salah ketik "Item Dept") juga diterima
+  });
+
+  test("template yang diunduh memakai nama BARU (nama lama tidak ada lagi); jumlah kolom tidak berubah", () => {
+    const cols = salesInvoiceTemplateGuide.map((g) => g.column);
+    for (const [oldName, newName] of renames) {
+      expect(cols).toContain(newName);
+      expect(cols).not.toContain(oldName);
+    }
+    expect(cols).toHaveLength(125);
+  });
+
+  test("SEMUA kolom template ter-map otomatis ke field yang dikenal (tidak ada header template yang jadi '(tidak dipetakan)')", () => {
+    const valid = new Set([
+      ...Object.keys(salesInvoiceMapping.fieldToAccuratePath),
+      ...Object.keys(customerAutoCreateMapping.fieldToAccuratePath),
+      ...Object.keys(itemAutoCreateMapping.fieldToAccuratePath),
+    ]);
+    const unmapped = salesInvoiceTemplateGuide.map((g) => g.column).filter((c) => {
+      const f = suggest(c);
+      return !f || !valid.has(f);
+    });
+    expect(unmapped).toEqual([]);
   });
 });
