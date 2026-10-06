@@ -62,6 +62,7 @@ import {
   buildPurchasePaymentPayload,
   groupPurchasePaymentRows,
   validateGroupVendorConsistencyForPayment,
+  validateInvoiceRowsConsistencyForPayment,
   // § Fase 89 — nama collide dengan `extractTaxIdsFromRows` Sales
   // Receipt (Fase 86), alias "PP" konsisten pola `buildDetailItemFromRow as
   // buildDetailItemFromRowSI` di bawah.
@@ -1591,6 +1592,9 @@ export async function processPurchasePaymentGroup(
 ): Promise<PurchasePaymentGroupResult> {
   const mismatchError = validateGroupVendorConsistencyForPayment(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
+  // § 2026-10-06 (mirror Sales Receipt) — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
+  const invoiceRowsError = validateInvoiceRowsConsistencyForPayment(group, columnMapping);
+  if (invoiceRowsError) throw new Error(invoiceRowsError);
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
