@@ -1,5 +1,5 @@
 import { Elysia } from "elysia";
-import { eq, and, or, inArray, desc } from "drizzle-orm";
+import { eq, and, or, inArray, desc, gt, isNull } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
 import { subscriptions, plans, dataUsaha, memberSeats } from "../db/schema";
@@ -32,6 +32,13 @@ import { hasAccessToDataUsaha } from "./data-usaha";
 //      kalau 1 fungsi dipakai untuk 2 keperluan berbeda ini.
 // Solusi: 2 fungsi bernama eksplisit sesuai levelnya — JANGAN campur lagi.
 
+// § Fase 175, ADR-0041 — akses diputus TEPAT di `end_at`, bukan menunggu job kedaluwarsa menjalankan flip `status`. Sebelumnya gerbang hanya
+// percaya `status = 'active'` (job harian 01:00 UTC) → pelanggan masih bisa memakai fitur sampai ±24 jam setelah jam akhir. `end_at` NULL pada baris
+// aktif (data lama tanpa tanggal akhir) tetap dianggap berlaku — tidak memutus akses siapa pun karena data tak lengkap.
+function notExpiredNow() {
+  return or(isNull(subscriptions.endAt), gt(subscriptions.endAt, new Date()));
+}
+
 // § OTORISASI/MUTASI — "apakah user ini PEMILIK Data Usaha subscription ini
 // SEKARANG" (bukan "siapa yang beli dulu"). Dipakai endpoint yang MENGUBAH
 // konfigurasi (koneksi Accurate): `accurate.route.ts` `POST /connect` & `POST
@@ -45,6 +52,7 @@ export async function getOwnedSubscriptionsWithPlans(userId: string) {
     .where(
       and(
         eq(subscriptions.status, "active"),
+        notExpiredNow(),
         inArray(
           subscriptions.dataUsahaId,
           db.select({ id: dataUsaha.id }).from(dataUsaha).where(eq(dataUsaha.userId, userId)),
@@ -68,6 +76,7 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
     .where(
       and(
         eq(subscriptions.status, "active"),
+        notExpiredNow(),
         or(
           inArray(
             subscriptions.dataUsahaId,
@@ -90,9 +99,8 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
     // harus konsisten ambil yang SAMA tiap request (terbaru), bukan
     // tergantung urutan return Postgres yang tidak dijamin tanpa ORDER BY.
     .orderBy(desc(subscriptions.createdAt));
-  // § endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
-  // (§ architecture-jobs.md, jalan tiap hari) yang jaga `status` selalu
-  // konsisten begitu lewat endAt, pola dari sebelum Fase 14, tidak berubah.
+  // § Fase 175 — `end_at > sekarang` SEKARANG dicek langsung di query (`notExpiredNow`); job EXPIRE_SUBSCRIPTIONS tetap menjaga `status` &
+  // mengirim notifikasi/email berakhir (kini tiap 10 menit, § lib/job-schedules.ts), tapi BUKAN lagi penjaga akses.
 }
 
 // § Fase 140, ADR-0035 — Data Usaha aktif dikirim web lewat header ini

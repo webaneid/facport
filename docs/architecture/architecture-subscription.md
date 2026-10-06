@@ -419,7 +419,7 @@ export async function getActiveSubscriptionsWithPlans(userId: string) {
     // konsisten ambil baris yang SAMA tiap request kalau somehow ada 2
     // subscription aktif yang cover modul yang sama.
     .orderBy(desc(subscriptions.createdAt));
-  // § endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
+  // § [Sebelum Fase 175] endAt > now TIDAK dicek manual di sini — job EXPIRE_SUBSCRIPTIONS
   // (jalan tiap hari) yang jaga `status` selalu konsisten, pola yang
   // SUDAH ada sejak sebelum Fase 14, tidak berubah.
 }
@@ -464,7 +464,7 @@ Terpisah, Bukan di Request Handler)"):
 
 ```ts
 // apps/api/src/workers/index.ts
-await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, "0 1 * * *");
+await boss.schedule(JOBS.EXPIRE_SUBSCRIPTIONS, EXPIRE_SUBSCRIPTIONS_CRON); // Fase 175: "*/10 * * * *" (dulu "0 1 * * *")
 await boss.work(JOBS.EXPIRE_SUBSCRIPTIONS, async () => {
   const expired = await db
     .update(subscriptions)
@@ -588,5 +588,6 @@ Aturan lengkap & alasan: `docs/decisions/adr-0041-periode-langganan-kalender.md`
 - **Jangkar:** `subscriptions.period_anchor_at` + `period_months` (NULL untuk data lama/override manual) — akhir = jangkar + total bulan, anti-geser tanggal. Diisi mulai Fase 174.
 - **Trial TIDAK berubah** (hari). Seat memakai logika yang sama; perpanjangan dini seat ditunda.
 - **Perpanjangan dini (Fase 176):** masih aktif saat disetujui → `end_at` diperpanjang di tempat dari akhir lama; sudah habis → mulai dari saat disetujui. Admin boleh override tanggal+jam.
-- **Status per fase:** 173 (fungsi + kolom + form paket) dan 174 (konsolidasi jalur aktivasi: konfirmasi order, Tambah User "sudah dibayar" termasuk seat, assign admin — `endAt` opsional, override mengosongkan jangkar; PATCH tanggal manual mengosongkan jangkar) selesai; 175 (penegakan akses) – 178 (koreksi 360 hari) berikutnya. Trial tetap memakai hari.
+- **Penegakan akses (Fase 175):** gerbang (`getOwnedSubscriptionsWithPlans`/`getAccessibleSubscriptionsWithPlans`) mengecek `end_at > sekarang` langsung di query (`end_at` NULL pada baris aktif tetap berlaku) — akses berhenti TEPAT di jam akhir, tidak menunggu job. Job `EXPIRE_SUBSCRIPTIONS` tiap 10 menit (flip status + notifikasi/email "berakhir" tepat waktu); `NOTIFY_EXPIRING_SOON` sekali sehari 09:00 di zona perusahaan (`tz` pg-boss; ganti zona di setting → restart worker). Fitur kedaluwarsa terkunci tetapi Data Usaha tetap bisa diakses pemilik (akses Data Usaha tidak bergantung langganan).
+- **Status per fase:** 173 (fungsi + kolom + form paket) dan 174 (konsolidasi jalur aktivasi: konfirmasi order, Tambah User "sudah dibayar" termasuk seat, assign admin — `endAt` opsional, override mengosongkan jangkar; PATCH tanggal manual mengosongkan jangkar) selesai; 175 (penegakan akses tepat di `end_at`, jadwal job) selesai; 176 (perpanjangan dini) – 178 (koreksi 360 hari) berikutnya. Trial tetap memakai hari.
 - **Form paket admin** hanya memilih Bulanan/Tahunan; API menerima `interval` (sumber) atau `durationDays` (klien lama, dipetakan; ≥360 hari = tahunan).
