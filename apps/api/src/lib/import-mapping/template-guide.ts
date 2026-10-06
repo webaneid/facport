@@ -964,7 +964,7 @@ export const salesQuotationTemplateGuide: TemplateFieldGuide[] = [
   { column: "Item price", required: true, example: "50000", description: "Harga satuan barang." },
   { column: "Item Quantity", required: true, example: "5", description: "Jumlah barang yang ditawarkan." },
   { column: "Item Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
-  { column: "Item Salesman No", required: false, example: "", description: "Kode tenaga penjual untuk baris ini — 1 kode per baris (tidak mendukung banyak salesman sekaligus)." },
+  { column: "Item Salesman No", required: false, example: "", description: "ID Karyawan (yang berstatus Penjual di Accurate) untuk baris ini — BOLEH lebih dari 1, pisahkan dengan koma (contoh: SLS-01, SLS-02). Format kolom ini sebagai Text di Excel supaya ID berupa angka tidak berubah." },
   { column: "Item Cash Discount", required: false, example: "", description: "Diskon nominal untuk baris barang ini." },
   { column: "Item Discount Percent", required: false, example: "", description: "Diskon persen untuk baris barang ini." },
   { column: "Item Tax1", required: false, format: BOOLEAN_FORMAT, example: "", description: "Baris ini kena Pajak 1 atau tidak." },

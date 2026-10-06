@@ -5,15 +5,18 @@
 // DEFAULT ADR-0011 (kunci "number"/Trans Number, OPSIONAL).
 //
 // § `salesmanListNumber` (detailItem) BERTIPE ARRAY of string di API —
-// Excel client cuma py 1 kolom "Item Salesman No", dipetakan sebagai
-// array 1-elemen `[value]` (TIDAK ada parsing multi-value/pemisah koma
-// — sesuai rekomendasi architecture doc, JANGAN over-engineer sebelum
-// dikonfirmasi butuh).
+// Excel client py 1 kolom "Item Salesman No". § DIKOREKSI 2026-10-06 —
+// dulu dibungkus array 1-elemen `[value]` TANPA memecah koma, jadi "ID1, ID2"
+// terkirim sebagai SATU ID bernama "ID1, ID2" (tidak ditemukan Accurate, penjual
+// tidak masuk). Sekarang dipecah (`splitIdList`, pemisah koma) — sama seperti
+// Sales Order & Sales Invoice.
 //
 // § Koreksi 2026-09-15 (pola SAMA seperti Purchase Return): kolom Excel
 // "Expense Project No" TIDAK punya field API — `detailExpense[]` Sales
 // Quotation TIDAK punya `projectNo` sama sekali (dikonfirmasi
 // `accurate-openapi.json`). SENGAJA tidak dimasukkan `defaultColumnMap`.
+import { splitIdList } from "./split-id-list";
+
 export const salesQuotationMapping = {
   requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
   fieldToAccuratePath: {
@@ -268,7 +271,7 @@ const EXCEL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 const BOOLEAN_FIELDS = new Set<SalesQuotationField>(["taxable", "inclusiveTax", "useTax1", "useTax2", "useTax3"]);
 const TRUE_TEXT_VALUES = new Set(["true", "y", "yes", "1", "ya"]);
 const PERCENT_STRING_FIELDS = new Set<SalesQuotationField>(["cashDiscPercent", "itemDiscPercent"]);
-// § field API bertipe ARRAY of string — 1 sel Excel jadi array 1-elemen.
+// § field API bertipe ARRAY of string — 1 sel Excel dipecah per koma jadi banyak elemen (`splitIdList`).
 const ARRAY_FIELDS = new Set<SalesQuotationField>(["salesmanNo"]);
 
 function toAccurateBoolean(value: unknown): unknown {
@@ -304,7 +307,10 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
       if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
       else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
       else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
-      else if (ARRAY_FIELDS.has(f)) values[f] = [String(raw)];
+      else if (ARRAY_FIELDS.has(f)) {
+        const list = splitIdList(raw);
+        if (list.length > 0) values[f] = list;
+      }
       else values[f] = raw;
     }
   }

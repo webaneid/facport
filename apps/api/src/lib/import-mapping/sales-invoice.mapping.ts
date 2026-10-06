@@ -4,6 +4,8 @@
 // PO dari customer, field resmi Accurate `poNumber`). Semua nama field
 // Accurate di `fieldToAccuratePath` diverifikasi dari OpenAPI spec resmi
 // (`docs/referencehtml/accurate-openapi.json`), BUKAN tebakan.
+import { splitIdList } from "./split-id-list";
+
 export const salesInvoiceMapping = {
   // § disamakan persis dengan aturan WAJIB/TIDAK WAJIB di format Excel
   // resmi client (`docs/referencehtml/format_sales_inv_v7 (PLAN).xlsx`,
@@ -54,7 +56,7 @@ export const salesInvoiceMapping = {
     // `detailItem[].salesmanListNumber` di `sales-invoice/save.do`
     // (diverifikasi ke accurate-openapi.json): ARRAY string nomor identitas
     // tenaga penjual, BUKAN string tunggal — sel Excel dikonversi di
-    // `toSalesmanList` (pisah koma/titik-koma untuk >1 salesman).
+    // `splitIdList` (pisah koma/titik-koma/baris baru untuk >1 salesman).
     salesmanListNumber: "detailItem.salesmanListNumber",
     // § Fase 55 — "Atribut Tambahan" Accurate (menu Rancangan Formulir
     // Faktur Penjualan, screenshot client) = fitur "Data Classification"
@@ -512,13 +514,6 @@ function toAccurateBoolean(value: unknown): unknown {
 // reject dengan pesan generik yang sama.
 // § `salesmanListNumber` WAJIB array string (bukan string/number tunggal) —
 // sel "A01, A02" jadi ["A01","A02"]; angka polos dari Excel (mis. 101) jadi "101".
-function toSalesmanList(value: unknown): string[] {
-  return String(value)
-    .split(/[,;]/)
-    .map((part) => part.trim())
-    .filter((part) => part !== "");
-}
-
 const PERCENT_STRING_FIELDS = new Set<SalesInvoiceField>(["cashDiscPercent", "itemDiscPercent"]);
 
 function toAccurateDate(value: unknown): unknown {
@@ -551,7 +546,7 @@ function extractRowValues(
       else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
       else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
       else if (f === "salesmanListNumber") {
-        const list = toSalesmanList(raw);
+        const list = splitIdList(raw);
         if (list.length > 0) values[f] = list;
       }
       else values[f] = raw;

@@ -10,6 +10,7 @@
 // Field mapping SUDAH diverifikasi 100% ke portal developer Accurate
 // live (2026-09-21, § architecture doc) — TIDAK ada gap dokumentasi API.
 import type { SalesQuotationLine } from "../accurate-sales-quotation";
+import { splitIdList } from "./split-id-list";
 
 export const salesOrderMapping = {
   requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
@@ -200,13 +201,6 @@ function toAccurateDate(value: unknown): unknown {
   return `${dd}/${mm}/${date.getUTCFullYear()}`;
 }
 
-function toSalesmanList(value: unknown): string[] {
-  return String(value)
-    .split(",")
-    .map((v) => v.trim())
-    .filter((v) => v !== "");
-}
-
 function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): Partial<Record<SalesOrderField, unknown>> {
   const values: Partial<Record<SalesOrderField, unknown>> = {};
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
@@ -216,7 +210,10 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
       if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
       else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
       else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
-      else if (ARRAY_SPLIT_FIELDS.has(f)) values[f] = toSalesmanList(raw);
+      else if (ARRAY_SPLIT_FIELDS.has(f)) {
+        const list = splitIdList(raw);
+        if (list.length > 0) values[f] = list;
+      }
       else values[f] = raw;
     }
   }

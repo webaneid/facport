@@ -136,3 +136,6 @@ Rekomendasi: 1x verifikasi test call nyata ke `sales-quotation/save.do`.
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/sales-quotation/save.do`
 - Panduan client (gitignored): sheet "Sales Quotation"
 - Modul terkait: `architecture-sales-invoice.md`, `architecture-sales-return.md`
+
+## Update 2026-10-06 — beberapa penjual per baris (bug: dibungkus jadi 1 elemen)
+Laporan client: data penjual yang sama yang berhasil di Sales Order tidak masuk di Sales Quotation. Akar masalah: kolom "Item Salesman No" dipetakan ke `detailItem.salesmanListNumber` (array string) tapi hanya DIBUNGKUS (`[String(sel)]`) tanpa memecah koma — "42620120010, K-01" terkirim sebagai SATU ID bernama "42620120010, K-01" (tidak ada di Accurate, penjual tidak masuk). Sekarang dipecah per koma lewat `splitIdList` (`lib/import-mapping/split-id-list.ts`), fungsi pemisah BERSAMA untuk Sales Quotation, Sales Order, dan Sales Invoice (koma standar; titik-koma/baris baru juga diterima; entri kosong dibuang). `salesmanListNumber` = ID Karyawan (kolom "ID Karyawan", `employee.number`) milik karyawan yang dicentang "Penjual" di Accurate. Deskripsi template diperbarui ("boleh lebih dari 1, pisahkan dengan koma"; format kolom sebagai Text).
