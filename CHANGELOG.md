@@ -1,3 +1,16 @@
+## 2.25.0 (2026-10-06)
+
+* release: merge develop ke main (PPh/diskon Sales Receipt & Purchase Payment, Sales Order dari Sales  ([694d030](https://github.com/webaneid/facport/commit/694d030))
+* feat(api web): Sales Order — ambil baris item otomatis dari Sales Quotation (Fase 169) ([33453b9](https://github.com/webaneid/facport/commit/33453b9))
+* feat(api web): Sales Return & Purchase Return — Unit Price (dan diskon baris) otomatis dari faktur a ([0ed8141](https://github.com/webaneid/facport/commit/0ed8141))
+* docs: rencana Fase 169 — Sales Order ambil baris item dari Sales Quotation ([66849b7](https://github.com/webaneid/facport/commit/66849b7))
+* docs: rencana Fase 170 — Sales/Purchase Return harga & diskon dari faktur asal ([2da507e](https://github.com/webaneid/facport/commit/2da507e))
+* fix(api): Purchase Payment — faktur sama di beberapa baris digabung jadi 1 entri (multi-diskon), dis ([b47667e](https://github.com/webaneid/facport/commit/b47667e))
+* fix(api): Purchase Payment — root chequeAmount dikurangi PPh (mirror Sales Receipt, speculative) ([b898930](https://github.com/webaneid/facport/commit/b898930))
+* fix(api): Sales Quotation — beberapa ID penjual dipisah koma dipecah jadi banyak elemen (bukan 1 ele ([011805a](https://github.com/webaneid/facport/commit/011805a))
+* fix(api): Sales Receipt — faktur sama di beberapa baris digabung jadi 1 entri (multi-diskon), diskon ([ba2179f](https://github.com/webaneid/facport/commit/ba2179f))
+* fix(api): Sales Receipt — root chequeAmount dikurangi PPh (uang masuk bank = Jumlah Bayar − PPh), bu ([d808c32](https://github.com/webaneid/facport/commit/d808c32))
+
 ## <small>2.24.2 (2026-10-04)</small>
 
 * release: merge develop ke main (rapihan UI: Pengaturan AutoProduksi, admin invoices/orders, header/b ([20dda5f](https://github.com/webaneid/facport/commit/20dda5f))
