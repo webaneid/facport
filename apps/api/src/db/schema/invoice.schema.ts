@@ -47,6 +47,9 @@ export const invoiceItems = pgTable("invoice_items", {
   // karena baru ADA setelah subscription tercipta dan HARUS reflect
   // perpanjangan admin (PATCH endAt) — snapshot justru salah utk itu.
   durationDays: integer("duration_days").notNull(),
+  // § Fase 173, ADR-0041 — SNAPSHOT plan.interval ("monthly" | "yearly"), pola sama durationDays. Nullable: invoice lama diisi backfill migrasi
+  // 0042 dari durationDays; tampilan "Durasi" memakai ini bila ada.
+  interval: varchar("interval", { length: 10 }),
 });
 
 // § Fase 16, ADR-0022 — ganti pola `COUNT(*) LIKE 'INV/...%'` (Fase 15,

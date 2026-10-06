@@ -579,3 +579,14 @@ Keputusan kecil Fase 43 ("1 Bulan = 30 hari, 1 Tahun = 360 hari = 12×30") dikor
 - **Data lama tetap terbaca:** paket/invoice yang tersimpan 360 hari (kelipatan: 720, 1080...) tetap ditampilkan sebagai "N Tahun" (web `inferDurationUnit`/`formatDuration` dan salinannya di PDF `formatDurasiPdf`, keduanya mengenali 365 dan `LEGACY_YEAR_DAYS = 360`). Paket lama yang dibuka di form admin tampil "1 Tahun"; kalau disimpan ulang menjadi 365.
 - **Migration 0041 (data):** `plans.duration_days` kelipatan 360 → kelipatan 365 (`(d/360)*365`). Hanya paket yang dipakai pembelian BERIKUTNYA. TIDAK mengubah subscription yang sedang berjalan (`end_at` sudah dihitung) maupun snapshot `invoice_items.duration_days` (riwayat).
 - **Keputusan bisnis yang terbuka:** pelanggan yang SUDAH membeli paket "1 tahun" mendapat 360 hari — apakah diberi tambahan 5 hari (perpanjangan `end_at` +5 hari untuk subscription aktif ber-paket 360 hari) belum diputuskan/tidak dilakukan otomatis.
+
+## Periode Langganan — Bulanan/Tahunan Kalender (ADR-0041, Fase 173–178)
+Aturan lengkap & alasan: `docs/decisions/adr-0041-periode-langganan-kalender.md`. Ringkas:
+- **Dua periode saja:** `plans.interval` = `monthly` | `yearly` (snapshot ke `invoice_items.interval`). `duration_days` (30/365) tinggal kompatibilitas/tampilan lama — BUKAN dipakai menghitung akhir langganan.
+- **Mulai = saat pembayaran disetujui; akhir = tanggal & jam dinding yang sama** di bulan/tahun berikutnya dalam zona `company.timezone` (satu zona, default Asia/Jakarta). Tanggal yang tidak ada di bulan tujuan dijepit ke hari terakhir bulan itu.
+- **SATU fungsi:** `apps/api/src/lib/subscription-period.ts` (`addCalendarMonths`/`addCalendarPeriod`, murni, `Intl`, dipakai web via re-export `apps/web/lib/subscription-period.ts`). JANGAN menghitung tanggal akhir langganan di tempat lain.
+- **Jangkar:** `subscriptions.period_anchor_at` + `period_months` (NULL untuk data lama/override manual) — akhir = jangkar + total bulan, anti-geser tanggal. Diisi mulai Fase 174.
+- **Trial TIDAK berubah** (hari). Seat memakai logika yang sama; perpanjangan dini seat ditunda.
+- **Perpanjangan dini (Fase 176):** masih aktif saat disetujui → `end_at` diperpanjang di tempat dari akhir lama; sudah habis → mulai dari saat disetujui. Admin boleh override tanggal+jam.
+- **Status per fase:** 173 (fungsi + kolom + form paket) selesai; 174 (konsolidasi 4 jalur aktivasi) – 178 (koreksi 360 hari) berikutnya. Sampai Fase 174 selesai, jalur aktivasi MASIH memakai `durationDays` lama (perilaku produksi tidak berubah).
+- **Form paket admin** hanya memilih Bulanan/Tahunan; API menerima `interval` (sumber) atau `durationDays` (klien lama, dipetakan; ≥360 hari = tahunan).

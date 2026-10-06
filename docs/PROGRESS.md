@@ -180,6 +180,12 @@
 | 170  | Sales Return & Purchase Return — harga (dan diskon baris) otomatis dari faktur asal bila Unit Price kosong (INVOICE/INVOICE_DP); scope `sales_invoice_view`/`purchase_invoice_view` wajib | Done | `docs/architecture/architecture-sales-return.md`, `architecture-purchase-return.md` | `docs/phases/phase-170-return-harga-dari-faktur-asal.md` |
 | 171  | Delivery Order — Sales Order Detail ID otomatis via Atribut Tambahan 1 ("Week", `charField1` SO) + Item Notes, bersihkan sel Excel, koreksi asumsi CLS5 Fase 158 | Done | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-171-delivery-order-so-detail-via-atribut-tambahan.md` |
 | 172  | Sales Order — tarik juga header, atribut baris & Expense dari Sales Quotation (Excel menang; Expense Project tidak tersedia di Accurate) | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-172-sales-order-tarik-header-atribut-beban-dari-quotation.md` |
+| 173  | Fondasi periode langganan (bulanan/tahunan kalender, ADR-0041): fungsi hitung, kolom interval+jangkar, form paket | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-173-fondasi-periode-langganan.md` |
+| 174  | Konsolidasi jalur aktivasi langganan ke satu fungsi periode | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-174-konsolidasi-aktivasi-langganan.md` |
+| 175  | Penegakan akses tepat di waktu akhir + job/reminder WIB | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-175-penegakan-akses-kedaluwarsa.md` |
+| 176  | Perpanjangan dini (sambung dari akhir lama) | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-176-perpanjangan-dini-langganan.md` |
+| 177  | Komponen SubscriptionPicker (multi-pilih, filter produk, mode Perpanjang) | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-177-komponen-subscription-picker.md` |
+| 178  | Koreksi langganan tahunan 360 hari | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-178-koreksi-langganan-360-hari.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

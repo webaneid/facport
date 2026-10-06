@@ -200,3 +200,52 @@ describe("POST /admin/plans — drift guard union `modules` vs module-catalog.ts
     expect(res.status).toBe(422);
   });
 });
+
+// § Fase 173, ADR-0041 — periode paket: `interval` sumber kebenaran, `durationDays` diturunkan (30/365) / dipetakan dari klien lama.
+describe("POST/PUT /admin/plans — periode (interval)", () => {
+  async function putPlan(cookie: string, id: string, body: Record<string, unknown>) {
+    return testApp.handle(
+      new Request(`http://localhost/admin/plans/${id}`, { method: "PUT", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }),
+    );
+  }
+
+  test("interval eksplisit: yearly → durationDays 365; monthly → 30 (durationDays yang dikirim DIABAIKAN, bukan sumber)", async () => {
+    const cookie = await makeAdminCookie();
+    const yearly = await postPlan(cookie, { name: `Plan Yearly ${runId}`, price: 1000, interval: "yearly", durationDays: 999, modules: ["purchase_invoice"] });
+    expect(yearly.status).toBe(200);
+    const y = (await yearly.json()) as { interval: string; durationDays: number };
+    expect(y.interval).toBe("yearly");
+    expect(y.durationDays).toBe(365);
+
+    const monthly = await postPlan(cookie, { name: `Plan Monthly ${runId}`, price: 1000, interval: "monthly", modules: ["purchase_invoice"] });
+    const m = (await monthly.json()) as { interval: string; durationDays: number };
+    expect(m.interval).toBe("monthly");
+    expect(m.durationDays).toBe(30);
+  });
+
+  test("klien lama hanya kirim durationDays: 360/365 → yearly, 30 → monthly", async () => {
+    const cookie = await makeAdminCookie();
+    const old360 = (await (await postPlan(cookie, { name: `Plan Old360 ${runId}`, price: 1000, durationDays: 360, modules: ["purchase_invoice"] })).json()) as { interval: string; durationDays: number };
+    expect(old360.interval).toBe("yearly");
+    expect(old360.durationDays).toBe(360); // nilai klien lama dipertahankan (kompatibilitas), periode tetap tahunan
+    const old30 = (await (await postPlan(cookie, { name: `Plan Old30 ${runId}`, price: 1000, durationDays: 30, modules: ["purchase_invoice"] })).json()) as { interval: string };
+    expect(old30.interval).toBe("monthly");
+  });
+
+  test("400 PLAN_PERIOD_REQUIRED — tanpa interval maupun durationDays", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await postPlan(cookie, { name: `Plan NoPeriod ${runId}`, price: 1000, modules: ["purchase_invoice"] });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("PLAN_PERIOD_REQUIRED");
+  });
+
+  test("PUT mengubah periode: monthly → yearly menurunkan durationDays 365", async () => {
+    const cookie = await makeAdminCookie();
+    const created = (await (await postPlan(cookie, { name: `Plan Put ${runId}`, price: 1000, interval: "monthly", modules: ["purchase_invoice"] })).json()) as { id: string };
+    const res = await putPlan(cookie, created.id, { name: `Plan Put ${runId}`, price: 1000, interval: "yearly", modules: ["purchase_invoice"] });
+    expect(res.status).toBe(200);
+    const updated = (await res.json()) as { interval: string; durationDays: number };
+    expect(updated.interval).toBe("yearly");
+    expect(updated.durationDays).toBe(365);
+  });
+});

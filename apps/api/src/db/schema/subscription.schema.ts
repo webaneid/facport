@@ -16,6 +16,9 @@ export const plans = pgTable("plans", {
   // dengan harga nyata).
   price: integer("price").notNull(), // Rupiah, integer
   durationDays: integer("duration_days").notNull(),
+  // § Fase 173, ADR-0041 — periode langganan: "monthly" | "yearly" (satu-satunya yang menentukan akhir langganan; `durationDays` tinggal
+  // kompatibilitas/tampilan lama, 30/365). Default "monthly" supaya insert lama tanpa kolom ini tetap valid; backfill migrasi 0042.
+  interval: varchar("interval", { length: 10 }).notNull().default("monthly"),
   // § konvensi Fase 14: cuma 1 elemen per plan (1 SKU = 1 sub-modul).
   // Tipe TETAP array (hindari migration breaking untuk data lama).
   modules: jsonb("modules").$type<string[]>().notNull(),
@@ -96,6 +99,10 @@ export const subscriptions = pgTable(
     // subscription asli, 3/1 utk trial) — cegah reminder terkirim dobel
     // tiap kali job harian jalan. Nullable — NULL = belum pernah diingatkan.
     lastReminderThresholdDays: integer("last_reminder_threshold_days"),
+    // § Fase 173, ADR-0041 — jangkar anti-geser tanggal: `endAt` = `periodAnchorAt` + `periodMonths` bulan kalender (zona perusahaan saat itu).
+    // NULL = langganan lama / admin mengubah tanggal manual → perpanjangan berikutnya menetapkan jangkar baru di `endAt` saat itu. Diisi Fase 174.
+    periodAnchorAt: timestamp("period_anchor_at", { withTimezone: true }),
+    periodMonths: integer("period_months"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — 54

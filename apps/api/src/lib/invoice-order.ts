@@ -5,7 +5,7 @@ import { moduleProductLine } from "./module-catalog";
 
 const INVOICE_DUE_DAYS = 3;
 
-type PlanRow = { id: string; name: string; price: number; durationDays: number; modules: string[]; productLine: string };
+type PlanRow = { id: string; name: string; price: number; durationDays: number; interval: string; modules: string[]; productLine: string };
 
 // § `tx` (dari `db.transaction(async (tx) => ...)`) TIDAK structurally
 // compatible dengan `typeof db` (beda tipe Drizzle — transaction hilang
@@ -73,6 +73,8 @@ export async function createInvoiceAndOrder(
       price: p.price,
       // § Fase 131 — snapshot durasi paket, pola sama label/price di atas.
       durationDays: p.durationDays,
+      // § Fase 173, ADR-0041 — snapshot periode ("monthly" | "yearly"), pola sama durationDays.
+      interval: p.interval,
     })),
   );
 
