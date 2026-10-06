@@ -152,6 +152,9 @@ Sales List No, PPN, PPh** (atribut baris) dan **baris Expense (Acc No/Name/Amoun
 - Expense penawaran ditarik **hanya bila Excel tidak punya baris Expense sama sekali** (hindari ganda), dibawa dengan `salesQuotationNumber` penawarannya.
 - Nilai tambahan yang tidak terbaca dari respons Accurate = **tidak ditarik** (bukan error); Expense penawaran yang ada tapi akun/jumlahnya tidak
   terbaca = **gagal jelas** (data akuntansi). Diskon 0 tidak ditarik.
-- ⚠️ Nama field BACA `sales-quotation/detail.do` belum diverifikasi respons asli (relasi nested diasumsikan `paymentTerm.name`, `currency.code`,
-  `department.name`, `project.projectNo|no`, `salesmanList[].number`, `detailExpense[].account.no`). Verifikasi dengan 1 respons nyata (mis. SQ-IDR-01).
+- ✅ Nama field BACA diverifikasi respons ASLI 2026-10-07 (Retail Demo, 100 penawaran dipindai lewat skrip probe read-only): `paymentTerm.name`,
+  `currency.code`, `toAddress`, `description`, `cashDiscount`/`cashDiscPercent` (string), baris `department.name`, `salesmanList[].number`,
+  `useTax1/2/3` boolean, `itemCashDiscount`/`itemDiscPercent`. ⚠️ BELUM terbukti: `project` baris (null di semua contoh; diasumsikan `projectNo`/`no`)
+  dan `detailExpense[]` (kosong di semua contoh; diasumsikan `account.no`) — retest begitu ada penawaran dengan proyek/Beban.
+- Diskon persen DAN nominal sama-sama terisi di respons asli → bila persen ada, hanya persen yang ditarik (nominal turunan; hindari bentrok pembulatan).
 - **Expense Project (kolom ungu) tidak dibuat**: `detailExpense[]` Sales Order/Quotation tidak punya `projectNo` di spec (hanya `detailItem[]`).

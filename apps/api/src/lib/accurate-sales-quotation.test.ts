@@ -49,7 +49,8 @@ describe("parseSalesQuotationDetail — header, atribut baris, Beban", () => {
       { detailItem: [line], paymentTerm: { name: "net 30" }, currency: { code: "IDR" }, toAddress: "Jl. A", description: "Q3", cashDiscount: 1000, cashDiscPercent: "5" },
       "SQ-1",
     );
-    expect(nested.header).toEqual({ paymentTermName: "net 30", currencyCode: "IDR", toAddress: "Jl. A", description: "Q3", cashDiscount: 1000, cashDiscPercent: "5" });
+    expect(nested.header).toEqual({ paymentTermName: "net 30", currencyCode: "IDR", toAddress: "Jl. A", description: "Q3", cashDiscPercent: "5" });
+    expect(parseSalesQuotationDetail({ detailItem: [line], cashDiscount: 2547.5, cashDiscPercent: "" }, "SQ-1").header).toEqual({ cashDiscount: 2547.5 });
     const flat = parseSalesQuotationDetail({ detailItem: [line], paymentTermName: "cod", currencyCode: "USD", cashDiscount: 0, cashDiscPercent: 0 }, "SQ-1");
     expect(flat.header).toEqual({ paymentTermName: "cod", currencyCode: "USD" });
     expect(parseSalesQuotationDetail({ detailItem: [line] }, "SQ-1").header).toEqual({});
@@ -65,7 +66,9 @@ describe("parseSalesQuotationDetail — header, atribut baris, Beban", () => {
       },
       "SQ-1",
     );
-    expect(d.lines[0]).toMatchObject({ departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], itemCashDiscount: 250, itemDiscPercent: "2", useTax1: true, useTax3: true });
+    expect(d.lines[0]).toMatchObject({ departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], itemDiscPercent: "2", useTax1: true, useTax3: true });
+    // persen & nominal sama-sama ada (pola respons asli) → hanya persen
+    expect(d.lines[0]).not.toHaveProperty("itemCashDiscount");
     expect(Object.keys(d.lines[1]!).sort()).toEqual(["itemName", "itemNo", "notes", "quantity", "unitName", "unitPrice"]);
   });
 

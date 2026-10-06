@@ -33,6 +33,9 @@ export async function saveSalesQuotation(ctx: AccurateSessionContext, payload: R
 // `{id, name, ...}`). ⚠️ BELUM diverifikasi dengan respons asli. Dua tingkat kehati-hatian:
 // - INTI baris (kode barang, harga, qty, satuan): parser KETAT — tidak terbaca membuat seluruh perluasan GAGAL dengan pesan jelas;
 //   TIDAK PERNAH mengirim baris setengah-setengah ke Sales Order (harga 0 diam-diam = data akuntansi salah).
+// § Terverifikasi respons ASLI 2026-10-07 (Retail Demo, 100 penawaran dipindai): `paymentTerm.name`, `currency.code`, `toAddress`, `description`,
+//   `cashDiscount`/`cashDiscPercent` (string "5"), baris `department.name`, `salesmanList[].number`, `useTax1/2/3` boolean, `itemCashDiscount`/`itemDiscPercent`.
+//   BELUM terbukti (tidak ada contoh terisi): `project` (null di semua contoh), `detailExpense[]` (kosong di semua contoh).
 // - TAMBAHAN (§ Fase 172: header, diskon, dept, proyek, penjual, pajak, Beban): nilai yang tidak terbaca = TIDAK ditarik (kolom Excel yang
 //   kosong tetap kosong), kecuali baris Beban penawaran yang ada tapi akun/jumlahnya tidak terbaca → GAGAL jelas (data akuntansi).
 export type SalesQuotationLine = {
@@ -185,6 +188,9 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
       useTax1: taxFlag(it.useTax1, it.tax1),
       useTax3: taxFlag(it.useTax3, it.tax3),
     };
+    // Persen DAN nominal diskon sama-sama terisi di respons asli (5% & 50) — nominal turunan dari persen; kirim keduanya berisiko bentrok
+    // pembulatan di Accurate, jadi bila persen ada, hanya persen yang ditarik.
+    if (extras.itemDiscPercent !== undefined) extras.itemCashDiscount = undefined;
     for (const [k, v] of Object.entries(extras)) if (v !== undefined) (line as Record<string, unknown>)[k] = v;
     return line;
   });
@@ -209,6 +215,7 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     cashDiscPercent: percentText(raw?.cashDiscPercent),
     currencyCode: relation(raw?.currency, ["code"], raw?.currencyCode),
   };
+  if (headerExtras.cashDiscPercent !== undefined) headerExtras.cashDiscount = undefined; // alasan sama dengan diskon baris
   for (const [k, v] of Object.entries(headerExtras)) if (v !== undefined) (header as Record<string, unknown>)[k] = v;
 
   return { header, lines, expenses };

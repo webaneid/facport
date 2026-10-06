@@ -481,7 +481,7 @@ describe("Fase 169 — baris perluasan Sales Quotation", () => {
     const rawRows = [{ ...header, "Sales Quot No": "SQ-1" }];
     const payload = buildSalesOrderPayload(rawRows, richMapping);
     await expandQuotationRowsInPayload(payload, rawRows, richMapping, async () => richQuotation);
-    expect(payload).toMatchObject({ paymentTermName: "net 30", toAddress: "Jl. Mawar 1", description: "Penawaran Q3", cashDiscount: 1000, cashDiscPercent: "5", currencyCode: "IDR" });
+    expect(payload).toMatchObject({ paymentTermName: "net 30", toAddress: "Jl. Mawar 1", description: "Penawaran Q3", cashDiscount: 1000, cashDiscPercent: "5", currencyCode: "IDR" }) // fixture langsung (parser yang memilih salah satu);
     const items = payload.detailItem as Record<string, unknown>[];
     expect(items[0]).toMatchObject({ itemCashDiscount: 250, itemDiscPercent: "2", departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], useTax1: true, useTax3: false });
     expect(Object.keys(items[1]!)).not.toContain("departmentName");
