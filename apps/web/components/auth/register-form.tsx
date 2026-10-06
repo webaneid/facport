@@ -1,6 +1,7 @@
 "use client";
 
 import { Suspense, useState } from "react";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -62,6 +63,11 @@ function RegisterFormInner() {
   const searchParams = useSearchParams();
   const [error, setError] = useState<string | null>(null);
   const [registered, setRegistered] = useState(false);
+  // § 2026-10-06 (laporan client) — email yang sudah terdaftar dulu menampilkan "internal server error" (bug server, sudah diperbaiki: sekarang 409
+  // USER_ALREADY_EXISTS). Form menawarkan jalan keluar: Masuk, Lupa password, atau kirim ulang email verifikasi (kalau pendaftaran sebelumnya belum diverifikasi).
+  const [existingEmail, setExistingEmail] = useState<string | null>(null);
+  const [resendInfo, setResendInfo] = useState<string | null>(null);
+  const [resending, setResending] = useState(false);
   const {
     register,
     handleSubmit,
@@ -74,10 +80,30 @@ function RegisterFormInner() {
     const callbackURL = typeof window !== "undefined" ? `${window.location.origin}${getSafeRedirect(redirect)}` : undefined;
     const { error: signUpError } = await authClient.signUp.email({ ...values, callbackURL });
     if (signUpError) {
+      if (signUpError.status === 409 || (signUpError as { code?: string }).code === "USER_ALREADY_EXISTS") {
+        setExistingEmail(values.email);
+        setResendInfo(null);
+        return;
+      }
       setError(signUpError.message ?? "Pendaftaran gagal.");
       return;
     }
+    setExistingEmail(null);
     setRegistered(true);
+  }
+
+  async function handleResendVerification() {
+    if (!existingEmail) return;
+    setResending(true);
+    const redirect = searchParams.get("redirect");
+    const callbackURL = typeof window !== "undefined" ? `${window.location.origin}${getSafeRedirect(redirect)}` : undefined;
+    const { error: resendError } = await authClient.sendVerificationEmail({ email: existingEmail, callbackURL });
+    setResending(false);
+    setResendInfo(
+      resendError
+        ? "Gagal mengirim ulang email verifikasi — coba lagi beberapa saat lagi."
+        : "Kalau email ini belum diverifikasi, link verifikasi baru sudah dikirim — cek inbox dan folder spam.",
+    );
   }
 
   if (registered) {
@@ -109,6 +135,25 @@ function RegisterFormInner() {
         {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {existingEmail && (
+        <div role="alert" className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            <strong>{existingEmail}</strong> sudah terdaftar. Silakan masuk, atau atur ulang password kalau lupa.
+          </p>
+          <div className="flex flex-wrap gap-x-4 gap-y-1">
+            <Link href="/login" className="font-medium underline">
+              Masuk
+            </Link>
+            <Link href="/forgot-password" className="font-medium underline">
+              Lupa password?
+            </Link>
+            <button type="button" onClick={handleResendVerification} disabled={resending} className="text-left font-medium underline disabled:opacity-50">
+              {resending ? "Mengirim..." : "Kirim ulang email verifikasi"}
+            </button>
+          </div>
+          {resendInfo && <p className="text-xs">{resendInfo}</p>}
+        </div>
+      )}
       <Button type="submit" loading={isSubmitting} className="w-full">
         Daftar
       </Button>

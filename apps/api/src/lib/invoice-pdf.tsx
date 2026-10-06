@@ -179,11 +179,12 @@ function formatTanggal(date: Date, timezone: string): string {
 }
 
 // § Fase 131 — duplikasi SENGAJA dari `apps/web/lib/duration.ts`
-// `formatDuration()` (1 Bulan=30 hari, 1 Tahun=360 hari, sama alasan
+// `formatDuration()` (1 Bulan=30 hari, 1 Tahun=365 hari — dikoreksi 2026-10-06 dari 360; data LAMA 360 hari tetap tampil "1 Tahun"; sama alasan
 // duplikasi `ORDER_STATUS_LABEL`/`INVOICE_STATUS_LABEL` di atas — apps/api
 // tidak bisa import apps/web). Update DUA-duanya kalau logic sumbernya berubah.
-function formatDurasiPdf(days: number): string {
-  if (days > 0 && days % 360 === 0) return `${days / 360} Tahun`;
+export function formatDurasiPdf(days: number): string {
+  if (days > 0 && days % 365 === 0) return `${days / 365} Tahun`;
+  if (days > 0 && days % 360 === 0) return `${days / 360} Tahun`; // invoice lama (snapshot 360 hari)
   if (days > 0 && days % 30 === 0) return `${days / 30} Bulan`;
   return `${days} Hari`;
 }

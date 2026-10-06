@@ -80,6 +80,17 @@ const allowedOrigins = [
 // Elysia instance TANPA .listen() — supaya bisa di-test via `.handle()`
 // (pola resmi Elysia testing) tanpa perlu bind port beneran. `index.ts`
 // yang import file ini dan panggil .listen() sebagai entry point asli.
+// Email dari body sign-up (huruf kecil, spasi dibuang); null kalau body bukan JSON / tidak punya email. Memakai clone — body `request` asli
+// tetap utuh untuk `auth.handler`.
+async function readSignUpEmail(request: Request): Promise<string | null> {
+  try {
+    const body = (await request.clone().json()) as { email?: unknown };
+    return typeof body.email === "string" && body.email.trim() !== "" ? body.email.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
 export const app = new Elysia()
   .use(cors({ origin: allowedOrigins, credentials: true }))
   .use(rateLimitPlugin({ pathPrefix: "/api/auth", windowMs: 60_000, max: 10 }))
@@ -203,7 +214,23 @@ export const app = new Elysia()
   // WAJIB (bukan `request`, kita tidak baca body request di sini) — body
   // `Response` juga cuma bisa dibaca SEKALI, `return response` di bawah
   // butuh body ORIGINAL masih utuh buat diteruskan ke client.
-  .post("/api/auth/sign-up/email", async ({ request }) => {
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-10-06 (laporan client: daftar ulang dengan email yang sudah terdaftar → "internal server error").
+  // Better Auth dengan `requireEmailVerification: true` TIDAK menolak email yang sudah ada — ia membalas 200 dengan user REKAAN (id acak yang
+  // TIDAK ADA di database, proteksi terhadap penebakan email). Versi lama langsung memasukkan id itu ke `user_roles` → pelanggaran foreign key →
+  // error tak tertangani → 500. Perbaikan: (1) email yang sudah terdaftar (tanpa beda huruf besar-kecil) DITOLAK lebih dulu dengan 409
+  // `USER_ALREADY_EXISTS` + pesan jelas, supaya form bisa menawarkan Masuk / Lupa password / Kirim ulang verifikasi; (2) role customer HANYA
+  // ditetapkan kalau user itu benar-benar ada di database (pengaman kalau jalur rekaan tetap lolos, mis. balapan 2 permintaan).
+  // Konsekuensi yang DISENGAJA (permintaan produk): endpoint ini jadi mengungkap "email sudah terdaftar" (enumerasi email) — dibatasi
+  // rate limit `/api/auth` (10/menit/IP, di atas).
+  .post("/api/auth/sign-up/email", async ({ request, set }) => {
+    const email = await readSignUpEmail(request);
+    if (email) {
+      const [existing] = await db.select({ id: userTable.id }).from(userTable).where(sql`lower(${userTable.email}) = ${email}`).limit(1);
+      if (existing) {
+        set.status = 409;
+        return { code: "USER_ALREADY_EXISTS", message: "Email ini sudah terdaftar." };
+      }
+    }
     const response = await auth.handler(request);
     if (response.ok) {
       const body = (await response
@@ -211,8 +238,9 @@ export const app = new Elysia()
         .json()
         .catch(() => null)) as { user?: { id: string } } | null;
       if (body?.user?.id) {
-        const [customerRole] = await db.select().from(roles).where(eq(roles.name, "customer"));
-        if (customerRole) {
+        const [created] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.id, body.user.id)).limit(1);
+        const [customerRole] = created ? await db.select().from(roles).where(eq(roles.name, "customer")) : [];
+        if (created && customerRole) {
           await db.insert(userRoles).values({ userId: body.user.id, roleId: customerRole.id }).onConflictDoNothing();
         }
       }

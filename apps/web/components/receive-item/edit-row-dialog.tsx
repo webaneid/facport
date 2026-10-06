@@ -157,7 +157,7 @@ export function EditRowDialog({
         <div ref={scrollRef} className="mt-3 flex max-h-[70vh] flex-col gap-3 overflow-y-auto text-sm">
           {row.errorMessage && (
             <p className="rounded-md bg-destructive-bg px-3 py-2 text-destructive">
-              <strong>Error terakhir dari Accurate:</strong> {row.errorMessage}
+              <strong>Error terakhir:</strong> {row.errorMessage}
             </p>
           )}
           {error && (

@@ -288,6 +288,13 @@
       "when": 1790974014796,
       "tag": "0040_panoramic_vengeance",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1791278435863,
+      "tag": "0041_plans_tahun_365",
+      "breakpoints": true
     }
   ]
 }

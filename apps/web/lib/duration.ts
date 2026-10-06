@@ -2,16 +2,23 @@
 // "360" untuk 1 tahun), merepotkan. UI sekarang input "Jumlah" + pilih unit
 // (Hari/Bulan/Tahun), dikonversi ke `durationDays` (SATU-SATUNYA field yang
 // dikirim ke API — API tidak tahu/tidak peduli soal unit) cuma saat submit.
-// § Keputusan Kecil (phase-43): 1 Bulan = 30 hari, 1 Tahun = 360 hari
-// (12×30, BUKAN 365) — konsisten kebiasaan manual admin selama ini, dan
-// bulat (1 Tahun = 12 Bulan persis, tidak ada sisa).
+// § Keputusan Kecil (phase-43): 1 Bulan = 30 hari. 1 Tahun SEMULA 360 hari
+// (12×30); § DIKOREKSI 2026-10-06 (permintaan user): 1 Tahun = 365 HARI —
+// pelanggan membeli "1 tahun" tapi hanya mendapat 360 hari. Paket/invoice
+// LAMA yang tersimpan 360 hari (dan kelipatannya) TETAP ditampilkan sebagai
+// "1 Tahun" (`LEGACY_YEAR_DAYS`) supaya riwayat tidak berubah jadi "360 Hari";
+// paket yang diedit & disimpan ulang otomatis menjadi 365 hari (migration 0041
+// juga menggeser paket lama di database).
 export type DurationUnit = "hari" | "bulan" | "tahun";
 
 export const DURATION_UNIT_TO_DAYS: Record<DurationUnit, number> = {
   hari: 1,
   bulan: 30,
-  tahun: 360,
+  tahun: 365,
 };
+
+/** Tahun lama (12×30). Hanya dipakai untuk MENGENALI data lama saat ditampilkan, tidak pernah untuk menghitung durasi baru. */
+export const LEGACY_YEAR_DAYS = 360;
 
 export const DURATION_UNIT_LABELS: Record<DurationUnit, string> = {
   hari: "Hari",
@@ -31,6 +38,10 @@ export function inferDurationUnit(days: number): { amount: number; unit: Duratio
   if (days > 0 && days % DURATION_UNIT_TO_DAYS.tahun === 0) {
     return { amount: days / DURATION_UNIT_TO_DAYS.tahun, unit: "tahun" };
   }
+  // Data lama: paket/invoice yang tersimpan 360 hari (kelipatan) tetap "N Tahun", bukan "N×12 Bulan".
+  if (days > 0 && days % LEGACY_YEAR_DAYS === 0) {
+    return { amount: days / LEGACY_YEAR_DAYS, unit: "tahun" };
+  }
   if (days > 0 && days % DURATION_UNIT_TO_DAYS.bulan === 0) {
     return { amount: days / DURATION_UNIT_TO_DAYS.bulan, unit: "bulan" };
   }
@@ -38,7 +49,7 @@ export function inferDurationUnit(days: number): { amount: number; unit: Duratio
 }
 
 // § format kolom "Durasi" di tabel daftar paket (mis. "1 Tahun" bukan
-// "360 hari") — pakai unit yang sama dengan `inferDurationUnit`.
+// "365 hari") — pakai unit yang sama dengan `inferDurationUnit`.
 export function formatDuration(days: number): string {
   const { amount, unit } = inferDurationUnit(days);
   return `${amount} ${DURATION_UNIT_LABELS[unit]}`;

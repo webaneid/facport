@@ -290,7 +290,7 @@ describe("Fase 171 — resolve Sales Order Detail ID via Item Notes ↔ charFiel
   });
 
   test("gagal jelas: Item No kembar tanpa Item Notes/CLS5; Item Notes tidak cocok; dua baris SO ber-Week sama (ambigu)", () => {
-    expect(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, undefined)).toThrow(/Item Notes.*Atribut Tambahan 1/s);
+    expect(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, undefined)).toThrow(/Item Notes.*Pilihan yang ada: Week 1, Week 2/s);
     expect(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, "Week 9")).toThrow(/tidak ditemukan/);
     const same = [{ ...so[0]! }, { ...so[1]!, charField1: "Week 1" }];
     expect(() => resolveSalesOrderDetailId(same, "9900016", "SOTES_EKA01", undefined, "Week 1")).toThrow(/ambigu \(2 baris cocok\)/);
@@ -312,5 +312,42 @@ describe("Fase 171 — resolve Sales Order Detail ID via Item Notes ↔ charFiel
     expect(item.salesOrderNumber).toBe("SOTES_EKA01");
     const blank = buildDeliveryOrderPayload([rowOf({ "Item Notes": " \n " })], mapping);
     expect((blank.detailItem as Record<string, unknown>[])[0]!.detailNotes).toBeUndefined();
+  });
+});
+
+// § 2026-10-06 — kalimat error dibuat ramah user Excel: menyebut KOLOM yang harus diisi ("Item Notes") dan PILIHAN label yang ada di SO.
+describe("Fase 171 — pesan error resolver menampilkan pilihan label", () => {
+  const so = [
+    { id: 102950, itemNo: "9900016", dataClassification5Name: null, charField1: "Week 1" },
+    { id: 102901, itemNo: "9900016", dataClassification5Name: null, charField1: "Week 2" },
+  ];
+  const message = (fn: () => unknown) => {
+    try {
+      fn();
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return "";
+  };
+
+  test("Item Notes kosong → menyebut kolom 'Item Notes' + pilihan 'Week 1, Week 2' (tanpa istilah teknis sebagai instruksi utama)", () => {
+    const m = message(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, undefined));
+    expect(m).toContain('Barang "9900016" ada 2× di Sales Order "SOTES_EKA01"');
+    expect(m).toContain('Isi kolom "Item Notes" pada baris ini');
+    expect(m).toContain("Pilihan yang ada: Week 1, Week 2");
+  });
+
+  test("Item Notes tidak cocok → 'tidak ditemukan' + daftar pilihan yang valid (tinggal disalin)", () => {
+    const m = message(() => resolveSalesOrderDetailId(so, "9900016", "SOTES_EKA01", undefined, "Week 9"));
+    expect(m).toContain('Item Notes "Week 9" tidak ditemukan');
+    expect(m).toContain("Week 1, Week 2");
+  });
+
+  test("label sama di dua baris SO → ambigu, minta ID manual; baris SO tanpa label terbaca → minta ID manual (bukan teka-teki)", () => {
+    const same = [{ ...so[0]! }, { ...so[1]!, charField1: "Week 1" }];
+    expect(message(() => resolveSalesOrderDetailId(same, "9900016", "SO", undefined, "Week 1"))).toContain('Isi kolom "Sales Order Detail ID" secara manual');
+    const noLabel = [{ ...so[0]!, charField1: null }, { ...so[1]!, charField1: null }];
+    expect(message(() => resolveSalesOrderDetailId(noLabel, "9900016", "SO", undefined, undefined))).toContain('isi kolom "Sales Order Detail ID" secara manual');
+    expect(message(() => resolveSalesOrderDetailId(noLabel, "9900016", "SO", undefined, "Week 1"))).toContain('"Sales Order Detail ID" secara manual');
   });
 });

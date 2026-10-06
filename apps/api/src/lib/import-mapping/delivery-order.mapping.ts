@@ -283,10 +283,21 @@ export function resolveSalesOrderDetailId(
 
   const weekGiven = week !== undefined && week.trim() !== "";
   const notesGiven = notes !== undefined && notes.trim() !== "";
+
+  // Label pembeda yang ADA di baris-baris SO itu (Atribut Tambahan 1 / CLS5) — ditampilkan di pesan supaya user tinggal menyalin yang benar.
+  const distinct = (values: (string | null | undefined)[]) => [...new Set(values.filter((v): v is string => !!v && v.trim() !== "").map((v) => v.trim()))];
+  const labels = distinct(byItemNo.map((d) => d.charField1));
+  const cls5Labels = distinct(byItemNo.map((d) => d.dataClassification5Name));
+  const labelList = labels.length > 0 ? labels.join(", ") : null;
+
   if (!weekGiven && !notesGiven) {
-    throw new Error(
-      `Item "${itemNo}" muncul ${byItemNo.length}× di Sales Order "${soNumber}" dengan kode sama — isi kolom "Item Notes" dengan nilai Atribut Tambahan 1 (Custom Character 1, mis. "Week 1") baris SO yang dimaksud, atau kolom CLS5 kalau SO memakainya, untuk membedakan baris mana yang dimaksud.`,
-    );
+    // Pesan untuk user Excel: yang diisi adalah kolom "Item Notes" di file Delivery Order ini (bukan field "Atribut Tambahan 1" yang ada di Accurate).
+    const choice = labelList
+      ? `Isi kolom "Item Notes" pada baris ini dengan label pembeda baris Sales Order-nya (sama persis dengan Atribut Tambahan 1 / Custom Character 1 di Sales Order). Pilihan yang ada: ${labelList}.`
+      : cls5Labels.length > 0
+        ? `Isi kolom CLS5 pada baris ini dengan salah satu: ${cls5Labels.join(", ")}.`
+        : `Baris-baris Sales Order itu tidak punya label pembeda yang terbaca — isi kolom "Sales Order Detail ID" secara manual.`;
+    throw new Error(`Barang "${itemNo}" ada ${byItemNo.length}× di Sales Order "${soNumber}" (kode sama). ${choice}${labelList && cls5Labels.length > 0 ? ` (Alternatif: kolom CLS5, pilihan: ${cls5Labels.join(", ")}.)` : ""}`);
   }
 
   let pool = byItemNo;
@@ -298,11 +309,17 @@ export function resolveSalesOrderDetailId(
   }
   if (notesGiven && pool.length !== 1) {
     pool = pool.filter((d) => d.charField1 != null && norm(d.charField1) === norm(notes!));
-    used.push(`Atribut Tambahan 1 "${notes!.trim()}"`);
+    used.push(`Item Notes "${notes!.trim()}"`);
   }
   if (pool.length !== 1) {
+    const given = used.join(" & ") || "isian yang diberikan";
+    if (pool.length === 0) {
+      throw new Error(
+        `Barang "${itemNo}" dengan ${given} tidak ditemukan di Sales Order "${soNumber}". ${labelList ? `Pilihan "Item Notes" yang ada: ${labelList} (huruf besar-kecil tidak masalah, tulisan harus sama).` : "Baris-baris Sales Order itu tidak punya label pembeda yang terbaca — isi kolom \"Sales Order Detail ID\" secara manual."}`,
+      );
+    }
     throw new Error(
-      `Item "${itemNo}" dengan ${used.join(" & ") || "nilai pembeda yang diisi"} di Sales Order "${soNumber}" ${pool.length === 0 ? "tidak ditemukan" : `masih ambigu (${pool.length} baris cocok)`} — cek kembali nilainya.`,
+      `Barang "${itemNo}" dengan ${given} cocok dengan ${pool.length} baris di Sales Order "${soNumber}" — masih ambigu (${pool.length} baris cocok): label pembedanya sama di baris-baris itu. Isi kolom "Sales Order Detail ID" secara manual untuk memilih salah satunya.`,
     );
   }
   return pool[0]!.id;

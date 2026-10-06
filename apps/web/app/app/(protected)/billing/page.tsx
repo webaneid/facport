@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { FileText, Download, CreditCard } from "lucide-react";
+import { FileText, FileDown, Banknote } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -14,19 +14,10 @@ import { StatusBadge } from "@/lib/status-badges";
 import { api, apiBaseUrl } from "@/lib/api-client";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { groupInvoiceItemLabels } from "@/lib/group-invoice-items";
+import { InvoiceDetailDialog, type BillingInvoice } from "@/components/billing/invoice-detail-dialog";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
-type InvoiceItem = { id: string; label: string; moduleKey: string; price: number };
-type Invoice = {
-  id: string;
-  invoiceNumber: string;
-  status: string;
-  total: number;
-  dueDate: string;
-  createdAt: string;
-  items: InvoiceItem[];
-  orderId: string | null;
-};
+type Invoice = BillingInvoice;
 
 // § Fase 15, ADR-0021 — riwayat invoice + unduh PDF. Belum ada jalur
 // normal yang bikin invoice (checkout = Fase 16-17), jadi halaman ini
@@ -50,7 +41,7 @@ export default function BillingPage() {
       <Card>
         <CardHeader>
           <CardTitle>Semua Invoice</CardTitle>
-          <CardDescription>Klik &quot;Unduh PDF&quot; untuk lihat/simpan dokumen invoice resmi.</CardDescription>
+          <CardDescription>Ikon di kolom Aksi: mata = lihat detail invoice, uang = bayar sekarang, dokumen = unduh PDF invoice resmi.</CardDescription>
         </CardHeader>
         <CardContent>
           {!invoices ? (
@@ -66,7 +57,7 @@ export default function BillingPage() {
                   <TableHead className="w-[12%]">Total</TableHead>
                   <TableHead className="w-[14%]">Jatuh Tempo</TableHead>
                   <TableHead className="w-[10%]">Status</TableHead>
-                  <TableHead className="w-[220px] text-right">Aksi</TableHead>
+                  <TableHead className="w-[144px] text-right">Aksi</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -82,21 +73,28 @@ export default function BillingPage() {
                       <StatusBadge domain="invoice" status={inv.status} />
                     </TableCell>
                     <TableCell className="text-right">
-                      <div className="flex items-center justify-end gap-2">
+                      {/* § diminta user 2026-10-06 — semua aksi berupa ikon saja (tooltip + label akses menjelaskan fungsinya). */}
+                      <div className="flex items-center justify-end gap-1">
+                        <InvoiceDetailDialog invoice={inv} />
                         {inv.status === "unpaid" && inv.orderId && (
-                          <Link href={`/billing/${inv.orderId}/pay`} className={buttonVariants("default", "h-8 gap-1.5")}>
-                            <CreditCard className="h-3.5 w-3.5" />
-                            Bayar Sekarang
+                          <Link
+                            href={`/billing/${inv.orderId}/pay`}
+                            title="Bayar sekarang"
+                            aria-label={`Bayar sekarang invoice ${inv.invoiceNumber}`}
+                            className={buttonVariants("ghost", "h-8 w-8 p-0 text-green-700 hover:bg-green-50")}
+                          >
+                            <Banknote className="h-4 w-4" />
                           </Link>
                         )}
                         <a
                           href={`${apiBaseUrl}/invoices/${inv.id}/pdf`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className={buttonVariants("outline", "h-8 gap-1.5")}
+                          title="Unduh PDF"
+                          aria-label={`Unduh PDF invoice ${inv.invoiceNumber}`}
+                          className={buttonVariants("ghost", "h-8 w-8 p-0")}
                         >
-                          <Download className="h-3.5 w-3.5" />
-                          Unduh PDF
+                          <FileDown className="h-4 w-4" />
                         </a>
                       </div>
                     </TableCell>

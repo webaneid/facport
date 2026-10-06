@@ -107,7 +107,13 @@ export default function AutoProduksiInputPage() {
       <Card className="w-full lg:w-3/4 xl:w-1/2">
         <CardHeader>
           <CardTitle>Form Input Produksi</CardTitle>
-          <CardDescription>Belum ada formula? Buat dulu di halaman List Formula.</CardDescription>
+          <CardDescription>
+            Belum ada formula? Buat dulu di halaman{" "}
+            <Link href="/autoproduksi/formulas" className="text-primary underline">
+              List Formula
+            </Link>
+            .
+          </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           {!activeFormulas ? (
