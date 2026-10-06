@@ -55,6 +55,7 @@ export function EditableGrid({
   columnMapping,
   requiredInternalFields,
   dateInternalFields,
+  isRequiredExempt,
   onSave,
   onSaved,
 }: {
@@ -62,6 +63,8 @@ export function EditableGrid({
   columnMapping: Record<string, string>;
   requiredInternalFields: Set<string>;
   dateInternalFields: Set<string>;
+  /** Opsional — kolom wajib yang DIKECUALIKAN untuk baris tertentu (mis. Sales Order: baris perluasan penawaran). `rowValues` = nilai per kolom Excel. */
+  isRequiredExempt?: (rowValues: Record<string, string>, internalField: string) => boolean;
   onSave: (rows: { id: string; rawData: Record<string, string> }[]) => Promise<BulkSaveResult | null>;
   onSaved: () => void;
 }) {
@@ -113,7 +116,9 @@ export function EditableGrid({
     const clientErrors: Record<string, Set<string>> = {};
     for (const row of rows) {
       const rowValues = values[row.id] ?? {};
-      const missing = new Set([...requiredColumns].filter((col) => (rowValues[col] ?? "").trim() === ""));
+      const missing = new Set(
+        [...requiredColumns].filter((col) => (rowValues[col] ?? "").trim() === "" && !isRequiredExempt?.(rowValues, columnMapping[col]!)),
+      );
       if (missing.size > 0) clientErrors[row.id] = missing;
     }
     if (Object.keys(clientErrors).length > 0) {

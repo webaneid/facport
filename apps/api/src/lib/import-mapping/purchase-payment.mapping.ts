@@ -207,6 +207,46 @@ export function validateGroupVendorConsistencyForPayment(
   return `Purchase Payment No "${label}" dipakai untuk vendor berbeda-beda (${[...vendorNos].join(", ")}) — pastikan semua baris 1 pembayaran pakai Nomor Vendor yang sama.`;
 }
 
+// § 2026-10-06 (diminta user, mirror `validateInvoiceRowsConsistencyForReceipt` Sales Receipt) — faktur yang sama di beberapa baris 1
+// pembayaran DIGABUNG jadi 1 entri (§ `buildPurchasePaymentPayload`); penggabungan tidak boleh diam-diam membuang data bertentangan:
+// "Payment" semua baris faktur yang sama harus SAMA (diulang, bukan dijumlahkan); Paid PPH/PPh No kalau diisi di >1 baris harus sama;
+// "PPh ID" yang sama tidak boleh dobel untuk faktur yang sama. `null` = lolos.
+export function validateInvoiceRowsConsistencyForPayment(group: PurchasePaymentGroup, columnMapping: Record<string, string>): string | null {
+  const byInvoice = new Map<string, { invoiceNo: string; rows: Partial<Record<PurchasePaymentField, unknown>>[] }>();
+  for (const row of group.rows) {
+    const values = extractRowValues(row.rawData, columnMapping);
+    const invoiceNo = String(values.invoiceNo ?? "").trim();
+    if (invoiceNo === "") continue;
+    const key = invoiceNo.toLowerCase();
+    const entry = byInvoice.get(key) ?? { invoiceNo, rows: [] };
+    entry.rows.push(values);
+    byInvoice.set(key, entry);
+  }
+
+  for (const { invoiceNo, rows } of byInvoice.values()) {
+    if (rows.length < 2) continue;
+    const amounts = new Set(rows.map((r) => Number(r.chequeAmount ?? 0)));
+    if (amounts.size > 1) {
+      return `Faktur "${invoiceNo}" ada di ${rows.length} baris dengan "Payment" berbeda (${[...amounts].join(" vs ")}). Satu faktur hanya boleh satu pembayaran per Purchase Payment — isi "Payment" SAMA di semua baris faktur itu (baris tambahan hanya untuk diskon/PPh tambahan).`;
+    }
+    for (const [field, label] of [
+      ["paidPph", "Paid PPH"],
+      ["pphNumber", "PPh No"],
+    ] as const) {
+      const distinct = new Set(rows.map((r) => r[field]).filter((v) => v !== undefined).map((v) => String(v).trim().toLowerCase()));
+      if (distinct.size > 1) return `Faktur "${invoiceNo}" ada di beberapa baris dengan "${label}" berbeda — isi sama atau kosongkan di baris lainnya.`;
+    }
+    const seenTax = new Set<string>();
+    for (const r of rows) {
+      if (r.taxId === undefined || r.taxAmount === undefined) continue;
+      const taxKey = String(r.taxId).trim().toLowerCase();
+      if (seenTax.has(taxKey)) return `Faktur "${invoiceNo}": "PPh ID" "${String(r.taxId).trim()}" diisi lebih dari sekali — PPh akan terhitung dobel. Isi PPh yang sama hanya di SATU baris faktur itu.`;
+      seenTax.add(taxKey);
+    }
+  }
+  return null;
+}
+
 // § lessons-learned.md 2026-08-19 — Excel date input HARUS dinormalisasi
 // ke DD/MM/YYYY (Accurate WAJIB format ini). BUG DITEMUKAN & DIPERBAIKI
 // Fase 88 (2026-09-10) — `transDate` TIDAK PERNAH dinormalisasi sejak
@@ -359,29 +399,38 @@ export function buildPurchasePaymentPayload(
   const headerValues = extractRowValues(rawRows[0] ?? {}, columnMapping);
   const detailTax: Record<string, unknown>[] = [];
 
-  const detailInvoice = rawRows.map((rawRow) => {
+  // § 2026-10-06 (diminta user, mirror fix Sales Receipt) — FAKTUR YANG SAMA di beberapa baris dalam 1 pembayaran = SATU entri
+  // `detailInvoice`. Accurate menolak faktur yang muncul lebih dari sekali dalam 1 pembayaran, sedangkan 1 baris Excel hanya memuat 1
+  // diskon — pola client: faktur ditulis di N baris, tiap baris menyumbang 1 diskon/PPh, "Payment" DIULANG sama (bukan dijumlahkan,
+  // validasi di `validateInvoiceRowsConsistencyForPayment`). Skalar (Paid PPH, PPh No) dari baris pertama yang mengisinya.
+  const invoiceEntries = new Map<string, Record<string, unknown>>();
+  const invoiceOrder: Record<string, unknown>[] = [];
+
+  rawRows.forEach((rawRow, rowIndex) => {
     const rowValues = extractRowValues(rawRow, columnMapping);
     const invoiceNo = String(rowValues.invoiceNo ?? "");
-    const entry: Record<string, unknown> = {
-      invoiceNo,
-      paymentAmount: Number(rowValues.chequeAmount ?? 0),
-    };
-    if (rowValues.paidPph !== undefined) entry.paidPph = rowValues.paidPph;
-    if (rowValues.pphNumber !== undefined) entry.pphNumber = String(rowValues.pphNumber);
+    const key = invoiceNo.trim() === "" ? `__row${rowIndex}` : invoiceNo.trim().toLowerCase();
+    let entry = invoiceEntries.get(key);
+    if (!entry) {
+      entry = { invoiceNo, paymentAmount: Number(rowValues.chequeAmount ?? 0) };
+      invoiceEntries.set(key, entry);
+      invoiceOrder.push(entry);
+    }
+    if (rowValues.paidPph !== undefined && entry.paidPph === undefined) entry.paidPph = rowValues.paidPph;
+    if (rowValues.pphNumber !== undefined && entry.pphNumber === undefined) entry.pphNumber = String(rowValues.pphNumber);
     const discount = buildDetailDiscountFromRowValues(rowValues);
-    if (discount) entry.detailDiscount = [discount];
+    if (discount) entry.detailDiscount = [...((entry.detailDiscount as Record<string, unknown>[] | undefined) ?? []), discount];
 
-    // § Fase 100 — SPECULATIVE, mirror `buildSalesReceiptPayload` Fase
-    // 99 persis (syarat minimal taxId+taxAmount sama-sama terisi, taxId
-    // harus berhasil di-resolve).
+    // § Fase 100 — SPECULATIVE, mirror `buildSalesReceiptPayload` Fase 99 persis (syarat minimal taxId+taxAmount sama-sama terisi,
+    // taxId harus berhasil di-resolve).
     if (rowValues.taxId !== undefined && rowValues.taxAmount !== undefined) {
       const resolvedId = resolvedTaxIds.get(String(rowValues.taxId).trim());
       if (resolvedId !== undefined) {
         detailTax.push({ detailInvoiceNo: invoiceNo, taxAmount: Number(rowValues.taxAmount), taxId: resolvedId });
       }
     }
-    return entry;
   });
+  const detailInvoice = invoiceOrder;
 
   // § Fase 90 (2026-09-10, BUG DITEMUKAN via test call NYATA ke Accurate,
   // company "Retail Demo", vendor SGD "ASMUS") — root `chequeAmount`
@@ -395,7 +444,19 @@ export function buildPurchasePaymentPayload(
   // setelah dikalikan `rate`. Kalau `rate` tidak diisi (transaksi mata
   // uang dasar, kasus PALING UMUM), kali 1 — ZERO REGRESSION.
   const rateMultiplier = headerValues.rate !== undefined ? Number(headerValues.rate) : 1;
-  const autoSummedChequeAmount = detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) * rateMultiplier;
+  // § 2026-10-06 (diminta user, mirror fix Sales Receipt) — root `chequeAmount` = uang yang BENAR-BENAR keluar dari bank = Σ paymentAmount
+  // (nilai FAKTUR yang dilunasi, sebelum potongan) − Σ PPh yang dipotong (`detailTax[].taxAmount`) − Σ diskon (`detailDiscount[].amount`).
+  // Jurnal seimbang: debit Hutang = paymentAmount; kredit = Bank + Akun Diskon + PPh Terutang. Sebelumnya auto-SUM mengabaikan keduanya,
+  // jadi bank dicatat penuh dan potongan terhitung di atas pelunasan (lebih bayar) — bug yang terbukti di Sales Receipt (contoh RESMI
+  // Accurate: 100.909.089 − 1.818.181 = 99.090.908). ⚠️ SPECULATIVE di endpoint ini: konfirmasi tertulis Accurate untuk
+  // `purchase-payment/save.do` belum ada (struktur PPh-nya sendiri juga spekulatif, § Fase 100), dan diskon belum punya contoh resmi
+  // di modul mana pun — retest 1 pembayaran ber-PPh/diskon nyata. "Cheque Amount" eksplisit dari user TIDAK diubah.
+  const totalTaxWithheld = detailTax.reduce((sum, d) => sum + (d.taxAmount as number), 0);
+  const totalDiscount = detailInvoice.reduce(
+    (sum, d) => sum + ((d.detailDiscount as { amount: number }[] | undefined) ?? []).reduce((inner, disc) => inner + disc.amount, 0),
+    0,
+  );
+  const autoSummedChequeAmount = (detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) - totalTaxWithheld - totalDiscount) * rateMultiplier;
 
   const payload: Record<string, unknown> = {
     vendorNo: String(headerValues.vendorNo ?? ""),

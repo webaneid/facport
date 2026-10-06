@@ -6,6 +6,7 @@ import {
   receiptNumberColumnOf,
   extractTaxIdsFromRows,
   type ImportRowRecord,
+  validateInvoiceRowsConsistencyForReceipt,
 } from "./sales-receipt.mapping";
 
 // § Fase 49 — audit data ASLI kompetitor (`docs/referencehtml/FACPORT_Sales
@@ -477,5 +478,162 @@ describe("buildSalesReceiptPayload — Fase 99 (detailTax di root, Tax ID/Tax Am
       { detailInvoiceNo: "SI-1", taxAmount: 40000, taxId: 350 },
       { detailInvoiceNo: "SI-2", taxAmount: 15000, taxId: 10 },
     ]);
+  });
+});
+
+// § BUG 2026-10-06 (laporan client): "nilai pembayaran 100.000, isi PPh, nilai pembayaran tetap 100.000 → lebih bayar". Root
+// `chequeAmount` = uang masuk bank = Σ paymentAmount − Σ PPh yang dipotong (contoh resmi Accurate Support, Fase 99).
+describe("buildSalesReceiptPayload — PPh mengurangi root chequeAmount (uang masuk bank)", () => {
+  const mapping = { ...columnMapping, "Tax ID": "taxId", "Tax Amount": "taxAmount", "Cheque Amount": "receiptTotalAmount" };
+  const taxIds = new Map([["PPh23", 350], ["PPh Lain", 10]]);
+
+  test("contoh RESMI Accurate Support: paymentAmount 100.909.089, taxAmount 1.818.181 → chequeAmount 99.090.908; paymentAmount faktur TETAP penuh", () => {
+    const rawRows = [{ "No Pelanggan": "C.00001", "No Faktur": "SI.2024.11.00003", "Jumlah Bayar": 100909089, "Tax ID": "PPh23", "Tax Amount": 1818181 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, taxIds);
+    expect(payload.chequeAmount).toBe(99090908);
+    expect((payload.detailInvoice as { paymentAmount: number }[])[0]!.paymentAmount).toBe(100909089);
+  });
+
+  test("kasus client: bayar 100.000 + PPh 2.000 → bank 98.000 (bukan 100.000 lagi)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000 }];
+    expect(buildSalesReceiptPayload(rawRows, mapping, taxIds).chequeAmount).toBe(98000);
+  });
+
+  test("beberapa faktur dalam 1 penerimaan, hanya sebagian kena PPh → hanya PPh yang masuk detailTax yang dikurangkan", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000 },
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-2", "Jumlah Bayar": 50000 },
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-3", "Jumlah Bayar": 30000, "Tax ID": "PPh Lain", "Tax Amount": 600 },
+    ];
+    expect(buildSalesReceiptPayload(rawRows, { ...mapping, Receipt: "receiptNumber" }, taxIds).chequeAmount).toBe(177400); // 180000 − 2000 − 600
+  });
+
+  test("Tax ID tidak ter-resolve (tidak masuk detailTax) → PPh TIDAK dikurangkan (tidak ada potongan yang dikirim ke Accurate)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "TidakAda", "Tax Amount": 2000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, taxIds);
+    expect(payload.detailTax).toBeUndefined();
+    expect(payload.chequeAmount).toBe(100000);
+  });
+
+  test("Tax Amount terisi tanpa Tax ID → tidak ada detailTax, tidak dikurangkan; tanpa PPh sama sekali → perilaku lama (SUM penuh)", () => {
+    const noId = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax Amount": 2000 }];
+    expect(buildSalesReceiptPayload(noId, mapping, taxIds).chequeAmount).toBe(100000);
+    const none = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000 }];
+    expect(buildSalesReceiptPayload(none, mapping, taxIds).chequeAmount).toBe(100000);
+  });
+
+  test("Cheque Amount EKSPLISIT dari user dipakai apa adanya — TIDAK dikurangi PPh lagi (kontrol manual penuh)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000, "Cheque Amount": 98000 }];
+    expect(buildSalesReceiptPayload(rawRows, mapping, taxIds).chequeAmount).toBe(98000);
+  });
+
+  test("mata uang asing (rate): (Σ payment − Σ PPh) × rate", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100, "Tax ID": "PPh23", "Tax Amount": 2, kurs: 15000 }];
+    expect(buildSalesReceiptPayload(rawRows, { ...mapping, kurs: "rate" }, taxIds).chequeAmount).toBe(98 * 15000);
+  });
+});
+
+// § diminta client 2026-10-06 — (1) faktur yang sama di 2 baris (karena 1 baris hanya muat 1 diskon) ditolak Accurate: "Faktur JASA-01
+// dimasukkan lebih dari sekali"; (2) akun diskon tidak mengurangi cheque amount. Data di bawah = isi Excel client (template-sales-receipt (3)).
+describe("buildSalesReceiptPayload — faktur sama di beberapa baris digabung + diskon mengurangi cheque amount", () => {
+  const mapping = {
+    "No. Sales Receipt": "receiptNumber",
+    "No Pelanggan": "customerNo",
+    "No Faktur": "invoiceNo",
+    "Jumlah Bayar": "chequeAmount",
+    "Tax ID": "taxId",
+    "Tax Amount": "taxAmount",
+    Discount: "discountAmount",
+    "Discount Acc": "discountAccountNo",
+    "Discount Note": "discountNotes",
+    "Cheque Amount": "receiptTotalAmount",
+    Department: "invoiceDepartmentName",
+    "Paid PPH": "paidPph",
+    "PPh No": "pphNumber",
+  };
+  const taxIds = new Map([["Jasa Kebersihan", 350]]);
+  const base = { "No. Sales Receipt": "SR02943", "No Pelanggan": "CSBY-0005", "No Faktur": "JASA-01", "Jumlah Bayar": 100000 };
+  // Persis isi Excel client: baris 1 = PPh 4000 + diskon 1000 (akun 711.000-100); baris 2 = diskon 2000 (akun 711.000-01), Jumlah Bayar diulang.
+  const clientRows = [
+    { ...base, "Tax ID": "Jasa Kebersihan", "Tax Amount": 4000, Discount: 1000, "Discount Acc": "711.000-100" },
+    { ...base, Discount: 2000, "Discount Acc": "711.000-01" },
+  ];
+
+  test("Excel client: JASA-01 di 2 baris → SATU entri detailInvoice dengan 2 detailDiscount; paymentAmount tidak dijumlahkan; 1 detailTax", () => {
+    const payload = buildSalesReceiptPayload(clientRows, mapping, taxIds);
+    const invoices = payload.detailInvoice as Record<string, unknown>[];
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({ invoiceNo: "JASA-01", paymentAmount: 100000 });
+    expect(invoices[0]!.detailDiscount).toEqual([
+      { amount: 1000, accountNo: "711.000-100" },
+      { amount: 2000, accountNo: "711.000-01" },
+    ]);
+    expect(payload.detailTax).toEqual([{ detailInvoiceNo: "JASA-01", taxAmount: 4000, taxId: 350 }]);
+  });
+
+  test("cheque amount otomatis = 100.000 − PPh 4.000 − diskon 1.000 − diskon 2.000 = 93.000 (diskon ikut mengurangi, bukan cuma PPh)", () => {
+    expect(buildSalesReceiptPayload(clientRows, mapping, taxIds).chequeAmount).toBe(93000);
+  });
+
+  test("diskon saja tanpa PPh juga mengurangi; Discount tanpa Discount Acc tidak masuk & tidak mengurangi", () => {
+    const onlyDiscount = [{ ...base, Discount: 5000, "Discount Acc": "711.000-01" }];
+    expect(buildSalesReceiptPayload(onlyDiscount, mapping, taxIds).chequeAmount).toBe(95000);
+    const noAccount = [{ ...base, Discount: 5000 }];
+    const payload = buildSalesReceiptPayload(noAccount, mapping, taxIds);
+    expect((payload.detailInvoice as Record<string, unknown>[])[0]!.detailDiscount).toBeUndefined();
+    expect(payload.chequeAmount).toBe(100000);
+  });
+
+  test("Cheque Amount eksplisit tetap dipakai apa adanya (tidak dikurangi diskon/PPh lagi)", () => {
+    const rows = clientRows.map((r) => ({ ...r, "Cheque Amount": 93000 }));
+    expect(buildSalesReceiptPayload(rows, mapping, taxIds).chequeAmount).toBe(93000);
+  });
+
+  test("faktur BEDA tetap entri terpisah, urutan mengikuti kemunculan pertama; faktur sama tidak peka huruf besar/kecil", () => {
+    const rows = [
+      { ...base, "No Faktur": "INV-1", "Jumlah Bayar": 100 },
+      { ...base, "No Faktur": "INV-2", "Jumlah Bayar": 200 },
+      { ...base, "No Faktur": "inv-1", "Jumlah Bayar": 100, Discount: 10, "Discount Acc": "A" },
+    ];
+    const invoices = buildSalesReceiptPayload(rows, mapping, taxIds).detailInvoice as Record<string, unknown>[];
+    expect(invoices.map((i) => i.invoiceNo)).toEqual(["INV-1", "INV-2"]);
+    expect(invoices[0]!.detailDiscount).toEqual([{ amount: 10, accountNo: "A" }]);
+  });
+});
+
+describe("validateInvoiceRowsConsistencyForReceipt", () => {
+  const mapping = { "No Faktur": "invoiceNo", "Jumlah Bayar": "chequeAmount", "Tax ID": "taxId", "Tax Amount": "taxAmount", Department: "invoiceDepartmentName", "PPh No": "pphNumber" };
+  const group = (rows: Record<string, unknown>[]) => ({ receiptNumber: "SR1", rows: rows.map((rawData, i) => ({ id: `r${i}`, rawData })) });
+
+  test("lolos: faktur sama dengan Jumlah Bayar sama; faktur beda; baris tunggal", () => {
+    expect(validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "A", "Jumlah Bayar": 100 }, { "No Faktur": "A", "Jumlah Bayar": 100 }]), mapping)).toBeNull();
+    expect(validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "A", "Jumlah Bayar": 100 }, { "No Faktur": "B", "Jumlah Bayar": 50 }]), mapping)).toBeNull();
+  });
+
+  test("ditolak: faktur sama dengan Jumlah Bayar BERBEDA (tidak dijumlahkan diam-diam)", () => {
+    const err = validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "JASA-01", "Jumlah Bayar": 100000 }, { "No Faktur": "JASA-01", "Jumlah Bayar": 50000 }]), mapping);
+    expect(err).toContain('Faktur "JASA-01"');
+    expect(err).toContain("100000 vs 50000");
+  });
+
+  test("ditolak: Department/PPh No bertentangan; Tax ID yang sama dobel untuk faktur yang sama; Tax ID sama di faktur BEDA boleh", () => {
+    const dept = validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "A", "Jumlah Bayar": 1, Department: "X" }, { "No Faktur": "A", "Jumlah Bayar": 1, Department: "Y" }]), mapping);
+    expect(dept).toContain('"Department" berbeda');
+    const dupTax = validateInvoiceRowsConsistencyForReceipt(
+      group([
+        { "No Faktur": "A", "Jumlah Bayar": 1, "Tax ID": "PPh23", "Tax Amount": 5 },
+        { "No Faktur": "A", "Jumlah Bayar": 1, "Tax ID": "pph23", "Tax Amount": 5 },
+      ]),
+      mapping,
+    );
+    expect(dupTax).toContain("dobel");
+    const diffInvoices = validateInvoiceRowsConsistencyForReceipt(
+      group([
+        { "No Faktur": "A", "Jumlah Bayar": 1, "Tax ID": "PPh23", "Tax Amount": 5 },
+        { "No Faktur": "B", "Jumlah Bayar": 1, "Tax ID": "PPh23", "Tax Amount": 5 },
+      ]),
+      mapping,
+    );
+    expect(diffInvoices).toBeNull();
   });
 });

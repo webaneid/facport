@@ -9,6 +9,9 @@
 // BEDA dari Sales Quotation yang cuma wrap 1 nilai jadi array 1-elemen).
 // Field mapping SUDAH diverifikasi 100% ke portal developer Accurate
 // live (2026-09-21, § architecture doc) — TIDAK ada gap dokumentasi API.
+import type { SalesQuotationLine } from "../accurate-sales-quotation";
+import { splitIdList } from "./split-id-list";
+
 export const salesOrderMapping = {
   requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
   fieldToAccuratePath: {
@@ -198,13 +201,6 @@ function toAccurateDate(value: unknown): unknown {
   return `${dd}/${mm}/${date.getUTCFullYear()}`;
 }
 
-function toSalesmanList(value: unknown): string[] {
-  return String(value)
-    .split(",")
-    .map((v) => v.trim())
-    .filter((v) => v !== "");
-}
-
 function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): Partial<Record<SalesOrderField, unknown>> {
   const values: Partial<Record<SalesOrderField, unknown>> = {};
   for (const [excelColumn, field] of Object.entries(columnMapping)) {
@@ -214,7 +210,10 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
       if (DATE_FIELDS.has(f)) values[f] = toAccurateDate(raw);
       else if (BOOLEAN_FIELDS.has(f)) values[f] = toAccurateBoolean(raw);
       else if (PERCENT_STRING_FIELDS.has(f)) values[f] = String(raw);
-      else if (ARRAY_SPLIT_FIELDS.has(f)) values[f] = toSalesmanList(raw);
+      else if (ARRAY_SPLIT_FIELDS.has(f)) {
+        const list = splitIdList(raw);
+        if (list.length > 0) values[f] = list;
+      }
       else values[f] = raw;
     }
   }
@@ -248,6 +247,78 @@ export function buildDetailItemFromRow(rawRow: Record<string, unknown>, columnMa
     if (value !== undefined) detailItem[accuratePath.slice("detailItem.".length)] = value;
   }
   return detailItem;
+}
+
+// § Fase 169, architecture-sales-order.md § "Fase 169" — baris dengan "Sales Quot No" terisi DAN keenam kolom item kosong diperluas
+// menjadi SEMUA baris item penawaran (dibaca dari Accurate). Salah satu kolom terisi → seluruhnya dari Excel (qty order bisa lebih kecil dari
+// penawaran, jadi TIDAK ada "isi sebagian dari penawaran"). "Description" yang dimaksud user = Item Note (`detailNotes`, deskripsi BARIS);
+// kolom "Description" level dokumen (header) tidak ikut syarat ini.
+export const QUOTATION_EXPANDABLE_FIELDS = ["itemNo", "itemName", "unitPrice", "itemNotes", "quantity", "itemUnitName"] as const;
+// Subset yang masuk `requiredFields` — dikecualikan dari validasi "wajib" per baris untuk baris perluasan.
+export const EXPANSION_EXEMPT_REQUIRED = new Set<string>(["itemNo", "unitPrice", "quantity", "itemUnitName"]);
+
+function isCellFilled(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): boolean {
+  const column = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+  if (!column) return false;
+  const value = rawRow[column];
+  return value !== undefined && value !== null && String(value).trim() !== "";
+}
+
+export function isQuotationExpansionRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): boolean {
+  return isCellFilled(rawRow, columnMapping, "salesQuotationNumber") && !QUOTATION_EXPANDABLE_FIELDS.some((f) => isCellFilled(rawRow, columnMapping, f));
+}
+
+/** Field wajib yang kosong di SATU baris — baris perluasan penawaran tidak diwajibkan mengisi Item No/Harga/Qty/Satuan. */
+export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
+  const expansion = isQuotationExpansionRow(rawRow, columnMapping);
+  return salesOrderMapping.requiredFields.filter((field) => {
+    if (expansion && EXPANSION_EXEMPT_REQUIRED.has(field)) return false;
+    return !isCellFilled(rawRow, columnMapping, field);
+  });
+}
+
+/** Satu entri `detailItem` perluasan → N entri (1 per baris penawaran); kolom lain pada entri asli berlaku ke SEMUA baris hasil. */
+export function expandQuotationEntry(entry: Record<string, unknown>, lines: SalesQuotationLine[]): Record<string, unknown>[] {
+  return lines.map((line) => ({
+    ...entry,
+    itemNo: line.itemNo,
+    unitPrice: line.unitPrice,
+    quantity: line.quantity,
+    itemUnitName: line.unitName,
+    ...(line.itemName ? { detailName: line.itemName } : {}),
+    ...(line.notes ? { detailNotes: line.notes } : {}),
+  }));
+}
+
+/**
+ * Perluas `payload.detailItem` (hasil `buildSalesOrderPayload`, indeks SEJAJAR `rawRows`) untuk baris perluasan. `fetchLines` disuntikkan
+ * (worker: baca Accurate; test: palsu) dan di-cache per nomor penawaran. Mengubah `payload.detailItem` di tempat.
+ */
+export async function expandQuotationRowsInPayload(
+  payload: Record<string, unknown>,
+  rawRows: Record<string, unknown>[],
+  columnMapping: Record<string, string>,
+  fetchLines: (quotationNumber: string) => Promise<SalesQuotationLine[]>,
+): Promise<void> {
+  const detailItem = payload.detailItem as Record<string, unknown>[] | undefined;
+  if (!detailItem) return;
+  const cache = new Map<string, SalesQuotationLine[]>();
+  const expanded: Record<string, unknown>[] = [];
+  for (let i = 0; i < detailItem.length; i++) {
+    const entry = detailItem[i]!;
+    if (!isQuotationExpansionRow(rawRows[i] ?? {}, columnMapping)) {
+      expanded.push(entry);
+      continue;
+    }
+    const number = String(entry.salesQuotationNumber);
+    let lines = cache.get(number);
+    if (!lines) {
+      lines = await fetchLines(number);
+      cache.set(number, lines);
+    }
+    expanded.push(...expandQuotationEntry(entry, lines));
+  }
+  payload.detailItem = expanded;
 }
 
 // § syarat minimal 1 baris dianggap punya data Beban: accountNo DAN

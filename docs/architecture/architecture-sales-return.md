@@ -172,3 +172,8 @@ nyata ke `sales-return/save.do`.
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/sales-return/save.do`
 - Panduan client (gitignored): sheet "Sales Return"
 - Modul terkait: `architecture-purchase-return.md` (bayangan cermin, BUKAN mirror persis), `architecture-sales-invoice.md`, `architecture-sales-quotation.md`
+
+
+## Fase 170 (2026-10-06) — Unit Price dari faktur asal
+`unitPrice` wajib di `detailItem` (spec Accurate); membuatnya opsional tanpa sumber akan mengirim 0. Aturan: Return Type **INVOICE/INVOICE_DP** dengan **Invoice No terisi** dan **Unit Price kosong** → harga diambil dari baris Faktur Penjualan asal (dicocokkan lewat Item No; `GET sales-invoice/detail.do?number=`, scope `sales_invoice_view` WAJIB); **diskon baris faktur ikut disalin** (persen apa adanya, nominal di-pro-rata ke qty retur) hanya kalau kedua kolom diskon baris retur kosong; Unit Price terisi = Excel menang. Return Type DELIVERY/NO_INVOICE: Unit Price tetap wajib manual. Gagal jelas (tidak pernah 0): barang tidak ada di faktur, barang sama dengan harga/diskon berbeda (ambigu), faktur tidak ketemu/tidak terbaca. Inti murni bersama: `lib/import-mapping/return-from-invoice.ts`; validasi "wajib" per baris (edit baris/edit massal, API + UI) lewat `missingRequiredFieldsForRow`. 
+⚠️ Respons `detail.do` untuk diskon baris belum diverifikasi dengan respons asli — retest dengan faktur berdiskon.

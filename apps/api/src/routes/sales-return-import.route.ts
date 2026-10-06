@@ -7,7 +7,7 @@ import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
-import { salesReturnMapping, returnTypeRowError } from "../lib/import-mapping/sales-return.mapping";
+import { salesReturnMapping, returnTypeRowError, missingRequiredFieldsForRow } from "../lib/import-mapping/sales-return.mapping";
 import { salesReturnTemplateGuide } from "../lib/import-mapping/template-guide";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -308,11 +308,8 @@ export const salesReturnImportRoute = new Elysia()
       }
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      const missing: string[] = salesReturnMapping.requiredFields.filter((field) => {
-        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-        const value = excelColumn ? body.rawData[excelColumn] : undefined;
-        return value === undefined || value === null || String(value).trim() === "";
-      });
+      // § Fase 170 — Unit Price dikecualikan untuk baris retur-faktur (`missingRequiredFieldsForRow`).
+      const missing: string[] = missingRequiredFieldsForRow(body.rawData, columnMapping);
       missing.push(...returnTypeRowError(body.rawData, columnMapping));
       if (missing.length > 0) {
         set.status = 400;
@@ -360,11 +357,8 @@ export const salesReturnImportRoute = new Elysia()
           continue;
         }
 
-        const missing: string[] = salesReturnMapping.requiredFields.filter((field) => {
-          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-          const value = excelColumn ? item.rawData[excelColumn] : undefined;
-          return value === undefined || value === null || String(value).trim() === "";
-        });
+        // § Fase 170 — Unit Price dikecualikan untuk baris retur-faktur (`missingRequiredFieldsForRow`).
+      const missing: string[] = missingRequiredFieldsForRow(item.rawData, columnMapping);
         missing.push(...returnTypeRowError(item.rawData, columnMapping));
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });

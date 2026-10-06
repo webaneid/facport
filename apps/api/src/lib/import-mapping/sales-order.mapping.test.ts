@@ -1,4 +1,5 @@
 import { describe, test, expect } from "bun:test";
+import type { SalesQuotationLine } from "../accurate-sales-quotation";
 import {
   buildSalesOrderPayload,
   buildDetailItemFromRow,
@@ -12,6 +13,9 @@ import {
   groupSalesOrderRows,
   validateGroupCustomerConsistency,
   type ImportRowRecord,
+  isQuotationExpansionRow,
+  missingRequiredFieldsForRow,
+  expandQuotationRowsInPayload,
 } from "./sales-order.mapping";
 
 // § Fase 137 — mirror `sales-quotation.mapping.test.ts`, disesuaikan:
@@ -368,5 +372,97 @@ describe("requiredFields — branchName WAJIB sejak awal (pelajaran Fase 120)", 
   test("requiredFields memuat semua field bisnis wajib termasuk branchName", () => {
     expect(salesOrderMapping.requiredFields).toContain("branchName");
     expect(salesOrderMapping.requiredFields).toContain("customerNo");
+  });
+});
+
+// § Fase 169 — Sales Order menarik baris item dari Sales Quotation.
+describe("Fase 169 — baris perluasan Sales Quotation", () => {
+  const mapping = {
+    "Cust No": "customerNo",
+    "Item No": "itemNo",
+    "Item Name": "itemName",
+    "Item Price": "unitPrice",
+    Qty: "quantity",
+    "Unit Name": "itemUnitName",
+    "Item Note": "itemNotes",
+    "Sales Quot No": "salesQuotationNumber",
+    "Item Dept": "departmentName",
+    PPN: "useTax1",
+    Description: "description",
+    "Branch Name": "branchName",
+    "Trans Date": "transDate",
+  };
+  const header = { "Cust No": "C1", "Branch Name": "JAKARTA", "Trans Date": "06/10/2026" };
+  const quotation: SalesQuotationLine[] = [
+    { itemNo: "A-1", itemName: "Barang A", unitPrice: 5000, quantity: 10, unitName: "PCS", notes: "catatan A" },
+    { itemNo: "B-2", itemName: null, unitPrice: 7500, quantity: 3, unitName: "KG", notes: null },
+  ];
+
+  test("isQuotationExpansionRow: Sales Quot No terisi + keenam kolom item kosong = true; salah satu terisi / tanpa nomor penawaran = false", () => {
+    expect(isQuotationExpansionRow({ ...header, "Sales Quot No": "SQ-1" }, mapping)).toBe(true);
+    // 'Description' header & kolom lain (dept, PPN) TIDAK ikut syarat "kosong"
+    expect(isQuotationExpansionRow({ ...header, "Sales Quot No": "SQ-1", Description: "x", "Item Dept": "D", PPN: "Y" }, mapping)).toBe(true);
+    for (const col of ["Item No", "Item Name", "Item Price", "Qty", "Unit Name", "Item Note"]) {
+      expect(isQuotationExpansionRow({ ...header, "Sales Quot No": "SQ-1", [col]: "1" }, mapping)).toBe(false);
+    }
+    expect(isQuotationExpansionRow({ ...header }, mapping)).toBe(false);
+    expect(isQuotationExpansionRow({ ...header, "Sales Quot No": "  " }, mapping)).toBe(false);
+  });
+
+  test("missingRequiredFieldsForRow: baris perluasan tidak wajib Item No/Harga/Qty/Satuan, tapi customer/tanggal/cabang tetap wajib", () => {
+    expect(missingRequiredFieldsForRow({ ...header, "Sales Quot No": "SQ-1" }, mapping)).toEqual([]);
+    expect(missingRequiredFieldsForRow({ "Sales Quot No": "SQ-1" }, mapping).sort()).toEqual(["branchName", "customerNo", "transDate"]);
+    // tanpa Sales Quot No → semua wajib seperti biasa
+    expect(missingRequiredFieldsForRow({ ...header }, mapping).sort()).toEqual(["itemNo", "itemNo", "itemUnitName", "quantity", "unitPrice"].filter((v, i, a) => a.indexOf(v) === i).sort());
+    // sebagian terisi → semua wajib lagi (aturan: Excel saja, harga kosong = salah)
+    expect(missingRequiredFieldsForRow({ ...header, "Sales Quot No": "SQ-1", "Item No": "A-1" }, mapping).sort()).toEqual(["itemUnitName", "quantity", "unitPrice"]);
+  });
+
+  test("expandQuotationRowsInPayload: 1 baris → semua baris penawaran; kolom lain berlaku ke SEMUA baris hasil; tiap baris membawa Sales Quot No", async () => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-1", "Item Dept": "Penjualan", PPN: "Y" }];
+    const payload = buildSalesOrderPayload(rawRows, mapping);
+    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => quotation);
+    expect(payload.detailItem).toEqual([
+      { salesQuotationNumber: "SQ-1", departmentName: "Penjualan", useTax1: true, itemNo: "A-1", unitPrice: 5000, quantity: 10, itemUnitName: "PCS", detailName: "Barang A", detailNotes: "catatan A" },
+      { salesQuotationNumber: "SQ-1", departmentName: "Penjualan", useTax1: true, itemNo: "B-2", unitPrice: 7500, quantity: 3, itemUnitName: "KG" },
+    ]);
+  });
+
+  test("baris dengan kolom item terisi (qty order 5 dari penawaran 10) TIDAK disentuh — Excel dipakai apa adanya, penawaran tidak dibaca", async () => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-1", "Item No": "A-1", "Item Price": 5000, Qty: 5, "Unit Name": "PCS" }];
+    const payload = buildSalesOrderPayload(rawRows, mapping);
+    let fetched = 0;
+    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => {
+      fetched++;
+      return quotation;
+    });
+    expect(fetched).toBe(0);
+    expect(payload.detailItem).toEqual([{ salesQuotationNumber: "SQ-1", itemNo: "A-1", unitPrice: 5000, quantity: 5, itemUnitName: "PCS" }]);
+  });
+
+  test("campuran: baris biasa + baris perluasan di 1 order — urutan terjaga; penawaran yang sama dibaca SEKALI (cache)", async () => {
+    const rawRows = [
+      { ...header, "Item No": "Z-9", "Item Price": 100, Qty: 1, "Unit Name": "PCS" },
+      { ...header, "Sales Quot No": "SQ-1" },
+      { ...header, "Sales Quot No": "SQ-1", "Item Dept": "X" },
+    ];
+    const payload = buildSalesOrderPayload(rawRows, mapping);
+    let fetched = 0;
+    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => {
+      fetched++;
+      return quotation;
+    });
+    expect(fetched).toBe(1);
+    expect((payload.detailItem as Record<string, unknown>[]).map((d) => d.itemNo)).toEqual(["Z-9", "A-1", "B-2", "A-1", "B-2"]);
+  });
+
+  test("penawaran tidak ketemu/tidak terbaca → error dari fetcher diteruskan apa adanya (baris gagal dengan pesan jelas)", async () => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-404" }];
+    const payload = buildSalesOrderPayload(rawRows, mapping);
+    await expect(
+      expandQuotationRowsInPayload(payload, rawRows, mapping, async (n) => {
+        throw new Error(`Penawaran "${n}" tidak ditemukan di Accurate`);
+      }),
+    ).rejects.toThrow('Penawaran "SQ-404" tidak ditemukan');
   });
 });

@@ -618,3 +618,68 @@ describe("POST /sales-order/import/:batchId/cancel — ownership (pemilik vs mem
     expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_CANCELLABLE");
   });
 });
+
+// § Fase 169 — baris perluasan Sales Quotation: Item No/Harga/Qty/Satuan tidak wajib saat edit baris (server = sumber kebenaran).
+describe("Edit baris — baris perluasan Sales Quotation (Fase 169)", () => {
+  const mappingWithQuotation = { ...columnMapping, "Item Name": "itemName", "Item Note": "itemNotes", "Sales Quot No": "salesQuotationNumber" };
+  const expansionRaw = { "Cust No": "C.0001", "Trans Date": "06/10/2026", "Trans No": "SO-100", "Branch Name": "JAKARTA", "Sales Quot No": "SQ-1" };
+
+  async function setup(email: string, count = 1) {
+    const owner = await createProvisionedUser(email);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_order", fileName: "t.xlsx", totalRows: count, status: "completed_with_errors", columnMapping: mappingWithQuotation })
+      .returning();
+    const rows = await db
+      .insert(importBatchRows)
+      .values(Array.from({ length: count }, (_, i) => ({ batchId: batch!.id, rowNumber: i + 1, rawData: {}, status: "failed", errorMessage: "x" })))
+      .returning();
+    return { owner, batch: batch!, rows };
+  }
+
+  test("PUT row: Sales Quot No terisi + kolom item kosong → 200 pending; sebagian terisi (Item No saja) → 400 menuntut harga/qty/satuan; tanpa Sales Quot No → semua wajib", async () => {
+    const { owner, batch, rows } = await setup(`so-expand-row-${runId}@test.local`);
+    const put = (rawData: Record<string, string>) =>
+      testApp.handle(
+        new Request(`http://localhost/sales-order/import/${batch.id}/rows/${rows[0]!.id}`, {
+          method: "PUT",
+          headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+          body: JSON.stringify({ rawData }),
+        }),
+      );
+
+    const partial = await put({ ...expansionRaw, "Item No": "A-1" });
+    expect(partial.status).toBe(400);
+    expect(((await partial.json()) as { fields: string[] }).fields.sort()).toEqual(["itemUnitName", "quantity", "unitPrice"]);
+
+    const noQuotation = await put({ ...expansionRaw, "Sales Quot No": "" });
+    expect(noQuotation.status).toBe(400);
+    expect(((await noQuotation.json()) as { fields: string[] }).fields).toContain("itemNo");
+
+    const ok = await put(expansionRaw);
+    expect(ok.status).toBe(200);
+    const [updated] = await db.select().from(importBatchRows).where(eq(importBatchRows.id, rows[0]!.id));
+    expect(updated!.status).toBe("pending");
+  });
+
+  test("PUT bulk (grid): baris perluasan lolos, baris biasa tanpa Item No tetap ditolak di request yang sama", async () => {
+    const { owner, batch, rows } = await setup(`so-expand-bulk-${runId}@test.local`, 2);
+    const res = await testApp.handle(
+      new Request(`http://localhost/sales-order/import/${batch.id}/rows`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: [
+            { id: rows[0]!.id, rawData: expansionRaw },
+            { id: rows[1]!.id, rawData: { ...expansionRaw, "Sales Quot No": "" } },
+          ],
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updated: string[]; errors: { rowId: string; fields: string[] }[] };
+    expect(body.updated).toEqual([rows[0]!.id]);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0]!.fields).toContain("itemNo");
+  });
+});

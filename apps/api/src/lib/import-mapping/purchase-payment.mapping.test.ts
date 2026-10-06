@@ -6,6 +6,7 @@ import {
   paymentNumberColumnOf,
   extractTaxIdsFromRows,
   type ImportRowRecord,
+  validateInvoiceRowsConsistencyForPayment,
 } from "./purchase-payment.mapping";
 
 // § Fase 50 — mirror `sales-receipt.mapping.test.ts` (Fase 49). Audit
@@ -466,5 +467,110 @@ describe("buildPurchasePaymentPayload — Fase 100 (detailTax di root, PPh ID/PP
     const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 1000000 }];
     const payload = buildPurchasePaymentPayload(rawRows, columnMapping);
     expect(payload.detailTax).toBeUndefined();
+  });
+});
+
+// § 2026-10-06 (diminta user, mirror fix Sales Receipt) — root `chequeAmount` = Σ Payment − Σ PPh yang terkirim di `detailTax`.
+describe("buildPurchasePaymentPayload — PPh mengurangi root chequeAmount (uang keluar dari bank)", () => {
+  const mapping = { ...columnMapping, "PPh ID": "taxId", "PPh Amount": "taxAmount", "Cheque Amount": "paymentTotalAmount", kurs: "rate" };
+  const taxIds = new Map([["PPh23", 350], ["PPh Lain", 10]]);
+
+  test("bayar 100.000 + PPh 2.000 → bank 98.000; paymentAmount faktur TETAP penuh (mirror contoh resmi Sales Receipt)", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000 }];
+    const payload = buildPurchasePaymentPayload(rawRows, mapping, taxIds);
+    expect(payload.chequeAmount).toBe(98000);
+    expect((payload.detailInvoice as { paymentAmount: number }[])[0]!.paymentAmount).toBe(100000);
+  });
+
+  test("beberapa faktur, hanya sebagian kena PPh → hanya PPh yang masuk detailTax yang dikurangkan", () => {
+    const rawRows = [
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000 },
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-2", Payment: 50000 },
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-3", Payment: 30000, "PPh ID": "PPh Lain", "PPh Amount": 600 },
+    ];
+    expect(buildPurchasePaymentPayload(rawRows, mapping, taxIds).chequeAmount).toBe(177400); // 180000 − 2000 − 600
+  });
+
+  test("PPh ID tidak ter-resolve / PPh Amount tanpa PPh ID / tanpa PPh → tidak ada pengurangan (perilaku lama)", () => {
+    const unresolved = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "TidakAda", "PPh Amount": 2000 }];
+    const p = buildPurchasePaymentPayload(unresolved, mapping, taxIds);
+    expect(p.detailTax).toBeUndefined();
+    expect(p.chequeAmount).toBe(100000);
+    const noId = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh Amount": 2000 }];
+    expect(buildPurchasePaymentPayload(noId, mapping, taxIds).chequeAmount).toBe(100000);
+    const none = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000 }];
+    expect(buildPurchasePaymentPayload(none, mapping, taxIds).chequeAmount).toBe(100000);
+  });
+
+  test("Cheque Amount EKSPLISIT dipakai apa adanya (tidak dikurangi PPh lagi); mata uang asing: (Σ payment − Σ PPh) × rate", () => {
+    const explicit = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000, "Cheque Amount": 98000 }];
+    expect(buildPurchasePaymentPayload(explicit, mapping, taxIds).chequeAmount).toBe(98000);
+    const foreign = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100, "PPh ID": "PPh23", "PPh Amount": 2, kurs: 15000 }];
+    expect(buildPurchasePaymentPayload(foreign, mapping, taxIds).chequeAmount).toBe(98 * 15000);
+  });
+});
+
+// § 2026-10-06 (diminta user, mirror Sales Receipt) — faktur sama di beberapa baris digabung jadi 1 entri (multi-diskon) + diskon
+// ikut mengurangi root chequeAmount. Data = pola Excel client Sales Receipt (JASA-01), disesuaikan header Purchase Payment.
+describe("buildPurchasePaymentPayload — faktur sama di beberapa baris digabung + diskon mengurangi cheque amount", () => {
+  const mapping = {
+    "Purchase Payment No": "paymentNumber",
+    "No. Supplier": "vendorNo",
+    "Invoice No": "invoiceNo",
+    Payment: "chequeAmount",
+    "PPh ID": "taxId",
+    "PPh Amount": "taxAmount",
+    Discount: "discountAmount",
+    "Discount Acc": "discountAccountNo",
+    "Cheque Amount": "paymentTotalAmount",
+    "Paid PPH": "paidPph",
+    "PPh No": "pphNumber",
+  };
+  const taxIds = new Map([["Jasa Kebersihan", 350]]);
+  const base = { "Purchase Payment No": "PP1", "No. Supplier": "V1", "Invoice No": "JASA-01", Payment: 100000 };
+  const rows = [
+    { ...base, "PPh ID": "Jasa Kebersihan", "PPh Amount": 4000, Discount: 1000, "Discount Acc": "711.000-100" },
+    { ...base, Discount: 2000, "Discount Acc": "711.000-01" },
+  ];
+  const group = (r: Record<string, unknown>[]) => ({ paymentNumber: "PP1", rows: r.map((rawData, i) => ({ id: `r${i}`, rawData })) });
+
+  test("JASA-01 di 2 baris → SATU entri detailInvoice dengan 2 detailDiscount; paymentAmount tidak dijumlahkan; 1 detailTax", () => {
+    const payload = buildPurchasePaymentPayload(rows, mapping, taxIds);
+    const invoices = payload.detailInvoice as Record<string, unknown>[];
+    expect(invoices).toHaveLength(1);
+    expect(invoices[0]).toMatchObject({ invoiceNo: "JASA-01", paymentAmount: 100000 });
+    expect(invoices[0]!.detailDiscount).toEqual([
+      { amount: 1000, accountNo: "711.000-100" },
+      { amount: 2000, accountNo: "711.000-01" },
+    ]);
+    expect(payload.detailTax).toEqual([{ detailInvoiceNo: "JASA-01", taxAmount: 4000, taxId: 350 }]);
+  });
+
+  test("chequeAmount otomatis = 100.000 − PPh 4.000 − diskon 1.000 − diskon 2.000 = 93.000; Cheque Amount eksplisit dipakai apa adanya", () => {
+    expect(buildPurchasePaymentPayload(rows, mapping, taxIds).chequeAmount).toBe(93000);
+    expect(buildPurchasePaymentPayload(rows.map((r) => ({ ...r, "Cheque Amount": 93000 })), mapping, taxIds).chequeAmount).toBe(93000);
+  });
+
+  test("Discount tanpa Discount Acc tidak masuk & tidak mengurangi; faktur beda tetap entri terpisah (urutan kemunculan pertama, tidak peka huruf)", () => {
+    const noAcc = buildPurchasePaymentPayload([{ ...base, Discount: 5000 }], mapping, taxIds);
+    expect((noAcc.detailInvoice as Record<string, unknown>[])[0]!.detailDiscount).toBeUndefined();
+    expect(noAcc.chequeAmount).toBe(100000);
+    const multi = buildPurchasePaymentPayload(
+      [{ ...base, "Invoice No": "INV-1", Payment: 100 }, { ...base, "Invoice No": "INV-2", Payment: 200 }, { ...base, "Invoice No": "inv-1", Payment: 100, Discount: 10, "Discount Acc": "A" }],
+      mapping,
+      taxIds,
+    ).detailInvoice as Record<string, unknown>[];
+    expect(multi.map((i) => i.invoiceNo)).toEqual(["INV-1", "INV-2"]);
+    expect(multi[0]!.detailDiscount).toEqual([{ amount: 10, accountNo: "A" }]);
+  });
+
+  test("validateInvoiceRowsConsistencyForPayment: lolos untuk Payment sama; ditolak untuk Payment beda, Paid PPH/PPh No bertentangan, PPh ID dobel di faktur sama (di faktur beda boleh)", () => {
+    expect(validateInvoiceRowsConsistencyForPayment(group(rows), mapping)).toBeNull();
+    const diffAmount = validateInvoiceRowsConsistencyForPayment(group([{ ...base }, { ...base, Payment: 50000 }]), mapping);
+    expect(diffAmount).toContain("100000 vs 50000");
+    expect(validateInvoiceRowsConsistencyForPayment(group([{ ...base, "PPh No": "A" }, { ...base, "PPh No": "B" }]), mapping)).toContain('"PPh No" berbeda');
+    const dup = validateInvoiceRowsConsistencyForPayment(group([{ ...base, "PPh ID": "X", "PPh Amount": 1 }, { ...base, "PPh ID": "x", "PPh Amount": 1 }]), mapping);
+    expect(dup).toContain("dobel");
+    expect(validateInvoiceRowsConsistencyForPayment(group([{ ...base, "PPh ID": "X", "PPh Amount": 1 }, { ...base, "Invoice No": "B", "PPh ID": "X", "PPh Amount": 1 }]), mapping)).toBeNull();
   });
 });

@@ -12,6 +12,7 @@ import {
   groupPurchaseReturnRows,
   validateGroupVendorConsistency,
   type ImportRowRecord,
+  missingRequiredFieldsForRow,
 } from "./purchase-return.mapping";
 
 // § Fase 122 — mirror `purchase-order.mapping.test.ts`, disesuaikan
@@ -379,5 +380,38 @@ describe("template Purchase Return — posisi kolom Unit Price", () => {
     expect(cols[cols.indexOf("Item Unit Name") + 1]).toBe("Unit Price");
     expect(purchaseReturnTemplateGuide.find((g) => g.column === "Unit Price")?.required).toBe(true);
     expect(cols.at(-1)).not.toBe("Unit Price");
+  });
+});
+
+// § Fase 170 — kolom diskon baris BARU di Purchase Return (dulu tidak dipetakan walau API mendukung) + validasi "wajib" per baris.
+describe("Purchase Return — diskon baris & Unit Price opsional untuk baris retur-faktur (Fase 170)", () => {
+  const mapping = {
+    "Vendor No": "vendorNo",
+    "Return Type": "returnType",
+    "Invoice No": "invoiceNumber",
+    "Item No": "itemNo",
+    "Unit Price": "unitPrice",
+    "Item Cash Discount": "itemCashDiscount",
+    "Item Cash Disc Percent": "itemDiscPercent",
+  };
+
+  test("kolom diskon baris masuk detailItem; persen dikirim sebagai STRING (mendukung '5 + 2'), nominal angka", () => {
+    const detail = buildDetailItemFromRow({ "Item No": "A", "Item Cash Discount": 2500, "Item Cash Disc Percent": 5 }, mapping);
+    expect(detail).toMatchObject({ itemNo: "A", itemCashDiscount: 2500, itemDiscPercent: "5" });
+  });
+
+  test("nama kolom bawaan template (utama & alias Purchase Invoice) ter-map otomatis", () => {
+    const m = purchaseReturnMapping.defaultColumnMap;
+    expect(m["Item Cash Discount"]).toBe("itemCashDiscount");
+    expect(m["Item Cash Disc Percent"]).toBe("itemDiscPercent");
+    expect(m["Item Cash Disc"]).toBe("itemCashDiscount");
+    expect(m["Item Disc (%)"]).toBe("itemDiscPercent");
+  });
+
+  test("missingRequiredFieldsForRow: Unit Price dikecualikan hanya untuk INVOICE/INVOICE_DP + Invoice No", () => {
+    const full = { "Vendor No": "V", "Item No": "A", "Item Qty": 1, "Item Unit Name": "PCS", Branch: "J", Date: "1", "Tax Date": "1", "Tax Num": "1" };
+    const m = { ...purchaseReturnMapping.defaultColumnMap, ...mapping };
+    expect(missingRequiredFieldsForRow({ ...full, "Return Type": "INVOICE", "Invoice No": "INV-1" }, m)).not.toContain("unitPrice");
+    expect(missingRequiredFieldsForRow({ ...full, "Return Type": "RECEIVE" }, m)).toContain("unitPrice");
   });
 });

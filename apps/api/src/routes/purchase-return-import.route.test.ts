@@ -683,3 +683,63 @@ describe("POST /purchase-return/import/:batchId/cancel — ownership (pemilik vs
     expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_CANCELLABLE");
   });
 });
+
+// § Fase 170 — baris retur-faktur (INVOICE/INVOICE_DP + Invoice No terisi) boleh mengosongkan Unit Price saat edit baris; tipe lain tetap wajib.
+describe("Edit baris — Unit Price opsional untuk baris retur-faktur (Fase 170)", () => {
+  const baseRaw = { "Vendor No": "V1", Date: "06/10/2026", "Tax Date": "06/10/2026", "Tax Num": "000", "Item No": "A-1", "Item Qty": "2", "Item Unit Name": "PCS", Branch: "JAKARTA" };
+  async function setup(email: string, count = 1) {
+    const owner = await createProvisionedUser(email);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_return", fileName: "t.xlsx", totalRows: count, status: "completed_with_errors", columnMapping })
+      .returning();
+    const rows = await db
+      .insert(importBatchRows)
+      .values(Array.from({ length: count }, (_, i) => ({ batchId: batch!.id, rowNumber: i + 1, rawData: {}, status: "failed", errorMessage: "x" })))
+      .returning();
+    return { owner, batch: batch!, rows };
+  }
+
+  test("PUT row: INVOICE + Invoice No + Unit Price kosong → 200; NO_INVOICE tanpa harga → 400 unitPrice; INVOICE tanpa Invoice No → 400 (Invoice No dan harga)", async () => {
+    const { owner, batch, rows } = await setup(`pr-price-row-${runId}@test.local`, 3);
+    // tiap skenario memakai baris SENDIRI (baris yang sukses jadi `pending` dan tidak bisa diedit lagi)
+    const put = (rawData: Record<string, string>, index: number) =>
+      testApp.handle(
+        new Request(`http://localhost/purchase-return/import/${batch.id}/rows/${rows[index]!.id}`, {
+          method: "PUT",
+          headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+          body: JSON.stringify({ rawData }),
+        }),
+      );
+    const noPriceInvoice = await put({ ...baseRaw, "Return Type": "INVOICE", "Invoice No": "INV-1" }, 0);
+    expect(noPriceInvoice.status).toBe(200);
+
+    const noInvoiceType = await put({ ...baseRaw, "Return Type": "NO_INVOICE", "Invoice No": "" }, 1);
+    expect(noInvoiceType.status).toBe(400);
+    expect(((await noInvoiceType.json()) as { fields: string[] }).fields).toContain("unitPrice");
+
+    const invoiceWithoutNumber = await put({ ...baseRaw, "Return Type": "INVOICE", "Invoice No": "" }, 2);
+    expect(invoiceWithoutNumber.status).toBe(400);
+    expect(((await invoiceWithoutNumber.json()) as { fields: string[] }).fields).toEqual(expect.arrayContaining(["unitPrice", "invoiceNumber"]));
+  });
+
+  test("PUT bulk (grid): baris retur-faktur lolos, baris NO_INVOICE tanpa harga ditolak di request yang sama", async () => {
+    const { owner, batch, rows } = await setup(`pr-price-bulk-${runId}@test.local`, 2);
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-return/import/${batch.id}/rows`, {
+        method: "PUT",
+        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: [
+            { id: rows[0]!.id, rawData: { ...baseRaw, "Return Type": "INVOICE_DP", "Invoice No": "INV-1" } },
+            { id: rows[1]!.id, rawData: { ...baseRaw, "Return Type": "NO_INVOICE" } },
+          ],
+        }),
+      }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { updated: string[]; errors: { rowId: string; fields: string[] }[] };
+    expect(body.updated).toEqual([rows[0]!.id]);
+    expect(body.errors[0]!.fields).toContain("unitPrice");
+  });
+});

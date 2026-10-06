@@ -400,3 +400,18 @@ describe("requiredFields — branchName WAJIB sejak awal (pelajaran Fase 120)", 
     expect(salesQuotationMapping.requiredFields).toContain("customerNo");
   });
 });
+
+// § 2026-10-06 — BUG: "ID1, ID2" dulu terkirim sebagai SATU elemen ["ID1, ID2"] (penjual tidak masuk di Accurate). Data = sel Excel client.
+describe("Item Salesman No — beberapa ID dipisah koma dipecah jadi banyak elemen", () => {
+  const columnMapping = { "Item Number": "itemNo", "Item Salesman No": "salesmanNo" };
+
+  test("sel client '42620120010, K-01' → ['42620120010','K-01'] (bukan 1 elemen bergabung)", () => {
+    const detail = buildDetailItemFromRow({ "Item Number": "BRG-1", "Item Salesman No": "42620120010, K-01" }, columnMapping);
+    expect(detail.salesmanListNumber).toEqual(["42620120010", "K-01"]);
+  });
+
+  test("hanya pemisah/spasi → field tidak dikirim; angka murni tetap jadi string 1 elemen", () => {
+    expect(buildDetailItemFromRow({ "Item Number": "BRG-1", "Item Salesman No": " , " }, columnMapping).salesmanListNumber).toBeUndefined();
+    expect(buildDetailItemFromRow({ "Item Number": "BRG-1", "Item Salesman No": 101 }, columnMapping).salesmanListNumber).toEqual(["101"]);
+  });
+});

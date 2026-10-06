@@ -41,7 +41,8 @@ import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
-import { savePurchaseInvoice, getPurchaseInvoiceDetail, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
+import { fillReturnPricesFromInvoice } from "../lib/import-mapping/return-from-invoice";
+import { savePurchaseInvoice, getPurchaseInvoiceDetail, getPurchaseInvoiceLinesByNumber, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
 import { deleteAccurateDocument, GENERIC_CANCELLABLE_MODULES } from "../lib/accurate-generic-delete";
 import {
   buildPurchaseInvoicePayload,
@@ -62,6 +63,7 @@ import {
   buildPurchasePaymentPayload,
   groupPurchasePaymentRows,
   validateGroupVendorConsistencyForPayment,
+  validateInvoiceRowsConsistencyForPayment,
   // § Fase 89 — nama collide dengan `extractTaxIdsFromRows` Sales
   // Receipt (Fase 86), alias "PP" konsisten pola `buildDetailItemFromRow as
   // buildDetailItemFromRowSI` di bawah.
@@ -73,6 +75,7 @@ import {
   buildSalesReceiptPayload,
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
+  validateInvoiceRowsConsistencyForReceipt,
   extractTaxIdsFromRows,
   type SalesReceiptGroup,
 } from "../lib/import-mapping/sales-receipt.mapping";
@@ -111,7 +114,7 @@ import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guar
 // baik dari abstraksi prematur"). `ImportRowRecord` TIDAK diimpor ulang
 // dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
 // impor di atas, reuse type yang sama.
-import { saveSalesInvoice, getSalesInvoiceDetail, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
+import { saveSalesInvoice, getSalesInvoiceDetail, getSalesInvoiceLinesByNumber, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
@@ -170,7 +173,7 @@ import {
 // auto-create customer+item (mirror Purchase Order's create-only
 // pattern, TANPA findExisting/append seperti Sales Invoice — tidak ada
 // dampak GL/stok, 2 quotation nominal sama bukan duplikat).
-import { saveSalesQuotation } from "../lib/accurate-sales-quotation";
+import { saveSalesQuotation, getSalesQuotationLinesByNumber } from "../lib/accurate-sales-quotation";
 import {
   buildSalesQuotationPayload,
   groupSalesQuotationRows,
@@ -186,6 +189,7 @@ import {
 import { saveSalesOrder, getSalesOrderDetailByNumber } from "../lib/accurate-sales-order";
 import {
   buildSalesOrderPayload,
+  expandQuotationRowsInPayload,
   groupSalesOrderRows,
   validateGroupCustomerConsistency as validateGroupCustomerConsistencyForSO,
   extractCustomerCreateFields as extractCustomerCreateFieldsSO,
@@ -1220,6 +1224,9 @@ export async function processSalesReceiptGroup(
 ): Promise<SalesReceiptGroupResult> {
   const mismatchError = validateGroupCustomerConsistencyForReceipt(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
+  // § diminta client 2026-10-06 — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
+  const invoiceRowsError = validateInvoiceRowsConsistencyForReceipt(group, columnMapping);
+  if (invoiceRowsError) throw new Error(invoiceRowsError);
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForReceipt(ctx, rawRows, columnMapping);
@@ -1332,6 +1339,8 @@ export async function processPurchaseReturnGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildPurchaseReturnPayload(rawRows, columnMapping);
+  // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Pembelian asal, termasuk diskon baris; tipe lain → error jelas.
+  await fillReturnPricesFromInvoice(payload, (number) => getPurchaseInvoiceLinesByNumber(ctx, number));
 
   await ensurePurchaseReturnDataClassifications(ctx, rawRows, columnMapping);
 
@@ -1402,6 +1411,10 @@ export async function processSalesOrderGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesOrderPayload(rawRows, columnMapping);
+  // § Fase 169 — baris dengan "Sales Quot No" terisi dan kolom item kosong diperluas dari isi penawaran di Accurate (gagal jelas kalau
+  // penawaran tidak ketemu/tidak terbaca — tidak pernah mengirim baris setengah). Barang hasil perluasan sudah ada di Accurate, jadi
+  // loop auto-create item di bawah (berbasis kolom Excel) otomatis melewatinya.
+  await expandQuotationRowsInPayload(payload, rawRows, columnMapping, (number) => getSalesQuotationLinesByNumber(ctx, number));
 
   const customerNo = String(payload.customerNo ?? "");
   if (customerNo) {
@@ -1454,6 +1467,8 @@ export async function processSalesReturnGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesReturnPayload(rawRows, columnMapping);
+  // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Penjualan asal, termasuk diskon baris; tipe lain → error jelas.
+  await fillReturnPricesFromInvoice(payload, (number) => getSalesInvoiceLinesByNumber(ctx, number));
 
   await ensureSalesReturnDataClassifications(ctx, rawRows, columnMapping);
 
@@ -1587,6 +1602,9 @@ export async function processPurchasePaymentGroup(
 ): Promise<PurchasePaymentGroupResult> {
   const mismatchError = validateGroupVendorConsistencyForPayment(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
+  // § 2026-10-06 (mirror Sales Receipt) — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
+  const invoiceRowsError = validateInvoiceRowsConsistencyForPayment(group, columnMapping);
+  if (invoiceRowsError) throw new Error(invoiceRowsError);
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);

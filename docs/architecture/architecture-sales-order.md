@@ -135,3 +135,10 @@ diverifikasi ulang lewat test call nyata saat eksekusi.
 - Modul kembar/pendahulu: `architecture-sales-quotation.md`
 - Pola grouping multi-item: ADR-0011, `architecture-purchase-invoice.md`
 - Preseden Branch Wajib: `architecture-purchase-payment.md` § "Fase 90"
+
+## Fase 169 (2026-10-06) — Ambil baris item dari Sales Quotation
+Sales Order memuat kolom "Sales Quot No" (`detailItem.salesQuotationNumber`) yang selama ini hanya meneruskan nomor. Spec Accurate mewajibkan `itemNo`+`unitPrice` di `detailItem`, jadi isi penawaran tidak ikut tertarik otomatis — Facport yang harus menyediakannya.
+**Aturan:** baris dengan Sales Quot No terisi DAN Item No, Item Name, Item Price, Item Note, Qty, Unit Name semuanya kosong → diperluas menjadi semua baris item penawaran (dibaca via `GET sales-quotation/detail.do?number=`, scope `sales_quotation_view`); salah satu kolom itu terisi → seluruhnya dari Excel (tidak ada "isi sebagian dari penawaran" — qty order bisa lebih kecil dari penawaran). Kolom lain pada baris itu berlaku ke semua baris hasil perluasan. Barang hasil perluasan tidak melalui auto-create (sudah pasti ada di Accurate).
+**Scope OAuth:** `sales_quotation_view` ditambahkan sebagai KEBUTUHAN modul `sales_order` (registri endpoint) — customer Sales Order yang ada diminta "Perbarui izin" sekali (keputusan user: wajib, bukan opsional).
+**Validasi "wajib" per baris** (edit baris/edit massal, API + UI) dikecualikan untuk baris perluasan: `missingRequiredFieldsForRow`.
+⚠️ Bentuk respons `sales-quotation/detail.do` tidak terdokumentasi di spec; parser ketat (baris tanpa itemNo/harga/qty/satuan terbaca = error jelas, tidak ada data setengah terkirim) — verifikasi dengan respons asli.

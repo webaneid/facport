@@ -196,3 +196,8 @@ call nyata ke `purchase-return/save.do` sebelum full rollout.
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/purchase-return/save.do`
 - Panduan client (gitignored): sheet "Purchase Return"
 - Modul terkait: `architecture-purchase-order.md`, `architecture-receive-item.md`, `architecture-purchase-invoice.md`
+
+
+## Fase 170 (2026-10-06) — Unit Price dari faktur asal
+`unitPrice` wajib di `detailItem` (spec Accurate); membuatnya opsional tanpa sumber akan mengirim 0. Aturan: Return Type **INVOICE/INVOICE_DP** dengan **Invoice No terisi** dan **Unit Price kosong** → harga diambil dari baris Faktur Pembelian asal (dicocokkan lewat Item No; `GET purchase-invoice/detail.do?number=`, scope `purchase_invoice_view` WAJIB); **diskon baris faktur ikut disalin** (persen apa adanya, nominal di-pro-rata ke qty retur) hanya kalau kedua kolom diskon baris retur kosong; Unit Price terisi = Excel menang. Return Type RECEIVE/NO_INVOICE: Unit Price tetap wajib manual. Gagal jelas (tidak pernah 0): barang tidak ada di faktur, barang sama dengan harga/diskon berbeda (ambigu), faktur tidak ketemu/tidak terbaca. Inti murni bersama: `lib/import-mapping/return-from-invoice.ts`; validasi "wajib" per baris (edit baris/edit massal, API + UI) lewat `missingRequiredFieldsForRow`. Kolom diskon baris BARU di modul ini: `Item Cash Discount`, `Item Cash Disc Percent` (alias Purchase Invoice: `Item Cash Disc`, `Item Disc (%)`) → `detailItem.itemCashDiscount`/`itemDiscPercent`.
+⚠️ Respons `detail.do` untuk diskon baris belum diverifikasi dengan respons asli — retest dengan faktur berdiskon.

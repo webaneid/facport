@@ -21,6 +21,8 @@
 export const RETURN_TYPES = ["DELIVERY", "INVOICE", "INVOICE_DP", "NO_INVOICE"] as const;
 export type SalesReturnType = (typeof RETURN_TYPES)[number];
 
+import { missingRequiredFieldsForReturnRow } from "./return-from-invoice";
+
 export const salesReturnMapping = {
   requiredFields: ["customerNo", "transDate", "taxDate", "taxNumber", "returnType", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
   fieldToAccuratePath: {
@@ -360,4 +362,11 @@ export function extractExpenseDataClassificationValues(rawRow: Record<string, un
     if (name !== "") result.push({ index, name });
   }
   return result;
+}
+
+// § Fase 170 — validasi "wajib" per baris: "Unit Price" dikecualikan untuk baris retur-faktur (INVOICE/INVOICE_DP + Invoice No terisi), harganya
+// diisi dari faktur asal saat dikirim. Aturan SAMA dipakai API (edit baris) dan web (dialog/grid) lewat fungsi ini.
+export { isInvoiceReturnRow } from "./return-from-invoice";
+export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
+  return missingRequiredFieldsForReturnRow(salesReturnMapping.requiredFields, rawRow, columnMapping);
 }

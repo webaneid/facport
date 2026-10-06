@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { isQuotationExpansionRow, EXPANSION_EXEMPT_REQUIRED } from "@/lib/sales-order-expansion";
 
 // § mirror `components/sales-quotation/edit-row-dialog.tsx` — modul ini
 // juga punya grouping multi-baris by "Trans No" (opsional, pola DEFAULT
@@ -76,8 +77,13 @@ export function EditRowDialog({
     if (error) scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [error]);
 
+  // § Fase 169 — baris perluasan penawaran (Sales Quot No terisi, kolom item kosong semua) tidak diwajibkan mengisi Item No/Harga/Qty/Satuan:
+  // datanya diambil dari Sales Quotation di Accurate saat dikirim. Aturan SAMA dengan server (`missingRequiredFieldsForRow`).
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    const expansion = isQuotationExpansionRow(vals, columnMapping);
+    return new Set(
+      [...requiredColumns].filter((col) => (vals[col] ?? "").trim() === "" && !(expansion && EXPANSION_EXEMPT_REQUIRED.has(columnMapping[col]!))),
+    );
   }
 
   function openDialog() {

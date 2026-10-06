@@ -53,7 +53,7 @@ const ACCURATE_FIELDS = [
   { value: "attributHeaderTanggal2", label: "Header - DF2" },
   { value: "itemNo", label: "Item No (wajib)" },
   { value: "itemName", label: "Item Name" },
-  { value: "unitPrice", label: "Item Unit Price (wajib)" },
+  { value: "unitPrice", label: "Item Unit Price (wajib, kecuali ambil dari Faktur: Return Type INVOICE/INVOICE_DP)" },
   { value: "quantity", label: "Item Qty (wajib)" },
   { value: "itemUnitName", label: "Item Unit Name (wajib)" },
   { value: "itemNotes", label: "Item Note" },
