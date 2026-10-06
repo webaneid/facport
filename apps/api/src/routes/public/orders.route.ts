@@ -125,7 +125,16 @@ export const publicOrdersRoute = new Elysia({ prefix: "/public/orders" })
         return { code: "INVALID_IMAGE_FILE" };
       }
 
-      await saveProofAndMarkSubmitted(params.id, webpBuffer, new Date(body.transferDate), body.payerNote ?? null);
+      try {
+        await saveProofAndMarkSubmitted(params.id, webpBuffer, new Date(body.transferDate), body.payerNote ?? null);
+      } catch (err) {
+        // § Fase 178 — order dibatalkan/kedaluwarsa tepat saat bukti diunggah: update bersyarat menolak (bukan menghidupkan order itu lagi).
+        if (err instanceof Error && err.message === "ORDER_NOT_EDITABLE") {
+          set.status = 400;
+          return { code: "ORDER_NOT_EDITABLE" };
+        }
+        throw err;
+      }
       return { ok: true };
     },
     {

@@ -33,6 +33,7 @@ export const JOBS = {
   IMPORT_TO_ACCURATE: "import-to-accurate", // proses bulk import Excel→Accurate per baris (generik lintas modul: Purchase Invoice, Vendor Akun Hutang, dst — dibedakan field `module` di `import_batches`), lihat architecture-accurate-integration.md
   REFRESH_ACCURATE_TOKEN: "refresh-accurate-token", // refresh OAuth token proaktif sebelum expired
   EXPIRE_SUBSCRIPTIONS: "expire-subscriptions", // job terjadwal tiap 10 menit (Fase 175), lihat architecture-subscription.md
+  EXPIRE_UNPAID_ORDERS: "expire-unpaid-orders", // tiap jam menit ke-5 (Fase 178): order pending lewat jatuh tempo → expired (`EXPIRE_UNPAID_ORDERS_CRON`, lib/job-schedules.ts)
 } as const;
 
 // ⚠️ pg-boss v12: `createQueue()` WAJIB dipanggil untuk tiap queue SEBELUM

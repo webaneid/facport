@@ -1,16 +1,15 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { orders, plans, subscriptions, invoices, invoiceItems, user as userTable, dataUsaha } from "../db/schema";
+import { plans, subscriptions, user as userTable, dataUsaha } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
-import { createInvoiceAndOrder } from "../lib/invoice-order";
+import { createInvoiceAndOrder, inFlightModuleKeys } from "../lib/invoice-order";
 import { createTrialSubscription } from "../lib/trial";
 import { createNotification, formatNotificationDate, NOTIFICATION_TYPES } from "../lib/notifications";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { ownsDataUsaha } from "../lib/data-usaha";
 
-const NON_TERMINAL_ORDER_STATUSES = ["pending", "submitted"] as const;
 
 export const subscriptionsRoute = new Elysia()
   .use(permissionPlugin)
@@ -154,19 +153,7 @@ export const subscriptionsRoute = new Elysia()
           // § Fase 176, ADR-0041 poin 4 — modul yang MASIH AKTIF (non-trial) BOLEH dibeli lagi: itu PERPANJANGAN DINI (saat pembayaran disetujui,
           // `end_at` diperpanjang dari akhir lama, tidak ada hari yang hilang — § admin/orders.route.ts confirm). Yang tetap diblokir hanya modul yang
           // masih punya pesanan BELUM SELESAI (in-flight) — mencegah dobel/perpanjangan ganda. (Dulu guard "modul sudah aktif" memblokir juga di sini.)
-          const inFlightRows = await tx
-            .select({ moduleKey: invoiceItems.moduleKey })
-            .from(orders)
-            .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
-            .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
-            .where(
-              and(
-                eq(invoices.userId, user.id),
-                eq(orders.dataUsahaId, body.dataUsahaId),
-                inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES]),
-              ),
-            );
-          const inFlightModules = new Set(inFlightRows.map((r) => r.moduleKey));
+          const inFlightModules = await inFlightModuleKeys(tx, { userId: user.id, dataUsahaId: body.dataUsahaId });
 
           const cartModules = planRows.flatMap((p) => p.modules);
           const orderInProgress = cartModules.find((m) => inFlightModules.has(m));

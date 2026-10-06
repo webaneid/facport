@@ -1,15 +1,16 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, ilike, desc, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs, memberSeats } from "../../db/schema";
+import { orders, invoices, invoiceItems, plans, subscriptions, auditLogs } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
-import { findRenewableSubscription, renewSubscriptionInPlace, paymentVerifiedBody, type RenewalResult } from "../../lib/subscription-renewal";
+import { paymentVerifiedBody } from "../../lib/subscription-renewal";
+import { activateInvoiceItems } from "../../lib/order-activation";
+import { cancelOrder, ADMIN_CANCELLABLE_STATUSES } from "../../lib/order-cancel";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { getCompanyTimezone } from "../../lib/company-timezone";
-import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
 
 const PROOF_URL_EXPIRY_SECONDS = 10 * 60; // 10 menit
 
@@ -127,101 +128,16 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
           // ke "Data Usaha Utama" default milik pembeli kalau kosong.
           const dataUsahaId = lockedOrder.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(lockedInvoice.userId));
 
-          // § ditemukan 2026-09-07 (feedback user soal logika trial) —
-          // trial SENGAJA tidak memblokir beli paket asli modul yang sama
-          // (§ komentar checkout, subscriptions.route.ts) supaya user bisa
-          // upgrade kapan saja tanpa nunggu trial habis. TAPI sebelum fix
-          // ini, subscription trial LAMA tidak pernah ditutup begitu paket
-          // asli confirm — user jadi punya 2 subscription "active"
-          // bersamaan utk modul yang sama (trial + asli), bikin
-          // `activeModuleMap` (subscribe/page.tsx) bisa salah nunjukkin
-          // "Sedang Trial" padahal sudah bayar (urutan iterasi array yang
-          // nentukan, bukan yang mana yang benar). Tutup SEMUA subscription
-          // aktif modul yang sama SEBELUM insert yang baru — 1 modul aktif
-          // = 1 subscription lagi beneran terjaga (invariant yang sebelumnya
-          // cuma dijaga best-effort via `orderBy(desc(createdAt))` di
-          // beberapa query, § subscription-gate.ts).
-          // § Fase 108 — di-SCOPE PER DATA USAHA (bukan lagi per akun) —
-          // modul yang sama BOLEH aktif bersamaan di Data Usaha LAIN
-          // milik user yang sama (tujuan utama restrukturisasi Data
-          // Usaha). Trial-supersede (komentar di atas) TETAP jalan
-          // persis seperti sebelumnya SELAMA trial & pembelian asli ini
-          // sama-sama untuk Data Usaha yang sama (kasus normal).
-          const activeSubs = await tx
-            .select({ id: subscriptions.id, modules: plans.modules, isTrial: subscriptions.isTrial, endAt: subscriptions.endAt })
-            .from(subscriptions)
-            .innerJoin(plans, eq(plans.id, subscriptions.planId))
-            .where(
-              and(
-                eq(subscriptions.userId, lockedInvoice.userId),
-                eq(subscriptions.status, "active"),
-                eq(subscriptions.dataUsahaId, dataUsahaId),
-              ),
-            );
-
-          const createdSubscriptionIds: string[] = [];
-          const renewals: RenewalResult[] = [];
-          for (const { item, plan } of items) {
-            const moduleKey = plan.modules[0];
-            // § Fase 174, ADR-0041 — periode memakai SNAPSHOT invoice (apa yang ditagihkan), jatuh ke periode paket lalu tebakan dari hari.
-            const interval = isSubscriptionInterval(item.interval) ? item.interval : isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(item.durationDays);
-
-            // § Fase 110 — supersede-trial CUMA berlaku untuk plan `module` (moduleKey ada). `seat_addon` punya `modules: []` (moduleKey undefined) —
-            // TANPA guard ini, filter `s.modules[0] === moduleKey` akan cocok SEMUA subscription seat_addon LAIN yang sudah aktif (sama-sama
-            // `modules[0] === undefined`) dan diam-diam MEMBATALKAN seat yang sudah dibeli sebelumnya — bug serius.
-            if (moduleKey) {
-              // § Fase 176, ADR-0041 poin 4 — PERPANJANGAN DINI: langganan modul yang sama (NON-trial) yang MASIH AKTIF (end_at > sekarang) diperpanjang
-              // DI TEMPAT dari akhir lamanya — TIDAK dibatalkan, tidak ada hari pelanggan yang hilang. Yang sudah lewat end_at (job belum membalik status)
-              // ditandai expired, dan pembelian mulai dari saat disetujui (aturan #1). Trial tetap digantikan (supersede) seperti sebelumnya.
-              const renewable = await findRenewableSubscription(tx, { dataUsahaId, moduleKey, now });
-              for (const s of activeSubs.filter((s) => s.modules[0] === moduleKey)) {
-                if (renewable && s.id === renewable.id) continue;
-                if (!s.isTrial && s.endAt && s.endAt.getTime() <= now.getTime()) {
-                  await tx.update(subscriptions).set({ status: "expired" }).where(eq(subscriptions.id, s.id));
-                } else {
-                  await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
-                }
-              }
-              if (renewable) {
-                renewals.push(
-                  await renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "order", actorId: user.id, orderId: lockedOrder.id, invoiceItemId: item.id }),
-                );
-                continue;
-              }
-            }
-
-            // § Fase 174, ADR-0041 — mulai = saat pembayaran DISETUJUI (`now`, satu untuk seluruh order → semua fitur berakhir di instan yang sama);
-            // akhir = tanggal & jam dinding sama bulan/tahun berikutnya (zona perusahaan).
-            const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
-            const [sub] = await tx
-              .insert(subscriptions)
-              .values({
-                userId: lockedInvoice.userId,
-                planId: plan.id,
-                orderId: lockedOrder.id,
-                invoiceItemId: item.id,
-                status: "active",
-                startAt: now,
-                endAt,
-                periodAnchorAt,
-                periodMonths,
-                dataUsahaId,
-              })
-              .returning();
-            createdSubscriptionIds.push(sub!.id);
-
-            // § Fase 110 — aktivasi seat: 1 subscription `seat_addon` aktif
-            // = 1 slot `member_seats` baru (`available`, siap di-invite).
-            // Expiry slot ini OTOMATIS ikut expiry subscription (job
-            // EXPIRE_SUBSCRIPTIONS yang sudah ada), tidak perlu job baru.
-            if (plan.kind === "seat_addon") {
-              await tx.insert(memberSeats).values({
-                primaryUserId: lockedInvoice.userId,
-                dataUsahaId,
-                seatSubscriptionId: sub!.id,
-              });
-            }
-          }
+          // § Fase 178 — logika aktivasi (perpanjang/supersede/buat/seat) diekstrak ke `lib/order-activation.ts`, dipakai juga invoice lunas-otomatis admin.
+          const { createdSubscriptionIds, renewals } = await activateInvoiceItems(tx, {
+            userId: lockedInvoice.userId,
+            orderId: lockedOrder.id,
+            dataUsahaId,
+            items,
+            now,
+            timeZone,
+            actorId: user.id,
+          });
 
           await tx.insert(auditLogs).values({
             entityType: "order",
@@ -260,6 +176,37 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
       }
     },
     { permission: "orders.manage", params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
+  // § Fase 178 — batalkan invoice/pesanan yang BELUM lunas (pending/submitted/rejected): order `cancelled`, invoice `void`, alasan wajib (tampil ke customer),
+  // customer diberi notifikasi. Membuka blokir pembelian/perpanjangan modul yang sama. Yang sudah lunas tidak bisa (di luar scope).
+  .post(
+    "/:id/cancel",
+    async ({ params, body, user, set }) => {
+      try {
+        const result = await db.transaction((tx) =>
+          cancelOrder(tx, { orderId: params.id, actorId: user.id, reason: body.reason.trim(), allowedStatuses: ADMIN_CANCELLABLE_STATUSES, notifyCustomer: true }),
+        );
+        return { orderId: result.orderId, invoiceId: result.invoiceId };
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "CANCEL_FAILED";
+        if (["ORDER_NOT_FOUND", "INVOICE_NOT_FOUND"].includes(code)) {
+          set.status = 404;
+          return { code };
+        }
+        if (["ORDER_NOT_CANCELLABLE", "INVOICE_ALREADY_PAID"].includes(code)) {
+          set.status = 400;
+          return { code };
+        }
+        logger.error({ err, orderId: params.id }, "Gagal membatalkan order");
+        set.status = 500;
+        return { code: "CANCEL_FAILED" };
+      }
+    },
+    {
+      permission: "orders.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ reason: t.String({ minLength: 1, maxLength: 500 }) }),
+    },
   )
   .post(
     "/:id/reject",

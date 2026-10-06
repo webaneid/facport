@@ -6,7 +6,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminUsersRoute } from "./users.route";
 import { db } from "../../lib/db";
-import { plans, invoices, orders, subscriptions, roles, userRoles, permissions, rolePermissions, user as userTable, session } from "../../db/schema";
+import { plans, invoices, invoiceItems, orders, subscriptions, roles, userRoles, permissions, rolePermissions, user as userTable, session } from "../../db/schema";
 import { createTestDataUsaha } from "../../lib/test-fixtures";
 
 // § Fase 18 — "Unifikasi Onboarding Admin": POST /admin/users diperluas
@@ -416,5 +416,82 @@ describe("PATCH /admin/users/:id/disable & /enable", () => {
     expect(res.status).toBe(200);
     const [updated] = await db.select().from(userTable).where(eq(userTable.id, userId));
     expect(updated!.disabled).toBe(false);
+  });
+});
+
+// § Fase 178 — Tambah User: mode pembayaran `payment` ("invoice" | "paid_invoice" | "free"); `markAsPaid` lama = "free".
+describe("POST /admin/users — mode pembayaran (Fase 178)", () => {
+  type Created = { id: string; invoiceId?: string; orderId?: string; amountDue?: number; subscriptionIds?: string[] };
+
+  test("paid_invoice: invoice LUNAS otomatis + langganan aktif tertaut ke order & item invoice (ada catatan invoice, beda dari free)", async () => {
+    const cookie = await makeAdminCookie();
+    const [planA] = await db.insert(plans).values({ name: `PaidInv Plan A ${runId}`, price: 100000, durationDays: 30, interval: "monthly", modules: ["sales_invoice"] }).returning();
+    const [planB] = await db.insert(plans).values({ name: `PaidInv Plan B ${runId}`, price: 200000, durationDays: 365, interval: "yearly", modules: ["purchase_invoice"] }).returning();
+    const res = await postAdminUser(cookie, { email: `admin-users-paidinv-${runId}@test.local`, name: "Paid Invoice User", planIds: [planA!.id, planB!.id], payment: "paid_invoice" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Created;
+    expect(body.invoiceId).toBeTruthy();
+    expect(body.orderId).toBeTruthy();
+    expect(body.subscriptionIds).toHaveLength(2);
+
+    const [inv] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId!));
+    expect(inv).toMatchObject({ status: "paid", total: 300000 });
+    expect(inv!.paidAt).toBeTruthy();
+    const [order] = await db.select().from(orders).where(eq(orders.id, body.orderId!));
+    expect(order).toMatchObject({ status: "paid", method: "manual", uniqueCode: 0 });
+    expect(await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, body.invoiceId!))).toHaveLength(2);
+    const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, body.id));
+    expect(subs).toHaveLength(2);
+    expect(subs.every((x) => x.status === "active" && x.orderId === body.orderId && x.invoiceItemId !== null)).toBe(true);
+    const tz = await getCompanyTimezone();
+    const yearly = subs.find((x) => x.planId === planB!.id)!;
+    expect(yearly.endAt!.getTime()).toBe(addCalendarMonths(yearly.startAt!, 12, tz).getTime());
+  });
+
+  test("invoice (default tanpa payment/markAsPaid): invoice belum dibayar + order pending, TANPA langganan; payment 'invoice' eksplisit sama", async () => {
+    const cookie = await makeAdminCookie();
+    const [plan] = await db.insert(plans).values({ name: `SendInv Plan ${runId}`, price: 150000, durationDays: 30, interval: "monthly", modules: ["journal_voucher"] }).returning();
+    const res = await postAdminUser(cookie, { email: `admin-users-sendinv-${runId}@test.local`, name: "Send Invoice", planIds: [plan!.id], payment: "invoice" });
+    const body = (await res.json()) as Created;
+    const [inv] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId!));
+    expect(inv!.status).toBe("unpaid");
+    expect((await db.select().from(orders).where(eq(orders.id, body.orderId!)))[0]!.status).toBe("pending");
+    expect(body.subscriptionIds).toBeUndefined();
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, body.id))).toHaveLength(0);
+  });
+
+  test("free (dan markAsPaid lama): langganan aktif TANPA invoice sama sekali", async () => {
+    const cookie = await makeAdminCookie();
+    const [plan] = await db.insert(plans).values({ name: `FreeMode Plan ${runId}`, price: 100000, durationDays: 30, interval: "monthly", modules: ["sales_receipt"] }).returning();
+    const free = (await (await postAdminUser(cookie, { email: `admin-users-free-${runId}@test.local`, name: "Free", planIds: [plan!.id], payment: "free" })).json()) as Created;
+    expect(free.invoiceId).toBeUndefined();
+    expect(await db.select().from(invoices).where(eq(invoices.userId, free.id))).toHaveLength(0);
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, free.id))).toHaveLength(1);
+
+    const [plan2] = await db.insert(plans).values({ name: `FreeMode Plan2 ${runId}`, price: 100000, durationDays: 30, interval: "monthly", modules: ["purchase_payment"] }).returning();
+    const legacy = (await (await postAdminUser(cookie, { email: `admin-users-legacy-${runId}@test.local`, name: "Legacy", planIds: [plan2!.id], markAsPaid: true })).json()) as Created;
+    expect(legacy.invoiceId).toBeUndefined();
+    expect(legacy.subscriptionIds).toHaveLength(1);
+  });
+
+  test("403 FORBIDDEN_MARK_AS_PAID untuk paid_invoice & free kalau caller TIDAK punya subscriptions.manage (user tidak ikut dibuat); invoice biasa tetap boleh", async () => {
+    const [usersManagePerm] = await db.select().from(permissions).where(eq(permissions.key, "users.manage"));
+    const [role] = await db.insert(roles).values({ name: `onboarding-staff-mode-${runId}`, isSystem: false }).returning();
+    await db.insert(rolePermissions).values({ roleId: role!.id, permissionId: usersManagePerm!.id });
+    const email = `admin-users-limited-mode-${runId}@test.local`;
+    const staffId = await signUp(email);
+    await db.insert(userRoles).values({ userId: staffId, roleId: role!.id });
+    const cookie = await signIn(email);
+    const [plan] = await db.insert(plans).values({ name: `Limited Mode Plan ${runId}`, price: 100000, durationDays: 30, interval: "monthly", modules: ["receive_item"] }).returning();
+
+    for (const payment of ["paid_invoice", "free"]) {
+      const targetEmail = `admin-users-limited-target-${payment}-${runId}@test.local`;
+      const res = await postAdminUser(cookie, { email: targetEmail, name: "Target", planIds: [plan!.id], payment });
+      expect(res.status).toBe(403);
+      expect(((await res.json()) as { code: string }).code).toBe("FORBIDDEN_MARK_AS_PAID");
+      expect(await db.select().from(userTable).where(eq(userTable.email, targetEmail))).toHaveLength(0);
+    }
+    const ok = await postAdminUser(cookie, { email: `admin-users-limited-ok-${runId}@test.local`, name: "Ok", planIds: [plan!.id], payment: "invoice" });
+    expect(ok.status).toBe(200);
   });
 });

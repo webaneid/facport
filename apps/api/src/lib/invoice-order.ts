@@ -1,7 +1,11 @@
 import { db } from "./db";
-import { invoices, invoiceItems, orders } from "../db/schema";
+import { and, eq, inArray } from "drizzle-orm";
+import { invoices, invoiceItems, orders, auditLogs, plans } from "../db/schema";
 import { generateInvoiceNumber } from "./invoice-number";
 import { moduleProductLine } from "./module-catalog";
+import { activateInvoiceItems } from "./order-activation";
+import { createNotification, NOTIFICATION_TYPES } from "./notifications";
+import { paymentVerifiedBody } from "./subscription-renewal";
 
 const INVOICE_DUE_DAYS = 3;
 
@@ -29,11 +33,13 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // Usaha dalam 1 keranjang). Disimpan di `orders.dataUsahaId` (bukan per
 // `invoiceItems`, semua item dalam 1 invoice pasti sama Data Usaha-nya
 // — cukup 1 kolom di level order/transaksi).
+// § Fase 178 — `paidBy`: invoice LUNAS OTOMATIS oleh admin (mode "Sudah dibayar"): invoice `paid`, order `paid` metode "manual" tanpa kode unik (tidak ada mutasi
+// bank untuk dicocokkan), `confirmedBy`/`confirmedAt` = admin. Aktivasi langganannya dikerjakan `createPaidInvoiceAndOrder` di bawah.
 export async function createInvoiceAndOrder(
   tx: Tx,
-  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string },
+  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string; paidBy?: { actorId: string; at: Date } },
 ) {
-  const { userId, billToName, planRows, dataUsahaId } = params;
+  const { userId, billToName, planRows, dataUsahaId, paidBy } = params;
   const subtotal = planRows.reduce((sum, p) => sum + p.price, 0);
   const invoiceNumber = await generateInvoiceNumber(tx);
   const dueDate = new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 60 * 60 * 1000);
@@ -43,7 +49,8 @@ export async function createInvoiceAndOrder(
     .values({
       invoiceNumber,
       userId,
-      status: "unpaid",
+      status: paidBy ? "paid" : "unpaid",
+      paidAt: paidBy?.at ?? null,
       billToName,
       subtotal,
       total: subtotal,
@@ -51,7 +58,7 @@ export async function createInvoiceAndOrder(
     })
     .returning();
 
-  await tx.insert(invoiceItems).values(
+  const insertedItems = await tx.insert(invoiceItems).values(
     planRows.map((p) => ({
       invoiceId: invoice!.id,
       planId: p.id,
@@ -76,13 +83,74 @@ export async function createInvoiceAndOrder(
       // § Fase 173, ADR-0041 — snapshot periode ("monthly" | "yearly"), pola sama durationDays.
       interval: p.interval,
     })),
-  );
+  ).returning();
 
   // § kode unik 100-999 (§ architecture-payment.md § Skema Database) —
   // ditambahkan ke invoice.total agar admin bisa cocokkan mutasi bank ke
   // invoice yang tepat tanpa API cek-mutasi otomatis.
-  const uniqueCode = Math.floor(Math.random() * 900) + 100;
-  const [order] = await tx.insert(orders).values({ invoiceId: invoice!.id, uniqueCode, dataUsahaId }).returning();
+  // Invoice lunas-admin: kode unik 0 (tidak ada transfer bank untuk dicocokkan).
+  const uniqueCode = paidBy ? 0 : Math.floor(Math.random() * 900) + 100;
+  const [order] = await tx
+    .insert(orders)
+    .values({
+      invoiceId: invoice!.id,
+      uniqueCode,
+      dataUsahaId,
+      ...(paidBy ? { status: "paid", method: "manual", confirmedBy: paidBy.actorId, confirmedAt: paidBy.at } : {}),
+    })
+    .returning();
 
-  return { invoiceId: invoice!.id, orderId: order!.id, subtotal, uniqueCode, amountDue: subtotal + uniqueCode };
+  return { invoiceId: invoice!.id, orderId: order!.id, subtotal, uniqueCode, amountDue: subtotal + uniqueCode, items: insertedItems };
+}
+
+// § Fase 178 — mode "Sudah dibayar" (Tambah User & Kelola Langganan): invoice dibuat OTOMATIS LUNAS + langganan langsung aktif & tertaut ke item invoice
+// (jadi ada catatan/PDF untuk pembukuan, masa berlaku/perpanjangan tampil di invoice) — beda dari mode "Gratis" (tanpa invoice sama sekali). Aktivasinya
+// memakai inti yang SAMA dengan konfirmasi pembayaran customer (`activateInvoiceItems`): modul aktif diperpanjang dari akhir lama, trial digantikan, dst.
+// Notifikasi "Pembayaran terverifikasi" ke customer ikut dibuat (menyebut perpanjangan bila ada).
+export async function createPaidInvoiceAndOrder(
+  tx: Tx,
+  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string; actorId: string; now: Date; timeZone: string },
+) {
+  const { userId, billToName, planRows, dataUsahaId, actorId, now, timeZone } = params;
+  const created = await createInvoiceAndOrder(tx, { userId, billToName, planRows, dataUsahaId, paidBy: { actorId, at: now } });
+
+  const planById = new Map(planRows.map((p) => [p.id, p]));
+  const items = created.items.map((item) => ({ item, plan: planById.get(item.planId!)! as typeof plans.$inferSelect }));
+  const { createdSubscriptionIds, renewals } = await activateInvoiceItems(tx, { userId, orderId: created.orderId, dataUsahaId, items, now, timeZone, actorId });
+
+  await tx.insert(auditLogs).values({
+    entityType: "order",
+    entityId: created.orderId,
+    action: "create",
+    changes: { status: "paid", paidByAdmin: true, subscriptionsCreated: createdSubscriptionIds, subscriptionsRenewed: renewals.map((r) => r.subscriptionId) },
+    actorId,
+  });
+  await createNotification(
+    {
+      userId,
+      type: NOTIFICATION_TYPES.PAYMENT_VERIFIED,
+      title: "Langganan diaktifkan",
+      body: paymentVerifiedBody(createdSubscriptionIds.length, renewals, timeZone),
+      entityType: "order",
+      entityId: created.orderId,
+    },
+    tx,
+  );
+
+  return { ...created, subscriptionIds: createdSubscriptionIds, renewals };
+}
+
+// § Pesanan yang BELUM SELESAI (order pending/submitted) — modul di dalamnya tidak boleh dipesan/diaktifkan lagi di Data Usaha yang sama (cegah dobel &
+// perpanjangan ganda). Satu sumber untuk checkout customer (`subscriptions.route.ts`) dan jalur admin (invoice/lunas). Dibatalkan/kedaluwarsa/ditolak
+// TIDAK dihitung (§ Fase 178 — membatalkan invoice membuka blokir ini).
+export const NON_TERMINAL_ORDER_STATUSES = ["pending", "submitted"] as const;
+
+export async function inFlightModuleKeys(tx: Tx | typeof db, params: { userId: string; dataUsahaId: string }): Promise<Set<string>> {
+  const rows = await tx
+    .select({ moduleKey: invoiceItems.moduleKey })
+    .from(orders)
+    .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
+    .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
+    .where(and(eq(invoices.userId, params.userId), eq(orders.dataUsahaId, params.dataUsahaId), inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES])));
+  return new Set(rows.map((r) => r.moduleKey));
 }

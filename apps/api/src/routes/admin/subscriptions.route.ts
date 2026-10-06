@@ -2,9 +2,10 @@ import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { assignPlanToDataUsaha } from "../../lib/admin-assign";
 import { eq, desc, inArray } from "drizzle-orm";
+import { createInvoiceAndOrder, createPaidInvoiceAndOrder, inFlightModuleKeys } from "../../lib/invoice-order";
 import { db } from "../../lib/db";
-import { plans, subscriptions, auditLogs } from "../../db/schema";
-import { permissionPlugin } from "../../lib/permission";
+import { plans, subscriptions, auditLogs, user as userTable } from "../../db/schema";
+import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
 
 export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscriptions" })
@@ -75,12 +76,18 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       }),
     },
   )
-  // § Fase 177, ADR-0041 — assign BANYAK paket sekaligus (komponen `SubscriptionPicker`, dialog Kelola Langganan): satu transaksi (semua atau tidak sama
-  // sekali), satu `now` untuk semuanya (fitur baru berakhir di instan yang sama), aturan per paket sama dengan `POST /` (`assignPlanToDataUsaha`):
-  // modul aktif → diperpanjang, selain itu baru. `endAt` (opsional) = override yang SAMA untuk semua paket.
+  // § Fase 177/178, ADR-0041 — assign BANYAK paket sekaligus (komponen `SubscriptionPicker`, dialog Kelola Langganan): satu transaksi (semua atau tidak sama
+  // sekali), satu `now`. MODE PEMBAYARAN (`payment`):
+  //  - "free" (default, perilaku Fase 177): aktifkan langsung TANPA invoice (hadiah/kompensasi/kontrak khusus); aturan per paket sama dengan `POST /`
+  //    (`assignPlanToDataUsaha`: modul aktif → diperpanjang, selain itu baru). Hanya mode ini yang boleh `endAt` override (sama untuk semua paket).
+  //  - "paid_invoice": invoice dibuat OTOMATIS LUNAS + langganan aktif & tertaut ke invoice (catatan/PDF untuk pembukuan), inti aktivasi yang sama dengan
+  //    konfirmasi pembayaran.
+  //  - "invoice": invoice BELUM dibayar untuk customer (aktif saat admin menyetujui pembayarannya) — tambahan izin `invoices.manage`.
+  // Mode invoice menolak fitur yang masih punya pesanan belum selesai (`MODULE_ORDER_IN_PROGRESS`) — batalkan dulu invoice lamanya.
   .post(
     "/bulk",
     async ({ body, user, set }) => {
+      const mode = body.payment ?? "free";
       const planIds = [...new Set(body.planIds)];
       const planRows = await db.select().from(plans).where(inArray(plans.id, planIds));
       if (planRows.length !== planIds.length) {
@@ -91,7 +98,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         set.status = 400;
         return { code: "PLAN_NOT_ACTIVE" };
       }
-      // 2 paket modul yang sama dalam 1 permintaan (mis. bulanan + tahunan) = ambigu → ditolak, bukan dipilih diam-diam. Seat (tanpa modul) boleh banyak.
+      // 2 paket modul yang sama dalam 1 permintaan (mis. bulanan + tahunan) = ambigu → ditolak, bukan dipilih diam-diam. Seat (tanpa modul) boleh.
       const seenModules = new Set<string>();
       for (const p of planRows) {
         const moduleKey = p.modules[0];
@@ -101,6 +108,15 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
           return { code: "DUPLICATE_MODULE_IN_REQUEST", moduleKey };
         }
         seenModules.add(moduleKey);
+      }
+
+      if (mode !== "free" && body.endAt) {
+        set.status = 400;
+        return { code: "END_AT_ONLY_FOR_FREE" };
+      }
+      if (mode === "invoice" && !(await userHasPermission(user.id, "invoices.manage"))) {
+        set.status = 403;
+        return { code: "FORBIDDEN_INVOICE" };
       }
 
       const now = new Date();
@@ -116,6 +132,41 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(body.userId));
       const timeZone = await getCompanyTimezone();
 
+      if (mode !== "free") {
+        const [target] = await db.select().from(userTable).where(eq(userTable.id, body.userId));
+        if (!target) {
+          set.status = 404;
+          return { code: "USER_NOT_FOUND" };
+        }
+        try {
+          return await db.transaction(async (tx) => {
+            const inFlight = await inFlightModuleKeys(tx, { userId: body.userId, dataUsahaId });
+            const blocked = planRows.map((p) => p.modules[0]).find((m): m is string => !!m && inFlight.has(m));
+            if (blocked) throw new Error(`MODULE_ORDER_IN_PROGRESS:${blocked}`);
+            if (mode === "invoice") {
+              const created = await createInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId });
+              return { dataUsahaId, payment: mode, invoiceId: created.invoiceId, orderId: created.orderId, amountDue: created.amountDue };
+            }
+            const paid = await createPaidInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, actorId: user.id, now, timeZone });
+            return {
+              dataUsahaId,
+              payment: mode,
+              invoiceId: paid.invoiceId,
+              orderId: paid.orderId,
+              subscriptionsCreated: paid.subscriptionIds.length,
+              subscriptionsRenewed: paid.renewals.length,
+            };
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "";
+          if (message.startsWith("MODULE_ORDER_IN_PROGRESS:")) {
+            set.status = 400;
+            return { code: "MODULE_ORDER_IN_PROGRESS", moduleKey: message.split(":")[1] };
+          }
+          throw err;
+        }
+      }
+
       const results = await db.transaction(async (tx) => {
         const out = [];
         for (const plan of planRows) {
@@ -130,7 +181,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         }
         return out;
       });
-      return { dataUsahaId, results };
+      return { dataUsahaId, payment: "free" as const, results };
     },
     {
       permission: "subscriptions.manage",
@@ -139,6 +190,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         planIds: t.Array(t.String({ format: "uuid" }), { minItems: 1, maxItems: 60 }),
         endAt: t.Optional(t.String({ format: "date-time" })),
         dataUsahaId: t.Optional(t.String({ format: "uuid" })),
+        payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
       }),
     },
   )

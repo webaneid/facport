@@ -23,6 +23,11 @@ describe("notificationLink", () => {
     expect(notificationLink("some_unknown_type", "admin")).toBe("/");
   });
 
+  test("Fase 178: invoice dibatalkan / kedaluwarsa → /billing (customer melihat statusnya & bisa memesan ulang)", () => {
+    expect(notificationLink("order_cancelled", "app")).toBe("/billing");
+    expect(notificationLink("order_expired", "app")).toBe("/billing");
+  });
+
   test("tipe tidak dikenal di surface app → /", () => {
     expect(notificationLink("some_unknown_type", "app")).toBe("/");
   });
@@ -33,6 +38,8 @@ describe("notificationLink", () => {
       "payment_proof_submitted",
       "payment_rejected",
       "payment_verified",
+      "order_cancelled",
+      "order_expired",
       "trial_started",
       "trial_ending_soon",
       "trial_expired",

@@ -42,6 +42,9 @@ export const NOTIFICATION_TYPES = {
   ACCURATE_CONNECTION_DISCONNECTED_BY_ADMIN: "accurate_connection_disconnected_by_admin",
   ANNOUNCEMENT: "announcement",
   ADMIN_PAYMENT_PROOF_SUBMITTED: "admin_payment_proof_submitted",
+  // § Fase 178 — invoice/pesanan belum dibayar dibatalkan admin / kedaluwarsa otomatis (tujuan: /billing).
+  ORDER_CANCELLED: "order_cancelled",
+  ORDER_EXPIRED: "order_expired",
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
 

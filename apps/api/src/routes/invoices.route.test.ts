@@ -108,6 +108,27 @@ describe("GET /me/invoices", () => {
   });
 });
 
+// § Fase 178 — /billing butuh status order GRANULAR + alasan pembatalan untuk tombol "Batalkan pesanan" & keterangan invoice dibatalkan.
+describe("GET /me/invoices — status order (Fase 178)", () => {
+  test("membawa orderStatus & cancelReason: order cancelled menampilkan alasan; order pending tanpa alasan", async () => {
+    const email = `inv-me-orderstatus-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const pendingInvoice = await insertInvoiceWithItems(userId);
+    const cancelledInvoice = await insertInvoiceWithItems(userId);
+    await db.insert(orders).values({ invoiceId: pendingInvoice.id, uniqueCode: 111, status: "pending" });
+    await db.insert(orders).values({ invoiceId: cancelledInvoice.id, uniqueCode: 222, status: "cancelled", cancelReason: "Salah paket", cancelledAt: new Date() });
+
+    const res = await testApp.handle(new Request("http://localhost/me/invoices", { headers: { cookie } }));
+    const body = (await res.json()) as { invoices: { id: string; orderId: string | null; orderStatus: string | null; cancelReason: string | null }[] };
+    const pending = body.invoices.find((i) => i.id === pendingInvoice.id)!;
+    const cancelled = body.invoices.find((i) => i.id === cancelledInvoice.id)!;
+    expect(pending).toMatchObject({ orderStatus: "pending", cancelReason: null });
+    expect(pending.orderId).toBeTruthy();
+    expect(cancelled).toMatchObject({ orderStatus: "cancelled", cancelReason: "Salah paket" });
+  });
+});
+
 describe("GET /invoices/:id/pdf", () => {
   test("401 kalau tidak login", async () => {
     const res = await testApp.handle(new Request("http://localhost/invoices/00000000-0000-0000-0000-000000000000/pdf"));

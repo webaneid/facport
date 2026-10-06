@@ -297,6 +297,21 @@ diselesaikan oleh row lock + guard status di atas (klik kedua pada order
 yang statusnya sudah bukan `"submitted"` lagi otomatis ditolak dengan
 pesan jelas).
 
+## Mode Pembayaran, Batalkan Invoice & Kedaluwarsa (Fase 178)
+Invariant yang TIDAK berubah: **1 invoice = 1 order = 1 Data Usaha = 1 pembayaran** (multi-fitur dalam satu invoice didukung; multi-Data-Usaha = invoice terpisah).
+
+**Mode pembayaran saat admin memberi paket** (Tambah User `POST /admin/users` `payment`, Kelola Langganan `POST /admin/subscriptions/bulk` `payment`, komponen `PaymentModeField`):
+| Mode | Hasil | Izin |
+|---|---|---|
+| `invoice` | invoice `unpaid` + order `pending` (kode unik 100–999); langganan aktif saat admin menyetujui pembayaran | Tambah User: `users.manage`; bulk: + `invoices.manage` |
+| `paid_invoice` (default Kelola Langganan) | invoice `paid` + order `paid` metode `manual`, kode unik **0**, `confirmedBy`=admin; langganan langsung aktif & tertaut (`orderId`, `invoiceItemId`) — inti aktivasi SAMA dengan konfirmasi (`lib/order-activation.ts`: perpanjang/supersede/seat); notifikasi ke customer | `subscriptions.manage` |
+| `free` (perilaku lama) | langganan aktif TANPA invoice (hadiah/kompensasi/kontrak khusus); satu-satunya mode yang boleh `endAt` kustom | `subscriptions.manage` |
+`markAsPaid` (lama) dipetakan ke `free`. Mode `invoice`/`paid_invoice` menolak fitur yang masih punya pesanan belum selesai (`MODULE_ORDER_IN_PROGRESS`, helper `inFlightModuleKeys`, sama dengan checkout & `POST /admin/invoices`).
+
+**Batalkan invoice** (`lib/order-cancel.ts` `cancelOrder`): order `cancelled` + invoice `void`, `orders.cancelled_by/cancelled_at/cancel_reason`, audit log, row lock. Admin `POST /admin/orders/:id/cancel` (`orders.manage`, alasan wajib, status pending|submitted|rejected, notifikasi `order_cancelled` ke customer); customer `POST /orders/:id/cancel` (pemilik saja, status pending|rejected — bukti yang sudah dikirim menunggu admin tidak dibatalkan sepihak; order orang lain = 404). Invoice LUNAS tidak bisa dibatalkan di sini (refund/pembalikan langganan di luar scope). Pembatalan membuka blokir pembelian/perpanjangan modul yang sama. Upload bukti memakai update BERSYARAT (hanya pending/rejected) supaya tidak menghidupkan lagi order yang baru dibatalkan/kedaluwarsa (race).
+
+**Kedaluwarsa otomatis** (job `EXPIRE_UNPAID_ORDERS`, tiap jam): HANYA order `pending` (belum ada bukti) dengan invoice `unpaid` yang `due_date`-nya lewat → order `expired` + invoice `expired` + notifikasi `order_expired`. `submitted`/`rejected` tidak pernah kedaluwarsa otomatis. `due_date` = dibuat + 3 hari (`INVOICE_DUE_DAYS`). Pertama kali job jalan di production, SEMUA invoice pending yang sudah lewat jatuh tempo akan kedaluwarsa sekaligus.
+
 ## Env
 **TIDAK ADA env var provider payment gateway apa pun** (`IPAYMU_*`/
 `XENDIT_*` di `.env.example` — DIHAPUS, tidak pernah dipakai). Semua

@@ -22,6 +22,7 @@ export const JOBS = {
   // BUKAN bulk seperti IMPORT_TO_ACCURATE) — default pg-boss options (retry 2x, expire 15 menit)
   // CUKUP untuk 1 panggilan ringan, tidak perlu masuk NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS di bawah.
   PROCESS_AUTOPRODUKSI_ENTRY: "process-autoproduksi-entry",
+  EXPIRE_UNPAID_ORDERS: "expire-unpaid-orders", // § Fase 178 — order belum dibayar lewat jatuh tempo → expired
 } as const;
 
 // § diminta user 2026-09-24 — default pg-boss (`expireInSeconds: 900` = 15

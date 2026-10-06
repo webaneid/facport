@@ -325,3 +325,25 @@ describe("POST /admin/invoices", () => {
     expect(body.code).toBe("DATA_USAHA_NOT_FOUND");
   });
 });
+
+// § Fase 178 — Buat Invoice admin menolak fitur yang masih tertahan pesanan belum selesai (konsisten dengan checkout & mode "Kirim invoice").
+describe("POST /admin/invoices — pesanan belum selesai (Fase 178)", () => {
+  test("400 MODULE_ORDER_IN_PROGRESS kalau fitur yang sama masih punya pesanan pending; bebas lagi setelah invoice lama dibatalkan", async () => {
+    const adminId = await signUp(`admin-invoices-inflight-admin-${runId}@test.local`);
+    await assignRole(adminId, "admin");
+    const adminCookie = await signIn(`admin-invoices-inflight-admin-${runId}@test.local`);
+    const customerId = await signUp(`admin-invoices-inflight-${runId}@test.local`);
+    const postInvoice = (cookie: string, body: Record<string, unknown>) =>
+      testApp.handle(new Request("http://localhost/admin/invoices", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    const [plan] = await db.insert(plans).values({ name: `Inflight Admin Plan ${runId}`, price: 50000, durationDays: 30, interval: "monthly", modules: ["delivery_order"] }).returning();
+    const first = await postInvoice(adminCookie, { userId: customerId, planIds: [plan!.id] });
+    expect(first.status).toBe(200);
+    const created = (await first.json()) as { orderId: string };
+    const second = await postInvoice(adminCookie, { userId: customerId, planIds: [plan!.id] });
+    expect(second.status).toBe(400);
+    expect(((await second.json()) as { code: string; moduleKey: string }).code).toBe("MODULE_ORDER_IN_PROGRESS");
+
+    await db.update(orders).set({ status: "cancelled" }).where(eq(orders.id, created.orderId)); // setara dibatalkan
+    expect((await postInvoice(adminCookie, { userId: customerId, planIds: [plan!.id] })).status).toBe(200);
+  });
+});

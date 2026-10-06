@@ -3,16 +3,18 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals } from "../../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals, invoices, invoiceItems, orders, notifications, permissions, rolePermissions } from "../../db/schema";
 import { adminSubscriptionsRoute } from "./subscriptions.route";
 import { addCalendarMonths, computeSubscriptionPeriod } from "../../lib/subscription-period";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
+import { attachSubscriptionDates } from "../../lib/invoice-helpers";
+import { adminOrdersRoute } from "./orders.route";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 
 // § Fase 174, ADR-0041 — assign admin: tanpa `endAt` = dihitung dari periode paket (kalender, jangkar dicatat); dengan `endAt` = override bebas
 // (jangkar kosong); PATCH tanggal manual mengosongkan jangkar. Sebelumnya endpoint ini tanpa test sama sekali.
 const runId = Date.now();
-const testApp = new Elysia().mount(auth.handler).use(adminSubscriptionsRoute);
+const testApp = new Elysia().mount(auth.handler).use(adminSubscriptionsRoute).use(adminOrdersRoute);
 
 async function signUp(email: string) {
   const res = await testApp.handle(
@@ -285,5 +287,136 @@ describe("POST /admin/subscriptions/bulk (Fase 177)", () => {
     expect(foreign.status).toBe(404);
     const noAuth = await testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ userId, planIds: [plan.id] }) }));
     expect([401, 403]).toContain(noAuth.status);
+  });
+});
+
+// § Fase 178 — MODE PEMBAYARAN pada assign massal: "paid_invoice" (invoice otomatis lunas + langganan aktif & tertaut), "invoice" (belum dibayar), "free" (default, tanpa invoice).
+describe("POST /admin/subscriptions/bulk — mode pembayaran (Fase 178)", () => {
+  async function bulk(cookie: string, body: Record<string, unknown>) {
+    return testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  }
+  type PaidBody = { dataUsahaId: string; payment: string; invoiceId: string; orderId: string; subscriptionsCreated: number; subscriptionsRenewed: number };
+
+  test("paid_invoice: invoice LUNAS otomatis (order paid, metode manual, kode unik 0, dikonfirmasi admin) + langganan aktif tertaut ke order & item invoice", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-paid-${runId}@test.local`);
+    const a = await makePlan("monthly", "sales_invoice");
+    const b = await makePlan("yearly", "purchase_invoice");
+    const res = await bulk(cookie, { userId, planIds: [a.id, b.id], payment: "paid_invoice" });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as PaidBody;
+    expect(body.subscriptionsCreated).toBe(2);
+
+    const [inv] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId));
+    expect(inv!.status).toBe("paid");
+    expect(inv!.paidAt).toBeTruthy();
+    expect(inv!.total).toBe(a.price + b.price);
+    const [order] = await db.select().from(orders).where(eq(orders.id, body.orderId));
+    expect(order).toMatchObject({ status: "paid", method: "manual", uniqueCode: 0 });
+    expect(order!.confirmedBy).toBeTruthy();
+    expect(order!.confirmedAt).toBeTruthy();
+
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, body.invoiceId));
+    expect(items).toHaveLength(2);
+    const subs = await db.select().from(subscriptions).where(eq(subscriptions.orderId, body.orderId));
+    expect(subs).toHaveLength(2);
+    expect(new Set(subs.map((x) => x.startAt!.getTime())).size).toBe(1); // satu `now`
+    const tz = await getCompanyTimezone();
+    for (const sub of subs) {
+      expect(sub.status).toBe("active");
+      expect(sub.invoiceItemId).toBeTruthy();
+      const interval = sub.planId === b.id ? 12 : 1;
+      expect(sub.endAt!.getTime()).toBe(addCalendarMonths(sub.startAt!, interval, tz).getTime());
+      expect(sub.periodMonths).toBe(interval);
+    }
+    // invoice menampilkan masa berlaku (tertaut ke item)
+    const dated = await attachSubscriptionDates(items);
+    expect(dated.every((i) => i.subscriptionEndAt !== null && i.isRenewal === false)).toBe(true);
+    // notifikasi ke customer
+    const [notif] = await db.select().from(notifications).where(eq(notifications.userId, userId));
+    expect(notif!.type).toBe("payment_verified");
+  });
+
+  test("paid_invoice untuk fitur yang masih aktif = PERPANJANGAN: baris sama diperpanjang, riwayat terhubung ke item invoice, invoice menandai perpanjangan", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-paid-renew-${runId}@test.local`);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const plan = await makePlan("monthly", "sales_quotation");
+    const oldEnd = new Date(Date.now() + 9 * 24 * 60 * 60 * 1000 + 111);
+    const [existing] = await db.insert(subscriptions).values({ userId, planId: plan.id, status: "active", startAt: new Date(oldEnd.getTime() - 5 * 24 * 60 * 60 * 1000), endAt: oldEnd, dataUsahaId }).returning();
+
+    const res = await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice", dataUsahaId });
+    const body = (await res.json()) as PaidBody;
+    expect(body.subscriptionsRenewed).toBe(1);
+    expect(body.subscriptionsCreated).toBe(0);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, existing!.id));
+    expect(after!.endAt!.getTime()).toBe(addCalendarMonths(oldEnd, 1, await getCompanyTimezone()).getTime());
+    const [renewal] = await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, existing!.id));
+    expect(renewal!.invoiceItemId).toBeTruthy();
+    expect(renewal!.orderId).toBe(body.orderId);
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, body.invoiceId));
+    const [dated] = await attachSubscriptionDates(items);
+    expect(dated!.isRenewal).toBe(true);
+  });
+
+  test("invoice: invoice BELUM dibayar + order pending (kode unik 100–999), TIDAK ada langganan; modul yang sama tertahan → MODULE_ORDER_IN_PROGRESS sampai dibatalkan", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-invoice-${runId}@test.local`);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const plan = await makePlan("monthly", "journal_voucher");
+    const res = await bulk(cookie, { userId, planIds: [plan.id], payment: "invoice", dataUsahaId });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { invoiceId: string; orderId: string; amountDue: number };
+    const [inv] = await db.select().from(invoices).where(eq(invoices.id, body.invoiceId));
+    expect(inv!.status).toBe("unpaid");
+    const [order] = await db.select().from(orders).where(eq(orders.id, body.orderId));
+    expect(order!.status).toBe("pending");
+    expect(order!.uniqueCode).toBeGreaterThanOrEqual(100);
+    expect(body.amountDue).toBe(plan.price + order!.uniqueCode);
+    expect(await db.select().from(subscriptions).where(eq(subscriptions.userId, userId))).toHaveLength(0);
+
+    const again = await bulk(cookie, { userId, planIds: [plan.id], payment: "invoice", dataUsahaId });
+    expect(again.status).toBe(400);
+    expect(((await again.json()) as { code: string }).code).toBe("MODULE_ORDER_IN_PROGRESS");
+    const paidWhilePending = await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice", dataUsahaId });
+    expect(paidWhilePending.status).toBe(400); // lunas-admin juga tidak boleh menimpa pesanan yang belum selesai
+
+    // dibatalkan → bebas lagi
+    const cancel = await testApp.handle(new Request(`http://localhost/admin/orders/${body.orderId}/cancel`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ reason: "dibuat ulang" }) }));
+    expect(cancel.status).toBe(200);
+    expect((await bulk(cookie, { userId, planIds: [plan.id], payment: "invoice", dataUsahaId })).status).toBe(200);
+  });
+
+  test("tanggal kustom (endAt) hanya untuk mode free → 400 END_AT_ONLY_FOR_FREE; tanpa payment = free (kompatibel Fase 177)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-bulk-mode-${runId}@test.local`);
+    const plan = await makePlan("monthly", "other_payment");
+    const custom = new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString();
+    const res = await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice", endAt: custom });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("END_AT_ONLY_FOR_FREE");
+    const free = await bulk(cookie, { userId, planIds: [plan.id], endAt: custom });
+    expect(free.status).toBe(200);
+    expect(((await free.json()) as { payment: string }).payment).toBe("free");
+    expect(await db.select().from(invoices).where(eq(invoices.userId, userId))).toHaveLength(0); // free = tanpa invoice
+  });
+
+  test("mode invoice butuh izin invoices.manage: role dengan subscriptions.manage SAJA → 403 FORBIDDEN_INVOICE (mode paid_invoice/free tetap boleh)", async () => {
+    const [subsPerm] = await db.select().from(permissions).where(eq(permissions.key, "subscriptions.manage"));
+    const [role] = await db.insert(roles).values({ name: `subs-only-${runId}`, isSystem: false }).returning();
+    await db.insert(rolePermissions).values({ roleId: role!.id, permissionId: subsPerm!.id });
+    const email = `admin-bulk-subsonly-${runId}@test.local`;
+    const staffId = await signUp(email);
+    await db.insert(userRoles).values({ userId: staffId, roleId: role!.id });
+    const signIn = await testApp.handle(new Request("http://localhost/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!" }) }));
+    const cookie = signIn.headers.get("set-cookie") ?? "";
+    const userId = await signUp(`admin-bulk-subsonly-target-${runId}@test.local`);
+    const plan = await makePlan("monthly", "work_order");
+
+    const denied = await bulk(cookie, { userId, planIds: [plan.id], payment: "invoice" });
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as { code: string }).code).toBe("FORBIDDEN_INVOICE");
+    expect(await db.select().from(invoices).where(eq(invoices.userId, userId))).toHaveLength(0);
+    expect((await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice" })).status).toBe(200);
   });
 });

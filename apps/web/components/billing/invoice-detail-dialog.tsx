@@ -24,6 +24,9 @@ export type BillingInvoice = {
   billToName?: string;
   items: BillingInvoiceItem[];
   orderId: string | null;
+  // § Fase 178 — status order granular (untuk tombol Batalkan: hanya pending/rejected) & alasan bila dibatalkan.
+  orderStatus?: string | null;
+  cancelReason?: string | null;
 };
 
 export function InvoiceDetailDialog({ invoice }: { invoice: BillingInvoice }) {
@@ -87,6 +90,7 @@ export function InvoiceDetailDialog({ invoice }: { invoice: BillingInvoice }) {
           <div>
             <p className="mb-1.5 text-xs font-medium uppercase text-muted-foreground">Status</p>
             <StatusBadge domain="invoice" status={invoice.status} />
+            {invoice.status === "void" && invoice.cancelReason && <p className="mt-1.5 text-xs text-muted-foreground">Alasan pembatalan: {invoice.cancelReason}</p>}
           </div>
         </div>
       </DialogContent>

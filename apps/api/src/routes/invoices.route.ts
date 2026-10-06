@@ -68,9 +68,16 @@ export const invoicesRoute = new Elysia()
       // `orders.invoiceId` 1:1 ke invoice, TIDAK ada FK terbalik di
       // `invoices`, jadi di-JOIN di sini (bukan disimpan redundan).
       const orderRows = invoiceIds.length ? await db.select().from(orders).where(inArray(orders.invoiceId, invoiceIds)) : [];
-      const orderIdByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o.id]));
+      const orderByInvoiceId = new Map(orderRows.map((o) => [o.invoiceId, o]));
       const withItems = await attachInvoiceItems(rows);
-      return { invoices: withItems.map((inv) => ({ ...inv, orderId: orderIdByInvoiceId.get(inv.id) ?? null })) };
+      // § Fase 178 — `orderStatus` GRANULAR (pending/submitted/rejected/cancelled/expired/paid) + `cancelReason`: dipakai /billing untuk tombol "Batalkan pesanan"
+      // (hanya pending/rejected) dan keterangan invoice yang dibatalkan.
+      return {
+        invoices: withItems.map((inv) => {
+          const order = orderByInvoiceId.get(inv.id);
+          return { ...inv, orderId: order?.id ?? null, orderStatus: order?.status ?? null, cancelReason: order?.cancelReason ?? null };
+        }),
+      };
     },
     { auth: true },
   )

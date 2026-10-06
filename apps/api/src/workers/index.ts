@@ -30,7 +30,8 @@ import {
 } from "../lib/import-mapping/autoproduksi-production.mapping";
 import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
-import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON } from "../lib/job-schedules";
+import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON, EXPIRE_UNPAID_ORDERS_CRON } from "../lib/job-schedules";
+import { expireOverdueOrders } from "../lib/order-cancel";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
@@ -2208,6 +2209,13 @@ async function main() {
     }
 
     logger.info({ count: expired.length }, "Subscriptions expired");
+  });
+
+  // § Fase 178 — invoice belum dibayar (order "pending", belum ada bukti) yang lewat jatuh tempo → expired (membuka blokir pembelian modul yang sama).
+  await boss.schedule(JOBS.EXPIRE_UNPAID_ORDERS, EXPIRE_UNPAID_ORDERS_CRON);
+  await boss.work(JOBS.EXPIRE_UNPAID_ORDERS, async () => {
+    const count = await expireOverdueOrders();
+    logger.info({ count }, "Unpaid orders expired");
   });
 
   // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir,

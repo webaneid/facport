@@ -27,6 +27,8 @@ import { timezoneAbbreviation } from "@/lib/timezone";
 import { type SubscriptionInterval } from "@/lib/subscription-period";
 import { buildPickerRows, summarizeSelection, type ActiveSubscriptionInfo } from "@/lib/subscription-picker";
 import { DateTimeField } from "@/components/ui/date-time-field";
+import { PaymentModeField, type PaymentMode } from "@/components/subscription/payment-mode-field";
+import { usePermissions } from "@/lib/use-permissions";
 import { SubscriptionPicker } from "@/components/subscription/subscription-picker";
 
 const PAGE_SIZE = 20;
@@ -91,7 +93,9 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
   // § Fase 177, ADR-0041 — pilih fitur lewat `SubscriptionPicker` (banyak sekaligus, satu periode untuk semua); paket diturunkan dari fitur+periode.
   const [interval, setPeriod] = useState<SubscriptionInterval>("monthly");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
-  const [markAsPaid, setMarkAsPaid] = useState(false);
+  // § Fase 178 — mode pembayaran (menggantikan checkbox "Tandai Sudah Dibayar"): kirim invoice | sudah dibayar (invoice otomatis lunas) | gratis (tanpa invoice).
+  const [payment, setPayment] = useState<PaymentMode>("invoice");
+  const canBypassPayment = usePermissions().includes("subscriptions.manage");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [created, setCreated] = useState<CreatedUserResult | null>(null);
@@ -116,7 +120,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
       name: name.trim(),
       email: email.trim(),
       planIds: summary.planIds.length > 0 ? summary.planIds : undefined,
-      markAsPaid: summary.planIds.length > 0 ? markAsPaid : undefined,
+      payment: summary.planIds.length > 0 ? payment : undefined,
     });
     setSubmitting(false);
     if (res.error) {
@@ -143,7 +147,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
       setEmail("");
       setSelectedKeys(new Set());
       setPeriod("monthly");
-      setMarkAsPaid(false);
+      setPayment("invoice");
       setCreated(null);
       setError(null);
     }
@@ -167,7 +171,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             <p>
               Password sementara: <code className="text-foreground">{created.tempPassword}</code>
             </p>
-            {created.orderId && (
+            {created.orderId && !created.subscriptionIds && (
               <p className="text-muted-foreground">
                 Invoice dibuat (total {currencyFormatter.format(created.amountDue ?? 0)}) — customer bisa login lalu bayar di{" "}
                 <code className="text-foreground">/billing/{created.orderId}/pay</code>. Email undangan otomatis terkirim.
@@ -175,7 +179,8 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
             )}
             {created.subscriptionIds && (
               <p className="text-muted-foreground">
-                {created.subscriptionIds.length} fitur langsung AKTIF (ditandai sudah dibayar). Email undangan otomatis terkirim.
+                {created.subscriptionIds.length} fitur langsung AKTIF
+                {created.invoiceId ? " — invoice dibuat otomatis berstatus LUNAS (tercatat di halaman Invoice)" : " (tanpa invoice)"}. Email undangan otomatis terkirim.
               </p>
             )}
             <Button onClick={() => handleClose(false)} className="self-end">
@@ -207,32 +212,15 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
                   selectedKeys={selectedKeys}
                   onSelectedKeysChange={setSelectedKeys}
                   timeZone={companyTimezone}
-                  startsAt={markAsPaid ? "exact" : "on-approval"}
+                  startsAt={payment === "invoice" ? "on-approval" : "exact"}
                 />
               )}
             </div>
 
             {summary.count > 0 && (
-              <div className="flex flex-col gap-2 rounded-md bg-muted p-3">
-                {/* § Fase 26, ADR-0024 — `markAsPaid` PERSIS aksi yang
-                    digerbangi `subscriptions.manage` di backend (§
-                    security review Fase 18, HIGH bypass fix) — role
-                    yang cuma punya `users.manage` (mis. "staf
-                    onboarding") tidak PERLU lihat opsi yang toh akan
-                    ditolak 403 kalau dipilih. UI hint saja, backend
-                    TETAP jadi penjaga sesungguhnya. */}
-                <Can permission="subscriptions.manage">
-                  <label className="flex items-center gap-2">
-                    <Checkbox checked={markAsPaid} onCheckedChange={(checked) => setMarkAsPaid(checked === true)} />
-                    <span className="text-foreground">Tandai Sudah Dibayar (aktifkan langsung, tanpa invoice)</span>
-                  </label>
-                </Can>
-                {!markAsPaid && (
-                  <p className="text-xs text-muted-foreground">
-                    Invoice dibuat, customer bayar sendiri (transfer bank/QRIS) lewat halaman tagihan setelah login.
-                  </p>
-                )}
-              </div>
+              // § Fase 26, ADR-0024 — "sudah dibayar"/"gratis" melewati pembayaran = aksi yang digerbangi `subscriptions.manage` di backend (security review Fase 18);
+              // role tanpa izin itu (mis. "staf onboarding") hanya melihat "Kirim invoice". UI hint saja — backend TETAP penjaga sesungguhnya.
+              <PaymentModeField value={payment} onChange={setPayment} allowed={canBypassPayment ? ["invoice", "paid_invoice", "free"] : ["invoice"]} />
             )}
 
             {error && <p className="text-destructive">{error}</p>}
@@ -258,6 +246,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
   // § Fase 174, ADR-0041 — default: akhir dihitung SERVER dari periode paket saat tombol Assign ditekan (tanggal & jam sama bulan/tahun
   // berikutnya). `manualEnd` = admin memilih tanggal+jam sendiri (`endAt` ISO, kontrak khusus/custom, tidak terikat bulanan/tahunan).
+  // § Fase 178 — mode pembayaran: default "sudah dibayar" (invoice otomatis lunas → ada catatan/PDF untuk pembukuan); "kirim invoice" (customer bayar sendiri,
+  // butuh izin invoices.manage); "gratis" (tanpa invoice, hadiah/kontrak khusus — satu-satunya mode yang boleh atur tanggal expired sendiri).
+  const [payment, setPayment] = useState<PaymentMode>("paid_invoice");
+  const canSendInvoice = usePermissions().includes("invoices.manage");
   const [manualEnd, setManualEnd] = useState(false);
   const [endAt, setEndAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -284,6 +276,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setOpen(true);
     setSelectedKeys(new Set());
     setPeriod("monthly");
+    setPayment("paid_invoice");
     setSelectedDataUsahaId("");
     setManualEnd(false);
     setEndAt("");
@@ -304,18 +297,20 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     }
     // § Fase 174 — tanpa mode manual, server menghitung akhir dari periode paket (atau memperpanjang dari akhir lama bila fitur masih aktif, § Fase 176);
     // mode manual WAJIB mengisi tanggal+jam dan berlaku sama untuk semua fitur yang dipilih.
-    if (manualEnd && !endAt) {
+    const customEnd = payment === "free" && manualEnd;
+    if (customEnd && !endAt) {
       setError("Tanggal & jam expired wajib diisi.");
       return;
     }
     setSubmitting(true);
     setError(null);
-    // § Fase 177 — SATU permintaan untuk semua fitur (atomik, satu `now`), bukan satu-satu.
+    // § Fase 177 — SATU permintaan untuk semua fitur (atomik, satu `now`), bukan satu-satu. § Fase 178 — `payment` menentukan invoice (kirim / otomatis lunas / tanpa).
     const res = await api.admin.subscriptions.bulk.post({
       userId: user.id,
       planIds: summary.planIds,
-      endAt: manualEnd ? endAt : undefined,
+      endAt: customEnd ? endAt : undefined,
       dataUsahaId: selectedDataUsahaId || undefined,
+      payment,
     });
     setSubmitting(false);
     if (res.error) {
@@ -332,15 +327,29 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 ? "Tanggal expired harus di masa depan."
                 : code === "DUPLICATE_MODULE_IN_REQUEST"
                   ? "Ada fitur yang dipilih dua kali — periksa pilihan."
-                  : "Gagal assign paket — coba lagi.",
+                  : code === "MODULE_ORDER_IN_PROGRESS"
+                    ? "Ada fitur yang masih punya invoice belum selesai — batalkan invoice lamanya dulu (halaman Invoice), lalu coba lagi."
+                    : code === "FORBIDDEN_INVOICE"
+                      ? "Kamu tidak punya izin membuat invoice."
+                      : "Gagal assign paket — coba lagi.",
       );
       return;
     }
-    const results = (res.data as unknown as { results: { renewed: boolean }[] }).results;
-    const renewed = results.filter((r) => r.renewed).length;
-    toast.success(
-      `${results.length} paket berhasil di-assign ke ${user.name || user.email}${renewed > 0 ? ` (${renewed} diperpanjang dari tanggal berakhirnya)` : ""}.`,
-    );
+    const data = res.data as unknown as { payment: PaymentMode; results?: { renewed: boolean }[]; orderId?: string; amountDue?: number; subscriptionsCreated?: number; subscriptionsRenewed?: number };
+    if (data.payment === "invoice") {
+      toast.success(`Invoice dibuat untuk ${user.name || user.email} (total ${currencyFormatter.format(data.amountDue ?? 0)}) — customer membayar lewat halaman tagihan.`);
+    } else if (data.payment === "paid_invoice") {
+      const renewed = data.subscriptionsRenewed ?? 0;
+      toast.success(
+        `${(data.subscriptionsCreated ?? 0) + renewed} paket aktif untuk ${user.name || user.email}${renewed > 0 ? ` (${renewed} diperpanjang dari tanggal berakhirnya)` : ""} — invoice lunas tercatat.`,
+      );
+    } else {
+      const results = data.results ?? [];
+      const renewed = results.filter((r) => r.renewed).length;
+      toast.success(
+        `${results.length} paket berhasil di-assign ke ${user.name || user.email}${renewed > 0 ? ` (${renewed} diperpanjang dari tanggal berakhirnya)` : ""}.`,
+      );
+    }
     setSelectedKeys(new Set());
     setManualEnd(false);
     setEndAt("");
@@ -523,19 +532,23 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 selectedKeys={selectedKeys}
                 onSelectedKeysChange={setSelectedKeys}
                 timeZone={companyTimezone}
+                startsAt={payment === "invoice" ? "on-approval" : "exact"}
               />
             )}
-            <div className="flex flex-col gap-2">
-              <label className="flex items-center gap-2">
-                <Checkbox checked={manualEnd} onCheckedChange={(checked) => setManualEnd(checked === true)} />
-                <span className="text-foreground">Atur tanggal &amp; jam expired sendiri (kontrak khusus, berlaku sama untuk semua fitur terpilih)</span>
-              </label>
-              {manualEnd && <DateTimeField value={endAt} onChange={setEndAt} timeZone={companyTimezone} ariaLabel="Expired" />}
-              {manualEnd && <p className="text-xs text-muted-foreground">Dengan tanggal sendiri, langganan aktif fitur yang sama diganti (bukan diperpanjang).</p>}
-            </div>
+            <PaymentModeField value={payment} onChange={setPayment} allowed={canSendInvoice ? ["paid_invoice", "invoice", "free"] : ["paid_invoice", "free"]} />
+            {payment === "free" && (
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2">
+                  <Checkbox checked={manualEnd} onCheckedChange={(checked) => setManualEnd(checked === true)} />
+                  <span className="text-foreground">Atur tanggal &amp; jam expired sendiri (kontrak khusus, berlaku sama untuk semua fitur terpilih)</span>
+                </label>
+                {manualEnd && <DateTimeField value={endAt} onChange={setEndAt} timeZone={companyTimezone} ariaLabel="Expired" />}
+                {manualEnd && <p className="text-xs text-muted-foreground">Dengan tanggal sendiri, langganan aktif fitur yang sama diganti (bukan diperpanjang).</p>}
+              </div>
+            )}
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleAssign} disabled={submitting || summary.count === 0} className="self-end">
-              {submitting ? "Memproses..." : `Assign ${summary.count > 0 ? `${summary.count} Paket` : "Paket"}`}
+              {submitting ? "Memproses..." : payment === "invoice" ? `Kirim Invoice${summary.count > 0 ? ` (${summary.count} Paket)` : ""}` : `Assign ${summary.count > 0 ? `${summary.count} Paket` : "Paket"}`}
             </Button>
           </div>
         </div>

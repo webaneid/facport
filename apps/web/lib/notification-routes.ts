@@ -19,6 +19,8 @@ export function notificationLink(type: string, surface: Surface): string {
       // pemanggil (notification-list.tsx) kalau `entityId` tersedia.
       return "/billing";
     case "payment_verified":
+    case "order_cancelled":
+    case "order_expired":
       return "/billing";
     case "trial_started":
     case "trial_ending_soon":

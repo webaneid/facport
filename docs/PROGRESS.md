@@ -185,7 +185,8 @@
 | 175  | Penegakan akses tepat di waktu akhir + job/reminder WIB | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-175-penegakan-akses-kedaluwarsa.md` |
 | 176  | Perpanjangan dini (sambung dari akhir lama) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-176-perpanjangan-dini-langganan.md` |
 | 177  | Komponen SubscriptionPicker (multi-pilih, filter produk, mode Perpanjang) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-177-komponen-subscription-picker.md` |
-| 178  | Koreksi langganan tahunan 360 hari | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-178-koreksi-langganan-360-hari.md` |
+| 178  | Mode pembayaran saat assign/Tambah User (kirim invoice / sudah dibayar = invoice otomatis lunas / gratis tanpa invoice) + batalkan invoice (admin & customer) + invoice belum dibayar kedaluwarsa otomatis | Done | `docs/architecture/architecture-payment.md` | `docs/phases/phase-178-mode-pembayaran-dan-batalkan-invoice.md` |
+| 179  | Koreksi langganan tahunan 360 hari | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-179-koreksi-langganan-360-hari.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
