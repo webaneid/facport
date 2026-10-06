@@ -1,3 +1,11 @@
+## 2.27.0 (2026-10-06)
+
+* release: merge develop ke main (daftar email ganda 409, pesan error Delivery Order ramah, nama kolom ([324676e](https://github.com/webaneid/facport/commit/324676e))
+* feat(web api): /billing aksi jadi ikon (lihat detail, bayar, unduh PDF); 1 Tahun = 365 hari (data la ([4e10062](https://github.com/webaneid/facport/commit/4e10062))
+* fix(api web): daftar dengan email yang sudah terdaftar tidak lagi 500 — 409 USER_ALREADY_EXISTS + fo ([3cb98ac](https://github.com/webaneid/facport/commit/3cb98ac))
+* fix(api web): pesan error Delivery Order ramah user (sebut kolom Item Notes + pilihan label SO); lab ([b44f23f](https://github.com/webaneid/facport/commit/b44f23f))
+* fix(api): Sales Invoice — nama kolom template departemen item = 'Item Item Dept' persis sesuai kemau ([b091b0f](https://github.com/webaneid/facport/commit/b091b0f))
+
 ## 2.26.0 (2026-10-06)
 
 * release: merge develop ke main (Delivery Order SO detail via Atribut Tambahan, nama kolom Sales Invo ([fe5bb22](https://github.com/webaneid/facport/commit/fe5bb22))
