@@ -1,3 +1,14 @@
+## 2.29.0 (2026-10-06)
+
+* chore: merge develop ke main (rilis periode langganan kalender, perpanjangan dini, SubscriptionPicke ([16119e7](https://github.com/webaneid/facport/commit/16119e7))
+* feat(api web): Fase 173 — fondasi periode langganan bulanan/tahunan kalender (ADR-0041): fungsi addC ([05c0a24](https://github.com/webaneid/facport/commit/05c0a24))
+* feat(api web): Fase 174 — semua jalur aktivasi langganan memakai periode kalender (mulai saat disetu ([e096578](https://github.com/webaneid/facport/commit/e096578))
+* feat(api web): Fase 176 — perpanjangan dini: langganan aktif diperpanjang di tempat dari tanggal+jam ([aa8f808](https://github.com/webaneid/facport/commit/aa8f808))
+* feat(api web): Fase 177 — komponen SubscriptionPicker (banyak fitur sekaligus, filter produk, satu p ([1d5bd5e](https://github.com/webaneid/facport/commit/1d5bd5e))
+* feat(api web): Fase 178 — mode pembayaran saat assign/Tambah User (kirim invoice / sudah dibayar = i ([0fad427](https://github.com/webaneid/facport/commit/0fad427))
+* feat(api): Fase 175 — akses langganan berhenti tepat di end_at (gerbang cek end_at), job kedaluwarsa ([acca85a](https://github.com/webaneid/facport/commit/acca85a))
+* feat(api): Fase 179 — skrip koreksi langganan tahunan 360 hari menjadi 1 tahun kalender (dry-run def ([a0d3591](https://github.com/webaneid/facport/commit/a0d3591))
+
 ## 2.28.0 (2026-10-06)
 
 * chore: merge develop ke main (rilis Sales Order tarik header/atribut/Expense dari Sales Quotation) ([ff07167](https://github.com/webaneid/facport/commit/ff07167))
