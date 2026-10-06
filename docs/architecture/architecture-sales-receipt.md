@@ -652,4 +652,4 @@ Gejala: bayar 100.000 + PPh 2.000 → di Accurate nilai pembayaran tetap 100.000
 - Tidak berubah: `paymentAmount` per faktur tetap penuh; kolom "Cheque Amount" eksplisit dipakai apa adanya (tidak dikurangi lagi); tanpa PPh → perilaku lama.
 - Asumsi yang belum terbukti: pada mata uang asing PPh dianggap dalam mata uang faktur yang sama dengan `paymentAmount` (jadi ikut dikali kurs). Kasus langka, belum diuji ke Accurate.
 - ⚠️ Belum diverifikasi test call nyata ke akun client — minta client retest 1 receipt dengan PPh: nilai bank harus = Jumlah Bayar − Tax Amount, dan faktur harus lunas (tidak lebih bayar).
-- Modul cermin `purchase-payment.mapping.ts` punya auto-SUM yang sama, tapi struktur PPh-nya sendiri masih SPECULATIVE (Fase 100) — TIDAK diubah, menunggu konfirmasi.
+- Modul cermin `purchase-payment.mapping.ts`: fix yang sama diterapkan (diminta user, 2026-10-06), lihat `architecture-purchase-payment.md` § "Update 2026-10-06".

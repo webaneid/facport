@@ -468,3 +468,43 @@ describe("buildPurchasePaymentPayload — Fase 100 (detailTax di root, PPh ID/PP
     expect(payload.detailTax).toBeUndefined();
   });
 });
+
+// § 2026-10-06 (diminta user, mirror fix Sales Receipt) — root `chequeAmount` = Σ Payment − Σ PPh yang terkirim di `detailTax`.
+describe("buildPurchasePaymentPayload — PPh mengurangi root chequeAmount (uang keluar dari bank)", () => {
+  const mapping = { ...columnMapping, "PPh ID": "taxId", "PPh Amount": "taxAmount", "Cheque Amount": "paymentTotalAmount", kurs: "rate" };
+  const taxIds = new Map([["PPh23", 350], ["PPh Lain", 10]]);
+
+  test("bayar 100.000 + PPh 2.000 → bank 98.000; paymentAmount faktur TETAP penuh (mirror contoh resmi Sales Receipt)", () => {
+    const rawRows = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000 }];
+    const payload = buildPurchasePaymentPayload(rawRows, mapping, taxIds);
+    expect(payload.chequeAmount).toBe(98000);
+    expect((payload.detailInvoice as { paymentAmount: number }[])[0]!.paymentAmount).toBe(100000);
+  });
+
+  test("beberapa faktur, hanya sebagian kena PPh → hanya PPh yang masuk detailTax yang dikurangkan", () => {
+    const rawRows = [
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000 },
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-2", Payment: 50000 },
+      { "No. Supplier": "V1", "Purchase Payment No": "P1", "Invoice No": "INV-3", Payment: 30000, "PPh ID": "PPh Lain", "PPh Amount": 600 },
+    ];
+    expect(buildPurchasePaymentPayload(rawRows, mapping, taxIds).chequeAmount).toBe(177400); // 180000 − 2000 − 600
+  });
+
+  test("PPh ID tidak ter-resolve / PPh Amount tanpa PPh ID / tanpa PPh → tidak ada pengurangan (perilaku lama)", () => {
+    const unresolved = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "TidakAda", "PPh Amount": 2000 }];
+    const p = buildPurchasePaymentPayload(unresolved, mapping, taxIds);
+    expect(p.detailTax).toBeUndefined();
+    expect(p.chequeAmount).toBe(100000);
+    const noId = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh Amount": 2000 }];
+    expect(buildPurchasePaymentPayload(noId, mapping, taxIds).chequeAmount).toBe(100000);
+    const none = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000 }];
+    expect(buildPurchasePaymentPayload(none, mapping, taxIds).chequeAmount).toBe(100000);
+  });
+
+  test("Cheque Amount EKSPLISIT dipakai apa adanya (tidak dikurangi PPh lagi); mata uang asing: (Σ payment − Σ PPh) × rate", () => {
+    const explicit = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100000, "PPh ID": "PPh23", "PPh Amount": 2000, "Cheque Amount": 98000 }];
+    expect(buildPurchasePaymentPayload(explicit, mapping, taxIds).chequeAmount).toBe(98000);
+    const foreign = [{ "No. Supplier": "V1", "Invoice No": "INV-1", Payment: 100, "PPh ID": "PPh23", "PPh Amount": 2, kurs: 15000 }];
+    expect(buildPurchasePaymentPayload(foreign, mapping, taxIds).chequeAmount).toBe(98 * 15000);
+  });
+});

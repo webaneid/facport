@@ -528,3 +528,7 @@ Detail lengkap → `docs/phases/phase-100-mirror-fix-pph-purchase-payment.md`.
 - Akun Hutang per vendor (`vendorPayableAccountListNo`, konsep terkait
   tapi BUKAN field yang dipakai di sini) → `docs/architecture/architecture-vendor-payable-account.md`
 - Katalog sub-modul → ADR-0019
+
+## Update 2026-10-06 — root `chequeAmount` dikurangi PPh (mirror fix Sales Receipt, SPECULATIVE)
+Bug yang sama dengan Sales Receipt (`architecture-sales-receipt.md` § "Update 2026-10-06"): auto-SUM root `chequeAmount` mengabaikan `detailTax[]`, sehingga bank dicatat penuh dan PPh terhitung di atas pelunasan faktur (lebih bayar). Diperbaiki atas permintaan user: default root `chequeAmount` = (Σ `paymentAmount` − Σ `detailTax[].taxAmount`) × kurs; `paymentAmount` per faktur tetap penuh; "Cheque Amount" eksplisit dipakai apa adanya; hanya PPh yang benar-benar terkirim yang dikurangkan.
+⚠️ **SPECULATIVE**: semantik ini terbukti lewat contoh resmi Accurate Support untuk `sales-receipt/save.do` saja. Konfirmasi tertulis untuk `purchase-payment/save.do` belum ada (struktur `detailTax` di modul ini sendiri masih spekulatif, § Fase 100). Retest 1 pembayaran ber-PPh sungguhan: uang keluar bank harus = Payment − PPh Amount dan faktur harus lunas tanpa lebih bayar; kalau Accurate menolak/menunjukkan hasil lain, kembalikan perhitungannya (satu baris di `buildPurchasePaymentPayload`) dan tanyakan ke Accurate Support.

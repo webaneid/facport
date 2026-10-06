@@ -395,7 +395,14 @@ export function buildPurchasePaymentPayload(
   // setelah dikalikan `rate`. Kalau `rate` tidak diisi (transaksi mata
   // uang dasar, kasus PALING UMUM), kali 1 — ZERO REGRESSION.
   const rateMultiplier = headerValues.rate !== undefined ? Number(headerValues.rate) : 1;
-  const autoSummedChequeAmount = detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) * rateMultiplier;
+  // § 2026-10-06 (diminta user, mirror fix Sales Receipt) — root `chequeAmount` = uang yang BENAR-BENAR keluar dari bank = Σ
+  // paymentAmount (nilai FAKTUR yang dilunasi, sebelum PPh) − Σ PPh yang dipotong (`detailTax[].taxAmount`). Sebelumnya auto-SUM
+  // mengabaikan `detailTax`, jadi bank dicatat penuh dan PPh terhitung di atas pelunasan (lebih bayar) — bug yang terbukti di Sales
+  // Receipt (contoh RESMI Accurate: 100.909.089 − 1.818.181 = 99.090.908). ⚠️ Semantik ini diterapkan SPECULATIVE ke endpoint ini:
+  // konfirmasi tertulis Accurate untuk `purchase-payment/save.do` belum ada (§ Fase 100, struktur PPh-nya sendiri juga spekulatif) —
+  // retest 1 pembayaran ber-PPh nyata. "Cheque Amount" eksplisit dari user TIDAK diubah.
+  const totalTaxWithheld = detailTax.reduce((sum, d) => sum + (d.taxAmount as number), 0);
+  const autoSummedChequeAmount = (detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) - totalTaxWithheld) * rateMultiplier;
 
   const payload: Record<string, unknown> = {
     vendorNo: String(headerValues.vendorNo ?? ""),
