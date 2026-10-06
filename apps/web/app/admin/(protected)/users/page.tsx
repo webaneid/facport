@@ -23,7 +23,9 @@ import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
-import { endOfDayInTimezone, todayInTimezone, addDaysToDateString } from "@/lib/timezone";
+import { timezoneAbbreviation } from "@/lib/timezone";
+import { addCalendarPeriod, inferIntervalFromDays, type SubscriptionInterval } from "@/lib/subscription-period";
+import { DateTimeField } from "@/components/ui/date-time-field";
 import { moduleLabel, MODULE_OPTIONS, productLineLabel } from "@/lib/module-options";
 import { plansAvailableForDataUsaha } from "@/lib/available-plans";
 import { PLAN_PRODUCT_FILTERS, countPlansByFilter, filterPlansByProduct, planOptionLabel, sortPlansByCatalog, summarizeHiddenPlans } from "@/lib/classify-plans";
@@ -41,7 +43,7 @@ type UserRow = {
   roles: string[];
   activeSubscriptions: ActiveSubscription[];
 };
-type Plan = { id: string; name: string; price: number; durationDays: number; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
+type Plan = { id: string; name: string; price: number; durationDays: number; interval?: SubscriptionInterval; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
 
 // § diminta user 2026-09-24 — "Delivery Order 30 hari" (Facport) vs
 // "Delivery Order 30 hari" (Konverter) SAMA PERSIS teksnya di checkbox
@@ -274,6 +276,9 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   const [productFilter, setProductFilter] = useState("all");
   const [dataUsahaOptions, setDataUsahaOptions] = useState<DataUsahaOption[] | null>(null);
   const [selectedDataUsahaId, setSelectedDataUsahaId] = useState("");
+  // § Fase 174, ADR-0041 — default: akhir dihitung SERVER dari periode paket saat tombol Assign ditekan (tanggal & jam sama bulan/tahun
+  // berikutnya). `manualEnd` = admin memilih tanggal+jam sendiri (`endAt` ISO, kontrak khusus/custom, tidak terikat bulanan/tahunan).
+  const [manualEnd, setManualEnd] = useState(false);
   const [endAt, setEndAt] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -300,23 +305,17 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setSelectedPlanId("");
     setProductFilter("all");
     setSelectedDataUsahaId("");
+    setManualEnd(false);
     setEndAt("");
     setError(null);
     setEditingId(null);
     load();
   }
 
-  // § Fase 115 — auto-suggest tanggal expired dari `plan.durationDays`
-  // begitu admin pilih paket, TIDAK melanggar ADR-0016 (endAt TETAP field
-  // manual di backend & TETAP fully-editable di sini — cuma nilai
-  // AWALNYA tidak lagi kosong). § docs/decisions/adr-0016-...md "Update
-  // 2026-09-14". Dihitung LANGSUNG di event handler pilih paket (bukan
-  // `useEffect`) — konsisten aturan project "derived state dihitung saat
-  // event terjadi, bukan react ke perubahan state via effect".
+  // § Fase 174, ADR-0041 (menggantikan auto-suggest hari Fase 115) — pilih paket hanya menyimpan pilihan; pratinjau akhir langganan dihitung
+  // dari periode paket lewat fungsi yang SAMA dengan server (`addCalendarPeriod`), lihat `previewEnd` di bawah.
   function handleSelectPlan(planId: string) {
     setSelectedPlanId(planId);
-    const plan = plans?.find((p) => p.id === planId);
-    if (plan) setEndAt(addDaysToDateString(todayInTimezone(companyTimezone), plan.durationDays));
   }
 
   async function handleAssign() {
@@ -334,28 +333,17 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       setError("Pilih Data Usaha tujuan paket ini dulu.");
       return;
     }
-    // § ADR-0016 — endAt WAJIB diisi admin secara manual, tidak lagi
-    // dihitung otomatis dari plan.durationDays.
-    if (!endAt) {
-      setError("Tanggal expired wajib diisi.");
+    // § Fase 174 — tanpa mode manual, server menghitung akhir dari periode paket; mode manual WAJIB mengisi tanggal+jam.
+    if (manualEnd && !endAt) {
+      setError("Tanggal & jam expired wajib diisi.");
       return;
     }
     setSubmitting(true);
     setError(null);
-    // § BUG ditemukan 2026-09-06 (audit timezone menyeluruh, diminta user)
-    // — `new Date(endAt).toISOString()` mem-parse tanggal date-picker
-    // ("YYYY-MM-DD") sebagai UTC MIDNIGHT, BUKAN akhir hari di timezone
-    // perusahaan. Admin pilih "31 Desember" bermaksud "berlaku SAMPAI
-    // akhir tanggal itu", tapi versi lama bikin subscription expired
-    // mulai jam 07:00 WIB tanggal itu juga (UTC+7 midnight = 07:00 WIB)
-    // — masa aktif TERAKHIR terpotong ~17 jam tanpa admin sadari. Fix:
-    // `endOfDayInTimezone` (§ lib/timezone.ts) konversi ke instant UTC
-    // yang benar-benar merepresentasikan 23:59:59.999 di timezone
-    // perusahaan.
     const res = await api.admin.subscriptions.post({
       userId: user.id,
       planId: selectedPlanId,
-      endAt: endOfDayInTimezone(endAt, companyTimezone).toISOString(),
+      endAt: manualEnd ? endAt : undefined,
       dataUsahaId: selectedDataUsahaId || undefined,
     });
     setSubmitting(false);
@@ -380,6 +368,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     }
     toast.success(`Paket berhasil di-assign ke ${user.name || user.email}.`);
     setSelectedPlanId("");
+    setManualEnd(false);
     setEndAt("");
     load();
     onAssigned();
@@ -387,14 +376,14 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
 
   function startEdit(h: SubscriptionHistoryItem) {
     setEditingId(h.subscriptionId);
-    setEditEndAt(h.endAt ? h.endAt.slice(0, 10) : "");
+    setEditEndAt(h.endAt ?? "");
   }
 
-  async function handleSaveEdit(id: string) {
-    if (!editEndAt) return;
+  async function handleSaveEdit(id: string, originalEndAt: string | null) {
+    // § Fase 174 — hanya kirim bila tanggal/jam benar-benar DIUBAH (detik pelanggan tidak terpotong); nilai dikirim sebagai instant persis.
+    if (!editEndAt || editEndAt === originalEndAt) return;
     setEditSubmitting(true);
-    // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
-    const res = await api.admin.subscriptions({ id }).patch({ endAt: endOfDayInTimezone(editEndAt, companyTimezone).toISOString() });
+    const res = await api.admin.subscriptions({ id }).patch({ endAt: editEndAt });
     setEditSubmitting(false);
     if (res.error) {
       // § sama fix-nya dengan `handleAssign` di atas — lihat komentar di sana.
@@ -437,6 +426,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   // § diminta user 2026-10-03 — filter Produk (Facport/Konverter/AutoProduksi/Tambah User) + opsi terurut menurut katalog, supaya paket
   // bernama sama di Facport vs Konverter tidak tertukar (§ lib/classify-plans.ts).
   const planCounts = countPlansByFilter(assignablePlans);
+  const selectedPlan = plans?.find((p) => p.id === selectedPlanId);
   const hiddenCounts = countPlansByFilter(hiddenPlans);
   const planOptions = sortPlansByCatalog(filterPlansByProduct(assignablePlans, productFilter)).map((p) => ({ value: p.id, label: planOptionLabel(p) }));
 
@@ -482,15 +472,10 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                             <span className="text-foreground">{h.planName}</span>
                             {editingId === h.subscriptionId ? (
                               <div className="flex items-center gap-2">
-                                <Input
-                                  type="date"
-                                  value={editEndAt}
-                                  onChange={(e) => setEditEndAt(e.target.value)}
-                                  className="h-8 w-36"
-                                />
+                                <DateTimeField value={editEndAt} onChange={setEditEndAt} timeZone={companyTimezone} ariaLabel="Expired baru" />
                                 <Button
-                                  onClick={() => handleSaveEdit(h.subscriptionId)}
-                                  disabled={editSubmitting || !editEndAt}
+                                  onClick={() => handleSaveEdit(h.subscriptionId, h.endAt)}
+                                  disabled={editSubmitting || !editEndAt || editEndAt === h.endAt}
                                   className="h-8 px-2.5 py-0 text-xs"
                                 >
                                   {editSubmitting ? "..." : "Simpan"}
@@ -603,10 +588,24 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 />
               )}
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium text-foreground">Tanggal Expired</span>
-              <Input type="date" value={endAt} onChange={(e) => setEndAt(e.target.value)} />
-            </label>
+            <div className="flex flex-col gap-2">
+              <span className="text-xs font-medium text-foreground">Masa Aktif</span>
+              {selectedPlan && !manualEnd && (
+                <p className="text-xs text-muted-foreground">
+                  Otomatis dari paket: berakhir{" "}
+                  <strong className="text-foreground">
+                    {formatDate(addCalendarPeriod(new Date(), selectedPlan.interval ?? inferIntervalFromDays(selectedPlan.durationDays), 1, companyTimezone), companyTimezone)}{" "}
+                    {timezoneAbbreviation(companyTimezone)}
+                  </strong>{" "}
+                  (tanggal &amp; jam yang sama bulan/tahun berikutnya, dihitung saat tombol Assign ditekan).
+                </p>
+              )}
+              <label className="flex items-center gap-2">
+                <Checkbox checked={manualEnd} onCheckedChange={(checked) => setManualEnd(checked === true)} />
+                <span className="text-foreground">Atur tanggal &amp; jam expired sendiri (kontrak khusus)</span>
+              </label>
+              {manualEnd && <DateTimeField value={endAt} onChange={setEndAt} timeZone={companyTimezone} ariaLabel="Expired" />}
+            </div>
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleAssign} disabled={submitting || !assignablePlans.length} className="self-end">
               {submitting ? "Memproses..." : "Assign Paket"}

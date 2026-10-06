@@ -1,5 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
+import { addCalendarMonths, intervalMonths, inferIntervalFromDays } from "../../lib/subscription-period";
+import { getCompanyTimezone } from "../../lib/company-timezone";
 import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminOrdersRoute } from "./orders.route";
@@ -63,7 +65,7 @@ async function createSubmittedOrder(userId: string, planSpecs: { moduleKey: stri
   for (const spec of planSpecs) {
     const [plan] = await db
       .insert(plans)
-      .values({ name: `AdminOrders Plan ${spec.moduleKey} ${runId}-${Math.random()}`, price: spec.price, durationDays: spec.durationDays, modules: [spec.moduleKey] })
+      .values({ name: `AdminOrders Plan ${spec.moduleKey} ${runId}-${Math.random()}`, price: spec.price, durationDays: spec.durationDays, interval: inferIntervalFromDays(spec.durationDays), modules: [spec.moduleKey] })
       .returning();
     planRows.push(plan!);
   }
@@ -81,7 +83,7 @@ async function createSubmittedOrder(userId: string, planSpecs: { moduleKey: stri
     })
     .returning();
   for (const plan of planRows) {
-    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price, durationDays: plan.durationDays });
+    await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId: plan.id, moduleKey: plan.modules[0]!, label: plan.name, price: plan.price, durationDays: plan.durationDays, interval: plan.interval });
   }
   const [order] = await db
     .insert(orders)
@@ -203,11 +205,15 @@ describe("POST /admin/orders/:id/confirm", () => {
       expect(sub.status).toBe("active");
       expect(sub.userId).toBe(customerId);
       const matchingPlan = createdPlans.find((p) => p.id === sub.planId)!;
-      const expectedDurationMs = matchingPlan.durationDays * 24 * 60 * 60 * 1000;
-      const actualDurationMs = sub.endAt!.getTime() - sub.startAt!.getTime();
-      // toleransi 5 detik (waktu eksekusi test), bukan exact millisecond match
-      expect(Math.abs(actualDurationMs - expectedDurationMs)).toBeLessThan(5000);
+      // § Fase 174, ADR-0041 — akhir = tanggal & jam dinding SAMA bulan/tahun berikutnya sejak waktu disetujui (kalender, bukan N×24 jam);
+      // satu `now` per order. Jangkar tercatat.
+      const months = intervalMonths(matchingPlan.interval as "monthly" | "yearly");
+      expect(sub.endAt!.getTime()).toBe(addCalendarMonths(sub.startAt!, months, await getCompanyTimezone()).getTime());
+      expect(sub.periodMonths).toBe(months);
+      expect(sub.periodAnchorAt!.getTime()).toBe(sub.startAt!.getTime());
     }
+    // semua fitur dalam 1 order mulai di instan yang SAMA
+    expect(new Set(subs.map((s) => s.startAt!.getTime())).size).toBe(1);
 
     // § Fase 45 — customer dapat notifikasi "payment_verified"
     const [notif] = await db.select().from(notifications).where(eq(notifications.userId, customerId));

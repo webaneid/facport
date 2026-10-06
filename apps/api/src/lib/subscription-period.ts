@@ -75,3 +75,16 @@ export function addCalendarMonths(start: Date, months: number, timeZone: string)
 export function addCalendarPeriod(start: Date, interval: SubscriptionInterval, count: number, timeZone: string): Date {
   return addCalendarMonths(start, intervalMonths(interval) * count, timeZone);
 }
+
+/**
+ * Periode LANGGANAN BARU yang mulai di `start` (saat pembayaran disetujui / admin assign): akhir = tanggal & jam dinding yang sama bulan/tahun
+ * berikutnya; `periodAnchorAt`/`periodMonths` dicatat sebagai jangkar anti-geser tanggal untuk perpanjangan berikutnya (Fase 176).
+ */
+export function computeSubscriptionPeriod(
+  start: Date,
+  interval: SubscriptionInterval,
+  timeZone: string,
+): { startAt: Date; endAt: Date; periodAnchorAt: Date; periodMonths: number } {
+  const periodMonths = intervalMonths(interval);
+  return { startAt: start, endAt: addCalendarMonths(start, periodMonths, timeZone), periodAnchorAt: start, periodMonths };
+}

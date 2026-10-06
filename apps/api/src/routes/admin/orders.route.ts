@@ -7,6 +7,8 @@ import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
+import { getCompanyTimezone } from "../../lib/company-timezone";
+import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
 
 const PROOF_URL_EXPIRY_SECONDS = 10 * 60; // 10 menit
 
@@ -93,6 +95,8 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
     "/:id/confirm",
     async ({ params, user, set }) => {
       try {
+        // § Fase 174, ADR-0041 — zona perusahaan dibaca SEBELUM transaksi (setting, bukan bagian atomik order).
+        const timeZone = await getCompanyTimezone();
         const result = await db.transaction(async (tx) => {
           const [lockedOrder] = await tx.select().from(orders).where(sql`${orders.id} = ${params.id} FOR UPDATE`).limit(1);
           if (!lockedOrder) throw new Error("ORDER_NOT_FOUND");
@@ -172,7 +176,11 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
               }
             }
 
-            const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+            // § Fase 174, ADR-0041 — mulai = saat pembayaran DISETUJUI (`now`, satu untuk seluruh order → semua fitur berakhir di instan yang sama);
+            // akhir = tanggal & jam dinding sama bulan/tahun berikutnya (zona perusahaan). Periode memakai SNAPSHOT invoice (apa yang ditagihkan),
+            // jatuh ke periode paket lalu tebakan dari hari untuk data yang tidak punya keduanya.
+            const interval = isSubscriptionInterval(item.interval) ? item.interval : isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(item.durationDays);
+            const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
             const [sub] = await tx
               .insert(subscriptions)
               .values({
@@ -183,6 +191,8 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
                 status: "active",
                 startAt: now,
                 endAt,
+                periodAnchorAt,
+                periodMonths,
                 dataUsahaId,
               })
               .returning();

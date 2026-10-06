@@ -1,8 +1,10 @@
 import { db } from "./db";
 import { subscriptions, auditLogs, memberSeats } from "../db/schema";
+import { getCompanyTimezone } from "./company-timezone";
+import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "./subscription-period";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
-type PlanRow = { id: string; durationDays: number; kind: string };
+type PlanRow = { id: string; durationDays: number; interval?: string; kind: string };
 
 // § Fase 18 — versi BATCH dari pola "admin-provisioned" yang sudah ada
 // sejak Fase 01/11 (`admin/subscriptions.route.ts` `POST /admin/subscriptions`
@@ -20,13 +22,16 @@ export async function createManualSubscriptions(
 ) {
   const { userId, planRows, actorId, dataUsahaId } = params;
   const now = new Date();
+  const timeZone = await getCompanyTimezone();
   const subscriptionIds: string[] = [];
 
   for (const plan of planRows) {
-    const endAt = new Date(now.getTime() + plan.durationDays * 24 * 60 * 60 * 1000);
+    // § Fase 174, ADR-0041 — mulai = sekarang (satu `now` untuk semua paket), akhir = tanggal & jam sama bulan/tahun berikutnya (zona perusahaan).
+    const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
+    const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
     const [subscription] = await tx
       .insert(subscriptions)
-      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, dataUsahaId })
+      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, periodAnchorAt, periodMonths, dataUsahaId })
       .returning();
     subscriptionIds.push(subscription!.id);
 

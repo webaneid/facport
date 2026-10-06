@@ -588,5 +588,5 @@ Aturan lengkap & alasan: `docs/decisions/adr-0041-periode-langganan-kalender.md`
 - **Jangkar:** `subscriptions.period_anchor_at` + `period_months` (NULL untuk data lama/override manual) — akhir = jangkar + total bulan, anti-geser tanggal. Diisi mulai Fase 174.
 - **Trial TIDAK berubah** (hari). Seat memakai logika yang sama; perpanjangan dini seat ditunda.
 - **Perpanjangan dini (Fase 176):** masih aktif saat disetujui → `end_at` diperpanjang di tempat dari akhir lama; sudah habis → mulai dari saat disetujui. Admin boleh override tanggal+jam.
-- **Status per fase:** 173 (fungsi + kolom + form paket) selesai; 174 (konsolidasi 4 jalur aktivasi) – 178 (koreksi 360 hari) berikutnya. Sampai Fase 174 selesai, jalur aktivasi MASIH memakai `durationDays` lama (perilaku produksi tidak berubah).
+- **Status per fase:** 173 (fungsi + kolom + form paket) dan 174 (konsolidasi jalur aktivasi: konfirmasi order, Tambah User "sudah dibayar" termasuk seat, assign admin — `endAt` opsional, override mengosongkan jangkar; PATCH tanggal manual mengosongkan jangkar) selesai; 175 (penegakan akses) – 178 (koreksi 360 hari) berikutnya. Trial tetap memakai hari.
 - **Form paket admin** hanya memilih Bulanan/Tahunan; API menerima `interval` (sumber) atau `durationDays` (klien lama, dipetakan; ≥360 hari = tahunan).

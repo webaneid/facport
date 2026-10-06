@@ -1,4 +1,6 @@
 import { describe, test, expect } from "bun:test";
+import { addCalendarMonths } from "../../lib/subscription-period";
+import { getCompanyTimezone } from "../../lib/company-timezone";
 import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
@@ -154,7 +156,7 @@ describe("POST /admin/users", () => {
       .returning();
     const [planB] = await db
       .insert(plans)
-      .values({ name: `Onboard Paid Plan B ${runId}`, price: 200000, durationDays: 365, modules: ["journal_voucher"] })
+      .values({ name: `Onboard Paid Plan B ${runId}`, price: 200000, durationDays: 365, interval: "yearly", modules: ["journal_voucher"] })
       .returning();
     const email = `admin-users-paid-${runId}@test.local`;
 
@@ -171,9 +173,16 @@ describe("POST /admin/users", () => {
       expect(sub.orderId).toBeNull();
       expect(sub.invoiceItemId).toBeNull();
     }
-    // endAt beda per plan (durationDays beda) — bukan shared/first-item value
-    const durations = subs.map((s) => Math.round((s.endAt!.getTime() - s.startAt!.getTime()) / (24 * 60 * 60 * 1000)));
-    expect(durations.sort((a, b) => a - b)).toEqual([30, 365]);
+    // § Fase 174, ADR-0041 — akhir dihitung kalender dari periode paket (bulanan +1 bulan, tahunan +12 bulan), mulai sama untuk semua paket.
+    const tz = await getCompanyTimezone();
+    const byPlan = new Map(subs.map((s) => [s.planId, s]));
+    const a = byPlan.get(planA!.id)!;
+    const b = byPlan.get(planB!.id)!;
+    expect(a.endAt!.getTime()).toBe(addCalendarMonths(a.startAt!, 1, tz).getTime());
+    expect(b.endAt!.getTime()).toBe(addCalendarMonths(b.startAt!, 12, tz).getTime());
+    expect(a.periodMonths).toBe(1);
+    expect(b.periodMonths).toBe(12);
+    expect(a.startAt!.getTime()).toBe(b.startAt!.getTime());
 
     const invoicesForUser = await db.select().from(invoices).where(eq(invoices.userId, body.id));
     expect(invoicesForUser.length).toBe(0);

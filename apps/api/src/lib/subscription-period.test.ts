@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { addCalendarMonths, addCalendarPeriod, intervalMonths, intervalCompatDays, inferIntervalFromDays, isSubscriptionInterval } from "./subscription-period";
+import { computeSubscriptionPeriod, addCalendarMonths, addCalendarPeriod, intervalMonths, intervalCompatDays, inferIntervalFromDays, isSubscriptionInterval } from "./subscription-period";
 
 const WIB = "Asia/Jakarta";
 // Helper: tulis jam dinding WIB (UTC+7 tetap, tanpa DST) sebagai ISO UTC.
@@ -94,5 +94,22 @@ describe("periode: konstanta & turunan", () => {
     expect(inferIntervalFromDays(360)).toBe("yearly");
     expect(inferIntervalFromDays(365)).toBe("yearly");
     expect(inferIntervalFromDays(720)).toBe("yearly");
+  });
+});
+
+describe("computeSubscriptionPeriod — periode langganan baru", () => {
+  test("bulanan: akhir = tanggal & jam sama bulan depan; jangkar = waktu mulai, 1 bulan", () => {
+    const start = wib(2026, 10, 6, 14, 35, 12, 500);
+    const p = computeSubscriptionPeriod(start, "monthly", WIB);
+    expect(iso(p.endAt)).toBe(iso(wib(2026, 11, 6, 14, 35, 12, 500)));
+    expect(iso(p.startAt)).toBe(iso(start));
+    expect(iso(p.periodAnchorAt)).toBe(iso(start));
+    expect(p.periodMonths).toBe(1);
+  });
+  test("tahunan: jangkar 12 bulan; disetujui 31 Jan 10:00 bulanan → 28 Feb 10:00 (dijepit)", () => {
+    const y = computeSubscriptionPeriod(wib(2026, 10, 6, 14, 35), "yearly", WIB);
+    expect(iso(y.endAt)).toBe(iso(wib(2027, 10, 6, 14, 35)));
+    expect(y.periodMonths).toBe(12);
+    expect(iso(computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB).endAt)).toBe(iso(wib(2026, 2, 28, 10)));
   });
 });

@@ -1,4 +1,6 @@
 import { Elysia, t } from "elysia";
+import { getCompanyTimezone } from "../../lib/company-timezone";
+import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs, memberSeats } from "../../db/schema";
@@ -42,14 +44,21 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       }
 
       const startAt = new Date();
-      // § ADR-0016 — endAt WAJIB diinput admin, BUKAN dihitung otomatis
-      // dari plan.durationDays (yang cuma dipakai jalur self-service
-      // checkout). Admin-provisioned justru sering butuh tanggal custom
-      // (kontrak korporat, dst).
-      const endAt = new Date(body.endAt);
-      if (endAt.getTime() <= startAt.getTime()) {
-        set.status = 400;
-        return { code: "END_AT_MUST_BE_FUTURE" };
+      // § ADR-0016 + § Fase 174 (ADR-0041) — `endAt` OPSIONAL: tanpa `endAt` akhir dihitung dari periode paket (tanggal & jam sama bulan/tahun
+      // berikutnya sejak sekarang, zona perusahaan) dan jangkar dicatat. Dengan `endAt` = override admin (kontrak khusus, tanggal+jam bebas, tidak
+      // terikat bulanan/tahunan) → jangkar dikosongkan (perpanjangan berikutnya menetapkan jangkar baru).
+      let endAt: Date;
+      let periodAnchorAt: Date | null = null;
+      let periodMonths: number | null = null;
+      if (body.endAt) {
+        endAt = new Date(body.endAt);
+        if (endAt.getTime() <= startAt.getTime()) {
+          set.status = 400;
+          return { code: "END_AT_MUST_BE_FUTURE" };
+        }
+      } else {
+        const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
+        ({ endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(startAt, interval, await getCompanyTimezone()));
       }
 
       // § Fase 108, architecture-user-tambahan.md § Fase B1 — admin
@@ -96,7 +105,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       // manual/kontrak korporat), § architecture-subscription.md
       const [subscription] = await db
         .insert(subscriptions)
-        .values({ userId: body.userId, planId: plan.id, status: "active", startAt, endAt, dataUsahaId })
+        .values({ userId: body.userId, planId: plan.id, status: "active", startAt, endAt, periodAnchorAt, periodMonths, dataUsahaId })
         .returning();
 
       await db.insert(auditLogs).values({
@@ -119,7 +128,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       body: t.Object({
         userId: t.String(),
         planId: t.String({ format: "uuid" }),
-        endAt: t.String({ format: "date-time" }),
+        endAt: t.Optional(t.String({ format: "date-time" })),
         dataUsahaId: t.Optional(t.String({ format: "uuid" })),
       }),
     },
@@ -148,7 +157,9 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
 
       const [updated] = await db
         .update(subscriptions)
-        .set({ endAt: newEndAt })
+        // § Fase 174 — admin mengubah tanggal manual → jangkar dikosongkan (akhir tidak lagi = jangkar + N bulan); perpanjangan berikutnya
+        // menetapkan jangkar baru di akhir saat itu (ADR-0041 poin 3).
+        .set({ endAt: newEndAt, periodAnchorAt: null, periodMonths: null })
         .where(eq(subscriptions.id, params.id))
         .returning();
 

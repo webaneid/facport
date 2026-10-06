@@ -114,3 +114,28 @@ export function addDaysToDateString(dateStr: string, days: number): string {
   const result = new Date(Date.UTC(y, m - 1, d) + days * 24 * 60 * 60 * 1000);
   return `${result.getUTCFullYear()}-${String(result.getUTCMonth() + 1).padStart(2, "0")}-${String(result.getUTCDate()).padStart(2, "0")}`;
 }
+
+// § Fase 174, ADR-0041 — tanggal+JAM akhir langganan (bukan lagi tanggal-saja akhir-hari). "YYYY-MM-DD" + "HH:mm" jam dinding di `timeZone`
+// → instant UTC (detik 0). Detik/milidetik titik lain TIDAK dibuang di sini — pemanggil hanya memakainya untuk nilai yang DIUBAH admin;
+// nilai yang tidak diubah dikirim apa adanya (jangan memotong detik hak pelanggan).
+export function zonedDateTimeToUtc(dateStr: string, timeStr: string, timeZone: string): Date {
+  const { y, m, d } = parseDateOnly(dateStr);
+  const [hh, mm] = timeStr.split(":").map(Number);
+  return zonedTimeToUtc(y, m, d, hh ?? 0, mm ?? 0, 0, 0, timeZone);
+}
+
+/** Instant → { date: "YYYY-MM-DD", time: "HH:mm" } jam dinding di `timeZone` (cocok untuk `<input type="date">` & `<input type="time">`). */
+export function dateTimeFieldsInTimezone(value: Date | string, timeZone: string): { date: string; time: string } {
+  const date = new Date(value);
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" }).formatToParts(date);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return { date: `${get("year")}-${get("month")}-${get("day")}`, time: `${get("hour")}:${get("minute")}` };
+}
+
+/** Singkatan zona Indonesia (WIB/WITA/WIT); zona lain apa adanya. */
+export function timezoneAbbreviation(timeZone: string): string {
+  if (timeZone === "Asia/Jakarta" || timeZone === "Asia/Pontianak") return "WIB";
+  if (timeZone === "Asia/Makassar") return "WITA";
+  if (timeZone === "Asia/Jayapura") return "WIT";
+  return timeZone;
+}
