@@ -73,6 +73,7 @@ import {
   buildSalesReceiptPayload,
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
+  validateInvoiceRowsConsistencyForReceipt,
   extractTaxIdsFromRows,
   type SalesReceiptGroup,
 } from "../lib/import-mapping/sales-receipt.mapping";
@@ -1220,6 +1221,9 @@ export async function processSalesReceiptGroup(
 ): Promise<SalesReceiptGroupResult> {
   const mismatchError = validateGroupCustomerConsistencyForReceipt(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
+  // § diminta client 2026-10-06 — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
+  const invoiceRowsError = validateInvoiceRowsConsistencyForReceipt(group, columnMapping);
+  if (invoiceRowsError) throw new Error(invoiceRowsError);
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForReceipt(ctx, rawRows, columnMapping);
