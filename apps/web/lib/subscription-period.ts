@@ -8,5 +8,7 @@ export {
   inferIntervalFromDays,
   addCalendarMonths,
   addCalendarPeriod,
+  computeRenewalEnd,
+  type RenewableSubscription,
   type SubscriptionInterval,
 } from "../../api/src/lib/subscription-period";

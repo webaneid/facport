@@ -6,6 +6,7 @@ import { permissionPlugin } from "../../lib/permission";
 import { minioPublicClient, PAYMENT_PROOF_BUCKET } from "../../lib/minio";
 import { logger } from "../../lib/logger";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { findRenewableSubscription, renewSubscriptionInPlace, paymentVerifiedBody, type RenewalResult } from "../../lib/subscription-renewal";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
@@ -147,7 +148,7 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
           // persis seperti sebelumnya SELAMA trial & pembelian asli ini
           // sama-sama untuk Data Usaha yang sama (kasus normal).
           const activeSubs = await tx
-            .select({ id: subscriptions.id, modules: plans.modules })
+            .select({ id: subscriptions.id, modules: plans.modules, isTrial: subscriptions.isTrial, endAt: subscriptions.endAt })
             .from(subscriptions)
             .innerJoin(plans, eq(plans.id, subscriptions.planId))
             .where(
@@ -159,27 +160,38 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             );
 
           const createdSubscriptionIds: string[] = [];
+          const renewals: RenewalResult[] = [];
           for (const { item, plan } of items) {
             const moduleKey = plan.modules[0];
-            // § Fase 110 — supersede-trial CUMA berlaku untuk plan `module`
-            // (moduleKey ada). `seat_addon` punya `modules: []` (moduleKey
-            // undefined) — TANPA guard ini, filter `s.modules[0] ===
-            // moduleKey` akan cocok SEMUA subscription seat_addon LAIN yang
-            // sudah aktif (sama-sama `modules[0] === undefined`) dan diam-
-            // diam MEMBATALKAN seat yang sudah dibeli sebelumnya — bug
-            // serius, seat tidak punya konsep "upgrade dari trial" sama
-            // sekali.
+            // § Fase 174, ADR-0041 — periode memakai SNAPSHOT invoice (apa yang ditagihkan), jatuh ke periode paket lalu tebakan dari hari.
+            const interval = isSubscriptionInterval(item.interval) ? item.interval : isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(item.durationDays);
+
+            // § Fase 110 — supersede-trial CUMA berlaku untuk plan `module` (moduleKey ada). `seat_addon` punya `modules: []` (moduleKey undefined) —
+            // TANPA guard ini, filter `s.modules[0] === moduleKey` akan cocok SEMUA subscription seat_addon LAIN yang sudah aktif (sama-sama
+            // `modules[0] === undefined`) dan diam-diam MEMBATALKAN seat yang sudah dibeli sebelumnya — bug serius.
             if (moduleKey) {
-              const superseded = activeSubs.filter((s) => s.modules[0] === moduleKey);
-              for (const s of superseded) {
-                await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+              // § Fase 176, ADR-0041 poin 4 — PERPANJANGAN DINI: langganan modul yang sama (NON-trial) yang MASIH AKTIF (end_at > sekarang) diperpanjang
+              // DI TEMPAT dari akhir lamanya — TIDAK dibatalkan, tidak ada hari pelanggan yang hilang. Yang sudah lewat end_at (job belum membalik status)
+              // ditandai expired, dan pembelian mulai dari saat disetujui (aturan #1). Trial tetap digantikan (supersede) seperti sebelumnya.
+              const renewable = await findRenewableSubscription(tx, { dataUsahaId, moduleKey, now });
+              for (const s of activeSubs.filter((s) => s.modules[0] === moduleKey)) {
+                if (renewable && s.id === renewable.id) continue;
+                if (!s.isTrial && s.endAt && s.endAt.getTime() <= now.getTime()) {
+                  await tx.update(subscriptions).set({ status: "expired" }).where(eq(subscriptions.id, s.id));
+                } else {
+                  await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+                }
+              }
+              if (renewable) {
+                renewals.push(
+                  await renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "order", actorId: user.id, orderId: lockedOrder.id, invoiceItemId: item.id }),
+                );
+                continue;
               }
             }
 
             // § Fase 174, ADR-0041 — mulai = saat pembayaran DISETUJUI (`now`, satu untuk seluruh order → semua fitur berakhir di instan yang sama);
-            // akhir = tanggal & jam dinding sama bulan/tahun berikutnya (zona perusahaan). Periode memakai SNAPSHOT invoice (apa yang ditagihkan),
-            // jatuh ke periode paket lalu tebakan dari hari untuk data yang tidak punya keduanya.
-            const interval = isSubscriptionInterval(item.interval) ? item.interval : isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(item.durationDays);
+            // akhir = tanggal & jam dinding sama bulan/tahun berikutnya (zona perusahaan).
             const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
             const [sub] = await tx
               .insert(subscriptions)
@@ -215,7 +227,7 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
             entityType: "order",
             entityId: lockedOrder.id,
             action: "update",
-            changes: { status: { from: "submitted", to: "paid" }, subscriptionsCreated: createdSubscriptionIds },
+            changes: { status: { from: "submitted", to: "paid" }, subscriptionsCreated: createdSubscriptionIds, subscriptionsRenewed: renewals.map((r) => r.subscriptionId) },
             actorId: user.id,
           });
 
@@ -224,17 +236,14 @@ export const adminOrdersRoute = new Elysia({ prefix: "/admin/orders" })
               userId: lockedInvoice.userId,
               type: NOTIFICATION_TYPES.PAYMENT_VERIFIED,
               title: "Pembayaran terverifikasi",
-              body:
-                createdSubscriptionIds.length === 1
-                  ? "Pembayaran kamu terverifikasi — langganan sudah aktif, selamat menggunakan Facport!"
-                  : `Pembayaran kamu terverifikasi — ${createdSubscriptionIds.length} langganan sudah aktif, selamat menggunakan Facport!`,
+              body: paymentVerifiedBody(createdSubscriptionIds.length, renewals, timeZone),
               entityType: "order",
               entityId: lockedOrder.id,
             },
             tx,
           );
 
-          return { subscriptionsCreated: createdSubscriptionIds.length };
+          return { subscriptionsCreated: createdSubscriptionIds.length, subscriptionsRenewed: renewals.length };
         });
 
         return result;

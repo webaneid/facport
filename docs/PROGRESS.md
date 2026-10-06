@@ -183,7 +183,7 @@
 | 173  | Fondasi periode langganan (bulanan/tahunan kalender, ADR-0041): fungsi hitung, kolom interval+jangkar, form paket | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-173-fondasi-periode-langganan.md` |
 | 174  | Konsolidasi jalur aktivasi langganan ke satu fungsi periode | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-174-konsolidasi-aktivasi-langganan.md` |
 | 175  | Penegakan akses tepat di waktu akhir + job/reminder WIB | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-175-penegakan-akses-kedaluwarsa.md` |
-| 176  | Perpanjangan dini (sambung dari akhir lama) | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-176-perpanjangan-dini-langganan.md` |
+| 176  | Perpanjangan dini (sambung dari akhir lama) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-176-perpanjangan-dini-langganan.md` |
 | 177  | Komponen SubscriptionPicker (multi-pilih, filter produk, mode Perpanjang) | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-177-komponen-subscription-picker.md` |
 | 178  | Koreksi langganan tahunan 360 hari | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-178-koreksi-langganan-360-hari.md` |
 

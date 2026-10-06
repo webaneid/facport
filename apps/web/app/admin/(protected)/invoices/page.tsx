@@ -39,6 +39,8 @@ type InvoiceItem = {
   durationDays: number;
   subscriptionStartAt: string | null;
   subscriptionEndAt: string | null;
+  // § Fase 176 — item ini memperpanjang langganan yang sudah aktif (tanggal = akhir lama → akhir baru).
+  isRenewal?: boolean;
 };
 type InvoiceRow = {
   id: string;
@@ -383,7 +385,7 @@ function InvoiceDetailDialog({ invoice }: { invoice: InvoiceRow }) {
                 // (invoice sudah dibayar).
                 const berlakuText =
                   item.subscriptionStartAt && item.subscriptionEndAt
-                    ? `Berlaku: ${formatDate(item.subscriptionStartAt, companyTimezone)} – ${formatDate(item.subscriptionEndAt, companyTimezone)}`
+                    ? `${item.isRenewal ? "Perpanjangan" : "Berlaku"}: ${formatDate(item.subscriptionStartAt, companyTimezone)} – ${formatDate(item.subscriptionEndAt, companyTimezone)}`
                     : "Berlaku: menunggu pembayaran";
                 return (
                   <div key={item.id} className="flex items-center justify-between gap-3">

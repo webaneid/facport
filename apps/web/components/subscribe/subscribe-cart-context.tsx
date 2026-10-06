@@ -114,7 +114,7 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     const subsData = subsRes.data as unknown as
       | {
           subscriptions: {
-            subscription: { isTrial: boolean; dataUsahaId: string; startAt: string | null; endAt: string | null };
+            subscription: { isTrial: boolean; dataUsahaId: string; startAt: string | null; endAt: string | null; periodAnchorAt?: string | null; periodMonths?: number | null };
             plan: { modules: string[] };
           }[];
           everTrialedModules: string[];
@@ -126,7 +126,7 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     for (const s of subs) {
       for (const m of s.plan.modules) {
         moduleMap.set(m, s.subscription.isTrial);
-        subscriptionInfoMap.set(m, { startAt: s.subscription.startAt, endAt: s.subscription.endAt });
+        subscriptionInfoMap.set(m, { startAt: s.subscription.startAt, endAt: s.subscription.endAt, periodAnchorAt: s.subscription.periodAnchorAt, periodMonths: s.subscription.periodMonths });
       }
     }
     setActiveModuleMap(moduleMap);
@@ -142,7 +142,8 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
 
       const preselect = searchParams.get("plans")?.split(",").filter(Boolean) ?? [];
       if (preselect.length > 0) {
-        const validPlans = allPlans.filter((p) => preselect.includes(p.id) && !p.modules.some((m) => moduleMap.has(m) && !moduleMap.get(m)));
+        // § Fase 176 — fitur yang masih aktif BOLEH dipilih lagi (perpanjangan dini), jadi tidak lagi disaring.
+        const validPlans = allPlans.filter((p) => preselect.includes(p.id));
         const moduleKeys = new Set<string>();
         for (const p of validPlans) {
           const moduleKey = p.modules[0];
@@ -193,8 +194,8 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     if (res.error) {
       const code = (res.error.value as { code?: string; moduleKey?: string } | undefined)?.code;
       toast.error(
-        code === "MODULE_ALREADY_SUBSCRIBED"
-          ? "Salah satu fitur yang dipilih sudah kamu langgan atau masih menunggu pembayaran."
+        code === "MODULE_ORDER_IN_PROGRESS"
+          ? "Salah satu fitur yang dipilih masih punya pesanan yang belum selesai dibayar — selesaikan atau batalkan pesanan itu dulu."
           : code === "PLAN_NOT_ACTIVE"
             ? "Salah satu paket sudah tidak tersedia."
             : "Gagal membuat pesanan. Coba lagi.",

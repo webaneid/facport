@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { computeSubscriptionPeriod, addCalendarMonths, addCalendarPeriod, intervalMonths, intervalCompatDays, inferIntervalFromDays, isSubscriptionInterval } from "./subscription-period";
+import { computeRenewalEnd, computeSubscriptionPeriod, addCalendarMonths, addCalendarPeriod, intervalMonths, intervalCompatDays, inferIntervalFromDays, isSubscriptionInterval } from "./subscription-period";
 
 const WIB = "Asia/Jakarta";
 // Helper: tulis jam dinding WIB (UTC+7 tetap, tanpa DST) sebagai ISO UTC.
@@ -111,5 +111,68 @@ describe("computeSubscriptionPeriod — periode langganan baru", () => {
     expect(iso(y.endAt)).toBe(iso(wib(2027, 10, 6, 14, 35)));
     expect(y.periodMonths).toBe(12);
     expect(iso(computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB).endAt)).toBe(iso(wib(2026, 2, 28, 10)));
+  });
+});
+
+describe("computeRenewalEnd — perpanjangan dini dari akhir lama (tanpa menghilangkan hari)", () => {
+  test("selaras jangkar: bulanan +1 bulan dari akhir lama; mulai & jam akhir terjaga", () => {
+    const start = wib(2026, 10, 6, 14, 35, 12);
+    const first = computeSubscriptionPeriod(start, "monthly", WIB);
+    const r = computeRenewalEnd({ endAt: first.endAt, periodAnchorAt: first.periodAnchorAt, periodMonths: first.periodMonths }, "monthly", WIB);
+    expect(iso(r.endAt)).toBe(iso(wib(2026, 12, 6, 14, 35, 12)));
+    expect(r.periodMonths).toBe(2);
+    expect(iso(r.periodAnchorAt)).toBe(iso(start));
+  });
+
+  test("customer bayar jauh sebelum habis tetap diperpanjang dari akhir lama, bukan dari waktu disetujui (28 Des bayar, habis 1 Jan 20:00 → +1 bulan = 1 Feb 20:00)", () => {
+    const existingEnd = wib(2027, 1, 1, 20, 0);
+    const r = computeRenewalEnd({ endAt: existingEnd, periodAnchorAt: null, periodMonths: null }, "monthly", WIB);
+    expect(iso(r.endAt)).toBe(iso(wib(2027, 2, 1, 20, 0)));
+    const y = computeRenewalEnd({ endAt: existingEnd, periodAnchorAt: null, periodMonths: null }, "yearly", WIB);
+    expect(iso(y.endAt)).toBe(iso(wib(2028, 1, 1, 20, 0)));
+  });
+
+  test("anti-geser: 12× perpanjang bulanan dari 31 Jan berakhir 31 Jan tahun depan (jangkar terjaga); tanpa jangkar bergeser ke 28", () => {
+    let sub: { endAt: Date; periodAnchorAt: Date | null; periodMonths: number | null } = (() => {
+      const p = computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB);
+      return { endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths };
+    })();
+    expect(iso(sub.endAt)).toBe(iso(wib(2026, 2, 28, 10)));
+    for (let i = 0; i < 11; i++) sub = computeRenewalEnd(sub, "monthly", WIB);
+    expect(iso(sub.endAt)).toBe(iso(wib(2027, 1, 31, 10)));
+    expect(sub.periodMonths).toBe(12);
+    // pembanding: tanpa jangkar (rantai dari akhir sebelumnya) menggeser — bukti jangkar diperlukan
+    let chained = wib(2026, 2, 28, 10);
+    for (let i = 0; i < 11; i++) chained = computeRenewalEnd({ endAt: chained, periodAnchorAt: null, periodMonths: null }, "monthly", WIB).endAt;
+    expect(iso(chained)).toBe(iso(wib(2027, 1, 28, 10)));
+  });
+
+  test("tahunan + bulanan campur pada jangkar yang sama: 1 tahun lalu +1 bulan = 13 bulan dari jangkar", () => {
+    const p = computeSubscriptionPeriod(wib(2026, 10, 6, 14, 35), "yearly", WIB);
+    const r = computeRenewalEnd({ endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths }, "monthly", WIB);
+    expect(iso(r.endAt)).toBe(iso(wib(2027, 11, 6, 14, 35)));
+    expect(r.periodMonths).toBe(13);
+  });
+
+  test("tanggal akhir diubah manual (tidak selaras jangkar) → jangkar ditetapkan ulang di akhir saat ini, bukan merusak tanggal admin", () => {
+    const p = computeSubscriptionPeriod(wib(2026, 10, 6, 14, 35), "monthly", WIB);
+    const manualEnd = new Date(p.endAt.getTime() + 3 * 24 * 60 * 60 * 1000 + 777);
+    const r = computeRenewalEnd({ endAt: manualEnd, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths }, "monthly", WIB);
+    expect(iso(r.endAt)).toBe(iso(addCalendarMonths(manualEnd, 1, WIB)));
+    expect(iso(r.periodAnchorAt)).toBe(iso(manualEnd));
+    expect(r.periodMonths).toBe(1);
+  });
+
+  test("zona perusahaan berganti: kasus biasa tetap selaras (selisih zona tetap, tanpa DST); di batas akhir bulan yang berbeda → jangkar ditetapkan ulang, langganan lama tidak bergeser", () => {
+    const normal = computeSubscriptionPeriod(wib(2026, 10, 6, 14, 35), "monthly", WIB);
+    const same = computeRenewalEnd({ endAt: normal.endAt, periodAnchorAt: normal.periodAnchorAt, periodMonths: normal.periodMonths }, "monthly", "Asia/Makassar");
+    expect(iso(same.periodAnchorAt)).toBe(iso(normal.periodAnchorAt)); // jangkar terjaga
+    expect(same.periodMonths).toBe(2);
+
+    // 30 Jan 23:30 WIB = 31 Jan 00:30 WITA → +1 bulan beda hasil jepit di kedua zona → tidak selaras → jangkar baru di akhir saat ini
+    const edge = computeSubscriptionPeriod(wib(2026, 1, 30, 23, 30), "monthly", WIB);
+    const r = computeRenewalEnd({ endAt: edge.endAt, periodAnchorAt: edge.periodAnchorAt, periodMonths: edge.periodMonths }, "monthly", "Asia/Makassar");
+    expect(iso(r.periodAnchorAt)).toBe(iso(edge.endAt));
+    expect(r.periodMonths).toBe(1);
   });
 });

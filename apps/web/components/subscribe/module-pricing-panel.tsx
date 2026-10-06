@@ -2,7 +2,9 @@ import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { moduleLabel } from "@/lib/module-options";
 import { currencyFormatter, formatDate } from "@/lib/utils";
-import { formatDuration } from "@/lib/duration";
+import { formatDuration, formatPeriod } from "@/lib/duration";
+import { computeRenewalEnd, inferIntervalFromDays, type SubscriptionInterval } from "@/lib/subscription-period";
+import { timezoneAbbreviation } from "@/lib/timezone";
 import { LANDING_MODULE_ICON_ANY, LANDING_MODULE_TAGLINE_ANY } from "@/lib/landing-content";
 import type { ModuleGroup } from "@/lib/use-grouped-plans";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
@@ -12,6 +14,7 @@ export type Plan = {
   name: string;
   price: number;
   durationDays: number;
+  interval?: SubscriptionInterval;
   modules: string[];
   isActive: boolean;
   trialEligible: boolean;
@@ -21,7 +24,7 @@ export type Plan = {
 // § Fase 130 (diminta user 2026-09-17) — tanggal subscription AKTUAL
 // (beda dari `activePlan.durationDays` yang cuma info KATALOG paket).
 // Undefined = belum ada subscription aktif utk modul ini sama sekali.
-export type SubscriptionInfo = { startAt: string | null; endAt: string | null };
+export type SubscriptionInfo = { startAt: string | null; endAt: string | null; periodAnchorAt?: string | null; periodMonths?: number | null };
 
 // § Fase 127 — isi panel accordion 1 Varian (dulu ISI KARTU SATU-SATUNYA
 // per modul di `/subscribe`, § subscribe-form.tsx versi lama baris
@@ -59,6 +62,20 @@ export function ModulePricingPanel({
   const Icon = LANDING_MODULE_ICON_ANY[group.moduleKey];
   const tagline = LANDING_MODULE_TAGLINE_ANY[group.moduleKey];
   const companyTimezone = useCompanyTimezone();
+  // § Fase 176, ADR-0041 poin 4 — fitur yang masih aktif boleh diperpanjang kapan saja: akhir baru dihitung dari TANGGAL BERAKHIR saat ini (bukan dari
+  // saat pembayaran disetujui), fungsi yang SAMA dengan server (`computeRenewalEnd`) supaya pratinjau ini identik dengan hasil sebenarnya.
+  const renewalEnd =
+    isRealActive && activePlan && subscriptionInfo?.endAt
+      ? computeRenewalEnd(
+          {
+            endAt: new Date(subscriptionInfo.endAt),
+            periodAnchorAt: subscriptionInfo.periodAnchorAt ? new Date(subscriptionInfo.periodAnchorAt) : null,
+            periodMonths: subscriptionInfo.periodMonths ?? null,
+          },
+          activePlan.interval ?? inferIntervalFromDays(activePlan.durationDays),
+          companyTimezone,
+        ).endAt
+      : null;
 
   return (
     <div className="rounded-xl border border-border/60 bg-background p-4">
@@ -86,7 +103,7 @@ export function ModulePricingPanel({
       {activePlan && (
         <p className="mt-3 text-2xl font-semibold text-foreground">
           {currencyFormatter.format(activePlan.price)}
-          <span className="text-sm font-normal text-muted-foreground"> / {formatDuration(activePlan.durationDays)}</span>
+          <span className="text-sm font-normal text-muted-foreground"> / {formatPeriod(activePlan.interval, activePlan.durationDays)}</span>
         </p>
       )}
 
@@ -100,24 +117,32 @@ export function ModulePricingPanel({
               <button
                 key={tier.id}
                 type="button"
-                disabled={isRealActive}
                 onClick={() => onSelectTier(tier.id)}
-                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+                className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                   activePlan?.id === tier.id
                     ? "border-primary-600 bg-primary-600 text-white"
                     : "border-border text-muted-foreground hover:border-primary-300"
                 }`}
               >
-                {formatDuration(tier.durationDays)}
+                {formatPeriod(tier.interval, tier.durationDays)}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {!isRealActive && activePlan && (
+      {activePlan && (
         <div className="mt-4 flex flex-col gap-2">
-          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Pilih Paket</span>
+          <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{isRealActive ? "Perpanjang Langganan" : "Pilih Paket"}</span>
+          {renewalEnd && (
+            <p className="text-xs text-muted-foreground">
+              Diperpanjang dari tanggal berakhir saat ini — akan berlaku sampai{" "}
+              <strong className="text-foreground">
+                {formatDate(renewalEnd, companyTimezone)} {timezoneAbbreviation(companyTimezone)}
+              </strong>
+              . Sisa masa aktifmu tidak hilang.
+            </p>
+          )}
           <div className="flex gap-1.5">
             <button
               type="button"
@@ -127,7 +152,7 @@ export function ModulePricingPanel({
               }`}
             >
               {isSelected && <Check className="h-3 w-3" />}
-              Berlangganan
+              {isRealActive ? "Perpanjang" : "Berlangganan"}
             </button>
             {showTrialButton && (
               <button

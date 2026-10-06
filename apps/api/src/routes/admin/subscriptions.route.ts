@@ -1,5 +1,6 @@
 import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
+import { findRenewableSubscription, renewSubscriptionInPlace } from "../../lib/subscription-renewal";
 import { computeSubscriptionPeriod, isSubscriptionInterval, inferIntervalFromDays } from "../../lib/subscription-period";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../../lib/db";
@@ -76,6 +77,19 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
       const dataUsahaId = body.dataUsahaId ?? (await getOrCreateDefaultDataUsaha(body.userId));
+
+      // § Fase 176, ADR-0041 poin 4 — assign TANPA `endAt` untuk modul yang SUDAH aktif (non-trial, end_at masih di masa depan) = PERPANJANGAN: langganan itu
+      // diperpanjang di tempat dari akhir lamanya (sisa waktu tidak hilang). Dengan `endAt` eksplisit = override admin → alur lama (tutup yang lama, buat baru).
+      if (!body.endAt && plan.modules[0]) {
+        const renewable = await findRenewableSubscription(db, { dataUsahaId, moduleKey: plan.modules[0], now: startAt });
+        if (renewable) {
+          const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
+          const timeZone = await getCompanyTimezone();
+          const renewal = await db.transaction((tx) => renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "admin", actorId: user.id }));
+          const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, renewal.subscriptionId));
+          return { ...row!, renewed: true, previousEndAt: renewal.previousEndAt.toISOString() };
+        }
+      }
 
       // § ditemukan 2026-09-07 — sama fix-nya seperti admin/orders.route.ts
       // POST /:id/confirm: tutup subscription aktif LAIN utk modul yang

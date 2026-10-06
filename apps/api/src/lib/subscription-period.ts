@@ -88,3 +88,25 @@ export function computeSubscriptionPeriod(
   const periodMonths = intervalMonths(interval);
   return { startAt: start, endAt: addCalendarMonths(start, periodMonths, timeZone), periodAnchorAt: start, periodMonths };
 }
+
+export type RenewableSubscription = { endAt: Date; periodAnchorAt: Date | null; periodMonths: number | null };
+
+/**
+ * Perpanjangan dini (ADR-0041 poin 4): langganan yang MASIH AKTIF diperpanjang dari `endAt`-nya (bukan dari saat disetujui) — tidak ada hari
+ * pelanggan yang hilang. Bila akhir saat ini masih SELARAS dengan jangkar (`endAt` == jangkar + `periodMonths` bulan, zona yang sama), akhir baru
+ * dihitung dari jangkar + total bulan baru (anti-geser: 12× +1 bulan dari 31 Jan berakhir 31 Jan, bukan 28). Bila tidak selaras (jangkar kosong =
+ * data lama/tanggal diubah manual, atau zona berganti) jangkar ditetapkan ulang di `endAt` saat ini. Dipakai server DAN pratinjau web.
+ */
+export function computeRenewalEnd(
+  existing: RenewableSubscription,
+  interval: SubscriptionInterval,
+  timeZone: string,
+): { endAt: Date; periodAnchorAt: Date; periodMonths: number } {
+  const add = intervalMonths(interval);
+  const { periodAnchorAt: anchor, periodMonths: months } = existing;
+  if (anchor && months && months > 0 && addCalendarMonths(anchor, months, timeZone).getTime() === existing.endAt.getTime()) {
+    const total = months + add;
+    return { endAt: addCalendarMonths(anchor, total, timeZone), periodAnchorAt: anchor, periodMonths: total };
+  }
+  return { endAt: addCalendarMonths(existing.endAt, add, timeZone), periodAnchorAt: existing.endAt, periodMonths: add };
+}

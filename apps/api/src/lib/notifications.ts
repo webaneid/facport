@@ -14,6 +14,11 @@ export function formatNotificationDate(date: Date, timezone: string): string {
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeZone: timezone }).format(date);
 }
 
+// § Fase 176, ADR-0041 — tanggal DAN jam (mis. "6 Desember 2026 pukul 14.35") untuk pemberitahuan perpanjangan: masa berlaku kini presisi sampai jam.
+export function formatNotificationDateTime(date: Date, timezone: string): string {
+  return new Intl.DateTimeFormat("id-ID", { dateStyle: "long", timeStyle: "short", timeZone: timezone }).format(date);
+}
+
 // § Fase 45, ADR-0029 — daftar LENGKAP tipe notifikasi yang valid, satu
 // sumber kebenaran (dipakai backend saat insert DAN referensi untuk
 // frontend `lib/notification-routes.ts` resolve link tujuan). Lihat

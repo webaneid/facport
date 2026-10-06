@@ -3,9 +3,10 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions } from "../../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals } from "../../db/schema";
 import { adminSubscriptionsRoute } from "./subscriptions.route";
-import { addCalendarMonths } from "../../lib/subscription-period";
+import { addCalendarMonths, computeSubscriptionPeriod } from "../../lib/subscription-period";
+import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 
 // § Fase 174, ADR-0041 — assign admin: tanpa `endAt` = dihitung dari periode paket (kalender, jangkar dicatat); dengan `endAt` = override bebas
@@ -115,5 +116,70 @@ describe("PATCH /admin/subscriptions/:id — ubah tanggal manual", () => {
     expect(after!.endAt!.getTime()).toBe(next.getTime());
     expect(after!.periodAnchorAt).toBeNull();
     expect(after!.periodMonths).toBeNull();
+  });
+});
+
+// § Fase 176, ADR-0041 poin 4 — assign admin untuk modul yang SUDAH aktif: tanpa endAt = perpanjangan dari akhir lama; dengan endAt = override (alur lama).
+describe("POST /admin/subscriptions — perpanjangan dini (Fase 176)", () => {
+  async function seedActive(userId: string, planId: string, endAt: Date, aligned = true) {
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const startAt = new Date(endAt.getTime() - 10 * 24 * 60 * 60 * 1000);
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId, planId, status: "active", startAt, endAt, dataUsahaId, ...(aligned ? { periodAnchorAt: startAt, periodMonths: 1 } : {}) })
+      .returning();
+    return sub!;
+  }
+
+  test("tanpa endAt + modul aktif → diperpanjang DI TEMPAT dari akhir lama (+1 bulan), tanpa baris baru, riwayat 'admin' tercatat", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-subs-renew-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_order");
+    const oldEnd = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000 + 555);
+    const sub = await seedActive(userId, plan.id, oldEnd, false);
+
+    const res = await post(cookie, { userId, planId: plan.id });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { id: string; renewed?: boolean };
+    expect(body.renewed).toBe(true);
+    expect(body.id).toBe(sub.id);
+    const all = await db.select().from(subscriptions).where(eq(subscriptions.userId, userId));
+    expect(all).toHaveLength(1);
+    expect(all[0]!.endAt!.getTime()).toBe(addCalendarMonths(oldEnd, 1, await getCompanyTimezone()).getTime());
+    const [renewal] = await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, sub.id));
+    expect(renewal!.source).toBe("admin");
+    expect(renewal!.orderId).toBeNull();
+    expect(renewal!.previousEndAt.getTime()).toBe(oldEnd.getTime());
+  });
+
+  test("dengan endAt eksplisit → override: langganan lama ditutup, baru dibuat dengan tanggal admin (alur lama tidak berubah)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-subs-renew-override-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_return");
+    const sub = await seedActive(userId, plan.id, new Date(Date.now() + 10 * 24 * 60 * 60 * 1000));
+    const custom = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000 + 321);
+
+    const res = await post(cookie, { userId, planId: plan.id, endAt: custom.toISOString() });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { renewed?: boolean }).renewed).toBeUndefined();
+    const [old] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(old!.status).toBe("cancelled");
+    const active = (await db.select().from(subscriptions).where(eq(subscriptions.userId, userId))).filter((s) => s.status === "active");
+    expect(active).toHaveLength(1);
+    expect(active[0]!.endAt!.getTime()).toBe(custom.getTime());
+  });
+
+  test("langganan aktif tapi end_at sudah lewat → BUKAN perpanjangan: dibuat baru dari sekarang (dihitung dari periode paket)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-subs-renew-stale-${runId}@test.local`);
+    const plan = await makePlan("monthly", "delivery_order");
+    await seedActive(userId, plan.id, new Date(Date.now() - 60 * 1000));
+    const res = await post(cookie, { userId, planId: plan.id });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { renewed?: boolean }).renewed).toBeUndefined();
+    const fresh = (await db.select().from(subscriptions).where(eq(subscriptions.userId, userId))).filter((s) => s.endAt!.getTime() > Date.now());
+    expect(fresh).toHaveLength(1);
+    const expected = computeSubscriptionPeriod(fresh[0]!.startAt!, "monthly", await getCompanyTimezone());
+    expect(fresh[0]!.endAt!.getTime()).toBe(expected.endAt.getTime());
   });
 });

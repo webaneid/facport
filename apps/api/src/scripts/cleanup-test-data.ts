@@ -6,6 +6,7 @@ import {
   user as userTable,
   plans,
   subscriptions,
+  subscriptionRenewals,
   orders,
   invoices,
   invoiceItems,
@@ -129,6 +130,12 @@ async function main() {
     if (testSubscriptionIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.subscriptionId, testSubscriptionIds));
     if (testDataUsahaIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.dataUsahaId, testDataUsahaIds));
     if (autoproduksiFormulaConditions.length) await tx.delete(autoproduksiFormulas).where(or(...autoproduksiFormulaConditions));
+
+    // § Fase 176 — riwayat perpanjangan (FK -> subscriptions/orders/invoiceItems/user) WAJIB dihapus SEBELUM semuanya itu.
+    const renewalConditions = [];
+    if (testSubscriptionIds.length) renewalConditions.push(inArray(subscriptionRenewals.subscriptionId, testSubscriptionIds));
+    if (testUserIds.length) renewalConditions.push(inArray(subscriptionRenewals.actorId, testUserIds));
+    if (renewalConditions.length) await tx.delete(subscriptionRenewals).where(or(...renewalConditions));
 
     // § Fase 113 — memberSeats & ownershipTransfers WAJIB dihapus SEBELUM
     // subscriptions/dataUsaha (FK: seatSubscriptionId -> subscriptions,

@@ -85,8 +85,13 @@ export default function AdminOrdersPage() {
       toast.error(code === "ORDER_NOT_SUBMITTED" ? "Order sudah diproses sebelumnya." : "Gagal konfirmasi pembayaran.");
       return;
     }
-    const data = res.data as { subscriptionsCreated: number };
-    toast.success(`Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan.`);
+    const data = res.data as { subscriptionsCreated: number; subscriptionsRenewed?: number };
+    const renewed = data.subscriptionsRenewed ?? 0;
+    toast.success(
+      renewed > 0
+        ? `Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan, ${renewed} diperpanjang.`
+        : `Pembayaran dikonfirmasi — ${data.subscriptionsCreated} langganan diaktifkan.`,
+    );
     load(queue, search);
   }
 
