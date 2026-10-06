@@ -80,6 +80,56 @@ describe("POST /api/auth/sign-up/email — role customer otomatis", () => {
   });
 });
 
+// § BUG 2026-10-06 (laporan client): daftar ulang dengan email yang SUDAH terdaftar → "internal server error". Better Auth membalas 200 dengan user
+// REKAAN (id tidak ada di DB) untuk email yang sudah ada; interceptor `app.ts` memasukkan id itu ke `user_roles` → pelanggaran foreign key → 500.
+// Sekarang: 409 `USER_ALREADY_EXISTS` dengan pesan jelas, TIDAK pernah 500, dan tidak ada baris user/role/akun tambahan.
+describe("POST /api/auth/sign-up/email — email yang sudah terdaftar", () => {
+  const post = (body: Record<string, unknown>, ip: string) =>
+    app.handle(
+      new Request("http://localhost/api/auth/sign-up/email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-real-ip": ip },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  test("daftar ulang email yang sama (belum maupun sudah terverifikasi, beda huruf besar-kecil) → 409 USER_ALREADY_EXISTS, bukan 500; tidak ada user ganda", async () => {
+    const email = `signup-dup-${runId}@test.local`;
+    const first = await post({ email, password: "TestPassword123!", name: "Dup Test" }, "203.0.113.221");
+    expect(first.status).toBe(200);
+
+    // belum terverifikasi
+    const again = await post({ email, password: "TestPassword123!", name: "Dup Test" }, "203.0.113.222");
+    expect(again.status).toBe(409);
+    expect(await again.json()).toMatchObject({ code: "USER_ALREADY_EXISTS", message: "Email ini sudah terdaftar." });
+
+    // sudah terverifikasi + penulisan huruf besar-kecil berbeda + spasi
+    await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.email, email));
+    const upper = await post({ email: ` ${email.toUpperCase()} `, password: "TestPassword123!", name: "Dup Test" }, "203.0.113.223");
+    expect(upper.status).toBe(409);
+    expect(((await upper.json()) as { code: string }).code).toBe("USER_ALREADY_EXISTS");
+
+    const rows = await db.select({ id: userTable.id }).from(userTable).where(sql`lower(${userTable.email}) = ${email}`);
+    expect(rows).toHaveLength(1); // tidak ada user ganda/rekaan yang tersimpan
+  });
+
+  test("pengaman kedua: email baru tetap sukses 200 dan dapat role customer; body tanpa email / bukan JSON tidak menyebabkan 500 dari interceptor", async () => {
+    const email = `signup-fresh-${runId}@test.local`;
+    const ok = await post({ email, password: "TestPassword123!", name: "Fresh" }, "203.0.113.224");
+    expect(ok.status).toBe(200);
+    const [created] = await db.select({ id: userTable.id }).from(userTable).where(eq(userTable.email, email));
+    const roleRows = await db.select({ roleName: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, created!.id));
+    expect(roleRows.map((r) => r.roleName)).toContain("customer");
+
+    const noEmail = await post({ password: "TestPassword123!", name: "X" }, "203.0.113.225");
+    expect(noEmail.status).toBeLessThan(500); // validasi Better Auth (400), bukan crash
+    const notJson = await app.handle(
+      new Request("http://localhost/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "text/plain", "x-real-ip": "203.0.113.226" }, body: "bukan json" }),
+    );
+    expect(notJson.status).toBeLessThan(500);
+  });
+});
+
 // § Fase 48 — diminta user: pilih paket di landing → daftar → klik link
 // verifikasi email WAJIB langsung login + mendarat di `callbackURL` yang
 // dikirim saat signUp (`register-form.tsx`), bukan diminta login manual
