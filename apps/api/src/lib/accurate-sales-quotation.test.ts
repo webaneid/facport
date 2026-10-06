@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseSalesQuotationLines, MAX_QUOTATION_LINES } from "./accurate-sales-quotation";
+import { parseSalesQuotationLines, parseSalesQuotationDetail, MAX_QUOTATION_LINES } from "./accurate-sales-quotation";
 
 // § Fase 169 — parser KETAT: bentuk respons `sales-quotation/detail.do` belum diverifikasi dengan respons asli, jadi data yang tidak
 // terbaca lengkap TIDAK BOLEH lolos jadi baris setengah (harga 0 diam-diam = data akuntansi salah).
@@ -37,5 +37,42 @@ describe("parseSalesQuotationLines — batas jumlah baris (security review Fase 
   test("tepat di batas lolos; satu baris di atas batas ditolak dengan pesan jelas", () => {
     expect(parseSalesQuotationLines({ detailItem: Array.from({ length: MAX_QUOTATION_LINES }, () => line) }, "SQ-1")).toHaveLength(MAX_QUOTATION_LINES);
     expect(() => parseSalesQuotationLines({ detailItem: Array.from({ length: MAX_QUOTATION_LINES + 1 }, () => line) }, "SQ-1")).toThrow(/melebihi batas 500/);
+  });
+});
+
+// § Fase 172 — atribut tambahan: bentuk respons belum terverifikasi → yang tidak terbaca TIDAK ditarik (bukan error), kecuali Beban.
+describe("parseSalesQuotationDetail — header, atribut baris, Beban", () => {
+  const line = { item: { no: "A-1" }, unitPrice: 5000, quantity: 10, itemUnit: { name: "PCS" } };
+
+  test("header dibaca dari relasi nested (paymentTerm.name, currency.code) maupun bentuk datar; diskon 0 tidak ditarik", () => {
+    const nested = parseSalesQuotationDetail(
+      { detailItem: [line], paymentTerm: { name: "net 30" }, currency: { code: "IDR" }, toAddress: "Jl. A", description: "Q3", cashDiscount: 1000, cashDiscPercent: "5" },
+      "SQ-1",
+    );
+    expect(nested.header).toEqual({ paymentTermName: "net 30", currencyCode: "IDR", toAddress: "Jl. A", description: "Q3", cashDiscount: 1000, cashDiscPercent: "5" });
+    const flat = parseSalesQuotationDetail({ detailItem: [line], paymentTermName: "cod", currencyCode: "USD", cashDiscount: 0, cashDiscPercent: 0 }, "SQ-1");
+    expect(flat.header).toEqual({ paymentTermName: "cod", currencyCode: "USD" });
+    expect(parseSalesQuotationDetail({ detailItem: [line] }, "SQ-1").header).toEqual({});
+  });
+
+  test("atribut baris: dept/proyek/penjual/diskon/pajak terbaca; yang kosong atau tidak dikenal tidak muncul", () => {
+    const d = parseSalesQuotationDetail(
+      {
+        detailItem: [
+          { ...line, department: { name: "Penjualan" }, project: { projectNo: "PRJ-1" }, salesmanList: [{ number: "S-1" }, "S-2"], itemCashDiscount: 250, itemDiscPercent: "2", useTax1: true, tax3: { id: 1 } },
+          { ...line, department: null, salesmanList: [], itemCashDiscount: 0 },
+        ],
+      },
+      "SQ-1",
+    );
+    expect(d.lines[0]).toMatchObject({ departmentName: "Penjualan", projectNo: "PRJ-1", salesmanListNumber: ["S-1", "S-2"], itemCashDiscount: 250, itemDiscPercent: "2", useTax1: true, useTax3: true });
+    expect(Object.keys(d.lines[1]!).sort()).toEqual(["itemName", "itemNo", "notes", "quantity", "unitName", "unitPrice"]);
+  });
+
+  test("Beban penawaran terbaca; baris Beban yang akun/jumlahnya tidak terbaca → GAGAL jelas (data akuntansi, tidak ditebak)", () => {
+    const ok = parseSalesQuotationDetail({ detailItem: [line], detailExpense: [{ account: { no: "6101" }, expenseName: "Ongkir", expenseAmount: 15000, expenseNotes: "kirim" }] }, "SQ-1");
+    expect(ok.expenses).toEqual([{ accountNo: "6101", expenseName: "Ongkir", expenseAmount: 15000, expenseNotes: "kirim" }]);
+    expect(parseSalesQuotationDetail({ detailItem: [line] }, "SQ-1").expenses).toEqual([]);
+    expect(() => parseSalesQuotationDetail({ detailItem: [line], detailExpense: [{ expenseAmount: 5 }] }, "SQ-1")).toThrow(/Beban ke-1.*SQ-1.*akun/);
   });
 });

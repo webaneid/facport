@@ -179,6 +179,7 @@
 | 169  | Sales Order — ambil baris item otomatis dari Sales Quotation (Sales Quot No terisi + kolom item kosong → diperluas dari penawaran; scope `sales_quotation_view` wajib) | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-169-sales-order-ambil-data-dari-sales-quotation.md` |
 | 170  | Sales Return & Purchase Return — harga (dan diskon baris) otomatis dari faktur asal bila Unit Price kosong (INVOICE/INVOICE_DP); scope `sales_invoice_view`/`purchase_invoice_view` wajib | Done | `docs/architecture/architecture-sales-return.md`, `architecture-purchase-return.md` | `docs/phases/phase-170-return-harga-dari-faktur-asal.md` |
 | 171  | Delivery Order — Sales Order Detail ID otomatis via Atribut Tambahan 1 ("Week", `charField1` SO) + Item Notes, bersihkan sel Excel, koreksi asumsi CLS5 Fase 158 | Done | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-171-delivery-order-so-detail-via-atribut-tambahan.md` |
+| 172  | Sales Order — tarik juga header, atribut baris & Expense dari Sales Quotation (Excel menang; Expense Project tidak tersedia di Accurate) | Done | `docs/architecture/architecture-sales-order.md` | `docs/phases/phase-172-sales-order-tarik-header-atribut-beban-dari-quotation.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

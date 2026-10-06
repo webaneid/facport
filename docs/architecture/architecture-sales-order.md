@@ -142,3 +142,16 @@ Sales Order memuat kolom "Sales Quot No" (`detailItem.salesQuotationNumber`) yan
 **Scope OAuth:** `sales_quotation_view` ditambahkan sebagai KEBUTUHAN modul `sales_order` (registri endpoint) — customer Sales Order yang ada diminta "Perbarui izin" sekali (keputusan user: wajib, bukan opsional).
 **Validasi "wajib" per baris** (edit baris/edit massal, API + UI) dikecualikan untuk baris perluasan: `missingRequiredFieldsForRow`.
 ⚠️ Bentuk respons `sales-quotation/detail.do` tidak terdokumentasi di spec; parser ketat (baris tanpa itemNo/harga/qty/satuan terbaca = error jelas, tidak ada data setengah terkirim) — verifikasi dengan respons asli.
+
+## Fase 172 (2026-10-07) — Tarik juga header, atribut baris, dan Beban dari Sales Quotation
+Permintaan client (kolom kuning di template uji): selain baris item (Fase 169), baris perluasan menarik juga **Pay Term Name, To Address,
+Description, Cash Discount, Cash Disc Percent, Currency Code** (header), **Item Cash Discount, Item Disc Percent, Item Dept, Item Project No,
+Sales List No, PPN, PPh** (atribut baris) dan **baris Expense (Acc No/Name/Amount/Note)**. Tidak butuh scope baru (`sales_quotation_view` sama).
+- **Isian Excel menang.** Kolom terisi dipakai apa adanya; hanya yang KOSONG diisi dari penawaran. PPN/PPh `FALSE` di Excel dianggap terisi.
+- Header diambil dari penawaran PERTAMA yang diperluas dalam 1 Sales Order (kalau beberapa penawaran berbeda, header mengikuti yang pertama).
+- Expense penawaran ditarik **hanya bila Excel tidak punya baris Expense sama sekali** (hindari ganda), dibawa dengan `salesQuotationNumber` penawarannya.
+- Nilai tambahan yang tidak terbaca dari respons Accurate = **tidak ditarik** (bukan error); Expense penawaran yang ada tapi akun/jumlahnya tidak
+  terbaca = **gagal jelas** (data akuntansi). Diskon 0 tidak ditarik.
+- ⚠️ Nama field BACA `sales-quotation/detail.do` belum diverifikasi respons asli (relasi nested diasumsikan `paymentTerm.name`, `currency.code`,
+  `department.name`, `project.projectNo|no`, `salesmanList[].number`, `detailExpense[].account.no`). Verifikasi dengan 1 respons nyata (mis. SQ-IDR-01).
+- **Expense Project (kolom ungu) tidak dibuat**: `detailExpense[]` Sales Order/Quotation tidak punya `projectNo` di spec (hanya `detailItem[]`).

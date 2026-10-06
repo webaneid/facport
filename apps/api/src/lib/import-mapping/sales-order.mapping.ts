@@ -9,7 +9,7 @@
 // BEDA dari Sales Quotation yang cuma wrap 1 nilai jadi array 1-elemen).
 // Field mapping SUDAH diverifikasi 100% ke portal developer Accurate
 // live (2026-09-21, § architecture doc) — TIDAK ada gap dokumentasi API.
-import type { SalesQuotationLine } from "../accurate-sales-quotation";
+import type { SalesQuotationDetail, SalesQuotationLine } from "../accurate-sales-quotation";
 import { splitIdList } from "./split-id-list";
 
 export const salesOrderMapping = {
@@ -277,33 +277,46 @@ export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, col
   });
 }
 
+// § Fase 172 — atribut baris penawaran yang ikut ditarik; ISIAN EXCEL MENANG (kolom Excel terisi = dipakai, kosong = dari penawaran).
+const QUOTATION_LINE_EXTRA_KEYS = ["itemCashDiscount", "itemDiscPercent", "departmentName", "projectNo", "salesmanListNumber", "useTax1", "useTax3"] as const;
+// Atribut header penawaran yang ikut ditarik (sama aturannya, diambil dari penawaran PERTAMA yang diperluas).
+const QUOTATION_HEADER_KEYS = ["paymentTermName", "toAddress", "description", "cashDiscount", "cashDiscPercent", "currencyCode"] as const;
+
 /** Satu entri `detailItem` perluasan → N entri (1 per baris penawaran); kolom lain pada entri asli berlaku ke SEMUA baris hasil. */
 export function expandQuotationEntry(entry: Record<string, unknown>, lines: SalesQuotationLine[]): Record<string, unknown>[] {
-  return lines.map((line) => ({
-    ...entry,
-    itemNo: line.itemNo,
-    unitPrice: line.unitPrice,
-    quantity: line.quantity,
-    itemUnitName: line.unitName,
-    ...(line.itemName ? { detailName: line.itemName } : {}),
-    ...(line.notes ? { detailNotes: line.notes } : {}),
-  }));
+  return lines.map((line) => {
+    const out: Record<string, unknown> = {
+      ...entry,
+      itemNo: line.itemNo,
+      unitPrice: line.unitPrice,
+      quantity: line.quantity,
+      itemUnitName: line.unitName,
+      ...(line.itemName ? { detailName: line.itemName } : {}),
+      ...(line.notes ? { detailNotes: line.notes } : {}),
+    };
+    for (const key of QUOTATION_LINE_EXTRA_KEYS) {
+      if (entry[key] === undefined && line[key] !== undefined) out[key] = line[key];
+    }
+    return out;
+  });
 }
 
 /**
- * Perluas `payload.detailItem` (hasil `buildSalesOrderPayload`, indeks SEJAJAR `rawRows`) untuk baris perluasan. `fetchLines` disuntikkan
- * (worker: baca Accurate; test: palsu) dan di-cache per nomor penawaran. Mengubah `payload.detailItem` di tempat.
+ * Perluas `payload.detailItem` (hasil `buildSalesOrderPayload`, indeks SEJAJAR `rawRows`) untuk baris perluasan. `fetchQuotation` disuntikkan
+ * (worker: baca Accurate; test: palsu) dan di-cache per nomor penawaran. Mengubah `payload` di tempat. § Fase 172: selain baris item, kolom header
+ * kosong diisi dari penawaran pertama yang diperluas, dan baris Beban penawaran ikut ditarik HANYA kalau Excel tidak punya baris Beban sama sekali.
  */
 export async function expandQuotationRowsInPayload(
   payload: Record<string, unknown>,
   rawRows: Record<string, unknown>[],
   columnMapping: Record<string, string>,
-  fetchLines: (quotationNumber: string) => Promise<SalesQuotationLine[]>,
+  fetchQuotation: (quotationNumber: string) => Promise<SalesQuotationDetail>,
 ): Promise<void> {
   const detailItem = payload.detailItem as Record<string, unknown>[] | undefined;
   if (!detailItem) return;
-  const cache = new Map<string, SalesQuotationLine[]>();
+  const cache = new Map<string, SalesQuotationDetail>();
   const expanded: Record<string, unknown>[] = [];
+  const expandedQuotations: { number: string; detail: SalesQuotationDetail }[] = [];
   for (let i = 0; i < detailItem.length; i++) {
     const entry = detailItem[i]!;
     if (!isQuotationExpansionRow(rawRows[i] ?? {}, columnMapping)) {
@@ -311,14 +324,33 @@ export async function expandQuotationRowsInPayload(
       continue;
     }
     const number = String(entry.salesQuotationNumber);
-    let lines = cache.get(number);
-    if (!lines) {
-      lines = await fetchLines(number);
-      cache.set(number, lines);
+    let detail = cache.get(number);
+    if (!detail) {
+      detail = await fetchQuotation(number);
+      cache.set(number, detail);
+      expandedQuotations.push({ number, detail });
     }
-    expanded.push(...expandQuotationEntry(entry, lines));
+    expanded.push(...expandQuotationEntry(entry, detail.lines));
   }
   payload.detailItem = expanded;
+
+  const first = expandedQuotations[0];
+  if (!first) return;
+  for (const key of QUOTATION_HEADER_KEYS) {
+    if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
+  }
+  if (payload.detailExpense === undefined) {
+    const pulled = expandedQuotations.flatMap(({ number, detail }) =>
+      detail.expenses.map((ex) => ({
+        accountNo: ex.accountNo,
+        expenseAmount: ex.expenseAmount,
+        salesQuotationNumber: number,
+        ...(ex.expenseName ? { expenseName: ex.expenseName } : {}),
+        ...(ex.expenseNotes ? { expenseNotes: ex.expenseNotes } : {}),
+      })),
+    );
+    if (pulled.length > 0) payload.detailExpense = pulled;
+  }
 }
 
 // § syarat minimal 1 baris dianggap punya data Beban: accountNo DAN
