@@ -645,3 +645,11 @@ langsung: Data Master → Pajak, filter jenis PPh23).
 - Katalog sub-modul → ADR-0019
 - Rencana ekspansi field opsional (Fase 85, belum dieksekusi) →
   `docs/phases/phase-85-ekspansi-field-sales-receipt.md`
+
+## Update 2026-10-06 — root `chequeAmount` dikurangi PPh (laporan client: "lebih bayar")
+Gejala: bayar 100.000 + PPh 2.000 → di Accurate nilai pembayaran tetap 100.000, PPh terhitung DI ATAS pelunasan faktur → customer tampak lebih bayar. Akar masalah: auto-SUM root `chequeAmount` (`buildSalesReceiptPayload`) hanya menjumlah `detailInvoice[].paymentAmount` dan mengabaikan `detailTax[]`. Semantik yang benar (bukti: contoh RESMI Accurate Support di `phase-99-fix-pph23-sales-receipt.md`, 100.909.089 − 1.818.181 = 99.090.908): `paymentAmount` = nilai FAKTUR yang dilunasi (sebelum PPh), root `chequeAmount` = uang yang benar-benar masuk bank = Σ paymentAmount − Σ PPh yang dipotong.
+- Fix: default root `chequeAmount` = (Σ paymentAmount − Σ `detailTax[].taxAmount`) × kurs. Hanya PPh yang BENAR-BENAR terkirim di `detailTax` (Tax ID ter-resolve + Tax Amount terisi) yang dikurangkan.
+- Tidak berubah: `paymentAmount` per faktur tetap penuh; kolom "Cheque Amount" eksplisit dipakai apa adanya (tidak dikurangi lagi); tanpa PPh → perilaku lama.
+- Asumsi yang belum terbukti: pada mata uang asing PPh dianggap dalam mata uang faktur yang sama dengan `paymentAmount` (jadi ikut dikali kurs). Kasus langka, belum diuji ke Accurate.
+- ⚠️ Belum diverifikasi test call nyata ke akun client — minta client retest 1 receipt dengan PPh: nilai bank harus = Jumlah Bayar − Tax Amount, dan faktur harus lunas (tidak lebih bayar).
+- Modul cermin `purchase-payment.mapping.ts` punya auto-SUM yang sama, tapi struktur PPh-nya sendiri masih SPECULATIVE (Fase 100) — TIDAK diubah, menunggu konfirmasi.

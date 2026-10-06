@@ -479,3 +479,55 @@ describe("buildSalesReceiptPayload — Fase 99 (detailTax di root, Tax ID/Tax Am
     ]);
   });
 });
+
+// § BUG 2026-10-06 (laporan client): "nilai pembayaran 100.000, isi PPh, nilai pembayaran tetap 100.000 → lebih bayar". Root
+// `chequeAmount` = uang masuk bank = Σ paymentAmount − Σ PPh yang dipotong (contoh resmi Accurate Support, Fase 99).
+describe("buildSalesReceiptPayload — PPh mengurangi root chequeAmount (uang masuk bank)", () => {
+  const mapping = { ...columnMapping, "Tax ID": "taxId", "Tax Amount": "taxAmount", "Cheque Amount": "receiptTotalAmount" };
+  const taxIds = new Map([["PPh23", 350], ["PPh Lain", 10]]);
+
+  test("contoh RESMI Accurate Support: paymentAmount 100.909.089, taxAmount 1.818.181 → chequeAmount 99.090.908; paymentAmount faktur TETAP penuh", () => {
+    const rawRows = [{ "No Pelanggan": "C.00001", "No Faktur": "SI.2024.11.00003", "Jumlah Bayar": 100909089, "Tax ID": "PPh23", "Tax Amount": 1818181 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, taxIds);
+    expect(payload.chequeAmount).toBe(99090908);
+    expect((payload.detailInvoice as { paymentAmount: number }[])[0]!.paymentAmount).toBe(100909089);
+  });
+
+  test("kasus client: bayar 100.000 + PPh 2.000 → bank 98.000 (bukan 100.000 lagi)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000 }];
+    expect(buildSalesReceiptPayload(rawRows, mapping, taxIds).chequeAmount).toBe(98000);
+  });
+
+  test("beberapa faktur dalam 1 penerimaan, hanya sebagian kena PPh → hanya PPh yang masuk detailTax yang dikurangkan", () => {
+    const rawRows = [
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000 },
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-2", "Jumlah Bayar": 50000 },
+      { "No Pelanggan": "C1", "Receipt": "R1", "No Faktur": "SI-3", "Jumlah Bayar": 30000, "Tax ID": "PPh Lain", "Tax Amount": 600 },
+    ];
+    expect(buildSalesReceiptPayload(rawRows, { ...mapping, Receipt: "receiptNumber" }, taxIds).chequeAmount).toBe(177400); // 180000 − 2000 − 600
+  });
+
+  test("Tax ID tidak ter-resolve (tidak masuk detailTax) → PPh TIDAK dikurangkan (tidak ada potongan yang dikirim ke Accurate)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "TidakAda", "Tax Amount": 2000 }];
+    const payload = buildSalesReceiptPayload(rawRows, mapping, taxIds);
+    expect(payload.detailTax).toBeUndefined();
+    expect(payload.chequeAmount).toBe(100000);
+  });
+
+  test("Tax Amount terisi tanpa Tax ID → tidak ada detailTax, tidak dikurangkan; tanpa PPh sama sekali → perilaku lama (SUM penuh)", () => {
+    const noId = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax Amount": 2000 }];
+    expect(buildSalesReceiptPayload(noId, mapping, taxIds).chequeAmount).toBe(100000);
+    const none = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000 }];
+    expect(buildSalesReceiptPayload(none, mapping, taxIds).chequeAmount).toBe(100000);
+  });
+
+  test("Cheque Amount EKSPLISIT dari user dipakai apa adanya — TIDAK dikurangi PPh lagi (kontrol manual penuh)", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100000, "Tax ID": "PPh23", "Tax Amount": 2000, "Cheque Amount": 98000 }];
+    expect(buildSalesReceiptPayload(rawRows, mapping, taxIds).chequeAmount).toBe(98000);
+  });
+
+  test("mata uang asing (rate): (Σ payment − Σ PPh) × rate", () => {
+    const rawRows = [{ "No Pelanggan": "C1", "No Faktur": "SI-1", "Jumlah Bayar": 100, "Tax ID": "PPh23", "Tax Amount": 2, kurs: 15000 }];
+    expect(buildSalesReceiptPayload(rawRows, { ...mapping, kurs: "rate" }, taxIds).chequeAmount).toBe(98 * 15000);
+  });
+});

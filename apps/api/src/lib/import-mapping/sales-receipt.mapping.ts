@@ -422,7 +422,15 @@ export function buildSalesReceiptPayload(
   // (12600.000001 IDR). Kalau `rate` tidak diisi (transaksi mata uang
   // dasar, kasus PALING UMUM), kali 1 — ZERO REGRESSION.
   const rateMultiplier = headerValues.rate !== undefined ? Number(headerValues.rate) : 1;
-  const autoSummedChequeAmount = detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) * rateMultiplier;
+  // § BUG DITEMUKAN & DIPERBAIKI 2026-10-06 (laporan client: "nilai pembayaran tetap 100.000 padahal sudah isi PPh → lebih bayar").
+  // `detailInvoice[].paymentAmount` = nilai FAKTUR yang dilunasi (SEBELUM potong PPh), sedangkan root `chequeAmount` = uang yang
+  // BENAR-BENAR masuk bank = Σ paymentAmount − Σ PPh yang dipotong customer. Contoh RESMI Accurate Support (Fase 99,
+  // phase-99-fix-pph23-sales-receipt.md): paymentAmount 100.909.089, taxAmount 1.818.181 → chequeAmount 99.090.908 (selisih persis
+  // = PPh). Sebelum fix ini auto-SUM mengabaikan `detailTax` sehingga bank dicatat 100.909.089 dan PPh 1.818.181 terhitung DI ATAS
+  // pelunasan faktur → customer tampak lebih bayar. Hanya PPh yang BENAR-BENAR masuk `detailTax` (Tax ID ter-resolve + Tax Amount
+  // terisi) yang dikurangkan. "Cheque Amount" eksplisit dari user TIDAK diubah (kontrol manual penuh).
+  const totalTaxWithheld = detailTax.reduce((sum, d) => sum + (d.taxAmount as number), 0);
+  const autoSummedChequeAmount = (detailInvoice.reduce((sum, d) => sum + (d.paymentAmount as number), 0) - totalTaxWithheld) * rateMultiplier;
 
   const payload: Record<string, unknown> = {
     customerNo: String(headerValues.customerNo ?? ""),
