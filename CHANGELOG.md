@@ -1,3 +1,9 @@
+## <small>2.29.1 (2026-10-07)</small>
+
+* chore: merge develop ke main (perbaikan login: reset password memverifikasi email, pesan galat login ([275a0d4](https://github.com/webaneid/facport/commit/275a0d4))
+* test(api): kirim ulang email verifikasi untuk akun lama belum terverifikasi (login 403 → kirim ulang ([2eacbfc](https://github.com/webaneid/facport/commit/2eacbfc))
+* fix(api web): reset password lewat link email menandai email terverifikasi; form login menampilkan p ([297d0f8](https://github.com/webaneid/facport/commit/297d0f8))
+
 ## 2.29.0 (2026-10-06)
 
 * chore: merge develop ke main (rilis periode langganan kalender, perpanjangan dini, SubscriptionPicke ([16119e7](https://github.com/webaneid/facport/commit/16119e7))
