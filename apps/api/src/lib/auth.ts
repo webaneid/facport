@@ -1,6 +1,8 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
+import { eq } from "drizzle-orm";
 import { db } from "./db";
+import { user as userTable } from "../db/schema";
 import { env, webOriginsProd } from "./env";
 import { boss, JOBS, startQueue } from "./queue";
 import { assignCustomerRole } from "./assign-customer-role";
@@ -28,6 +30,13 @@ export const auth = betterAuth({
     // sudah otomatis ter-mount via `.mount(auth.handler)` di app.ts),
     // TINGGAL kasih `sendResetPassword` di sini supaya beneran ngirim
     // email (tanpa ini, Better Auth balas "RESET_PASSWORD_DISABLED").
+    // § 2026-10-07 (laporan client: "sudah ganti password 2x tapi tetap tidak bisa login") — reset password bawaan Better Auth HANYA mengganti password,
+    // TIDAK menandai email terverifikasi. Akun daftar-mandiri yang belum pernah klik link verifikasi lalu reset password → password benar tapi login tetap
+    // ditolak 403 EMAIL_NOT_VERIFIED (`requireEmailVerification: true`), dan UI menutupinya dengan "Email atau password salah". Link reset hanya dikirim ke
+    // alamat email akun itu sendiri — memakainya MEMBUKTIKAN pemilik mengakses kotak surat tersebut, jadi email otomatis dianggap terverifikasi.
+    onPasswordReset: async ({ user }) => {
+      if (!user.emailVerified) await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, user.id));
+    },
     sendResetPassword: async ({ user, url }) => {
       await startQueue();
       await boss.send(JOBS.SEND_EMAIL, {

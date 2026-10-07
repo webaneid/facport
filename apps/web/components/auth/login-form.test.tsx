@@ -9,13 +9,14 @@ import userEvent from "@testing-library/user-event";
 // bukan setelahnya, supaya komponen yang di-import belakangan
 // benar-benar dapat versi mock-nya, bukan modul asli yang keburu
 // ter-resolve).
-const signInEmail = mock(async (): Promise<{ error: { message: string } | null }> => ({ error: null }));
+const signInEmail = mock(async (): Promise<{ error: { message: string; status?: number; code?: string } | null }> => ({ error: null }));
+const sendVerificationEmail = mock(async (_args: { email: string; callbackURL?: string }): Promise<{ error: { message: string } | null }> => ({ error: null }));
 const signInSocial = mock(async () => ({ error: null }));
 const routerPush = mock(() => {});
 const routerRefresh = mock(() => {});
 
 mock.module("@/lib/auth-client", () => ({
-  authClient: { signIn: { email: signInEmail, social: signInSocial } },
+  authClient: { signIn: { email: signInEmail, social: signInSocial }, sendVerificationEmail },
 }));
 mock.module("next/navigation", () => ({
   useRouter: () => ({ push: routerPush, refresh: routerRefresh }),
@@ -89,5 +90,56 @@ describe("LoginForm", () => {
         expect.objectContaining({ provider: "google", callbackURL: expect.any(String), errorCallbackURL: expect.any(String) }),
       ),
     );
+  });
+
+  // § 2026-10-07 — pesan sesuai PENYEBAB kegagalan (dulu semua = "Email atau password salah.").
+  async function failLogin(error: { message: string; status?: number; code?: string }) {
+    signInEmail.mockImplementationOnce(async () => ({ error }));
+    const user = userEvent.setup();
+    render(<LoginForm />);
+    routerPush.mockClear();
+    await user.type(screen.getByPlaceholderText("Email"), "riza@test.local");
+    await user.type(screen.getByPlaceholderText("Password"), "FAC_2026!");
+    await user.click(screen.getByRole("button", { name: "Login" }));
+    return user;
+  }
+
+  test("password salah (401 INVALID_EMAIL_OR_PASSWORD) → 'Email atau password salah.', tanpa tombol kirim ulang verifikasi", async () => {
+    await failLogin({ message: "x", status: 401, code: "INVALID_EMAIL_OR_PASSWORD" });
+    expect(await screen.findByText("Email atau password salah.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Kirim ulang email verifikasi" })).toBeNull();
+  });
+
+  test("email belum terverifikasi (403 EMAIL_NOT_VERIFIED) → pesan jelas + tombol kirim ulang verifikasi yang benar-benar mengirim ke email yang diketik", async () => {
+    const user = await failLogin({ message: "Email not verified", status: 403, code: "EMAIL_NOT_VERIFIED" });
+    expect(await screen.findByText(/Email kamu belum diverifikasi/)).toBeInTheDocument();
+    expect(screen.queryByText("Email atau password salah.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Kirim ulang email verifikasi" }));
+    await waitFor(() => expect(sendVerificationEmail).toHaveBeenCalledWith(expect.objectContaining({ email: "riza@test.local" })));
+    expect(await screen.findByText(/Link verifikasi baru sudah dikirim/)).toBeInTheDocument();
+    expect(routerPush).not.toHaveBeenCalled();
+  });
+
+  test("gagal kirim ulang verifikasi → pesan galat, bukan sukses palsu", async () => {
+    sendVerificationEmail.mockImplementationOnce(async () => ({ error: { message: "boom" } }));
+    const user = await failLogin({ message: "x", status: 403, code: "EMAIL_NOT_VERIFIED" });
+    await user.click(await screen.findByRole("button", { name: "Kirim ulang email verifikasi" }));
+    expect(await screen.findByText(/Gagal mengirim ulang email verifikasi/)).toBeInTheDocument();
+  });
+
+  test("akun dinonaktifkan (403 ACCOUNT_DISABLED) → pesan jelas, bukan 'password salah'", async () => {
+    await failLogin({ message: "x", status: 403, code: "ACCOUNT_DISABLED" });
+    expect(await screen.findByText(/Akun ini dinonaktifkan/)).toBeInTheDocument();
+  });
+
+  test("429 → 'Terlalu banyak percobaan login'", async () => {
+    await failLogin({ message: "x", status: 429, code: "TOO_MANY_REQUESTS" });
+    expect(await screen.findByText(/Terlalu banyak percobaan login/)).toBeInTheDocument();
+  });
+
+  test("500 → 'Server sedang bermasalah' (bukan menuduh password salah)", async () => {
+    await failLogin({ message: "x", status: 500 });
+    expect(await screen.findByText(/Server sedang bermasalah/)).toBeInTheDocument();
+    expect(screen.queryByText("Email atau password salah.")).toBeNull();
   });
 });
