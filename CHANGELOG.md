@@ -1,3 +1,10 @@
+## 2.30.0 (2026-10-07)
+
+* chore: merge develop ke main (perbaikan input tanggal, verifikasi email otomatis saat login, penutup ([97e92c4](https://github.com/webaneid/facport/commit/97e92c4))
+* fix(api web): akses member lewat kursi (seat) hanya selama langganan kursi berlaku — satu aturan di  ([f1a2de9](https://github.com/webaneid/facport/commit/f1a2de9))
+* fix(web): DateTimeField — tahun bisa diketik digit demi digit (tidak lagi tertimpa 1902); hanya meng ([43b13c6](https://github.com/webaneid/facport/commit/43b13c6))
+* feat(api web): login dengan password benar tapi email belum terverifikasi otomatis mengirim link ver ([c2a42eb](https://github.com/webaneid/facport/commit/c2a42eb))
+
 ## <small>2.29.1 (2026-10-07)</small>
 
 * chore: merge develop ke main (perbaikan login: reset password memverifikasi email, pesan galat login ([275a0d4](https://github.com/webaneid/facport/commit/275a0d4))
