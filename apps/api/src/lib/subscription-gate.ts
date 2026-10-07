@@ -2,7 +2,8 @@ import { Elysia } from "elysia";
 import { eq, and, or, inArray, desc, gt, isNull } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
-import { subscriptions, plans, dataUsaha, memberSeats } from "../db/schema";
+import { subscriptions, plans, dataUsaha } from "../db/schema";
+import { memberAccessibleDataUsahaIds } from "./seat-access";
 import { hasAccessToDataUsaha } from "./data-usaha";
 
 // § architecture-subscription.md § "Gating Akses Modul" — LAPISAN TERPISAH
@@ -82,13 +83,8 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
             subscriptions.dataUsahaId,
             db.select({ id: dataUsaha.id }).from(dataUsaha).where(eq(dataUsaha.userId, userId)),
           ),
-          inArray(
-            subscriptions.dataUsahaId,
-            db
-              .select({ dataUsahaId: memberSeats.dataUsahaId })
-              .from(memberSeats)
-              .where(and(eq(memberSeats.memberUserId, userId), eq(memberSeats.status, "active"))),
-          ),
+          // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".
+          inArray(subscriptions.dataUsahaId, memberAccessibleDataUsahaIds(userId)),
         ),
       ),
     )

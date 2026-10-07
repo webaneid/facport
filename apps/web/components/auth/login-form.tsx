@@ -56,7 +56,7 @@ function LoginFormInner() {
       const failure = signInError as { status?: number; code?: string };
       if (failure.code === "EMAIL_NOT_VERIFIED") {
         setUnverifiedEmail(values.email);
-        setError("Email kamu belum diverifikasi. Klik link verifikasi di email pendaftaran, atau kirim ulang link-nya di bawah ini.");
+        setError("Email kamu belum diverifikasi. Kami sudah mengirim link verifikasi baru ke email kamu — cek inbox dan folder spam, lalu klik link-nya. Belum menerima? Kirim ulang di bawah ini.");
       } else if (failure.code === "ACCOUNT_DISABLED") {
         setError("Akun ini dinonaktifkan. Hubungi admin untuk bantuan.");
       } else if (failure.status === 429 || failure.code === "TOO_MANY_REQUESTS") {

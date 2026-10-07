@@ -15,6 +15,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
+import { formatDate } from "@/lib/utils";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
 
 type Seat = {
   id: string;
@@ -22,6 +24,9 @@ type Seat = {
   invitedEmail: string | null;
   memberName: string | null;
   memberEmail: string | null;
+  // § 2026-10-07 — langganan KURSI sudah berakhir: member tidak bisa memakai Data Usaha ini sampai kursinya aktif lagi.
+  seatExpired?: boolean;
+  seatEndAt?: string | null;
 };
 
 const inviteSchema = z.object({ email: z.string().email("Format email tidak valid") });
@@ -40,6 +45,7 @@ const STATUS_BADGE: Record<Seat["status"], { label: string; variant: "default" |
 // Tambahan milik Data Usaha AKTIF + invite/resend/revoke. `dataUsahaId`
 // dioper dari `page.tsx` (Server Component, cookie sudah divalidasi layout).
 export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
+  const companyTimezone = useCompanyTimezone();
   const [seats, setSeats] = useState<Seat[] | null>(null);
   const [inviteTarget, setInviteTarget] = useState<string | null>(null);
   const [busySeatId, setBusySeatId] = useState<string | null>(null);
@@ -167,7 +173,14 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
                         {seat.memberName || seat.memberEmail || seat.invitedEmail || "Slot kosong"}
                       </span>
                       <Badge variant={statusInfo.variant}>{statusInfo.label}</Badge>
+                      {seat.seatExpired && <Badge variant="destructive">Kursi berakhir</Badge>}
                     </div>
+                    {seat.seatExpired && (
+                      <p className="mt-1 text-xs text-destructive">
+                        Langganan kursi ini sudah berakhir{seat.seatEndAt ? ` (${formatDate(seat.seatEndAt, companyTimezone)})` : ""}, jadi anggota di sini tidak bisa memakai Data Usaha sampai kursi
+                        diperpanjang/dibeli lagi.
+                      </p>
+                    )}
                     {seat.status === "invited" && <p className="mt-1 text-xs text-muted-foreground">Menunggu {seat.invitedEmail} menerima undangan.</p>}
                   </div>
                   <div className="flex shrink-0 gap-2">

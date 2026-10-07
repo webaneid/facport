@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
-import { memberSeats, dataUsaha, user as userTable } from "../db/schema";
+import { memberSeats, dataUsaha, subscriptions, user as userTable } from "../db/schema";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { generateInviteToken, revokeAllSessions } from "../lib/member-seats";
 import { boss, JOBS, startQueue } from "../lib/queue";
@@ -51,11 +51,22 @@ export const teamRoute = new Elysia()
           memberUserId: memberSeats.memberUserId,
           memberName: userTable.name,
           memberEmail: userTable.email,
+          // § 2026-10-07 — langganan KURSI (bukan status slot): member hanya bisa memakai Data Usaha selama kursinya masih berlaku (lib/seat-access.ts) — pemilik perlu
+          // tahu kursi mana yang sudah berakhir supaya paham kenapa stafnya tidak bisa masuk.
+          seatEndAt: subscriptions.endAt,
+          seatSubscriptionStatus: subscriptions.status,
         })
         .from(memberSeats)
+        .innerJoin(subscriptions, eq(subscriptions.id, memberSeats.seatSubscriptionId))
         .leftJoin(userTable, eq(userTable.id, memberSeats.memberUserId))
         .where(eq(memberSeats.dataUsahaId, query.dataUsahaId));
-      return { seats };
+      const now = Date.now();
+      return {
+        seats: seats.map((seat) => ({
+          ...seat,
+          seatExpired: seat.seatSubscriptionStatus !== "active" || (seat.seatEndAt !== null && seat.seatEndAt.getTime() <= now),
+        })),
+      };
     },
     { auth: true, query: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
   )

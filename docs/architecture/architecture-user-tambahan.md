@@ -573,3 +573,10 @@ C stabil.
   `apps/web/app/app/(protected)/accurate/page.tsx`,
   `apps/web/components/app-shell/sidebar.tsx`,
   `apps/web/lib/module-options.ts`.
+
+## Akses Member Lewat Kursi — Hanya Selama Langganan Kursi Berlaku (2026-10-07)
+Aturan satu tempat: `apps/api/src/lib/seat-access.ts` `memberAccessibleDataUsahaIds(userId)` — member boleh memakai Data Usaha pemilik HANYA bila slot `active` DAN langganan kursinya (`seat_subscription_id`) masih `active` dengan `end_at` belum lewat (NULL = data lama, berlaku). Dipakai tiga titik: gerbang fitur (`subscription-gate.ts` `getAccessibleSubscriptionsWithPlans`), `hasAccessToDataUsaha` (`data-usaha.ts`), `GET /me/data-usaha` (`me.route.ts`).
+- Status slot (`member_seats.status`) SENGAJA tidak diubah saat kursi berakhir: kursi aktif lagi → member kembali otomatis tanpa undang ulang.
+- `GET /me/team` menambah `seatExpired`/`seatEndAt`/`seatSubscriptionStatus`; halaman Tim menandai "Kursi berakhir" + tanggal supaya pemilik tahu kenapa anggotanya tidak bisa masuk.
+- Sebelum ini ketiga titik hanya mengecek status slot, yang tidak pernah berubah saat kursi berakhir (member punya akses selamanya). Dampak produksi saat ditutup: 0 member (dicek read-only sebelum rilis).
+- Perpanjangan kursi lewat tombol tetap ditunda (ADR-0041 poin 6): kursi yang habis dibeli baru / diaktifkan admin.

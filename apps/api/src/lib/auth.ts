@@ -72,6 +72,13 @@ export const auth = betterAuth({
     // signUp (`/subscribe?plans=...`) — user mendarat sudah login DENGAN
     // paket ke-preselect, tinggal checkout.
     autoSignInAfterVerification: true,
+    // § 2026-10-07 (laporan client: akun lama belum terverifikasi tak bisa login) — login dengan password BENAR tapi email belum terverifikasi sekarang OTOMATIS
+    // mengirim link verifikasi baru (dulu hanya 403 tanpa email apa pun; pengguna harus menemukan tombol kirim ulang sendiri). Hanya terjadi saat password benar
+    // (tidak bisa dipakai menebak/membanjiri alamat orang lain), dan tetap di bawah batas 10 percobaan/menit/IP di `/api/auth`.
+    sendOnSignIn: true,
+    // Link verifikasi berlaku 24 jam (bawaan Better Auth 1 jam) — pengguna yang membuka email beberapa jam kemudian tidak perlu minta ulang. Link reset password
+    // TIDAK diubah (sengaja pendek, lebih sensitif).
+    expiresIn: 60 * 60 * 24,
   },
   session: {
     expiresIn: 60 * 60 * 24 * 7, // 7 hari

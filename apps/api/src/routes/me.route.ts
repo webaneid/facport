@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
 import { eq, and, or, inArray, isNotNull, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, memberSeats, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
+import { memberAccessibleDataUsahaIds } from "../lib/seat-access";
+import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
 import { ownsDataUsaha, hasAccessToDataUsaha } from "../lib/data-usaha";
@@ -68,13 +69,8 @@ export const meRoute = new Elysia()
         .where(
           or(
             eq(dataUsaha.userId, user.id),
-            inArray(
-              dataUsaha.id,
-              db
-                .select({ dataUsahaId: memberSeats.dataUsahaId })
-                .from(memberSeats)
-                .where(and(eq(memberSeats.memberUserId, user.id), eq(memberSeats.status, "active"))),
-            ),
+            // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".
+            inArray(dataUsaha.id, memberAccessibleDataUsahaIds(user.id)),
           ),
         )
         .orderBy(desc(dataUsaha.createdAt));
