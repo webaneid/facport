@@ -1,6 +1,7 @@
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { dataUsaha, memberSeats } from "../db/schema";
+import { dataUsaha } from "../db/schema";
+import { memberAccessibleDataUsahaIds } from "./seat-access";
 
 // § Fase 107/108, architecture-user-tambahan.md § Fase B0/B1 — SATU
 // sumber kebenaran nama default (dipakai juga
@@ -63,13 +64,8 @@ export async function hasAccessToDataUsaha(userId: string, dataUsahaId: string):
         eq(dataUsaha.id, dataUsahaId),
         or(
           eq(dataUsaha.userId, userId),
-          inArray(
-            dataUsaha.id,
-            db
-              .select({ dataUsahaId: memberSeats.dataUsahaId })
-              .from(memberSeats)
-              .where(and(eq(memberSeats.memberUserId, userId), eq(memberSeats.status, "active"))),
-          ),
+          // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".
+          inArray(dataUsaha.id, memberAccessibleDataUsahaIds(userId)),
         ),
       ),
     );

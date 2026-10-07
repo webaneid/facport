@@ -11,7 +11,7 @@ Akses fitur berhenti TEPAT di `end_at` (tidak menunggu job harian), job kedaluwa
 - [x] `NOTIFY_EXPIRING_SOON` jam 09:00 di zona perusahaan (`tz` pg-boss; dulu 00:00 UTC)
 - [x] `lib/job-schedules.ts` (jadwal satu tempat) + tes
 - [x] Tes: status `active` tetapi `end_at` lewat → 403; 1 menit lagi → 200; `end_at` NULL tetap berlaku; Data Usaha tetap bisa diakses saat fitur kedaluwarsa
-- [ ] DITUNDA (butuh keputusan): akses MEMBER lewat seat saat langganan seat kedaluwarsa (lihat Temuan)
+- [x] DITUTUP 2026-10-07 (di luar fase ini, setelah dampak produksi dicek = 0 member): akses MEMBER lewat seat kini ikut langganan kursi — `lib/seat-access.ts`, lihat `architecture-user-tambahan.md`
 
 ## Keputusan Kecil Selama Eksekusi
 - `end_at` NULL pada baris aktif dianggap berlaku — data lama tanpa tanggal akhir tidak memutus akses siapa pun.
