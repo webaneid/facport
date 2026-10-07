@@ -80,15 +80,18 @@ describe("kirim ulang email verifikasi untuk akun lama yang belum terverifikasi"
     }) as never);
     try {
       expect((await post("/api/auth/sign-in/email", { email, password: "PasswordRahasia123!" })).status).toBe(403);
-      expect(sent).toHaveLength(0); // login yang ditolak TIDAK mengirim email apa pun sendiri (sendOnSignIn mati) — pengguna yang meminta lewat tombol
-
-      const resend = await post("/api/auth/send-verification-email", { email, callbackURL: "http://localhost/" });
-      expect(resend.status).toBe(200);
+      // sendOnSignIn: login dengan password BENAR tapi belum terverifikasi OTOMATIS mengirim link baru (tanpa harus menekan tombol)
       expect(sent).toHaveLength(1);
       expect(sent[0]!.to).toBe(email);
       expect(sent[0]!.subject).toBe("Verifikasi email Facport");
 
-      const link = sent[0]!.html.match(/href="([^"]+verify-email[^"]+)"/)![1]!.replace(/&amp;/g, "&");
+      // tombol "Kirim ulang" (endpoint eksplisit) tetap berfungsi
+      const resend = await post("/api/auth/send-verification-email", { email, callbackURL: "http://localhost/" });
+      expect(resend.status).toBe(200);
+      expect(sent).toHaveLength(2);
+      expect(sent[1]!.to).toBe(email);
+
+      const link = sent[1]!.html.match(/href="([^"]+verify-email[^"]+)"/)![1]!.replace(/&amp;/g, "&");
       const verify = await testApp.handle(new Request(link));
       expect([200, 302]).toContain(verify.status);
       expect((await db.select().from(userTable).where(eq(userTable.email, email)))[0]!.emailVerified).toBe(true);
@@ -108,6 +111,57 @@ describe("kirim ulang email verifikasi untuk akun lama yang belum terverifikasi"
       const res = await post("/api/auth/send-verification-email", { email: `tidak-ada-${runId}@test.local`, callbackURL: "http://localhost/" });
       expect(res.status).toBe(200);
       expect(sent).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
+describe("verifikasi email otomatis saat login & masa link", () => {
+  const sentTo = () => {
+    const sent: { to: string; subject: string; html: string }[] = [];
+    const spy = spyOn(boss, "send").mockImplementation((async (_n: string, data: unknown) => {
+      sent.push(data as { to: string; subject: string; html: string });
+      return "job-id";
+    }) as never);
+    return { sent, spy };
+  };
+
+  test("password SALAH tidak mengirim email verifikasi apa pun (tidak bisa dipakai membanjiri alamat orang lain)", async () => {
+    const email = `autosend-wrongpw-${runId}@test.local`;
+    await signUp(email, "PasswordBenar123!");
+    const { sent, spy } = sentTo();
+    try {
+      expect((await post("/api/auth/sign-in/email", { email, password: "PasswordSalah999!" })).status).toBe(401);
+      expect(sent).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("akun SUDAH terverifikasi login normal dan tidak dikirimi email verifikasi", async () => {
+    const email = `autosend-verified-${runId}@test.local`;
+    const userId = await signUp(email, "PasswordBenar123!");
+    await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
+    const { sent, spy } = sentTo();
+    try {
+      expect((await post("/api/auth/sign-in/email", { email, password: "PasswordBenar123!" })).status).toBe(200);
+      expect(sent).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("link verifikasi berlaku 24 jam (bukan 1 jam bawaan)", async () => {
+    const email = `autosend-expiry-${runId}@test.local`;
+    await signUp(email, "PasswordBenar123!");
+    const { sent, spy } = sentTo();
+    try {
+      await post("/api/auth/sign-in/email", { email, password: "PasswordBenar123!" });
+      const link = sent[0]!.html.match(/href="([^"]+verify-email[^"]+)"/)![1]!.replace(/&amp;/g, "&");
+      const token = new URL(link).searchParams.get("token")!;
+      const payload = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString("utf8")) as { iat: number; exp: number };
+      expect(payload.exp - payload.iat).toBe(24 * 60 * 60);
     } finally {
       spy.mockRestore();
     }

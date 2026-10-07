@@ -243,3 +243,10 @@ dipisah jadi macro sendiri (`subscriptionGatePlugin`) dari
 - Prinsip keamanan umum (JWT expiry, cookie httpOnly, dst) → `architecture-security.md` §4
 - Model langganan & gating modul → `docs/architecture/architecture-subscription.md`
 - Surface admin vs app → `docs/architecture/architecture-domain-routing.md`
+
+## Verifikasi Email — Perilaku Login & Pemulihan (2026-10-07)
+Daftar mandiri WAJIB verifikasi email (`requireEmailVerification: true`; admin-provisioned = terverifikasi oleh admin). Aturan yang berlaku:
+- **Login dengan password BENAR tapi email belum terverifikasi** → server membalas 403 `EMAIL_NOT_VERIFIED` DAN otomatis mengirim link verifikasi baru (`sendOnSignIn: true`); password salah tidak mengirim apa pun (tidak bisa dipakai membanjiri alamat orang lain). Form login menampilkan pesan khusus + tombol "Kirim ulang email verifikasi" (`POST /api/auth/send-verification-email`; email tak terdaftar tetap dibalas sukses tanpa mengirim — tidak membocorkan keberadaan akun).
+- **Link verifikasi berlaku 24 jam** (`emailVerification.expiresIn`; bawaan Better Auth 1 jam). Link reset password tetap pendek (bawaan).
+- **Reset password lewat link email menandai email terverifikasi** (`emailAndPassword.onPasswordReset`) — link itu hanya dikirim ke alamat akun sendiri, jadi memakainya membuktikan pemilik mengakses kotak surat. Tanpa ini, akun daftar-mandiri yang tak pernah klik link verifikasi bisa reset password berkali-kali dan tetap tidak bisa login.
+- **Pesan galat login sesuai penyebab** (`login-form.tsx`): `EMAIL_NOT_VERIFIED` (+ kirim ulang), `ACCOUNT_DISABLED`, 429, 5xx; "Email atau password salah." HANYA untuk kredensial salah. Jangan kembali memukul rata semua galat jadi satu pesan.
