@@ -1,9 +1,10 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { Elysia } from "elysia";
 import { eq, like } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
 import { user as userTable, verification } from "../db/schema";
+import { boss } from "./queue";
 
 // § 2026-10-07 — laporan client: ganti password 2× lewat link email, login tetap gagal. Akar masalah: email BELUM terverifikasi (daftar mandiri), dan reset password
 // bawaan Better Auth tidak memverifikasinya. Sekarang reset lewat link email (bukti pemilik mengakses kotak surat) otomatis menandai email terverifikasi.
@@ -64,5 +65,51 @@ describe("reset password menandai email terverifikasi", () => {
     const res = await post("/api/auth/reset-password", { newPassword: "PasswordBaru456!", token: "token-ngawur" });
     expect(res.status).toBe(400);
     expect((await db.select().from(userTable).where(eq(userTable.id, userId)))[0]!.emailVerified).toBe(false);
+  });
+});
+
+// § 2026-10-07 — akun lama yang belum terverifikasi (link pendaftaran sudah kedaluwarsa) harus bisa MINTA kirim ulang verifikasi lalu menyelesaikannya.
+describe("kirim ulang email verifikasi untuk akun lama yang belum terverifikasi", () => {
+  test("login password benar → 403 EMAIL_NOT_VERIFIED → kirim ulang → email baru terkirim ke alamatnya → klik link = terverifikasi + login berhasil", async () => {
+    const email = `resend-verify-${runId}@test.local`;
+    await signUp(email, "PasswordRahasia123!");
+    const sent: { to: string; subject: string; html: string }[] = [];
+    const spy = spyOn(boss, "send").mockImplementation((async (_name: string, data: unknown) => {
+      sent.push(data as { to: string; subject: string; html: string });
+      return "job-id";
+    }) as never);
+    try {
+      expect((await post("/api/auth/sign-in/email", { email, password: "PasswordRahasia123!" })).status).toBe(403);
+      expect(sent).toHaveLength(0); // login yang ditolak TIDAK mengirim email apa pun sendiri (sendOnSignIn mati) — pengguna yang meminta lewat tombol
+
+      const resend = await post("/api/auth/send-verification-email", { email, callbackURL: "http://localhost/" });
+      expect(resend.status).toBe(200);
+      expect(sent).toHaveLength(1);
+      expect(sent[0]!.to).toBe(email);
+      expect(sent[0]!.subject).toBe("Verifikasi email Facport");
+
+      const link = sent[0]!.html.match(/href="([^"]+verify-email[^"]+)"/)![1]!.replace(/&amp;/g, "&");
+      const verify = await testApp.handle(new Request(link));
+      expect([200, 302]).toContain(verify.status);
+      expect((await db.select().from(userTable).where(eq(userTable.email, email)))[0]!.emailVerified).toBe(true);
+      expect((await post("/api/auth/sign-in/email", { email, password: "PasswordRahasia123!" })).status).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("permintaan kirim ulang untuk email yang TIDAK terdaftar tidak membocorkan apa pun (tetap 200, tidak ada email)", async () => {
+    const sent: unknown[] = [];
+    const spy = spyOn(boss, "send").mockImplementation((async (_n: string, data: unknown) => {
+      sent.push(data);
+      return "job-id";
+    }) as never);
+    try {
+      const res = await post("/api/auth/send-verification-email", { email: `tidak-ada-${runId}@test.local`, callbackURL: "http://localhost/" });
+      expect(res.status).toBe(200);
+      expect(sent).toHaveLength(0);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
