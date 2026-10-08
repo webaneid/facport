@@ -124,7 +124,7 @@ describe("GET /admin/users/:id/subscriptions", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { subscriptions: { moduleKey: string; interval: string; isTrial: boolean; periodAnchorAt: string | null; periodMonths: number | null }[] };
     const paid = body.subscriptions.find((x) => x.moduleKey === "journal_voucher")!;
-    expect(paid).toMatchObject({ interval: "yearly", isTrial: false, periodMonths: 12 });
+    expect(paid).toMatchObject({ interval: "yearly", isTrial: false, periodMonths: 12, renewalInterval: null, planKind: "module" });
     expect(new Date(paid.periodAnchorAt!).getTime()).toBe(anchor.getTime());
     const trial = body.subscriptions.find((x) => x.moduleKey === "sales_order")!;
     expect(trial).toMatchObject({ interval: "monthly", isTrial: true, periodAnchorAt: null, periodMonths: null });

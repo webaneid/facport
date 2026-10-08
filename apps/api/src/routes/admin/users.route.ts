@@ -213,18 +213,18 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         // 109/110, dicatat sebagai Known Limitation phase doc).
         const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
         if (paymentMode === "free") {
-          subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId }));
+          subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId, renewalInterval: body.renewalInterval ?? null }));
         } else if (paymentMode === "paid_invoice") {
           // § Fase 178 — invoice dibuat OTOMATIS LUNAS + langganan aktif & tertaut ke invoice (catatan/PDF untuk pembukuan).
           const timeZone = await getCompanyTimezone();
           const paid = await db.transaction((tx) =>
-            createPaidInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, actorId: user.id, now: new Date(), timeZone }),
+            createPaidInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, actorId: user.id, now: new Date(), timeZone, renewalInterval: body.renewalInterval ?? null }),
           );
           invoiceId = paid.invoiceId;
           orderId = paid.orderId;
           subscriptionIds = paid.subscriptionIds;
         } else {
-          const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId }));
+          const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, origin: "admin", renewalInterval: body.renewalInterval ?? null }));
           invoiceId = created.invoiceId;
           orderId = created.orderId;
           amountDue = created.amountDue;
@@ -275,6 +275,8 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         markAsPaid: t.Optional(t.Boolean()),
         // § Fase 178 — menggantikan `markAsPaid` (tetap diterima: true = "free"): "invoice" kirim invoice | "paid_invoice" invoice otomatis lunas | "free" tanpa invoice.
         payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
+        // § Fase 181, ADR-0042 — "perpanjangan berikutnya" untuk semua paket MODUL yang dipilih (seat diabaikan): tagihan perpanjangan terbit otomatis 7 hari sebelum berakhir.
+        renewalInterval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])),
       }),
     },
   )

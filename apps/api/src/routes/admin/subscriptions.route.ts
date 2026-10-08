@@ -2,6 +2,7 @@ import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { assignPlanToDataUsaha } from "../../lib/admin-assign";
 import { renewSubscriptionInPlace } from "../../lib/subscription-renewal";
+import { issueRenewalInvoiceNow, RenewalIssueError } from "../../lib/renewal-billing";
 import { eq, desc, inArray, sql } from "drizzle-orm";
 import { createInvoiceAndOrder, createPaidInvoiceAndOrder, inFlightModuleKeys } from "../../lib/invoice-order";
 import { db } from "../../lib/db";
@@ -145,10 +146,10 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
             const blocked = planRows.map((p) => p.modules[0]).find((m): m is string => !!m && inFlight.has(m));
             if (blocked) throw new Error(`MODULE_ORDER_IN_PROGRESS:${blocked}`);
             if (mode === "invoice") {
-              const created = await createInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId });
+              const created = await createInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, origin: "admin", renewalInterval: body.renewalInterval ?? null });
               return { dataUsahaId, payment: mode, invoiceId: created.invoiceId, orderId: created.orderId, amountDue: created.amountDue };
             }
-            const paid = await createPaidInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, actorId: user.id, now, timeZone });
+            const paid = await createPaidInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, actorId: user.id, now, timeZone, renewalInterval: body.renewalInterval ?? null });
             return {
               dataUsahaId,
               payment: mode,
@@ -171,7 +172,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       const results = await db.transaction(async (tx) => {
         const out = [];
         for (const plan of planRows) {
-          const r = await assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id });
+          const r = await assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id, renewalInterval: body.renewalInterval ?? null });
           out.push({
             planId: plan.id,
             subscriptionId: r.subscription.id,
@@ -192,6 +193,8 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         endAt: t.Optional(t.String({ format: "date-time" })),
         dataUsahaId: t.Optional(t.String({ format: "uuid" })),
         payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
+        // § Fase 181, ADR-0042 — "perpanjangan berikutnya" untuk semua paket MODUL yang dipilih (seat diabaikan).
+        renewalInterval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])),
       }),
     },
   )
@@ -281,5 +284,62 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ interval: t.Union([t.Literal("monthly"), t.Literal("yearly")]), periods: t.Integer({ minimum: 1, maximum: 36 }) }),
+    },
+  
+  )
+  // § Fase 181, ADR-0042 — atur penanda "perpanjangan berikutnya" langganan (monthly/yearly/null). Hanya langganan modul non-trial yang masih aktif (seat & trial tidak pernah ditandai).
+  // Mengubah penanda tidak menyentuh tanggal berakhir dan tidak menerbitkan tagihan — penerbitan dilakukan job harian (7 hari sebelum berakhir) atau tombol manual di bawah.
+  .patch(
+    "/:id/renewal",
+    async ({ params, body, user, set }) => {
+      const [row] = await db.select({ sub: subscriptions, kind: plans.kind }).from(subscriptions).innerJoin(plans, eq(plans.id, subscriptions.planId)).where(eq(subscriptions.id, params.id));
+      if (!row) {
+        set.status = 404;
+        return { code: "SUBSCRIPTION_NOT_FOUND" };
+      }
+      if (row.sub.isTrial || row.sub.status !== "active" || row.kind !== "module") {
+        set.status = 400;
+        return { code: "RENEWAL_NOT_APPLICABLE" };
+      }
+      const [updated] = await db.update(subscriptions).set({ renewalInterval: body.renewalInterval }).where(eq(subscriptions.id, params.id)).returning();
+      await db.insert(auditLogs).values({
+        entityType: "subscription",
+        entityId: params.id,
+        action: "update",
+        changes: { renewalInterval: { old: row.sub.renewalInterval, new: body.renewalInterval } },
+        actorId: user.id,
+      });
+      return updated;
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ renewalInterval: t.Union([t.Literal("monthly"), t.Literal("yearly"), t.Null()]) }),
+    },
+  )
+  // § Fase 181 — terbitkan tagihan perpanjangan SEKARANG untuk satu langganan (mis. tagihan sebelumnya dibatalkan, atau paket periode baru tersedia): mengabaikan jendela 7 hari &
+  // penanda siklus, tetap menolak trial/habis/seat, modul yang masih punya pesanan berjalan, dan paket periode yang tidak ada. Butuh izin `invoices.manage` juga (membuat invoice).
+  .post(
+    "/:id/renewal-invoice",
+    async ({ params, body, user, set }) => {
+      if (!(await userHasPermission(user.id, "invoices.manage"))) {
+        set.status = 403;
+        return { code: "FORBIDDEN_INVOICE" };
+      }
+      try {
+        const outcome = await issueRenewalInvoiceNow(params.id, { timeZone: await getCompanyTimezone(), interval: body.interval });
+        return { invoiceId: outcome.invoiceId, orderId: outcome.orderId, invoiceNumber: outcome.invoiceNumber, amountDue: outcome.amountDue };
+      } catch (err) {
+        if (err instanceof RenewalIssueError) {
+          set.status = err.code === "SUBSCRIPTION_NOT_FOUND" ? 404 : 400;
+          return { code: err.code };
+        }
+        throw err;
+      }
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ interval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])) }),
     },
   );

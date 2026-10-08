@@ -32,6 +32,7 @@ export function CategoryCard({
   selectTier,
   tryingPlanId,
   onStartTrial,
+  onTurnOffRenewal,
 }: {
   category: string;
   groups: ModuleGroup<Plan>[];
@@ -44,6 +45,7 @@ export function CategoryCard({
   selectTier: (moduleKey: string, planId: string) => void;
   tryingPlanId: string | null;
   onStartTrial: (e: React.MouseEvent, plan: Plan) => void;
+  onTurnOffRenewal?: (subscriptionId: string) => Promise<void>;
 }) {
   const Icon = CATEGORY_ICON[category] ?? CATEGORY_ICON_FALLBACK;
 
@@ -89,6 +91,7 @@ export function CategoryCard({
                     onToggle={() => toggleModule(group.moduleKey)}
                     onSelectTier={(planId) => selectTier(group.moduleKey, planId)}
                     onStartTrial={onStartTrial}
+                    onTurnOffRenewal={onTurnOffRenewal}
                   />
                 </AccordionContent>
               </AccordionItem>

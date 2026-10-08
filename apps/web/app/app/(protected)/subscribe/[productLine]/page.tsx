@@ -38,6 +38,7 @@ export default function ProductCatalogPage() {
     selectTier,
     tryingPlanId,
     onStartTrial,
+    turnOffRenewal,
   } = useSubscribeCart();
 
   if (!plans) {
@@ -75,6 +76,7 @@ export default function ProductCatalogPage() {
           selectTier={selectTier}
           tryingPlanId={tryingPlanId}
           onStartTrial={onStartTrial}
+          onTurnOffRenewal={turnOffRenewal}
         />
       )}
     </div>

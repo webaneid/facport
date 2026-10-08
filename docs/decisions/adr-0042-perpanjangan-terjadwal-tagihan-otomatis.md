@@ -1,6 +1,6 @@
 # ADR-0042: Perpanjangan terjadwal — tagihan perpanjangan diterbitkan otomatis menjelang berakhir
 
-**Status:** Proposed (menunggu konfirmasi pemilik produk — lihat "Keputusan yang masih perlu dikonfirmasi")
+**Status:** Accepted (dikonfirmasi pemilik produk 2026-10-08: default (a)–(f) disetujui)
 **Tanggal:** 2026-10-08
 
 ## Context
@@ -30,8 +30,8 @@ Langganan Facport dibayar manual (transfer bank/QRIS, diverifikasi admin). Perpa
 - Harga tagihan = harga paket SAAT terbit (bukan harga saat langganan dibeli); pelanggan melihat total sebelum membayar.
 - Pelanggan bisa menerima tagihan yang tidak mereka minta → wajib ada cara mudah mematikan dan membatalkan tagihan.
 
-## Keputusan yang masih perlu dikonfirmasi pemilik produk
-Default berikut dipakai sampai ada koreksi: (a) tagihan terbit H-7 untuk bulanan maupun tahunan; (b) jatuh tempo = tanggal berakhir, tanpa masa tenggang; (c) dibayar setelah berakhir → mulai dari saat disetujui; (d) paket tak tersedia → tidak terbit + notifikasi admin; (e) pelanggan hanya bisa mematikan (tidak menyalakan sendiri) di v1; (f) tagihan yang dibatalkan tidak otomatis diterbitkan ulang di siklus yang sama.
+## Keputusan yang dikonfirmasi pemilik produk (2026-10-08)
+Disetujui tanpa koreksi: (a) tagihan terbit H-7 untuk bulanan maupun tahunan; (b) jatuh tempo = tanggal berakhir, tanpa masa tenggang; (c) dibayar setelah berakhir → mulai dari saat disetujui; (d) paket tak tersedia → tidak terbit + notifikasi admin; (e) pelanggan hanya bisa mematikan (tidak menyalakan sendiri) di v1; (f) tagihan yang dibatalkan tidak otomatis diterbitkan ulang di siklus yang sama.
 
 ---
 > Aturan: file ADR TIDAK diedit setelah Accepted. Kalau keputusan berubah, buat ADR baru dan tulis "Supersedes ADR-0042" di file baru itu.

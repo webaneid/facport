@@ -17,7 +17,7 @@ export type AssignResult = { subscription: SubscriptionRow; renewed: boolean; pr
 //  - selain itu: tutup langganan aktif lain modul yang sama di Data Usaha ini, lalu buat baru (mulai sekarang).
 export async function assignPlanToDataUsaha(
   tx: Tx,
-  params: { userId: string; plan: PlanRow; dataUsahaId: string; endAt: Date | null; now: Date; timeZone: string; actorId: string },
+  params: { userId: string; plan: PlanRow; dataUsahaId: string; endAt: Date | null; now: Date; timeZone: string; actorId: string; renewalInterval?: "monthly" | "yearly" | null },
 ): Promise<AssignResult> {
   const { userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId } = params;
   const interval = isSubscriptionInterval(plan.interval) ? plan.interval : inferIntervalFromDays(plan.durationDays);
@@ -27,6 +27,8 @@ export async function assignPlanToDataUsaha(
     const renewable = await findRenewableSubscription(tx, { dataUsahaId, moduleKey, now });
     if (renewable) {
       const renewal = await renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "admin", actorId });
+      // § Fase 181, ADR-0042 — "perpanjangan berikutnya" (hanya modul): ditetapkan bila admin memilihnya; tanpa pilihan, penanda lama dibiarkan.
+      if (params.renewalInterval) await tx.update(subscriptions).set({ renewalInterval: params.renewalInterval }).where(eq(subscriptions.id, renewal.subscriptionId));
       const [row] = await tx.select().from(subscriptions).where(eq(subscriptions.id, renewal.subscriptionId));
       return { subscription: row!, renewed: true, previousEndAt: renewal.previousEndAt };
     }
@@ -53,7 +55,10 @@ export async function assignPlanToDataUsaha(
   // orderId = null — dianggap sudah dibayar di luar sistem (invoice manual/kontrak korporat), § architecture-subscription.md
   const [subscription] = await tx
     .insert(subscriptions)
-    .values({ userId, planId: plan.id, status: "active", startAt: now, endAt: period.endAt, periodAnchorAt: period.periodAnchorAt, periodMonths: period.periodMonths, dataUsahaId })
+    .values({
+      userId, planId: plan.id, status: "active", startAt: now, endAt: period.endAt, periodAnchorAt: period.periodAnchorAt, periodMonths: period.periodMonths, dataUsahaId,
+      renewalInterval: plan.kind === "seat_addon" ? null : (params.renewalInterval ?? null),
+    })
     .returning();
 
   await tx.insert(auditLogs).values({

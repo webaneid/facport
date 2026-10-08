@@ -47,6 +47,8 @@ export const orders = pgTable("orders", {
   cancelledBy: text("cancelled_by").references(() => user.id),
   cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
   cancelReason: text("cancel_reason"),
+  // § Fase 181, ADR-0042 — asal pesanan: "checkout" (pelanggan) | "admin" (dibuat/dilunasi admin) | "renewal" (tagihan perpanjangan terjadwal oleh job). Jejak audit & lencana UI.
+  origin: varchar("origin", { length: 12 }).notNull().default("checkout"),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });

@@ -4,7 +4,7 @@ import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { subscriptionsRoute } from "./subscriptions.route";
 import { db } from "../lib/db";
-import { plans, subscriptions, invoices, invoiceItems, orders, notifications, user as userTable } from "../db/schema";
+import { plans, subscriptions, invoices, invoiceItems, orders, notifications, auditLogs, user as userTable } from "../db/schema";
 import { createTestDataUsaha } from "../lib/test-fixtures";
 
 // § Fase 16, ADR-0022 — checkout REWORK: cart multi-modul `{planIds}`,
@@ -486,5 +486,47 @@ describe("GET /me/subscriptions", () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { subscriptions: { plan: { name: string } }[] };
     expect(body.subscriptions.map((s) => s.plan.name)).toEqual([`Me Subs Scoped Plan A ${runId}`]);
+  });
+});
+
+// § Fase 181, ADR-0042 — pelanggan (pemilik Data Usaha) dapat MEMATIKAN perpanjangan terjadwal; tidak menyalakan, tidak untuk langganan orang lain.
+describe("PATCH /me/subscriptions/:id/renewal (Fase 181)", () => {
+  async function seed(userId: string, dataUsahaId: string, renewalInterval: "monthly" | "yearly" | null = "yearly") {
+    const [plan] = await db.insert(plans).values({ name: `Renewal Off Plan ${runId}-${Math.random()}`, price: 1000, durationDays: 30, modules: ["purchase_order"] }).returning();
+    const [sub] = await db.insert(subscriptions).values({ userId, planId: plan!.id, status: "active", startAt: new Date(), endAt: new Date(Date.now() + 30 * 86400000), dataUsahaId, renewalInterval }).returning();
+    return sub!;
+  }
+  const patch = (cookie: string, id: string, body: unknown = { renewalInterval: null }) =>
+    testApp.handle(new Request(`http://localhost/me/subscriptions/${id}/renewal`, { method: "PATCH", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+
+  test("pemilik Data Usaha mematikan: penanda jadi null + audit oleh pelanggan; langganan orang lain → 404 dan tidak berubah; tanpa login → 401", async () => {
+    const ownerEmail = `renewal-off-owner-${runId}@test.local`;
+    const ownerId = await signUp(ownerEmail);
+    const cookie = await signIn(ownerEmail);
+    const dataUsahaId = await createTestDataUsaha(ownerId);
+    const sub = await seed(ownerId, dataUsahaId);
+    const res = await patch(cookie, sub.id);
+    expect(res.status).toBe(200);
+    expect((await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id)))[0]!.renewalInterval).toBeNull();
+    const audit = (await db.select().from(auditLogs).where(eq(auditLogs.entityId, sub.id))).filter((l) => (l.changes as { by?: string }).by === "customer");
+    expect(audit).toHaveLength(1);
+
+    const otherEmail = `renewal-off-other-${runId}@test.local`;
+    await signUp(otherEmail);
+    const otherCookie = await signIn(otherEmail);
+    const victim = await seed(ownerId, dataUsahaId);
+    expect((await patch(otherCookie, victim.id)).status).toBe(404);
+    expect((await db.select().from(subscriptions).where(eq(subscriptions.id, victim.id)))[0]!.renewalInterval).toBe("yearly");
+    expect((await testApp.handle(new Request(`http://localhost/me/subscriptions/${victim.id}/renewal`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ renewalInterval: null }) }))).status).toBe(401);
+    expect((await patch(cookie, crypto.randomUUID())).status).toBe(404);
+  });
+
+  test("pelanggan TIDAK bisa menyalakan/mengubah ke monthly/yearly lewat endpoint ini (hanya null) → 422", async () => {
+    const email = `renewal-off-noon-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const sub = await seed(userId, await createTestDataUsaha(userId), null);
+    expect((await patch(cookie, sub.id, { renewalInterval: "yearly" })).status).toBe(422);
+    expect((await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id)))[0]!.renewalInterval).toBeNull();
   });
 });

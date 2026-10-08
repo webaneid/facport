@@ -48,6 +48,8 @@ export async function activateInvoiceItems(
       }
       if (renewable) {
         renewals.push(await renewSubscriptionInPlace(tx, { subscription: renewable, interval, timeZone, source: "order", actorId, orderId, invoiceItemId: item.id }));
+        // § Fase 181 — niat "perpanjangan berikutnya" yang ikut invoice ini dipasang ke langganan (tanpa niat → penanda lama dibiarkan).
+        if (isSubscriptionInterval(item.renewalInterval)) await tx.update(subscriptions).set({ renewalInterval: item.renewalInterval }).where(eq(subscriptions.id, renewable.id));
         continue;
       }
     }
@@ -55,7 +57,10 @@ export async function activateInvoiceItems(
     const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
     const [sub] = await tx
       .insert(subscriptions)
-      .values({ userId, planId: plan.id, orderId, invoiceItemId: item.id, status: "active", startAt: now, endAt, periodAnchorAt, periodMonths, dataUsahaId })
+      .values({
+        userId, planId: plan.id, orderId, invoiceItemId: item.id, status: "active", startAt: now, endAt, periodAnchorAt, periodMonths, dataUsahaId,
+        renewalInterval: isSubscriptionInterval(item.renewalInterval) ? item.renewalInterval : null, // Fase 181 — siklus perpanjangan terjadwal berlanjut
+      })
       .returning();
     createdSubscriptionIds.push(sub!.id);
 

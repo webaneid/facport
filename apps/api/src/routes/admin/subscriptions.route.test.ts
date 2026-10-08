@@ -1,14 +1,15 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals, invoices, invoiceItems, orders, notifications, permissions, rolePermissions } from "../../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals, invoices, invoiceItems, orders, notifications, permissions, rolePermissions, memberSeats } from "../../db/schema";
 import { adminSubscriptionsRoute } from "./subscriptions.route";
 import { addCalendarMonths, computeSubscriptionPeriod } from "../../lib/subscription-period";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { attachSubscriptionDates } from "../../lib/invoice-helpers";
 import { adminOrdersRoute } from "./orders.route";
+import { createTestSeat } from "../../lib/test-fixtures";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 
 // § Fase 174, ADR-0041 — assign admin: tanpa `endAt` = dihitung dari periode paket (kalender, jangkar dicatat); dengan `endAt` = override bebas
@@ -518,5 +519,104 @@ describe("POST /admin/subscriptions/:id/extend (Fase 180)", () => {
       return r.headers.get("set-cookie") ?? "";
     })();
     expect((await extend(customerCookie, trial!.id, { interval: "monthly", periods: 1 })).status).toBe(403);
+  });
+});
+
+// § Fase 181, ADR-0042 — perpanjangan terjadwal: penanda "perpanjangan berikutnya" & penerbitan tagihan manual.
+describe("perpanjangan terjadwal — endpoint admin (Fase 181)", () => {
+  const api = (cookie: string, method: string, path: string, body?: unknown) =>
+    testApp.handle(new Request(`http://localhost${path}`, { method, headers: { cookie, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  async function seedActive(userId: string, moduleKey: string, over: Partial<typeof subscriptions.$inferInsert> = {}) {
+    const plan = await makePlan("monthly", moduleKey);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const [sub] = await db.insert(subscriptions).values({ userId, planId: plan.id, status: "active", startAt: new Date(Date.now() - 10 * 86400000), endAt: new Date(Date.now() + 20 * 86400000), dataUsahaId, ...over }).returning();
+    return { sub: sub!, plan, dataUsahaId };
+  }
+
+  test("PATCH /:id/renewal: set monthly/yearly lalu kosongkan (null); tanggal berakhir tidak berubah; audit tercatat", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-set-${runId}@test.local`);
+    const { sub } = await seedActive(userId, "sales_invoice");
+    for (const interval of ["yearly", "monthly", null] as const) {
+      const res = await api(cookie, "PATCH", `/admin/subscriptions/${sub.id}/renewal`, { renewalInterval: interval });
+      expect(res.status).toBe(200);
+      const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+      expect(row!.renewalInterval).toBe(interval);
+      expect(row!.endAt!.getTime()).toBe(sub.endAt!.getTime());
+    }
+  });
+
+  test("PATCH /:id/renewal ditolak: trial, bukan aktif, seat (RENEWAL_NOT_APPLICABLE); 404; nilai di luar monthly/yearly/null → 422", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-reject-${runId}@test.local`);
+    const trial = await seedActive(userId, "purchase_invoice", { isTrial: true });
+    const cancelled = await seedActive(userId, "journal_voucher", { status: "cancelled" });
+    const seatId = await createTestSeat(userId, await getOrCreateDefaultDataUsaha(userId));
+    const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, seatId));
+    for (const id of [trial.sub.id, cancelled.sub.id, seat!.seatSubscriptionId]) {
+      const res = await api(cookie, "PATCH", `/admin/subscriptions/${id}/renewal`, { renewalInterval: "yearly" });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("RENEWAL_NOT_APPLICABLE");
+    }
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${crypto.randomUUID()}/renewal`, { renewalInterval: "yearly" })).status).toBe(404);
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${trial.sub.id}/renewal`, { renewalInterval: "weekly" })).status).toBe(422);
+  });
+
+  test("bulk membawa renewalInterval: free & paid_invoice langsung memasang penanda ke langganan (baru atau yang diperpanjang); invoice → di-snapshot ke item lalu dipasang saat aktivasi; seat diabaikan", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-bulk-${runId}@test.local`);
+    const free = await makePlan("monthly", "other_deposit");
+    const paid = await makePlan("monthly", "other_payment");
+    const seat = await db.insert(plans).values({ name: `Renewal Seat ${runId}`, price: 100, durationDays: 30, interval: "monthly", modules: [], kind: "seat_addon" }).returning().then((r) => r[0]!);
+
+    expect((await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [free.id], payment: "free", renewalInterval: "yearly" })).status).toBe(200);
+    const [freeSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, free.id)));
+    expect(freeSub!.renewalInterval).toBe("yearly");
+
+    const paidRes = await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [paid.id, seat.id], payment: "paid_invoice", renewalInterval: "monthly" });
+    expect(paidRes.status).toBe(200);
+    const [paidSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, paid.id)));
+    const [seatSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, seat.id)));
+    expect(paidSub!.renewalInterval).toBe("monthly");
+    expect(seatSub!.renewalInterval).toBeNull(); // seat tidak pernah ditandai
+
+    // mode invoice: niat bertahan di item sampai pembayaran disetujui
+    const invoicePlan = await makePlan("monthly", "item_requisition");
+    const invRes = await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [invoicePlan.id], payment: "invoice", renewalInterval: "yearly" });
+    const { invoiceId } = (await invRes.json()) as { invoiceId: string };
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    expect(items[0]!.renewalInterval).toBe("yearly");
+  });
+
+  test("POST /:id/renewal-invoice: menerbitkan tagihan (origin renewal) untuk langganan ber-penanda; kode galat: tanpa interval, trial, tidak ada paket; tanpa invoices.manage → 403", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-issue-${runId}@test.local`);
+    await makePlan("yearly", "item_transfer");
+    const { sub } = await seedActive(userId, "item_transfer", { renewalInterval: "yearly" });
+    const res = await api(cookie, "POST", `/admin/subscriptions/${sub.id}/renewal-invoice`, {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { orderId: string; invoiceNumber: string };
+    expect((await db.select().from(orders).where(eq(orders.id, body.orderId)))[0]!.origin).toBe("renewal");
+
+    const noFlag = await seedActive(userId, "inventory_adjustment");
+    const needInterval = await api(cookie, "POST", `/admin/subscriptions/${noFlag.sub.id}/renewal-invoice`, {});
+    expect(needInterval.status).toBe(400);
+    expect(((await needInterval.json()) as { code: string }).code).toBe("RENEWAL_INTERVAL_REQUIRED");
+    const trial = await seedActive(userId, "job_costing", { isTrial: true });
+    expect(((await (await api(cookie, "POST", `/admin/subscriptions/${trial.sub.id}/renewal-invoice`, { interval: "monthly" })).json()) as { code: string }).code).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect((await api(cookie, "POST", `/admin/subscriptions/${crypto.randomUUID()}/renewal-invoice`, {})).status).toBe(404);
+
+    // izin: hanya subscriptions.manage (tanpa invoices.manage) → 403 FORBIDDEN_INVOICE
+    const [subsPerm] = await db.select().from(permissions).where(eq(permissions.key, "subscriptions.manage"));
+    const [role] = await db.insert(roles).values({ name: `renewal-subs-only-${runId}`, isSystem: false }).returning();
+    await db.insert(rolePermissions).values({ roleId: role!.id, permissionId: subsPerm!.id });
+    const email = `admin-renewal-subsonly-${runId}@test.local`;
+    const staffId = await signUp(email);
+    await db.insert(userRoles).values({ userId: staffId, roleId: role!.id });
+    const login = await testApp.handle(new Request("http://localhost/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!" }) }));
+    const staffCookie = login.headers.get("set-cookie") ?? "";
+    const denied = await api(staffCookie, "POST", `/admin/subscriptions/${sub.id}/renewal-invoice`, {});
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as { code: string }).code).toBe("FORBIDDEN_INVOICE");
   });
 });

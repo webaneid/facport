@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { plans, subscriptions, user as userTable, dataUsaha } from "../db/schema";
+import { plans, subscriptions, auditLogs, user as userTable, dataUsaha } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { createInvoiceAndOrder, inFlightModuleKeys } from "../lib/invoice-order";
@@ -79,6 +79,29 @@ export const subscriptionsRoute = new Elysia()
   // sama — subscription baru tercipta belakangan (saat admin confirm),
   // jadi cek "subscription aktif" saja tidak cukup untuk cegah 2 invoice
   // pending untuk modul yang sama.
+  // § Fase 181, ADR-0042 — pelanggan MEMATIKAN perpanjangan terjadwal langganannya (v1: tidak menyalakan sendiri — keputusan komersial). Hanya pemilik Data Usaha langganan itu
+  // (member lewat kursi tidak); langganan orang lain = 404 (tidak membocorkan keberadaannya). Tagihan yang SUDAH terbit tetap bisa dibatalkan lewat /billing.
+  .patch(
+    "/me/subscriptions/:id/renewal",
+    async ({ user, params, set }) => {
+      const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, params.id));
+      if (!row || !(await ownsDataUsaha(user.id, row.dataUsahaId))) {
+        set.status = 404;
+        return { code: "SUBSCRIPTION_NOT_FOUND" };
+      }
+      await db.update(subscriptions).set({ renewalInterval: null }).where(eq(subscriptions.id, params.id));
+      await db.insert(auditLogs).values({
+        entityType: "subscription",
+        entityId: params.id,
+        action: "update",
+        changes: { renewalInterval: { old: row.renewalInterval, new: null }, by: "customer" },
+        actorId: user.id,
+      });
+      return { subscriptionId: params.id, renewalInterval: null };
+    },
+    // body WAJIB `{ renewalInterval: null }` — endpoint ini hanya MEMATIKAN (menyalakan = keputusan komersial, bukan self-service di v1); nilai lain ditolak 422.
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ renewalInterval: t.Null() }) },
+  )
   .post(
     "/subscriptions/checkout",
     async ({ body, user, set }) => {

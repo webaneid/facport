@@ -67,6 +67,7 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
             ...inv,
             orderId: order?.id ?? null,
             orderStatus: order?.status ?? null,
+            origin: order?.origin ?? null, // Fase 181 — "checkout" | "admin" | "renewal" (lencana "Tagihan perpanjangan")
             hasProof: !!order?.proofUrl,
             dataUsahaId,
             dataUsahaName: dataUsahaId ? (dataUsahaNameById.get(dataUsahaId) ?? null) : null,
@@ -128,7 +129,7 @@ export const adminInvoicesRoute = new Elysia({ prefix: "/admin/invoices" })
           const inFlight = await inFlightModuleKeys(tx, { userId: targetUser.id, dataUsahaId });
           const blocked = planRows.map((p) => p.modules[0]).find((m): m is string => !!m && inFlight.has(m));
           if (blocked) throw new Error(`MODULE_ORDER_IN_PROGRESS:${blocked}`);
-          return createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId });
+          return createInvoiceAndOrder(tx, { userId: targetUser.id, billToName: targetUser.name, planRows, dataUsahaId, origin: "admin" });
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : "";

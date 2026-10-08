@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { FileText, FileDown, Banknote } from "lucide-react";
 import { buttonVariants } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { TruncateText } from "@/components/ui/truncate-text";
@@ -66,7 +67,14 @@ export default function BillingPage() {
               <TableBody>
                 {invoices.map((inv) => (
                   <TableRow key={inv.id}>
-                    <TableCell className="font-medium text-foreground">{inv.invoiceNumber}</TableCell>
+                    <TableCell className="font-medium text-foreground">
+                      {inv.invoiceNumber}
+                      {inv.origin === "renewal" && (
+                        <Badge variant="primary" className="ml-2" title="Diterbitkan otomatis 7 hari sebelum langganan berakhir">
+                          Tagihan perpanjangan
+                        </Badge>
+                      )}
+                    </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncateText>{groupInvoiceItemLabels(inv.items) || "-"}</TruncateText>
                     </TableCell>

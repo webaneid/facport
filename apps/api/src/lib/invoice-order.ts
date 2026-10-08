@@ -9,7 +9,7 @@ import { paymentVerifiedBody } from "./subscription-renewal";
 
 const INVOICE_DUE_DAYS = 3;
 
-type PlanRow = { id: string; name: string; price: number; durationDays: number; interval: string; modules: string[]; productLine: string };
+type PlanRow = { id: string; name: string; price: number; durationDays: number; interval: string; kind: string; modules: string[]; productLine: string };
 
 // § `tx` (dari `db.transaction(async (tx) => ...)`) TIDAK structurally
 // compatible dengan `typeof db` (beda tipe Drizzle — transaction hilang
@@ -37,12 +37,25 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 // bank untuk dicocokkan), `confirmedBy`/`confirmedAt` = admin. Aktivasi langganannya dikerjakan `createPaidInvoiceAndOrder` di bawah.
 export async function createInvoiceAndOrder(
   tx: Tx,
-  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string; paidBy?: { actorId: string; at: Date } },
+  params: {
+    userId: string;
+    billToName: string;
+    planRows: PlanRow[];
+    dataUsahaId: string;
+    paidBy?: { actorId: string; at: Date };
+    // § Fase 181, ADR-0042 — asal pesanan (default "checkout"), jatuh tempo kustom (tagihan perpanjangan: = tanggal berakhir langganan, BUKAN +3 hari — kalau tidak, job
+    // kedaluwarsa invoice mengedaluwarsakannya sebelum langganan berakhir), dan niat "perpanjangan berikutnya" yang di-snapshot ke item modul (bukan seat).
+    origin?: "checkout" | "admin" | "renewal";
+    dueDate?: Date;
+    renewalInterval?: "monthly" | "yearly" | null;
+    /** Niat perpanjangan per paket (tagihan perpanjangan gabungan bisa memuat langganan bulanan & tahunan sekaligus); menimpa `renewalInterval`. */
+    renewalIntervalByPlanId?: Record<string, "monthly" | "yearly">;
+  },
 ) {
-  const { userId, billToName, planRows, dataUsahaId, paidBy } = params;
+  const { userId, billToName, planRows, dataUsahaId, paidBy, origin = "checkout", renewalInterval = null } = params;
   const subtotal = planRows.reduce((sum, p) => sum + p.price, 0);
   const invoiceNumber = await generateInvoiceNumber(tx);
-  const dueDate = new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 60 * 60 * 1000);
+  const dueDate = params.dueDate ?? new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 60 * 60 * 1000);
 
   const [invoice] = await tx
     .insert(invoices)
@@ -82,6 +95,8 @@ export async function createInvoiceAndOrder(
       durationDays: p.durationDays,
       // § Fase 173, ADR-0041 — snapshot periode ("monthly" | "yearly"), pola sama durationDays.
       interval: p.interval,
+      // niat perpanjangan terjadwal hanya untuk item MODUL (seat tidak pernah diberi penanda)
+      renewalInterval: p.kind === "seat_addon" ? null : (params.renewalIntervalByPlanId?.[p.id] ?? renewalInterval),
     })),
   ).returning();
 
@@ -96,6 +111,7 @@ export async function createInvoiceAndOrder(
       invoiceId: invoice!.id,
       uniqueCode,
       dataUsahaId,
+      origin,
       ...(paidBy ? { status: "paid", method: "manual", confirmedBy: paidBy.actorId, confirmedAt: paidBy.at } : {}),
     })
     .returning();
@@ -109,10 +125,10 @@ export async function createInvoiceAndOrder(
 // Notifikasi "Pembayaran terverifikasi" ke customer ikut dibuat (menyebut perpanjangan bila ada).
 export async function createPaidInvoiceAndOrder(
   tx: Tx,
-  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string; actorId: string; now: Date; timeZone: string },
+  params: { userId: string; billToName: string; planRows: PlanRow[]; dataUsahaId: string; actorId: string; now: Date; timeZone: string; renewalInterval?: "monthly" | "yearly" | null },
 ) {
-  const { userId, billToName, planRows, dataUsahaId, actorId, now, timeZone } = params;
-  const created = await createInvoiceAndOrder(tx, { userId, billToName, planRows, dataUsahaId, paidBy: { actorId, at: now } });
+  const { userId, billToName, planRows, dataUsahaId, actorId, now, timeZone, renewalInterval = null } = params;
+  const created = await createInvoiceAndOrder(tx, { userId, billToName, planRows, dataUsahaId, paidBy: { actorId, at: now }, origin: "admin", renewalInterval });
 
   const planById = new Map(planRows.map((p) => [p.id, p]));
   const items = created.items.map((item) => ({ item, plan: planById.get(item.planId!)! as typeof plans.$inferSelect }));

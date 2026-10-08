@@ -1,5 +1,5 @@
 import { describe, test, expect, mock } from "bun:test";
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { ModulePricingPanel, type Plan } from "./module-pricing-panel";
 
 // § Fase 176, ADR-0041 poin 4 — fitur yang masih aktif bisa DIPERPANJANG dari tanggal berakhir saat ini; pratinjau memakai fungsi yang sama dengan server.
@@ -58,5 +58,51 @@ describe("ModulePricingPanel — perpanjangan dini", () => {
       subscriptionInfo: { startAt: "2026-10-06T07:35:00.000Z", endAt: "2026-11-06T07:35:00.000Z", periodAnchorAt: "2026-10-06T07:35:00.000Z", periodMonths: 1 },
     });
     expect(screen.getByText(/6 Nov 2027/)).toBeTruthy(); // 6 Nov 2026 + 12 bulan (jangkar 1 + 12 = 13 bulan dari 6 Okt)
+  });
+});
+
+// § Fase 181, ADR-0042 — perpanjangan terjadwal di panel pelanggan: info + tombol Matikan (konfirmasi dulu; hanya mematikan).
+describe("ModulePricingPanel — perpanjangan terjadwal", () => {
+  const info = { subscriptionId: "sub-1", startAt: "2026-10-06T07:35:00.000Z", endAt: "2026-11-06T07:35:00.000Z", periodAnchorAt: "2026-10-06T07:35:00.000Z", periodMonths: 1, renewalInterval: "yearly" as const };
+  function panel(over: Partial<React.ComponentProps<typeof ModulePricingPanel>> = {}) {
+    const onTurnOffRenewal = mock(async (_id: string) => {});
+    render(
+      <ModulePricingPanel
+        group={group}
+        activePlan={monthly}
+        isSelected={false}
+        isRealActive
+        isTrialActive={false}
+        subscriptionInfo={info}
+        hasEverTrialed={false}
+        showTrialButton={false}
+        tryingPlanId={null}
+        onToggle={() => {}}
+        onSelectTier={() => {}}
+        onStartTrial={() => {}}
+        onTurnOffRenewal={onTurnOffRenewal}
+        {...over}
+      />,
+    );
+    return { onTurnOffRenewal };
+  }
+
+  test("langganan aktif ber-perpanjangan-terjadwal: info jenis (Tahunan) + 7 hari sebelum berakhir; tidak tampil tanpa penanda atau saat trial", () => {
+    panel();
+    expect(screen.getByText(/Perpanjangan terjadwal: Tahunan/)).toBeTruthy();
+    expect(screen.getByText(/terbit otomatis 7 hari sebelum berakhir/)).toBeTruthy();
+  });
+  test("tanpa penanda → tidak ada blok perpanjangan terjadwal", () => {
+    panel({ subscriptionInfo: { ...info, renewalInterval: null } });
+    expect(screen.queryByText(/Perpanjangan terjadwal/)).toBeNull();
+  });
+  test("Matikan: butuh konfirmasi 'Ya, matikan' (Batal membatalkan); konfirmasi memanggil onTurnOffRenewal dengan id langganan", async () => {
+    const { onTurnOffRenewal } = panel();
+    fireEvent.click(screen.getByRole("button", { name: "Matikan perpanjangan terjadwal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Batal" }));
+    expect(onTurnOffRenewal).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Matikan perpanjangan terjadwal" }));
+    fireEvent.click(screen.getByRole("button", { name: "Ya, matikan" }));
+    await waitFor(() => expect(onTurnOffRenewal).toHaveBeenCalledWith("sub-1"));
   });
 });

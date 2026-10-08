@@ -65,6 +65,8 @@ type InvoiceRow = {
   // expired) — dialog "Detail Invoice" pakai ini biar sama detailnya
   // dengan yang dilihat customer sendiri di alur bayar mereka.
   orderStatus: string | null;
+  // § Fase 181 — "checkout" | "admin" | "renewal"
+  origin?: string | null;
   hasProof: boolean;
 };
 type Plan = { id: string; name: string; price: number; durationDays: number; interval?: SubscriptionInterval; modules: string[]; isActive: boolean; productLine?: string; kind?: string };
@@ -474,7 +476,17 @@ export default function AdminInvoicesPage() {
     columnHelper.accessor("invoiceNumber", {
       header: "Nomor",
       meta: { width: "22%" },
-      cell: (ctx) => <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>,
+      cell: (ctx) => (
+        <div className="flex flex-col gap-0.5">
+          <TruncateText className="font-medium text-foreground">{ctx.getValue()}</TruncateText>
+          {/* § Fase 181 — tagihan yang diterbitkan otomatis oleh job perpanjangan terjadwal */}
+          {ctx.row.original.origin === "renewal" && (
+            <Badge variant="primary" className="w-fit text-[11px]" title="Diterbitkan otomatis 7 hari sebelum langganan berakhir">
+              Tagihan perpanjangan
+            </Badge>
+          )}
+        </div>
+      ),
     }),
     columnHelper.accessor("billToName", { header: "Ditagihkan Ke", meta: { width: "26%" }, cell: (ctx) => <TruncateText>{ctx.getValue()}</TruncateText> }),
     // § diminta user 2026-10-03 — kolom "Data Usaha / Paket" DIHAPUS dari tabel list (terlalu padat). Data Usaha & rincian paket tetap

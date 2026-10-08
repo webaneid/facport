@@ -495,3 +495,36 @@ describe("POST /admin/users — mode pembayaran (Fase 178)", () => {
     expect(ok.status).toBe(200);
   });
 });
+
+// § Fase 181, ADR-0042 — Tambah User: "perpanjangan berikutnya" untuk paket MODUL (seat diabaikan).
+describe("POST /admin/users — renewalInterval (Fase 181)", () => {
+  type Created = { id: string; invoiceId?: string; subscriptionIds?: string[] };
+  test("paid_invoice & free: penanda terpasang pada langganan modul; seat tidak ditandai", async () => {
+    const cookie = await makeAdminCookie();
+    const [mod] = await db.insert(plans).values({ name: `Renewal User Mod ${runId}`, price: 1000, durationDays: 30, interval: "monthly", modules: ["sales_order"] }).returning();
+    const [seat] = await db.insert(plans).values({ name: `Renewal User Seat ${runId}`, price: 100, durationDays: 30, interval: "monthly", modules: [], kind: "seat_addon" }).returning();
+    const paid = (await (await postAdminUser(cookie, { email: `admin-users-renew-paid-${runId}@test.local`, name: "R", planIds: [mod!.id, seat!.id], payment: "paid_invoice", renewalInterval: "yearly" })).json()) as Created;
+    const subs = await db.select().from(subscriptions).where(eq(subscriptions.userId, paid.id));
+    expect(subs.find((x) => x.planId === mod!.id)!.renewalInterval).toBe("yearly");
+    expect(subs.find((x) => x.planId === seat!.id)!.renewalInterval).toBeNull();
+
+    const [mod2] = await db.insert(plans).values({ name: `Renewal User Mod2 ${runId}`, price: 1000, durationDays: 30, interval: "monthly", modules: ["sales_return"] }).returning();
+    const free = (await (await postAdminUser(cookie, { email: `admin-users-renew-free-${runId}@test.local`, name: "R", planIds: [mod2!.id], payment: "free", renewalInterval: "monthly" })).json()) as Created;
+    expect((await db.select().from(subscriptions).where(eq(subscriptions.userId, free.id)))[0]!.renewalInterval).toBe("monthly");
+  });
+
+  test("invoice (kirim invoice): niat di-snapshot ke item invoice (langganan baru dibuat saat pembayaran disetujui); tanpa renewalInterval → null", async () => {
+    const cookie = await makeAdminCookie();
+    const [mod] = await db.insert(plans).values({ name: `Renewal User Inv ${runId}`, price: 1000, durationDays: 30, interval: "monthly", modules: ["delivery_order"] }).returning();
+    const withIntent = (await (await postAdminUser(cookie, { email: `admin-users-renew-inv-${runId}@test.local`, name: "R", planIds: [mod!.id], payment: "invoice", renewalInterval: "yearly" })).json()) as Created;
+    expect((await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, withIntent.invoiceId!)))[0]!.renewalInterval).toBe("yearly");
+    const without = (await (await postAdminUser(cookie, { email: `admin-users-renew-inv2-${runId}@test.local`, name: "R", planIds: [mod!.id], payment: "invoice" })).json()) as Created;
+    expect((await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, without.invoiceId!)))[0]!.renewalInterval).toBeNull();
+  });
+
+  test("nilai renewalInterval di luar monthly/yearly ditolak (422)", async () => {
+    const cookie = await makeAdminCookie();
+    const res = await postAdminUser(cookie, { email: `admin-users-renew-bad-${runId}@test.local`, name: "R", renewalInterval: "weekly" });
+    expect(res.status).toBe(422);
+  });
+});
