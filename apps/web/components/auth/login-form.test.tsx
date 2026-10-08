@@ -129,7 +129,7 @@ describe("LoginForm", () => {
 
   test("akun dinonaktifkan (403 ACCOUNT_DISABLED) → pesan jelas, bukan 'password salah'", async () => {
     await failLogin({ message: "x", status: 403, code: "ACCOUNT_DISABLED" });
-    expect(await screen.findByText(/Akun ini dinonaktifkan/)).toBeInTheDocument();
+    expect(await screen.findByText(/User Anda telah dinonaktifkan/)).toBeInTheDocument();
   });
 
   test("429 → 'Terlalu banyak percobaan login'", async () => {
