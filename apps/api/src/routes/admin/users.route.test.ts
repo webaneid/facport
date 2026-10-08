@@ -1,4 +1,5 @@
-import { describe, test, expect } from "bun:test";
+import { boss } from "../../lib/queue";
+import { describe, test, expect, spyOn } from "bun:test";
 import { addCalendarMonths } from "../../lib/subscription-period";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { Elysia } from "elysia";
@@ -351,6 +352,36 @@ describe("PATCH /admin/users/:id/disable & /enable", () => {
 
     const after = await db.select().from(session).where(eq(session.userId, userId));
     expect(after.length).toBe(0);
+  });
+
+  test("nonaktifkan → email pemberitahuan ke user; aktifkan kembali → email 'diaktifkan kembali'; ulang tanpa perubahan status TIDAK mengirim email lagi", async () => {
+    const adminCookie = await makeAdminCookie();
+    const { userId, email } = await makePlainCustomer();
+    const sent: { to: string; subject: string; html: string }[] = [];
+    const spy = spyOn(boss, "send").mockImplementation((async (_n: string, data: unknown) => {
+      sent.push(data as { to: string; subject: string; html: string });
+      return "job-id";
+    }) as never);
+    const call = (action: "disable" | "enable") => testApp.handle(new Request(`http://localhost/admin/users/${userId}/${action}`, { method: "PATCH", headers: { cookie: adminCookie } }));
+    try {
+      expect((await call("disable")).status).toBe(200);
+      const mail = sent.find((m) => m.to === email)!;
+      expect(mail.subject).toContain("dinonaktifkan");
+      expect(mail.html).toContain("User Anda di non aktifkan oleh sistem kami");
+      expect(mail.html).toContain("hubungi admin");
+      const count = sent.length;
+      expect((await call("disable")).status).toBe(200); // sudah nonaktif → tanpa email baru
+      expect(sent.length).toBe(count);
+
+      expect((await call("enable")).status).toBe(200);
+      expect(sent.at(-1)!.subject).toContain("diaktifkan kembali");
+      const count2 = sent.length;
+      expect((await call("enable")).status).toBe(200);
+      expect(sent.length).toBe(count2);
+      expect((await testApp.handle(new Request(`http://localhost/admin/users/nope-${runId}/disable`, { method: "PATCH", headers: { cookie: adminCookie } }))).status).toBe(404);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   test("400 CANNOT_DISABLE_SELF kalau Super Admin coba nonaktifkan akun sendiri", async () => {

@@ -58,7 +58,7 @@ function LoginFormInner() {
         setUnverifiedEmail(values.email);
         setError("Email kamu belum diverifikasi. Kami sudah mengirim link verifikasi baru ke email kamu — cek inbox dan folder spam, lalu klik link-nya. Belum menerima? Kirim ulang di bawah ini.");
       } else if (failure.code === "ACCOUNT_DISABLED") {
-        setError("Akun ini dinonaktifkan. Hubungi admin untuk bantuan.");
+        setError("User Anda telah dinonaktifkan. Hubungi admin untuk mengaktifkannya kembali.");
       } else if (failure.status === 429 || failure.code === "TOO_MANY_REQUESTS") {
         setError("Terlalu banyak percobaan login. Tunggu sebentar lalu coba lagi.");
       } else if (typeof failure.status === "number" && failure.status >= 500) {
