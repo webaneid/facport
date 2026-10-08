@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-// Toggle on/off yang terlihat jelas bisa diklik (track + knob), untuk status Aktif/Non-aktif dan sejenisnya.
+// Toggle on/off yang terlihat jelas bisa diklik (track + knob), untuk status Aktif/Nonaktif dan sejenisnya.
 // Aksesibel: role="switch" + aria-checked, bisa dioperasikan keyboard (Space/Enter) karena memakai <button>.
 export function Switch({
   checked,

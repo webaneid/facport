@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { allocateFormulaNumber } from "../lib/formula-number";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { user as userTable, dataUsaha, plans, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiDefaults } from "../db/schema";
@@ -19,12 +20,14 @@ let dataUsahaId = "";
 let planId = "";
 
 async function insertFormula(name: string, isActive: boolean) {
+  const formulaNumber = await db.transaction((tx) => allocateFormulaNumber(tx, dataUsahaId));
   const [f] = await db
     .insert(autoproduksiFormulas)
     .values({
       userId,
       dataUsahaId,
       subscriptionId,
+      formulaNumber,
       name,
       finishedGoodItemNo: "100011",
       finishedGoodItemUnitName: "Loyang",
@@ -55,7 +58,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (!subscriptionId) return;
   await db.delete(autoproduksiDefaults).where(eq(autoproduksiDefaults.subscriptionId, subscriptionId));
-  // Test "duplikat tapi satu non-aktif" lolos sampai Accurate → tersisa entry failed.
+  // Test "duplikat tapi satu nonaktif" lolos sampai Accurate → tersisa entry failed.
   await db.delete(autoproduksiProductionEntries).where(eq(autoproduksiProductionEntries.subscriptionId, subscriptionId));
   await db.delete(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
   await db.delete(subscriptions).where(eq(subscriptions.id, subscriptionId));
@@ -71,9 +74,9 @@ describe("processAutoproduksiProductionImportRow — resolusi Formula", () => {
     await expect(run(`Tidak Ada ${runId}`)).rejects.toThrow("tidak ditemukan");
   });
 
-  test("satu-satunya Formula non-aktif → error NON-AKTIF", async () => {
+  test("satu-satunya Formula nonaktif → error NONAKTIF", async () => {
     await insertFormula(`Roti Nonaktif ${runId}`, false);
-    await expect(run(`Roti Nonaktif ${runId}`)).rejects.toThrow("NON-AKTIF");
+    await expect(run(`Roti Nonaktif ${runId}`)).rejects.toThrow("NONAKTIF");
   });
 
   test("dua Formula aktif bernama sama → error ganda", async () => {
@@ -82,20 +85,30 @@ describe("processAutoproduksiProductionImportRow — resolusi Formula", () => {
     await expect(run(`Roti Ganda ${runId}`)).rejects.toThrow("ganda");
   });
 
-  test("duplikat tapi satu non-aktif → tidak lagi dianggap ganda (lolos resolusi)", async () => {
+  test("Fase 184 — pencocokan nama TIDAK peka huruf besar/kecil; kembar beda huruf dianggap ganda dan pesan menyebut nomor kandidat", async () => {
+    const a = await insertFormula(`Kue Huruf ${runId}`, true);
+    await expect(run(`kue huruf ${runId}`.toUpperCase())).rejects.not.toThrow("tidak ditemukan"); // lolos resolusi (gagal belakangan di Accurate)
+    const b = await insertFormula(`KUE HURUF ${runId}`, true);
+    const err = await run(`kue huruf ${runId}`).catch((e: Error) => e);
+    expect((err as Error).message).toContain("ganda");
+    expect((err as Error).message).toContain(`F-${String(a.formulaNumber).padStart(3, "0")}`);
+    expect((err as Error).message).toContain(`F-${String(b.formulaNumber).padStart(3, "0")}`);
+  });
+
+  test("duplikat tapi satu nonaktif → tidak lagi dianggap ganda (lolos resolusi)", async () => {
     await insertFormula(`Roti Dup ${runId}`, false);
     await insertFormula(`Roti Dup ${runId}`, true);
     // ctx kosong → gagal DI panggilan Accurate, artinya resolusi Formula sudah lolos.
     const err = await run(`Roti Dup ${runId}`).catch((e: Error) => e);
     expect(err).toBeInstanceOf(Error);
     expect((err as Error).message).not.toContain("ganda");
-    expect((err as Error).message).not.toContain("NON-AKTIF");
+    expect((err as Error).message).not.toContain("NONAKTIF");
     expect((err as Error).message).not.toContain("tidak ditemukan");
   });
 
   test("nama Formula di DB berspasi ujung tetap ketemu", async () => {
     await insertFormula(`  Roti Spasi ${runId} `, false);
-    await expect(run(`Roti Spasi ${runId}`)).rejects.toThrow("NON-AKTIF");
+    await expect(run(`Roti Spasi ${runId}`)).rejects.toThrow("NONAKTIF");
   });
 });
 

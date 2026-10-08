@@ -16,6 +16,7 @@ import { accurateResultText } from "@/lib/accurate-result-text";
 type Entry = {
   id: string;
   formulaName: string;
+  formulaCode: string;
   producedQty: string;
   transDate: string;
   status: "pending" | "processing" | "success" | "failed";
@@ -50,7 +51,7 @@ export default function AutoProduksiRiwayatPage() {
   }, []);
 
   const columns = [
-    columnHelper.accessor("formulaName", { header: "Formula", meta: { width: "26%" } }),
+    columnHelper.accessor((row) => `${row.formulaCode} · ${row.formulaName}`, { id: "formulaName", header: "Formula", meta: { width: "26%" } }),
     columnHelper.accessor("producedQty", { header: "Qty Produksi" }),
     columnHelper.accessor("transDate", { header: "Tanggal" }),
     columnHelper.display({

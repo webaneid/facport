@@ -41,7 +41,7 @@ async function sendAccountStatusEmail(userId: string, kind: "disabled" | "enable
     if (!target) return;
     const body =
       kind === "disabled"
-        ? "User Anda di non aktifkan oleh sistem kami. Anda dapat hubungi admin jika ingin melanjutkan penggunaan Facport."
+        ? "User Anda dinonaktifkan oleh sistem kami. Anda dapat hubungi admin jika ingin melanjutkan penggunaan Facport."
         : "User Anda telah diaktifkan kembali oleh admin. Silakan login untuk melanjutkan penggunaan Facport.";
     await startQueue();
     await boss.send(JOBS.SEND_EMAIL, {

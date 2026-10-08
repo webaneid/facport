@@ -1,4 +1,4 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { Elysia } from "elysia";
 import { eq, and } from "drizzle-orm";
 import * as XLSX from "xlsx";
@@ -18,12 +18,12 @@ import {
 } from "../db/schema";
 import { autoproduksiFormulaImportRoute } from "./autoproduksi-formula-import.route";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
+import { boss } from "../lib/queue";
+import { runFormulaImportJob } from "../lib/autoproduksi-formula-import";
 
-// § architecture-autoproduksi.md — Import Formula, SATU-SATUNYA modul
-// import synchronous di Facport (TIDAK ADA panggilan Accurate). Fokus
-// test: batch status langsung completed/completed_with_errors (tidak
-// pernah "processing"), Formula+Item BENERAN tersimpan di DB, validasi
-// grup (tepat 1 BJ), dan retry TIDAK duplikat grup yang sudah sukses.
+// § architecture-autoproduksi.md — Import Formula (TIDAK ADA panggilan Accurate). Fase 186: confirm/retry kini ASINKRON (status "processing" + job); tes menjalankan
+// isi job (`runFormulaImportJob`) langsung dan menahan `boss.send` agar tidak masuk antrean DB dev. Fokus: Formula+Item BENERAN tersimpan, validasi grup (tepat 1 BJ),
+// retry TIDAK duplikat grup yang sudah sukses.
 const runId = Date.now();
 const testApp = new Elysia().mount(auth.handler).use(autoproduksiFormulaImportRoute);
 // § Fase 168 (diminta client) — Cabang/Gudang DIHAPUS dari modul ini
@@ -103,23 +103,34 @@ async function uploadAndConfirm(cookie: string, rows: (string | number)[][]) {
   form.append("file", buildExcelFile(rows));
   const uploadRes = await testApp.handle(new Request("http://localhost/autoproduksi/import-formula/upload", { method: "POST", headers: { cookie }, body: form }));
   const { batchId } = (await uploadRes.json()) as { batchId: string };
-  const confirmRes = await testApp.handle(
-    new Request(`http://localhost/autoproduksi/import-formula/${batchId}/confirm`, {
-      method: "POST",
-      headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ columnMapping }),
-    }),
-  );
-  return { batchId, confirmRes };
+  const spy = spyOn(boss, "send").mockImplementation((async () => "job-id") as never);
+  try {
+    const confirmRes = await testApp.handle(
+      new Request(`http://localhost/autoproduksi/import-formula/${batchId}/confirm`, {
+        method: "POST",
+        headers: { cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ columnMapping }),
+      }),
+    );
+    const confirmBody = (await confirmRes.clone().json()) as { status?: string };
+    const sent = spy.mock.calls.length;
+    await runFormulaImportJob(batchId);
+    const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, batchId));
+    return { batchId, confirmRes, confirmBody, sent, finalStatus: batch!.status };
+  } finally {
+    spy.mockRestore();
+  }
 }
 
-describe("POST /autoproduksi/import-formula/upload + confirm — happy path SYNCHRONOUS", () => {
-  test("confirm langsung completed (bukan processing) — Formula+Item BENERAN tersimpan di DB", async () => {
+describe("POST /autoproduksi/import-formula/upload + confirm — asinkron (Fase 186)", () => {
+  test("confirm langsung 'processing' + 1 job di-enqueue; setelah job jalan: completed — Formula+Item BENERAN tersimpan di DB", async () => {
     const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-happy-${runId}@test.local`);
-    const { batchId, confirmRes } = await uploadAndConfirm(cookie, validFormulaRows("Bolu Kukus SP Happy"));
+    const { batchId, confirmRes, confirmBody, sent, finalStatus } = await uploadAndConfirm(cookie, validFormulaRows("Bolu Kukus SP Happy"));
 
     expect(confirmRes.status).toBe(200);
-    expect((await confirmRes.json()) as { status: string }).toMatchObject({ status: "completed" });
+    expect(confirmBody.status).toBe("processing");
+    expect(sent).toBe(1);
+    expect(finalStatus).toBe("completed");
 
     const [batch] = await db.select().from(importBatches).where(eq(importBatches.id, batchId));
     expect(batch!.status).toBe("completed");
@@ -144,9 +155,9 @@ describe("POST /autoproduksi/import-formula/upload + confirm — happy path SYNC
   test("grup TANPA baris BJ -> baris gagal, batch completed_with_errors, TIDAK ADA Formula tersimpan", async () => {
     const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-nobj-${runId}@test.local`);
     const rowsNoBj = [HEADER, ["Resep Gagal", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""]];
-    const { batchId, confirmRes } = await uploadAndConfirm(cookie, rowsNoBj);
+    const { batchId, finalStatus } = await uploadAndConfirm(cookie, rowsNoBj);
 
-    expect((await confirmRes.json()) as { status: string }).toMatchObject({ status: "completed_with_errors" });
+    expect(finalStatus).toBe("completed_with_errors");
     const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batchId));
     expect(rows[0]!.status).toBe("failed");
     expect(rows[0]!.errorMessage).toMatch(/TEPAT 1 baris Tipe Barang=BJ/);
@@ -175,15 +186,26 @@ describe("POST /autoproduksi/import-formula/:batchId/retry — tidak duplikat gr
       ["Resep Rusak", "110501", "BB", "100006", "Telur", 0.5, "Kg", ""],
       // § Resep Rusak sengaja TANPA baris BJ -> gagal di confirm pertama.
     ];
-    const { batchId, confirmRes } = await uploadAndConfirm(cookie, mixedRows);
-    expect((await confirmRes.json()) as { status: string }).toMatchObject({ status: "completed_with_errors" });
+    const { batchId, finalStatus } = await uploadAndConfirm(cookie, mixedRows);
+    expect(finalStatus).toBe("completed_with_errors");
 
     let formulasOk = await db.select().from(autoproduksiFormulas).where(and(eq(autoproduksiFormulas.subscriptionId, subscriptionId), eq(autoproduksiFormulas.name, "Resep OK")));
     expect(formulasOk).toHaveLength(1);
 
     // § retry TANPA memperbaiki apa pun — "Resep Rusak" MASIH tanpa BJ, tetap gagal; "Resep OK" (sudah success) TIDAK diproses ulang.
-    const retryRes = await testApp.handle(new Request(`http://localhost/autoproduksi/import-formula/${batchId}/retry`, { method: "POST", headers: { cookie } }));
-    expect(retryRes.status).toBe(200);
+    const spy = spyOn(boss, "send").mockImplementation((async () => "job-id") as never);
+    try {
+      const retryRes = await testApp.handle(new Request(`http://localhost/autoproduksi/import-formula/${batchId}/retry`, { method: "POST", headers: { cookie } }));
+      expect(retryRes.status).toBe(200);
+      expect(((await retryRes.json()) as { status: string }).status).toBe("processing");
+      expect(spy.mock.calls.length).toBe(1);
+      // saat 'processing', retry kedua ditolak dan batch tidak bisa dihapus
+      expect((await testApp.handle(new Request(`http://localhost/autoproduksi/import-formula/${batchId}/retry`, { method: "POST", headers: { cookie } }))).status).toBe(409);
+      expect((await testApp.handle(new Request(`http://localhost/autoproduksi/import-formula/${batchId}`, { method: "DELETE", headers: { cookie } }))).status).toBe(409);
+    } finally {
+      spy.mockRestore();
+    }
+    await runFormulaImportJob(batchId);
 
     formulasOk = await db.select().from(autoproduksiFormulas).where(and(eq(autoproduksiFormulas.subscriptionId, subscriptionId), eq(autoproduksiFormulas.name, "Resep OK")));
     expect(formulasOk).toHaveLength(1); // TIDAK bertambah jadi 2
@@ -216,3 +238,21 @@ describe("DELETE /autoproduksi/import-formula/:batchId — ownership", () => {
     expect(formula).toBeDefined(); // Delete batch TIDAK PERNAH menyentuh Formula yang sudah dibuat
   });
 });
+
+// § Fase 186 — job berjalan idempoten: dijalankan DUA KALI tidak membuat Formula ganda (baris sukses tidak diproses ulang), dan nomor Formula terus berurutan.
+describe("runFormulaImportJob — idempoten & nomor Formula", () => {
+  test("job dijalankan ulang tidak menggandakan Formula; dua batch menghasilkan nomor F-001.. berurutan tanpa celah", async () => {
+    const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-job-${runId}@test.local`);
+    const first = await uploadAndConfirm(cookie, validFormulaRows("Job A"));
+    await runFormulaImportJob(first.batchId);
+    await uploadAndConfirm(cookie, validFormulaRows("Job B"));
+    const formulas = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
+    expect(formulas).toHaveLength(2);
+    expect(formulas.map((f) => f.formulaNumber).sort()).toEqual([1, 2]);
+  });
+
+  test("batch yang sudah dihapus sebelum job jalan → job selesai diam-diam (tanpa galat)", async () => {
+    await expect(runFormulaImportJob(crypto.randomUUID())).resolves.toBeUndefined();
+  });
+});
+

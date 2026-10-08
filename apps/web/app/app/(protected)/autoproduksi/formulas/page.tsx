@@ -40,8 +40,8 @@ import { UnitField, type ItemUnit } from "@/components/autoproduksi/unit-field";
 // banyak cabang terpaksa bikin Formula terpisah per cabang padahal
 // resepnya identik, sekarang 1 Formula dipakai lintas cabang/gudang.
 // Formula sekarang MURNI resep: Nama + Barang Jadi + Bahan Baku + takaran
-// + Akun Perantara. Fase ini juga menambahkan toggle Aktif/Non-aktif
-// (§ kolom "Status" di tabel List Formula) — non-aktif = tidak bisa
+// + Akun Perantara. Fase ini juga menambahkan toggle Aktif/Nonaktif
+// (§ kolom "Status" di tabel List Formula) — nonaktif = tidak bisa
 // dipilih/dicari utk Input Produksi baru, tapi tetap tampil di sini
 // sebagai dokumentasi.
 type AccurateItemResult = { no: string; name: string; unitName: string; units?: ItemUnit[] };
@@ -64,6 +64,7 @@ type AccurateItemResult = { no: string; name: string; unitName: string; units?: 
 type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: string };
 type Formula = {
   id: string;
+  formulaCode: string;
   name: string;
   finishedGoodItemNo: string;
   finishedGoodItemUnitName: string;
@@ -381,7 +382,7 @@ export default function AutoProduksiFormulasPage() {
   // § Fase 162 (evaluasi client) — search nama Formula, client-side
   // (dataset per Data Usaha kecil, § plan file). Fungsi filter diekstrak
   // ke `lib/filter-formulas.ts` supaya testable.
-  // § Fase 168 — filter Cabang DIGANTI filter Status (Aktif/Non-aktif),
+  // § Fase 168 — filter Cabang DIGANTI filter Status (Aktif/Nonaktif),
   // karena Cabang sudah tidak lagi jadi field Formula.
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<FormulaStatusFilter>("all");
@@ -406,7 +407,7 @@ export default function AutoProduksiFormulasPage() {
     load();
   }
 
-  // § Fase 168 (diminta client) — toggle Aktif/Non-aktif, endpoint
+  // § Fase 168 (diminta client) — toggle Aktif/Nonaktif, endpoint
   // TERPISAH dari PUT (§ autoproduksi.route.ts) supaya tidak perlu kirim
   // ulang Formula+items cuma utk ubah 1 boolean.
   async function handleToggleActive(formula: Formula) {
@@ -422,7 +423,8 @@ export default function AutoProduksiFormulasPage() {
   }
 
   const columns = [
-    columnHelper.accessor("name", { header: "Nama Formula", meta: { width: "30%" } }),
+    columnHelper.accessor("formulaCode", { header: "No.", meta: { width: "8%" } }),
+    columnHelper.accessor("name", { header: "Nama Formula", meta: { width: "26%" } }),
     columnHelper.display({
       id: "finishedGood",
       header: "Barang Jadi",
@@ -445,7 +447,7 @@ export default function AutoProduksiFormulasPage() {
     }),
     // § Fase 168 (diminta client) — kolom Cabang DIHILANGKAN (field-nya
     // sudah dihapus dari Formula total, pindah ke Input Produksi) —
-    // digantikan kolom Status (toggle Aktif/Non-aktif).
+    // digantikan kolom Status (toggle Aktif/Nonaktif).
     columnHelper.display({
       id: "status",
       header: "Status",
@@ -456,11 +458,11 @@ export default function AutoProduksiFormulasPage() {
             checked={row.original.isActive}
             disabled={togglingId === row.original.id}
             onCheckedChange={() => handleToggleActive(row.original)}
-            aria-label={`${row.original.isActive ? "Nonaktifkan" : "Aktifkan"} formula ${row.original.name}`}
+            aria-label={`${row.original.isActive ? "Nonaktifkan" : "Aktifkan"} formula ${row.original.formulaCode} ${row.original.name}`}
             title={row.original.isActive ? "Klik untuk nonaktifkan" : "Klik untuk aktifkan"}
           />
           <span className={row.original.isActive ? "text-xs font-medium text-green-700" : "text-xs text-muted-foreground"}>
-            {row.original.isActive ? "Aktif" : "Non-aktif"}
+            {row.original.isActive ? "Aktif" : "Nonaktif"}
           </span>
         </div>
       ),
@@ -476,7 +478,7 @@ export default function AutoProduksiFormulasPage() {
             type="button"
             onClick={() => handleDelete(row.original)}
             title="Hapus"
-            aria-label={`Hapus formula ${row.original.name}`}
+            aria-label={`Hapus formula ${row.original.formulaCode} ${row.original.name}`}
             className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:text-destructive")}
           >
             <Trash2 className="h-4 w-4" />
@@ -509,7 +511,7 @@ export default function AutoProduksiFormulasPage() {
         <CardContent className="flex flex-col gap-4">
           {formulas && formulas.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama Formula..." className="max-w-xs" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama atau nomor Formula..." className="max-w-xs" />
               <div className="w-48">
                 <Combobox
                   value={statusFilter === "all" ? "" : statusFilter}
@@ -518,7 +520,7 @@ export default function AutoProduksiFormulasPage() {
                   options={[
                     { value: "", label: "Semua Status" },
                     { value: "active", label: "Aktif" },
-                    { value: "inactive", label: "Non-aktif" },
+                    { value: "inactive", label: "Nonaktif" },
                   ]}
                 />
               </div>

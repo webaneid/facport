@@ -1,19 +1,13 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
-import { importBatches, importBatchRows, auditLogs, autoproduksiFormulas, autoproduksiFormulaItems } from "../db/schema";
+import { importBatches, importBatchRows, auditLogs } from "../db/schema";
+import { boss, JOBS, startQueue } from "../lib/queue";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
-import {
-  autoproduksiFormulaMapping,
-  autoproduksiFormulaRowError,
-  groupAutoproduksiFormulaRows,
-  validateAutoproduksiFormulaGroup,
-  buildAutoproduksiFormulaRecord,
-  type ImportRowRecord,
-} from "../lib/import-mapping/autoproduksi-formula.mapping";
+import { autoproduksiFormulaMapping, autoproduksiFormulaRowError } from "../lib/import-mapping/autoproduksi-formula.mapping";
 import { autoproduksiFormulaTemplateGuide } from "../lib/import-mapping/template-guide";
 import { checkTrialRowBudget } from "../lib/trial";
 
@@ -36,90 +30,10 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
   return suggestion;
 }
 
-// § architecture-autoproduksi.md — Import Formula (Excel). SATU-SATUNYA
-// modul import di Facport yang diproses SYNCHRONOUS (bukan job pg-boss) —
-// Formula adalah data LOKAL murni (TIDAK PERNAH memanggil Accurate, §
-// komentar `autoproduksi-formula.mapping.ts`), jadi tidak ada alasan
-// menahan user menunggu job queue untuk sesuatu yang selesai dalam
-// hitungan milidetik. `import_batches.status` langsung
-// `completed`/`completed_with_errors` begitu confirm/retry selesai —
-// TIDAK PERNAH singgah di `processing`. TIDAK ADA endpoint cancel (tidak
-// ada transaksi Accurate untuk dibatalkan — Formula yang sudah dibuat
-// batch ini TETAP ADA walau riwayat batch-nya di-"Delete", sama filosofi
-// Delete modul lain: cuma hapus riwayat lokal, tidak pernah mundurkan
-// efek yang sudah terjadi).
-//
-// § Duplikat Nama Resep/Formula DIBOLEHKAN (keputusan eksplisit user) —
-// setiap grup yang valid SELALU insert Formula BARU. Konsekuensi: retry
-// HANYA boleh memproses ULANG baris yang masih pending/failed (grouping
-// dihitung ulang dari situ) — grup yang SUDAH sukses TIDAK PERNAH
-// diproses lagi (insert sekali per grup, bukan per retry call), supaya
-// retry tidak diam-diam membuat Formula duplikat tambahan.
-async function processFormulaBatchRows(
-  batch: { id: string; userId: string; subscriptionId: string; dataUsahaId?: string },
-  subscriptionDataUsahaId: string,
-  rowsToProcess: ImportRowRecord[],
-  columnMapping: Record<string, string>,
-): Promise<void> {
-  const groups = groupAutoproduksiFormulaRows(rowsToProcess, columnMapping);
-
-  for (const group of groups) {
-    const rowIds = group.rows.map((r) => r.id);
-    try {
-      const rowErrors = group.rows.flatMap((r) => autoproduksiFormulaRowError(r.rawData, columnMapping).map((f) => `${f} (baris ${r.id})`));
-      if (rowErrors.length > 0) throw new Error(`Kolom tidak lengkap/valid: ${rowErrors.join(", ")}.`);
-
-      const groupError = validateAutoproduksiFormulaGroup(group, columnMapping);
-      if (groupError) throw new Error(groupError);
-
-      const record = buildAutoproduksiFormulaRecord(group, columnMapping);
-
-      await db.transaction(async (tx) => {
-        const [inserted] = await tx
-          .insert(autoproduksiFormulas)
-          .values({
-            userId: batch.userId,
-            dataUsahaId: subscriptionDataUsahaId,
-            subscriptionId: batch.subscriptionId,
-            name: record.name,
-            finishedGoodItemNo: record.finishedGoodItemNo,
-            finishedGoodItemUnitName: record.finishedGoodItemUnitName,
-            finishedGoodItemName: record.finishedGoodItemName,
-            standardCost: record.standardCost,
-            adjustmentAccountNo: record.adjustmentAccountNo,
-          })
-          .returning();
-        await tx.insert(autoproduksiFormulaItems).values(
-          record.items.map((item, index) => ({
-            formulaId: inserted!.id,
-            itemNo: item.itemNo,
-            itemUnitName: item.itemUnitName,
-            itemName: item.itemName,
-            quantity: item.quantity,
-            sortOrder: index,
-          })),
-        );
-      });
-
-      await db
-        .update(importBatchRows)
-        .set({ status: "success", errorMessage: null, processedAt: new Date() })
-        .where(inArray(importBatchRows.id, rowIds));
-    } catch (err) {
-      await db
-        .update(importBatchRows)
-        .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
-        .where(inArray(importBatchRows.id, rowIds));
-    }
-  }
-
-  const finalRows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
-  const hasFailed = finalRows.some((r) => r.status === "failed");
-  await db
-    .update(importBatches)
-    .set({ status: hasFailed ? "completed_with_errors" : "completed", completedAt: new Date() })
-    .where(eq(importBatches.id, batch.id));
-}
+// § Fase 186 — Import Formula kini ASINKRON lewat job queue (`JOBS.IMPORT_AUTOPRODUKSI_FORMULA`, inti di `lib/autoproduksi-formula-import.ts`), SAMA seperti modul import lain:
+// confirm/retry → status `processing` + enqueue → halaman Hasil polling + progress bar. (Fase 166 dulu sinkron; dicabut karena file besar tanpa progres + risiko timeout proxy.)
+// Tetap: Formula = data LOKAL murni (tanpa Accurate), TIDAK ada Batal Import, duplikat Nama Resep/Formula DIBOLEHKAN (tiap grup valid = Formula BARU), retry hanya
+// memproses baris pending/failed (grup yang sudah sukses tidak pernah diproses ulang).
 
 export const autoproduksiFormulaImportRoute = new Elysia()
   .use(permissionPlugin)
@@ -249,18 +163,10 @@ export const autoproduksiFormulaImportRoute = new Elysia()
         return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
       }
 
-      await db.update(importBatches).set({ columnMapping: body.columnMapping }).where(eq(importBatches.id, batch.id));
-
-      const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
-      await processFormulaBatchRows(
-        batch,
-        subscription.dataUsahaId,
-        rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
-        body.columnMapping,
-      );
-
-      const [finalBatch] = await db.select().from(importBatches).where(eq(importBatches.id, batch.id));
-      return { batchId: batch.id, status: finalBatch!.status };
+      await db.update(importBatches).set({ columnMapping: body.columnMapping, status: "processing" }).where(eq(importBatches.id, batch.id));
+      await startQueue();
+      await boss.send(JOBS.IMPORT_AUTOPRODUKSI_FORMULA, { batchId: batch.id });
+      return { batchId: batch.id, status: "processing" };
     },
     {
       permission: "import.create",
@@ -348,16 +254,14 @@ export const autoproduksiFormulaImportRoute = new Elysia()
         return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
       }
 
-      const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      await processFormulaBatchRows(
-        batch,
-        subscription.dataUsahaId,
-        pendingOrFailed.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
-        columnMapping,
-      );
-
-      const [finalBatch] = await db.select().from(importBatches).where(eq(importBatches.id, batch.id));
-      return { batchId: batch.id, status: finalBatch!.status };
+      if (batch.status === "processing") {
+        set.status = 409;
+        return { code: "BATCH_BUSY" };
+      }
+      await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
+      await startQueue();
+      await boss.send(JOBS.IMPORT_AUTOPRODUKSI_FORMULA, { batchId: batch.id });
+      return { batchId: batch.id, status: "processing" };
     },
     {
       permission: "import.create",
@@ -464,8 +368,11 @@ export const autoproduksiFormulaImportRoute = new Elysia()
         set.status = 403;
         return { code: "DELETE_OWNER_ONLY" };
       }
-      // § TIDAK ADA status "processing"/"cancelling" untuk modul ini
-      // (synchronous, § komentar atas file) — tidak perlu cek BATCH_BUSY.
+      // § Fase 186 — sedang diproses job: jangan dihapus di tengah jalan.
+      if (batch.status === "processing") {
+        set.status = 409;
+        return { code: "BATCH_BUSY" };
+      }
 
       const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
       await db.insert(auditLogs).values({

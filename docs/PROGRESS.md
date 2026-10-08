@@ -191,6 +191,9 @@
 | 181  | Perpanjangan terjadwal & tagihan otomatis: penanda perpanjangan (bulanan/tahunan) per langganan, tagihan terbit otomatis 7 hari sebelum berakhir, notifikasi + email dengan link bayar | Done | `docs/architecture/architecture-renewal-billing.md` | `docs/phases/phase-181-perpanjangan-terjadwal-tagihan-otomatis.md` |
 | 182  | Notifikasi ke pelanggan untuk mode Gratis & perubahan masa aktif oleh admin | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-182-notifikasi-mode-gratis-dan-perubahan-masa-aktif.md` |
 | 183  | Perpanjangan kursi (Slot User Tambahan) | Done | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-183-perpanjangan-kursi-slot-user-tambahan.md` |
+| 184  | Nomor Formula otomatis AutoProduksi (F-001…): bedakan Formula bernama sama, pencarian tak peka huruf, tampil di autocomplete | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-184-nomor-formula-autoproduksi.md` |
+| 185  | Popup konfirmasi + progres Input Produksi (Periksa dulu → Progres → Hasil), form mengingat input terakhir per user | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-185-popup-progres-input-produksi.md` |
+| 186  | Konsistensi UI import Excel AutoProduksi + Import Formula asinkron (job queue, progress bar) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-186-konsistensi-ui-import-autoproduksi.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

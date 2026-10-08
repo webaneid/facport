@@ -27,7 +27,7 @@ import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-prov
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "transDate", label: "Tanggal (wajib)" },
-  { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada, AKTIF, & namanya unik)" },
+  { value: "formulaName", label: "Nama Resep/Formula (wajib)" },
   { value: "producedQty", label: "Jumlah (wajib)" },
   { value: "branchName", label: "Cabang (opsional — kosong = default Pengaturan)" },
   { value: "warehouseName", label: "Gudang Barang Jadi (opsional — kosong = default Pengaturan)" },
@@ -117,11 +117,12 @@ export default function AutoproduksiProductionImportPage() {
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <AccurateRequiredNotice />
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Produksi (Excel)</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Produksi dari Excel</h1>
         <p className="text-sm text-muted-foreground">
           Upload file Excel berisi daftar Input Produksi (Tanggal, Nama Resep/Formula, Jumlah). Formula HARUS sudah
-          ada dulu (lewat List Formula atau Import Formula) dan namanya unik — kebutuhan Bahan Baku dihitung otomatis
-          sama seperti input satu-per-satu.
+          ada dulu (lewat List Formula atau Import Formula) dan AKTIF — nama dicocokkan tanpa membedakan huruf besar/kecil.
+          Kalau ada beberapa Formula aktif bernama sama, nonaktifkan salah satu dulu (nomor F-001 dst terlihat di List Formula).
+          Kebutuhan Bahan Baku dihitung otomatis sama seperti input satu-per-satu.
         </p>
       </div>
 

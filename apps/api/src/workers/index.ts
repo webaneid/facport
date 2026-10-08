@@ -1,5 +1,7 @@
 import "../lib/env"; // WAJIB paling awal
 
+import { runFormulaImportJob } from "../lib/autoproduksi-formula-import";
+import { formatFormulaCode } from "../lib/formula-number";
 import { eq, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
@@ -1880,21 +1882,21 @@ export async function processAutoproduksiProductionImportRow(
   const matches = await db
     .select()
     .from(autoproduksiFormulas)
-    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), sql`trim(${autoproduksiFormulas.name}) = ${formulaName}`));
+    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), sql`lower(trim(${autoproduksiFormulas.name})) = lower(${formulaName})`));
   if (matches.length === 0) {
     throw new Error(`Formula "${formulaName}" tidak ditemukan — cek ejaan Nama Resep/Formula, atau buat Formula-nya dulu.`);
   }
   // § Fase 168 — duplikat nama dihitung HANYA di antara Formula AKTIF:
   // menonaktifkan salah satu duplikat harus menyelesaikan ambiguitas.
-  // Formula non-aktif tidak bisa dipakai untuk Input Produksi baru
+  // Formula nonaktif tidak bisa dipakai untuk Input Produksi baru
   // (pesan beda dari "tidak ditemukan" supaya akar masalahnya jelas).
   const activeMatches = matches.filter((m) => m.isActive);
   if (activeMatches.length === 0) {
-    throw new Error(`Formula "${formulaName}" sedang NON-AKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
+    throw new Error(`Formula "${formulaName}" sedang NONAKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
   }
   if (activeMatches.length > 1) {
     throw new Error(
-      `Nama Formula "${formulaName}" ganda (${activeMatches.length} Formula aktif dengan nama sama) — tidak bisa diproses otomatis, ganti nama atau nonaktifkan salah satu Formula dulu baru impor ulang.`,
+      `Nama Formula "${formulaName}" ganda (${activeMatches.length} Formula aktif: ${activeMatches.map((m) => formatFormulaCode(m.formulaNumber)).join(", ")}) — tidak bisa diproses otomatis, ganti nama atau nonaktifkan salah satu Formula dulu (lihat nomornya di List Formula) baru impor ulang.`,
     );
   }
   const formula = activeMatches[0]!;
@@ -2395,6 +2397,17 @@ async function main() {
   // cek scope → buka sesi → panggil Accurate) TAPI jauh lebih simpel: 1
   // entry = 1 panggilan `saveInventoryAdjustment()` (endpoint yang SUDAH
   // ADA, dipakai modul Inventory Adjustment — TIDAK ada integrasi baru).
+  // § Fase 186 — Import Formula (Excel) AutoProduksi: job lokal murni (tanpa Accurate), progres per grup terlihat lewat baris batch.
+  await boss.work<{ batchId: string }>(JOBS.IMPORT_AUTOPRODUKSI_FORMULA, async ([job]) => {
+    if (!job) return;
+    try {
+      await runFormulaImportJob(job.data.batchId);
+    } catch (err) {
+      logger.error({ err, batchId: job.data.batchId }, "Import Formula AutoProduksi gagal");
+      Sentry.captureException(err);
+    }
+  });
+
   await boss.work<{ entryId: string }>(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, async ([job]) => {
     if (!job) return;
     const { entryId } = job.data;
@@ -2433,8 +2446,6 @@ async function main() {
       return;
     }
 
-    await db.update(autoproduksiProductionEntries).set({ status: "processing" }).where(eq(autoproduksiProductionEntries.id, entryId));
-
     let session;
     try {
       session = await openAccurateSession(connection, accurateDbId);
@@ -2446,6 +2457,9 @@ async function main() {
       if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
       return;
     }
+
+    // § Fase 185 — "processing" = SEDANG MENGIRIM (sesi Accurate sudah terbuka); "pending" = antre + menghubungi Accurate. Popup progres Input Produksi membacanya.
+    await db.update(autoproduksiProductionEntries).set({ status: "processing" }).where(eq(autoproduksiProductionEntries.id, entryId));
 
     try {
       const payload = buildProductionEntryPayload(formula, formulaItems, entry);

@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { allocateFormulaNumber, formatFormulaCode, withFormulaCode } from "../lib/formula-number";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
@@ -95,7 +96,7 @@ async function loadFormulaWithItems(formulaId: string, subscriptionId: string) {
     .from(autoproduksiFormulaItems)
     .where(eq(autoproduksiFormulaItems.formulaId, formulaId))
     .orderBy(autoproduksiFormulaItems.sortOrder);
-  return { formula, items };
+  return { formula: withFormulaCode(formula), items };
 }
 
 export const autoproduksiRoute = new Elysia()
@@ -109,7 +110,7 @@ export const autoproduksiRoute = new Elysia()
         .from(autoproduksiFormulas)
         .where(eq(autoproduksiFormulas.subscriptionId, subscription.id))
         .orderBy(desc(autoproduksiFormulas.createdAt));
-      return { formulas };
+      return { formulas: formulas.map(withFormulaCode) };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production" },
   )
@@ -135,12 +136,14 @@ export const autoproduksiRoute = new Elysia()
       }
       const body = checked.body;
       const formula = await db.transaction(async (tx) => {
+        const formulaNumber = await allocateFormulaNumber(tx, subscription.dataUsahaId);
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
           .values({
             userId: user.id,
             dataUsahaId: subscription.dataUsahaId,
             subscriptionId: subscription.id,
+            formulaNumber,
             name: body.name,
             finishedGoodItemNo: body.finishedGoodItemNo,
             finishedGoodItemUnitName: body.finishedGoodItemUnitName,
@@ -161,7 +164,7 @@ export const autoproduksiRoute = new Elysia()
             sortOrder: index,
           })),
         );
-        return inserted!;
+        return withFormulaCode(inserted!);
       });
       return { formula };
     },
@@ -220,7 +223,7 @@ export const autoproduksiRoute = new Elysia()
       body: formulaBodySchema,
     },
   )
-  // § Fase 168 (diminta client) — toggle Aktif/Non-aktif List Formula.
+  // § Fase 168 (diminta client) — toggle Aktif/Nonaktif List Formula.
   // Endpoint TERPISAH dari PUT (yang butuh body penuh Formula+items) —
   // ubah 1 kolom tanpa perlu kirim ulang seluruh resep.
   .patch(
@@ -236,7 +239,7 @@ export const autoproduksiRoute = new Elysia()
         .set({ isActive: body.isActive, updatedAt: new Date() })
         .where(eq(autoproduksiFormulas.id, params.id))
         .returning();
-      return { formula };
+      return { formula: formula ? withFormulaCode(formula) : formula };
     },
     {
       permission: "import.create",
@@ -259,6 +262,51 @@ export const autoproduksiRoute = new Elysia()
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production", params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
+  // § Fase 185 — isian terakhir untuk form Input Produksi: entri terakhir MILIK USER YANG LOGIN di langganan ini (bukan dibagi antar staf). Tanggal SENGAJA tidak
+  // dikembalikan — form selalu memakai tanggal hari itu. Static path ini harus didaftarkan SEBELUM `/:id`.
+  .get(
+    "/autoproduksi/production-entries/last",
+    async ({ user, subscription }) => {
+      const [entry] = await db
+        .select({
+          formulaId: autoproduksiProductionEntries.formulaId,
+          producedQty: autoproduksiProductionEntries.producedQty,
+          branchName: autoproduksiProductionEntries.branchName,
+          warehouseName: autoproduksiProductionEntries.warehouseName,
+          rawMaterialWarehouseName: autoproduksiProductionEntries.rawMaterialWarehouseName,
+          projectNo: autoproduksiProductionEntries.projectNo,
+          departmentName: autoproduksiProductionEntries.departmentName,
+          createdAt: autoproduksiProductionEntries.createdAt,
+        })
+        .from(autoproduksiProductionEntries)
+        .where(and(eq(autoproduksiProductionEntries.subscriptionId, subscription.id), eq(autoproduksiProductionEntries.userId, user.id)))
+        .orderBy(desc(autoproduksiProductionEntries.createdAt))
+        .limit(1);
+      return { entry: entry ?? null };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  // § Fase 185 — status SATU entri untuk popup progres (polling). Ter-scope langganan; entri langganan lain = 404 yang sama dengan "tidak ada".
+  .get(
+    "/autoproduksi/production-entries/:id",
+    async ({ params, subscription, set }) => {
+      const [entry] = await db
+        .select({
+          id: autoproduksiProductionEntries.id,
+          status: autoproduksiProductionEntries.status,
+          errorMessage: autoproduksiProductionEntries.errorMessage,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
+        })
+        .from(autoproduksiProductionEntries)
+        .where(and(eq(autoproduksiProductionEntries.id, params.id), eq(autoproduksiProductionEntries.subscriptionId, subscription.id)));
+      if (!entry) {
+        set.status = 404;
+        return { code: "ENTRY_NOT_FOUND" };
+      }
+      return { entry };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production", params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
   .get(
     "/autoproduksi/production-entries",
     async ({ subscription, query }) => {
@@ -269,6 +317,7 @@ export const autoproduksiRoute = new Elysia()
           id: autoproduksiProductionEntries.id,
           formulaId: autoproduksiProductionEntries.formulaId,
           formulaName: autoproduksiFormulas.name,
+          formulaNumber: autoproduksiFormulas.formulaNumber,
           producedQty: autoproduksiProductionEntries.producedQty,
           transDate: autoproduksiProductionEntries.transDate,
           status: autoproduksiProductionEntries.status,
@@ -283,7 +332,7 @@ export const autoproduksiRoute = new Elysia()
         .orderBy(desc(autoproduksiProductionEntries.createdAt))
         .limit(limit)
         .offset(offset);
-      return { entries };
+      return { entries: entries.map(({ formulaNumber, ...e }) => ({ ...e, formulaCode: formatFormulaCode(formulaNumber) })) };
     },
     {
       permission: "import.create",
@@ -300,7 +349,7 @@ export const autoproduksiRoute = new Elysia()
         return { code: "FORMULA_NOT_FOUND" };
       }
       // § Fase 168 — defense-in-depth: Combobox frontend sudah menyaring
-      // Formula non-aktif, API tidak boleh percaya itu saja (bisa dipanggil
+      // Formula nonaktif, API tidak boleh percaya itu saja (bisa dipanggil
       // langsung/state Combobox basi).
       if (!resolved.formula.isActive) {
         set.status = 409;

@@ -50,6 +50,8 @@ export const autoproduksiFormulas = pgTable(
     subscriptionId: uuid("subscription_id")
       .notNull()
       .references(() => subscriptions.id), // menentukan accurate_connections mana yang dipakai saat produksi
+    // § Fase 184 — nomor internal otomatis per Data Usaha (tampil "F-007"), pembeda Formula bernama sama. Tidak bisa dikustom, tidak dikirim ke Accurate.
+    formulaNumber: integer("formula_number").notNull(),
     name: varchar("name", { length: 255 }).notNull(), // "Bolu Kukus SP (Spesial BGT)"
     finishedGoodItemNo: varchar("finished_good_item_no", { length: 100 }).notNull(),
     finishedGoodItemUnitName: varchar("finished_good_item_unit_name", { length: 50 }).notNull(),
@@ -64,7 +66,7 @@ export const autoproduksiFormulas = pgTable(
     adjustmentAccountNo: varchar("adjustment_account_no", { length: 50 }).notNull(), // "Akun Perantara" / adjustmentAccountNo API
     // § Fase 163 — nama Akun Perantara hasil live-search, sama pola di atas.
     adjustmentAccountName: varchar("adjustment_account_name", { length: 255 }),
-    // § Fase 168 (diminta client) — toggle List Formula: non-aktif = tidak
+    // § Fase 168 (diminta client) — toggle List Formula: nonaktif = tidak
     // bisa dipilih/dicari utk Input Produksi baru (manual maupun Excel),
     // TAPI tetap tampil di List Formula sebagai dokumentasi (tidak
     // dihapus, tetap bisa diedit). Default true — Formula lama & baru
@@ -73,7 +75,7 @@ export const autoproduksiFormulas = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [index("autoproduksi_formulas_subscription_idx").on(t.subscriptionId)],
+  (t) => [index("autoproduksi_formulas_subscription_idx").on(t.subscriptionId), uniqueIndex("autoproduksi_formulas_data_usaha_number_uidx").on(t.dataUsahaId, t.formulaNumber)],
 );
 
 // Bahan Baku per formula — 1 formula punya N baris.

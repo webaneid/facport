@@ -74,7 +74,7 @@ Data Usaha (`dataUsahaId`) + subscription (`subscriptionId`, menentukan
 - **`autoproduksi_formulas`** — 1 baris = 1 resep: Nama + Barang Jadi +
   Akun Perantara + `standardCost` (diisi MANUAL, bukan hitung otomatis
   dari harga beli Accurate — lihat "Di Luar Scope" di bawah) + `isActive`
-  (§ Fase 168, toggle List Formula — non-aktif = tidak bisa dipilih/dicari
+  (§ Fase 168, toggle List Formula — nonaktif = tidak bisa dipilih/dicari
   utk Input Produksi baru, tapi tetap tampil sebagai dokumentasi).
   **§ Fase 168** — Cabang/Gudang Barang Jadi/Nomor Project/Departemen
   DIHAPUS TOTAL dari tabel ini (pindah ke `autoproduksi_production_entries`
@@ -207,8 +207,8 @@ terpisah per cabang padahal resepnya identik. Perubahan:
   `branchName`/gudang/proyek/departemen sekarang dari parameter `entry`
   (konteks produksi), BUKAN dari `formula` lagi. `unitCost` (dari
   `formula.standardCost`) TIDAK disentuh — fix Fase 166 tetap berlaku.
-- Toggle Aktif/Non-aktif BARU (`autoproduksi_formulas.isActive`,
-  `PATCH /autoproduksi/formulas/:id/active`) — non-aktif = tidak bisa
+- Toggle Aktif/Nonaktif BARU (`autoproduksi_formulas.isActive`,
+  `PATCH /autoproduksi/formulas/:id/active`) — nonaktif = tidak bisa
   dipilih/dicari utk Input Produksi baru (manual: 409 `FORMULA_INACTIVE`;
   Excel: baris gagal pesan jelas di worker), tapi tetap tampil di List
   Formula sebagai dokumentasi & tetap bisa diedit.
@@ -233,7 +233,7 @@ cocokkan kolom → riwayat → retry → edit baris gagal) — BUKAN mekanisme
 bulk-upload terpisah. Tapi KEDUANYA beda secara struktural dari 24 modul
 itu, dengan cara yang BERBEDA satu sama lain:
 
-### A. Import Formula — SATU-SATUNYA modul import SYNCHRONOUS di Facport
+### A. Import Formula — (Fase 166: dulu SYNCHRONOUS; **Fase 186: kini ASINKRON via job `IMPORT_AUTOPRODUKSI_FORMULA`, lihat bagian akhir**)
 `import_batches.module = "autoproduksi_formula"` (moduleAccess TETAP
 `autoproduksi_production`, 1 SKU bundel — key ini SENGAJA tidak masuk
 `module-catalog.ts` supaya tidak muncul sebagai opsi "jual terpisah" di
@@ -277,7 +277,7 @@ Accurate) dulu: 0 match → baris gagal `Formula tidak ditemukan`; **2+
 match (duplikat nama, § keputusan di atas) → baris gagal eksplisit,
 TIDAK PERNAH menebak salah satu** (aman di atas cakupan, ADR-0013);
 match tapi `isActive = false` (§ Fase 168) → baris gagal pesan jelas
-("sedang NON-AKTIF"), beda dari "tidak ditemukan"; 1 match aktif → reuse
+("sedang NONAKTIF"), beda dari "tidak ditemukan"; 1 match aktif → reuse
 `buildProductionEntryPayload()` (lib/autoproduksi.ts, SAMA PERSIS fungsi
 yang dipakai flow manual single-entry) lalu `saveInventoryAdjustment()`.
 Hasil (sukses/gagal) JUGA diinsert sebagai baris
@@ -356,3 +356,13 @@ Keluhan: Formula bisa disimpan dengan satuan yang tidak ada di master barang Acc
 **FAIL-OPEN** (Formula tetap disimpan seperti dulu): tidak terkoneksi Accurate, sesi gagal/timeout, barang tidak ketemu, atau daftar satuan tidak lengkap (Accurate tidak mengembalikan kunci `unit2` → field satuan tambahan tidak dikenali, jadi tidak boleh menolak satuan ke-2 yang sah). Saklar darurat: env `AUTOPRODUKSI_UNIT_VALIDATION=off`.
 **Belum dicakup (tindak lanjut)**: Import Formula (Excel) — sengaja lokal & sinkron tanpa Accurate (bisa 10.000 baris), jadi belum divalidasi; satuan salah di jalur itu masih baru ketahuan saat Input Produksi. Perlu desain batas panggilan Accurate (distinct itemNo × rate limit) sebelum ditambahkan.
 ⚠️ Nama field baca `unit2..5` belum diverifikasi test call nyata — verifikasi dengan barang 100028 (KG & Pouch) setelah deploy.
+
+## Nomor Formula (Fase 184)
+Tiap Formula punya nomor internal otomatis per Data Usaha (`autoproduksi_formulas.formula_number`, tampil `F-001`; penghitung `data_usaha.formula_last_number`, atomik, tidak dipakai ulang). Tidak bisa dikustom, tidak ada kolom nomor di Excel, tidak dikirim ke Accurate. Nama Formula boleh kembar; List Formula & autocomplete menampilkan nomor, pencarian nama tidak peka huruf besar/kecil dan bisa lewat nomor. Import Produksi mencocokkan nama (`lower(trim())`); kembar aktif → baris gagal, pesan menyebut nomor kandidat.
+
+## Input Produksi: konfirmasi, progres, isian terakhir (Fase 185)
+Klik "Input Produksi" membuka popup 3 tahap: Periksa dulu (ringkasan + peringatan duplikat; Kirim/Batal) → Progres (polling `GET /autoproduksi/production-entries/:id` tiap 1 dtk; `pending` = antre + menghubungi Accurate, `processing` = mengirim) → Hasil (Lihat riwayat / Input produksi baru). Form terisi dari `GET /autoproduksi/production-entries/last` (milik user, tanpa tanggal); tanggal selalu hari ini menurut zona perusahaan.
+
+## Import Formula asinkron & konsistensi UI (Fase 186)
+Keputusan sinkron Fase 166 dicabut: `confirm`/`retry` Import Formula mengubah batch ke `processing` dan meng-enqueue job `IMPORT_AUTOPRODUKSI_FORMULA` (`retryLimit: 0`, kedaluwarsa 1 jam); isi job = `lib/autoproduksi-formula-import.ts` (`runFormulaImportJob`). Penandaan baris "sukses" satu grup ada di transaksi yang sama dengan insert Formula-nya (tidak ada celah Formula ganda saat crash/ulang). Halaman Hasil memakai polling + `ImportProgress` seperti modul lain; `retry` ditolak 409 `BATCH_BUSY` saat memproses, begitu juga Hapus. Teks halaman (judul upload "… dari Excel", "Hasil Import", "Arsip Riwayat Import") diseragamkan dengan modul Facport.
+

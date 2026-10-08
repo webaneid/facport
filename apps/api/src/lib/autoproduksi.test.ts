@@ -19,6 +19,7 @@ const baseFormula: Formula = {
   userId: "user-1",
   dataUsahaId: "du-1",
   subscriptionId: "sub-1",
+  formulaNumber: 1,
   name: "Bolu Kukus SP (Spesial BGT)",
   finishedGoodItemNo: "100011",
   finishedGoodItemUnitName: "Loyang",

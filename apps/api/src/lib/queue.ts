@@ -22,6 +22,8 @@ export const JOBS = {
   // BUKAN bulk seperti IMPORT_TO_ACCURATE) — default pg-boss options (retry 2x, expire 15 menit)
   // CUKUP untuk 1 panggilan ringan, tidak perlu masuk NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS di bawah.
   PROCESS_AUTOPRODUKSI_ENTRY: "process-autoproduksi-entry",
+  // § Fase 186 — Import Formula (Excel) AutoProduksi diproses job (data lokal, tanpa Accurate). retryLimit 0: tidak boleh diulang otomatis oleh pg-boss.
+  IMPORT_AUTOPRODUKSI_FORMULA: "import-autoproduksi-formula",
   EXPIRE_UNPAID_ORDERS: "expire-unpaid-orders", // § Fase 178 — order belum dibayar lewat jatuh tempo → expired
 } as const;
 
@@ -87,6 +89,7 @@ export const JOBS = {
 const NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS: Record<string, { expireInSeconds: number; retryLimit: number }> = {
   [JOBS.IMPORT_TO_ACCURATE]: { expireInSeconds: 7200, retryLimit: 0 },
   [JOBS.CANCEL_IMPORT]: { expireInSeconds: 7200, retryLimit: 0 },
+  [JOBS.IMPORT_AUTOPRODUKSI_FORMULA]: { expireInSeconds: 3600, retryLimit: 0 },
   [JOBS.REFRESH_ACCURATE_TOKEN]: { expireInSeconds: 3600, retryLimit: 0 },
 };
 

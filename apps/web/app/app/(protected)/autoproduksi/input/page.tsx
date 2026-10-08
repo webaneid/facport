@@ -13,6 +13,9 @@ import { warehouseComboboxOptions } from "@/lib/accurate-combobox-options";
 import { searchAccurateWarehouses, type AccurateWarehouseResult } from "@/lib/accurate-warehouse-search";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
 import { SearchableField } from "@/components/autoproduksi/searchable-accurate-field";
+import { ProductionSubmitDialog, type SubmitOutcome } from "@/components/autoproduksi/production-submit-dialog";
+import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { duplicateWarning, todayInTimezone, type RecentEntry } from "@/lib/production-input";
 
 // § Fase 159 — form PALING SEDERHANA di seluruh Facport: pilih formula +
 // input qty produksi, sisanya OTOMATIS (hitung kebutuhan bahan baku, kirim
@@ -27,19 +30,19 @@ import { SearchableField } from "@/components/autoproduksi/searchable-accurate-f
 // dari Formula — 1 Formula sekarang dipakai lintas cabang/gudang), semua
 // OPSIONAL. Gudang Bahan Baku SATU pilihan berlaku ke SEMUA Bahan Baku
 // resep ini (bukan per-item lagi). Hanya Formula yang AKTIF yang muncul di
-// Combobox (non-aktif disaring di sini, server juga menolak 409 kalau
+// Combobox (nonaktif disaring di sini, server juga menolak 409 kalau
 // tetap dipaksa — § autoproduksi.route.ts).
-type Formula = { id: string; name: string; finishedGoodItemUnitName: string; isActive: boolean };
+type Formula = { id: string; formulaCode: string; name: string; finishedGoodItemUnitName: string; isActive: boolean };
 
-function todayIsoDate(): string {
-  return new Date().toISOString().slice(0, 10);
-}
+// § Fase 185 — isian terakhir milik user ini (server, `GET /autoproduksi/production-entries/last`); tanggal SENGAJA tidak ikut (selalu hari ini).
+type LastEntry = { formulaId: string; producedQty: string; branchName: string | null; warehouseName: string | null; rawMaterialWarehouseName: string | null; projectNo: string | null; departmentName: string | null };
 
 export default function AutoProduksiInputPage() {
   const [formulas, setFormulas] = useState<Formula[] | null>(null);
   const [formulaId, setFormulaId] = useState("");
   const [producedQty, setProducedQty] = useState("");
-  const [transDate, setTransDate] = useState(todayIsoDate());
+  const companyTimezone = useCompanyTimezone();
+  const [transDate, setTransDate] = useState(() => todayInTimezone(companyTimezone));
   const [branchName, setBranchName] = useState("");
   const [warehouseName, setWarehouseName] = useState("");
   const [rawMaterialWarehouseName, setRawMaterialWarehouseName] = useState("");
@@ -47,7 +50,9 @@ export default function AutoProduksiInputPage() {
   const [departmentName, setDepartmentName] = useState("");
   const [finishedGoodWarehouseResults, setFinishedGoodWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
   const [rawMaterialWarehouseResults, setRawMaterialWarehouseResults] = useState<AccurateWarehouseResult[]>([]);
-  const [submitting, setSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [warning, setWarning] = useState<string | null>(null);
+  const [prefillNote, setPrefillNote] = useState<string | null>(null);
 
   const debouncedFinishedGoodWarehouseSearch = useDebouncedCallback(async (q: string) => setFinishedGoodWarehouseResults(await searchAccurateWarehouses(q)), 350);
   const debouncedRawMaterialWarehouseSearch = useDebouncedCallback(async (q: string) => setRawMaterialWarehouseResults(await searchAccurateWarehouses(q)), 350);
@@ -55,14 +60,40 @@ export default function AutoProduksiInputPage() {
   useEffect(() => {
     (async () => {
       const res = await api.autoproduksi.formulas.get();
-      if (res.data) setFormulas((res.data as unknown as { formulas: Formula[] }).formulas);
+      const list = res.data ? (res.data as unknown as { formulas: Formula[] }).formulas : null;
+      if (list) setFormulas(list);
+      // isian terakhir: semua kecuali tanggal. Formula hanya diisi bila masih AKTIF (nonaktif/terhapus → pengguna memilih ulang).
+      const lastRes = await api.autoproduksi["production-entries"].last.get();
+      const last = (lastRes.data as unknown as { entry: LastEntry | null } | null)?.entry;
+      if (!last) return;
+      const formula = list?.find((f) => f.id === last.formulaId && f.isActive);
+      if (formula) setFormulaId(formula.id);
+      setProducedQty(String(Number(last.producedQty)));
+      setBranchName(last.branchName ?? "");
+      setWarehouseName(last.warehouseName ?? "");
+      setRawMaterialWarehouseName(last.rawMaterialWarehouseName ?? "");
+      setProjectNo(last.projectNo ?? "");
+      setDepartmentName(last.departmentName ?? "");
+      setPrefillNote(formula ? `${formula.formulaCode} · ${formula.name}, ${Number(last.producedQty)} ${formula.finishedGoodItemUnitName}` : "isian sebelumnya");
     })();
   }, []);
+
+  function clearForm() {
+    setFormulaId("");
+    setProducedQty("");
+    setBranchName("");
+    setWarehouseName("");
+    setRawMaterialWarehouseName("");
+    setProjectNo("");
+    setDepartmentName("");
+    setPrefillNote(null);
+  }
 
   const activeFormulas = formulas?.filter((f) => f.isActive) ?? null;
   const selectedFormula = activeFormulas?.find((f) => f.id === formulaId);
 
-  async function handleSubmit() {
+  // Klik "Input Produksi" TIDAK langsung mengirim: validasi → popup "Periksa dulu" (Kirim/Batal) + peringatan bila ada entri serupa yang baru dikirim.
+  async function handleReview() {
     if (!formulaId) {
       toast.error("Pilih formula dulu.");
       return;
@@ -72,10 +103,16 @@ export default function AutoProduksiInputPage() {
       toast.error("Qty produksi harus lebih dari 0.");
       return;
     }
-    setSubmitting(true);
+    const recent = await api.autoproduksi["production-entries"].get({ query: { limit: 10 } });
+    const entries = (recent.data as unknown as { entries?: RecentEntry[] } | null)?.entries ?? [];
+    setWarning(duplicateWarning(entries, { formulaId, qty, transDate }));
+    setConfirmOpen(true);
+  }
+
+  async function sendEntry(): Promise<SubmitOutcome> {
     const res = await api.autoproduksi["production-entries"].post({
       formulaId,
-      producedQty: qty,
+      producedQty: Number(producedQty),
       transDate,
       ...(branchName.trim() ? { branchName: branchName.trim() } : {}),
       ...(warehouseName.trim() ? { warehouseName: warehouseName.trim() } : {}),
@@ -83,15 +120,32 @@ export default function AutoProduksiInputPage() {
       ...(projectNo.trim() ? { projectNo: projectNo.trim() } : {}),
       ...(departmentName.trim() ? { departmentName: departmentName.trim() } : {}),
     });
-    setSubmitting(false);
     if (res.error) {
       const value = res.error.value as { code?: string } | undefined;
-      toast.error(value?.code === "FORMULA_INACTIVE" ? "Formula ini sedang non-aktif — aktifkan dulu di List Formula." : "Gagal submit input produksi.");
-      return;
+      return { ok: false, message: value?.code === "FORMULA_INACTIVE" ? "Formula ini sedang nonaktif — aktifkan dulu di List Formula." : "Gagal mengirim input produksi ke server." };
     }
-    toast.success("Input produksi terkirim — cek status di halaman Riwayat.");
-    setProducedQty("");
+    return { ok: true, entryId: (res.data as unknown as { entry: { id: string } }).entry.id };
   }
+
+  // "Input produksi baru": isian TETAP (hanya tanggal kembali ke hari ini) — user cukup mengubah yang perlu.
+  function startNewInput() {
+    setConfirmOpen(false);
+    setPrefillNote(null);
+    setTransDate(todayInTimezone(companyTimezone));
+  }
+
+  const summary = {
+    formulaLabel: selectedFormula ? `${selectedFormula.formulaCode} · ${selectedFormula.name}` : "-",
+    qtyText: `${Number(producedQty)} ${selectedFormula?.finishedGoodItemUnitName ?? ""}`.trim(),
+    dateText: transDate,
+    context: [
+      { label: "Cabang", value: branchName.trim() },
+      { label: "Gudang Barang Jadi", value: warehouseName.trim() },
+      { label: "Gudang Bahan Baku", value: rawMaterialWarehouseName.trim() },
+      { label: "Proyek", value: projectNo.trim() },
+      { label: "Departemen", value: departmentName.trim() },
+    ].filter((c) => c.value),
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -131,7 +185,7 @@ export default function AutoProduksiInputPage() {
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-xs font-medium text-foreground">Formula / Resep</span>
                 <Combobox
-                  options={activeFormulas.map((f) => ({ value: f.id, label: f.name }))}
+                  options={activeFormulas.map((f) => ({ value: f.id, label: `${f.formulaCode} · ${f.name}` }))}
                   value={formulaId}
                   onChange={setFormulaId}
                   placeholder="Pilih formula..."
@@ -197,9 +251,21 @@ export default function AutoProduksiInputPage() {
                 </div>
               </div>
 
-              <Button onClick={handleSubmit} disabled={submitting}>
-                {submitting ? "Mengirim..." : "Input Produksi"}
+              {prefillNote && (
+                <p className="flex items-center justify-between gap-2 rounded-lg bg-muted/60 px-3 py-2 text-xs text-muted-foreground">
+                  <span>Diisi dari input terakhir kamu ({prefillNote}). Tanggal hari ini.</span>
+                  <button type="button" onClick={clearForm} className="shrink-0 font-medium text-primary underline">
+                    Kosongkan
+                  </button>
+                </p>
+              )}
+
+              <Button onClick={handleReview} disabled={confirmOpen}>
+                Input Produksi
               </Button>
+              {confirmOpen && (
+                <ProductionSubmitDialog summary={summary} duplicateWarning={warning} onSubmit={sendEntry} onCancel={() => setConfirmOpen(false)} onNewInput={startNewInput} />
+              )}
             </>
           )}
         </CardContent>
