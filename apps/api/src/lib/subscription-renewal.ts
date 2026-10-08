@@ -31,6 +31,8 @@ export async function renewSubscriptionInPlace(
     subscription: SubscriptionRow;
     interval: SubscriptionInterval;
     timeZone: string;
+    /** Jumlah periode yang ditambahkan sekaligus (default 1) — mis. 3 untuk "+3 bulan" di Ubah Masa Aktif. */
+    periods?: number;
     source: "order" | "admin";
     actorId: string;
     orderId?: string | null;
@@ -44,7 +46,8 @@ export async function renewSubscriptionInPlace(
   if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
   if (!subscription.endAt) throw new Error("SUBSCRIPTION_HAS_NO_END_DATE");
   const previousEndAt = subscription.endAt;
-  const next = computeRenewalEnd({ endAt: previousEndAt, periodAnchorAt: subscription.periodAnchorAt, periodMonths: subscription.periodMonths }, interval, timeZone);
+  const periods = params.periods ?? 1;
+  const next = computeRenewalEnd({ endAt: previousEndAt, periodAnchorAt: subscription.periodAnchorAt, periodMonths: subscription.periodMonths }, interval, timeZone, periods);
 
   await tx
     .update(subscriptions)
@@ -66,7 +69,7 @@ export async function renewSubscriptionInPlace(
     entityType: "subscription",
     entityId: subscription.id,
     action: "update",
-    changes: { renewed: true, source, interval, endAt: { old: previousEndAt.toISOString(), new: next.endAt.toISOString() }, orderId: params.orderId ?? null },
+    changes: { renewed: true, source, interval, periods, endAt: { old: previousEndAt.toISOString(), new: next.endAt.toISOString() }, orderId: params.orderId ?? null },
     actorId,
   });
 

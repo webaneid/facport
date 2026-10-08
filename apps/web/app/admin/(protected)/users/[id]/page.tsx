@@ -47,6 +47,8 @@ type SubscriptionRow = {
   startAt: string | null;
   endAt: string | null;
   durationDays: number | null;
+  periodAnchorAt?: string | null;
+  periodMonths?: number | null;
   moduleKey: string | null;
   planName: string;
   dataUsahaId: string;
@@ -235,6 +237,8 @@ export default function AdminUserDetailPage() {
                                         planName={sub.planName}
                                         status={sub.status}
                                         endAt={sub.endAt}
+                                        periodAnchorAt={sub.periodAnchorAt}
+                                        periodMonths={sub.periodMonths}
                                         onSaved={loadSubscriptions}
                                       />
                                     </div>

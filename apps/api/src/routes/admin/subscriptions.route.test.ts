@@ -420,3 +420,103 @@ describe("POST /admin/subscriptions/bulk — mode pembayaran (Fase 178)", () => 
     expect((await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice" })).status).toBe(200);
   });
 });
+
+// § Fase 180 — perpanjang langganan aktif N periode dari jangkar (tombol cepat di "Ubah Masa Aktif"), tanggal tidak bergeser.
+describe("POST /admin/subscriptions/:id/extend (Fase 180)", () => {
+  async function extend(cookie: string, id: string, body: Record<string, unknown>) {
+    return testApp.handle(new Request(`http://localhost/admin/subscriptions/${id}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  }
+  const wibTime = (y: number, mo: number, d: number, h: number) => new Date(Date.UTC(y, mo - 1, d, h - 7));
+  async function seedAnchored(userId: string, plan: { id: string }, start: Date, months = 1) {
+    const tz = await getCompanyTimezone();
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan.id, status: "active", startAt: start, endAt: addCalendarMonths(start, months, tz), periodAnchorAt: start, periodMonths: months, dataUsahaId })
+      .returning();
+    return sub!;
+  }
+
+  test("jangkar terjaga: dari akhir 28 Feb (mulai 31 Jan) +1 bulan → 31 Mar (BUKAN 28 Mar seperti PATCH tanggal); +3 bulan → total dari jangkar; riwayat admin tercatat; reminder direset", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-anchor-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_invoice");
+    // mulai 31 Jan 2027 10:00 WIB → akhir 28 Feb 2027 10:00 WIB (masa depan)
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 1, 31, 10));
+    await db.update(subscriptions).set({ lastReminderThresholdDays: 7 }).where(eq(subscriptions.id, sub.id));
+
+    const res = await extend(cookie, sub.id, { interval: "monthly", periods: 1 });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { previousEndAt: string; newEndAt: string };
+    expect(new Date(body.previousEndAt).getTime()).toBe(wibTime(2027, 2, 28, 10).getTime());
+    expect(new Date(body.newEndAt).getTime()).toBe(wibTime(2027, 3, 31, 10).getTime());
+    const [after1] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after1!.endAt!.getTime()).toBe(wibTime(2027, 3, 31, 10).getTime());
+    expect(after1!.periodMonths).toBe(2);
+    expect(after1!.periodAnchorAt!.getTime()).toBe(sub.startAt!.getTime());
+    expect(after1!.lastReminderThresholdDays).toBeNull();
+
+    const res3 = await extend(cookie, sub.id, { interval: "monthly", periods: 3 });
+    expect(res3.status).toBe(200);
+    const [after3] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after3!.endAt!.getTime()).toBe(wibTime(2027, 6, 30, 10).getTime()); // 31 Jan + 5 bulan = 30 Jun (dijepit)
+    expect(after3!.periodMonths).toBe(5);
+    const renewals = await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, sub.id));
+    expect(renewals).toHaveLength(2);
+    expect(renewals.every((r) => r.source === "admin" && r.orderId === null)).toBe(true);
+  });
+
+  test("tahunan: +1 tahun menambah 12 bulan dari jangkar", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-yearly-${runId}@test.local`);
+    const plan = await makePlan("yearly", "purchase_invoice");
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 3, 15, 9), 12);
+    expect((await extend(cookie, sub.id, { interval: "yearly", periods: 1 })).status).toBe(200);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after!.endAt!.getTime()).toBe(wibTime(2029, 3, 15, 9).getTime());
+    expect(after!.periodMonths).toBe(24);
+  });
+
+  test("setelah tanggal diubah manual (PATCH mengosongkan jangkar), perpanjang berikutnya menetapkan jangkar baru di akhir saat itu", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-afterpatch-${runId}@test.local`);
+    const plan = await makePlan("monthly", "journal_voucher");
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 1, 31, 10));
+    const manual = wibTime(2027, 4, 10, 8);
+    await testApp.handle(new Request(`http://localhost/admin/subscriptions/${sub.id}`, { method: "PATCH", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ endAt: manual.toISOString() }) }));
+    expect(await extend(cookie, sub.id, { interval: "monthly", periods: 1 }).then((r) => r.status)).toBe(200);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after!.endAt!.getTime()).toBe(wibTime(2027, 5, 10, 8).getTime());
+    expect(after!.periodAnchorAt!.getTime()).toBe(manual.getTime());
+    expect(after!.periodMonths).toBe(1);
+  });
+
+  test("ditolak: trial (TRIAL_NOT_EXTENDABLE), sudah lewat end_at / bukan aktif (SUBSCRIPTION_NOT_RENEWABLE), id tak dikenal 404, periode di luar 1–36 → 422, tanpa izin → 403", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-reject-${runId}@test.local`);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const plan = await makePlan("monthly", "other_deposit");
+    const base = { userId, planId: plan.id, dataUsahaId, startAt: new Date(Date.now() - 5 * 86400000) };
+    const [trial] = await db.insert(subscriptions).values({ ...base, status: "active", endAt: new Date(Date.now() + 5 * 86400000), isTrial: true }).returning();
+    const [lapsed] = await db.insert(subscriptions).values({ ...base, status: "active", endAt: new Date(Date.now() - 1000) }).returning();
+    const [cancelled] = await db.insert(subscriptions).values({ ...base, status: "cancelled", endAt: new Date(Date.now() + 5 * 86400000) }).returning();
+
+    const code = async (id: string) => ((await (await extend(cookie, id, { interval: "monthly", periods: 1 })).json()) as { code: string }).code;
+    expect(await code(trial!.id)).toBe("TRIAL_NOT_EXTENDABLE");
+    expect(await code(lapsed!.id)).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect(await code(cancelled!.id)).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect((await extend(cookie, crypto.randomUUID(), { interval: "monthly", periods: 1 })).status).toBe(404);
+    expect((await extend(cookie, trial!.id, { interval: "monthly", periods: 0 })).status).toBe(422);
+    expect((await extend(cookie, trial!.id, { interval: "monthly", periods: 37 })).status).toBe(422);
+    // tidak ada perubahan pada yang ditolak
+    expect((await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, trial!.id)))).toHaveLength(0);
+
+    const customerCookie = await (async () => {
+      const email = `admin-extend-plain-${runId}@test.local`;
+      await signUp(email);
+      const r = await testApp.handle(new Request("http://localhost/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!" }) }));
+      return r.headers.get("set-cookie") ?? "";
+    })();
+    expect((await extend(customerCookie, trial!.id, { interval: "monthly", periods: 1 })).status).toBe(403);
+  });
+});

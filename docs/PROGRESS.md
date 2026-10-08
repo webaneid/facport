@@ -187,6 +187,7 @@
 | 177  | Komponen SubscriptionPicker (multi-pilih, filter produk, mode Perpanjang) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-177-komponen-subscription-picker.md` |
 | 178  | Mode pembayaran saat assign/Tambah User (kirim invoice / sudah dibayar = invoice otomatis lunas / gratis tanpa invoice) + batalkan invoice (admin & customer) + invoice belum dibayar kedaluwarsa otomatis | Done | `docs/architecture/architecture-payment.md` | `docs/phases/phase-178-mode-pembayaran-dan-batalkan-invoice.md` |
 | 179  | Koreksi langganan tahunan 360 hari (skrip dry-run/commit; belum dijalankan di production) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-179-koreksi-langganan-360-hari.md` |
+| 180  | Ubah Masa Aktif: tombol +1 bulan/+3 bulan/+1 tahun memakai perpanjangan server berbasis jangkar (tanggal tidak bergeser) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-180-perpanjang-masa-aktif-berbasis-jangkar.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

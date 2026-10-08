@@ -101,8 +101,10 @@ export function computeRenewalEnd(
   existing: RenewableSubscription,
   interval: SubscriptionInterval,
   timeZone: string,
+  periods: number = 1,
 ): { endAt: Date; periodAnchorAt: Date; periodMonths: number } {
-  const add = intervalMonths(interval);
+  if (!Number.isInteger(periods) || periods < 1) throw new RangeError(`Jumlah periode harus bilangan bulat ≥ 1 (diterima ${periods}).`);
+  const add = intervalMonths(interval) * periods;
   const { periodAnchorAt: anchor, periodMonths: months } = existing;
   if (anchor && months && months > 0 && addCalendarMonths(anchor, months, timeZone).getTime() === existing.endAt.getTime()) {
     const total = months + add;

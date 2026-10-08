@@ -1,7 +1,8 @@
 import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { assignPlanToDataUsaha } from "../../lib/admin-assign";
-import { eq, desc, inArray } from "drizzle-orm";
+import { renewSubscriptionInPlace } from "../../lib/subscription-renewal";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { createInvoiceAndOrder, createPaidInvoiceAndOrder, inFlightModuleKeys } from "../../lib/invoice-order";
 import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs, user as userTable } from "../../db/schema";
@@ -238,5 +239,47 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ endAt: t.String({ format: "date-time" }) }),
+    },
+  
+  )
+  // § Fase 180, ADR-0041 — perpanjang langganan yang MASIH AKTIF sebanyak N periode (bulanan/tahunan) dari tanggal berakhirnya, memakai jangkar (tanggal tidak bergeser) —
+  // aturan yang SAMA dengan perpanjangan lewat Assign/konfirmasi pembayaran (`computeRenewalEnd`). Dipakai tombol cepat +1 bulan / +3 bulan / +1 tahun di "Ubah Masa Aktif".
+  // BEDA dari `PATCH` di atas (tanggal persis, jangkar dikosongkan). Tidak untuk trial dan tidak untuk yang sudah habis/dibatalkan (habis → Assign, mulai dari saat itu).
+  .post(
+    "/:id/extend",
+    async ({ params, body, user, set }) => {
+      try {
+        return await db.transaction(async (tx) => {
+          const [subscription] = await tx.select().from(subscriptions).where(sql`${subscriptions.id} = ${params.id} FOR UPDATE`).limit(1);
+          if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
+          if (subscription.isTrial) throw new Error("TRIAL_NOT_EXTENDABLE");
+          if (subscription.status !== "active" || !subscription.endAt || subscription.endAt.getTime() <= Date.now()) throw new Error("SUBSCRIPTION_NOT_RENEWABLE");
+          const result = await renewSubscriptionInPlace(tx, {
+            subscription,
+            interval: body.interval,
+            periods: body.periods,
+            timeZone: await getCompanyTimezone(),
+            source: "admin",
+            actorId: user.id,
+          });
+          return { subscriptionId: result.subscriptionId, previousEndAt: result.previousEndAt.toISOString(), newEndAt: result.newEndAt.toISOString() };
+        });
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "";
+        if (code === "SUBSCRIPTION_NOT_FOUND") {
+          set.status = 404;
+          return { code };
+        }
+        if (code === "TRIAL_NOT_EXTENDABLE" || code === "SUBSCRIPTION_NOT_RENEWABLE") {
+          set.status = 400;
+          return { code };
+        }
+        throw err;
+      }
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ interval: t.Union([t.Literal("monthly"), t.Literal("yearly")]), periods: t.Integer({ minimum: 1, maximum: 36 }) }),
     },
   );
