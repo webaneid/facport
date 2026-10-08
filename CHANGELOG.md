@@ -1,3 +1,16 @@
+## 2.31.0 (2026-10-08)
+
+* chore: merge develop ke main (perbaikan tes gate rilis) ([0d9a692](https://github.com/webaneid/facport/commit/0d9a692))
+* chore: rilis Fase 181–183 (perpanjangan terjadwal, notifikasi perubahan masa aktif, perpanjangan kur ([8158e83](https://github.com/webaneid/facport/commit/8158e83))
+* test(web): mock next/navigation di tes TeamForm memuat useSearchParams (mock.module bocor lintas fil ([0933625](https://github.com/webaneid/facport/commit/0933625))
+* test(web): sesuaikan tes login dengan pesan akun nonaktif baru ([f317ce0](https://github.com/webaneid/facport/commit/f317ce0))
+* feat(api web): email ke pengguna saat akun dinonaktifkan / diaktifkan kembali admin (hanya saat stat ([7a8ce66](https://github.com/webaneid/facport/commit/7a8ce66))
+* feat(api web): Fase 180 — tombol cepat Ubah Masa Aktif memakai perpanjangan server berbasis jangkar  ([f47ba9f](https://github.com/webaneid/facport/commit/f47ba9f))
+* feat(api web): Fase 181 — perpanjangan terjadwal & tagihan otomatis (tagihan terbit H-7, notifikasi  ([9f957d7](https://github.com/webaneid/facport/commit/9f957d7))
+* feat(api web): Fase 182 — pelanggan selalu diberi tahu (in-app + email) saat admin memberi paket gra ([c0c26e1](https://github.com/webaneid/facport/commit/c0c26e1))
+* feat(api web): Fase 183 — perpanjangan kursi per slot (multi-slot, hidupkan kembali slot habis, ikut ([9c81a5a](https://github.com/webaneid/facport/commit/9c81a5a))
+* docs: perencanaan Fase 181 — perpanjangan terjadwal & tagihan otomatis (ADR-0042 Proposed, architect ([5b03780](https://github.com/webaneid/facport/commit/5b03780))
+
 ## 2.30.0 (2026-10-07)
 
 * chore: merge develop ke main (perbaikan input tanggal, verifikasi email otomatis saat login, penutup ([97e92c4](https://github.com/webaneid/facport/commit/97e92c4))
