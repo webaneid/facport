@@ -1,5 +1,6 @@
 import "../lib/env"; // WAJIB paling awal
 
+import { runFormulaImportJob } from "../lib/autoproduksi-formula-import";
 import { formatFormulaCode } from "../lib/formula-number";
 import { eq, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
@@ -2396,6 +2397,17 @@ async function main() {
   // cek scope → buka sesi → panggil Accurate) TAPI jauh lebih simpel: 1
   // entry = 1 panggilan `saveInventoryAdjustment()` (endpoint yang SUDAH
   // ADA, dipakai modul Inventory Adjustment — TIDAK ada integrasi baru).
+  // § Fase 186 — Import Formula (Excel) AutoProduksi: job lokal murni (tanpa Accurate), progres per grup terlihat lewat baris batch.
+  await boss.work<{ batchId: string }>(JOBS.IMPORT_AUTOPRODUKSI_FORMULA, async ([job]) => {
+    if (!job) return;
+    try {
+      await runFormulaImportJob(job.data.batchId);
+    } catch (err) {
+      logger.error({ err, batchId: job.data.batchId }, "Import Formula AutoProduksi gagal");
+      Sentry.captureException(err);
+    }
+  });
+
   await boss.work<{ entryId: string }>(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, async ([job]) => {
     if (!job) return;
     const { entryId } = job.data;

@@ -53,7 +53,7 @@ export default function AutoproduksiProductionImportArchivePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Arsip Riwayat Import Produksi" description="Semua import Produksi via Excel, termasuk yang lebih lama." />
+      <PageHeader title="Arsip Riwayat Import" description="Semua import Produksi, termasuk yang lebih lama." />
 
       <Card>
         <CardHeader>

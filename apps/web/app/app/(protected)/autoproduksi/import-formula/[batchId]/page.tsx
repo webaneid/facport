@@ -16,11 +16,8 @@ import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
-// § architecture-autoproduksi.md — berbeda dari modul lain: batch SUDAH
-// final (`completed`/`completed_with_errors`) begitu halaman ini dibuka
-// pertama kali (confirm synchronous, § page.tsx) — polling tetap ada
-// supaya "Retry baris gagal" (juga synchronous) langsung terlihat
-// hasilnya tanpa refresh manual.
+// § Fase 186 — Import Formula kini diproses job (status "processing" lalu completed/completed_with_errors), SAMA seperti modul import lain: halaman ini polling
+// selama memproses dan menampilkan progress bar.
 type Row = {
   id: string;
   rowNumber: number;
@@ -39,6 +36,7 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destru
   success: { label: "Sukses", variant: "success" },
   failed: { label: "Gagal", variant: "destructive" },
   pending: { label: "Menunggu", variant: "warning" },
+  processing: { label: "Memproses", variant: "warning" },
   completed: { label: "Selesai", variant: "success" },
   completed_with_errors: { label: "Selesai (ada gagal)", variant: "warning" },
   mapping_pending: { label: "Menunggu Konfirmasi", variant: "default" },
@@ -69,6 +67,8 @@ export default function AutoproduksiFormulaImportResultPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch awal, pola standar
     load();
+    const interval = setInterval(load, 3000);
+    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.batchId]);
 
@@ -94,11 +94,12 @@ export default function AutoproduksiFormulaImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
+  const isProcessing = batch.status === "processing";
 
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import Formula</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import</h1>
         <p className="text-sm text-muted-foreground">{batch.fileName}</p>
       </div>
 
@@ -115,7 +116,7 @@ export default function AutoproduksiFormulaImportResultPage() {
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
-        {(summary.failed > 0 || summary.pending > 0) && batch.columnMapping && (
+        {(summary.failed > 0 || summary.pending > 0) && !isProcessing && batch.columnMapping && (
           <CardContent className="flex flex-wrap items-center gap-3">
             <Button onClick={handleRetry} disabled={retrying}>
               {retrying ? "Memproses ulang..." : "Retry baris gagal"}

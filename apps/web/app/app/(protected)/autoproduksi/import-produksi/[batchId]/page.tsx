@@ -100,7 +100,7 @@ export default function AutoproduksiProductionImportResultPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import Produksi</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Hasil Import</h1>
         <p className="text-sm text-muted-foreground">{batch.fileName}</p>
       </div>
 

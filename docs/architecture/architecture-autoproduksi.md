@@ -233,7 +233,7 @@ cocokkan kolom → riwayat → retry → edit baris gagal) — BUKAN mekanisme
 bulk-upload terpisah. Tapi KEDUANYA beda secara struktural dari 24 modul
 itu, dengan cara yang BERBEDA satu sama lain:
 
-### A. Import Formula — SATU-SATUNYA modul import SYNCHRONOUS di Facport
+### A. Import Formula — (Fase 166: dulu SYNCHRONOUS; **Fase 186: kini ASINKRON via job `IMPORT_AUTOPRODUKSI_FORMULA`, lihat bagian akhir**)
 `import_batches.module = "autoproduksi_formula"` (moduleAccess TETAP
 `autoproduksi_production`, 1 SKU bundel — key ini SENGAJA tidak masuk
 `module-catalog.ts` supaya tidak muncul sebagai opsi "jual terpisah" di
@@ -362,4 +362,7 @@ Tiap Formula punya nomor internal otomatis per Data Usaha (`autoproduksi_formula
 
 ## Input Produksi: konfirmasi, progres, isian terakhir (Fase 185)
 Klik "Input Produksi" membuka popup 3 tahap: Periksa dulu (ringkasan + peringatan duplikat; Kirim/Batal) → Progres (polling `GET /autoproduksi/production-entries/:id` tiap 1 dtk; `pending` = antre + menghubungi Accurate, `processing` = mengirim) → Hasil (Lihat riwayat / Input produksi baru). Form terisi dari `GET /autoproduksi/production-entries/last` (milik user, tanpa tanggal); tanggal selalu hari ini menurut zona perusahaan.
+
+## Import Formula asinkron & konsistensi UI (Fase 186)
+Keputusan sinkron Fase 166 dicabut: `confirm`/`retry` Import Formula mengubah batch ke `processing` dan meng-enqueue job `IMPORT_AUTOPRODUKSI_FORMULA` (`retryLimit: 0`, kedaluwarsa 1 jam); isi job = `lib/autoproduksi-formula-import.ts` (`runFormulaImportJob`). Penandaan baris "sukses" satu grup ada di transaksi yang sama dengan insert Formula-nya (tidak ada celah Formula ganda saat crash/ulang). Halaman Hasil memakai polling + `ImportProgress` seperti modul lain; `retry` ditolak 409 `BATCH_BUSY` saat memproses, begitu juga Hapus. Teks halaman (judul upload "… dari Excel", "Hasil Import", "Arsip Riwayat Import") diseragamkan dengan modul Facport.
 

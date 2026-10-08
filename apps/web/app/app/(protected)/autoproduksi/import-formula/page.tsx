@@ -26,7 +26,7 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 // murni resep, dipakai lintas cabang/gudang.
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
-  { value: "formulaName", label: "Nama Resep/Formula (wajib — kunci penggabungan baris jadi 1 Formula)" },
+  { value: "formulaName", label: "Nama Resep/Formula (wajib)" },
   { value: "adjustmentAccountNo", label: "Akun Perantara (wajib)" },
   { value: "itemType", label: "Tipe Barang: BB/BJ (wajib)" },
   { value: "itemNo", label: "Nomor Item (wajib)" },
@@ -116,7 +116,7 @@ export default function AutoproduksiFormulaImportPage() {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Formula (Excel)</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Formula dari Excel</h1>
         <p className="text-sm text-muted-foreground">
           Upload file Excel berisi daftar Formula (resep). Baris dengan Nama Resep/Formula yang sama digabung jadi 1
           Formula — setiap Formula wajib tepat 1 baris Tipe Barang=BJ (Barang Jadi) dan minimal 1 baris Tipe

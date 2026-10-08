@@ -49,7 +49,7 @@ export default function AutoproduksiFormulaImportArchivePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <PageHeader title="Arsip Riwayat Import Formula" description="Semua import Formula via Excel, termasuk yang lebih lama." />
+      <PageHeader title="Arsip Riwayat Import" description="Semua import Formula, termasuk yang lebih lama." />
 
       <Card>
         <CardHeader>
