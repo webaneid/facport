@@ -9,7 +9,13 @@ import { paymentVerifiedBody } from "./subscription-renewal";
 
 const INVOICE_DUE_DAYS = 3;
 
-type PlanRow = { id: string; name: string; price: number; durationDays: number; interval: string; kind: string; modules: string[]; productLine: string };
+type PlanRow = {
+  id: string; name: string; price: number; durationDays: number; interval: string; kind: string; modules: string[]; productLine: string;
+  /** § Fase 183, ADR-0043 — item perpanjangan KURSI: langganan kursi (slot) yang diperpanjang / dihidupkan kembali. Tanpa ini = beli slot baru. */
+  renewSubscriptionId?: string | null;
+  /** Niat "perpanjangan berikutnya" per ITEM kursi (kursi tidak mewarisi niat global invoice). */
+  itemRenewalInterval?: "monthly" | "yearly" | null;
+};
 
 // § `tx` (dari `db.transaction(async (tx) => ...)`) TIDAK structurally
 // compatible dengan `typeof db` (beda tipe Drizzle — transaction hilang
@@ -96,7 +102,9 @@ export async function createInvoiceAndOrder(
       // § Fase 173, ADR-0041 — snapshot periode ("monthly" | "yearly"), pola sama durationDays.
       interval: p.interval,
       // niat perpanjangan terjadwal hanya untuk item MODUL (seat tidak pernah diberi penanda)
-      renewalInterval: p.kind === "seat_addon" ? null : (params.renewalIntervalByPlanId?.[p.id] ?? renewalInterval),
+      // kursi: niat hanya dari item itu sendiri (per slot), tidak dari niat global invoice
+      renewalInterval: p.kind === "seat_addon" ? (p.itemRenewalInterval ?? null) : (params.renewalIntervalByPlanId?.[p.id] ?? renewalInterval),
+      renewSubscriptionId: p.kind === "seat_addon" ? (p.renewSubscriptionId ?? null) : null,
     })),
   ).returning();
 
@@ -161,12 +169,24 @@ export async function createPaidInvoiceAndOrder(
 // TIDAK dihitung (§ Fase 178 — membatalkan invoice membuka blokir ini).
 export const NON_TERMINAL_ORDER_STATUSES = ["pending", "submitted"] as const;
 
+// § Fase 183 — slot kursi yang sudah punya tagihan perpanjangan BELUM SELESAI (satu slot, satu tagihan terbuka).
+// Scope = Data Usaha (BUKAN pembuat invoice): tagihan terbuka milik pemilik LAMA tetap terlihat setelah transfer kepemilikan (security review Fase 183). `userId` dipertahankan di tanda tangan (pemanggil sudah mengunci baris pemilik).
+export async function inFlightSeatRenewalIds(tx: Tx | typeof db, params: { userId: string; dataUsahaId: string }): Promise<Set<string>> {
+  const rows = await tx
+    .select({ id: invoiceItems.renewSubscriptionId })
+    .from(orders)
+    .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
+    .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
+    .where(and(eq(orders.dataUsahaId, params.dataUsahaId), inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES])));
+  return new Set(rows.flatMap((r) => (r.id ? [r.id] : [])));
+}
+
 export async function inFlightModuleKeys(tx: Tx | typeof db, params: { userId: string; dataUsahaId: string }): Promise<Set<string>> {
   const rows = await tx
     .select({ moduleKey: invoiceItems.moduleKey })
     .from(orders)
     .innerJoin(invoices, eq(invoices.id, orders.invoiceId))
     .innerJoin(invoiceItems, eq(invoiceItems.invoiceId, invoices.id))
-    .where(and(eq(invoices.userId, params.userId), eq(orders.dataUsahaId, params.dataUsahaId), inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES])));
+    .where(and(eq(orders.dataUsahaId, params.dataUsahaId), inArray(orders.status, [...NON_TERMINAL_ORDER_STATUSES])));
   return new Set(rows.map((r) => r.moduleKey));
 }

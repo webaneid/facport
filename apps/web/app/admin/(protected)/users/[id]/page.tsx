@@ -250,7 +250,7 @@ export default function AdminUserDetailPage() {
                                         periodAnchorAt={sub.periodAnchorAt}
                                         periodMonths={sub.periodMonths}
                                         renewalInterval={sub.renewalInterval}
-                                        renewalEligible={sub.planKind === "module" && !sub.isTrial}
+                                        renewalEligible={!sub.isTrial}
                                         onSaved={loadSubscriptions}
                                       />
                                     </div>

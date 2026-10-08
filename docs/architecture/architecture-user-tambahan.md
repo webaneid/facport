@@ -580,3 +580,7 @@ Aturan satu tempat: `apps/api/src/lib/seat-access.ts` `memberAccessibleDataUsaha
 - `GET /me/team` menambah `seatExpired`/`seatEndAt`/`seatSubscriptionStatus`; halaman Tim menandai "Kursi berakhir" + tanggal supaya pemilik tahu kenapa anggotanya tidak bisa masuk.
 - Sebelum ini ketiga titik hanya mengecek status slot, yang tidak pernah berubah saat kursi berakhir (member punya akses selamanya). Dampak produksi saat ditutup: 0 member (dicek read-only sebelum rilis).
 - Perpanjangan kursi lewat tombol tetap ditunda (ADR-0041 poin 6): kursi yang habis dibeli baru / diaktifkan admin.
+
+## Perpanjangan kursi (Fase 183, ADR-0043)
+Per slot: `invoice_items.renew_subscription_id` menunjuk langganan kursi. Dibayar saat aktif → diperpanjang di tempat (jangkar); sudah habis → slot sama dihidupkan kembali dari saat disetujui (`reactivateSubscription`, anggota tetap); dibatalkan/tidak valid → slot baru (tercatat di audit). Pelanggan: `POST /me/team/renew` (banyak slot, 1 invoice). Terjadwal (ADR-0042) mencakup kursi dengan kunci `seat:<id>`.
+

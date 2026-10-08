@@ -546,14 +546,17 @@ describe("perpanjangan terjadwal — endpoint admin (Fase 181)", () => {
     }
   });
 
-  test("PATCH /:id/renewal ditolak: trial, bukan aktif, seat (RENEWAL_NOT_APPLICABLE); 404; nilai di luar monthly/yearly/null → 422", async () => {
+  test("PATCH /:id/renewal ditolak: trial, bukan aktif (RENEWAL_NOT_APPLICABLE); kursi aktif BOLEH (Fase 183); 404; nilai di luar monthly/yearly/null → 422", async () => {
     const cookie = await adminCookie();
     const userId = await signUp(`admin-renewal-reject-${runId}@test.local`);
     const trial = await seedActive(userId, "purchase_invoice", { isTrial: true });
     const cancelled = await seedActive(userId, "journal_voucher", { status: "cancelled" });
     const seatId = await createTestSeat(userId, await getOrCreateDefaultDataUsaha(userId));
     const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, seatId));
-    for (const id of [trial.sub.id, cancelled.sub.id, seat!.seatSubscriptionId]) {
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${seat!.seatSubscriptionId}/renewal`, { renewalInterval: "monthly" })).status).toBe(200);
+    const [seatSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, seat!.seatSubscriptionId));
+    expect(seatSub!.renewalInterval).toBe("monthly");
+    for (const id of [trial.sub.id, cancelled.sub.id]) {
       const res = await api(cookie, "PATCH", `/admin/subscriptions/${id}/renewal`, { renewalInterval: "yearly" });
       expect(res.status).toBe(400);
       expect(((await res.json()) as { code: string }).code).toBe("RENEWAL_NOT_APPLICABLE");

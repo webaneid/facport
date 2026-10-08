@@ -36,7 +36,7 @@ export function RenewalIntervalField({ value, onChange, disabled }: { value: Ren
       <p className="text-xs text-muted-foreground">
         {value === "none"
           ? "Tidak ada tagihan otomatis — perpanjangan dilakukan manual."
-          : `Tagihan perpanjangan ${value === "yearly" ? "1 tahun" : "1 bulan"} terbit otomatis 7 hari sebelum langganan berakhir (customer diberi tahu lewat notifikasi dan email). Setelah dibayar, masa aktif bertambah dari tanggal berakhir. Tidak berlaku untuk Slot User Tambahan.`}
+          : `Tagihan perpanjangan ${value === "yearly" ? "1 tahun" : "1 bulan"} terbit otomatis 7 hari sebelum langganan berakhir (customer diberi tahu lewat notifikasi dan email). Setelah dibayar, masa aktif bertambah dari tanggal berakhir. Tidak berlaku untuk Slot User Tambahan di sini (atur per slot dari detail langganan user).`}
       </p>
     </fieldset>
   );

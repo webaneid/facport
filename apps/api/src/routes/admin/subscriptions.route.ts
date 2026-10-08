@@ -302,7 +302,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
     },
   
   )
-  // § Fase 181, ADR-0042 — atur penanda "perpanjangan berikutnya" langganan (monthly/yearly/null). Hanya langganan modul non-trial yang masih aktif (seat & trial tidak pernah ditandai).
+  // § Fase 181, ADR-0042 — atur penanda "perpanjangan berikutnya" langganan (monthly/yearly/null). Hanya langganan non-trial yang masih aktif (modul ATAU kursi — Fase 183; trial tidak pernah ditandai).
   // Mengubah penanda tidak menyentuh tanggal berakhir dan tidak menerbitkan tagihan — penerbitan dilakukan job harian (7 hari sebelum berakhir) atau tombol manual di bawah.
   .patch(
     "/:id/renewal",
@@ -312,7 +312,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         set.status = 404;
         return { code: "SUBSCRIPTION_NOT_FOUND" };
       }
-      if (row.sub.isTrial || row.sub.status !== "active" || row.kind !== "module") {
+      if (row.sub.isTrial || row.sub.status !== "active") {
         set.status = 400;
         return { code: "RENEWAL_NOT_APPLICABLE" };
       }

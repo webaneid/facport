@@ -149,7 +149,7 @@ describe("issueDueRenewalInvoices — penerbitan otomatis", () => {
     }
   });
 
-  test("TIDAK menerbitkan: di luar jendela (10 hari), tanpa penanda, trial, seat, status bukan aktif, sudah lewat end_at", async () => {
+  test("TIDAK menerbitkan: di luar jendela (10 hari), tanpa penanda, trial, status bukan aktif, sudah lewat end_at", async () => {
     const { owner, dataUsahaId } = await setup("skip");
     await makePlan("delivery_order", "yearly");
     await seedSub({ ownerId: owner.id, dataUsahaId, moduleKey: "delivery_order", endsInDays: 10 });
@@ -157,10 +157,6 @@ describe("issueDueRenewalInvoices — penerbitan otomatis", () => {
     await seedSub({ ownerId: owner.id, dataUsahaId, moduleKey: "other_deposit", endsInDays: 3, isTrial: true });
     await seedSub({ ownerId: owner.id, dataUsahaId, moduleKey: "other_payment", endsInDays: 3, status: "cancelled" });
     await seedSub({ ownerId: owner.id, dataUsahaId, moduleKey: "work_order", endAt: new Date(Date.now() - 1000) });
-    // seat: langganan kursi ditandai (data tidak wajar) tetap tidak ditagih
-    const seatId = await createTestSeat(owner.id, dataUsahaId);
-    const [seatRow] = await db.select({ seatSubscriptionId: memberSeats.seatSubscriptionId }).from(memberSeats).where(eq(memberSeats.id, seatId));
-    await db.update(subscriptions).set({ renewalInterval: "yearly", endAt: new Date(Date.now() + 3 * DAY) }).where(eq(subscriptions.id, seatRow!.seatSubscriptionId));
     const { spy } = spyEmails();
     try {
       await issueDueRenewalInvoices(new Date(), WIB);
@@ -365,5 +361,95 @@ describe("openRenewalOrdersBySubscription", () => {
     const map = await openRenewalOrdersBySubscription([target]);
     expect(map.get(sub.sub.id)).toEqual({ orderId: open.order.id, invoiceNumber: open.invoice.invoiceNumber, amountDue: 100 + 123 });
     expect((await openRenewalOrdersBySubscription([])).size).toBe(0);
+  });
+});
+
+
+// § Fase 183, ADR-0043 — kursi ikut perpanjangan terjadwal: item menunjuk slotnya, kunci in-flight per slot, tagihan digabung dengan modul yang berakhir di hari yang sama.
+describe("perpanjangan terjadwal — kursi (Fase 183)", () => {
+  const seatPlan = async (interval: "monthly" | "yearly", price = 5000) =>
+    (await db.insert(plans).values({ name: `Renewal SeatPlan ${interval} ${runId}-${++seq}`, price, durationDays: interval === "yearly" ? 365 : 30, interval, modules: [], kind: "seat_addon" }).returning())[0]!;
+  async function markedSeat(ownerId: string, dataUsahaId: string, endAt: Date, interval: "monthly" | "yearly" | null = "monthly") {
+    const seatId = await createTestSeat(ownerId, dataUsahaId);
+    const [row] = await db.select({ id: memberSeats.seatSubscriptionId }).from(memberSeats).where(eq(memberSeats.id, seatId));
+    await db.update(subscriptions).set({ renewalInterval: interval, endAt }).where(eq(subscriptions.id, row!.id));
+    return row!.id;
+  }
+
+  test("3 slot ber-penanda berakhir bersamaan → 1 invoice, 3 item (masing-masing menunjuk slotnya), niat siklus terbawa; langganan ditandai", async () => {
+    const { owner, dataUsahaId } = await setup("seat-multi");
+    await seatPlan("monthly", 1);
+    const end = new Date(Date.now() + 4 * DAY);
+    const ids = [await markedSeat(owner.id, dataUsahaId, end), await markedSeat(owner.id, dataUsahaId, end), await markedSeat(owner.id, dataUsahaId, end)];
+    const { spy } = spyEmails();
+    try {
+      await issueDueRenewalInvoices(new Date(), WIB);
+      const [inv] = await invoicesOf(owner.id);
+      const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, inv!.id));
+      expect(items).toHaveLength(3);
+      expect(new Set(items.map((i) => i.renewSubscriptionId))).toEqual(new Set(ids));
+      expect(items.every((i) => i.renewalInterval === "monthly" && i.moduleKey === "seat_addon")).toBe(true);
+      for (const id of ids) {
+        const [s] = await db.select().from(subscriptions).where(eq(subscriptions.id, id));
+        expect(s!.renewalInvoicedForEndAt!.getTime()).toBe(end.getTime());
+      }
+      // run kedua: tidak menerbitkan lagi
+      await issueDueRenewalInvoices(new Date(), WIB);
+      expect(await invoicesOf(owner.id)).toHaveLength(1);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("slot dengan tagihan perpanjangan terbuka DILEWATI (tanpa menandai); slot lain di Data Usaha yang sama tetap ditagih; lalu aktivasi memperpanjang slot yang benar", async () => {
+    const { owner, dataUsahaId } = await setup("seat-inflight");
+    const plan = await seatPlan("monthly", 1);
+    const end = new Date(Date.now() + 3 * DAY);
+    const busy = await markedSeat(owner.id, dataUsahaId, end);
+    const free = await markedSeat(owner.id, dataUsahaId, end);
+    const [inv0] = await db.insert(invoices).values({ invoiceNumber: `INV/RS/${runId}/${++seq}`, userId: owner.id, status: "unpaid", billToName: "x", subtotal: 1, total: 1, dueDate: new Date(Date.now() + DAY) }).returning();
+    await db.insert(invoiceItems).values({ invoiceId: inv0!.id, planId: plan.id, moduleKey: "seat_addon", label: "x", price: 1, durationDays: 30, interval: "monthly", renewSubscriptionId: busy });
+    await db.insert(orders).values({ invoiceId: inv0!.id, uniqueCode: 111, status: "pending", dataUsahaId });
+    const { spy } = spyEmails();
+    try {
+      await issueDueRenewalInvoices(new Date(), WIB);
+      const all = await invoicesOf(owner.id);
+      expect(all).toHaveLength(2);
+      const newInv = all.find((i) => i.id !== inv0!.id)!;
+      const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, newInv.id));
+      expect(items.map((i) => i.renewSubscriptionId)).toEqual([free]);
+      const [busyRow] = await db.select().from(subscriptions).where(eq(subscriptions.id, busy));
+      expect(busyRow!.renewalInvoicedForEndAt).toBeNull();
+
+      // dibayar → slot `free` diperpanjang di tempat dari akhir lama
+      const [order] = await db.select().from(orders).where(eq(orders.invoiceId, newInv.id));
+      const before = end.getTime();
+      await db.transaction(async (tx) => {
+        const planRow = (await tx.select().from(plans).where(eq(plans.id, items[0]!.planId!)))[0]!;
+        await activateInvoiceItems(tx, { userId: owner.id, orderId: order!.id, dataUsahaId, items: [{ item: items[0]!, plan: planRow }], now: new Date(), timeZone: WIB, actorId: owner.id });
+      });
+      const [freeRow] = await db.select().from(subscriptions).where(eq(subscriptions.id, free));
+      expect(freeRow!.endAt!.getTime()).toBeGreaterThan(before);
+      expect(freeRow!.renewalInterval).toBe("monthly");
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  test("paket kursi periode itu tidak ada → ditandai + admin diberi tahu (bukan invoice kosong); penerbitan manual kursi (issueRenewalInvoiceNow) bekerja", async () => {
+    const { owner, dataUsahaId } = await setup("seat-manual");
+    await seatPlan("monthly", 7);
+    const sid = await markedSeat(owner.id, dataUsahaId, new Date(Date.now() + 20 * DAY), null);
+    const { spy } = spyEmails();
+    try {
+      const out = await issueRenewalInvoiceNow(sid, { timeZone: WIB, interval: "monthly" });
+      expect(out.status).toBe("issued");
+      const [inv] = await invoicesOf(owner.id);
+      const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, inv!.id));
+      expect(items[0]).toMatchObject({ renewSubscriptionId: sid, renewalInterval: null }); // manual tanpa penanda tidak menyalakan siklus
+      await expect(issueRenewalInvoiceNow(sid, { timeZone: WIB, interval: "monthly" })).rejects.toBeInstanceOf(RenewalIssueError); // sudah ada tagihan terbuka
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

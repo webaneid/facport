@@ -2274,7 +2274,7 @@ async function main() {
       const planIds = [...new Set(candidates.map((s) => s.planId))];
       const dataUsahaIds = [...new Set(candidates.map((s) => s.dataUsahaId))];
       const [planRows, dataUsahaRows, timezone] = await Promise.all([
-        db.select({ id: plans.id, modules: plans.modules }).from(plans).where(inArray(plans.id, planIds)),
+        db.select({ id: plans.id, modules: plans.modules, kind: plans.kind }).from(plans).where(inArray(plans.id, planIds)),
         db.select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: dataUsaha.userId }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)),
         getCompanyTimezone(),
       ]);
@@ -2284,11 +2284,13 @@ async function main() {
       const userIds = [...new Set(candidates.map((s) => s.userId).concat(dataUsahaRows.map((d) => d.ownerId)))];
       const userRows = await db.select({ id: userTable.id, email: userTable.email }).from(userTable).where(inArray(userTable.id, userIds));
       const moduleByPlanId = new Map(planRows.map((p) => [p.id, p.modules[0] ?? null]));
+      const seatPlanIds = new Set(planRows.filter((p) => p.kind === "seat_addon").map((p) => p.id));
+      const renewalKeyOf = (s: { id: string; planId: string }) => (seatPlanIds.has(s.planId) ? `seat:${s.id}` : (moduleByPlanId.get(s.planId) ?? null));
       const nameByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
       const emailByUserId = new Map(userRows.map((u) => [u.id, u.email]));
       // § Fase 181 — langganan ber-perpanjangan-terjadwal yang tagihannya MASIH TERBUKA: pengingat H-3/H-1 menyebut tagihan itu (belum dibayar) + link bayar.
       const openRenewalBySubscription = await openRenewalOrdersBySubscription(
-        candidates.flatMap((s) => (s.renewalInterval && moduleByPlanId.get(s.planId) ? [{ id: s.id, dataUsahaId: s.dataUsahaId, moduleKey: moduleByPlanId.get(s.planId)! }] : [])),
+        candidates.flatMap((s) => (s.renewalInterval && renewalKeyOf(s) ? [{ id: s.id, dataUsahaId: s.dataUsahaId, moduleKey: renewalKeyOf(s)! }] : [])),
       );
 
       // § audit-temuan-2026-09-27 Batch 5.3 — SEBELUMNYA insert notifikasi +
@@ -2309,7 +2311,7 @@ async function main() {
         const daysLeft = daysLeftById.get(sub.id)!;
         const applicableThreshold = thresholdById.get(sub.id)!;
         const moduleKey = moduleByPlanId.get(sub.planId);
-        const featureLabel = moduleKey ? moduleLabel(moduleKey) : "fitur ini";
+        const featureLabel = moduleKey ? moduleLabel(moduleKey) : seatPlanIds.has(sub.planId) ? "User Tambahan" : "fitur ini";
         const dataUsahaName = nameByDataUsahaId.get(sub.dataUsahaId) ?? "-";
         const tanggalBerakhir = formatNotificationDate(sub.endAt!, timezone);
         const openRenewal = openRenewalBySubscription.get(sub.id);

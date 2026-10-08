@@ -6158,3 +6158,8 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Perbaikan:** kunci baris `user` pemilik di awal transaksi (pola checkout); penerima pengingat tagihan = `dataUsaha.userId`; notifikasi/email dibungkus try/catch + log.
 **Pelajaran:** setiap jalur baru yang membuat pesanan WAJIB memakai lock user yang sama dengan checkout; data yang disimpan "siapa pembeli awal" jangan dipakai sebagai penerima informasi finansial — gunakan pemilik saat ini.
 
+## 2026-10-08 — Fase 183: guard "pesanan terbuka" jangan di-scope ke pembuat invoice
+**Temuan (audit):** `inFlightModuleKeys`/`inFlightSeatRenewalIds` memfilter `invoices.userId`; tagihan terbuka yang dibuat pemilik LAMA hilang dari pandangan pemilik baru setelah transfer kepemilikan → tagihan ganda, slot diperpanjang dua kali bila keduanya dibayar.
+**Perbaikan:** scope hanya `orders.data_usaha_id` + status non-terminal.
+**Pelajaran:** sumber kebenaran "siapa yang sedang ditagih" adalah Data Usaha, bukan akun yang kebetulan membuat invoice; kepemilikan bisa berpindah. Aktivasi ke target (slot) juga wajib memvalidasi jenis target dan mengunci barisnya sebelum memilih cabang.
+
