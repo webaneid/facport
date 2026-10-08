@@ -1,12 +1,21 @@
 import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { assignPlanToDataUsaha } from "../../lib/admin-assign";
-import { eq, desc, inArray } from "drizzle-orm";
+import { notifySubscriptionChangedByAdmin } from "../../lib/subscription-change-notice";
+import { moduleLabel } from "../../lib/module-catalog";
+import { renewSubscriptionInPlace } from "../../lib/subscription-renewal";
+import { issueRenewalInvoiceNow, RenewalIssueError } from "../../lib/renewal-billing";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { createInvoiceAndOrder, createPaidInvoiceAndOrder, inFlightModuleKeys } from "../../lib/invoice-order";
 import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs, user as userTable } from "../../db/schema";
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
+
+async function notifyChangedBySubscriptionId(planId: string, dataUsahaId: string, kind: "extended" | "changed", oldEnd: Date | null, newEnd: Date | null) {
+  const [plan] = await db.select({ name: plans.name, modules: plans.modules }).from(plans).where(eq(plans.id, planId));
+  await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan?.modules[0] ? moduleLabel(plan.modules[0]) : (plan?.name ?? "paket"), kind, oldEnd, newEnd });
+}
 
 export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscriptions" })
   .use(permissionPlugin)
@@ -63,6 +72,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       const timeZone = await getCompanyTimezone();
 
       const result = await db.transaction((tx) => assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id }));
+      await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan.modules[0] ? moduleLabel(plan.modules[0]) : plan.name, kind: result.renewed ? "extended" : "granted", oldEnd: result.previousEndAt, newEnd: result.subscription.endAt });
       // Bentuk respons lama dipertahankan: baris langganan (+ `renewed`/`previousEndAt` bila perpanjangan, § Fase 176).
       return result.renewed ? { ...result.subscription, renewed: true, previousEndAt: result.previousEndAt!.toISOString() } : result.subscription;
     },
@@ -144,10 +154,10 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
             const blocked = planRows.map((p) => p.modules[0]).find((m): m is string => !!m && inFlight.has(m));
             if (blocked) throw new Error(`MODULE_ORDER_IN_PROGRESS:${blocked}`);
             if (mode === "invoice") {
-              const created = await createInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId });
+              const created = await createInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, origin: "admin", renewalInterval: body.renewalInterval ?? null });
               return { dataUsahaId, payment: mode, invoiceId: created.invoiceId, orderId: created.orderId, amountDue: created.amountDue };
             }
-            const paid = await createPaidInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, actorId: user.id, now, timeZone });
+            const paid = await createPaidInvoiceAndOrder(tx, { userId: target.id, billToName: target.name, planRows, dataUsahaId, actorId: user.id, now, timeZone, renewalInterval: body.renewalInterval ?? null });
             return {
               dataUsahaId,
               payment: mode,
@@ -170,7 +180,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       const results = await db.transaction(async (tx) => {
         const out = [];
         for (const plan of planRows) {
-          const r = await assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id });
+          const r = await assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id, renewalInterval: body.renewalInterval ?? null });
           out.push({
             planId: plan.id,
             subscriptionId: r.subscription.id,
@@ -181,6 +191,10 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         }
         return out;
       });
+      for (const [i, plan] of planRows.entries()) {
+        const r = results[i]!;
+        await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan.modules[0] ? moduleLabel(plan.modules[0]) : plan.name, kind: r.renewed ? "extended" : "granted", oldEnd: r.previousEndAt ? new Date(r.previousEndAt) : null, newEnd: r.endAt ? new Date(r.endAt) : null });
+      }
       return { dataUsahaId, payment: "free" as const, results };
     },
     {
@@ -191,6 +205,8 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         endAt: t.Optional(t.String({ format: "date-time" })),
         dataUsahaId: t.Optional(t.String({ format: "uuid" })),
         payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
+        // § Fase 181, ADR-0042 — "perpanjangan berikutnya" untuk semua paket MODUL yang dipilih (seat diabaikan).
+        renewalInterval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])),
       }),
     },
   )
@@ -232,11 +248,113 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         actorId: user.id,
       });
 
+      await notifyChangedBySubscriptionId(existing.planId, existing.dataUsahaId, "changed", existing.endAt, newEndAt);
       return updated;
     },
     {
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ endAt: t.String({ format: "date-time" }) }),
+    },
+  
+  )
+  // § Fase 180, ADR-0041 — perpanjang langganan yang MASIH AKTIF sebanyak N periode (bulanan/tahunan) dari tanggal berakhirnya, memakai jangkar (tanggal tidak bergeser) —
+  // aturan yang SAMA dengan perpanjangan lewat Assign/konfirmasi pembayaran (`computeRenewalEnd`). Dipakai tombol cepat +1 bulan / +3 bulan / +1 tahun di "Ubah Masa Aktif".
+  // BEDA dari `PATCH` di atas (tanggal persis, jangkar dikosongkan). Tidak untuk trial dan tidak untuk yang sudah habis/dibatalkan (habis → Assign, mulai dari saat itu).
+  .post(
+    "/:id/extend",
+    async ({ params, body, user, set }) => {
+      try {
+        const done = await db.transaction(async (tx) => {
+          const [subscription] = await tx.select().from(subscriptions).where(sql`${subscriptions.id} = ${params.id} FOR UPDATE`).limit(1);
+          if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
+          if (subscription.isTrial) throw new Error("TRIAL_NOT_EXTENDABLE");
+          if (subscription.status !== "active" || !subscription.endAt || subscription.endAt.getTime() <= Date.now()) throw new Error("SUBSCRIPTION_NOT_RENEWABLE");
+          const result = await renewSubscriptionInPlace(tx, {
+            subscription,
+            interval: body.interval,
+            periods: body.periods,
+            timeZone: await getCompanyTimezone(),
+            source: "admin",
+            actorId: user.id,
+          });
+          return { subscriptionId: result.subscriptionId, previousEndAt: result.previousEndAt.toISOString(), newEndAt: result.newEndAt.toISOString(), planId: subscription.planId, dataUsahaId: subscription.dataUsahaId };
+        });
+        await notifyChangedBySubscriptionId(done.planId, done.dataUsahaId, "extended", new Date(done.previousEndAt), new Date(done.newEndAt));
+        return { subscriptionId: done.subscriptionId, previousEndAt: done.previousEndAt, newEndAt: done.newEndAt };
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "";
+        if (code === "SUBSCRIPTION_NOT_FOUND") {
+          set.status = 404;
+          return { code };
+        }
+        if (code === "TRIAL_NOT_EXTENDABLE" || code === "SUBSCRIPTION_NOT_RENEWABLE") {
+          set.status = 400;
+          return { code };
+        }
+        throw err;
+      }
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ interval: t.Union([t.Literal("monthly"), t.Literal("yearly")]), periods: t.Integer({ minimum: 1, maximum: 36 }) }),
+    },
+  
+  )
+  // § Fase 181, ADR-0042 — atur penanda "perpanjangan berikutnya" langganan (monthly/yearly/null). Hanya langganan non-trial yang masih aktif (modul ATAU kursi — Fase 183; trial tidak pernah ditandai).
+  // Mengubah penanda tidak menyentuh tanggal berakhir dan tidak menerbitkan tagihan — penerbitan dilakukan job harian (7 hari sebelum berakhir) atau tombol manual di bawah.
+  .patch(
+    "/:id/renewal",
+    async ({ params, body, user, set }) => {
+      const [row] = await db.select({ sub: subscriptions, kind: plans.kind }).from(subscriptions).innerJoin(plans, eq(plans.id, subscriptions.planId)).where(eq(subscriptions.id, params.id));
+      if (!row) {
+        set.status = 404;
+        return { code: "SUBSCRIPTION_NOT_FOUND" };
+      }
+      if (row.sub.isTrial || row.sub.status !== "active") {
+        set.status = 400;
+        return { code: "RENEWAL_NOT_APPLICABLE" };
+      }
+      const [updated] = await db.update(subscriptions).set({ renewalInterval: body.renewalInterval }).where(eq(subscriptions.id, params.id)).returning();
+      await db.insert(auditLogs).values({
+        entityType: "subscription",
+        entityId: params.id,
+        action: "update",
+        changes: { renewalInterval: { old: row.sub.renewalInterval, new: body.renewalInterval } },
+        actorId: user.id,
+      });
+      return updated;
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ renewalInterval: t.Union([t.Literal("monthly"), t.Literal("yearly"), t.Null()]) }),
+    },
+  )
+  // § Fase 181 — terbitkan tagihan perpanjangan SEKARANG untuk satu langganan (mis. tagihan sebelumnya dibatalkan, atau paket periode baru tersedia): mengabaikan jendela 7 hari &
+  // penanda siklus, tetap menolak trial/habis/seat, modul yang masih punya pesanan berjalan, dan paket periode yang tidak ada. Butuh izin `invoices.manage` juga (membuat invoice).
+  .post(
+    "/:id/renewal-invoice",
+    async ({ params, body, user, set }) => {
+      if (!(await userHasPermission(user.id, "invoices.manage"))) {
+        set.status = 403;
+        return { code: "FORBIDDEN_INVOICE" };
+      }
+      try {
+        const outcome = await issueRenewalInvoiceNow(params.id, { timeZone: await getCompanyTimezone(), interval: body.interval });
+        return { invoiceId: outcome.invoiceId, orderId: outcome.orderId, invoiceNumber: outcome.invoiceNumber, amountDue: outcome.amountDue };
+      } catch (err) {
+        if (err instanceof RenewalIssueError) {
+          set.status = err.code === "SUBSCRIPTION_NOT_FOUND" ? 404 : 400;
+          return { code: err.code };
+        }
+        throw err;
+      }
+    },
+    {
+      permission: "subscriptions.manage",
+      params: t.Object({ id: t.String({ format: "uuid" }) }),
+      body: t.Object({ interval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])) }),
     },
   );

@@ -18,3 +18,26 @@ export function findApplicableReminderThreshold(daysLeft: number, thresholds: nu
   if (lastReminderThresholdDays != null && lastReminderThresholdDays <= applicable) return null;
   return applicable;
 }
+
+// § Fase 181, ADR-0042 — teks pengingat berakhir, dipisah dari job supaya bisa diuji. Tiga varian: trial (upgrade), langganan biasa (perpanjang), dan langganan ber-perpanjangan-terjadwal
+// yang tagihannya MASIH TERBUKA (menyebut nomor tagihan, nominal, dan link bayar — pengingat H-3/H-1 "belum dibayar").
+export function buildExpiryReminder(p: {
+  isTrial: boolean;
+  featureLabel: string;
+  dataUsahaName: string;
+  daysLeft: number;
+  tanggalBerakhir: string;
+  openRenewal?: { invoiceNumber: string; amountDue: number; payUrl: string };
+}): { title: string; body: string } {
+  const sisa = `${Math.ceil(p.daysLeft)} hari lagi (${p.tanggalBerakhir})`;
+  if (p.isTrial) {
+    return { title: "Trial akan berakhir", body: `Trial ${p.featureLabel} di Data Usaha ${p.dataUsahaName} akan berakhir ${sisa} — upgrade sekarang supaya tidak terputus.` };
+  }
+  if (p.openRenewal) {
+    return {
+      title: "Tagihan perpanjangan belum dibayar",
+      body: `Langganan ${p.featureLabel} di Data Usaha ${p.dataUsahaName} akan berakhir ${sisa}. Tagihan perpanjangan ${p.openRenewal.invoiceNumber} (Rp${p.openRenewal.amountDue.toLocaleString("id-ID")}) belum dibayar — bayar di ${p.openRenewal.payUrl} supaya tidak terputus.`,
+    };
+  }
+  return { title: "Langganan akan berakhir", body: `Langganan ${p.featureLabel} di Data Usaha ${p.dataUsahaName} akan berakhir ${sisa} — perpanjang sekarang supaya tidak terputus.` };
+}

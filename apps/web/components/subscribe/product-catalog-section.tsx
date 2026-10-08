@@ -42,6 +42,7 @@ export function ProductCatalogSection({
   selectTier,
   tryingPlanId,
   onStartTrial,
+  onTurnOffRenewal,
 }: {
   title: string;
   // § diminta user 2026-09-23 — SEBELUM ini hardcode 1 kalimat generik ("Pilih fitur yang ingin Anda gunakan")
@@ -57,6 +58,7 @@ export function ProductCatalogSection({
   selectTier: (moduleKey: string, planId: string) => void;
   tryingPlanId: string | null;
   onStartTrial: (e: React.MouseEvent, plan: Plan) => void;
+  onTurnOffRenewal?: (subscriptionId: string) => Promise<void>;
 }) {
   const categories = groupByCategory(groups);
   if (categories.length === 0) return null;
@@ -83,6 +85,7 @@ export function ProductCatalogSection({
             selectTier={selectTier}
             tryingPlanId={tryingPlanId}
             onStartTrial={onStartTrial}
+            onTurnOffRenewal={onTurnOffRenewal}
           />
         ))}
       </div>

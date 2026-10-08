@@ -75,7 +75,7 @@ export const invoicesRoute = new Elysia()
       return {
         invoices: withItems.map((inv) => {
           const order = orderByInvoiceId.get(inv.id);
-          return { ...inv, orderId: order?.id ?? null, orderStatus: order?.status ?? null, cancelReason: order?.cancelReason ?? null };
+          return { ...inv, orderId: order?.id ?? null, orderStatus: order?.status ?? null, cancelReason: order?.cancelReason ?? null, origin: order?.origin ?? null };
         }),
       };
     },

@@ -6,10 +6,12 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { DateTimeField } from "@/components/ui/date-time-field";
+import { Can } from "@/components/auth/can";
+import { RenewalIntervalField, type RenewalChoice } from "@/components/subscription/renewal-interval-field";
 import { api } from "@/lib/api-client";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { timezoneAbbreviation } from "@/lib/timezone";
-import { addCalendarMonths } from "@/lib/subscription-period";
+import { computeRenewalEnd, type SubscriptionInterval } from "@/lib/subscription-period";
 import { formatDate } from "@/lib/utils";
 
 // § diminta user 2026-10-03 — ubah/perpanjang masa aktif langganan langsung dari halaman detail user (kolom "Aksi"),
@@ -18,10 +20,13 @@ import { formatDate } from "@/lib/utils";
 // (bukan dari hari ini) — perpanjangan tidak memotong sisa masa aktif.
 // § Fase 174, ADR-0041 — tanggal AKHIR kini tanggal + JAM (zona perusahaan), tombol cepat memakai bulan/tahun KALENDER (jam tetap, dari akhir saat ini),
 // dan nilai yang tidak diubah tidak pernah dikirim ulang (detik pelanggan tidak terpotong). Mengubah tanggal manual mengosongkan jangkar periode di server.
-const QUICK_EXTENSIONS = [
-  { months: 1, label: "+1 bulan" },
-  { months: 3, label: "+3 bulan" },
-  { months: 12, label: "+1 tahun" },
+// § Fase 180 — tombol cepat memakai PERPANJANGAN SERVER berbasis jangkar (`POST /admin/subscriptions/:id/extend`, aturan SAMA dengan Assign/konfirmasi pembayaran: tanggal tidak
+// bergeser di akhir bulan, mis. mulai 31 Jan → 28 Feb → 31 Mar), bukan lagi menyimpan tanggal hasil hitung klien lewat PATCH (yang mengosongkan jangkar). Pratinjau di kolom
+// tanggal dihitung dengan fungsi yang SAMA (`computeRenewalEnd`). Mengedit tanggal secara manual setelah itu kembali ke PATCH (tanggal persis, jangkar dikosongkan — disengaja).
+const QUICK_EXTENSIONS: { label: string; interval: SubscriptionInterval; periods: number }[] = [
+  { label: "+1 bulan", interval: "monthly", periods: 1 },
+  { label: "+3 bulan", interval: "monthly", periods: 3 },
+  { label: "+1 tahun", interval: "yearly", periods: 1 },
 ];
 
 export function EditSubscriptionEndDialog({
@@ -29,18 +34,32 @@ export function EditSubscriptionEndDialog({
   planName,
   status,
   endAt,
+  periodAnchorAt,
+  periodMonths,
+  renewalInterval,
+  renewalEligible = false,
   onSaved,
 }: {
   subscriptionId: string;
   planName: string;
   status: string;
   endAt: string | null;
+  // § Fase 180 — jangkar periode langganan (untuk pratinjau perpanjangan; NULL = data lama / tanggal pernah diubah manual).
+  periodAnchorAt?: string | null;
+  periodMonths?: number | null;
+  // § Fase 181, ADR-0042 — perpanjangan terjadwal: penanda saat ini + apakah langganan ini boleh ditandai (modul non-trial; seat & trial tidak).
+  renewalInterval?: SubscriptionInterval | null;
+  renewalEligible?: boolean;
   onSaved: () => void;
 }) {
   const timezone = useCompanyTimezone();
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState("");
+  // Perpanjangan yang dipilih lewat tombol cepat (null = tanggal diketik manual → PATCH).
+  const [extension, setExtension] = useState<{ interval: SubscriptionInterval; periods: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [renewal, setRenewal] = useState<RenewalChoice>(renewalInterval ?? "none");
+  const [renewalBusy, setRenewalBusy] = useState<"save" | "issue" | null>(null);
   const editable = status === "active";
   const currentLabel = endAt ? `${formatDate(endAt, timezone)} ${timezoneAbbreviation(timezone)}` : "";
   const changed = value !== "" && value !== endAt;
@@ -48,21 +67,68 @@ export function EditSubscriptionEndDialog({
   async function handleSave() {
     if (!changed) return;
     setSaving(true);
-    const res = await api.admin.subscriptions({ id: subscriptionId }).patch({ endAt: value });
+    const res = extension
+      ? await api.admin.subscriptions({ id: subscriptionId }).extend.post(extension)
+      : await api.admin.subscriptions({ id: subscriptionId }).patch({ endAt: value });
     setSaving(false);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
       toast.error(
         code === "END_AT_MUST_BE_FUTURE"
           ? "Tanggal expired harus di masa depan."
-          : code === "SUBSCRIPTION_NOT_ACTIVE"
-            ? "Hanya langganan yang masih aktif yang bisa diubah."
-            : "Gagal ubah masa aktif — coba lagi.",
+          : code === "SUBSCRIPTION_NOT_ACTIVE" || code === "SUBSCRIPTION_NOT_RENEWABLE"
+            ? "Hanya langganan yang masih aktif (belum berakhir) yang bisa diubah/diperpanjang."
+            : code === "TRIAL_NOT_EXTENDABLE"
+              ? "Trial tidak diperpanjang di sini — assign paket asli."
+              : "Gagal ubah masa aktif — coba lagi.",
       );
       return;
     }
     toast.success("Masa aktif berhasil diubah.");
     setOpen(false);
+    onSaved();
+  }
+
+  async function handleSaveRenewal() {
+    setRenewalBusy("save");
+    const res = await api.admin.subscriptions({ id: subscriptionId }).renewal.patch({ renewalInterval: renewal === "none" ? null : renewal });
+    setRenewalBusy(null);
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      toast.error(code === "RENEWAL_NOT_APPLICABLE" ? "Perpanjangan terjadwal hanya untuk langganan fitur yang aktif (bukan trial / slot user)." : "Gagal menyimpan perpanjangan berikutnya — coba lagi.");
+      return;
+    }
+    toast.success(renewal === "none" ? "Perpanjangan terjadwal dimatikan." : `Perpanjangan berikutnya diatur: ${renewal === "yearly" ? "Tahunan" : "Bulanan"}.`);
+    onSaved();
+  }
+
+  // Terbitkan tagihan perpanjangan SEKARANG (mis. tagihan sebelumnya dibatalkan, atau tagihan mau dikirim lebih awal). Memakai penanda yang tersimpan; bila belum ada, pilihan di layar.
+  async function handleIssueInvoice() {
+    const interval = renewalInterval ?? (renewal !== "none" ? renewal : undefined);
+    if (!interval) {
+      toast.error("Pilih Bulanan atau Tahunan dulu.");
+      return;
+    }
+    setRenewalBusy("issue");
+    const res = await api.admin.subscriptions({ id: subscriptionId })["renewal-invoice"].post({ interval });
+    setRenewalBusy(null);
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      toast.error(
+        code === "MODULE_ORDER_IN_PROGRESS"
+          ? "Fitur ini masih punya invoice yang belum selesai — batalkan atau selesaikan dulu."
+          : code === "RENEWAL_PLAN_NOT_AVAILABLE"
+            ? "Tidak ada paket aktif untuk periode itu — aktifkan paketnya dulu."
+            : code === "SUBSCRIPTION_NOT_RENEWABLE"
+              ? "Langganan ini tidak bisa ditagih perpanjangan (trial / sudah berakhir / bukan fitur)."
+              : code === "FORBIDDEN_INVOICE"
+                ? "Kamu tidak punya izin membuat invoice."
+                : "Gagal menerbitkan tagihan — coba lagi.",
+      );
+      return;
+    }
+    const data = res.data as unknown as { invoiceNumber: string };
+    toast.success(`Tagihan perpanjangan ${data.invoiceNumber} diterbitkan — customer diberi tahu.`);
     onSaved();
   }
 
@@ -73,6 +139,8 @@ export function EditSubscriptionEndDialog({
         disabled={!editable}
         onClick={() => {
           setValue(endAt ?? "");
+          setExtension(null);
+          setRenewal(renewalInterval ?? "none");
           setOpen(true);
         }}
         title={editable ? "Ubah / perpanjang masa aktif" : "Hanya langganan aktif yang bisa diubah — untuk yang sudah berakhir, assign paket baru"}
@@ -96,21 +164,59 @@ export function EditSubscriptionEndDialog({
           </p>
           <label className="flex flex-col gap-1.5">
             <span className="text-xs font-medium text-foreground">Tanggal &amp; Jam Expired Baru</span>
-            <DateTimeField value={value} onChange={setValue} timeZone={timezone} ariaLabel="Expired baru" />
+            <DateTimeField
+              value={value}
+              onChange={(iso) => {
+                setExtension(null); // diketik manual → tanggal persis (PATCH), bukan perpanjangan berbasis jangkar
+                setValue(iso);
+              }}
+              timeZone={timezone}
+              ariaLabel="Expired baru"
+            />
           </label>
           {endAt && (
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs text-muted-foreground">Perpanjang dari tanggal &amp; jam berakhir saat ini:</span>
-              {QUICK_EXTENSIONS.map(({ months, label }) => (
-                <Button key={months} variant="outline" onClick={() => setValue(addCalendarMonths(new Date(endAt), months, timezone).toISOString())} className="h-7 px-2.5 py-0 text-xs">
+              {QUICK_EXTENSIONS.map(({ label, interval, periods }) => (
+                <Button
+                  key={label}
+                  variant="outline"
+                  onClick={() => {
+                    const next = computeRenewalEnd(
+                      { endAt: new Date(endAt), periodAnchorAt: periodAnchorAt ? new Date(periodAnchorAt) : null, periodMonths: periodMonths ?? null },
+                      interval,
+                      timezone,
+                      periods,
+                    );
+                    setValue(next.endAt.toISOString());
+                    setExtension({ interval, periods });
+                  }}
+                  className={`h-7 px-2.5 py-0 text-xs ${extension?.interval === interval && extension.periods === periods ? "border-primary-600 bg-primary-50" : ""}`}
+                >
                   {label}
                 </Button>
               ))}
             </div>
           )}
+          {extension && <p className="text-xs text-muted-foreground">Perpanjangan dihitung dari jangkar langganan — tanggal tidak bergeser di akhir bulan. Mengetik tanggal sendiri mengganti ini dengan tanggal persis.</p>}
           <Button onClick={handleSave} disabled={saving || !changed} className="self-end">
             {saving ? "Menyimpan..." : "Simpan"}
           </Button>
+          {renewalEligible && (
+            <div className="flex flex-col gap-2 border-t border-border pt-3">
+              <RenewalIntervalField value={renewal} onChange={setRenewal} disabled={renewalBusy !== null} />
+              <div className="flex flex-wrap justify-end gap-2">
+                <Can permission="invoices.manage">
+                  <Button variant="outline" onClick={handleIssueInvoice} disabled={renewalBusy !== null} className="h-8 px-3 py-0 text-xs">
+                    {renewalBusy === "issue" ? "Menerbitkan..." : "Terbitkan tagihan sekarang"}
+                  </Button>
+                </Can>
+                <Button onClick={handleSaveRenewal} disabled={renewalBusy !== null || renewal === (renewalInterval ?? "none")} className="h-8 px-3 py-0 text-xs">
+                  {renewalBusy === "save" ? "Menyimpan..." : "Simpan perpanjangan"}
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

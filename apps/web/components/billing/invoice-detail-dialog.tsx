@@ -27,6 +27,8 @@ export type BillingInvoice = {
   // § Fase 178 — status order granular (untuk tombol Batalkan: hanya pending/rejected) & alasan bila dibatalkan.
   orderStatus?: string | null;
   cancelReason?: string | null;
+  // § Fase 181 — asal pesanan: "renewal" = tagihan perpanjangan terjadwal (diterbitkan otomatis).
+  origin?: string | null;
 };
 
 export function InvoiceDetailDialog({ invoice }: { invoice: BillingInvoice }) {

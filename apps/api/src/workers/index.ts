@@ -32,6 +32,7 @@ import { moduleLabel } from "../lib/module-catalog";
 import { getCompanyTimezone } from "../lib/company-timezone";
 import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON, EXPIRE_UNPAID_ORDERS_CRON } from "../lib/job-schedules";
 import { expireOverdueOrders } from "../lib/order-cancel";
+import { issueDueRenewalInvoices, openRenewalOrdersBySubscription, renewalPayUrl } from "../lib/renewal-billing";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
@@ -41,7 +42,7 @@ import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
 import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
-import { findApplicableReminderThreshold, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
+import { findApplicableReminderThreshold, buildExpiryReminder, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
 import { fillReturnPricesFromInvoice } from "../lib/import-mapping/return-from-invoice";
 import { savePurchaseInvoice, getPurchaseInvoiceDetail, getPurchaseInvoiceLinesByNumber, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
@@ -2226,6 +2227,14 @@ async function main() {
   await boss.schedule(JOBS.NOTIFY_EXPIRING_SOON, NOTIFY_EXPIRING_SOON_CRON, null, { tz: await getCompanyTimezone() });
   await boss.work(JOBS.NOTIFY_EXPIRING_SOON, async () => {
     const now = Date.now();
+    // § Fase 181, ADR-0042 — SEBELUM pengingat: terbitkan tagihan perpanjangan untuk langganan yang ditandai & berakhir ≤ 7 hari (penerbitan menekan pengingat H-7 generik karena tagihan
+    // itulah pengingat pertamanya). Dibungkus try/catch — kegagalan penerbitan TIDAK boleh menghentikan pengingat.
+    try {
+      const summary = await issueDueRenewalInvoices(new Date(), await getCompanyTimezone());
+      logger.info(summary, "Tagihan perpanjangan terjadwal diproses");
+    } catch (err) {
+      logger.error({ err }, "Gagal memproses tagihan perpanjangan terjadwal");
+    }
     // § Fase 131 — ikut `planId`/`dataUsahaId`, sama alasan job
     // EXPIRE_SUBSCRIPTIONS di atas.
     const active = await db
@@ -2237,6 +2246,7 @@ async function main() {
         lastReminderThresholdDays: subscriptions.lastReminderThresholdDays,
         planId: subscriptions.planId,
         dataUsahaId: subscriptions.dataUsahaId,
+        renewalInterval: subscriptions.renewalInterval,
       })
       .from(subscriptions)
       .where(eq(subscriptions.status, "active"));
@@ -2263,16 +2273,25 @@ async function main() {
     if (candidates.length > 0) {
       const planIds = [...new Set(candidates.map((s) => s.planId))];
       const dataUsahaIds = [...new Set(candidates.map((s) => s.dataUsahaId))];
-      const userIds = [...new Set(candidates.map((s) => s.userId))];
-      const [planRows, dataUsahaRows, userRows, timezone] = await Promise.all([
-        db.select({ id: plans.id, modules: plans.modules }).from(plans).where(inArray(plans.id, planIds)),
-        db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)),
-        db.select({ id: userTable.id, email: userTable.email }).from(userTable).where(inArray(userTable.id, userIds)),
+      const [planRows, dataUsahaRows, timezone] = await Promise.all([
+        db.select({ id: plans.id, modules: plans.modules, kind: plans.kind }).from(plans).where(inArray(plans.id, planIds)),
+        db.select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: dataUsaha.userId }).from(dataUsaha).where(inArray(dataUsaha.id, dataUsahaIds)),
         getCompanyTimezone(),
       ]);
+      const ownerByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.ownerId]));
+      // penerima = pembeli awal (`subscriptions.userId`), KECUALI pengingat tagihan perpanjangan: tagihan itu milik pemilik Data Usaha SAAT INI (bisa beda setelah transfer kepemilikan)
+      const recipientOf = (sub: (typeof candidates)[number]) => (openRenewalBySubscription.get(sub.id) ? (ownerByDataUsahaId.get(sub.dataUsahaId) ?? sub.userId) : sub.userId);
+      const userIds = [...new Set(candidates.map((s) => s.userId).concat(dataUsahaRows.map((d) => d.ownerId)))];
+      const userRows = await db.select({ id: userTable.id, email: userTable.email }).from(userTable).where(inArray(userTable.id, userIds));
       const moduleByPlanId = new Map(planRows.map((p) => [p.id, p.modules[0] ?? null]));
+      const seatPlanIds = new Set(planRows.filter((p) => p.kind === "seat_addon").map((p) => p.id));
+      const renewalKeyOf = (s: { id: string; planId: string }) => (seatPlanIds.has(s.planId) ? `seat:${s.id}` : (moduleByPlanId.get(s.planId) ?? null));
       const nameByDataUsahaId = new Map(dataUsahaRows.map((d) => [d.id, d.name]));
       const emailByUserId = new Map(userRows.map((u) => [u.id, u.email]));
+      // § Fase 181 — langganan ber-perpanjangan-terjadwal yang tagihannya MASIH TERBUKA: pengingat H-3/H-1 menyebut tagihan itu (belum dibayar) + link bayar.
+      const openRenewalBySubscription = await openRenewalOrdersBySubscription(
+        candidates.flatMap((s) => (s.renewalInterval && renewalKeyOf(s) ? [{ id: s.id, dataUsahaId: s.dataUsahaId, moduleKey: renewalKeyOf(s)! }] : [])),
+      );
 
       // § audit-temuan-2026-09-27 Batch 5.3 — SEBELUMNYA insert notifikasi +
       // update `lastReminderThresholdDays` masing-masing 1 query TERPISAH
@@ -2292,16 +2311,22 @@ async function main() {
         const daysLeft = daysLeftById.get(sub.id)!;
         const applicableThreshold = thresholdById.get(sub.id)!;
         const moduleKey = moduleByPlanId.get(sub.planId);
-        const featureLabel = moduleKey ? moduleLabel(moduleKey) : "fitur ini";
+        const featureLabel = moduleKey ? moduleLabel(moduleKey) : seatPlanIds.has(sub.planId) ? "User Tambahan" : "fitur ini";
         const dataUsahaName = nameByDataUsahaId.get(sub.dataUsahaId) ?? "-";
         const tanggalBerakhir = formatNotificationDate(sub.endAt!, timezone);
-        const title = sub.isTrial ? "Trial akan berakhir" : "Langganan akan berakhir";
-        const body = sub.isTrial
-          ? `Trial ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — upgrade sekarang supaya tidak terputus.`
-          : `Langganan ${featureLabel} di Data Usaha ${dataUsahaName} akan berakhir ${Math.ceil(daysLeft)} hari lagi (${tanggalBerakhir}) — perpanjang sekarang supaya tidak terputus.`;
+        const openRenewal = openRenewalBySubscription.get(sub.id);
+        const { title, body } = buildExpiryReminder({
+          isTrial: sub.isTrial,
+          featureLabel,
+          dataUsahaName,
+          daysLeft,
+          tanggalBerakhir,
+          openRenewal: openRenewal ? { invoiceNumber: openRenewal.invoiceNumber, amountDue: openRenewal.amountDue, payUrl: renewalPayUrl(openRenewal.orderId) } : undefined,
+        });
 
+        const recipientId = recipientOf(sub);
         notificationInputs.push({
-          userId: sub.userId,
+          userId: recipientId,
           type: sub.isTrial ? NOTIFICATION_TYPES.TRIAL_ENDING_SOON : NOTIFICATION_TYPES.SUBSCRIPTION_ENDING_SOON,
           title,
           body,
@@ -2313,7 +2338,7 @@ async function main() {
         idsForThreshold.push(sub.id);
         subscriptionIdsByThreshold.set(applicableThreshold, idsForThreshold);
 
-        const email = emailByUserId.get(sub.userId);
+        const email = emailByUserId.get(recipientId);
         if (email) emailJobs.push({ email, title, body });
         notified++;
       }

@@ -18,7 +18,7 @@ type PlanRow = { id: string; durationDays: number; interval?: string; kind: stri
 // korporat, dst), beda kebutuhan dari sini.
 export async function createManualSubscriptions(
   tx: Tx,
-  params: { userId: string; planRows: PlanRow[]; actorId: string; dataUsahaId: string },
+  params: { userId: string; planRows: PlanRow[]; actorId: string; dataUsahaId: string; renewalInterval?: "monthly" | "yearly" | null },
 ) {
   const { userId, planRows, actorId, dataUsahaId } = params;
   const now = new Date();
@@ -31,7 +31,7 @@ export async function createManualSubscriptions(
     const { endAt, periodAnchorAt, periodMonths } = computeSubscriptionPeriod(now, interval, timeZone);
     const [subscription] = await tx
       .insert(subscriptions)
-      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, periodAnchorAt, periodMonths, dataUsahaId })
+      .values({ userId, planId: plan.id, status: "active", startAt: now, endAt, periodAnchorAt, periodMonths, dataUsahaId, renewalInterval: plan.kind === "seat_addon" ? null : (params.renewalInterval ?? null) })
       .returning();
     subscriptionIds.push(subscription!.id);
 

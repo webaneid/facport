@@ -1,7 +1,9 @@
 import { Elysia, t } from "elysia";
-import { eq } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
-import { memberSeats, dataUsaha, subscriptions, user as userTable } from "../db/schema";
+import { memberSeats, dataUsaha, subscriptions, plans, user as userTable } from "../db/schema";
+import { createInvoiceAndOrder, inFlightSeatRenewalIds } from "../lib/invoice-order";
+import { createNotification, NOTIFICATION_TYPES } from "../lib/notifications";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { generateInviteToken, revokeAllSessions } from "../lib/member-seats";
 import { boss, JOBS, startQueue } from "../lib/queue";
@@ -34,6 +36,78 @@ function getAppOrigin(): string {
 // slot ini", snapshot historis, sama seperti `subscriptions.userId`).
 export const teamRoute = new Elysia()
   .use(permissionPlugin)
+  // § Fase 183, ADR-0043 — perpanjang kursi PER SLOT (beberapa slot sekaligus → 1 invoice, 1 item per slot). Aktif → diperpanjang di tempat saat dibayar; sudah habis →
+  // slot yang sama dihidupkan kembali dari saat pembayaran disetujui (anggota tidak berubah). `repeat` memasang penanda perpanjangan terjadwal (ADR-0042) pada slot itu.
+  .post(
+    "/me/team/renew",
+    async ({ user, body, set }) => {
+      if (!(await ownsDataUsaha(user.id, body.dataUsahaId))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const seatIds = [...new Set(body.seatIds)];
+      try {
+        return await db.transaction(async (tx) => {
+          // kunci baris user (pola checkout): serialisasi dengan checkout/penerbitan tagihan lain milik pemilik yang sama
+          const [me] = await tx.select().from(userTable).where(sql`${userTable.id} = ${user.id} FOR UPDATE`).limit(1);
+          if (!me) throw new Error("USER_NOT_FOUND");
+          const rows = await tx
+            .select({ seatId: memberSeats.id, subscriptionId: subscriptions.id, status: subscriptions.status, isTrial: subscriptions.isTrial })
+            .from(memberSeats)
+            .innerJoin(subscriptions, eq(subscriptions.id, memberSeats.seatSubscriptionId))
+            .where(and(inArray(memberSeats.id, seatIds), eq(memberSeats.dataUsahaId, body.dataUsahaId)));
+          // slot milik Data Usaha lain / tidak ada → 404 yang sama (tidak membocorkan keberadaannya)
+          if (rows.length !== seatIds.length) throw new Error("SEAT_NOT_FOUND");
+          if (rows.some((r) => r.isTrial || (r.status !== "active" && r.status !== "expired"))) throw new Error("SEAT_NOT_RENEWABLE");
+          const open = await inFlightSeatRenewalIds(tx, { userId: user.id, dataUsahaId: body.dataUsahaId });
+          if (rows.some((r) => open.has(r.subscriptionId))) throw new Error("SEAT_RENEWAL_IN_PROGRESS");
+
+          const [seatPlan] = await tx
+            .select()
+            .from(plans)
+            .where(and(eq(plans.kind, "seat_addon"), eq(plans.isActive, true), eq(plans.interval, body.interval)))
+            .orderBy(asc(plans.price), asc(plans.name))
+            .limit(1);
+          if (!seatPlan) throw new Error("SEAT_PLAN_NOT_AVAILABLE");
+
+          const planRows = rows.map((r) => ({ ...seatPlan, renewSubscriptionId: r.subscriptionId, itemRenewalInterval: body.repeat ? body.interval : null }));
+          const created = await createInvoiceAndOrder(tx, { userId: user.id, billToName: me.name, planRows, dataUsahaId: body.dataUsahaId });
+          await createNotification(
+            {
+              userId: user.id,
+              type: NOTIFICATION_TYPES.ORDER_CREATED,
+              title: "Pesanan dibuat",
+              body: `Pesanan perpanjangan ${rows.length} User Tambahan sudah dibuat — selesaikan pembayaran supaya slot tetap aktif.`,
+              entityType: "order",
+              entityId: created.orderId,
+            },
+            tx,
+          );
+          return { invoiceId: created.invoiceId, orderId: created.orderId, amountDue: created.amountDue };
+        });
+      } catch (err) {
+        const code = err instanceof Error ? err.message : "";
+        if (code === "SEAT_NOT_FOUND") {
+          set.status = 404;
+          return { code };
+        }
+        if (code === "SEAT_NOT_RENEWABLE" || code === "SEAT_RENEWAL_IN_PROGRESS" || code === "SEAT_PLAN_NOT_AVAILABLE") {
+          set.status = 400;
+          return { code };
+        }
+        throw err;
+      }
+    },
+    {
+      auth: true,
+      body: t.Object({
+        dataUsahaId: t.String({ format: "uuid" }),
+        seatIds: t.Array(t.String({ format: "uuid" }), { minItems: 1, maxItems: 60 }),
+        interval: t.Union([t.Literal("monthly"), t.Literal("yearly")]),
+        repeat: t.Optional(t.Boolean()),
+      }),
+    },
+  )
   .get(
     "/me/team",
     async ({ user, query, set }) => {
@@ -55,15 +129,22 @@ export const teamRoute = new Elysia()
           // tahu kursi mana yang sudah berakhir supaya paham kenapa stafnya tidak bisa masuk.
           seatEndAt: subscriptions.endAt,
           seatSubscriptionStatus: subscriptions.status,
+          seatSubscriptionId: subscriptions.id,
+          seatIsTrial: subscriptions.isTrial,
+          seatRenewalInterval: subscriptions.renewalInterval,
         })
         .from(memberSeats)
         .innerJoin(subscriptions, eq(subscriptions.id, memberSeats.seatSubscriptionId))
         .leftJoin(userTable, eq(userTable.id, memberSeats.memberUserId))
         .where(eq(memberSeats.dataUsahaId, query.dataUsahaId));
       const now = Date.now();
+      // § Fase 183, ADR-0043 — slot yang sudah punya tagihan perpanjangan terbuka (tombol Perpanjang dinonaktifkan) & slot yang tidak bisa diperpanjang (dibatalkan).
+      const openRenewals = await inFlightSeatRenewalIds(db, { userId: user.id, dataUsahaId: query.dataUsahaId });
       return {
         seats: seats.map((seat) => ({
           ...seat,
+          renewalOpen: openRenewals.has(seat.seatSubscriptionId),
+          renewable: !seat.seatIsTrial && (seat.seatSubscriptionStatus === "active" || seat.seatSubscriptionStatus === "expired"),
           seatExpired: seat.seatSubscriptionStatus !== "active" || (seat.seatEndAt !== null && seat.seatEndAt.getTime() <= now),
         })),
       };

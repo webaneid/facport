@@ -316,6 +316,20 @@
       "when": 1791308999417,
       "tag": "0044_order_cancellation",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1791425050030,
+      "tag": "0045_renewal_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1791511450030,
+      "tag": "0046_seat_renewal",
+      "breakpoints": true
     }
   ]
 }

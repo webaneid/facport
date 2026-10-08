@@ -21,12 +21,15 @@ export function notificationLink(type: string, surface: Surface): string {
     case "payment_verified":
     case "order_cancelled":
     case "order_expired":
+    case "renewal_invoice_issued":
+      // § Fase 181 — tagihan perpanjangan otomatis terbit; bayar di /billing.
       return "/billing";
     case "trial_started":
     case "trial_ending_soon":
     case "trial_expired":
     case "subscription_ending_soon":
     case "subscription_expired":
+    case "subscription_changed_by_admin":
       return "/subscribe";
     case "accurate_connection_expired":
     case "accurate_connection_disconnected_by_admin":
@@ -40,6 +43,9 @@ export function notificationLink(type: string, surface: Surface): string {
       // Konvensi yang benar sama seperti sidebar admin (`app-shell/sidebar.tsx`
       // pakai `href: "/orders"` bare, BUKAN "/admin/orders").
       return "/orders";
+    case "admin_renewal_invoice_failed":
+      // § Fase 181 — admin: paket periode tak ada/nonaktif; langganan ada di /users.
+      return "/users";
     case "announcement":
       // § ditemukan 2026-09-07 di production — sebelumnya "/" (dashboard
       // kosong, tidak nunjukin apa-apa soal pengumuman). Isi lengkap

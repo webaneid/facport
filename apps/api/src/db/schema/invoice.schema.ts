@@ -50,6 +50,11 @@ export const invoiceItems = pgTable("invoice_items", {
   // § Fase 173, ADR-0041 — SNAPSHOT plan.interval ("monthly" | "yearly"), pola sama durationDays. Nullable: invoice lama diisi backfill migrasi
   // 0042 dari durationDays; tampilan "Durasi" memakai ini bila ada.
   interval: varchar("interval", { length: 10 }),
+  // § Fase 181, ADR-0042 — snapshot niat "perpanjangan berikutnya" (monthly/yearly/NULL): dipasang ke langganan saat invoice ini diaktifkan (mode "Kirim invoice" — niat harus
+  // bertahan sampai pembayaran disetujui) dan dibawa tagihan perpanjangan yang diterbitkan job supaya siklus berlanjut.
+  renewalInterval: varchar("renewal_interval", { length: 10 }),
+  // § Fase 183, ADR-0043 — item perpanjangan KURSI: menunjuk langganan kursi (slot) yang diperpanjang / dihidupkan kembali saat invoice dibayar. NULL = pembelian baru.
+  renewSubscriptionId: uuid("renew_subscription_id"),
 });
 
 // § Fase 16, ADR-0022 — ganti pola `COUNT(*) LIKE 'INV/...%'` (Fase 15,

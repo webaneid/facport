@@ -28,6 +28,15 @@ describe("notificationLink", () => {
     expect(notificationLink("order_expired", "app")).toBe("/billing");
   });
 
+  test("Fase 181: tagihan perpanjangan terbit → /billing; gagal terbit (admin) → bare /users", () => {
+    expect(notificationLink("renewal_invoice_issued", "app")).toBe("/billing");
+    expect(notificationLink("admin_renewal_invoice_failed", "admin")).toBe("/users");
+  });
+
+  test("Fase 182: perubahan langganan oleh admin → /subscribe", () => {
+    expect(notificationLink("subscription_changed_by_admin", "app")).toBe("/subscribe");
+  });
+
   test("tipe tidak dikenal di surface app → /", () => {
     expect(notificationLink("some_unknown_type", "app")).toBe("/");
   });
@@ -47,6 +56,8 @@ describe("notificationLink", () => {
       "subscription_expired",
       "accurate_connection_expired",
       "admin_payment_proof_submitted",
+      "renewal_invoice_issued",
+      "admin_renewal_invoice_failed",
       "announcement",
       "unknown",
     ];

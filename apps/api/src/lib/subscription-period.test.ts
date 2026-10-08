@@ -176,3 +176,29 @@ describe("computeRenewalEnd — perpanjangan dini dari akhir lama (tanpa menghil
     expect(r.periodMonths).toBe(1);
   });
 });
+
+describe("computeRenewalEnd — N periode sekaligus (Fase 180)", () => {
+  test("+3 bulan dari jangkar 31 Jan: akhir 28 Feb → 31 Mei (bukan 28 Mei); jangkar & total bulan benar", () => {
+    const p = computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB); // akhir 28 Feb, total 1 bulan
+    const r = computeRenewalEnd({ endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths }, "monthly", WIB, 3);
+    expect(iso(r.endAt)).toBe(iso(wib(2026, 5, 31, 10)));
+    expect(r.periodMonths).toBe(4);
+    expect(iso(r.periodAnchorAt)).toBe(iso(wib(2026, 1, 31, 10)));
+  });
+
+  test("N periode = hasil sama dengan N kali perpanjang 1 periode (konsisten); tahunan × 2 = 24 bulan", () => {
+    const p = computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB);
+    let step = { endAt: p.endAt, periodAnchorAt: p.periodAnchorAt as Date | null, periodMonths: p.periodMonths as number | null };
+    for (let i = 0; i < 5; i++) step = computeRenewalEnd(step, "monthly", WIB);
+    const once = computeRenewalEnd({ endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths }, "monthly", WIB, 5);
+    expect(iso(once.endAt)).toBe(iso(step.endAt));
+    const y = computeRenewalEnd({ endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths }, "yearly", WIB, 2);
+    expect(y.periodMonths).toBe(1 + 24);
+  });
+
+  test("jumlah periode tidak valid ditolak", () => {
+    const p = computeSubscriptionPeriod(wib(2026, 1, 31, 10), "monthly", WIB);
+    const sub = { endAt: p.endAt, periodAnchorAt: p.periodAnchorAt, periodMonths: p.periodMonths };
+    for (const bad of [0, -1, 1.5]) expect(() => computeRenewalEnd(sub, "monthly", WIB, bad)).toThrow(RangeError);
+  });
+});

@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { UserPlus, Mail, RotateCw, UserX, ArrowRightLeft } from "lucide-react";
+import { UserPlus, Mail, RotateCw, UserX, ArrowRightLeft, CalendarPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
@@ -27,6 +28,10 @@ type Seat = {
   // § 2026-10-07 — langganan KURSI sudah berakhir: member tidak bisa memakai Data Usaha ini sampai kursinya aktif lagi.
   seatExpired?: boolean;
   seatEndAt?: string | null;
+  // § Fase 183, ADR-0043 — perpanjang per slot: dibatalkan = tidak bisa; tagihan perpanjangan terbuka = tunggu dibayar.
+  renewable?: boolean;
+  renewalOpen?: boolean;
+  seatRenewalInterval?: "monthly" | "yearly" | null;
 };
 
 const inviteSchema = z.object({ email: z.string().email("Format email tidak valid") });
@@ -49,6 +54,12 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
   const [seats, setSeats] = useState<Seat[] | null>(null);
   const [inviteTarget, setInviteTarget] = useState<string | null>(null);
   const [busySeatId, setBusySeatId] = useState<string | null>(null);
+  const router = useRouter();
+  const [renewOpen, setRenewOpen] = useState(false);
+  const [renewSelected, setRenewSelected] = useState<string[]>([]);
+  const [renewInterval, setRenewInterval] = useState<"monthly" | "yearly">("monthly");
+  const [renewRepeat, setRenewRepeat] = useState(false);
+  const [renewing, setRenewing] = useState(false);
   const form = useForm<InviteFormValues>({ resolver: zodResolver(inviteSchema) });
 
   const [transferOpen, setTransferOpen] = useState(false);
@@ -104,6 +115,34 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
     load();
   }
 
+  function openRenew(preselect: string[]) {
+    setRenewSelected(preselect);
+    setRenewOpen(true);
+  }
+
+  async function onRenew() {
+    setRenewing(true);
+    const res = await api.me.team.renew.post({ dataUsahaId, seatIds: renewSelected, interval: renewInterval, repeat: renewRepeat });
+    setRenewing(false);
+    if (res.error) {
+      const code = (res.error.value as { code?: string } | undefined)?.code;
+      toast.error(
+        code === "SEAT_RENEWAL_IN_PROGRESS"
+          ? "Salah satu slot sudah punya tagihan perpanjangan yang belum selesai — bayar atau batalkan dulu di Tagihan."
+          : code === "SEAT_PLAN_NOT_AVAILABLE"
+            ? "Paket User Tambahan untuk periode ini belum tersedia."
+            : code === "SEAT_NOT_RENEWABLE"
+              ? "Salah satu slot tidak bisa diperpanjang."
+              : "Gagal membuat tagihan perpanjangan. Coba lagi.",
+      );
+      return;
+    }
+    const orderId = (res.data as unknown as { orderId: string }).orderId;
+    toast.success("Tagihan perpanjangan dibuat — selesaikan pembayaran.");
+    setRenewOpen(false);
+    router.push(`/billing/${orderId}/pay`);
+  }
+
   async function onTransfer(values: TransferFormValues) {
     const res = await api.me["data-usaha"]({ id: dataUsahaId })["transfer-ownership"].post({ toEmail: values.toEmail });
     if (res.error) {
@@ -154,6 +193,15 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
         </p>
       </div>
 
+      {seats.some((seat) => seat.renewable) && (
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" className="gap-1.5" onClick={() => openRenew(seats.filter((seat) => seat.renewable && !seat.renewalOpen && seat.seatExpired).map((seat) => seat.id))}>
+            <CalendarPlus className="h-3.5 w-3.5" />
+            Perpanjang slot
+          </Button>
+        </div>
+      )}
+
       {seats.length === 0 ? (
         <EmptyState
           icon={UserPlus}
@@ -184,6 +232,12 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
                     {seat.status === "invited" && <p className="mt-1 text-xs text-muted-foreground">Menunggu {seat.invitedEmail} menerima undangan.</p>}
                   </div>
                   <div className="flex shrink-0 gap-2">
+                    {seat.renewable && (
+                      <Button size="sm" variant="outline" disabled={seat.renewalOpen} className="gap-1.5" onClick={() => openRenew([seat.id])}>
+                        <CalendarPlus className="h-3.5 w-3.5" />
+                        {seat.renewalOpen ? "Menunggu pembayaran" : "Perpanjang"}
+                      </Button>
+                    )}
                     {seat.status === "available" && (
                       <Button size="sm" variant="outline" className="gap-1.5" onClick={() => setInviteTarget(seat.id)}>
                         <Mail className="h-3.5 w-3.5" />
@@ -256,6 +310,57 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={renewOpen} onOpenChange={setRenewOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Perpanjang User Tambahan</DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4">
+            <CardDescription>
+              Pilih slot yang diperpanjang. Slot yang masih aktif diperpanjang dari tanggal berakhirnya; slot yang sudah berakhir aktif lagi (anggotanya tetap) sejak pembayaran disetujui.
+            </CardDescription>
+            <div className="flex flex-col gap-2">
+              {seats
+                .filter((seat) => seat.renewable)
+                .map((seat, i) => (
+                  <label key={seat.id} className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      disabled={seat.renewalOpen}
+                      checked={renewSelected.includes(seat.id)}
+                      onChange={(e) => setRenewSelected((cur) => (e.target.checked ? [...cur, seat.id] : cur.filter((id) => id !== seat.id)))}
+                    />
+                    <span>
+                      Slot {i + 1} — {seat.memberName || seat.memberEmail || seat.invitedEmail || "kosong"}
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · berakhir {seat.seatEndAt ? formatDate(seat.seatEndAt, companyTimezone) : "-"}
+                        {seat.renewalOpen ? " · menunggu pembayaran" : ""}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+            </div>
+            <div className="flex gap-2">
+              {(["monthly", "yearly"] as const).map((v) => (
+                <Button key={v} type="button" size="sm" variant={renewInterval === v ? "default" : "outline"} aria-pressed={renewInterval === v} onClick={() => setRenewInterval(v)}>
+                  {v === "monthly" ? "Bulanan" : "Tahunan"}
+                </Button>
+              ))}
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={renewRepeat} onChange={(e) => setRenewRepeat(e.target.checked)} />
+              Ulangi otomatis — tagihan berikutnya terbit 7 hari sebelum berakhir (bisa dimatikan kapan saja)
+            </label>
+            <DialogFooter>
+              <Button className="w-full" loading={renewing} disabled={renewSelected.length === 0} onClick={onRenew}>
+                Buat Tagihan ({renewSelected.length} slot)
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 

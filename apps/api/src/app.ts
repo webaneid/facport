@@ -120,6 +120,8 @@ export const app = new Elysia()
   // jadi alasan awal limiter ini TIDAK PERNAH mendekati bahkan 60/menit
   // secara wajar, jadi menaikkan tidak melemahkan proteksinya.
   .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 180 }))
+  // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
+  .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.
   .onAfterHandle(({ set }) => {
     set.headers["X-Content-Type-Options"] = "nosniff";

@@ -36,6 +36,8 @@ type SubscribeCartContextValue = {
   selectedPlans: Plan[];
   tryingPlanId: string | null;
   onStartTrial: (e: React.MouseEvent, plan: Plan) => void;
+  // § Fase 181, ADR-0042 — pelanggan mematikan perpanjangan terjadwal langganannya (hanya mematikan).
+  turnOffRenewal: (subscriptionId: string) => Promise<void>;
   seatPlans: Plan[];
   selectedSeatPlan: Plan | null;
   selectedSeatPlanId: string | null;
@@ -114,7 +116,7 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     const subsData = subsRes.data as unknown as
       | {
           subscriptions: {
-            subscription: { isTrial: boolean; dataUsahaId: string; startAt: string | null; endAt: string | null; periodAnchorAt?: string | null; periodMonths?: number | null };
+            subscription: { id?: string; isTrial: boolean; dataUsahaId: string; startAt: string | null; endAt: string | null; periodAnchorAt?: string | null; periodMonths?: number | null; renewalInterval?: "monthly" | "yearly" | null };
             plan: { modules: string[] };
           }[];
           everTrialedModules: string[];
@@ -126,7 +128,7 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     for (const s of subs) {
       for (const m of s.plan.modules) {
         moduleMap.set(m, s.subscription.isTrial);
-        subscriptionInfoMap.set(m, { startAt: s.subscription.startAt, endAt: s.subscription.endAt, periodAnchorAt: s.subscription.periodAnchorAt, periodMonths: s.subscription.periodMonths });
+        subscriptionInfoMap.set(m, { subscriptionId: s.subscription.id, startAt: s.subscription.startAt, endAt: s.subscription.endAt, periodAnchorAt: s.subscription.periodAnchorAt, periodMonths: s.subscription.periodMonths, renewalInterval: s.subscription.renewalInterval ?? null });
       }
     }
     setActiveModuleMap(moduleMap);
@@ -179,6 +181,16 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     load();
   }
 
+  async function turnOffRenewal(subscriptionId: string) {
+    const res = await api.me.subscriptions({ id: subscriptionId }).renewal.patch({ renewalInterval: null });
+    if (res.error) {
+      toast.error("Gagal mematikan perpanjangan terjadwal. Coba lagi.");
+      return;
+    }
+    toast.success("Perpanjangan terjadwal dimatikan. Tagihan perpanjangan tidak akan diterbitkan otomatis lagi.");
+    await load();
+  }
+
   const hasAnyRealActiveSubscription = hasAnyRealActiveSubscriptionFn(activeModuleMap);
 
   const seatTotal = selectedSeatPlan ? selectedSeatPlan.price * seatQuantity : 0;
@@ -219,6 +231,7 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
     selectedPlans,
     tryingPlanId,
     onStartTrial: handleStartTrial,
+    turnOffRenewal,
     seatPlans,
     selectedSeatPlan,
     selectedSeatPlanId,

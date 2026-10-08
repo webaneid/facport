@@ -1,14 +1,15 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals, invoices, invoiceItems, orders, notifications, permissions, rolePermissions } from "../../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, subscriptionRenewals, invoices, invoiceItems, orders, notifications, permissions, rolePermissions, memberSeats } from "../../db/schema";
 import { adminSubscriptionsRoute } from "./subscriptions.route";
 import { addCalendarMonths, computeSubscriptionPeriod } from "../../lib/subscription-period";
 import { getOrCreateDefaultDataUsaha } from "../../lib/data-usaha";
 import { attachSubscriptionDates } from "../../lib/invoice-helpers";
 import { adminOrdersRoute } from "./orders.route";
+import { createTestSeat } from "../../lib/test-fixtures";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 
 // § Fase 174, ADR-0041 — assign admin: tanpa `endAt` = dihitung dari periode paket (kalender, jangkar dicatat); dengan `endAt` = override bebas
@@ -418,5 +419,267 @@ describe("POST /admin/subscriptions/bulk — mode pembayaran (Fase 178)", () => 
     expect(((await denied.json()) as { code: string }).code).toBe("FORBIDDEN_INVOICE");
     expect(await db.select().from(invoices).where(eq(invoices.userId, userId))).toHaveLength(0);
     expect((await bulk(cookie, { userId, planIds: [plan.id], payment: "paid_invoice" })).status).toBe(200);
+  });
+});
+
+// § Fase 180 — perpanjang langganan aktif N periode dari jangkar (tombol cepat di "Ubah Masa Aktif"), tanggal tidak bergeser.
+describe("POST /admin/subscriptions/:id/extend (Fase 180)", () => {
+  async function extend(cookie: string, id: string, body: Record<string, unknown>) {
+    return testApp.handle(new Request(`http://localhost/admin/subscriptions/${id}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  }
+  const wibTime = (y: number, mo: number, d: number, h: number) => new Date(Date.UTC(y, mo - 1, d, h - 7));
+  async function seedAnchored(userId: string, plan: { id: string }, start: Date, months = 1) {
+    const tz = await getCompanyTimezone();
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const [sub] = await db
+      .insert(subscriptions)
+      .values({ userId, planId: plan.id, status: "active", startAt: start, endAt: addCalendarMonths(start, months, tz), periodAnchorAt: start, periodMonths: months, dataUsahaId })
+      .returning();
+    return sub!;
+  }
+
+  test("jangkar terjaga: dari akhir 28 Feb (mulai 31 Jan) +1 bulan → 31 Mar (BUKAN 28 Mar seperti PATCH tanggal); +3 bulan → total dari jangkar; riwayat admin tercatat; reminder direset", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-anchor-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_invoice");
+    // mulai 31 Jan 2027 10:00 WIB → akhir 28 Feb 2027 10:00 WIB (masa depan)
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 1, 31, 10));
+    await db.update(subscriptions).set({ lastReminderThresholdDays: 7 }).where(eq(subscriptions.id, sub.id));
+
+    const res = await extend(cookie, sub.id, { interval: "monthly", periods: 1 });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { previousEndAt: string; newEndAt: string };
+    expect(new Date(body.previousEndAt).getTime()).toBe(wibTime(2027, 2, 28, 10).getTime());
+    expect(new Date(body.newEndAt).getTime()).toBe(wibTime(2027, 3, 31, 10).getTime());
+    const [after1] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after1!.endAt!.getTime()).toBe(wibTime(2027, 3, 31, 10).getTime());
+    expect(after1!.periodMonths).toBe(2);
+    expect(after1!.periodAnchorAt!.getTime()).toBe(sub.startAt!.getTime());
+    expect(after1!.lastReminderThresholdDays).toBeNull();
+
+    const res3 = await extend(cookie, sub.id, { interval: "monthly", periods: 3 });
+    expect(res3.status).toBe(200);
+    const [after3] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after3!.endAt!.getTime()).toBe(wibTime(2027, 6, 30, 10).getTime()); // 31 Jan + 5 bulan = 30 Jun (dijepit)
+    expect(after3!.periodMonths).toBe(5);
+    const renewals = await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, sub.id));
+    expect(renewals).toHaveLength(2);
+    expect(renewals.every((r) => r.source === "admin" && r.orderId === null)).toBe(true);
+  });
+
+  test("tahunan: +1 tahun menambah 12 bulan dari jangkar", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-yearly-${runId}@test.local`);
+    const plan = await makePlan("yearly", "purchase_invoice");
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 3, 15, 9), 12);
+    expect((await extend(cookie, sub.id, { interval: "yearly", periods: 1 })).status).toBe(200);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after!.endAt!.getTime()).toBe(wibTime(2029, 3, 15, 9).getTime());
+    expect(after!.periodMonths).toBe(24);
+  });
+
+  test("setelah tanggal diubah manual (PATCH mengosongkan jangkar), perpanjang berikutnya menetapkan jangkar baru di akhir saat itu", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-afterpatch-${runId}@test.local`);
+    const plan = await makePlan("monthly", "journal_voucher");
+    const sub = await seedAnchored(userId, plan, wibTime(2027, 1, 31, 10));
+    const manual = wibTime(2027, 4, 10, 8);
+    await testApp.handle(new Request(`http://localhost/admin/subscriptions/${sub.id}`, { method: "PATCH", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ endAt: manual.toISOString() }) }));
+    expect(await extend(cookie, sub.id, { interval: "monthly", periods: 1 }).then((r) => r.status)).toBe(200);
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+    expect(after!.endAt!.getTime()).toBe(wibTime(2027, 5, 10, 8).getTime());
+    expect(after!.periodAnchorAt!.getTime()).toBe(manual.getTime());
+    expect(after!.periodMonths).toBe(1);
+  });
+
+  test("ditolak: trial (TRIAL_NOT_EXTENDABLE), sudah lewat end_at / bukan aktif (SUBSCRIPTION_NOT_RENEWABLE), id tak dikenal 404, periode di luar 1–36 → 422, tanpa izin → 403", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-extend-reject-${runId}@test.local`);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const plan = await makePlan("monthly", "other_deposit");
+    const base = { userId, planId: plan.id, dataUsahaId, startAt: new Date(Date.now() - 5 * 86400000) };
+    const [trial] = await db.insert(subscriptions).values({ ...base, status: "active", endAt: new Date(Date.now() + 5 * 86400000), isTrial: true }).returning();
+    const [lapsed] = await db.insert(subscriptions).values({ ...base, status: "active", endAt: new Date(Date.now() - 1000) }).returning();
+    const [cancelled] = await db.insert(subscriptions).values({ ...base, status: "cancelled", endAt: new Date(Date.now() + 5 * 86400000) }).returning();
+
+    const code = async (id: string) => ((await (await extend(cookie, id, { interval: "monthly", periods: 1 })).json()) as { code: string }).code;
+    expect(await code(trial!.id)).toBe("TRIAL_NOT_EXTENDABLE");
+    expect(await code(lapsed!.id)).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect(await code(cancelled!.id)).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect((await extend(cookie, crypto.randomUUID(), { interval: "monthly", periods: 1 })).status).toBe(404);
+    expect((await extend(cookie, trial!.id, { interval: "monthly", periods: 0 })).status).toBe(422);
+    expect((await extend(cookie, trial!.id, { interval: "monthly", periods: 37 })).status).toBe(422);
+    // tidak ada perubahan pada yang ditolak
+    expect((await db.select().from(subscriptionRenewals).where(eq(subscriptionRenewals.subscriptionId, trial!.id)))).toHaveLength(0);
+
+    const customerCookie = await (async () => {
+      const email = `admin-extend-plain-${runId}@test.local`;
+      await signUp(email);
+      const r = await testApp.handle(new Request("http://localhost/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!" }) }));
+      return r.headers.get("set-cookie") ?? "";
+    })();
+    expect((await extend(customerCookie, trial!.id, { interval: "monthly", periods: 1 })).status).toBe(403);
+  });
+});
+
+// § Fase 181, ADR-0042 — perpanjangan terjadwal: penanda "perpanjangan berikutnya" & penerbitan tagihan manual.
+describe("perpanjangan terjadwal — endpoint admin (Fase 181)", () => {
+  const api = (cookie: string, method: string, path: string, body?: unknown) =>
+    testApp.handle(new Request(`http://localhost${path}`, { method, headers: { cookie, "Content-Type": "application/json" }, body: body === undefined ? undefined : JSON.stringify(body) }));
+  async function seedActive(userId: string, moduleKey: string, over: Partial<typeof subscriptions.$inferInsert> = {}) {
+    const plan = await makePlan("monthly", moduleKey);
+    const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
+    const [sub] = await db.insert(subscriptions).values({ userId, planId: plan.id, status: "active", startAt: new Date(Date.now() - 10 * 86400000), endAt: new Date(Date.now() + 20 * 86400000), dataUsahaId, ...over }).returning();
+    return { sub: sub!, plan, dataUsahaId };
+  }
+
+  test("PATCH /:id/renewal: set monthly/yearly lalu kosongkan (null); tanggal berakhir tidak berubah; audit tercatat", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-set-${runId}@test.local`);
+    const { sub } = await seedActive(userId, "sales_invoice");
+    for (const interval of ["yearly", "monthly", null] as const) {
+      const res = await api(cookie, "PATCH", `/admin/subscriptions/${sub.id}/renewal`, { renewalInterval: interval });
+      expect(res.status).toBe(200);
+      const [row] = await db.select().from(subscriptions).where(eq(subscriptions.id, sub.id));
+      expect(row!.renewalInterval).toBe(interval);
+      expect(row!.endAt!.getTime()).toBe(sub.endAt!.getTime());
+    }
+  });
+
+  test("PATCH /:id/renewal ditolak: trial, bukan aktif (RENEWAL_NOT_APPLICABLE); kursi aktif BOLEH (Fase 183); 404; nilai di luar monthly/yearly/null → 422", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-reject-${runId}@test.local`);
+    const trial = await seedActive(userId, "purchase_invoice", { isTrial: true });
+    const cancelled = await seedActive(userId, "journal_voucher", { status: "cancelled" });
+    const seatId = await createTestSeat(userId, await getOrCreateDefaultDataUsaha(userId));
+    const [seat] = await db.select().from(memberSeats).where(eq(memberSeats.id, seatId));
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${seat!.seatSubscriptionId}/renewal`, { renewalInterval: "monthly" })).status).toBe(200);
+    const [seatSub] = await db.select().from(subscriptions).where(eq(subscriptions.id, seat!.seatSubscriptionId));
+    expect(seatSub!.renewalInterval).toBe("monthly");
+    for (const id of [trial.sub.id, cancelled.sub.id]) {
+      const res = await api(cookie, "PATCH", `/admin/subscriptions/${id}/renewal`, { renewalInterval: "yearly" });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as { code: string }).code).toBe("RENEWAL_NOT_APPLICABLE");
+    }
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${crypto.randomUUID()}/renewal`, { renewalInterval: "yearly" })).status).toBe(404);
+    expect((await api(cookie, "PATCH", `/admin/subscriptions/${trial.sub.id}/renewal`, { renewalInterval: "weekly" })).status).toBe(422);
+  });
+
+  test("bulk membawa renewalInterval: free & paid_invoice langsung memasang penanda ke langganan (baru atau yang diperpanjang); invoice → di-snapshot ke item lalu dipasang saat aktivasi; seat diabaikan", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-bulk-${runId}@test.local`);
+    const free = await makePlan("monthly", "other_deposit");
+    const paid = await makePlan("monthly", "other_payment");
+    const seat = await db.insert(plans).values({ name: `Renewal Seat ${runId}`, price: 100, durationDays: 30, interval: "monthly", modules: [], kind: "seat_addon" }).returning().then((r) => r[0]!);
+
+    expect((await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [free.id], payment: "free", renewalInterval: "yearly" })).status).toBe(200);
+    const [freeSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, free.id)));
+    expect(freeSub!.renewalInterval).toBe("yearly");
+
+    const paidRes = await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [paid.id, seat.id], payment: "paid_invoice", renewalInterval: "monthly" });
+    expect(paidRes.status).toBe(200);
+    const [paidSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, paid.id)));
+    const [seatSub] = await db.select().from(subscriptions).where(and(eq(subscriptions.userId, userId), eq(subscriptions.planId, seat.id)));
+    expect(paidSub!.renewalInterval).toBe("monthly");
+    expect(seatSub!.renewalInterval).toBeNull(); // seat tidak pernah ditandai
+
+    // mode invoice: niat bertahan di item sampai pembayaran disetujui
+    const invoicePlan = await makePlan("monthly", "item_requisition");
+    const invRes = await api(cookie, "POST", "/admin/subscriptions/bulk", { userId, planIds: [invoicePlan.id], payment: "invoice", renewalInterval: "yearly" });
+    const { invoiceId } = (await invRes.json()) as { invoiceId: string };
+    const items = await db.select().from(invoiceItems).where(eq(invoiceItems.invoiceId, invoiceId));
+    expect(items[0]!.renewalInterval).toBe("yearly");
+  });
+
+  test("POST /:id/renewal-invoice: menerbitkan tagihan (origin renewal) untuk langganan ber-penanda; kode galat: tanpa interval, trial, tidak ada paket; tanpa invoices.manage → 403", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-renewal-issue-${runId}@test.local`);
+    await makePlan("yearly", "item_transfer");
+    const { sub } = await seedActive(userId, "item_transfer", { renewalInterval: "yearly" });
+    const res = await api(cookie, "POST", `/admin/subscriptions/${sub.id}/renewal-invoice`, {});
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { orderId: string; invoiceNumber: string };
+    expect((await db.select().from(orders).where(eq(orders.id, body.orderId)))[0]!.origin).toBe("renewal");
+
+    const noFlag = await seedActive(userId, "inventory_adjustment");
+    const needInterval = await api(cookie, "POST", `/admin/subscriptions/${noFlag.sub.id}/renewal-invoice`, {});
+    expect(needInterval.status).toBe(400);
+    expect(((await needInterval.json()) as { code: string }).code).toBe("RENEWAL_INTERVAL_REQUIRED");
+    const trial = await seedActive(userId, "job_costing", { isTrial: true });
+    expect(((await (await api(cookie, "POST", `/admin/subscriptions/${trial.sub.id}/renewal-invoice`, { interval: "monthly" })).json()) as { code: string }).code).toBe("SUBSCRIPTION_NOT_RENEWABLE");
+    expect((await api(cookie, "POST", `/admin/subscriptions/${crypto.randomUUID()}/renewal-invoice`, {})).status).toBe(404);
+
+    // izin: hanya subscriptions.manage (tanpa invoices.manage) → 403 FORBIDDEN_INVOICE
+    const [subsPerm] = await db.select().from(permissions).where(eq(permissions.key, "subscriptions.manage"));
+    const [role] = await db.insert(roles).values({ name: `renewal-subs-only-${runId}`, isSystem: false }).returning();
+    await db.insert(rolePermissions).values({ roleId: role!.id, permissionId: subsPerm!.id });
+    const email = `admin-renewal-subsonly-${runId}@test.local`;
+    const staffId = await signUp(email);
+    await db.insert(userRoles).values({ userId: staffId, roleId: role!.id });
+    const login = await testApp.handle(new Request("http://localhost/api/auth/sign-in/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!" }) }));
+    const staffCookie = login.headers.get("set-cookie") ?? "";
+    const denied = await api(staffCookie, "POST", `/admin/subscriptions/${sub.id}/renewal-invoice`, {});
+    expect(denied.status).toBe(403);
+    expect(((await denied.json()) as { code: string }).code).toBe("FORBIDDEN_INVOICE");
+  });
+});
+
+// § Fase 182 — perubahan masa aktif / pemberian paket oleh admin (tanpa invoice) SELALU memberi tahu pemilik Data Usaha saat ini.
+describe("notifikasi perubahan langganan oleh admin (Fase 182)", () => {
+  async function notices(userId: string) {
+    return db.select().from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.type, "subscription_changed_by_admin")));
+  }
+
+  test("POST assign (gratis) → 'Paket diberikan admin'; assign lagi (perpanjang) → 'Masa aktif diperpanjang admin'", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-grant-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_invoice");
+    expect((await post(cookie, { userId, planId: plan.id })).status).toBe(200);
+    expect((await notices(userId)).map((n) => n.title)).toEqual(["Paket diberikan admin"]);
+    expect((await post(cookie, { userId, planId: plan.id })).status).toBe(200);
+    expect((await notices(userId)).map((n) => n.title).sort()).toEqual(["Masa aktif diperpanjang admin", "Paket diberikan admin"]);
+  });
+
+  test("PATCH tanggal: bertambah → 'diubah', dipersingkat → 'dipersingkat' (selalu diberi tahu); isi menyebut tanggal lama & baru", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-patch-${runId}@test.local`);
+    const plan = await makePlan("monthly", "journal_voucher");
+    const created = (await (await post(cookie, { userId, planId: plan.id })).json()) as { id: string };
+    const patch = (endAt: Date) => testApp.handle(new Request(`http://localhost/admin/subscriptions/${created.id}`, { method: "PATCH", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ endAt: endAt.toISOString() }) }));
+    expect((await patch(new Date(Date.now() + 200 * 86400000))).status).toBe(200);
+    expect((await patch(new Date(Date.now() + 10 * 86400000))).status).toBe(200);
+    const titles = (await notices(userId)).map((n) => n.title);
+    expect(titles).toContain("Masa aktif diubah admin");
+    expect(titles).toContain("Masa aktif dipersingkat admin");
+    const short = (await notices(userId)).find((n) => n.title === "Masa aktif dipersingkat admin")!;
+    expect(short.body).toContain("dari");
+    expect(short.body).toContain("menjadi");
+  });
+
+  test("perpanjang cepat (/extend) memberi tahu; permintaan ditolak (trial) TIDAK memberi tahu", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-extend-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_order");
+    const created = (await (await post(cookie, { userId, planId: plan.id })).json()) as { id: string };
+    const before = (await notices(userId)).length;
+    const res = await testApp.handle(new Request(`http://localhost/admin/subscriptions/${created.id}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ interval: "monthly", periods: 1 }) }));
+    expect(res.status).toBe(200);
+    expect((await notices(userId)).length).toBe(before + 1);
+    const bad = await testApp.handle(new Request(`http://localhost/admin/subscriptions/${crypto.randomUUID()}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ interval: "monthly", periods: 1 }) }));
+    expect(bad.status).toBe(404);
+    expect((await notices(userId)).length).toBe(before + 1);
+  });
+
+  test("mode bulk 'free' memberi tahu per paket; mode 'paid_invoice' tidak memakai notifikasi ini (sudah ada invoice)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-bulk-${runId}@test.local`);
+    const p1 = await makePlan("monthly", "purchase_order");
+    const p2 = await makePlan("monthly", "receive_item");
+    const bulk = (payment: string, planIds: string[]) => testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ userId, planIds, payment }) }));
+    expect((await bulk("free", [p1.id, p2.id])).status).toBe(200);
+    expect((await notices(userId)).length).toBe(2);
+    const p3 = await makePlan("monthly", "purchase_return");
+    expect((await bulk("paid_invoice", [p3.id])).status).toBe(200);
+    expect((await notices(userId)).length).toBe(2);
   });
 });

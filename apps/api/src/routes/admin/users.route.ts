@@ -34,6 +34,26 @@ function getAppOrigin(): string {
 // OTOMATIS dari plan.durationDays, bukan diinput manual). Email selamat
 // datang (kredensial + link relevan) diganti dari relay manual admin
 // jadi otomatis lewat job queue.
+// § Permintaan pemilik 2026-10-08 — pengguna diberi tahu lewat email saat akunnya dinonaktifkan / diaktifkan kembali admin. Best-effort pasca-aksi (galat email tidak menggagalkan aksi admin).
+async function sendAccountStatusEmail(userId: string, kind: "disabled" | "enabled") {
+  try {
+    const [target] = await db.select({ email: userTable.email, name: userTable.name }).from(userTable).where(eq(userTable.id, userId));
+    if (!target) return;
+    const body =
+      kind === "disabled"
+        ? "User Anda di non aktifkan oleh sistem kami. Anda dapat hubungi admin jika ingin melanjutkan penggunaan Facport."
+        : "User Anda telah diaktifkan kembali oleh admin. Silakan login untuk melanjutkan penggunaan Facport.";
+    await startQueue();
+    await boss.send(JOBS.SEND_EMAIL, {
+      to: target.email,
+      subject: kind === "disabled" ? "Akun Facport Anda dinonaktifkan" : "Akun Facport Anda diaktifkan kembali",
+      html: `<p>Halo ${escapeHtml(target.name)},</p><p>${escapeHtml(body)}</p>`,
+    });
+  } catch {
+    // dicatat oleh worker/queue; aksi admin tetap berhasil
+  }
+}
+
 export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   .use(permissionPlugin)
   // § Fase 10 — list user + role + subscription AKTIF (kalau ada), buat
@@ -213,18 +233,18 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         // 109/110, dicatat sebagai Known Limitation phase doc).
         const dataUsahaId = await getOrCreateDefaultDataUsaha(userId);
         if (paymentMode === "free") {
-          subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId }));
+          subscriptionIds = await db.transaction((tx) => createManualSubscriptions(tx, { userId, planRows, actorId: user.id, dataUsahaId, renewalInterval: body.renewalInterval ?? null }));
         } else if (paymentMode === "paid_invoice") {
           // § Fase 178 — invoice dibuat OTOMATIS LUNAS + langganan aktif & tertaut ke invoice (catatan/PDF untuk pembukuan).
           const timeZone = await getCompanyTimezone();
           const paid = await db.transaction((tx) =>
-            createPaidInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, actorId: user.id, now: new Date(), timeZone }),
+            createPaidInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, actorId: user.id, now: new Date(), timeZone, renewalInterval: body.renewalInterval ?? null }),
           );
           invoiceId = paid.invoiceId;
           orderId = paid.orderId;
           subscriptionIds = paid.subscriptionIds;
         } else {
-          const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId }));
+          const created = await db.transaction((tx) => createInvoiceAndOrder(tx, { userId, billToName: body.name, planRows, dataUsahaId, origin: "admin", renewalInterval: body.renewalInterval ?? null }));
           invoiceId = created.invoiceId;
           orderId = created.orderId;
           amountDue = created.amountDue;
@@ -275,6 +295,8 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         markAsPaid: t.Optional(t.Boolean()),
         // § Fase 178 — menggantikan `markAsPaid` (tetap diterima: true = "free"): "invoice" kirim invoice | "paid_invoice" invoice otomatis lunas | "free" tanpa invoice.
         payment: t.Optional(t.Union([t.Literal("invoice"), t.Literal("paid_invoice"), t.Literal("free")])),
+        // § Fase 181, ADR-0042 — "perpanjangan berikutnya" untuk semua paket MODUL yang dipilih (seat diabaikan): tagihan perpanjangan terbit otomatis 7 hari sebelum berakhir.
+        renewalInterval: t.Optional(t.Union([t.Literal("monthly"), t.Literal("yearly")])),
       }),
     },
   )
@@ -289,6 +311,11 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         return { code: "CANNOT_DISABLE_SELF" };
       }
 
+      const [before] = await db.select({ disabled: userTable.disabled }).from(userTable).where(eq(userTable.id, params.id));
+      if (!before) {
+        set.status = 404;
+        return { code: "USER_NOT_FOUND" };
+      }
       const [adminRole] = await db.select().from(roles).where(eq(roles.name, "admin"));
 
       // § security review 2026-09-05 (Medium) — guard "jangan nonaktifkan
@@ -337,13 +364,19 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         actorId: user.id,
       });
 
+      if (!before.disabled) await sendAccountStatusEmail(params.id, "disabled");
       return { ok: true };
     },
     { permission: "users.manage", params: t.Object({ id: t.String({ minLength: 1 }) }) },
   )
   .patch(
     "/:id/enable",
-    async ({ params, user }) => {
+    async ({ params, user, set }) => {
+      const [before] = await db.select({ disabled: userTable.disabled }).from(userTable).where(eq(userTable.id, params.id));
+      if (!before) {
+        set.status = 404;
+        return { code: "USER_NOT_FOUND" };
+      }
       await db.update(userTable).set({ disabled: false }).where(eq(userTable.id, params.id));
       await db.insert(auditLogs).values({
         entityType: "user",
@@ -352,6 +385,7 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
         changes: { disabled: false },
         actorId: user.id,
       });
+      if (before.disabled) await sendAccountStatusEmail(params.id, "enabled");
       return { ok: true };
     },
     { permission: "users.manage", params: t.Object({ id: t.String({ minLength: 1 }) }) },

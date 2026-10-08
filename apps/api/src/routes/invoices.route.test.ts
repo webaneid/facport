@@ -123,7 +123,7 @@ describe("GET /me/invoices — status order (Fase 178)", () => {
     const body = (await res.json()) as { invoices: { id: string; orderId: string | null; orderStatus: string | null; cancelReason: string | null }[] };
     const pending = body.invoices.find((i) => i.id === pendingInvoice.id)!;
     const cancelled = body.invoices.find((i) => i.id === cancelledInvoice.id)!;
-    expect(pending).toMatchObject({ orderStatus: "pending", cancelReason: null });
+    expect(pending).toMatchObject({ orderStatus: "pending", cancelReason: null, origin: "checkout" });
     expect(pending.orderId).toBeTruthy();
     expect(cancelled).toMatchObject({ orderStatus: "cancelled", cancelReason: "Salah paket" });
   });

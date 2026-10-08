@@ -103,6 +103,10 @@ export const subscriptions = pgTable(
     // NULL = langganan lama / admin mengubah tanggal manual → perpanjangan berikutnya menetapkan jangkar baru di `endAt` saat itu. Diisi Fase 174.
     periodAnchorAt: timestamp("period_anchor_at", { withTimezone: true }),
     periodMonths: integer("period_months"),
+    // § Fase 181, ADR-0042 — perpanjangan TERJADWAL: "monthly" | "yearly" | NULL (tidak terjadwal, default semua langganan yang ada). Job harian menerbitkan invoice perpanjangan
+    // 7 hari sebelum `end_at` untuk langganan modul non-trial yang ditandai. `renewal_invoiced_for_end_at` = `end_at` yang SUDAH ditagih (idempoten: satu tagihan per siklus).
+    renewalInterval: varchar("renewal_interval", { length: 10 }),
+    renewalInvoicedForEndAt: timestamp("renewal_invoiced_for_end_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   // § BUG DITEMUKAN & DIPERBAIKI 2026-09-27 (audit menyeluruh) — 54

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { moduleLabel } from "@/lib/module-options";
@@ -24,7 +25,15 @@ export type Plan = {
 // § Fase 130 (diminta user 2026-09-17) — tanggal subscription AKTUAL
 // (beda dari `activePlan.durationDays` yang cuma info KATALOG paket).
 // Undefined = belum ada subscription aktif utk modul ini sama sekali.
-export type SubscriptionInfo = { startAt: string | null; endAt: string | null; periodAnchorAt?: string | null; periodMonths?: number | null };
+export type SubscriptionInfo = {
+  subscriptionId?: string;
+  startAt: string | null;
+  endAt: string | null;
+  periodAnchorAt?: string | null;
+  periodMonths?: number | null;
+  // § Fase 181, ADR-0042 — perpanjangan terjadwal (tagihan terbit otomatis 7 hari sebelum berakhir); pelanggan hanya bisa mematikannya.
+  renewalInterval?: SubscriptionInterval | null;
+};
 
 // § Fase 127 — isi panel accordion 1 Varian (dulu ISI KARTU SATU-SATUNYA
 // per modul di `/subscribe`, § subscribe-form.tsx versi lama baris
@@ -45,6 +54,7 @@ export function ModulePricingPanel({
   onToggle,
   onSelectTier,
   onStartTrial,
+  onTurnOffRenewal,
 }: {
   group: ModuleGroup<Plan>;
   activePlan: Plan | undefined;
@@ -58,7 +68,10 @@ export function ModulePricingPanel({
   onToggle: () => void;
   onSelectTier: (planId: string) => void;
   onStartTrial: (e: React.MouseEvent, plan: Plan) => void;
+  onTurnOffRenewal?: (subscriptionId: string) => Promise<void>;
 }) {
+  const [confirmingOff, setConfirmingOff] = useState(false);
+  const [turningOff, setTurningOff] = useState(false);
   const Icon = LANDING_MODULE_ICON_ANY[group.moduleKey];
   const tagline = LANDING_MODULE_TAGLINE_ANY[group.moduleKey];
   const companyTimezone = useCompanyTimezone();
@@ -98,6 +111,44 @@ export function ModulePricingPanel({
           {subscriptionInfo.startAt && subscriptionInfo.endAt && " — "}
           {subscriptionInfo.endAt && `Berakhir ${formatDate(subscriptionInfo.endAt, companyTimezone)}`}
         </p>
+      )}
+
+      {isRealActive && subscriptionInfo?.renewalInterval && (
+        <div className="mt-2 flex flex-col gap-1.5 rounded-md bg-primary-50 px-3 py-2 text-xs">
+          <p className="text-foreground">
+            <strong>Perpanjangan terjadwal: {subscriptionInfo.renewalInterval === "yearly" ? "Tahunan" : "Bulanan"}</strong> — tagihan perpanjangan terbit otomatis 7 hari sebelum berakhir, dan kamu diberi tahu lewat
+            notifikasi dan email.
+          </p>
+          {onTurnOffRenewal && subscriptionInfo.subscriptionId && (
+            <div className="flex items-center gap-2">
+              {!confirmingOff ? (
+                <button type="button" onClick={() => setConfirmingOff(true)} className="text-xs font-medium text-destructive underline-offset-2 hover:underline">
+                  Matikan perpanjangan terjadwal
+                </button>
+              ) : (
+                <>
+                  <span className="text-muted-foreground">Matikan? Tidak ada tagihan perpanjangan otomatis lagi.</span>
+                  <button
+                    type="button"
+                    disabled={turningOff}
+                    onClick={async () => {
+                      setTurningOff(true);
+                      await onTurnOffRenewal(subscriptionInfo.subscriptionId!);
+                      setTurningOff(false);
+                      setConfirmingOff(false);
+                    }}
+                    className="rounded border border-destructive px-2 py-0.5 text-xs font-medium text-destructive disabled:opacity-50"
+                  >
+                    {turningOff ? "Memproses..." : "Ya, matikan"}
+                  </button>
+                  <button type="button" disabled={turningOff} onClick={() => setConfirmingOff(false)} className="text-xs text-muted-foreground">
+                    Batal
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+        </div>
       )}
 
       {activePlan && (

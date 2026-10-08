@@ -45,6 +45,11 @@ export const NOTIFICATION_TYPES = {
   // § Fase 178 — invoice/pesanan belum dibayar dibatalkan admin / kedaluwarsa otomatis (tujuan: /billing).
   ORDER_CANCELLED: "order_cancelled",
   ORDER_EXPIRED: "order_expired",
+  // § Fase 181, ADR-0042 — tagihan perpanjangan terjadwal terbit (pelanggan) / gagal terbit karena paket periode tidak tersedia (admin).
+  RENEWAL_INVOICE_ISSUED: "renewal_invoice_issued",
+  ADMIN_RENEWAL_INVOICE_FAILED: "admin_renewal_invoice_failed",
+  // § Fase 182 — admin memberi paket gratis / mengubah / memperpanjang masa aktif tanpa invoice (tujuan: /subscribe).
+  SUBSCRIPTION_CHANGED_BY_ADMIN: "subscription_changed_by_admin",
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
 

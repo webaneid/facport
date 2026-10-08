@@ -28,6 +28,7 @@ import { type SubscriptionInterval } from "@/lib/subscription-period";
 import { buildPickerRows, summarizeSelection, type ActiveSubscriptionInfo } from "@/lib/subscription-picker";
 import { DateTimeField } from "@/components/ui/date-time-field";
 import { PaymentModeField, type PaymentMode } from "@/components/subscription/payment-mode-field";
+import { RenewalIntervalField, type RenewalChoice } from "@/components/subscription/renewal-interval-field";
 import { usePermissions } from "@/lib/use-permissions";
 import { SubscriptionPicker } from "@/components/subscription/subscription-picker";
 
@@ -95,6 +96,8 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   // § Fase 178 — mode pembayaran (menggantikan checkbox "Tandai Sudah Dibayar"): kirim invoice | sudah dibayar (invoice otomatis lunas) | gratis (tanpa invoice).
   const [payment, setPayment] = useState<PaymentMode>("invoice");
+  // § Fase 181, ADR-0042 — "perpanjangan berikutnya" (tagihan perpanjangan terbit otomatis 7 hari sebelum berakhir) untuk fitur yang dipilih.
+  const [renewal, setRenewal] = useState<RenewalChoice>("none");
   const canBypassPayment = usePermissions().includes("subscriptions.manage");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -121,6 +124,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
       email: email.trim(),
       planIds: summary.planIds.length > 0 ? summary.planIds : undefined,
       payment: summary.planIds.length > 0 ? payment : undefined,
+      renewalInterval: summary.planIds.length > 0 && renewal !== "none" ? renewal : undefined,
     });
     setSubmitting(false);
     if (res.error) {
@@ -148,6 +152,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
       setSelectedKeys(new Set());
       setPeriod("monthly");
       setPayment("invoice");
+      setRenewal("none");
       setCreated(null);
       setError(null);
     }
@@ -222,6 +227,7 @@ function AddUserDialog({ onCreated }: { onCreated: () => void }) {
               // role tanpa izin itu (mis. "staf onboarding") hanya melihat "Kirim invoice". UI hint saja — backend TETAP penjaga sesungguhnya.
               <PaymentModeField value={payment} onChange={setPayment} allowed={canBypassPayment ? ["invoice", "paid_invoice", "free"] : ["invoice"]} />
             )}
+            {summary.count > 0 && <RenewalIntervalField value={renewal} onChange={setRenewal} />}
 
             {error && <p className="text-destructive">{error}</p>}
             <Button onClick={handleCreate} disabled={submitting} className="self-end">
@@ -249,6 +255,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
   // § Fase 178 — mode pembayaran: default "sudah dibayar" (invoice otomatis lunas → ada catatan/PDF untuk pembukuan); "kirim invoice" (customer bayar sendiri,
   // butuh izin invoices.manage); "gratis" (tanpa invoice, hadiah/kontrak khusus — satu-satunya mode yang boleh atur tanggal expired sendiri).
   const [payment, setPayment] = useState<PaymentMode>("paid_invoice");
+  const [renewal, setRenewal] = useState<RenewalChoice>("none"); // Fase 181 — perpanjangan berikutnya (tagihan otomatis 7 hari sebelum berakhir)
   const canSendInvoice = usePermissions().includes("invoices.manage");
   const [manualEnd, setManualEnd] = useState(false);
   const [endAt, setEndAt] = useState("");
@@ -277,6 +284,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setSelectedKeys(new Set());
     setPeriod("monthly");
     setPayment("paid_invoice");
+    setRenewal("none");
     setSelectedDataUsahaId("");
     setManualEnd(false);
     setEndAt("");
@@ -311,6 +319,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       endAt: customEnd ? endAt : undefined,
       dataUsahaId: selectedDataUsahaId || undefined,
       payment,
+      renewalInterval: renewal !== "none" ? renewal : undefined,
     });
     setSubmitting(false);
     if (res.error) {
@@ -351,6 +360,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
       );
     }
     setSelectedKeys(new Set());
+    setRenewal("none");
     setManualEnd(false);
     setEndAt("");
     load();
@@ -536,6 +546,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
               />
             )}
             <PaymentModeField value={payment} onChange={setPayment} allowed={canSendInvoice ? ["paid_invoice", "invoice", "free"] : ["paid_invoice", "free"]} />
+            {summary.count > 0 && <RenewalIntervalField value={renewal} onChange={setRenewal} />}
             {payment === "free" && (
               <div className="flex flex-col gap-2">
                 <label className="flex items-center gap-2">

@@ -6152,3 +6152,14 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Akar masalah:** `<input type="date">` melaporkan nilai SEMENTARA saat tahun diketik digit demi digit ("0002" → "0020" → "0202" → "2027"). `DateTimeField` menurunkan isi kolom dari `value` di setiap render: nilai sementara langsung dikonversi (`Date.UTC` memetakan tahun 0–99 ke 1900–1999 → "0002" = 1902), dikirim ke induk, lalu kolom ditimpa ulang dari nilai itu — setiap ketukan terhapus. Tes Fase 174 hanya mengubah kolom sekali dengan nilai penuh, jadi tidak pernah mengetik bertahap.
 **Perbaikan:** kolom memegang teks ketikan sendiri (`draft`) dan hanya mengemit saat tanggal LENGKAP & wajar (tahun 2000–2100; selain itu mengemit "" → Simpan nonaktif); `draft` disinkronkan dari `value` hanya bila diubah dari luar (tombol +1 bulan, reset); jam dikosongkan = belum lengkap; kolom tanggal membatasi min/max. Tes baru mengetik tahun digit demi digit.
 **Pelajaran:** input terkontrol yang nilainya DITURUNKAN dari hasil parse/konversi tidak boleh dipakai untuk kolom yang diketik manusia — simpan teks mentah, parse hanya saat valid. Dan uji komponen input dengan urutan ketikan nyata (bertahap), bukan hanya nilai akhir.
+
+## 2026-10-08 — Fase 181: audit keamanan perpanjangan terjadwal (3 Medium, sudah diperbaiki)
+**Temuan:** (1) cek pesanan berjalan dibaca SEBELUM row lock → penerbitan manual ganda/job × checkout bisa menghasilkan 2 invoice; (2) pengingat H-3/H-1 berisi link bayar dikirim ke pembeli awal (`subscriptions.userId`), bukan pemilik Data Usaha saat ini setelah transfer; (3) galat notifikasi pasca-commit menandai kelompok gagal padahal tagihan sudah terbit.
+**Perbaikan:** kunci baris `user` pemilik di awal transaksi (pola checkout); penerima pengingat tagihan = `dataUsaha.userId`; notifikasi/email dibungkus try/catch + log.
+**Pelajaran:** setiap jalur baru yang membuat pesanan WAJIB memakai lock user yang sama dengan checkout; data yang disimpan "siapa pembeli awal" jangan dipakai sebagai penerima informasi finansial — gunakan pemilik saat ini.
+
+## 2026-10-08 — Fase 183: guard "pesanan terbuka" jangan di-scope ke pembuat invoice
+**Temuan (audit):** `inFlightModuleKeys`/`inFlightSeatRenewalIds` memfilter `invoices.userId`; tagihan terbuka yang dibuat pemilik LAMA hilang dari pandangan pemilik baru setelah transfer kepemilikan → tagihan ganda, slot diperpanjang dua kali bila keduanya dibayar.
+**Perbaikan:** scope hanya `orders.data_usaha_id` + status non-terminal.
+**Pelajaran:** sumber kebenaran "siapa yang sedang ditagih" adalah Data Usaha, bukan akun yang kebetulan membuat invoice; kepemilikan bisa berpindah. Aktivasi ke target (slot) juga wajib memvalidasi jenis target dan mengunci barisnya sebelum memilih cabang.
+

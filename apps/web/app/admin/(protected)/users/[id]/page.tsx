@@ -47,6 +47,12 @@ type SubscriptionRow = {
   startAt: string | null;
   endAt: string | null;
   durationDays: number | null;
+  periodAnchorAt?: string | null;
+  periodMonths?: number | null;
+  // § Fase 181 — perpanjangan terjadwal (lencana + dialog): penanda, trial/bukan, jenis paket (seat tidak bisa ditandai).
+  renewalInterval?: "monthly" | "yearly" | null;
+  isTrial?: boolean;
+  planKind?: string;
   moduleKey: string | null;
   planName: string;
   dataUsahaId: string;
@@ -221,6 +227,12 @@ export default function AdminUserDetailPage() {
                                   </TableCell>
                                   <TableCell className="font-medium text-foreground">
                                     <TruncateText>{sub.planName}</TruncateText>
+                                    {/* § Fase 181 — perpanjangan terjadwal: tagihan terbit otomatis 7 hari sebelum berakhir */}
+                                    {sub.renewalInterval && sub.status === "active" && (
+                                      <Badge variant="primary" className="mt-1" title="Tagihan perpanjangan terbit otomatis 7 hari sebelum berakhir">
+                                        Perpanjangan: {sub.renewalInterval === "yearly" ? "Tahunan" : "Bulanan"}
+                                      </Badge>
+                                    )}
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">
                                     <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
@@ -235,6 +247,10 @@ export default function AdminUserDetailPage() {
                                         planName={sub.planName}
                                         status={sub.status}
                                         endAt={sub.endAt}
+                                        periodAnchorAt={sub.periodAnchorAt}
+                                        periodMonths={sub.periodMonths}
+                                        renewalInterval={sub.renewalInterval}
+                                        renewalEligible={!sub.isTrial}
                                         onSaved={loadSubscriptions}
                                       />
                                     </div>

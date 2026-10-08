@@ -1,7 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "./db";
 import { subscriptions, subscriptionRenewals, plans, auditLogs } from "../db/schema";
-import { computeRenewalEnd, type SubscriptionInterval } from "./subscription-period";
+import { computeRenewalEnd, computeSubscriptionPeriod, type SubscriptionInterval } from "./subscription-period";
 import { formatNotificationDateTime } from "./notifications";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -31,6 +31,8 @@ export async function renewSubscriptionInPlace(
     subscription: SubscriptionRow;
     interval: SubscriptionInterval;
     timeZone: string;
+    /** Jumlah periode yang ditambahkan sekaligus (default 1) — mis. 3 untuk "+3 bulan" di Ubah Masa Aktif. */
+    periods?: number;
     source: "order" | "admin";
     actorId: string;
     orderId?: string | null;
@@ -44,7 +46,8 @@ export async function renewSubscriptionInPlace(
   if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
   if (!subscription.endAt) throw new Error("SUBSCRIPTION_HAS_NO_END_DATE");
   const previousEndAt = subscription.endAt;
-  const next = computeRenewalEnd({ endAt: previousEndAt, periodAnchorAt: subscription.periodAnchorAt, periodMonths: subscription.periodMonths }, interval, timeZone);
+  const periods = params.periods ?? 1;
+  const next = computeRenewalEnd({ endAt: previousEndAt, periodAnchorAt: subscription.periodAnchorAt, periodMonths: subscription.periodMonths }, interval, timeZone, periods);
 
   await tx
     .update(subscriptions)
@@ -66,11 +69,46 @@ export async function renewSubscriptionInPlace(
     entityType: "subscription",
     entityId: subscription.id,
     action: "update",
-    changes: { renewed: true, source, interval, endAt: { old: previousEndAt.toISOString(), new: next.endAt.toISOString() }, orderId: params.orderId ?? null },
+    changes: { renewed: true, source, interval, periods, endAt: { old: previousEndAt.toISOString(), new: next.endAt.toISOString() }, orderId: params.orderId ?? null },
     actorId,
   });
 
   return { subscriptionId: subscription.id, previousEndAt, newEndAt: next.endAt, periodMonths: next.periodMonths };
+}
+
+// § Fase 183, ADR-0043 — kursi yang sudah HABIS (expired / end_at lewat) dihidupkan kembali di baris yang SAMA: periode baru dimulai dari `now` (saat pembayaran disetujui),
+// `member_seats` & anggota tidak disentuh. Dicatat di riwayat perpanjangan + audit. WAJIB di dalam transaksi pemanggil.
+export async function reactivateSubscription(
+  tx: Tx,
+  params: { subscription: SubscriptionRow; interval: SubscriptionInterval; timeZone: string; now: Date; actorId: string; orderId?: string | null; invoiceItemId?: string | null },
+): Promise<RenewalResult> {
+  const { interval, timeZone, now, actorId } = params;
+  const [subscription] = await tx.select().from(subscriptions).where(sql`${subscriptions.id} = ${params.subscription.id} FOR UPDATE`).limit(1);
+  if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
+  const previousEndAt = subscription.endAt ?? now;
+  const period = computeSubscriptionPeriod(now, interval, timeZone);
+  await tx
+    .update(subscriptions)
+    .set({ status: "active", startAt: now, endAt: period.endAt, periodAnchorAt: period.periodAnchorAt, periodMonths: period.periodMonths, lastReminderThresholdDays: null, renewalInvoicedForEndAt: null })
+    .where(eq(subscriptions.id, subscription.id));
+  await tx.insert(subscriptionRenewals).values({
+    subscriptionId: subscription.id,
+    orderId: params.orderId ?? null,
+    invoiceItemId: params.invoiceItemId ?? null,
+    source: "order",
+    previousEndAt,
+    newEndAt: period.endAt,
+    interval,
+    actorId,
+  });
+  await tx.insert(auditLogs).values({
+    entityType: "subscription",
+    entityId: subscription.id,
+    action: "update",
+    changes: { reactivated: true, interval, status: { old: subscription.status, new: "active" }, endAt: { old: previousEndAt.toISOString(), new: period.endAt.toISOString() }, orderId: params.orderId ?? null },
+    actorId,
+  });
+  return { subscriptionId: subscription.id, previousEndAt, newEndAt: period.endAt, periodMonths: period.periodMonths };
 }
 
 // § Teks notifikasi "Pembayaran terverifikasi". Tanpa perpanjangan = teks lama (tidak berubah). Dengan perpanjangan: sebut sampai kapan berlaku (tanggal + jam,
