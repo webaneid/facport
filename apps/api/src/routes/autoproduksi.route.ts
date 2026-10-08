@@ -262,6 +262,51 @@ export const autoproduksiRoute = new Elysia()
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production", params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
+  // § Fase 185 — isian terakhir untuk form Input Produksi: entri terakhir MILIK USER YANG LOGIN di langganan ini (bukan dibagi antar staf). Tanggal SENGAJA tidak
+  // dikembalikan — form selalu memakai tanggal hari itu. Static path ini harus didaftarkan SEBELUM `/:id`.
+  .get(
+    "/autoproduksi/production-entries/last",
+    async ({ user, subscription }) => {
+      const [entry] = await db
+        .select({
+          formulaId: autoproduksiProductionEntries.formulaId,
+          producedQty: autoproduksiProductionEntries.producedQty,
+          branchName: autoproduksiProductionEntries.branchName,
+          warehouseName: autoproduksiProductionEntries.warehouseName,
+          rawMaterialWarehouseName: autoproduksiProductionEntries.rawMaterialWarehouseName,
+          projectNo: autoproduksiProductionEntries.projectNo,
+          departmentName: autoproduksiProductionEntries.departmentName,
+          createdAt: autoproduksiProductionEntries.createdAt,
+        })
+        .from(autoproduksiProductionEntries)
+        .where(and(eq(autoproduksiProductionEntries.subscriptionId, subscription.id), eq(autoproduksiProductionEntries.userId, user.id)))
+        .orderBy(desc(autoproduksiProductionEntries.createdAt))
+        .limit(1);
+      return { entry: entry ?? null };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  // § Fase 185 — status SATU entri untuk popup progres (polling). Ter-scope langganan; entri langganan lain = 404 yang sama dengan "tidak ada".
+  .get(
+    "/autoproduksi/production-entries/:id",
+    async ({ params, subscription, set }) => {
+      const [entry] = await db
+        .select({
+          id: autoproduksiProductionEntries.id,
+          status: autoproduksiProductionEntries.status,
+          errorMessage: autoproduksiProductionEntries.errorMessage,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
+        })
+        .from(autoproduksiProductionEntries)
+        .where(and(eq(autoproduksiProductionEntries.id, params.id), eq(autoproduksiProductionEntries.subscriptionId, subscription.id)));
+      if (!entry) {
+        set.status = 404;
+        return { code: "ENTRY_NOT_FOUND" };
+      }
+      return { entry };
+    },
+    { permission: "import.create", moduleAccess: "autoproduksi_production", params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
   .get(
     "/autoproduksi/production-entries",
     async ({ subscription, query }) => {

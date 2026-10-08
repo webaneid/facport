@@ -360,3 +360,6 @@ Keluhan: Formula bisa disimpan dengan satuan yang tidak ada di master barang Acc
 ## Nomor Formula (Fase 184)
 Tiap Formula punya nomor internal otomatis per Data Usaha (`autoproduksi_formulas.formula_number`, tampil `F-001`; penghitung `data_usaha.formula_last_number`, atomik, tidak dipakai ulang). Tidak bisa dikustom, tidak ada kolom nomor di Excel, tidak dikirim ke Accurate. Nama Formula boleh kembar; List Formula & autocomplete menampilkan nomor, pencarian nama tidak peka huruf besar/kecil dan bisa lewat nomor. Import Produksi mencocokkan nama (`lower(trim())`); kembar aktif → baris gagal, pesan menyebut nomor kandidat.
 
+## Input Produksi: konfirmasi, progres, isian terakhir (Fase 185)
+Klik "Input Produksi" membuka popup 3 tahap: Periksa dulu (ringkasan + peringatan duplikat; Kirim/Batal) → Progres (polling `GET /autoproduksi/production-entries/:id` tiap 1 dtk; `pending` = antre + menghubungi Accurate, `processing` = mengirim) → Hasil (Lihat riwayat / Input produksi baru). Form terisi dari `GET /autoproduksi/production-entries/last` (milik user, tanpa tanggal); tanggal selalu hari ini menurut zona perusahaan.
+

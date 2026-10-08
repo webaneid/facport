@@ -758,3 +758,49 @@ describe("nomor Formula otomatis (Fase 184)", () => {
     expect((await create(o2.cookie, { name: "X" })).formulaCode).toBe("F-001");
   });
 });
+
+// § Fase 185 — endpoint pendukung popup progres Input Produksi & isian terakhir.
+describe("GET /autoproduksi/production-entries/last & /:id (Fase 185)", () => {
+  const post = (cookie: string, path: string, body: unknown) =>
+    testApp.handle(new Request(`http://localhost${path}`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+  const get = (cookie: string, path: string) => testApp.handle(new Request(`http://localhost${path}`, { headers: { cookie } }));
+  async function formulaOf(cookie: string) {
+    const res = await post(cookie, "/autoproduksi/formulas", validFormulaBody);
+    return ((await res.json()) as { formula: { id: string } }).formula.id;
+  }
+
+  test("last: null bila belum pernah input; sesudahnya = entri TERAKHIR milik user itu (tanpa tanggal), konteks ikut", async () => {
+    const owner = await createProvisionedUser(`ap-last-${runId}@test.local`);
+    expect(((await (await get(owner.cookie, "/autoproduksi/production-entries/last")).json()) as { entry: unknown }).entry).toBeNull();
+    const formulaId = await formulaOf(owner.cookie);
+    await post(owner.cookie, "/autoproduksi/production-entries", { formulaId, producedQty: 3, transDate: "2026-09-01", branchName: "JKT" });
+    await post(owner.cookie, "/autoproduksi/production-entries", { formulaId, producedQty: 7, transDate: "2026-09-02", warehouseName: "GUDANG A", projectNo: "P-1", departmentName: "PROD" });
+    const { entry } = (await (await get(owner.cookie, "/autoproduksi/production-entries/last")).json()) as { entry: Record<string, unknown> };
+    expect(entry).toMatchObject({ formulaId, producedQty: "7.0000", warehouseName: "GUDANG A", projectNo: "P-1", departmentName: "PROD" });
+    expect(entry).not.toHaveProperty("transDate");
+  });
+
+  test("last TIDAK menampilkan entri staf lain di langganan yang sama", async () => {
+    const owner = await createProvisionedUser(`ap-last-iso-${runId}@test.local`);
+    const formulaId = await formulaOf(owner.cookie);
+    const otherUser = await signUp(`ap-last-iso-other-${runId}@test.local`);
+    await db.insert(autoproduksiProductionEntries).values({
+      userId: otherUser, dataUsahaId: owner.dataUsahaId, subscriptionId: owner.subscriptionId, formulaId, producedQty: "99", transDate: "2026-09-03", status: "success",
+    });
+    expect(((await (await get(owner.cookie, "/autoproduksi/production-entries/last")).json()) as { entry: unknown }).entry).toBeNull();
+  });
+
+  test(":id mengembalikan status (pending setelah submit); entri langganan lain / id acak = 404 yang sama", async () => {
+    const owner = await createProvisionedUser(`ap-entry-id-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-entry-id-other-${runId}@test.local`);
+    const formulaId = await formulaOf(owner.cookie);
+    const created = (await (await post(owner.cookie, "/autoproduksi/production-entries", { formulaId, producedQty: 2, transDate: "2026-09-28" })).json()) as { entry: { id: string } };
+    const res = await get(owner.cookie, `/autoproduksi/production-entries/${created.entry.id}`);
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { entry: { status: string } }).entry.status).toBe("pending");
+    expect((await get(other.cookie, `/autoproduksi/production-entries/${created.entry.id}`)).status).toBe(404);
+    expect((await get(owner.cookie, `/autoproduksi/production-entries/${crypto.randomUUID()}`)).status).toBe(404);
+    expect((await get(owner.cookie, "/autoproduksi/production-entries/bukan-uuid")).status).toBe(422);
+    expect((await testApp.handle(new Request(`http://localhost/autoproduksi/production-entries/${created.entry.id}`))).status).toBe(401);
+  });
+});

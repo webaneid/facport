@@ -2434,8 +2434,6 @@ async function main() {
       return;
     }
 
-    await db.update(autoproduksiProductionEntries).set({ status: "processing" }).where(eq(autoproduksiProductionEntries.id, entryId));
-
     let session;
     try {
       session = await openAccurateSession(connection, accurateDbId);
@@ -2447,6 +2445,9 @@ async function main() {
       if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
       return;
     }
+
+    // § Fase 185 — "processing" = SEDANG MENGIRIM (sesi Accurate sudah terbuka); "pending" = antre + menghubungi Accurate. Popup progres Input Produksi membacanya.
+    await db.update(autoproduksiProductionEntries).set({ status: "processing" }).where(eq(autoproduksiProductionEntries.id, entryId));
 
     try {
       const payload = buildProductionEntryPayload(formula, formulaItems, entry);
