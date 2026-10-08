@@ -13,7 +13,8 @@ const renewPost = mock(async (_body: Record<string, unknown>): Promise<Result> =
 const push = mock((_url: string) => {});
 const teamFn = Object.assign((_arg: { seatId: string }) => ({}), { get: async () => ({ data: { seats } }), renew: { post: renewPost } });
 mock.module("@/lib/api-client", () => ({ api: { me: { team: teamFn, "data-usaha": () => ({}) } }, apiBaseUrl: "" }));
-mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
+// mock.module bocor lintas file di bun — sertakan semua ekspor yang dipakai file tes lain (useSearchParams dst), kalau tidak tes lain gagal impor di CI
+mock.module("next/navigation", () => ({ useRouter: () => ({ push, refresh: () => {} }), useSearchParams: () => new URLSearchParams(), usePathname: () => "/team" }));
 mock.module("sonner", () => ({ toast: { success: () => {}, error: () => {} } }));
 mock.module("@/components/company-timezone-provider", () => ({ useCompanyTimezone: () => "Asia/Jakarta" }));
 
