@@ -1,3 +1,11 @@
+## 2.32.0 (2026-10-08)
+
+* chore: rilis Fase 184–186 (nomor Formula AutoProduksi, popup progres Input Produksi, Import Formula  ([95014ef](https://github.com/webaneid/facport/commit/95014ef))
+* fix(api web): ejaan baku 'nonaktif' (bukan 'non-aktif'/'non aktif') di seluruh teks UI, pesan galat, ([fdacaa5](https://github.com/webaneid/facport/commit/fdacaa5))
+* feat(api web): Fase 184 — nomor Formula otomatis AutoProduksi (F-001…, per Data Usaha) untuk membeda ([a26d5a3](https://github.com/webaneid/facport/commit/a26d5a3))
+* feat(api web): Fase 185 — Input Produksi: popup Periksa dulu (Kirim/Batal, peringatan duplikat) → pr ([afbcbe3](https://github.com/webaneid/facport/commit/afbcbe3))
+* feat(api web): Fase 186 — Import Formula AutoProduksi asinkron (job queue, status Memproses + progre ([50fd069](https://github.com/webaneid/facport/commit/50fd069))
+
 ## 2.31.0 (2026-10-08)
 
 * chore: merge develop ke main (perbaikan tes gate rilis) ([0d9a692](https://github.com/webaneid/facport/commit/0d9a692))
