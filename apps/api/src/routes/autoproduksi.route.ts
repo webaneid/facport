@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { allocateFormulaNumber, formatFormulaCode, withFormulaCode } from "../lib/formula-number";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
@@ -95,7 +96,7 @@ async function loadFormulaWithItems(formulaId: string, subscriptionId: string) {
     .from(autoproduksiFormulaItems)
     .where(eq(autoproduksiFormulaItems.formulaId, formulaId))
     .orderBy(autoproduksiFormulaItems.sortOrder);
-  return { formula, items };
+  return { formula: withFormulaCode(formula), items };
 }
 
 export const autoproduksiRoute = new Elysia()
@@ -109,7 +110,7 @@ export const autoproduksiRoute = new Elysia()
         .from(autoproduksiFormulas)
         .where(eq(autoproduksiFormulas.subscriptionId, subscription.id))
         .orderBy(desc(autoproduksiFormulas.createdAt));
-      return { formulas };
+      return { formulas: formulas.map(withFormulaCode) };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production" },
   )
@@ -135,12 +136,14 @@ export const autoproduksiRoute = new Elysia()
       }
       const body = checked.body;
       const formula = await db.transaction(async (tx) => {
+        const formulaNumber = await allocateFormulaNumber(tx, subscription.dataUsahaId);
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
           .values({
             userId: user.id,
             dataUsahaId: subscription.dataUsahaId,
             subscriptionId: subscription.id,
+            formulaNumber,
             name: body.name,
             finishedGoodItemNo: body.finishedGoodItemNo,
             finishedGoodItemUnitName: body.finishedGoodItemUnitName,
@@ -161,7 +164,7 @@ export const autoproduksiRoute = new Elysia()
             sortOrder: index,
           })),
         );
-        return inserted!;
+        return withFormulaCode(inserted!);
       });
       return { formula };
     },
@@ -236,7 +239,7 @@ export const autoproduksiRoute = new Elysia()
         .set({ isActive: body.isActive, updatedAt: new Date() })
         .where(eq(autoproduksiFormulas.id, params.id))
         .returning();
-      return { formula };
+      return { formula: formula ? withFormulaCode(formula) : formula };
     },
     {
       permission: "import.create",
@@ -269,6 +272,7 @@ export const autoproduksiRoute = new Elysia()
           id: autoproduksiProductionEntries.id,
           formulaId: autoproduksiProductionEntries.formulaId,
           formulaName: autoproduksiFormulas.name,
+          formulaNumber: autoproduksiFormulas.formulaNumber,
           producedQty: autoproduksiProductionEntries.producedQty,
           transDate: autoproduksiProductionEntries.transDate,
           status: autoproduksiProductionEntries.status,
@@ -283,7 +287,7 @@ export const autoproduksiRoute = new Elysia()
         .orderBy(desc(autoproduksiProductionEntries.createdAt))
         .limit(limit)
         .offset(offset);
-      return { entries };
+      return { entries: entries.map(({ formulaNumber, ...e }) => ({ ...e, formulaCode: formatFormulaCode(formulaNumber) })) };
     },
     {
       permission: "import.create",

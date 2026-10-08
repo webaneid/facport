@@ -1,4 +1,5 @@
 import { Elysia, t } from "elysia";
+import { allocateFormulaNumber } from "../lib/formula-number";
 import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { importBatches, importBatchRows, auditLogs, autoproduksiFormulas, autoproduksiFormulaItems } from "../db/schema";
@@ -75,12 +76,14 @@ async function processFormulaBatchRows(
       const record = buildAutoproduksiFormulaRecord(group, columnMapping);
 
       await db.transaction(async (tx) => {
+        const formulaNumber = await allocateFormulaNumber(tx, subscriptionDataUsahaId);
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
           .values({
             userId: batch.userId,
             dataUsahaId: subscriptionDataUsahaId,
             subscriptionId: batch.subscriptionId,
+            formulaNumber,
             name: record.name,
             finishedGoodItemNo: record.finishedGoodItemNo,
             finishedGoodItemUnitName: record.finishedGoodItemUnitName,

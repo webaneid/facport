@@ -64,6 +64,7 @@ type AccurateItemResult = { no: string; name: string; unitName: string; units?: 
 type FormulaItem = { itemNo: string; itemUnitName: string; itemName?: string; quantity: string };
 type Formula = {
   id: string;
+  formulaCode: string;
   name: string;
   finishedGoodItemNo: string;
   finishedGoodItemUnitName: string;
@@ -422,7 +423,8 @@ export default function AutoProduksiFormulasPage() {
   }
 
   const columns = [
-    columnHelper.accessor("name", { header: "Nama Formula", meta: { width: "30%" } }),
+    columnHelper.accessor("formulaCode", { header: "No.", meta: { width: "8%" } }),
+    columnHelper.accessor("name", { header: "Nama Formula", meta: { width: "26%" } }),
     columnHelper.display({
       id: "finishedGood",
       header: "Barang Jadi",
@@ -456,7 +458,7 @@ export default function AutoProduksiFormulasPage() {
             checked={row.original.isActive}
             disabled={togglingId === row.original.id}
             onCheckedChange={() => handleToggleActive(row.original)}
-            aria-label={`${row.original.isActive ? "Nonaktifkan" : "Aktifkan"} formula ${row.original.name}`}
+            aria-label={`${row.original.isActive ? "Nonaktifkan" : "Aktifkan"} formula ${row.original.formulaCode} ${row.original.name}`}
             title={row.original.isActive ? "Klik untuk nonaktifkan" : "Klik untuk aktifkan"}
           />
           <span className={row.original.isActive ? "text-xs font-medium text-green-700" : "text-xs text-muted-foreground"}>
@@ -476,7 +478,7 @@ export default function AutoProduksiFormulasPage() {
             type="button"
             onClick={() => handleDelete(row.original)}
             title="Hapus"
-            aria-label={`Hapus formula ${row.original.name}`}
+            aria-label={`Hapus formula ${row.original.formulaCode} ${row.original.name}`}
             className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:text-destructive")}
           >
             <Trash2 className="h-4 w-4" />
@@ -509,7 +511,7 @@ export default function AutoProduksiFormulasPage() {
         <CardContent className="flex flex-col gap-4">
           {formulas && formulas.length > 0 && (
             <div className="flex flex-wrap items-center gap-2">
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama Formula..." className="max-w-xs" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Cari nama atau nomor Formula..." className="max-w-xs" />
               <div className="w-48">
                 <Combobox
                   value={statusFilter === "all" ? "" : statusFilter}

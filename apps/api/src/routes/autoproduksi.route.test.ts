@@ -702,3 +702,59 @@ describe("default Cabang/Gudang (diminta client 2026-10-03)", () => {
     expect(e2).toMatchObject({ branchName: "SURABAYA", warehouseName: "Gudang Utama" });
   });
 });
+
+// § Fase 184 — nomor Formula otomatis (F-001…) per Data Usaha: pembeda nama kembar; tidak bisa dikustom, tidak berubah saat edit, tidak dipakai ulang.
+describe("nomor Formula otomatis (Fase 184)", () => {
+  type FormulaJson = { id: string; formulaNumber: number; formulaCode: string; name: string };
+  const create = async (cookie: string, extra: Record<string, unknown> = {}) => {
+    const res = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, ...extra }) }),
+    );
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { formula: FormulaJson }).formula;
+  };
+
+  test("berurutan F-001, F-002, F-003; nama kembar (bahkan beda huruf) tetap diterima dengan nomor berbeda; field nomor dari klien diabaikan", async () => {
+    const owner = await createProvisionedUser(`ap-fnum-seq-${runId}@test.local`);
+    const a = await create(owner.cookie, { name: "Bolu Kukus" });
+    const b = await create(owner.cookie, { name: "Bolu Kukus" });
+    const c = await create(owner.cookie, { name: "bolu kukus", formulaNumber: 99, formulaCode: "FL-001" });
+    expect([a.formulaCode, b.formulaCode, c.formulaCode]).toEqual(["F-001", "F-002", "F-003"]);
+    expect(new Set([a.id, b.id, c.id]).size).toBe(3);
+  });
+
+  test("GET list & detail membawa formulaCode; edit (PUT) tidak mengubah nomor; hapus tidak membuat nomor dipakai ulang", async () => {
+    const owner = await createProvisionedUser(`ap-fnum-edit-${runId}@test.local`);
+    const a = await create(owner.cookie, { name: "Roti A" });
+    const b = await create(owner.cookie, { name: "Roti B" });
+    const list = (await (await testApp.handle(new Request("http://localhost/autoproduksi/formulas", { headers: { cookie: owner.cookie } }))).json()) as { formulas: FormulaJson[] };
+    expect(list.formulas.map((f) => f.formulaCode).sort()).toEqual(["F-001", "F-002"]);
+    const detail = (await (await testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${a.id}`, { headers: { cookie: owner.cookie } }))).json()) as { formula: FormulaJson };
+    expect(detail.formula.formulaCode).toBe("F-001");
+
+    const put = await testApp.handle(
+      new Request(`http://localhost/autoproduksi/formulas/${a.id}`, { method: "PUT", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, name: "Roti A (edit)", formulaNumber: 50 }) }),
+    );
+    expect(put.status).toBe(200);
+    const after = (await (await testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${a.id}`, { headers: { cookie: owner.cookie } }))).json()) as { formula: FormulaJson };
+    expect(after.formula).toMatchObject({ name: "Roti A (edit)", formulaCode: "F-001" });
+
+    await testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${b.id}`, { method: "DELETE", headers: { cookie: owner.cookie } }));
+    const next = await create(owner.cookie, { name: "Roti C" });
+    expect(next.formulaCode).toBe("F-003"); // F-002 tidak dipakai ulang
+  });
+
+  test("dua pembuatan paralel tidak pernah mendapat nomor yang sama", async () => {
+    const owner = await createProvisionedUser(`ap-fnum-race-${runId}@test.local`);
+    const made = await Promise.all([1, 2, 3, 4].map((i) => create(owner.cookie, { name: `Paralel ${i}` })));
+    expect(new Set(made.map((f) => f.formulaNumber)).size).toBe(4);
+  });
+
+  test("nomor berurutan per Data Usaha: Data Usaha lain mulai dari F-001 lagi", async () => {
+    const o1 = await createProvisionedUser(`ap-fnum-du1-${runId}@test.local`);
+    const o2 = await createProvisionedUser(`ap-fnum-du2-${runId}@test.local`);
+    await create(o1.cookie, { name: "X" });
+    await create(o1.cookie, { name: "Y" });
+    expect((await create(o2.cookie, { name: "X" })).formulaCode).toBe("F-001");
+  });
+});

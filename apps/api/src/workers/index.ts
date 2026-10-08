@@ -1,5 +1,6 @@
 import "../lib/env"; // WAJIB paling awal
 
+import { formatFormulaCode } from "../lib/formula-number";
 import { eq, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
@@ -1880,7 +1881,7 @@ export async function processAutoproduksiProductionImportRow(
   const matches = await db
     .select()
     .from(autoproduksiFormulas)
-    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), sql`trim(${autoproduksiFormulas.name}) = ${formulaName}`));
+    .where(and(eq(autoproduksiFormulas.subscriptionId, batch.subscriptionId), sql`lower(trim(${autoproduksiFormulas.name})) = lower(${formulaName})`));
   if (matches.length === 0) {
     throw new Error(`Formula "${formulaName}" tidak ditemukan — cek ejaan Nama Resep/Formula, atau buat Formula-nya dulu.`);
   }
@@ -1894,7 +1895,7 @@ export async function processAutoproduksiProductionImportRow(
   }
   if (activeMatches.length > 1) {
     throw new Error(
-      `Nama Formula "${formulaName}" ganda (${activeMatches.length} Formula aktif dengan nama sama) — tidak bisa diproses otomatis, ganti nama atau nonaktifkan salah satu Formula dulu baru impor ulang.`,
+      `Nama Formula "${formulaName}" ganda (${activeMatches.length} Formula aktif: ${activeMatches.map((m) => formatFormulaCode(m.formulaNumber)).join(", ")}) — tidak bisa diproses otomatis, ganti nama atau nonaktifkan salah satu Formula dulu (lihat nomornya di List Formula) baru impor ulang.`,
     );
   }
   const formula = activeMatches[0]!;

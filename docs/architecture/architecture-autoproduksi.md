@@ -356,3 +356,7 @@ Keluhan: Formula bisa disimpan dengan satuan yang tidak ada di master barang Acc
 **FAIL-OPEN** (Formula tetap disimpan seperti dulu): tidak terkoneksi Accurate, sesi gagal/timeout, barang tidak ketemu, atau daftar satuan tidak lengkap (Accurate tidak mengembalikan kunci `unit2` → field satuan tambahan tidak dikenali, jadi tidak boleh menolak satuan ke-2 yang sah). Saklar darurat: env `AUTOPRODUKSI_UNIT_VALIDATION=off`.
 **Belum dicakup (tindak lanjut)**: Import Formula (Excel) — sengaja lokal & sinkron tanpa Accurate (bisa 10.000 baris), jadi belum divalidasi; satuan salah di jalur itu masih baru ketahuan saat Input Produksi. Perlu desain batas panggilan Accurate (distinct itemNo × rate limit) sebelum ditambahkan.
 ⚠️ Nama field baca `unit2..5` belum diverifikasi test call nyata — verifikasi dengan barang 100028 (KG & Pouch) setelah deploy.
+
+## Nomor Formula (Fase 184)
+Tiap Formula punya nomor internal otomatis per Data Usaha (`autoproduksi_formulas.formula_number`, tampil `F-001`; penghitung `data_usaha.formula_last_number`, atomik, tidak dipakai ulang). Tidak bisa dikustom, tidak ada kolom nomor di Excel, tidak dikirim ke Accurate. Nama Formula boleh kembar; List Formula & autocomplete menampilkan nomor, pencarian nama tidak peka huruf besar/kecil dan bisa lewat nomor. Import Produksi mencocokkan nama (`lower(trim())`); kembar aktif → baris gagal, pesan menyebut nomor kandidat.
+

@@ -24,7 +24,7 @@ export const REQUIRED_INTERNAL_FIELDS = new Set(["transDate", "formulaName", "pr
 
 const FIELD_HINTS: Record<string, string> = {
   transDate: "Format YYYY-MM-DD (mis. 2026-07-13) atau DD/MM/YYYY (mis. 13/07/2026)",
-  formulaName: "Nama Formula PERSIS seperti di halaman List Formula — harus unik (tidak boleh ada 2 Formula nama sama)",
+  formulaName: "Nama Formula seperti di halaman List Formula (huruf besar/kecil tidak dibedakan). Bila ada 2 Formula AKTIF bernama sama, nonaktifkan salah satu dulu — nomornya (F-001, dst) terlihat di List Formula",
   producedQty: "Jumlah Barang Jadi yang diproduksi, contoh: 15",
 };
 

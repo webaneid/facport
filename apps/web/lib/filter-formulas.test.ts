@@ -38,3 +38,19 @@ describe("filterFormulas", () => {
     expect(filterFormulas(formulas, { search: "nasi goreng", status: "all" })).toHaveLength(0);
   });
 });
+
+// § Fase 184 — nama kembar dibedakan lewat nomor; pencarian tidak peka huruf besar/kecil dan bisa lewat nomor.
+describe("filterFormulas — nomor Formula (Fase 184)", () => {
+  const twins = [
+    { name: "Bolu Kukus", isActive: true, formulaCode: "F-001" },
+    { name: "bolu kukus", isActive: true, formulaCode: "F-002" },
+    { name: "Roti Tawar", isActive: true, formulaCode: "F-014" },
+  ];
+  test("'Bolu Kukus' dan 'bolu kukus' sama-sama tampil, dengan huruf berapa pun", () => {
+    expect(filterFormulas(twins, { search: "BOLU KUKUS", status: "all" }).map((f) => f.formulaCode)).toEqual(["F-001", "F-002"]);
+  });
+  test("cari lewat nomor (lengkap atau sebagian, tanpa peduli huruf)", () => {
+    expect(filterFormulas(twins, { search: "f-002", status: "all" }).map((f) => f.name)).toEqual(["bolu kukus"]);
+    expect(filterFormulas(twins, { search: "014", status: "all" }).map((f) => f.name)).toEqual(["Roti Tawar"]);
+  });
+});

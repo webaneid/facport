@@ -35,6 +35,8 @@ export const dataUsaha = pgTable("data_usaha", {
   // § Fase 144 — kapan pemilik memilih/MENGONFIRMASI database ini. NULL = "database terakhir diketahui" hasil backfill 0028
   // (belum diverifikasi manusia) → gerbang koneksi meminta konfirmasi (`confirm_database`). Diisi `databases/select` & `confirm`.
   accurateDbConfirmedAt: timestamp("accurate_db_confirmed_at", { withTimezone: true }),
+  // § Fase 184 — penghitung nomor Formula AutoProduksi per Data Usaha (F-001, F-002, …). Diambil atomik `UPDATE … +1 RETURNING`; tidak pernah turun (nomor tak dipakai ulang walau Formula dihapus).
+  formulaLastNumber: integer("formula_last_number").notNull().default(0),
   // § diminta user 2026-09-27 — counter PERMANEN "baris sukses diimport"
   // untuk kartu "efisiensi waktu kerja" (`GET /me/stats`,
   // `admin/stats.route.ts`). SEBELUM ini dihitung LIVE via

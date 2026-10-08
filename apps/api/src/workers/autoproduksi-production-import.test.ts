@@ -1,4 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
+import { allocateFormulaNumber } from "../lib/formula-number";
 import { eq } from "drizzle-orm";
 import { db } from "../lib/db";
 import { user as userTable, dataUsaha, plans, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiDefaults } from "../db/schema";
@@ -19,12 +20,14 @@ let dataUsahaId = "";
 let planId = "";
 
 async function insertFormula(name: string, isActive: boolean) {
+  const formulaNumber = await db.transaction((tx) => allocateFormulaNumber(tx, dataUsahaId));
   const [f] = await db
     .insert(autoproduksiFormulas)
     .values({
       userId,
       dataUsahaId,
       subscriptionId,
+      formulaNumber,
       name,
       finishedGoodItemNo: "100011",
       finishedGoodItemUnitName: "Loyang",
@@ -80,6 +83,16 @@ describe("processAutoproduksiProductionImportRow — resolusi Formula", () => {
     await insertFormula(`Roti Ganda ${runId}`, true);
     await insertFormula(`Roti Ganda ${runId}`, true);
     await expect(run(`Roti Ganda ${runId}`)).rejects.toThrow("ganda");
+  });
+
+  test("Fase 184 — pencocokan nama TIDAK peka huruf besar/kecil; kembar beda huruf dianggap ganda dan pesan menyebut nomor kandidat", async () => {
+    const a = await insertFormula(`Kue Huruf ${runId}`, true);
+    await expect(run(`kue huruf ${runId}`.toUpperCase())).rejects.not.toThrow("tidak ditemukan"); // lolos resolusi (gagal belakangan di Accurate)
+    const b = await insertFormula(`KUE HURUF ${runId}`, true);
+    const err = await run(`kue huruf ${runId}`).catch((e: Error) => e);
+    expect((err as Error).message).toContain("ganda");
+    expect((err as Error).message).toContain(`F-${String(a.formulaNumber).padStart(3, "0")}`);
+    expect((err as Error).message).toContain(`F-${String(b.formulaNumber).padStart(3, "0")}`);
   });
 
   test("duplikat tapi satu non-aktif → tidak lagi dianggap ganda (lolos resolusi)", async () => {

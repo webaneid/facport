@@ -27,7 +27,7 @@ import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-prov
 const ACCURATE_FIELDS = [
   { value: "", label: "(tidak dipetakan)" },
   { value: "transDate", label: "Tanggal (wajib)" },
-  { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada, AKTIF, & namanya unik)" },
+  { value: "formulaName", label: "Nama Resep/Formula (wajib — harus sudah ada & AKTIF; huruf besar/kecil tidak dibedakan; bila ada 2 Formula aktif bernama sama, nonaktifkan salah satu)" },
   { value: "producedQty", label: "Jumlah (wajib)" },
   { value: "branchName", label: "Cabang (opsional — kosong = default Pengaturan)" },
   { value: "warehouseName", label: "Gudang Barang Jadi (opsional — kosong = default Pengaturan)" },

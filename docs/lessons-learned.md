@@ -6163,3 +6163,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Perbaikan:** scope hanya `orders.data_usaha_id` + status non-terminal.
 **Pelajaran:** sumber kebenaran "siapa yang sedang ditagih" adalah Data Usaha, bukan akun yang kebetulan membuat invoice; kepemilikan bisa berpindah. Aktivasi ke target (slot) juga wajib memvalidasi jenis target dan mengunci barisnya sebelum memilih cabang.
 
+## 2026-10-09 — Jangan menggeser `when` di `_journal.json` secara manual (migrasi berikutnya terlewati diam-diam)
+**Gejala:** migrasi 0047 "applied successfully" tapi kolomnya tidak ada; tes gagal dengan `column … does not exist`.
+**Akar masalah:** saat menyusun migrasi 0046 (Fase 183) `when` entri jurnal saya isi `when_sebelumnya + 86400000` (di masa depan). Drizzle hanya menjalankan migrasi dengan `when` LEBIH BESAR dari yang terakhir diterapkan, jadi 0047 yang dibuat `db:generate` (`when` = sekarang, lebih kecil) terlewati tanpa galat. Di production, 0046 sudah tercatat dengan `when` masa depan itu.
+**Perbaikan:** `when` 0047 diset 0046 + 1 jam (lebih besar); migrasi berikutnya yang dibuat `db:generate` otomatis memakai waktu nyata — pastikan selalu > `when` 0046 (1791511450030 ≈ 2026-10-09 02:04 UTC); sebelum itu lewat, setel manual lebih besar.
+**Pelajaran:** jangan mengutak-atik `when`; kalau migrasi "sukses" tapi kolom tidak ada, bandingkan `when` entri jurnal. Verifikasi kolom setelah migrasi (sudah praktik di runbook).
+

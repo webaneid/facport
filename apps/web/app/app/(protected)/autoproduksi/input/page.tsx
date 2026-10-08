@@ -29,7 +29,7 @@ import { SearchableField } from "@/components/autoproduksi/searchable-accurate-f
 // resep ini (bukan per-item lagi). Hanya Formula yang AKTIF yang muncul di
 // Combobox (non-aktif disaring di sini, server juga menolak 409 kalau
 // tetap dipaksa — § autoproduksi.route.ts).
-type Formula = { id: string; name: string; finishedGoodItemUnitName: string; isActive: boolean };
+type Formula = { id: string; formulaCode: string; name: string; finishedGoodItemUnitName: string; isActive: boolean };
 
 function todayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -131,7 +131,7 @@ export default function AutoProduksiInputPage() {
               <label className="flex flex-col gap-1.5 text-sm">
                 <span className="text-xs font-medium text-foreground">Formula / Resep</span>
                 <Combobox
-                  options={activeFormulas.map((f) => ({ value: f.id, label: f.name }))}
+                  options={activeFormulas.map((f) => ({ value: f.id, label: `${f.formulaCode} · ${f.name}` }))}
                   value={formulaId}
                   onChange={setFormulaId}
                   placeholder="Pilih formula..."

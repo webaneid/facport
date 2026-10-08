@@ -330,6 +330,13 @@
       "when": 1791511450030,
       "tag": "0046_seat_renewal",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1791515050030,
+      "tag": "0047_formula_number",
+      "breakpoints": true
     }
   ]
 }
