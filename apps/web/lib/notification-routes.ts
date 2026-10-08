@@ -29,6 +29,7 @@ export function notificationLink(type: string, surface: Surface): string {
     case "trial_expired":
     case "subscription_ending_soon":
     case "subscription_expired":
+    case "subscription_changed_by_admin":
       return "/subscribe";
     case "accurate_connection_expired":
     case "accurate_connection_disconnected_by_admin":

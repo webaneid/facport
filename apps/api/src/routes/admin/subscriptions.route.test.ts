@@ -620,3 +620,63 @@ describe("perpanjangan terjadwal — endpoint admin (Fase 181)", () => {
     expect(((await denied.json()) as { code: string }).code).toBe("FORBIDDEN_INVOICE");
   });
 });
+
+// § Fase 182 — perubahan masa aktif / pemberian paket oleh admin (tanpa invoice) SELALU memberi tahu pemilik Data Usaha saat ini.
+describe("notifikasi perubahan langganan oleh admin (Fase 182)", () => {
+  async function notices(userId: string) {
+    return db.select().from(notifications).where(and(eq(notifications.userId, userId), eq(notifications.type, "subscription_changed_by_admin")));
+  }
+
+  test("POST assign (gratis) → 'Paket diberikan admin'; assign lagi (perpanjang) → 'Masa aktif diperpanjang admin'", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-grant-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_invoice");
+    expect((await post(cookie, { userId, planId: plan.id })).status).toBe(200);
+    expect((await notices(userId)).map((n) => n.title)).toEqual(["Paket diberikan admin"]);
+    expect((await post(cookie, { userId, planId: plan.id })).status).toBe(200);
+    expect((await notices(userId)).map((n) => n.title).sort()).toEqual(["Masa aktif diperpanjang admin", "Paket diberikan admin"]);
+  });
+
+  test("PATCH tanggal: bertambah → 'diubah', dipersingkat → 'dipersingkat' (selalu diberi tahu); isi menyebut tanggal lama & baru", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-patch-${runId}@test.local`);
+    const plan = await makePlan("monthly", "journal_voucher");
+    const created = (await (await post(cookie, { userId, planId: plan.id })).json()) as { id: string };
+    const patch = (endAt: Date) => testApp.handle(new Request(`http://localhost/admin/subscriptions/${created.id}`, { method: "PATCH", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ endAt: endAt.toISOString() }) }));
+    expect((await patch(new Date(Date.now() + 200 * 86400000))).status).toBe(200);
+    expect((await patch(new Date(Date.now() + 10 * 86400000))).status).toBe(200);
+    const titles = (await notices(userId)).map((n) => n.title);
+    expect(titles).toContain("Masa aktif diubah admin");
+    expect(titles).toContain("Masa aktif dipersingkat admin");
+    const short = (await notices(userId)).find((n) => n.title === "Masa aktif dipersingkat admin")!;
+    expect(short.body).toContain("dari");
+    expect(short.body).toContain("menjadi");
+  });
+
+  test("perpanjang cepat (/extend) memberi tahu; permintaan ditolak (trial) TIDAK memberi tahu", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-extend-${runId}@test.local`);
+    const plan = await makePlan("monthly", "sales_order");
+    const created = (await (await post(cookie, { userId, planId: plan.id })).json()) as { id: string };
+    const before = (await notices(userId)).length;
+    const res = await testApp.handle(new Request(`http://localhost/admin/subscriptions/${created.id}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ interval: "monthly", periods: 1 }) }));
+    expect(res.status).toBe(200);
+    expect((await notices(userId)).length).toBe(before + 1);
+    const bad = await testApp.handle(new Request(`http://localhost/admin/subscriptions/${crypto.randomUUID()}/extend`, { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ interval: "monthly", periods: 1 }) }));
+    expect(bad.status).toBe(404);
+    expect((await notices(userId)).length).toBe(before + 1);
+  });
+
+  test("mode bulk 'free' memberi tahu per paket; mode 'paid_invoice' tidak memakai notifikasi ini (sudah ada invoice)", async () => {
+    const cookie = await adminCookie();
+    const userId = await signUp(`admin-notice-bulk-${runId}@test.local`);
+    const p1 = await makePlan("monthly", "purchase_order");
+    const p2 = await makePlan("monthly", "receive_item");
+    const bulk = (payment: string, planIds: string[]) => testApp.handle(new Request("http://localhost/admin/subscriptions/bulk", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ userId, planIds, payment }) }));
+    expect((await bulk("free", [p1.id, p2.id])).status).toBe(200);
+    expect((await notices(userId)).length).toBe(2);
+    const p3 = await makePlan("monthly", "purchase_return");
+    expect((await bulk("paid_invoice", [p3.id])).status).toBe(200);
+    expect((await notices(userId)).length).toBe(2);
+  });
+});

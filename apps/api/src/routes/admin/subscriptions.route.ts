@@ -1,6 +1,8 @@
 import { Elysia, t } from "elysia";
 import { getCompanyTimezone } from "../../lib/company-timezone";
 import { assignPlanToDataUsaha } from "../../lib/admin-assign";
+import { notifySubscriptionChangedByAdmin } from "../../lib/subscription-change-notice";
+import { moduleLabel } from "../../lib/module-catalog";
 import { renewSubscriptionInPlace } from "../../lib/subscription-renewal";
 import { issueRenewalInvoiceNow, RenewalIssueError } from "../../lib/renewal-billing";
 import { eq, desc, inArray, sql } from "drizzle-orm";
@@ -9,6 +11,11 @@ import { db } from "../../lib/db";
 import { plans, subscriptions, auditLogs, user as userTable } from "../../db/schema";
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { getOrCreateDefaultDataUsaha, ownsDataUsaha } from "../../lib/data-usaha";
+
+async function notifyChangedBySubscriptionId(planId: string, dataUsahaId: string, kind: "extended" | "changed", oldEnd: Date | null, newEnd: Date | null) {
+  const [plan] = await db.select({ name: plans.name, modules: plans.modules }).from(plans).where(eq(plans.id, planId));
+  await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan?.modules[0] ? moduleLabel(plan.modules[0]) : (plan?.name ?? "paket"), kind, oldEnd, newEnd });
+}
 
 export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscriptions" })
   .use(permissionPlugin)
@@ -65,6 +72,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
       const timeZone = await getCompanyTimezone();
 
       const result = await db.transaction((tx) => assignPlanToDataUsaha(tx, { userId: body.userId, plan, dataUsahaId, endAt: customEnd, now, timeZone, actorId: user.id }));
+      await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan.modules[0] ? moduleLabel(plan.modules[0]) : plan.name, kind: result.renewed ? "extended" : "granted", oldEnd: result.previousEndAt, newEnd: result.subscription.endAt });
       // Bentuk respons lama dipertahankan: baris langganan (+ `renewed`/`previousEndAt` bila perpanjangan, § Fase 176).
       return result.renewed ? { ...result.subscription, renewed: true, previousEndAt: result.previousEndAt!.toISOString() } : result.subscription;
     },
@@ -183,6 +191,10 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         }
         return out;
       });
+      for (const [i, plan] of planRows.entries()) {
+        const r = results[i]!;
+        await notifySubscriptionChangedByAdmin({ dataUsahaId, featureLabel: plan.modules[0] ? moduleLabel(plan.modules[0]) : plan.name, kind: r.renewed ? "extended" : "granted", oldEnd: r.previousEndAt ? new Date(r.previousEndAt) : null, newEnd: r.endAt ? new Date(r.endAt) : null });
+      }
       return { dataUsahaId, payment: "free" as const, results };
     },
     {
@@ -236,6 +248,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         actorId: user.id,
       });
 
+      await notifyChangedBySubscriptionId(existing.planId, existing.dataUsahaId, "changed", existing.endAt, newEndAt);
       return updated;
     },
     {
@@ -252,7 +265,7 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
     "/:id/extend",
     async ({ params, body, user, set }) => {
       try {
-        return await db.transaction(async (tx) => {
+        const done = await db.transaction(async (tx) => {
           const [subscription] = await tx.select().from(subscriptions).where(sql`${subscriptions.id} = ${params.id} FOR UPDATE`).limit(1);
           if (!subscription) throw new Error("SUBSCRIPTION_NOT_FOUND");
           if (subscription.isTrial) throw new Error("TRIAL_NOT_EXTENDABLE");
@@ -265,8 +278,10 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
             source: "admin",
             actorId: user.id,
           });
-          return { subscriptionId: result.subscriptionId, previousEndAt: result.previousEndAt.toISOString(), newEndAt: result.newEndAt.toISOString() };
+          return { subscriptionId: result.subscriptionId, previousEndAt: result.previousEndAt.toISOString(), newEndAt: result.newEndAt.toISOString(), planId: subscription.planId, dataUsahaId: subscription.dataUsahaId };
         });
+        await notifyChangedBySubscriptionId(done.planId, done.dataUsahaId, "extended", new Date(done.previousEndAt), new Date(done.newEndAt));
+        return { subscriptionId: done.subscriptionId, previousEndAt: done.previousEndAt, newEndAt: done.newEndAt };
       } catch (err) {
         const code = err instanceof Error ? err.message : "";
         if (code === "SUBSCRIPTION_NOT_FOUND") {

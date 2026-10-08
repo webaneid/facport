@@ -33,6 +33,10 @@ describe("notificationLink", () => {
     expect(notificationLink("admin_renewal_invoice_failed", "admin")).toBe("/users");
   });
 
+  test("Fase 182: perubahan langganan oleh admin → /subscribe", () => {
+    expect(notificationLink("subscription_changed_by_admin", "app")).toBe("/subscribe");
+  });
+
   test("tipe tidak dikenal di surface app → /", () => {
     expect(notificationLink("some_unknown_type", "app")).toBe("/");
   });

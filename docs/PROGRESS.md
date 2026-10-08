@@ -189,7 +189,7 @@
 | 179  | Koreksi langganan tahunan 360 hari (skrip dry-run/commit; belum dijalankan di production) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-179-koreksi-langganan-360-hari.md` |
 | 180  | Ubah Masa Aktif: tombol +1 bulan/+3 bulan/+1 tahun memakai perpanjangan server berbasis jangkar (tanggal tidak bergeser) | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-180-perpanjang-masa-aktif-berbasis-jangkar.md` |
 | 181  | Perpanjangan terjadwal & tagihan otomatis: penanda perpanjangan (bulanan/tahunan) per langganan, tagihan terbit otomatis 7 hari sebelum berakhir, notifikasi + email dengan link bayar | Done | `docs/architecture/architecture-renewal-billing.md` | `docs/phases/phase-181-perpanjangan-terjadwal-tagihan-otomatis.md` |
-| 182  | Notifikasi ke pelanggan untuk mode Gratis & perubahan masa aktif oleh admin | Planned | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-182-notifikasi-mode-gratis-dan-perubahan-masa-aktif.md` |
+| 182  | Notifikasi ke pelanggan untuk mode Gratis & perubahan masa aktif oleh admin | Done | `docs/architecture/architecture-subscription.md` | `docs/phases/phase-182-notifikasi-mode-gratis-dan-perubahan-masa-aktif.md` |
 | 183  | Perpanjangan kursi (Slot User Tambahan) | Planned | `docs/architecture/architecture-user-tambahan.md` | `docs/phases/phase-183-perpanjangan-kursi.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`

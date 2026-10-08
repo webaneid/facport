@@ -145,6 +145,7 @@ Satu sumber kebenaran: `apps/api/src/lib/notifications.ts` `NOTIFICATION_TYPES`.
 | `subscription_ending_soon` | Job `NOTIFY_EXPIRING_SOON`, H-7/H-3/H-1 | Customer | `/subscribe` | ✅ Fase 132 |
 | `renewal_invoice_issued` | Job `NOTIFY_EXPIRING_SOON` (H-7, langganan ber-penanda perpanjangan) atau admin "Terbitkan tagihan sekarang" — + email link bayar | Customer (pemilik Data Usaha saat ini) | `/billing` | ✅ Fase 181 |
 | `admin_renewal_invoice_failed` | Job `NOTIFY_EXPIRING_SOON`: paket periode (bulanan/tahunan) tak ada/nonaktif → tagihan tidak terbit | Admin | `/users` | ✅ Fase 181 |
+| `subscription_changed_by_admin` | Admin memberi paket gratis / ubah / perpanjang masa aktif (+ email) | Customer (pemilik Data Usaha saat ini) | `/subscribe` | ✅ Fase 182 |
 | `subscription_expired` | Job `EXPIRE_SUBSCRIPTIONS`, `isTrial=false` | Customer | `/subscribe` | ✅ Fase 132 |
 | `accurate_connection_expired` | Job `REFRESH_ACCURATE_TOKEN` gagal, ATAU `openAccurateSession()` gagal saat import (⚠️ diperluas Fase 91 — dulu cuma job terjadwal) | Customer (pemilik koneksi, BUKAN admin — § ADR-0020) | `/accurate` | ❌ pending |
 | `accurate_connection_disconnected_by_admin` | `POST /admin/subscriptions/:id/disconnect-accurate` (Fase 92) | Customer (pemilik koneksi) | `/accurate` | ❌ pending |
