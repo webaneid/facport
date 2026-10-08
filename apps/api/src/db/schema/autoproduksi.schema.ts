@@ -66,7 +66,7 @@ export const autoproduksiFormulas = pgTable(
     adjustmentAccountNo: varchar("adjustment_account_no", { length: 50 }).notNull(), // "Akun Perantara" / adjustmentAccountNo API
     // § Fase 163 — nama Akun Perantara hasil live-search, sama pola di atas.
     adjustmentAccountName: varchar("adjustment_account_name", { length: 255 }),
-    // § Fase 168 (diminta client) — toggle List Formula: non-aktif = tidak
+    // § Fase 168 (diminta client) — toggle List Formula: nonaktif = tidak
     // bisa dipilih/dicari utk Input Produksi baru (manual maupun Excel),
     // TAPI tetap tampil di List Formula sebagai dokumentasi (tidak
     // dihapus, tetap bisa diedit). Default true — Formula lama & baru

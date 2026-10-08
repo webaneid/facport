@@ -219,7 +219,7 @@ describe("GET/PUT/DELETE /autoproduksi/formulas/:id — ownership", () => {
 // § Fase 168 (diminta client) — toggle List Formula, endpoint TERPISAH
 // dari PUT (ubah 1 kolom tanpa kirim ulang Formula+items).
 describe("PATCH /autoproduksi/formulas/:id/active", () => {
-  test("200 — toggle jadi non-aktif lalu balik aktif", async () => {
+  test("200 — toggle jadi nonaktif lalu balik aktif", async () => {
     const owner = await createProvisionedUser(`ap-formula-toggle-${runId}@test.local`);
     const createRes = await testApp.handle(
       new Request("http://localhost/autoproduksi/formulas", {
@@ -370,8 +370,8 @@ describe("POST /autoproduksi/production-entries", () => {
   });
 
   // § Fase 168 (diminta client) — defense-in-depth: Combobox frontend
-  // sudah menyaring Formula non-aktif, API tidak boleh percaya itu saja.
-  test("409 FORMULA_INACTIVE kalau Formula sedang non-aktif", async () => {
+  // sudah menyaring Formula nonaktif, API tidak boleh percaya itu saja.
+  test("409 FORMULA_INACTIVE kalau Formula sedang nonaktif", async () => {
     const owner = await createProvisionedUser(`ap-entry-inactive-${runId}@test.local`);
     const createRes = await testApp.handle(
       new Request("http://localhost/autoproduksi/formulas", {
@@ -600,7 +600,7 @@ describe("PUT /autoproduksi/formulas/:id (edit)", () => {
     expect(items.some((i) => i.itemNo === "100099" && i.itemUnitName === "Pouch")).toBe(true);
   });
 
-  test("edit TIDAK mengubah status Non-aktif kalau isActive tidak dikirim (UI tidak mengirimnya)", async () => {
+  test("edit TIDAK mengubah status Nonaktif kalau isActive tidak dikirim (UI tidak mengirimnya)", async () => {
     const owner = await createProvisionedUser(`ap-formula-edit-inactive-${runId}@test.local`);
     const id = await createFormula(owner.cookie);
     await db.update(autoproduksiFormulas).set({ isActive: false }).where(eq(autoproduksiFormulas.id, id));

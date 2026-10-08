@@ -70,10 +70,10 @@ describe("ProductionSubmitDialog", () => {
 
   test("POST gagal (tidak sampai membuat entri) → langsung 'Gagal terkirim' dengan pesan, tanpa polling", async () => {
     getEntry.mockClear();
-    setup({ onSubmit: mock(async () => ({ ok: false as const, message: "Formula ini sedang non-aktif" })) });
+    setup({ onSubmit: mock(async () => ({ ok: false as const, message: "Formula ini sedang nonaktif" })) });
     fireEvent.click(screen.getByRole("button", { name: "Kirim" }));
     await screen.findByText("Gagal terkirim");
-    expect(screen.getByText("Formula ini sedang non-aktif")).toBeTruthy();
+    expect(screen.getByText("Formula ini sedang nonaktif")).toBeTruthy();
     expect(getEntry).not.toHaveBeenCalled();
   });
 

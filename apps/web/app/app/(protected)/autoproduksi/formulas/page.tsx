@@ -40,8 +40,8 @@ import { UnitField, type ItemUnit } from "@/components/autoproduksi/unit-field";
 // banyak cabang terpaksa bikin Formula terpisah per cabang padahal
 // resepnya identik, sekarang 1 Formula dipakai lintas cabang/gudang.
 // Formula sekarang MURNI resep: Nama + Barang Jadi + Bahan Baku + takaran
-// + Akun Perantara. Fase ini juga menambahkan toggle Aktif/Non-aktif
-// (§ kolom "Status" di tabel List Formula) — non-aktif = tidak bisa
+// + Akun Perantara. Fase ini juga menambahkan toggle Aktif/Nonaktif
+// (§ kolom "Status" di tabel List Formula) — nonaktif = tidak bisa
 // dipilih/dicari utk Input Produksi baru, tapi tetap tampil di sini
 // sebagai dokumentasi.
 type AccurateItemResult = { no: string; name: string; unitName: string; units?: ItemUnit[] };
@@ -382,7 +382,7 @@ export default function AutoProduksiFormulasPage() {
   // § Fase 162 (evaluasi client) — search nama Formula, client-side
   // (dataset per Data Usaha kecil, § plan file). Fungsi filter diekstrak
   // ke `lib/filter-formulas.ts` supaya testable.
-  // § Fase 168 — filter Cabang DIGANTI filter Status (Aktif/Non-aktif),
+  // § Fase 168 — filter Cabang DIGANTI filter Status (Aktif/Nonaktif),
   // karena Cabang sudah tidak lagi jadi field Formula.
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<FormulaStatusFilter>("all");
@@ -407,7 +407,7 @@ export default function AutoProduksiFormulasPage() {
     load();
   }
 
-  // § Fase 168 (diminta client) — toggle Aktif/Non-aktif, endpoint
+  // § Fase 168 (diminta client) — toggle Aktif/Nonaktif, endpoint
   // TERPISAH dari PUT (§ autoproduksi.route.ts) supaya tidak perlu kirim
   // ulang Formula+items cuma utk ubah 1 boolean.
   async function handleToggleActive(formula: Formula) {
@@ -447,7 +447,7 @@ export default function AutoProduksiFormulasPage() {
     }),
     // § Fase 168 (diminta client) — kolom Cabang DIHILANGKAN (field-nya
     // sudah dihapus dari Formula total, pindah ke Input Produksi) —
-    // digantikan kolom Status (toggle Aktif/Non-aktif).
+    // digantikan kolom Status (toggle Aktif/Nonaktif).
     columnHelper.display({
       id: "status",
       header: "Status",
@@ -462,7 +462,7 @@ export default function AutoProduksiFormulasPage() {
             title={row.original.isActive ? "Klik untuk nonaktifkan" : "Klik untuk aktifkan"}
           />
           <span className={row.original.isActive ? "text-xs font-medium text-green-700" : "text-xs text-muted-foreground"}>
-            {row.original.isActive ? "Aktif" : "Non-aktif"}
+            {row.original.isActive ? "Aktif" : "Nonaktif"}
           </span>
         </div>
       ),
@@ -520,7 +520,7 @@ export default function AutoProduksiFormulasPage() {
                   options={[
                     { value: "", label: "Semua Status" },
                     { value: "active", label: "Aktif" },
-                    { value: "inactive", label: "Non-aktif" },
+                    { value: "inactive", label: "Nonaktif" },
                   ]}
                 />
               </div>

@@ -1888,11 +1888,11 @@ export async function processAutoproduksiProductionImportRow(
   }
   // § Fase 168 — duplikat nama dihitung HANYA di antara Formula AKTIF:
   // menonaktifkan salah satu duplikat harus menyelesaikan ambiguitas.
-  // Formula non-aktif tidak bisa dipakai untuk Input Produksi baru
+  // Formula nonaktif tidak bisa dipakai untuk Input Produksi baru
   // (pesan beda dari "tidak ditemukan" supaya akar masalahnya jelas).
   const activeMatches = matches.filter((m) => m.isActive);
   if (activeMatches.length === 0) {
-    throw new Error(`Formula "${formulaName}" sedang NON-AKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
+    throw new Error(`Formula "${formulaName}" sedang NONAKTIF — aktifkan dulu di halaman List Formula sebelum impor.`);
   }
   if (activeMatches.length > 1) {
     throw new Error(

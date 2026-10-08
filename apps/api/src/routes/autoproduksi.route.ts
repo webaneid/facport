@@ -223,7 +223,7 @@ export const autoproduksiRoute = new Elysia()
       body: formulaBodySchema,
     },
   )
-  // § Fase 168 (diminta client) — toggle Aktif/Non-aktif List Formula.
+  // § Fase 168 (diminta client) — toggle Aktif/Nonaktif List Formula.
   // Endpoint TERPISAH dari PUT (yang butuh body penuh Formula+items) —
   // ubah 1 kolom tanpa perlu kirim ulang seluruh resep.
   .patch(
@@ -349,7 +349,7 @@ export const autoproduksiRoute = new Elysia()
         return { code: "FORMULA_NOT_FOUND" };
       }
       // § Fase 168 — defense-in-depth: Combobox frontend sudah menyaring
-      // Formula non-aktif, API tidak boleh percaya itu saja (bisa dipanggil
+      // Formula nonaktif, API tidak boleh percaya itu saja (bisa dipanggil
       // langsung/state Combobox basi).
       if (!resolved.formula.isActive) {
         set.status = 409;

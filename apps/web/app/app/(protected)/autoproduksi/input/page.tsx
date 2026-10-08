@@ -30,7 +30,7 @@ import { duplicateWarning, todayInTimezone, type RecentEntry } from "@/lib/produ
 // dari Formula — 1 Formula sekarang dipakai lintas cabang/gudang), semua
 // OPSIONAL. Gudang Bahan Baku SATU pilihan berlaku ke SEMUA Bahan Baku
 // resep ini (bukan per-item lagi). Hanya Formula yang AKTIF yang muncul di
-// Combobox (non-aktif disaring di sini, server juga menolak 409 kalau
+// Combobox (nonaktif disaring di sini, server juga menolak 409 kalau
 // tetap dipaksa — § autoproduksi.route.ts).
 type Formula = { id: string; formulaCode: string; name: string; finishedGoodItemUnitName: string; isActive: boolean };
 
@@ -62,7 +62,7 @@ export default function AutoProduksiInputPage() {
       const res = await api.autoproduksi.formulas.get();
       const list = res.data ? (res.data as unknown as { formulas: Formula[] }).formulas : null;
       if (list) setFormulas(list);
-      // isian terakhir: semua kecuali tanggal. Formula hanya diisi bila masih AKTIF (non-aktif/terhapus → pengguna memilih ulang).
+      // isian terakhir: semua kecuali tanggal. Formula hanya diisi bila masih AKTIF (nonaktif/terhapus → pengguna memilih ulang).
       const lastRes = await api.autoproduksi["production-entries"].last.get();
       const last = (lastRes.data as unknown as { entry: LastEntry | null } | null)?.entry;
       if (!last) return;
@@ -122,7 +122,7 @@ export default function AutoProduksiInputPage() {
     });
     if (res.error) {
       const value = res.error.value as { code?: string } | undefined;
-      return { ok: false, message: value?.code === "FORMULA_INACTIVE" ? "Formula ini sedang non-aktif — aktifkan dulu di List Formula." : "Gagal mengirim input produksi ke server." };
+      return { ok: false, message: value?.code === "FORMULA_INACTIVE" ? "Formula ini sedang nonaktif — aktifkan dulu di List Formula." : "Gagal mengirim input produksi ke server." };
     }
     return { ok: true, entryId: (res.data as unknown as { entry: { id: string } }).entry.id };
   }

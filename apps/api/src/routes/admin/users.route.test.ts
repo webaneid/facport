@@ -367,7 +367,7 @@ describe("PATCH /admin/users/:id/disable & /enable", () => {
       expect((await call("disable")).status).toBe(200);
       const mail = sent.find((m) => m.to === email)!;
       expect(mail.subject).toContain("dinonaktifkan");
-      expect(mail.html).toContain("User Anda di non aktifkan oleh sistem kami");
+      expect(mail.html).toContain("User Anda dinonaktifkan oleh sistem kami");
       expect(mail.html).toContain("hubungi admin");
       const count = sent.length;
       expect((await call("disable")).status).toBe(200); // sudah nonaktif → tanpa email baru

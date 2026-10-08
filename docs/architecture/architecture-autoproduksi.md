@@ -74,7 +74,7 @@ Data Usaha (`dataUsahaId`) + subscription (`subscriptionId`, menentukan
 - **`autoproduksi_formulas`** — 1 baris = 1 resep: Nama + Barang Jadi +
   Akun Perantara + `standardCost` (diisi MANUAL, bukan hitung otomatis
   dari harga beli Accurate — lihat "Di Luar Scope" di bawah) + `isActive`
-  (§ Fase 168, toggle List Formula — non-aktif = tidak bisa dipilih/dicari
+  (§ Fase 168, toggle List Formula — nonaktif = tidak bisa dipilih/dicari
   utk Input Produksi baru, tapi tetap tampil sebagai dokumentasi).
   **§ Fase 168** — Cabang/Gudang Barang Jadi/Nomor Project/Departemen
   DIHAPUS TOTAL dari tabel ini (pindah ke `autoproduksi_production_entries`
@@ -207,8 +207,8 @@ terpisah per cabang padahal resepnya identik. Perubahan:
   `branchName`/gudang/proyek/departemen sekarang dari parameter `entry`
   (konteks produksi), BUKAN dari `formula` lagi. `unitCost` (dari
   `formula.standardCost`) TIDAK disentuh — fix Fase 166 tetap berlaku.
-- Toggle Aktif/Non-aktif BARU (`autoproduksi_formulas.isActive`,
-  `PATCH /autoproduksi/formulas/:id/active`) — non-aktif = tidak bisa
+- Toggle Aktif/Nonaktif BARU (`autoproduksi_formulas.isActive`,
+  `PATCH /autoproduksi/formulas/:id/active`) — nonaktif = tidak bisa
   dipilih/dicari utk Input Produksi baru (manual: 409 `FORMULA_INACTIVE`;
   Excel: baris gagal pesan jelas di worker), tapi tetap tampil di List
   Formula sebagai dokumentasi & tetap bisa diedit.
@@ -277,7 +277,7 @@ Accurate) dulu: 0 match → baris gagal `Formula tidak ditemukan`; **2+
 match (duplikat nama, § keputusan di atas) → baris gagal eksplisit,
 TIDAK PERNAH menebak salah satu** (aman di atas cakupan, ADR-0013);
 match tapi `isActive = false` (§ Fase 168) → baris gagal pesan jelas
-("sedang NON-AKTIF"), beda dari "tidak ditemukan"; 1 match aktif → reuse
+("sedang NONAKTIF"), beda dari "tidak ditemukan"; 1 match aktif → reuse
 `buildProductionEntryPayload()` (lib/autoproduksi.ts, SAMA PERSIS fungsi
 yang dipakai flow manual single-entry) lalu `saveInventoryAdjustment()`.
 Hasil (sukses/gagal) JUGA diinsert sebagai baris

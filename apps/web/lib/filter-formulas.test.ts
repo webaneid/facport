@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { filterFormulas } from "./filter-formulas";
 
 // § Fase 168 (diminta client) — filter Cabang DIGANTI filter Status
-// (Aktif/Non-aktif), fixture diperbarui mengikuti.
+// (Aktif/Nonaktif), fixture diperbarui mengikuti.
 const formulas = [
   { name: "Bolu Kukus SP", isActive: true },
   { name: "Bolu Coklat", isActive: true },
