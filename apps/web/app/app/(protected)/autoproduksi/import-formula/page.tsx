@@ -119,7 +119,7 @@ export default function AutoproduksiFormulaImportPage() {
         <h1 className="text-3xl font-bold tracking-tight text-foreground">Import Formula dari Excel</h1>
         <p className="text-sm text-muted-foreground">
           Upload file Excel berisi daftar Formula (resep). Baris dengan Nama Resep/Formula yang sama digabung jadi 1
-          Formula — setiap Formula wajib tepat 1 baris Tipe Barang=BJ (Barang Jadi) dan minimal 1 baris Tipe
+          Formula. Nama Formula harus unik: nama yang sudah dipakai Formula lain (tak peka huruf besar/kecil) ditolak — setiap Formula wajib tepat 1 baris Tipe Barang=BJ (Barang Jadi) dan minimal 1 baris Tipe
           Barang=BB (Bahan Baku). Tidak ada panggilan ke Accurate di langkah ini — Formula tersimpan lokal dulu,
           divalidasi ke Accurate nanti saat Input Produksi.
         </p>

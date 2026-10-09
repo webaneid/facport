@@ -202,6 +202,32 @@ alur CI/CD otomatis, sama seperti host lain):
 > mati, error yang MEMBINGUNGKAN karena kelihatan seperti fix belum
 > ke-deploy padahal sudah ada di repo).
 
+### ★ STANDAR DEPLOY (divalidasi pada rilis v2.31.0 & v2.32.0, 2026-10-08/09) — langkah demi langkah
+> Ini urutan BAKU yang dipakai sekarang. Satu perintah per pesan, user menempel hasil tiap langkah sebelum lanjut. Tidak ada rilis tanpa permintaan eksplisit user.
+
+**Sisi Claude Code (sebelum user SSH)**
+1. User minta rilis eksplisit ("rilis"). Pastikan `develop` bersih & ter-push. `git checkout main && git pull --ff-only origin main && git merge --no-ff develop -m "chore: rilis …" && git push origin main && git checkout develop`.
+2. Pantau workflow `Release` (gate typecheck+test web & api → semantic-release memberi tag). Gagal di gate → perbaiki di `develop`, merge ulang ke `main` (kasus nyata: `mock.module("next/navigation")` di tes bocor lintas file → lengkapi ekspor mock, mis. `useSearchParams`).
+3. Ambil tag baru (`git fetch --tags`), tunggu workflow `Deploy` job **`build-and-push` = success** (job `deploy-to-server` GAGAL = expected, secret SSH belum diisi). Jangan umumkan siap tarik hanya dari `gh release list`.
+4. Cek apa yang berubah antar tag: `git diff --stat vLAMA vBARU -- 'docker-compose*' Caddyfile apps/api/src/lib/env.ts` (file ini COPY MANUAL di server — bila berubah, update di server DULU) dan daftar `apps/api/drizzle/*.sql` baru. Ada migrasi / worker berubah / ragu → **Full**.
+
+**Sisi user (SSH ke `wasugi@76.13.18.136`)**
+1. `ssh wasugi@76.13.18.136`
+2. `cd /opt/facport`
+3. Backup: `./scripts/backup-db.sh` → harus ada "Postgres dump … (N M)" + "Upload ke gdrive:backup-app/facport selesai" (peringatan `mc` MinIO diabaikan).
+4. `export GITHUB_REPO="webaneid/facport" IMAGE_TAG="vX.Y.Z"`
+5. `printf 'GITHUB_REPO=%s\nIMAGE_TAG=%s\n' "$GITHUB_REPO" "$IMAGE_TAG" > .env.deploy && cat .env.deploy` (harus 2 baris benar; `export` harus sudah dijalankan di sesi yang sama).
+6. `docker compose -f docker-compose.prod.yml --env-file .env.production --env-file .env.deploy pull` (api & web `vX.Y.Z` ter-pull).
+7. `docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy up -d api web worker minio postgres` (api Healthy; worker WAJIB ikut — job/mapping dipakai worker).
+8. Migrasi: `docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy exec api bun run db:migrate` — output sering TERPOTONG; JANGAN percaya "sukses" saja, lanjut langkah 9.
+9. **Verifikasi kolom/data hasil migrasi** (bukan cuma pesan sukses). Pola baku — satu `-c` dalam satu pasang tanda kutip ganda, `$` host di-escape: `docker compose -f docker-compose.prod.yml --env-file .env.production exec postgres sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"select …;\""`. Contoh: cek kolom di `information_schema.columns`, hitung baris backfill yang masih NULL. JANGAN pakai `$$…$$` (dikembang shell host).
+10. `docker image prune -f && docker ps --format "table {{.Names}}\t{{.Status}}" && curl -s -o /dev/null -w "api health: %{http_code}\n" http://localhost:3001/health` → api & web `(healthy)`, worker `Up`, health 200. (Dari luar: `https://api.facinstitute.id/health`.)
+11. Opsional: `docker compose -f docker-compose.prod.yml --env-file .env.production logs --tail 40 worker` untuk memastikan job baru terdaftar tanpa galat.
+
+**Setelah deploy**: catat versi & nama file backup di memori/dokumen status production; user menguji di browser production; laporan client hanya bila diminta.
+
+**Jebakan yang pernah terjadi** — (a) Minimal dipilih padahal worker ikut berubah (2×, lihat lessons-learned 2026-09-09); (b) migrasi "sukses" tapi kolom tidak ada karena `when` entri `_journal.json` lebih kecil dari migrasi terakhir yang tercatat (lessons-learned 2026-10-09; JANGAN menggeser `when` manual — migrasi 0046 sudah kadung ber-`when` 2026-10-09 02:04 UTC, migrasi baru wajib > nilai 0047); (c) output paste terpotong; (d) heredoc/`sh -c` bersarang rapuh saat di-paste.
+
 ### Minimal — fix kecil, tanpa migration DB, tanpa ubah worker/queue
 Cocok untuk: fix UI, pesan error/teks, perubahan 1 route tanpa skema baru.
 ```bash

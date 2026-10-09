@@ -166,13 +166,16 @@ describe("POST /autoproduksi/import-formula/upload + confirm — asinkron (Fase 
     expect(formulas).toHaveLength(0);
   });
 
-  test("duplikat Nama Resep DIBOLEHKAN — upload 2x nama sama -> 2 Formula terpisah", async () => {
+  test("Nama Resep wajib unik — upload ke-2 dengan nama sama (beda huruf besar/kecil) gagal, Formula pertama tetap 1", async () => {
     const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-dup-${runId}@test.local`);
     await uploadAndConfirm(cookie, validFormulaRows("Resep Kembar"));
-    await uploadAndConfirm(cookie, validFormulaRows("Resep Kembar"));
+    const second = await uploadAndConfirm(cookie, validFormulaRows("  resep KEMBAR "));
 
-    const formulas = await db.select().from(autoproduksiFormulas).where(and(eq(autoproduksiFormulas.subscriptionId, subscriptionId), eq(autoproduksiFormulas.name, "Resep Kembar")));
-    expect(formulas).toHaveLength(2);
+    const formulas = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
+    expect(formulas).toHaveLength(1);
+    expect(second.finalStatus).toBe("completed_with_errors");
+    const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, second.batchId));
+    expect(rows.every((r) => r.status === "failed" && r.errorMessage?.includes("Nama formula sudah dipakai"))).toBe(true);
   });
 });
 

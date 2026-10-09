@@ -1,7 +1,7 @@
 import { eq, inArray, and } from "drizzle-orm";
 import { db } from "./db";
 import { importBatches, importBatchRows, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems } from "../db/schema";
-import { allocateFormulaNumber } from "./formula-number";
+import { allocateFormulaNumber, isFormulaNameTaken, FORMULA_NAME_TAKEN_MESSAGE } from "./formula-number";
 import {
   autoproduksiFormulaRowError,
   groupAutoproduksiFormulaRows,
@@ -12,7 +12,7 @@ import {
 
 // § Fase 186 — inti Import Formula (dipindah dari route supaya dijalankan JOB, bukan permintaan HTTP). Idempotensi: baris sukses tidak pernah diproses ulang; penandaan
 // "sukses" baris-baris sebuah grup terjadi di TRANSAKSI YANG SAMA dengan insert Formula-nya — crash di tengah tidak mungkin meninggalkan Formula tersimpan dengan baris
-// masih "pending" (yang akan membuat Formula ganda saat diproses ulang). Duplikat Nama Resep/Formula DIBOLEHKAN (tiap grup valid = Formula BARU, berbeda nomor).
+// masih "pending" (yang akan membuat Formula ganda saat diproses ulang). Nama Resep/Formula WAJIB unik per Data Usaha (permintaan client, membalik Fase 166): grup yang namanya sudah dipakai → gagal, tidak ada update/overwrite.
 export async function processFormulaBatchRows(
   batch: { id: string; userId: string; subscriptionId: string },
   dataUsahaId: string,
@@ -34,6 +34,7 @@ export async function processFormulaBatchRows(
 
       await db.transaction(async (tx) => {
         const formulaNumber = await allocateFormulaNumber(tx, dataUsahaId);
+        if (await isFormulaNameTaken(tx, dataUsahaId, record.name)) throw new Error(FORMULA_NAME_TAKEN_MESSAGE);
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
           .values({

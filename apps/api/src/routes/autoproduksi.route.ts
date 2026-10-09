@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { allocateFormulaNumber, formatFormulaCode, withFormulaCode } from "../lib/formula-number";
+import { allocateFormulaNumber, formatFormulaCode, withFormulaCode, isFormulaNameTaken, lockDataUsahaForFormula } from "../lib/formula-number";
 import { eq, and, desc } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
@@ -136,7 +136,8 @@ export const autoproduksiRoute = new Elysia()
       }
       const body = checked.body;
       const formula = await db.transaction(async (tx) => {
-        const formulaNumber = await allocateFormulaNumber(tx, subscription.dataUsahaId);
+        const formulaNumber = await allocateFormulaNumber(tx, subscription.dataUsahaId); // juga mengunci baris Data Usaha → cek nama di bawah bebas race
+        if (await isFormulaNameTaken(tx, subscription.dataUsahaId, body.name)) return null;
         const [inserted] = await tx
           .insert(autoproduksiFormulas)
           .values({
@@ -166,6 +167,10 @@ export const autoproduksiRoute = new Elysia()
         );
         return withFormulaCode(inserted!);
       });
+      if (!formula) {
+        set.status = 409;
+        return { code: "FORMULA_NAME_TAKEN" };
+      }
       return { formula };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production", body: formulaBodySchema },
@@ -184,7 +189,12 @@ export const autoproduksiRoute = new Elysia()
         return checked.error;
       }
       const body = checked.body;
-      await db.transaction(async (tx) => {
+      const taken = await db.transaction(async (tx) => {
+        // Cek hanya kalau nama BERUBAH — Formula lama yang sudah kembar (sebelum aturan ini) tetap bisa diedit field lain.
+        if (body.name.trim().toLowerCase() !== existing.formula.name.trim().toLowerCase()) {
+          await lockDataUsahaForFormula(tx, subscription.dataUsahaId);
+          if (await isFormulaNameTaken(tx, subscription.dataUsahaId, body.name, params.id)) return true;
+        }
         await tx
           .update(autoproduksiFormulas)
           .set({
@@ -213,7 +223,12 @@ export const autoproduksiRoute = new Elysia()
             sortOrder: index,
           })),
         );
+        return false;
       });
+      if (taken) {
+        set.status = 409;
+        return { code: "FORMULA_NAME_TAKEN" };
+      }
       return { ok: true };
     },
     {

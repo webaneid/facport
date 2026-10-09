@@ -99,6 +99,30 @@ describe("POST /autoproduksi/formulas", () => {
     expect(items).toHaveLength(2);
   });
 
+  test("409 FORMULA_NAME_TAKEN — nama sama (tak peka huruf besar/kecil) di Data Usaha yang sama ditolak; Data Usaha lain boleh", async () => {
+    const owner = await createProvisionedUser(`ap-formula-name-dup-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-formula-name-dup2-${runId}@test.local`);
+    const post = (cookie: string, name: string) =>
+      testApp.handle(new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, name }) }));
+    expect((await post(owner.cookie, "Roti Unik")).status).toBe(200);
+    const dup = await post(owner.cookie, " roti UNIK ");
+    expect(dup.status).toBe(409);
+    expect(((await dup.json()) as { code: string }).code).toBe("FORMULA_NAME_TAKEN");
+    expect((await post(other.cookie, "Roti Unik")).status).toBe(200);
+  });
+
+  test("PUT — ganti nama ke nama formula lain ditolak 409; simpan dengan nama sendiri tetap boleh", async () => {
+    const owner = await createProvisionedUser(`ap-formula-name-put-${runId}@test.local`);
+    const create = async (name: string) =>
+      ((await (await testApp.handle(new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, name }) }))).json()) as { formula: { id: string } }).formula.id;
+    const a = await create("Resep A");
+    await create("Resep B");
+    const put = (id: string, name: string) =>
+      testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${id}`, { method: "PUT", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, name }) }));
+    expect((await put(a, "resep b")).status).toBe(409);
+    expect((await put(a, "Resep A")).status).toBe(200);
+  });
+
   // § Fase 168 (diminta client) — Formula TIDAK LAGI butuh Cabang (field
   // ini DIHAPUS total, bukan sekadar jadi opsional) — body TANPA
   // branchName harus tetap sukses, dan isActive default true.
@@ -703,7 +727,7 @@ describe("default Cabang/Gudang (diminta client 2026-10-03)", () => {
   });
 });
 
-// § Fase 184 — nomor Formula otomatis (F-001…) per Data Usaha: pembeda nama kembar; tidak bisa dikustom, tidak berubah saat edit, tidak dipakai ulang.
+// § Fase 184 — nomor Formula otomatis (F-001…) per Data Usaha: nomor internal (nama kini wajib unik sejak 2026-10-09); tidak bisa dikustom, tidak berubah saat edit, tidak dipakai ulang.
 describe("nomor Formula otomatis (Fase 184)", () => {
   type FormulaJson = { id: string; formulaNumber: number; formulaCode: string; name: string };
   const create = async (cookie: string, extra: Record<string, unknown> = {}) => {
@@ -714,11 +738,11 @@ describe("nomor Formula otomatis (Fase 184)", () => {
     return ((await res.json()) as { formula: FormulaJson }).formula;
   };
 
-  test("berurutan F-001, F-002, F-003; nama kembar (bahkan beda huruf) tetap diterima dengan nomor berbeda; field nomor dari klien diabaikan", async () => {
+  test("berurutan F-001, F-002, F-003; field nomor dari klien diabaikan", async () => {
     const owner = await createProvisionedUser(`ap-fnum-seq-${runId}@test.local`);
     const a = await create(owner.cookie, { name: "Bolu Kukus" });
-    const b = await create(owner.cookie, { name: "Bolu Kukus" });
-    const c = await create(owner.cookie, { name: "bolu kukus", formulaNumber: 99, formulaCode: "FL-001" });
+    const b = await create(owner.cookie, { name: "Bolu Kukus 2" });
+    const c = await create(owner.cookie, { name: "Bolu Kukus 3", formulaNumber: 99, formulaCode: "FL-001" });
     expect([a.formulaCode, b.formulaCode, c.formulaCode]).toEqual(["F-001", "F-002", "F-003"]);
     expect(new Set([a.id, b.id, c.id]).size).toBe(3);
   });
