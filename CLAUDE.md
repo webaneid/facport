@@ -161,6 +161,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Produk Konverter (Excel→XML untuk Accurate Desktop) | `docs/architecture/architecture-konverter.md` |
 | Produk AutoProduksi (Formula/BOM, Input Produksi) | `docs/architecture/architecture-autoproduksi.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
+| Hapus Massal transaksi Accurate dari Excel (RENCANA/DRAFT, Fase 188, menunggu keputusan client) | `docs/architecture/architecture-bulk-delete.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan
 > Komponen** yang diisi user saat `project-init` (lihat

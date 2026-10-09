@@ -194,6 +194,8 @@
 | 184  | Nomor Formula otomatis AutoProduksi (F-001…): bedakan Formula bernama sama, pencarian tak peka huruf, tampil di autocomplete | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-184-nomor-formula-autoproduksi.md` |
 | 185  | Popup konfirmasi + progres Input Produksi (Periksa dulu → Progres → Hasil), form mengingat input terakhir per user | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-185-popup-progres-input-produksi.md` |
 | 186  | Konsistensi UI import Excel AutoProduksi + Import Formula asinkron (job queue, progress bar) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-186-konsistensi-ui-import-autoproduksi.md` |
+| 187  | Nama Formula AutoProduksi wajib unik per Data Usaha (manual + import Excel; permintaan client, membalik Fase 166/184) — rilis v2.33.0 | Done | `docs/architecture/architecture-autoproduksi.md` | (tanpa phase doc; lihat `docs/lessons-learned.md` 2026-10-09 untuk insiden deploy) |
+| 188  | Hapus Massal transaksi Accurate dari Excel (nomor transaksi → pratinjau → hapus) — **menunggu keputusan client: Opsi 1 tombol per modul vs Opsi 2 fitur berbayar** | Planned (belum ada kode) | `docs/architecture/architecture-bulk-delete.md` (DRAFT) | — |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
