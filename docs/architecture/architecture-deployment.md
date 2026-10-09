@@ -214,6 +214,7 @@ alur CI/CD otomatis, sama seperti host lain):
 **Sisi user (SSH ke `wasugi@76.13.18.136`)**
 1. `ssh wasugi@76.13.18.136`
 2. `cd /opt/facport`
+2b. **Cek job berjalan SEBELUM `up -d`** (insiden v2.33.0): `docker compose -f docker-compose.prod.yml -f docker-compose.override.yml --env-file .env.production --env-file .env.deploy exec postgres sh -c "psql -U \$POSTGRES_USER -d \$POSTGRES_DB -c \"select name, started_on from pgboss.job where state='active'\""` → harus 0 baris. Ada baris = import/proses sedang jalan; `up -d` me-restart worker dan MEMATIKAN job itu (tertinggal `active`, batch macet "Memproses"). Tunggu selesai atau minta user menunda deploy. Kalau sudah terlanjur → `docs/lessons-learned.md` 2026-10-09 (pemulihan).
 3. Backup: `./scripts/backup-db.sh` → harus ada "Postgres dump … (N M)" + "Upload ke gdrive:backup-app/facport selesai" (peringatan `mc` MinIO diabaikan).
 4. `export GITHUB_REPO="webaneid/facport" IMAGE_TAG="vX.Y.Z"`
 5. `printf 'GITHUB_REPO=%s\nIMAGE_TAG=%s\n' "$GITHUB_REPO" "$IMAGE_TAG" > .env.deploy && cat .env.deploy` (harus 2 baris benar; `export` harus sudah dijalankan di sesi yang sama).

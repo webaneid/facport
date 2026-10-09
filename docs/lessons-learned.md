@@ -6169,3 +6169,10 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Perbaikan:** `when` 0047 diset 0046 + 1 jam (lebih besar); migrasi berikutnya yang dibuat `db:generate` otomatis memakai waktu nyata — pastikan selalu > `when` 0046 (1791511450030 ≈ 2026-10-09 02:04 UTC); sebelum itu lewat, setel manual lebih besar.
 **Pelajaran:** jangan mengutak-atik `when`; kalau migrasi "sukses" tapi kolom tidak ada, bandingkan `when` entri jurnal. Verifikasi kolom setelah migrasi (sudah praktik di runbook).
 
+## 2026-10-09 — Deploy v2.33.0 me-restart worker di tengah import 6.302 baris (batch macet "Memproses")
+**Gejala (laporan client, 5 menit tak bergerak):** Import Sales Receipt 121 sukses / 5 gagal / 6.176 menunggu, status "Memproses" 2%.
+**Akar masalah:** `docker compose up -d` mengganti container `worker` saat job `import-to-accurate` aktif (dibuat/mulai 01:40:41–42 UTC, worker baru 01:41:32). Job lama mati tanpa penutupan; baris di pg-boss tertinggal `active` tanpa proses. `retryLimit: 0` (sengaja, anti kirim ganda) → tidak diulang otomatis; kedaluwarsa 2 jam pun tidak mengubah status batch. Diagnosis: jumlah baris per status dua kali berjarak 60 dtk (tidak bergerak) → `pgboss.job` `active` + log worker hanya tugas terjadwal.
+**Pemulihan:** (1) `update import_batches set status='completed_with_errors', completed_at=now() where id='…' and status='processing'` (SQL dijalankan user) supaya tombol "Coba Ulang" (hanya memproses baris pending/failed) muncul; (2) sebelum Coba Ulang, cek di Accurate apakah transaksi terakhir (baris yang sedang dikirim saat worker mati) sudah ada — baris in-flight bisa masih "pending" padahal sudah tersimpan di Accurate (risiko 1 transaksi ganda).
+**Pencegahan:** langkah 2b di STANDAR DEPLOY: cek `pgboss.job where state='active'` = 0 sebelum `up -d`. Perbaikan permanen (belum dikerjakan): worker menangani SIGTERM (`boss.stop` graceful + `stop_grace_period` compose) dan/atau pemulihan batch yatim otomatis saat worker start.
+**Pelajaran:** restart worker = membunuh job yang sedang jalan; job idempoten per-baris tidak cukup bila batch bergantung pada satu job tunggal tanpa retry.
+
