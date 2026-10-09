@@ -1,3 +1,9 @@
+## 2.33.0 (2026-10-09)
+
+* chore: rilis nama Formula AutoProduksi wajib unik ([81d2018](https://github.com/webaneid/facport/commit/81d2018))
+* feat(api web): nama Formula AutoProduksi wajib unik per Data Usaha (manual & import Excel), perminta ([e1d7212](https://github.com/webaneid/facport/commit/e1d7212))
+* docs: standar deploy langkah demi langkah (v2.31.0/v2.32.0) di architecture-deployment.md ([ada33d9](https://github.com/webaneid/facport/commit/ada33d9))
+
 ## 2.32.0 (2026-10-08)
 
 * chore: rilis Fase 184–186 (nomor Formula AutoProduksi, popup progres Input Produksi, Import Formula  ([95014ef](https://github.com/webaneid/facport/commit/95014ef))
