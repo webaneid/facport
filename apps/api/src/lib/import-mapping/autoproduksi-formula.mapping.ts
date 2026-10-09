@@ -16,11 +16,11 @@
 // `autoproduksi-production.mapping.ts`). Formula sekarang murni: Nama
 // Resep + Akun Perantara + daftar Barang Jadi/Bahan Baku + takaran.
 //
-// § Duplikat Nama Resep/Formula DIBOLEHKAN (keputusan eksplisit user
-// 2026-10-02) — setiap baris BJ yang cocok selalu INSERT formula BARU,
-// TIDAK PERNAH update/timpa formula yang sudah ada. Konsekuensi: Input
-// Produksi (modul lain) WAJIB menolak baris yang nama Formula-nya ganda,
-// bukan menebak salah satu — lihat `autoproduksi-production.mapping.ts`.
+// § Nama Resep/Formula WAJIB unik per Data Usaha (permintaan client
+// 2026-10-09, membalik keputusan 2026-10-02) — grup yang namanya sudah
+// dipakai GAGAL (tak peka huruf besar/kecil), TIDAK PERNAH update/timpa.
+// Formula lama yang sudah kembar tetap ada; Input Produksi tetap menolak
+// nama ganda (bukan menebak) — lihat `autoproduksi-production.mapping.ts`.
 export const AUTOPRODUKSI_ITEM_TYPES = ["BB", "BJ"] as const;
 export type AutoproduksiItemType = (typeof AUTOPRODUKSI_ITEM_TYPES)[number];
 

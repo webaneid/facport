@@ -1,6 +1,6 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, ne, sql } from "drizzle-orm";
 import { db } from "./db";
-import { dataUsaha } from "../db/schema";
+import { dataUsaha, autoproduksiFormulas } from "../db/schema";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -25,4 +25,28 @@ export function formatFormulaCode(n: number): string {
 /** Menambah `formulaCode` ke baris Formula untuk respons API. */
 export function withFormulaCode<T extends { formulaNumber: number }>(formula: T): T & { formulaCode: string } {
   return { ...formula, formulaCode: formatFormulaCode(formula.formulaNumber) };
+}
+
+/** Kunci baris Data Usaha sampai transaksi selesai — menserialkan pembuatan/pengubahan nama Formula per Data Usaha (cek nama unik bebas race). `allocateFormulaNumber` sudah mengunci lewat UPDATE yang sama. */
+export async function lockDataUsahaForFormula(tx: Tx, dataUsahaId: string): Promise<void> {
+  await tx.select({ id: dataUsaha.id }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId)).for("update");
+}
+
+/** Pesan baku saat nama Formula sudah dipakai (dipakai input manual & Import Excel). */
+export const FORMULA_NAME_TAKEN_MESSAGE = "Nama formula sudah dipakai di Data Usaha ini. Gunakan nama lain.";
+
+/** True kalau sudah ada Formula bernama sama (tak peka huruf besar/kecil & spasi tepi) di Data Usaha ini. `excludeId` = Formula yang sedang diedit. */
+export async function isFormulaNameTaken(tx: Tx, dataUsahaId: string, name: string, excludeId?: string): Promise<boolean> {
+  const [row] = await tx
+    .select({ id: autoproduksiFormulas.id })
+    .from(autoproduksiFormulas)
+    .where(
+      and(
+        eq(autoproduksiFormulas.dataUsahaId, dataUsahaId),
+        sql`lower(btrim(${autoproduksiFormulas.name})) = lower(btrim(${name}))`,
+        excludeId ? ne(autoproduksiFormulas.id, excludeId) : undefined,
+      ),
+    )
+    .limit(1);
+  return !!row;
 }
