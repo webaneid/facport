@@ -181,11 +181,11 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
       let filters: Record<string, unknown> = {};
 
       if (params.report === "customers") {
-        const { items } = await listCustomers({ q: query.q, type: query.type ?? "all", now, ...bigPage });
+        const { items } = await listCustomers({ q: query.q, type: query.type ?? "all", kind: query.accountKind ?? "semua", now, ...bigPage });
         const capped = capRows(items);
         truncated = capped.truncated;
         csv = customersCsv(capped.rows, timeZone);
-        filters = { ...searchFilter(query.q), type: query.type ?? "all" };
+        filters = { ...searchFilter(query.q), type: query.type ?? "all", accountKind: query.accountKind ?? "semua" };
       } else if (params.report === "feature-users") {
         if (!query.moduleKey) return fail(422, "MODULE_REQUIRED");
         if (!isKnownModule(query.moduleKey)) return fail(404, "MODULE_NOT_FOUND");
@@ -251,6 +251,7 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
       query: t.Object({
         q: t.Optional(t.String({ maxLength: 100 })),
         type: t.Optional(t.Union([t.Literal("all"), t.Literal("commercial"), t.Literal("internal")])),
+        accountKind: t.Optional(t.Union([t.Literal("semua"), t.Literal("pemilik"), t.Literal("tambahan"), t.Literal("belum")])), // jenis akun (ekspor customers); `kind` dipakai riwayat koneksi
         moduleKey: t.Optional(t.String({ maxLength: 50 })),
         from: t.Optional(t.String({ maxLength: 10 })),
         to: t.Optional(t.String({ maxLength: 10 })),

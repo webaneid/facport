@@ -98,5 +98,8 @@ describe("downloadCsv", () => {
     expect(exportErrorMessage("RANGE_TOO_LONG")).toContain("24 bulan");
     expect(exportErrorMessage("NETWORK")).toContain("koneksi");
     expect(exportErrorMessage("APA_SAJA")).toContain("Gagal");
+    expect(exportErrorMessage("TOO_MANY_REQUESTS", 429)).toContain("Terlalu banyak");
+    expect(exportErrorMessage("X", 429)).toContain("Terlalu banyak");
+    expect(exportErrorMessage("X", 403)).toContain("izin");
   });
 });

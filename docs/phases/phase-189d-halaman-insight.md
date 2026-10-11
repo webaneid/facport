@@ -1,8 +1,8 @@
 # Fase 189D — Halaman Insight Admin (fungsional)
 
-**Status:** In Progress
+**Status:** Done
 **Mulai:** 2026-10-12
-**Selesai:** —
+**Selesai:** 2026-10-12
 
 ## Tujuan
 Satu area **Insight** di panel admin (`/insight`, menu "Insight" untuk `insights.view`) yang menampilkan semua kebutuhan data client FAC (Excel 10/10/2026) memakai API 189C: ringkasan, daftar pelanggan + kontak (tombol WhatsApp), pengguna per fitur, akses User Tambahan, langganan baru & akan berakhir, tren tahunan + usia langganan, riwayat koneksi, dan ekspor CSV. **Fungsional dulu**: memakai komponen yang ada (`DataTable`, `Tabs`, `Select`, `StatCard`, `Dialog`); redesain visual & design system = Fase 190 (komponen bersama sehingga halaman ini ikut terbarui). Induk: `phase-189-insight-pelanggan-admin.md`; API: `architecture-insights-api.md`; rancangan halaman: `architecture-admin-insight.md` § 6.
@@ -57,14 +57,21 @@ Data pribadi hanya tampil untuk `insights.view` (menu & API); tidak ada penyimpa
 - Halaman memakai `router.replace("/insight?tab=…")` tanpa `usePathname`, dan tes nav memeriksa sumber `sidebar.tsx` — `mock.module("next/navigation")` parsial dari tes lain bocor lintas file dan membuat impor modul yang memakai `usePathname` gagal di suite penuh.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
-- [ ] Type check nol error; lint bersih
-- [ ] Tes API + web hijau (SUITE PENUH); data uji dibersihkan
-- [ ] Security review (subagent `security-auditor`)
-- [ ] Temuan Critical/High diperbaiki; Medium/Low diperbaiki atau dicatat
-- [ ] Dokumen; PROGRESS/phase 189 diupdate
-- [ ] Catat: UI belum dilihat di browser
+- [x] Type check nol error; lint bersih
+- [x] Tes API + web hijau (SUITE PENUH); data uji dibersihkan
+- [x] Security review (subagent `security-auditor`)
+- [x] Temuan Critical/High diperbaiki; Medium/Low diperbaiki atau dicatat
+- [x] Dokumen; PROGRESS/phase 189 diupdate
+- [x] Catat: UI belum dilihat di browser
 
 ## Known Limitations
--
+- **UI belum dilihat di browser** — tata letak kolom, dialog, grafik perlu dicek user (Fase 190 merapikan visual).
+- Kuota ekspor per akun check-then-act (audit Low): permintaan paralel dari satu akun bisa melewati 30/jam sesaat; dibatasi rate limit IP 10/menit (in-memory). Pengetatan (reservasi audit sebelum membangun CSV) belum dikerjakan.
+- Rate limit memakai IP klien: perlu dipastikan di production bahwa header proxy terbaca (bukan satu bucket untuk semua admin).
+- Kalimat peristiwa Riwayat Koneksi memakai `describeDataUsahaEvent` (sama dengan panel per Data Usaha); `accept_seat`/`resend_seat` belum dicatat (189B).
 
-## Ringkasan Hasil (isi pas fase Done)
+## Ringkasan Hasil
+Halaman `/insight` (menu "Insight", `insights.view`) dengan 7 tab: Ringkasan (KPI), Pelanggan (kontak + WhatsApp + dialog Lihat), Fitur (pemakai per fitur), Akses (pemilik + slot User Tambahan), Langganan (baru per rentang / akan berakhir 14·30 hari + status tagihan), Tren & Retensi (filter tahun, 5 metrik, grafik, selisih/%, usia langganan) dan Riwayat Koneksi; ekspor CSV berkredensial di tiap tab. API: filter `kind` + `seats` di `/customers`, `accountKind` di ekspor customers.
+**Verifikasi:** typecheck + lint bersih; API 2.284 lulus; web 509 lulus; data uji dibersihkan.
+**Security review** (`security-auditor`): 0 Critical, 0 High, 1 Medium (halaman tanpa gerbang izin di frontend → **diperbaiki** + tes), 4 Low (ekspor Akses mengabaikan jenis akun → **diperbaiki**; pesan galat 401/403/429 → **diperbaiki**; encode nama laporan & `parseTab` → **diperbaiki**; race kuota → dicatat), 4 Info (XSS/href/wa.me/CSV/penyimpanan aman).
+**Commit:** `0d738a8`, `b11f12e`, `90aa2d6`, lalu perbaikan audit.

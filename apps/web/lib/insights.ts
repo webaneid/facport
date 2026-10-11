@@ -83,10 +83,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   EXPORT_QUOTA_EXCEEDED: "Anda sudah mencapai batas ekspor per jam. Coba lagi nanti.",
   RANGE_TOO_LONG: "Rentang tanggal terlalu panjang (maksimal 24 bulan).",
   NETWORK: "Gagal mengunduh: periksa koneksi internet Anda.",
+  TOO_MANY_REQUESTS: "Terlalu banyak permintaan. Tunggu satu menit lalu coba lagi.",
+  FORBIDDEN: "Anda tidak punya izin untuk mengekspor data ini.",
 };
 
-export function exportErrorMessage(code: string): string {
-  return ERROR_MESSAGES[code] ?? "Gagal mengunduh ekspor. Coba lagi.";
+export function exportErrorMessage(code: string, status?: number): string {
+  if (ERROR_MESSAGES[code]) return ERROR_MESSAGES[code];
+  if (status === 429) return ERROR_MESSAGES.TOO_MANY_REQUESTS!;
+  if (status === 401 || status === 403) return ERROR_MESSAGES.FORBIDDEN!;
+  return "Gagal mengunduh ekspor. Coba lagi.";
 }
 
 export type DownloadResult =
@@ -142,7 +147,7 @@ export async function downloadCsv(
 /** URL ekspor CSV: `base` = `apiBaseUrl` (proxy dev / origin prod), `name` = segmen setelah `/admin/insights/export/`. */
 export function exportUrl(base: string, name: string, params: Record<string, QueryValue> = {}): string {
   const qs = exportQuery(params);
-  return `${base}/admin/insights/export/${name}${qs ? `?${qs}` : ""}`;
+  return `${base}/admin/insights/export/${encodeURIComponent(name)}${qs ? `?${qs}` : ""}`;
 }
 
 // ---------- tipe respons API Insight (bentuk JSON: tanggal = string ISO) ----------

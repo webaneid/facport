@@ -89,6 +89,8 @@ mock.module("@/lib/api-client", () => ({
   },
   apiBaseUrl: "https://api.test",
 }));
+let permissions = ["insights.view"];
+mock.module("@/lib/use-permissions", () => ({ usePermissions: () => permissions, usePermission: (k: string) => permissions.includes(k), PermissionsProvider: ({ children }: { children: React.ReactNode }) => children }));
 mock.module("next/navigation", () => ({ useRouter: () => ({ replace, push: () => {} }), useSearchParams: () => new URLSearchParams(search) }));
 mock.module("@/components/company-timezone-provider", () => ({ useCompanyTimezone: () => "Asia/Jakarta" }));
 mock.module("sonner", () => ({ toast: { success: () => {}, error: toastError } }));
@@ -100,6 +102,7 @@ const { default: AdminInsightPage } = await import("./page");
 
 beforeEach(() => {
   search = "";
+  permissions = ["insights.view"];
   replace.mockClear();
   summaryGet.mockClear();
   customersGet.mockClear();
@@ -108,6 +111,15 @@ beforeEach(() => {
 });
 
 describe("Halaman Insight", () => {
+  test("tanpa izin insights.view: pesan akses, tidak ada tab dan tidak ada panggilan API", async () => {
+    permissions = ["users.view"];
+    search = "tab=pelanggan";
+    render(<AdminInsightPage />);
+    expect(await screen.findByText(/tidak punya izin/)).toBeTruthy();
+    expect(screen.queryByRole("tab")).toBeNull();
+    expect(customersGet).not.toHaveBeenCalled();
+  });
+
   test("default = Ringkasan: kartu KPI (komersil/internal, terhubung, uang)", async () => {
     render(<AdminInsightPage />);
     expect(await screen.findByText("Akun komersil")).toBeTruthy();

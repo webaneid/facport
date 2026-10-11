@@ -16,7 +16,7 @@ export function ExportButton({ name, params, label = "Ekspor CSV" }: { name: str
     const res = await downloadCsv(exportUrl(apiBaseUrl, name, params));
     setBusy(false);
     if (!res.ok) {
-      toast.error(exportErrorMessage(res.code));
+      toast.error(exportErrorMessage(res.code, res.status));
       return;
     }
     toast.success(res.truncated ? `Diunduh ${res.rows.toLocaleString("id-ID")} baris (dipotong di batas maksimum).` : `Diunduh ${res.rows.toLocaleString("id-ID")} baris.`);

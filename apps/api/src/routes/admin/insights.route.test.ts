@@ -626,6 +626,16 @@ describe("GET /connection-history (laporan lintas pelanggan)", () => {
 describe("GET /export/:report (CSV, D5)", () => {
   const csvLines = (text: string) => text.replace(/\r\n$/, "").split("\r\n");
 
+  test("customers: ekspor mengikuti filter jenis akun (accountKind) seperti tab Akses", async () => {
+    const admin = await loginAs(app, "admin");
+    const tag = `ak${runId}`;
+    await insertAccount(`${tag}-a`, { name: "Tanpa Usaha A" });
+    await insertAccount(`${tag}-b`, { name: "Tanpa Usaha B" });
+    expect((await get(admin.cookie, `/export/customers?q=${tag}&accountKind=pemilik`)).headers.get("x-export-rows")).toBe("0");
+    expect((await get(admin.cookie, `/export/customers?q=${tag}&accountKind=belum`)).headers.get("x-export-rows")).toBe("2");
+    expect((await get(admin.cookie, `/export/customers?q=${tag}&accountKind=bukan`)).status).toBe(422);
+  });
+
   test("customers: BOM UTF-8, header Indonesia, CRLF, sel berawalan = + - @ dinetralkan, telepon format lokal, header unduhan + jumlah baris; q membatasi; audit ekspor tercatat", async () => {
     const admin = await loginAs(app, "admin");
     const tag = `csv${runId}`;

@@ -140,6 +140,8 @@ Aturan:
 - Peringatan wajib: menandai internal akun yang sudah punya invoice lunas → riwayatnya otomatis keluar dari laporan uang.
 
 ## 6. Informasi arsitektur halaman (konsep; visual → Fase 190)
+
+> **Status: DIKERJAKAN (Fase 189D, 2026-10-12)** — lihat `architecture-insights-page.md`.
 Satu area **"Insight"** di sidebar admin, `/admin/insight`, dengan tab:
 1. **Ringkasan** — KPI komersil vs internal, nilai, langganan aktif/segera berakhir, koneksi bermasalah.
 2. **Pelanggan** — tabel + pencarian + filter tipe; detail ringkas (kontak, Data Usaha, fitur, akses). Tombol WhatsApp/telepon (`wa.me`) langsung dari baris.

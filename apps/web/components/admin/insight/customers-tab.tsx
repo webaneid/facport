@@ -115,7 +115,7 @@ export function CustomersTab({ mode }: { mode: "pelanggan" | "akses" }) {
         <option value="internal">Internal</option>
       </Select>
       <div className="ml-auto">
-        <ExportButton name="customers" params={{ q: q || undefined, type }} />
+        <ExportButton name="customers" params={{ q: q || undefined, type, accountKind: kind }} />
       </div>
     </div>
   );

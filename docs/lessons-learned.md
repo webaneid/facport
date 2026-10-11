@@ -6224,3 +6224,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 ## 2026-10-12 — `Date.UTC` memetakan tahun 0–99 ke 1900-an
 **Temuan audit 189C (Info):** `parseMonthKey("0050-01")` lolos regex dan menghasilkan bulan yang salah diam-diam. **Perbaikan:** tahun dibatasi 2000–2100. **Pelajaran:** validasi rentang tahun masuk akal pada setiap parser tanggal/bulan yang memakai `Date.UTC`.
 
+
+## 2026-10-12 — Fase 189D: halaman admin harus menggerbang izin sendiri, bukan hanya menu
+- Menu disaring `permission`, tetapi URL bisa dibuka langsung; layout admin hanya memeriksa role. Halaman yang memakai izin khusus WAJIB memeriksa `usePermissions` sendiri (API tetap sumber kebenaran, 403).
+- Paginasi: API Insight 0-based; mengirim `page+1` diam-diam melewatkan halaman pertama — sepakati basis di dokumen API dan uji parameter yang dikirim.
+- Tes yang memuat modul ber-`usePathname`/`next/navigation` bocor lintas file bila ada `mock.module` parsial di file lain; hindari mengimpor `sidebar.tsx` di tes (periksa sumbernya) dan jangan pakai `usePathname` di halaman.
+- Nama parameter query ganda di satu skema (`kind` untuk dua arti) memecah typecheck; beri nama berbeda (`accountKind`).
