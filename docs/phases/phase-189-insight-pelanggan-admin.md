@@ -29,7 +29,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | 189B | Riwayat koneksi Accurate (sambung/pilih database/reset + alasan putus) dan aksi admin cabut/pindahkan akses seat dengan alasan wajib — rencana detail: `phase-189b-riwayat-koneksi-dan-akses-seat.md` | Done (2026-10-12) |
 | 189C | API Insight read-only (summary, pelanggan, fitur, akses, baru, akan berakhir, tren tahunan, usia langganan, riwayat koneksi, CSV) — rencana detail: `phase-189c-api-insight.md` | Done (2026-10-12) |
 | 189D | Halaman Insight admin fungsional (7 tab: Ringkasan, Pelanggan, Fitur, Akses, Langganan, Tren & Retensi, Riwayat Koneksi) + tombol WhatsApp + ekspor CSV — rencana detail: `phase-189d-halaman-insight.md` | Done |
-| 189E | KPI komersil/internal & nilai rupiah di `/admin` | Not Started |
+| 189E | KPI komersil/internal & nilai rupiah di `/admin` — rencana detail: `phase-189e-kpi-dashboard-admin.md` | Done (2026-10-12) |
 | 189H | Aksi massal pengguna (nonaktifkan/aktifkan, hapus permanen aman, anonimisasi; ADR-0045) + aksi role dua arah (akses pengguna untuk admin; jadikan admin untuk customer) | Not Started |
 | 189F | (Opsional) Log aktivitas user | Ditunda |
 

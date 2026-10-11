@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { formatWorkTimeSaved } from "@/lib/utils";
 import { UserSubscriptionBarChart } from "@/components/admin/dashboard/user-subscription-bar-chart";
 import { UserGrowthAreaChart } from "@/components/admin/dashboard/user-growth-area-chart";
+import { InsightKpiSection } from "@/components/admin/dashboard/insight-kpi-section";
 import { ModulePopularityBarChart } from "@/components/admin/dashboard/module-popularity-bar-chart";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:3001";
@@ -42,6 +43,8 @@ export default async function AdminDashboardPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader title="Dashboard Admin" description="Ringkasan Facport." />
+
+      <InsightKpiSection />
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

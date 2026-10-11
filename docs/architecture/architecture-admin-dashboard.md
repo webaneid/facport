@@ -126,3 +126,7 @@ dashboard admin.
 - Setting "detik input manual per baris" → `docs/phases/phase-40-estimasi-efisiensi-waktu-kerja.md`
 - Bug batch gagal-dini yang dikecualikan dari efisiensi → `docs/phases/phase-56-fix-error-message-batch-gagal-dini.md`
 - Keputusan tool chart → `docs/decisions/adr-0004-ui-component-standards.md`
+
+
+## Fase 189E — KPI Insight
+Bagian "Pelanggan & Keuangan (komersil)" di atas statistik Fase 59 (komponen `components/admin/dashboard/insight-kpi-section.tsx`, kartu bersama `components/admin/insight/kpi-cards.tsx`, data `GET /admin/insights/summary`, izin `insights.view`). Angka Fase 59 tidak diubah (mencakup semua akun customer).
