@@ -6201,3 +6201,12 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Gejala:** tes halaman Pengguna lulus sendirian, tetapi di `bun test` penuh gagal: `Export named 'usePermission' not found in module lib/use-permissions.tsx` (tes lain me-mock modul itu hanya dengan `usePermissions`).
 **Perbaikan:** halaman memakai `usePermissions()` (ekspor yang juga dipakai `<Can>` dan oleh mock tes lain). **Pelajaran:** selalu jalankan SUITE PENUH sebelum menutup fase, bukan hanya berkas baru; pakai ekspor yang sudah dipakai mock lain, atau sediakan semua ekspor di mock sendiri.
 
+## 2026-10-12 — Menerima undangan tanpa syarat status bisa "menghidupkan" slot yang baru dicabut (temuan audit 189B, Medium)
+**Gejala/temuan:** `revokeSeat` mengunci baris (`FOR UPDATE`), tetapi penerimaan undangan (`linkSeatToMember`) membaca token valid lalu menulis `WHERE id = seatId` saja. Bila slot dicabut/dipindahkan di sela keduanya, penerima undangan lama bisa membuat slot `active` lagi untuk orang yang baru dicabut — riwayat hanya mencatat "revoke".
+**Perbaikan:** `linkSeatToMember` (kini di `lib/member-seats.ts`) bersyarat: `status='invited'` dan `inviteTokenHash` sama dengan yang divalidasi; mengembalikan boolean, route membalas 404 `INVITE_NOT_FOUND_OR_EXPIRED` bila false; jalur Google ikut bersyarat.
+**Pelajaran:** kunci baris di satu sisi tidak cukup bila sisi lain membaca-lalu-menulis tanpa syarat. Penulisan yang bergantung pada pembacaan sebelumnya harus MEMBAWA syarat pembacaan itu di klausa `WHERE` (compare-and-set) dan memeriksa jumlah baris yang berubah.
+
+## 2026-10-12 — Skema validasi bisa terlalu longgar sehingga cek "setelah trim" harus diulang di server
+**Gejala:** tes 189B menangkap alasan 501 karakter lolos karena batas skema sengaja diberi ruang 2× untuk spasi tepi; yang tersimpan setelah trim melebihi batas.
+**Perbaikan:** server memeriksa panjang SETELAH trim (`REASON_TOO_LONG`). **Pelajaran:** bila skema memberi kelonggaran untuk normalisasi, ulangi batas pada nilai TERNORMALISASI sebelum disimpan, dan uji tepat di perbatasan.
+

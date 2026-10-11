@@ -1,10 +1,12 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { and, eq } from "drizzle-orm";
 import { db } from "./db";
 import { auditLogs, memberSeats, session as sessionTable, user as userTable } from "../db/schema";
 import { createTestDataUsaha, createTestSeat } from "./test-fixtures";
 import { SeatActionError, inviteSeat, revokeSeat } from "./seat-actions";
+import * as memberSeatsLib from "./member-seats";
 import { hashInviteToken } from "./member-seats";
+import { logger } from "./logger";
 
 // § Fase 189B — logika seat (undang/cabut) dipakai pemilik (`/me/team`) DAN admin (`/admin/data-usaha/:id/seats`); tiap aksi menulis riwayat Data Usaha dalam transaksi yang sama.
 const runId = Date.now();
@@ -111,5 +113,22 @@ describe("revokeSeat", () => {
     const rejected = results.find((r) => r.status === "rejected") as PromiseRejectedResult;
     expect(rejected.reason).toMatchObject({ code: "SEAT_ALREADY_AVAILABLE" });
     expect(await eventsOf(du, "revoke_seat")).toHaveLength(1);
+  });
+
+  test("pencabutan sesi GAGAL setelah commit → tidak melempar (slot + riwayat sudah tersimpan), dicatat tanpa PII", async () => {
+    const { owner, member, du, seatId } = await setup("active");
+    const spy = spyOn(memberSeatsLib, "revokeAllSessions").mockRejectedValue(new Error("db putus"));
+    const errorLog = spyOn(logger, "error");
+    try {
+      const res = await revokeSeat({ seatId, dataUsahaId: du, actor: { id: owner.id, role: "owner" } });
+      expect(res.previousMemberUserId).toBe(member.id);
+      expect((await seatRow(seatId)).status).toBe("available");
+      expect(await eventsOf(du, "revoke_seat")).toHaveLength(1);
+      expect(errorLog).toHaveBeenCalled();
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain(member.email);
+    } finally {
+      spy.mockRestore();
+      errorLog.mockRestore();
+    }
   });
 });

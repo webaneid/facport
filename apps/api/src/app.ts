@@ -133,6 +133,9 @@ export const app = new Elysia()
   // jadi alasan awal limiter ini TIDAK PERNAH mendekati bahkan 60/menit
   // secara wajar, jadi menaikkan tidak melemahkan proteksinya.
   .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 180 }))
+  // § Fase 189B (audit, Low) — aksi admin atas Data Usaha (putus koneksi, transfer, cabut/pindahkan akses seat yang bisa mengirim email undangan): batas LONGGAR,
+  // hanya menahan penyalahgunaan (relay email dari akun admin yang dibajak), bukan pemakaian normal.
+  .use(rateLimitPlugin({ pathPrefix: "/admin/data-usaha", windowMs: 60_000, max: 60 }))
   // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
   .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.

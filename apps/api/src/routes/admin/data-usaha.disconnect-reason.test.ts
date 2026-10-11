@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq, and } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { user as userTable, roles, userRoles, auditLogs, notifications } from "../../db/schema";
+import { user as userTable, roles, userRoles, auditLogs, notifications, dataUsaha } from "../../db/schema";
 import { adminDataUsahaRoute } from "./data-usaha.route";
 import { createTestAccurateConnection, createTestDataUsaha } from "../../lib/test-fixtures";
 
@@ -84,6 +84,33 @@ describe("alasan putus koneksi (disconnect-accurate)", () => {
     expect((await disconnect(b.admin.cookie, b.du, { reason: { code: "sembarang" } })).status).toBe(422);
     expect((await disconnect(b.admin.cookie, b.du, { reason: { note: "x".repeat(501) } })).status).toBe(422);
     const rows = await db.select().from(auditLogs).where(and(eq(auditLogs.entityId, b.du), eq(auditLogs.action, "disconnect_accurate")));
+    expect(rows).toHaveLength(0);
+  });
+
+  test("hapus akun Accurate yang dipakai >1 Data Usaha: SETIAP Data Usaha terdampak mendapat entri riwayat sendiri (bukan hanya yang diklik)", async () => {
+    const admin = await makeUser("admin", "admin");
+    const owner = await makeUser("owner");
+    const duA = await createTestDataUsaha(owner.id, "DU A");
+    const duB = await createTestDataUsaha(owner.id, "DU B");
+    const conn = await createTestAccurateConnection(owner.id, { dataUsahaId: duA, accurateDbId: "1", accurateDbAlias: "PT Satu" });
+    await db.update(dataUsaha).set({ accurateConnectionId: conn.id, accurateDbId: "2", accurateDbAlias: "PT Dua" }).where(eq(dataUsaha.id, duB));
+
+    const res = await disconnect(admin.cookie, duA, { removeAccount: true, reason: { code: "salah_akun" } });
+    expect(res.status).toBe(200);
+
+    const main = await auditOf(duA);
+    expect(main.changes).toMatchObject({ removedAccount: true, previousAccurateDbAlias: "PT Satu" });
+    const [secondary] = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "data_usaha"), eq(auditLogs.entityId, duB), eq(auditLogs.action, "disconnect_accurate")));
+    expect(secondary).toBeTruthy();
+    expect(secondary!.actorId).toBe(admin.id);
+    expect(secondary!.changes).toMatchObject({ removedAccount: true, viaDataUsahaId: duA, previousAccurateDbAlias: "PT Dua", reason: { code: "salah_akun" } });
+  });
+
+  test("putus biasa (tanpa hapus akun): hanya Data Usaha itu yang tercatat", async () => {
+    const { admin, owner, du } = await setup();
+    const other = await createTestDataUsaha(owner.id, "DU Lain");
+    expect((await disconnect(admin.cookie, du)).status).toBe(200);
+    const rows = await db.select().from(auditLogs).where(and(eq(auditLogs.entityId, other), eq(auditLogs.action, "disconnect_accurate")));
     expect(rows).toHaveLength(0);
   });
 });

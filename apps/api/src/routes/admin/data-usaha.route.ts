@@ -56,8 +56,11 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
 
       // Data Usaha yang terdampak: hanya ini, atau SEMUA yang memakai koneksi akun yang sama (removeAccount).
       const affected = removeAccount
-        ? await db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.accurateConnectionId, connectionId))
-        : [{ id: du.id, name: du.name }];
+        ? await db
+            .select({ id: dataUsaha.id, name: dataUsaha.name, accurateDbId: dataUsaha.accurateDbId, accurateDbAlias: dataUsaha.accurateDbAlias })
+            .from(dataUsaha)
+            .where(eq(dataUsaha.accurateConnectionId, connectionId))
+        : [{ id: du.id, name: du.name, accurateDbId: du.accurateDbId, accurateDbAlias: du.accurateDbAlias }];
       const affectedIds = affected.map((a) => a.id);
 
       const [running] = await db
@@ -81,6 +84,8 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
           await tx.update(subscriptions).set({ accurateConnectionId: null }).where(eq(subscriptions.accurateConnectionId, connectionId));
           await tx.delete(accurateConnections).where(eq(accurateConnections.id, connectionId));
         }
+        // § Fase 189B, D10 — alasan opsional (saran cepat + catatan bebas) untuk statistik "salah database/akun"; catatan INTERNAL, tidak masuk notifikasi pelanggan.
+        const reason = normalizeDisconnectReason(body?.reason);
         await tx.insert(auditLogs).values({
           entityType: "data_usaha",
           entityId: du.id,
@@ -91,11 +96,31 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
             previousAccurateDbAlias: du.accurateDbAlias ?? null,
             removedAccount: removeAccount,
             affectedDataUsahaIds: affectedIds,
-            // § Fase 189B, D10 — alasan opsional (saran cepat + catatan bebas) untuk statistik "salah database/akun"; catatan INTERNAL, tidak masuk notifikasi pelanggan.
-            reason: normalizeDisconnectReason(body?.reason),
+            reason,
           },
           actorId: user.id,
         });
+        // Audit 189B: pada "hapus akun Accurate" Data Usaha LAIN yang memakai akun yang sama ikut terputus — masing-masing mendapat entri riwayat sendiri (laporan per Data Usaha
+        // tidak boleh kehilangan peristiwa ini). `viaDataUsahaId` menunjuk Data Usaha yang diklik admin.
+        const others = affected.filter((a) => a.id !== du.id);
+        if (others.length > 0) {
+          await tx.insert(auditLogs).values(
+            others.map((a) => ({
+              entityType: "data_usaha",
+              entityId: a.id,
+              action: "disconnect_accurate",
+              changes: {
+                previousConnectionId: connectionId,
+                previousAccurateDbId: a.accurateDbId ?? null,
+                previousAccurateDbAlias: a.accurateDbAlias ?? null,
+                removedAccount: true,
+                viaDataUsahaId: du.id,
+                reason,
+              },
+              actorId: user.id,
+            })),
+          );
+        }
       });
 
       await createNotification({

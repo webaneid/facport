@@ -210,6 +210,7 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | D19 | Metrik grafik tren | 5 metrik: pengguna terdaftar, pelanggan berlangganan aktif, baru, berhenti, uang terbayar; evaluasi kemudian | **Diputuskan user 2026-10-12** |
 | D20 | Admin/staf Tim Internal dikecualikan dari modal Lengkapi Profil | Ya, kecuali saat membuka `app.` sebagai ber-role ganda | **Diputuskan user 2026-10-12** |
 | D21 | Invoice/order yang SUDAH terbit untuk akun yang baru ditandai internal (masih bisa dibayar & dikonfirmasi) | (c) biarkan, laporan uang wajib punya baris "Kas dari akun internal" agar kas cocok; alternatif (a) batalkan otomatis saat ditandai (dengan persetujuan), (b) tolak konfirmasi pembayaran akun internal | **Menunggu user** (temuan audit 189G, Medium) |
+| D22 | Pemindahan akses seat ke email baru oleh admin (`newEmail`): siapa yang boleh dan perlu bukti permintaan? Saat ini `subscriptions.manage` (admin & staf), alasan wajib, tercatat, pemilik diberi notifikasi + email | Pertahankan + (opsional) hanya Super Admin untuk `newEmail`, dan/atau kolom referensi tiket/bukti permintaan | **Menunggu user** (temuan audit 189B, Medium/kebijakan) |
 
 ADR terkait: **ADR-0044** (data kontak akun, penanda internal, kontrol keuangan; Proposed), **ADR-0045** (kebijakan hapus/anonimisasi akun; Proposed), **ADR-0046** (design system admin, Fase 190; belum ditulis).
 

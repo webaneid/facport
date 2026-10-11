@@ -23,6 +23,7 @@
 | Data Usaha | Workspace Accurate (`data_usaha`) dengan nama sendiri, tempat langganan/koneksi Accurate/User Tambahan menempel. Terpisah total dari Nama Perusahaan akun dan tidak menyimpan kontak pelanggan |
 | Akun Internal | Akun yang tidak ditagih dan tidak dihitung di laporan uang: trainer, karyawan, mitra (ditandai Super Admin) ATAU pemegang role Admin/Super Admin (otomatis). Lawannya Akun Komersil (default). Lihat `architecture-internal-accounts.md` |
 | Akun Komersil | Akun role customer yang bukan internal — ditentukan status AKUN, bukan trial/langganan |
+| Riwayat Data Usaha | Aliran peristiwa per Data Usaha di `audit_logs`: koneksi Accurate (sambung/pilih/konfirmasi/reset/putus+alasan) dan akses User Tambahan (undang/cabut). Lihat `architecture-data-usaha-history.md` |
 | Lengkapi Profil | Modal yang tidak bisa ditutup untuk akun pelanggan yang Nama Perusahaan/Telepon/WhatsApp-nya masih kosong; hanya lapisan tampilan, tanpa memblokir API |
 | Pesanan Penjualan | Sales Order — dokumen transaksi modul Penjualan |
 | Delivery Order | Pengiriman Pesanan — dokumen transaksi modul Penjualan |

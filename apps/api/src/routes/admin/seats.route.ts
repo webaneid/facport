@@ -5,7 +5,7 @@ import { dataUsaha, memberSeats, subscriptions, user as userTable } from "../../
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 import { listDataUsahaEvents, REASON_NOTE_MAX_LENGTH } from "../../lib/data-usaha-events";
-import { SEAT_ERROR_STATUS, SeatActionError, revokeSeat, sendSeatInviteEmail } from "../../lib/seat-actions";
+import { SEAT_ERROR_STATUS, SeatActionError, revokeSeat, sendSeatAccessChangedEmailToOwner, sendSeatInviteEmail } from "../../lib/seat-actions";
 import { logger } from "../../lib/logger";
 
 // § Fase 189B, ADR-0044, D7/D15 — akses User Tambahan (seat) dari sisi ADMIN: melihat daftar slot + riwayat, mencabut, atau memindahkan akses (cabut + undang email baru di
@@ -69,7 +69,7 @@ export const adminSeatsRoute = new Elysia({ prefix: "/admin/data-usaha" })
         return { code: "REASON_TOO_LONG" };
       }
       const [du] = await db
-        .select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: userTable.id, ownerName: userTable.name })
+        .select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: userTable.id, ownerName: userTable.name, ownerEmail: userTable.email })
         .from(dataUsaha)
         .innerJoin(userTable, eq(userTable.id, dataUsaha.userId))
         .where(eq(dataUsaha.id, params.id));
@@ -93,17 +93,20 @@ export const adminSeatsRoute = new Elysia({ prefix: "/admin/data-usaha" })
       // Aksi SUDAH ter-commit (beserta riwayatnya): galat notifikasi/email tidak boleh membalas 500 seolah gagal — dicatat saja (tanpa PII).
       try {
         const who = result.previousEmail ?? "seorang pengguna";
+        // SENGAJA generik: alasan yang dicatat admin adalah catatan internal dan tidak ditampilkan ke pelanggan (D15)
+        const summary = result.invite
+          ? `Akses ${who} di Data Usaha ${du.name} dicabut oleh tim Facport, dan slot itu kini diundangkan ke ${result.invite.email}.`
+          : `Akses ${who} di Data Usaha ${du.name} dicabut oleh tim Facport. Slotnya tersedia kembali di halaman Kelola Tim.`;
         await createNotification({
           userId: du.ownerId,
           type: NOTIFICATION_TYPES.SEAT_ACCESS_CHANGED_BY_ADMIN,
           title: "Akses User Tambahan diubah",
-          // SENGAJA generik: alasan yang dicatat admin adalah catatan internal dan tidak ditampilkan ke pelanggan (D15)
-          body: result.invite
-            ? `Akses ${who} di Data Usaha ${du.name} dicabut oleh tim Facport, dan slot itu kini diundangkan ke ${result.invite.email}.`
-            : `Akses ${who} di Data Usaha ${du.name} dicabut oleh tim Facport. Slotnya tersedia kembali di halaman Kelola Tim.`,
+          body: summary,
           entityType: "data_usaha",
           entityId: du.id,
         });
+        // audit 189B (Medium): perubahan akses oleh admin tidak boleh hanya bergantung pada notifikasi in-app yang mungkin tak dibuka — pemilik juga diberi email.
+        await sendSeatAccessChangedEmailToOwner({ to: du.ownerEmail, ownerName: du.ownerName, dataUsahaName: du.name, summary });
         if (result.invite) {
           await sendSeatInviteEmail({ to: result.invite.email, inviterName: du.ownerName, dataUsahaName: du.name, token: result.invite.token, onBehalfOfOwner: true });
         }

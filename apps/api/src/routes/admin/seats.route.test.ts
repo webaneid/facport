@@ -128,6 +128,13 @@ describe("POST /admin/data-usaha/:id/seats/:seatId/revoke", () => {
       const emailJob = send.mock.calls.map((c) => c[1] as { to?: string; subject?: string; html?: string }).find((j) => j?.to === "pengganti@test.local");
       expect(emailJob?.subject).toBe("Undangan User Tambahan Facport");
       expect(emailJob?.html).toContain("Tim Facport");
+      expect(emailJob?.html).toContain("telah diberi tahu"); // klaim yang benar-benar dipenuhi sistem
+      expect(emailJob?.html).not.toContain("atas permintaan"); // sistem tidak memverifikasi klaim permintaan pemilik
+      // pemilik juga diberi EMAIL (bukan hanya notifikasi in-app), isi generik tanpa alasan admin
+      const ownerMail = send.mock.calls.map((c) => c[1] as { to?: string; subject?: string; html?: string }).find((j) => j?.to === s.owner.email);
+      expect(ownerMail?.subject).toContain("Akses User Tambahan diubah");
+      expect(ownerMail?.html).toContain("pengganti@test.local");
+      expect(ownerMail?.html).not.toContain("Pindah ke pengganti");
       expect(emailJob?.html).toContain("/invite/");
       const row = await seatRow(s.seatId);
       expect(emailJob?.html).not.toContain(row.inviteTokenHash!); // hanya hash di DB, token mentah hanya di tautan email
