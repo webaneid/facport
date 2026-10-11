@@ -34,6 +34,9 @@ export const user = pgTable("user", {
   companyName: varchar("company_name", { length: 200 }),
   phone: varchar("phone", { length: 20 }),
   whatsapp: varchar("whatsapp", { length: 20 }),
+  // § Fase 189G, ADR-0044 — penanda akun INTERNAL (trainer, karyawan, mitra) yang ditetapkan Super Admin; false = komersil (default, status AKUN bukan langganan).
+  // Status EFEKTIF internal = kolom ini ATAU memegang role admin/staff (D16) — SELALU lewat `lib/internal-accounts.ts`, jangan baca kolom ini langsung di laporan.
+  isInternal: boolean("is_internal").default(false).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .$onUpdate(() => new Date())

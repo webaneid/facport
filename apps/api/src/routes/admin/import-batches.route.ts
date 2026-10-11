@@ -3,6 +3,7 @@ import { eq, desc, count } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { importBatches, importBatchRows, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
+import { getInternalReason } from "../../lib/internal-accounts";
 
 // § diminta user 2026-09-05 — admin (Super Admin/Admin) bisa lihat
 // riwayat & detail log import SEMUA user (bukan cuma milik sendiri),
@@ -31,6 +32,8 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
         return { code: "USER_NOT_FOUND" };
       }
 
+      const internalReason = await getInternalReason(targetUser.id);
+
       // § disertakan di respons yang SAMA (bukan endpoint terpisah "GET
       // /admin/users/:id") — halaman detail user cukup 1 fetch.
       const [rows, totalRows] = await Promise.all([
@@ -55,6 +58,10 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
           companyName: targetUser.companyName,
           phone: targetUser.phone,
           whatsapp: targetUser.whatsapp,
+          // § Fase 189G, ADR-0044 — status internal efektif (flag ATAU role admin/staf) + alasannya, untuk lencana & tombol tandai di detail user.
+          internalFlag: targetUser.isInternal,
+          internalReason,
+          isInternal: internalReason !== null,
         },
         batches: rows,
         total: totalRows[0]?.total ?? 0,

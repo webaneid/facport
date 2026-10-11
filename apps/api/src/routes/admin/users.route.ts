@@ -1,8 +1,8 @@
 import { Elysia, t } from "elysia";
 import { randomBytes } from "crypto";
-import { eq, and, or, ilike, inArray, desc, count } from "drizzle-orm";
+import { eq, and, or, ilike, inArray, notInArray, isNotNull, desc, count, sql } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { roles, userRoles, auditLogs, subscriptions, plans, user as userTable, session } from "../../db/schema";
+import { roles, userRoles, auditLogs, subscriptions, plans, invoices, dataUsaha, user as userTable, session } from "../../db/schema";
 import { permissionPlugin, userHasPermission } from "../../lib/permission";
 import { createInvoiceAndOrder, createPaidInvoiceAndOrder } from "../../lib/invoice-order";
 import { getCompanyTimezone } from "../../lib/company-timezone";
@@ -13,6 +13,7 @@ import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
 import { safeSignUpEmail } from "../../lib/auth-errors";
 import { parseContact } from "../../lib/phone";
+import { deriveInternalReason, internalUserIdsSubquery } from "../../lib/internal-accounts";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -55,6 +56,58 @@ async function sendAccountStatusEmail(userId: string, kind: "disabled" | "enable
   }
 }
 
+// § Fase 189G — body aksi massal internal: 1–100 akun per permintaan (daftar server-paginated 20/halaman; batas melindungi transaksi dan audit log).
+const internalBody = t.Object({
+  userIds: t.Array(t.String({ minLength: 1, maxLength: 100 }), { minItems: 1, maxItems: 100 }),
+  isInternal: t.Boolean(),
+});
+
+// Muat akun target (id unik) beserta flag dan alasan internal efektif (role mengalahkan flag). `requested` = jumlah id unik yang diminta.
+async function loadInternalTargets(userIds: string[]) {
+  const ids = [...new Set(userIds)];
+  const rows = await db.select({ id: userTable.id, flag: userTable.isInternal }).from(userTable).where(inArray(userTable.id, ids));
+  const roleRows = rows.length
+    ? await db
+        .select({ userId: userRoles.userId, name: roles.name })
+        .from(userRoles)
+        .innerJoin(roles, eq(roles.id, userRoles.roleId))
+        .where(inArray(userRoles.userId, rows.map((r) => r.id)))
+    : [];
+  const rolesByUser = new Map<string, string[]>();
+  for (const r of roleRows) rolesByUser.set(r.userId, [...(rolesByUser.get(r.userId) ?? []), r.name]);
+  return { requested: ids.length, targets: rows.map((r) => ({ id: r.id, flag: r.flag, reason: deriveInternalReason(r.flag, rolesByUser.get(r.id) ?? []) })) };
+}
+
+// Dampak perubahan status komersil↔internal pada akun `ids`: uang lunas yang akan keluar dari/masuk ke laporan, langganan berbayar aktif, tagihan perpanjangan
+// terjadwal yang akan berhenti/berlanjut (penerima tagihan = pemilik Data Usaha, ADR-0042), dan invoice belum dibayar yang tertinggal (tidak dibatalkan otomatis).
+async function internalChangeImpact(ids: string[]) {
+  if (ids.length === 0) return { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0 };
+  const [inv] = await db
+    .select({
+      paidInvoiceCount: sql<number>`count(*) filter (where ${invoices.status} = 'paid')`,
+      paidTotal: sql<number>`coalesce(sum(${invoices.total}) filter (where ${invoices.status} = 'paid'), 0)`,
+      unpaidInvoices: sql<number>`count(*) filter (where ${invoices.status} = 'unpaid')`,
+    })
+    .from(invoices)
+    .where(inArray(invoices.userId, ids));
+  const [subs] = await db
+    .select({ n: count() })
+    .from(subscriptions)
+    .where(and(inArray(subscriptions.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false)));
+  const [renewals] = await db
+    .select({ n: count() })
+    .from(subscriptions)
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .where(and(inArray(dataUsaha.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false), isNotNull(subscriptions.renewalInterval)));
+  return {
+    paidInvoiceCount: Number(inv?.paidInvoiceCount ?? 0),
+    paidTotal: Number(inv?.paidTotal ?? 0),
+    unpaidInvoices: Number(inv?.unpaidInvoices ?? 0),
+    activePaidSubscriptions: Number(subs?.n ?? 0),
+    scheduledRenewals: Number(renewals?.n ?? 0),
+  };
+}
+
 export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   .use(permissionPlugin)
   // § Fase 10 — list user + role + subscription AKTIF (kalau ada), buat
@@ -82,7 +135,14 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
       // saja (aman, bukan bocor semua user).
       if (!customerRole) return { users: [], total: 0 };
       const customerIds = db.select({ id: userRoles.userId }).from(userRoles).where(eq(userRoles.roleId, customerRole.id));
-      const where = searchCondition ? and(inArray(userTable.id, customerIds), searchCondition) : inArray(userTable.id, customerIds);
+      // § Fase 189G, ADR-0044 — filter tipe akun: internal = flag ATAU role admin/staf (D16), komersil = kebalikannya (`lib/internal-accounts.ts`).
+      const typeCondition =
+        query.type === "internal"
+          ? inArray(userTable.id, internalUserIdsSubquery())
+          : query.type === "commercial"
+            ? notInArray(userTable.id, internalUserIdsSubquery())
+            : undefined;
+      const where = and(inArray(userTable.id, customerIds), searchCondition, typeCondition);
 
       const [rows, totalRows] = await Promise.all([
         db.select().from(userTable).where(where).orderBy(desc(userTable.createdAt)).limit(limit).offset(offset),
@@ -126,6 +186,10 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
           emailVerified: u.emailVerified,
           disabled: u.disabled,
           createdAt: u.createdAt,
+          // § Fase 189G, ADR-0044 — status internal EFEKTIF (flag ATAU role admin/staf), flag mentah, dan alasannya ("role" tidak bisa dicabut lewat flag).
+          isInternal: deriveInternalReason(u.isInternal, rolesByUser.get(u.id) ?? []) !== null,
+          internalFlag: u.isInternal,
+          internalReason: deriveInternalReason(u.isInternal, rolesByUser.get(u.id) ?? []),
           // § Fase 189A, ADR-0044 — kontak AKUN untuk kolom Perusahaan + tombol WhatsApp di daftar admin.
           companyName: u.companyName,
           phone: u.phone,
@@ -143,6 +207,8 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
       permission: "users.view",
       query: t.Object({
         search: t.Optional(t.String()),
+        // § Fase 189G — filter tipe akun (default semua).
+        type: t.Optional(t.Union([t.Literal("all"), t.Literal("commercial"), t.Literal("internal")])),
         limit: t.Optional(t.Numeric({ minimum: 1, maximum: 100 })),
         offset: t.Optional(t.Numeric({ minimum: 0 })),
       }),
@@ -308,6 +374,60 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   // § Fase 29, ADR-0027 — "mengurangi user" = NONAKTIFKAN (reversibel),
   // BUKAN hapus permanen (§ ADR-0027 § Decision 3, alasan FK/finansial).
   // Cuma `users.manage` (Super Admin) — role "staff" (Admin) TIDAK BOLEH.
+  // § Fase 189G, ADR-0044 — aksi massal Super Admin (`users.manage`): tandai/cabut tanda INTERNAL (trainer, karyawan, mitra). Status efektif internal = flag ATAU
+  // role admin/staf (D16, `lib/internal-accounts.ts`), jadi mencabut flag dari akun ber-role admin/staf tidak mengubah statusnya (dilaporkan `internalByRole`).
+  // Reversibel & TIDAK menghapus data: invoice lama tetap ada, hanya keluar dari laporan uang. Dua langkah: `/preview` (dampak, tanpa mengubah) lalu terapkan.
+  .post(
+    "/internal/preview",
+    async ({ body }) => {
+      const { requested, targets } = await loadInternalTargets(body.userIds);
+      const flagChanges = targets.filter((x) => x.flag !== body.isInternal);
+      const statusChanging = flagChanges.filter((x) => (body.isInternal ? x.reason === null : x.reason === "flag"));
+      return {
+        requested,
+        found: targets.length,
+        notFound: requested - targets.length,
+        flagChanges: flagChanges.length,
+        becomeInternal: body.isInternal ? statusChanging.length : 0,
+        becomeCommercial: body.isInternal ? 0 : statusChanging.length,
+        alreadyInState: targets.filter((x) => x.flag === body.isInternal).length,
+        internalByRole: targets.filter((x) => x.reason === "role").length,
+        // dampak dihitung untuk akun yang STATUS EFEKTIFnya berubah (komersil↔internal)
+        impact: await internalChangeImpact(statusChanging.map((x) => x.id)),
+      };
+    },
+    { permission: "users.manage", body: internalBody },
+  )
+  .post(
+    "/internal",
+    async ({ body, user }) => {
+      const { requested, targets } = await loadInternalTargets(body.userIds);
+      const toChange = targets.filter((x) => x.flag !== body.isInternal);
+      if (toChange.length > 0) {
+        await db.transaction(async (tx) => {
+          await tx.update(userTable).set({ isInternal: body.isInternal }).where(inArray(userTable.id, toChange.map((x) => x.id)));
+          await tx.insert(auditLogs).values(
+            toChange.map((x) => ({
+              entityType: "user",
+              entityId: x.id,
+              action: "update",
+              changes: { isInternal: { from: x.flag, to: body.isInternal }, bulk: requested > 1 },
+              actorId: user.id,
+            })),
+          );
+        });
+      }
+      return {
+        requested,
+        found: targets.length,
+        notFound: requested - targets.length,
+        changed: toChange.length,
+        unchanged: targets.length - toChange.length,
+        internalByRole: targets.filter((x) => x.reason === "role").length,
+      };
+    },
+    { permission: "users.manage", body: internalBody },
+  )
   // § Fase 189A, ADR-0044 — Super Admin mengoreksi kontak AKUN pelanggan (mis. salah ketik). Validasi/normalisasi sama dengan `PATCH /me/contact`.
   // Audit: nilai lama → baru di `audit_logs` (kontak adalah data pribadi, hanya tampil ke admin berizin; TIDAK ditulis ke log aplikasi).
   .patch(

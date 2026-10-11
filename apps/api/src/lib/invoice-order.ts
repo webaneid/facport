@@ -6,6 +6,7 @@ import { moduleProductLine } from "./module-catalog";
 import { activateInvoiceItems } from "./order-activation";
 import { createNotification, NOTIFICATION_TYPES } from "./notifications";
 import { paymentVerifiedBody } from "./subscription-renewal";
+import { assertBillable } from "./internal-accounts";
 
 const INVOICE_DUE_DAYS = 3;
 
@@ -59,6 +60,11 @@ export async function createInvoiceAndOrder(
   },
 ) {
   const { userId, billToName, planRows, dataUsahaId, paidBy, origin = "checkout", renewalInterval = null } = params;
+  // § Fase 189G, ADR-0044 — GUARD TERPUSAT kontrol keuangan: akun internal (flag `is_internal` ATAU role admin/staff) tidak memerlukan langganan berbayar, jadi
+  // TIDAK boleh punya invoice/order baru apa pun asalnya (checkout pelanggan, kursi, tagihan terjadwal, 3 jalur admin — SEMUANYA lewat fungsi ini, termasuk
+  // `createPaidInvoiceAndOrder`). Dicek PALING AWAL (sebelum nomor invoice diambil) agar tidak ada nomor terbuang. Melempar `InternalAccountBillingError` (403).
+  // Akses internal diberikan lewat mode admin "gratis" (tanpa invoice).
+  await assertBillable(tx, userId);
   const subtotal = planRows.reduce((sum, p) => sum + p.price, 0);
   const invoiceNumber = await generateInvoiceNumber(tx);
   const dueDate = params.dueDate ?? new Date(Date.now() + INVOICE_DUE_DAYS * 24 * 60 * 60 * 1000);

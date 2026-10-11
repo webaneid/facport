@@ -11,6 +11,7 @@ import { user as userTable, roles, userRoles } from "./db/schema";
 import { webOriginsProd } from "./lib/env";
 import { rateLimitPlugin } from "./lib/rate-limit";
 import { hasContactKeys, parseContact, type ContactInput, type ContactValue } from "./lib/phone";
+import { InternalAccountBillingError } from "./lib/internal-accounts";
 import { settingsRoute } from "./routes/settings.route";
 import { mediaRoute } from "./routes/media.route";
 import { plansRoute } from "./routes/plans.route";
@@ -154,6 +155,12 @@ export const app = new Elysia()
     if (code === "VALIDATION" || code === "PARSE") {
       logger.warn({ code, path: new URL(request.url).pathname }, "Invalid request");
       return { message: "Invalid request", code };
+    }
+    // § Fase 189G, ADR-0044 — guard kontrol keuangan: akun internal ditolak membuat invoice/order. Galat bisnis yang DIHARAPKAN (bukan bug) → 403 dengan
+    // kode stabil untuk UI; TIDAK dikirim ke Sentry dan tidak dicatat sebagai "Unhandled error".
+    if (error instanceof InternalAccountBillingError) {
+      set.status = error.status;
+      return error.toBody();
     }
     logger.error({ err: error, code }, "Unhandled error");
     // Body error SELALU bare {code, message} — BUKAN {data,error} manual
