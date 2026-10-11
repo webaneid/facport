@@ -44,6 +44,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 ## Keputusan Kecil Selama Eksekusi
 - 2026-10-12 — Penanda internal = flag di akun user (`is_internal`), dipilih user (bukan role khusus).
 - 2026-10-12 — Redesign UI: arah "Kompak & tajam", cakupan admin dulu lalu pelanggan; dikerjakan SETELAH fungsi data (Fase 190).
+- 2026-10-12 — Jawaban user atas pertanyaan client: nomor telepon/WA mengikuti standar E.164 Jalajogja; isian saat daftar (email) atau pengalihan sekali pada login (Google/user lama); nilai rupiah = total terbayar; internal = flag akun oleh admin (Trainer/Karyawan/Mitra, tanpa subkategori); komersil = default; tidak ada toleransi di batas habis langganan; alasan pencabutan akses wajib & tercatat. Detail: `architecture-admin-insight.md` § 4.1, 5.1, 9.
 - 2026-10-12 — Fase 145 ditutup (bagian cutover). T11 kontrak (hapus kolom/endpoint koneksi lama) tetap terbuka, rilis terpisah.
 
 ## Checklist Sebelum Ditutup (sesuai SOP) — berlaku per sub-fase eksekusi

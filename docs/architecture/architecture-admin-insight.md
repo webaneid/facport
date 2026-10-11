@@ -19,8 +19,8 @@ dan edukasi koneksi. Bukan sekadar angka agregat (dashboard Fase 59): kebutuhan 
 | **Data Usaha** | Workspace (`data_usaha`); langganan, koneksi Accurate, dan seat menempel di sini. Satu pelanggan bisa punya banyak. |
 | **Fitur** | Satu langganan modul aktif (`subscriptions` → `plans.modules`, 1 SKU = 1 sub-modul) pada sebuah Data Usaha. |
 | **Akses** | Orang yang bisa masuk ke Data Usaha: pemilik + User Tambahan (`member_seats`, status `active`/`invited`). |
-| **Komersil** | Pelanggan berbayar. Nilai rupiah fitur dihitung. |
-| **Internal** | Trainer, mitra, dsb. Tidak berbayar → TIDAK dihitung nilai rupiahnya (butir 1). Ditandai flag di akun (`user.is_internal`, keputusan user 2026-10-12). |
+| **Komersil** | DEFAULT setiap akun customer yang TIDAK ditandai internal. Ditentukan oleh **status akun**, bukan status langganan: pengguna trial tetap komersil. Nilai rupiah = total uang yang sudah dibayar (D3). |
+| **Internal** | Akun yang ditandai admin sebagai internal — Trainer, Karyawan, Mitra (Excel client: "Trainer, mitra, dll"). Tidak butuh invoice berlangganan; statusnya berlaku sampai admin mencabut tanda itu. Client hanya perlu jumlahnya, jadi cukup SATU flag (`user.is_internal`); subkategori Trainer/Karyawan/Mitra ditunda (YAGNI). Tidak ada nilai rupiah. |
 
 ## 3. Pemetaan 9 butir kebutuhan
 
@@ -28,14 +28,14 @@ Legenda kesiapan: **Siap** = data sudah ada, tinggal endpoint+halaman · **Gap d
 
 | # | Kebutuhan client | Sumber data sekarang | Kesiapan | Yang perlu dibuat |
 |---|---|---|---|---|
-| 1 | Jumlah pengguna komersil vs internal; nilai rupiah fitur hanya untuk komersil | Role `customer`; tidak ada penanda internal; harga di `plans.price` + `interval` | **Gap data** | Kolom `user.is_internal`; admin menandai di halaman Pengguna; KPI komersil/internal; nilai rupiah (D3) |
+| 1 | Jumlah pengguna komersil vs internal; nilai rupiah fitur hanya untuk komersil | Role `customer`; tidak ada penanda internal; pembayaran di invoice/order | **Gap data** | Kolom `user.is_internal`; admin menandai di halaman Pengguna; KPI komersil/internal; nilai rupiah = **total terbayar** akun komersil (D3, diputuskan) |
 | 2 | Pengguna per fitur (nama pelanggan per modul) | `subscriptions` active → `plans.modules` → `data_usaha` → `user` | **Siap** | Endpoint `by-feature` + tampilan daftar per fitur |
 | 3 | Fitur per pengguna | Sama (dibalik). Sebagian sudah di `/admin/users/[id]` | **Siap** | Endpoint `by-customer` (ringkas: daftar fitur + jumlah) |
 | 4 | Jumlah & nama akses per pelanggan (email utama + User Tambahan); eliminasi/mutasi akses | `member_seats` (`member_user_id`, `invited_email`, `status`, `revoked_*`) | **Siap (lihat)** + **Gap fitur (aksi)** | Endpoint `access`; aksi admin **cabut seat** dan **pindahkan akses** (saat ini revoke hanya lewat `team.route.ts` sisi pemilik) |
 | 5 | Pelanggan baru per tanggal + fiturnya | `subscriptions.start_at/created_at`, `user.created_at` | **Siap** | Endpoint `new-customers?from&to` |
 | 6 | Pelanggan yang akan berakhir + fiturnya | `subscriptions.end_at` (H-7 sudah diingatkan ke pelanggan, belum ada tampilan untuk FAC) | **Siap** | Endpoint `expiring?from&to` |
 | 7 | Kohort pelanggan tahun ke-1, ke-2, …; retensi | `subscriptions` + `subscription_renewals` (tidak dihapus job purge) | **Siap (hitung)**, data baru sejak 2026-09 | Endpoint `cohorts`; kohort tahun ke-2 baru bermakna 2027 |
-| 8 | Nama, email, telepon, perusahaan | `user.name/email` saja; telepon & perusahaan tidak ada (hanya `company.phone` di settings = telepon FAC, bukan pelanggan) | **Gap data** | Kolom `user.phone`, `user.company_name`; form daftar + lengkapi profil untuk user lama |
+| 8 | Nama, email, telepon, perusahaan | `user.name/email` saja; telepon & perusahaan tidak ada (hanya `company.phone` di settings = telepon FAC, bukan pelanggan) | **Gap data** | Kolom `user.phone`, `user.whatsapp`, `user.company_name`, `user.profile_prompted_at`; form daftar + pengalihan sekali "Lengkapi Profil" untuk Google & user lama; standar nomor E.164 dari Jalajogja |
 | 9 | Riwayat pemutusan koneksi oleh admin (salah → putus → benar) | `audit_logs` `entity_type='data_usaha'`, `action='disconnect_accurate'` (sudah memuat DB lama, alias, `removedAccount`, admin) | **Gap data** (setengah) | Catat juga sisi *sambung/pilih database* + `alasan` pada dialog putus; endpoint riwayat per Data Usaha |
 
 ## 4. Gap skema & pencatatan (perubahan data)
@@ -43,14 +43,19 @@ Legenda kesiapan: **Siap** = data sudah ada, tinggal endpoint+halaman · **Gap d
 ### 4.1 Profil pelanggan (butir 1, 8)
 Tambah di `user` (migrasi Drizzle, `docs/architecture/architecture-database.md`):
 - `is_internal boolean not null default false`
-- `phone varchar(20)` nullable — disimpan dinormalisasi format `628xxxxxxxxxx` (tanpa `+`), SAMA dengan konvensi `customer_care_agents.whatsapp_number` supaya langsung bisa dipakai `wa.me`.
+- `phone varchar(20)` dan `whatsapp varchar(20)` nullable — format baku **E.164 dengan tanda `+`** (mis. `+6281234567890`), mengikuti standar project Jalajogja (`/Users/webane/sites/jalajogja/docs/arsitektur-kontak.md`): satu komponen (`PhoneInput`: pemilih kode negara, default +62, keluaran E.164), satu helper (`normalizePhone()` WAJIB di server saat simpan; `displayPhone()` untuk tampilan `08xx`; `toWaDigits()` untuk tautan `wa.me`, dibangun dari nilai E.164 ASLI, bukan dari hasil `displayPhone()` — bug yang pernah terjadi di Jalajogja), satu format. Port `components/ui/phone-input.tsx` + `lib/phone.ts` dari Jalajogja ke `apps/web`; `normalizePhone` juga di API sebagai pertahanan berlapis. Isian WhatsApp punya opsi "Sama dengan nomor telepon" (kolom `whatsapp` tetap diisi nilainya).
+- ⚠ `customer_care_agents.whatsapp_number` (Fase 46) memakai format lain (`628…` tanpa `+`). Dibiarkan, tidak dimigrasi; bila perlu tautan, lewat `toWaDigits()`.
 - `company_name varchar(200)` nullable.
+- `profile_prompted_at timestamptz` nullable — penanda DB bahwa user sudah dialihkan SEKALI ke Lengkapi Profil (pola penanda idempoten Jalajogja).
 
 Catatan penting:
 - `user` dikelola Better Auth. Kolom `disabled` sudah pernah ditambahkan sebagai field custom (§ `auth.schema.ts`) → ikuti pola itu;
   **verifikasi** apakah perlu `additionalFields` agar `signUpEmail` menerima `phone/companyName`. Jangan tebak — cek instalasi (pola Fase 106).
-- Jalur daftar ada dua: email+password (form dapat menyertakan field) dan **Google** (tidak lewat form; hook `databaseHooks.user.create.after` hanya `assignCustomerRole` + link invite).
-  Untuk Google dan seluruh user lama, kolom ini kosong → perlu langkah **"Lengkapi profil"** setelah login (D2: wajib atau boleh dilewati).
+- **Alur pengisian (diputuskan user 2026-10-12):**
+  1. Daftar email+password → form daftar menyertakan telepon, WhatsApp, perusahaan.
+  2. Google (langsung masuk, tidak lewat form) → saat login dicek: bila telepon/WhatsApp masih kosong DAN `profile_prompted_at` kosong → **dialihkan SEKALI** ke halaman Lengkapi Profil, lalu `profile_prompted_at` diisi.
+  3. Bila dilewati → notifikasi in-app (sistem notifikasi yang ada) tetap tampil sampai terisi. Tanpa pemblokiran akses. Berlaku juga untuk user lama.
+  Asumsi yang perlu konfirmasi: form daftar email MEWAJIBKAN telepon+WhatsApp; pengalihan sekali pada Google/user lama boleh dilewati.
 - Admin/staf/Tim Internal (role `admin`/`staff`) TIDAK diperlakukan sebagai "pengguna internal" butir ini — itu tim FAC. "Internal" = akun customer-role yang ditandai trainer/mitra.
 - Menandai internal = aksi admin yang tercatat di `audit_logs` (`entity_type='user'`, `action='update'`, `changes.is_internal`).
 
@@ -95,9 +100,9 @@ Aturan:
 - Index kandidat (verifikasi dengan `EXPLAIN` di data besar): `subscriptions(end_at)`, `subscriptions(start_at)`, `member_seats(data_usaha_id, status)`, `audit_logs(entity_type, action, created_at)`.
 
 ### 5.1 Rumus
-- **Aktif pada tanggal t**: ada langganan modul non-trial, bukan `cancelled`, dengan `start_at ≤ t < end_at`. Trial dan seat_addon TIDAK dihitung sebagai "fitur" pelanggan komersil (seat dihitung terpisah sebagai akses).
-- **Kohort**: bulan langganan berbayar pertama (non-trial, bukan internal) per pelanggan. Retensi periode k = pelanggan kohort itu yang masih aktif (definisi di atas) pada k bulan sesudahnya. Sel yang belum tercapai = kosong, bukan 0%.
-- **Nilai langganan aktif** (kandidat D3): jumlah `plans.price` langganan aktif komersil, dinormalisasi per bulan (`interval` monthly=1, yearly=12 → bagi). **Total dibayar**: dari invoice/order berstatus lunas (verifikasi nama status di `architecture-invoice.md` saat eksekusi, jangan menebak).
+- **Habis / aktif (standar baku, diverifikasi di kode 2026-10-12):** langganan *habis* tepat saat `end_at` lewat — job `EXPIRE_SUBSCRIPTIONS` (tiap 10 menit, `job-schedules.ts`) mengubah status ke `expired`; tagihan perpanjangan terbit H-7 (ADR-0042 butir b: "jatuh tempo = tanggal berakhir, tanpa masa tenggang"). **Tidak ada jeda toleransi tambahan di laporan.** Aktif pada tanggal t = ada langganan modul non-trial, bukan `cancelled`, dengan `start_at ≤ t < end_at`. Trial dan seat_addon TIDAK dihitung sebagai "fitur" pelanggan (seat dihitung terpisah sebagai akses).
+- **Kohort**: bulan langganan berbayar pertama (non-trial, akun bukan internal) per pelanggan. "Tidak melanjutkan" = tidak ada langganan berbayar aktif sesudah `end_at` (aturan di atas, tanpa toleransi). Pengukuran retensi per **bulan kalender**: pelanggan dihitung aktif di bulan M bila ada langganan berbayar yang masa berlakunya menyentuh bulan M — ini resolusi pengukuran, BUKAN jeda toleransi status (konfirmasi user). Sel yang belum tercapai = kosong, bukan 0%.
+- **Nilai rupiah (D3, diputuskan 2026-10-12)** = **total uang yang sudah dibayar** akun komersil, dari invoice/order berstatus lunas (verifikasi nama status di `architecture-invoice.md` saat eksekusi, jangan menebak). Akun internal tidak dihitung. Nilai langganan aktif per bulan TIDAK dibuat (tidak diminta, hindari melebar).
 - **Perhatian**: `end_at` bisa diubah manual admin (Fase 173–180, quick-extend) — riwayat kohort mengikuti nilai terkini, bukan nilai asli; dicatat sebagai keterbatasan.
 
 ## 6. Informasi arsitektur halaman (konsep; visual → Fase 190)
@@ -138,13 +143,14 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | ID | Pertanyaan | Rekomendasi | Status |
 |---|---|---|---|
 | D1 | "Pelanggan" = akun pemilik atau Data Usaha? | Akun pemilik sebagai baris utama, Data Usaha sebagai anak (tab Akses/Fitur per Data Usaha, karena seat & langganan menempel di Data Usaha) | **Menunggu user** |
-| D2 | Telepon & perusahaan wajib saat daftar / saat login pertama? | Wajib di form daftar baru; user lama & Google: banner "Lengkapi profil" dulu, pemblokiran hanya bila client minta | **Menunggu client** |
-| D3 | Definisi "nilai rupiah" | Tampilkan dua: *nilai langganan aktif (per bulan/tahun)* dan *total dibayar* | **Menunggu client** |
-| D4 | Siapa yang boleh menandai internal | Admin dengan `users.manage`; tercatat di audit | Disarankan |
+| D2 | Telepon & WhatsApp wajib saat daftar? | Form daftar email: wajib. Google/user lama: dialihkan sekali + notifikasi, tanpa blokir (§ 4.1) | **Diputuskan user 2026-10-12** (asumsi wajib di form masih perlu konfirmasi) |
+| D3 | Definisi "nilai rupiah" | Total uang yang sudah dibayar (akun komersil saja) | **Diputuskan user 2026-10-12** |
+| D4 | Siapa yang menandai internal & arti flag | Admin (`users.manage`), tercatat di audit. Flag = label status akun untuk laporan; komersil = default | **Diputuskan user 2026-10-12**; sisa: apakah flag mengubah AKSES (D9) |
 | D5 | Ekspor CSV: sinkron atau job queue (aturan root: export data lewat job) | Sinkron dengan batas baris (mis. ≤ 10.000) dan dicatat sebagai pengecualian sadar di ADR; di atas batas → job. Volume B2B kecil | **Menunggu user** |
 | D6 | Permission `insights.view` baru atau pakai `users.view` | Baru, supaya staf bisa dibatasi dari data kontak | **Menunggu user** |
-| D7 | Perlu "alasan" wajib pada putus koneksi? | Opsional di dialog, default `lainnya` | Disarankan |
+| D7 | Alasan saat admin mencabut/memindah akses | Alasan WAJIB (min. beberapa karakter) dicatat di `audit_logs` (`entity_type='member_seat'`, `action='revoke_seat'`, `changes`: alasan, email, Data Usaha, admin) → jadi riwayat bila akses ditambahkan lagi kelak | **Diputuskan user 2026-10-12** |
 | D8 | Log aktivitas user (189F) | Tunda | Disetujui (ditunda) |
+| D9 | Apakah flag internal juga memberi AKSES fitur tanpa langganan, atau hanya label laporan (admin tetap memberi langganan gratis seperti sekarang)? | Hanya label laporan — tidak mengubah gerbang akses (tidak melebar) | **Menunggu user** |
 
 ADR yang akan ditulis saat keputusan jatuh: **ADR-0044** (model pelanggan komersil/internal + data kontak) dan **ADR-0045** (design system admin, Fase 190).
 
