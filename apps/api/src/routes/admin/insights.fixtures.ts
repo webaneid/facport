@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { eq, inArray } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { dataUsaha, invoiceItems, invoices, orders, plans, roles, subscriptions, userRoles, user as userTable } from "../../db/schema";
+import { auditLogs, dataUsaha, invoiceItems, invoices, orders, plans, roles, subscriptions, userRoles, user as userTable } from "../../db/schema";
 
 // § Fase 189C — fixture BERSAMA tes Insight (DB dev dipakai bersama → semua data uji diberi prefiks unik per run dan diasersi lewat pelanggan uji / delta, bukan total global).
 export const DAY = 24 * 60 * 60 * 1000;
@@ -145,4 +145,9 @@ export async function insertOpenRenewalOrder(userId: string, dataUsahaId: string
   await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId, moduleKey, label: "Renewal", price: total, durationDays: 30 });
   await db.insert(orders).values({ invoiceId: invoice!.id, dataUsahaId, origin: "renewal", status: "pending", uniqueCode: 123 });
   return invoice!;
+}
+
+/** Peristiwa riwayat Data Usaha (audit_logs) dengan tanggal tertentu — dasar laporan Riwayat Koneksi. */
+export async function insertDataUsahaEventRow(dataUsahaId: string, action: string, actorId: string | null, changes: Record<string, unknown>, createdAt: Date) {
+  await db.insert(auditLogs).values({ entityType: "data_usaha", entityId: dataUsahaId, action, actorId, changes, createdAt });
 }

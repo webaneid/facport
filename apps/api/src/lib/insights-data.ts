@@ -1,7 +1,8 @@
 import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import { asc } from "drizzle-orm";
-import { dataUsaha, invoices, memberSeats, orders, plans, roles, subscriptions, user as userTable, userRoles } from "../db/schema";
+import { alias } from "drizzle-orm/pg-core";
+import { auditLogs, dataUsaha, invoices, memberSeats, orders, plans, roles, subscriptions, user as userTable, userRoles } from "../db/schema";
 import { commercialCustomerIdsSubquery, customerUserIdsSubquery, deriveInternalReason, internalUserIdsSubquery } from "./internal-accounts";
 import { activeOwnersInMonth, addMonths, buildTrend, firstStartByOwner, monthBounds, monthKey, monthOf, tenureBreakdown, type CountedSubscription, type MonthRef, type TrendPoint } from "./admin-insights";
 import { MODULE_CATALOG, moduleLabel } from "./module-catalog";
@@ -457,4 +458,69 @@ export async function getTenure(month: MonthRef, timeZone: string) {
     .map(([year, n]) => ({ year: Number(year), count: n }))
     .sort((a, b) => a.year - b.year);
   return { month: monthKey(month), aktif: breakdown.aktif, baru: breakdown.baru, lanjutanTahun1: breakdown.lanjutanTahun1, byYear, berhenti: breakdown.berhenti, kembali: breakdown.kembali };
+}
+
+// ---------- riwayat koneksi lintas pelanggan ----------
+export const CONNECTION_EVENT_ACTIONS = ["connect_accurate", "select_database", "confirm_database", "reset_database", "disconnect_accurate"];
+/** Koreksi = pelanggan memperbaiki sendiri ("Pilih yang Lain") atau admin memutus koneksi — indikator "salah koneksi" (butir 9). */
+export const CORRECTION_ACTIONS = ["reset_database", "disconnect_accurate"];
+
+export async function getConnectionHistory(p: { q?: string; kind: "all" | "koreksi"; range?: { start: Date; endExclusive: Date }; page: number; pageSize: number }) {
+  const owner = userTable;
+  const actor = alias(userTable, "actor");
+  const q = p.q?.trim();
+  // audit_logs.entity_id bertipe teks, data_usaha.id uuid → cocokkan sebagai teks
+  const joinDu = sql`${dataUsaha.id}::text = ${auditLogs.entityId}`;
+  const base = and(
+    eq(auditLogs.entityType, "data_usaha"),
+    inArray(auditLogs.action, CONNECTION_EVENT_ACTIONS),
+    p.range ? gte(auditLogs.createdAt, p.range.start) : undefined,
+    p.range ? lt(auditLogs.createdAt, p.range.endExclusive) : undefined,
+    inArray(dataUsaha.userId, commercialCustomerIdsSubquery()),
+    q ? or(ilike(dataUsaha.name, likePattern(q)), ilike(owner.name, likePattern(q)), ilike(owner.email, likePattern(q)), ilike(owner.companyName, likePattern(q))) : undefined,
+  );
+  const filtered = and(base, p.kind === "koreksi" ? inArray(auditLogs.action, CORRECTION_ACTIONS) : undefined);
+
+  const [items, totalRows, byActionRows, correctionRows] = await Promise.all([
+    db
+      .select({
+        id: auditLogs.id,
+        action: auditLogs.action,
+        changes: auditLogs.changes,
+        createdAt: auditLogs.createdAt,
+        actor: { id: actor.id, name: actor.name },
+        dataUsaha: { id: dataUsaha.id, name: dataUsaha.name },
+        owner: { id: owner.id, name: owner.name, email: owner.email, companyName: owner.companyName, phone: owner.phone, whatsapp: owner.whatsapp },
+      })
+      .from(auditLogs)
+      .innerJoin(dataUsaha, joinDu)
+      .innerJoin(owner, eq(owner.id, dataUsaha.userId))
+      .leftJoin(actor, eq(actor.id, auditLogs.actorId))
+      .where(filtered)
+      .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+      .limit(p.pageSize)
+      .offset(p.page * p.pageSize),
+    db.select({ n: count() }).from(auditLogs).innerJoin(dataUsaha, joinDu).innerJoin(owner, eq(owner.id, dataUsaha.userId)).where(filtered),
+    db.select({ action: auditLogs.action, n: count() }).from(auditLogs).innerJoin(dataUsaha, joinDu).innerJoin(owner, eq(owner.id, dataUsaha.userId)).where(base).groupBy(auditLogs.action),
+    db
+      .select({ dataUsahaId: auditLogs.entityId, ownerId: dataUsaha.userId, n: count() })
+      .from(auditLogs)
+      .innerJoin(dataUsaha, joinDu)
+      .innerJoin(owner, eq(owner.id, dataUsaha.userId))
+      .where(and(base, inArray(auditLogs.action, CORRECTION_ACTIONS)))
+      .groupBy(auditLogs.entityId, dataUsaha.userId),
+  ]);
+
+  return {
+    items: items.map((i) => ({ ...i, actor: i.actor?.id ? i.actor : null })),
+    total: totalRows[0]?.n ?? 0,
+    page: p.page,
+    pageSize: p.pageSize,
+    summary: {
+      byAction: Object.fromEntries(byActionRows.map((r) => [r.action, r.n])),
+      dataUsahaWithCorrection: correctionRows.length,
+      ownersWithCorrection: new Set(correctionRows.map((r) => r.ownerId)).size,
+      repeatedCorrection: correctionRows.filter((r) => r.n >= 2).length,
+    },
+  };
 }

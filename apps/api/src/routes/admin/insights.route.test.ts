@@ -1,9 +1,9 @@
 import { describe, test, expect } from "bun:test";
 import { adminInsightsRoute } from "./insights.route";
-import { DAY, insertAccount, insertDataUsaha, insertOpenRenewalOrder, insertPaidInvoice, insertPlan, insertSub, loginAs, makeTestApp, runId, wib } from "./insights.fixtures";
+import { DAY, insertAccount, insertDataUsaha, insertDataUsahaEventRow, insertOpenRenewalOrder, insertPaidInvoice, insertPlan, insertSub, loginAs, makeTestApp, runId, wib } from "./insights.fixtures";
 import { db } from "../../lib/db";
-import { eq } from "drizzle-orm";
-import { dataUsaha, memberSeats, user as userTable } from "../../db/schema";
+import { and, desc, eq } from "drizzle-orm";
+import { auditLogs, dataUsaha, memberSeats, user as userTable } from "../../db/schema";
 import { createTestSeat } from "../../lib/test-fixtures";
 
 // § Fase 189C — API Insight (read-only). Izin `insights.view` = Super Admin & Admin (D6). DB dev dipakai bersama → asersi lewat pelanggan uji (pencarian `q` unik) atau DELTA.
@@ -17,7 +17,7 @@ describe("izin", () => {
     const admin = await loginAs(app, "admin");
     const staff = await loginAs(app, "staff");
     const owner = await insertAccount("izin");
-    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`, "/features", "/features/other_deposit/customers", "/new?from=2026-01-01&to=2026-01-31", "/expiring?window=14", "/trend?year=2021&metric=active", "/tenure?month=2024-10"]) {
+    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`, "/features", "/features/other_deposit/customers", "/new?from=2026-01-01&to=2026-01-31", "/expiring?window=14", "/trend?year=2021&metric=active", "/tenure?month=2024-10", "/connection-history", "/export/customers"]) {
       expect((await get(null, path)).status).toBe(401);
       expect((await get(customer.cookie, path)).status).toBe(403);
       expect((await get(admin.cookie, path)).status).toBe(200);
@@ -502,5 +502,163 @@ describe("GET /tenure", () => {
     const res = await get(admin.cookie, `/tenure?month=${future}`);
     expect(res.status).toBe(422);
     expect(await json<{ code: string }>(res)).toMatchObject({ code: "FUTURE_MONTH" });
+  });
+});
+
+describe("GET /connection-history (laporan lintas pelanggan)", () => {
+  type Item = { id: string; action: string; createdAt: string; actor: { id: string; name: string } | null; changes: Record<string, unknown>; dataUsaha: { id: string; name: string }; owner: { id: string; email: string; companyName: string | null; phone: string | null; whatsapp: string | null } };
+  type Report = {
+    items: Item[];
+    total: number;
+    summary: { byAction: Record<string, number>; dataUsahaWithCorrection: number; ownersWithCorrection: number; repeatedCorrection: number };
+  };
+  // jendela masa lalu Mei 2019 (tidak bertabrakan dengan data tes lain); asersi tetap lewat DELTA + keanggotaan id
+  const win = "from=2019-05-01&to=2019-05-31";
+  const report = async (cookie: string, q = "") => json<Report>(await get(cookie, `/connection-history?${win}&pageSize=100${q}`));
+
+  test("cerita salah → koreksi → benar; internal & di luar jendela & aksi non-koneksi dikecualikan; urut terbaru dulu; ringkasan koreksi", async () => {
+    const admin = await loginAs(app, "admin");
+    const before = await report(admin.cookie);
+    const tag = `hist${runId}`;
+    const owner = await insertAccount(`${tag}-a`, { companyName: "PT Salah Sambung", phone: "+6281400000001", whatsapp: "+6281400000002" });
+    const owner2 = await insertAccount(`${tag}-b`);
+    const internal = await insertAccount(`${tag}-int`, { isInternal: true });
+    const du = await insertDataUsaha(owner.id, `${tag} DU Satu`);
+    const du2 = await insertDataUsaha(owner2.id, `${tag} DU Dua`);
+    const duI = await insertDataUsaha(internal.id, `${tag} DU Int`);
+    const adminUser = await loginAs(app, "staff");
+
+    await insertDataUsahaEventRow(du, "connect_accurate", owner.id, { via: "oauth", accountEmail: "akun@accurate.test" }, wib(2019, 5, 2, 9));
+    await insertDataUsahaEventRow(du, "select_database", owner.id, { accurateDbId: "1", alias: "PT Salah" }, wib(2019, 5, 2, 9, 5));
+    await insertDataUsahaEventRow(du, "reset_database", owner.id, { previousDbId: "1", previousAlias: "PT Salah" }, wib(2019, 5, 3, 10)); // koreksi mandiri
+    await insertDataUsahaEventRow(du, "select_database", owner.id, { accurateDbId: "2", alias: "PT Benar" }, wib(2019, 5, 3, 10, 2));
+    await insertDataUsahaEventRow(du2, "disconnect_accurate", adminUser.id, { previousAccurateDbAlias: "PT X", reason: { code: "salah_akun", note: null } }, wib(2019, 5, 10, 8));
+    await insertDataUsahaEventRow(du2, "disconnect_accurate", adminUser.id, { previousAccurateDbAlias: "PT X", reason: { code: "salah_database", note: null } }, wib(2019, 5, 20, 8)); // berulang
+    await insertDataUsahaEventRow(du, "connect_accurate", owner.id, { via: "oauth" }, wib(2019, 4, 30, 23)); // di luar jendela (30 Apr)
+    await insertDataUsahaEventRow(du, "update", owner.id, { name: "bukan koneksi" }, wib(2019, 5, 5)); // aksi lain
+    await insertDataUsahaEventRow(duI, "reset_database", internal.id, { previousAlias: "PT Int" }, wib(2019, 5, 6)); // internal
+
+    const after = await report(admin.cookie);
+    const mine = after.items.filter((i) => [du, du2, duI].includes(i.dataUsaha.id));
+    expect(mine.map((i) => i.action)).toEqual(["disconnect_accurate", "disconnect_accurate", "select_database", "reset_database", "select_database", "connect_accurate"]);
+    // terbaru dulu
+    const times = mine.map((i) => new Date(i.createdAt).getTime());
+    expect([...times].sort((a, b) => b - a)).toEqual(times);
+    const reset = mine.find((i) => i.action === "reset_database")!;
+    expect(reset).toMatchObject({ dataUsaha: { id: du, name: `${tag} DU Satu` }, owner: { id: owner.id, email: owner.email, companyName: "PT Salah Sambung", phone: "+6281400000001", whatsapp: "+6281400000002" }, changes: { previousAlias: "PT Salah" } });
+    expect(reset.actor?.id).toBe(owner.id);
+    expect(mine.find((i) => i.action === "disconnect_accurate")!.actor?.id).toBe(adminUser.id);
+    // ringkasan (delta): byAction, DU dengan koreksi (du: reset; du2: 2x disconnect) = +2, pemilik +2, berulang +1 (du2)
+    const byAction = (k: string) => (after.summary.byAction[k] ?? 0) - (before.summary.byAction[k] ?? 0);
+    expect({ connect: byAction("connect_accurate"), select: byAction("select_database"), reset: byAction("reset_database"), disconnect: byAction("disconnect_accurate") }).toEqual({ connect: 1, select: 2, reset: 1, disconnect: 2 });
+    expect(after.summary.dataUsahaWithCorrection - before.summary.dataUsahaWithCorrection).toBe(2);
+    expect(after.summary.ownersWithCorrection - before.summary.ownersWithCorrection).toBe(2);
+    expect(after.summary.repeatedCorrection - before.summary.repeatedCorrection).toBe(1);
+  });
+
+  test("filter koreksi (reset/putus saja), pencarian (nama Data Usaha/pemilik), dan paginasi", async () => {
+    const admin = await loginAs(app, "admin");
+    const tag = `filt${runId}`;
+    const owner = await insertAccount(`${tag}-a`, { companyName: `PT ${tag} Unik` });
+    const du = await insertDataUsaha(owner.id, `${tag} DU`);
+    await insertDataUsahaEventRow(du, "connect_accurate", owner.id, {}, wib(2019, 5, 11));
+    await insertDataUsahaEventRow(du, "reset_database", owner.id, {}, wib(2019, 5, 12));
+    await insertDataUsahaEventRow(du, "disconnect_accurate", owner.id, {}, wib(2019, 5, 13));
+
+    const koreksi = await report(admin.cookie, `&kind=koreksi&q=${tag}`);
+    expect(koreksi.items.map((i) => i.action)).toEqual(["disconnect_accurate", "reset_database"]);
+    expect(koreksi.total).toBe(2);
+    const byOwner = await report(admin.cookie, `&q=${encodeURIComponent(`PT ${tag} Unik`)}`);
+    expect(byOwner.total).toBe(3);
+    const page2 = await json<Report>(await get(admin.cookie, `/connection-history?${win}&q=${tag}&pageSize=2&page=1`));
+    expect(page2.items).toHaveLength(1);
+    expect(page2.total).toBe(3);
+  });
+
+  test("tanpa rentang tanggal → semua waktu; rentang setengah (hanya from) atau tidak valid → 422; kind tidak dikenal → 422", async () => {
+    const admin = await loginAs(app, "admin");
+    expect((await get(admin.cookie, "/connection-history?pageSize=5")).status).toBe(200);
+    expect((await get(admin.cookie, "/connection-history?from=2019-05-01")).status).toBe(422);
+    expect((await get(admin.cookie, "/connection-history?from=2019-05-31&to=2019-05-01")).status).toBe(422);
+    expect((await get(admin.cookie, "/connection-history?kind=lain")).status).toBe(422);
+  });
+});
+
+describe("GET /export/:report (CSV, D5)", () => {
+  const csvLines = (text: string) => text.replace(/\r\n$/, "").split("\r\n");
+
+  test("customers: BOM UTF-8, header Indonesia, CRLF, sel berawalan = + - @ dinetralkan, telepon format lokal, header unduhan + jumlah baris; q membatasi; audit ekspor tercatat", async () => {
+    const admin = await loginAs(app, "admin");
+    const tag = `csv${runId}`;
+    await insertAccount(`${tag}-a`, { name: `=HYPERLINK("http://x")`, companyName: "+PT Aneh", phone: "+6281234567890", whatsapp: "+6281234567891" });
+    await insertAccount(`${tag}-b`, { name: "Budi Biasa", companyName: "PT Biasa" });
+    const res = await get(admin.cookie, `/export/customers?q=${tag}`);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toMatch(/^attachment; filename="facport-customers-\d{8}\.csv"$/);
+    expect(res.headers.get("cache-control")).toContain("no-store");
+    expect(res.headers.get("x-export-rows")).toBe("2");
+    expect(res.headers.get("x-export-truncated")).toBe("false");
+    const text = await res.text();
+    expect(text.charCodeAt(0)).toBe(0xfeff);
+    const lines = csvLines(text.slice(1));
+    expect(lines).toHaveLength(3); // header + 2 baris
+    expect(lines[0]).toBe("Nama,Email,Perusahaan,Telepon,WhatsApp,Tipe,Jenis akun,Nonaktif,Data Usaha,Terhubung Accurate,Fitur aktif,Berakhir terdekat,Terdaftar");
+    const evil = lines.find((l) => l.includes("HYPERLINK"))!;
+    expect(evil.startsWith(`"'=HYPERLINK(""http://x"")",`)).toBe(true); // rumus dinetralkan
+    expect(evil).toContain(",'+PT Aneh,"); // perusahaan berawalan +
+    expect(evil).toContain(",081234567890,081234567891,"); // telepon lokal, tanpa apostrof
+    expect(evil).toContain(",Komersil,Belum punya Data Usaha,Tidak,0,0,");
+
+    const [log] = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "insight_export"), eq(auditLogs.actorId, admin.id))).orderBy(desc(auditLogs.createdAt)).limit(1);
+    expect(log).toMatchObject({ action: "export", entityId: "customers" });
+    expect(log!.changes).toMatchObject({ report: "customers", rows: 2, truncated: false, filters: { q: tag } });
+  });
+
+  test("Admin (staff) boleh; fitur/baru/akan berakhir/riwayat/tren menghasilkan CSV dengan header khas", async () => {
+    const staff = await loginAs(app, "staff");
+    const header = async (path: string) => {
+      const res = await get(staff.cookie, path);
+      expect(res.status).toBe(200);
+      return csvLines((await res.text()).slice(1))[0]!;
+    };
+    expect(await header("/export/feature-users?moduleKey=other_deposit")).toBe("Fitur,Nama,Email,Perusahaan,Telepon,WhatsApp,Data Usaha,Paket,Mulai,Berakhir,Perpanjangan terjadwal");
+    expect(await header("/export/new?from=2020-03-01&to=2020-03-31")).toBe("Nama,Email,Perusahaan,Telepon,WhatsApp,Pelanggan baru,Mulai pertama,Fitur,Data Usaha,Mulai,Berakhir");
+    expect(await header("/export/expiring?window=30")).toBe("Nama,Email,Perusahaan,Telepon,WhatsApp,Fitur,Data Usaha,Berakhir,Sisa hari,Status tagihan perpanjangan,No. invoice,Jumlah tagihan");
+    expect(await header("/export/connection-history?from=2019-05-01&to=2019-05-31")).toBe("Waktu,Data Usaha,Nama,Email,Perusahaan,Telepon,WhatsApp,Aksi,Keterangan,Pelaku");
+    expect(await header("/export/trend?year=2023&metric=money")).toBe("Bulan,Nilai,Bulan sebelumnya,Selisih,Persen");
+  });
+
+  test("isi nyata: pemakai fitur memuat baris pelanggan uji; riwayat koneksi memuat kalimat peristiwa", async () => {
+    const admin = await loginAs(app, "admin");
+    const tag = `csvisi${runId}`;
+    const owner = await insertAccount(`${tag}-pemilik`, { companyName: "PT Isi CSV" });
+    const du = await insertDataUsaha(owner.id, `${tag} DU`);
+    const plan = await insertPlan("receive_item");
+    await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: plan.id, start: new Date(Date.now() - DAY), end: new Date(Date.now() + 9 * DAY), renewalInterval: "yearly" });
+    await insertDataUsahaEventRow(du, "reset_database", owner.id, { previousAlias: "PT Keliru" }, wib(2019, 5, 8));
+    const fu = await (await get(admin.cookie, "/export/feature-users?moduleKey=receive_item")).text();
+    const mine = csvLines(fu.slice(1)).find((l) => l.includes(`${tag} DU`))!;
+    expect(mine.startsWith("Receive Item,")).toBe(true);
+    expect(mine).toContain("PT Isi CSV");
+    expect(mine.endsWith(",Tahunan")).toBe(true);
+    const ch = await (await get(admin.cookie, `/export/connection-history?from=2019-05-01&to=2019-05-31&q=${tag}`)).text();
+    expect(ch).toContain('Memilih database yang lain (sebelumnya ""PT Keliru"")');
+  });
+
+  test("parameter wajib per laporan: tanpa moduleKey/rentang/window/tahun → 422; modul tak dikenal 404; laporan tak dikenal 422; tanpa login 401, customer 403", async () => {
+    const admin = await loginAs(app, "admin");
+    const status = async (path: string) => (await get(admin.cookie, path)).status;
+    expect(await status("/export/feature-users")).toBe(422);
+    expect(await status("/export/feature-users?moduleKey=tidak_ada")).toBe(404);
+    expect(await status("/export/new")).toBe(422);
+    expect(await status("/export/new?from=2026-03-02&to=2026-03-01")).toBe(422);
+    expect(await status("/export/expiring")).toBe(422);
+    expect(await status("/export/trend")).toBe(422);
+    expect(await status("/export/trend?year=2026")).toBe(422);
+    expect(await status("/export/semua")).toBe(422);
+    const customer = await loginAs(app, "customer");
+    expect((await get(null, "/export/customers")).status).toBe(401);
+    expect((await get(customer.cookie, "/export/customers")).status).toBe(403);
   });
 });

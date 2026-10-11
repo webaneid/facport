@@ -1,11 +1,13 @@
 import { Elysia, t } from "elysia";
 import { asc, eq } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { dataUsaha, user as userTable } from "../../db/schema";
+import { auditLogs, dataUsaha, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { getCompanyTimezone } from "../../lib/company-timezone";
-import { getSummary, getTenure, getTrend, isKnownModule, listCustomers, listExpiring, listFeatureCustomers, listFeatures, listNewSubscriptions } from "../../lib/insights-data";
+import { getConnectionHistory, getSummary, getTenure, getTrend, isKnownModule, listCustomers, listExpiring, listFeatureCustomers, listFeatures, listNewSubscriptions } from "../../lib/insights-data";
 import { monthKey, monthOf, parseMonthKey, resolveDateRange } from "../../lib/admin-insights";
+import { EXPORT_MAX_ROWS, capRows, connectionHistoryCsv, csvFile, customersCsv, expiringCsv, featureUsersCsv, formatLocalDateTime, newCsv, trendCsv } from "../../lib/insights-export";
+import { moduleLabel } from "../../lib/module-catalog";
 import { listSeatsForDataUsaha } from "../../lib/seat-queries";
 
 // § Fase 189C, ADR-0044 — API Insight pelanggan (READ-ONLY) untuk kebutuhan data client FAC. Izin `insights.view` (Super Admin & Admin, D6). Route hanya mengambil data lewat
@@ -110,4 +112,131 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
       return getTenure(month, timeZone);
     },
     { permission: "insights.view", query: t.Object({ month: t.Optional(t.String({ maxLength: 7 })) }) },
+  )
+  // Butir 9: riwayat koneksi Accurate lintas pelanggan (sambung/pilih/konfirmasi/koreksi/putus) + ringkasan koreksi ("salah koneksi"). Rentang tanggal opsional (keduanya atau tidak sama sekali).
+  .get(
+    "/connection-history",
+    async ({ query, set }) => {
+      let range: { start: Date; endExclusive: Date } | undefined;
+      if (query.from !== undefined || query.to !== undefined) {
+        if (query.from === undefined || query.to === undefined) {
+          set.status = 422;
+          return { code: "RANGE_INCOMPLETE" };
+        }
+        const resolved = resolveDateRange(query.from, query.to, await getCompanyTimezone());
+        if (!resolved.ok) {
+          set.status = 422;
+          return { code: resolved.code };
+        }
+        range = { start: resolved.start, endExclusive: resolved.endExclusive };
+      }
+      return getConnectionHistory({ q: query.q, kind: query.kind ?? "all", range, page: query.page ?? 0, pageSize: query.pageSize ?? 20 });
+    },
+    {
+      permission: "insights.view",
+      query: t.Object({
+        q: t.Optional(t.String({ maxLength: 100 })),
+        kind: t.Optional(t.Union([t.Literal("all"), t.Literal("koreksi")])),
+        from: t.Optional(t.String({ maxLength: 10 })),
+        to: t.Optional(t.String({ maxLength: 10 })),
+        ...pageQuery,
+      }),
+    },
+  )
+  // Ekspor CSV (D5): unduh LANGSUNG, maks 10.000 baris (lebih → dipotong, header `X-Export-Truncated: true`). Berisi data pribadi → izin `insights.view`, rate limit di app.ts, dan SETIAP ekspor
+  // dicatat di audit (siapa, laporan, filter, jumlah baris); bila pencatatan gagal ekspor DITOLAK (tidak ada ekspor tanpa jejak). Sel berawalan = + - @ dinetralkan (`csvCell`).
+  .get(
+    "/export/:report",
+    async ({ params, query, user, set }) => {
+      const timeZone = await getCompanyTimezone();
+      const now = new Date();
+      const fail = (status: number, code: string) => {
+        set.status = status;
+        return { code };
+      };
+      const bigPage = { page: 0, pageSize: EXPORT_MAX_ROWS + 1 };
+      let csv: ReturnType<typeof customersCsv>;
+      let truncated = false;
+      let filters: Record<string, unknown> = {};
+
+      if (params.report === "customers") {
+        const { items } = await listCustomers({ q: query.q, type: query.type ?? "all", now, ...bigPage });
+        const capped = capRows(items);
+        truncated = capped.truncated;
+        csv = customersCsv(capped.rows, timeZone);
+        filters = { q: query.q ?? null, type: query.type ?? "all" };
+      } else if (params.report === "feature-users") {
+        if (!query.moduleKey) return fail(422, "MODULE_REQUIRED");
+        if (!isKnownModule(query.moduleKey)) return fail(404, "MODULE_NOT_FOUND");
+        const { items } = await listFeatureCustomers({ moduleKey: query.moduleKey, now, ...bigPage });
+        const capped = capRows(items);
+        truncated = capped.truncated;
+        csv = featureUsersCsv(moduleLabel(query.moduleKey), capped.rows, timeZone);
+        filters = { moduleKey: query.moduleKey };
+      } else if (params.report === "new") {
+        if (!query.from || !query.to) return fail(422, "RANGE_REQUIRED");
+        const range = resolveDateRange(query.from, query.to, timeZone);
+        if (!range.ok) return fail(422, range.code);
+        const { items } = await listNewSubscriptions({ start: range.start, endExclusive: range.endExclusive, ...bigPage });
+        const flat = newCsv(items, timeZone);
+        const capped = capRows(flat.rows);
+        truncated = capped.truncated;
+        csv = { header: flat.header, rows: capped.rows };
+        filters = { from: query.from, to: query.to };
+      } else if (params.report === "expiring") {
+        if (!query.window) return fail(422, "WINDOW_REQUIRED");
+        const { items } = await listExpiring({ now, windowDays: query.window === "14" ? 14 : 30, ...bigPage });
+        const flat = expiringCsv(items, timeZone);
+        const capped = capRows(flat.rows);
+        truncated = capped.truncated;
+        csv = { header: flat.header, rows: capped.rows };
+        filters = { window: query.window };
+      } else if (params.report === "connection-history") {
+        let range: { start: Date; endExclusive: Date } | undefined;
+        if (query.from !== undefined || query.to !== undefined) {
+          if (!query.from || !query.to) return fail(422, "RANGE_INCOMPLETE");
+          const resolved = resolveDateRange(query.from, query.to, timeZone);
+          if (!resolved.ok) return fail(422, resolved.code);
+          range = { start: resolved.start, endExclusive: resolved.endExclusive };
+        }
+        const { items } = await getConnectionHistory({ q: query.q, kind: query.kind ?? "all", range, ...bigPage });
+        const capped = capRows(items);
+        truncated = capped.truncated;
+        csv = connectionHistoryCsv(capped.rows, timeZone);
+        filters = { q: query.q ?? null, kind: query.kind ?? "all", from: query.from ?? null, to: query.to ?? null };
+      } else {
+        if (query.year === undefined || !query.metric) return fail(422, "TREND_PARAMS_REQUIRED");
+        const trend = await getTrend({ year: query.year, metric: query.metric, now, timeZone });
+        csv = trendCsv(trend.points);
+        filters = { year: query.year, metric: query.metric };
+      }
+
+      await db.insert(auditLogs).values({ entityType: "insight_export", entityId: params.report, action: "export", changes: { report: params.report, filters, rows: csv.rows.length, truncated }, actorId: user.id });
+
+      const stamp = formatLocalDateTime(now, timeZone).slice(0, 10).replace(/-/g, "");
+      return new Response(csvFile(csv), {
+        headers: {
+          "Content-Type": "text/csv; charset=utf-8",
+          "Content-Disposition": `attachment; filename="facport-${params.report}-${stamp}.csv"`,
+          "Cache-Control": "no-store",
+          "X-Export-Rows": String(csv.rows.length),
+          "X-Export-Truncated": String(truncated),
+        },
+      });
+    },
+    {
+      permission: "insights.view",
+      params: t.Object({ report: t.Union([t.Literal("customers"), t.Literal("feature-users"), t.Literal("new"), t.Literal("expiring"), t.Literal("connection-history"), t.Literal("trend")]) }),
+      query: t.Object({
+        q: t.Optional(t.String({ maxLength: 100 })),
+        type: t.Optional(t.Union([t.Literal("all"), t.Literal("commercial"), t.Literal("internal")])),
+        moduleKey: t.Optional(t.String({ maxLength: 50 })),
+        from: t.Optional(t.String({ maxLength: 10 })),
+        to: t.Optional(t.String({ maxLength: 10 })),
+        window: t.Optional(t.Union([t.Literal("14"), t.Literal("30")])),
+        kind: t.Optional(t.Union([t.Literal("all"), t.Literal("koreksi")])),
+        year: t.Optional(t.Numeric({ minimum: 2020, maximum: 2100 })),
+        metric: t.Optional(t.Union([t.Literal("registered"), t.Literal("active"), t.Literal("new"), t.Literal("stopped"), t.Literal("money")])),
+      }),
+    },
   );

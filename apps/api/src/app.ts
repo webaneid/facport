@@ -137,6 +137,8 @@ export const app = new Elysia()
   // § Fase 189B (audit, Low) — aksi admin atas Data Usaha (putus koneksi, transfer, cabut/pindahkan akses seat yang bisa mengirim email undangan): batas LONGGAR,
   // hanya menahan penyalahgunaan (relay email dari akun admin yang dibajak), bukan pemakaian normal.
   .use(rateLimitPlugin({ pathPrefix: "/admin/data-usaha", windowMs: 60_000, max: 60 }))
+  // § Fase 189C — ekspor CSV Insight memuat data pribadi: batas ketat (10/menit) menahan penarikan massal oleh akun yang dibajak; pemakaian normal jauh di bawahnya.
+  .use(rateLimitPlugin({ pathPrefix: "/admin/insights/export", windowMs: 60_000, max: 10 }))
   // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
   .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.

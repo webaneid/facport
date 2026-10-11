@@ -60,3 +60,9 @@ export function isContactComplete(row: { companyName?: string | null; phone?: st
   const name = row.companyName?.trim() ?? "";
   return name.length > 0 && !!row.phone && isValidE164(row.phone) && !!row.whatsapp && isValidE164(row.whatsapp);
 }
+
+/** Tampilan lokal: +62812… → 0812… (Indonesia); nomor internasional apa adanya; kosong → "". Dipakai ekspor CSV (sel berawalan "+" akan diberi apostrof oleh `csvCell`). */
+export function displayPhone(e164: string | null | undefined): string {
+  if (!e164) return "";
+  return e164.startsWith("+62") ? "0" + e164.slice(3) : e164;
+}
