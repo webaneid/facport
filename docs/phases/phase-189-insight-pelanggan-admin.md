@@ -27,7 +27,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | 189A | Profil akun: `phone`, `whatsapp`, `company_name`; `PhoneInput` (E.164); form daftar; modal Lengkapi Profil tak bisa ditutup; tampil + WhatsApp klik di admin — rencana detail: `phase-189a-profil-kontak-akun.md` | Done (2026-10-12) |
 | 189G | Akun internal & kontrol keuangan (Lapis 1: guard invoice terpusat, tagihan terjadwal, laporan uang) + aksi massal tandai internal di `/admin/users` — rencana detail: `phase-189g-akun-internal-kontrol-keuangan.md` | Done (2026-10-12) |
 | 189B | Riwayat koneksi Accurate (sambung/pilih database/reset + alasan putus) dan aksi admin cabut/pindahkan akses seat dengan alasan wajib — rencana detail: `phase-189b-riwayat-koneksi-dan-akses-seat.md` | Done (2026-10-12) |
-| 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
+| 189C | API Insight read-only (summary, pelanggan, fitur, akses, baru, akan berakhir, tren tahunan, usia langganan, riwayat koneksi, CSV) — rencana detail: `phase-189c-api-insight.md` | In Progress |
 | 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
 | 189E | KPI komersil/internal & nilai rupiah di `/admin` | Not Started |
 | 189H | Aksi massal pengguna (nonaktifkan/aktifkan, hapus permanen aman, anonimisasi; ADR-0045) + aksi role dua arah (akses pengguna untuk admin; jadikan admin untuk customer) | Not Started |
