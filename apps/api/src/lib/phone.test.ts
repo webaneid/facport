@@ -59,6 +59,14 @@ describe("parseContact", () => {
     expect(parseContact({ ...valid, companyName: "a".repeat(200) }).ok).toBe(true);
   });
 
+  test("karakter kontrol / zero-width / penimpa arah (bidi) di nama perusahaan ditolak; huruf non-Latin dan tanda baca biasa tetap boleh", () => {
+    expect(parseContact({ ...valid, companyName: "PT\u0000Evil" })).toEqual({ ok: false, field: "companyName" });
+    expect(parseContact({ ...valid, companyName: "PT \u202Eatad" })).toEqual({ ok: false, field: "companyName" });
+    expect(parseContact({ ...valid, companyName: "PT\u200BMaju" })).toEqual({ ok: false, field: "companyName" });
+    expect(parseContact({ ...valid, companyName: "PT Maju\tJaya\n" })).toEqual({ ok: true, value: { companyName: "PT Maju Jaya", phone: "+628123456789", whatsapp: "+628123456789" } });
+    expect(parseContact({ ...valid, companyName: "CV. Berkah & Sons (Persero) — 株式会社" }).ok).toBe(true);
+  });
+
   test("telepon salah → gagal di phone; WhatsApp salah → gagal di whatsapp", () => {
     expect(parseContact({ ...valid, phone: "abc" })).toEqual({ ok: false, field: "phone" });
     expect(parseContact({ ...valid, phone: "" })).toEqual({ ok: false, field: "phone" });

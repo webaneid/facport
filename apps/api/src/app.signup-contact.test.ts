@@ -1,6 +1,7 @@
-import { describe, test, expect } from "bun:test";
+import { describe, test, expect, spyOn } from "bun:test";
 import { eq, sql } from "drizzle-orm";
 import { app } from "./app";
+import { logger } from "./lib/logger";
 import { db } from "./lib/db";
 import { roles, userRoles, user as userTable } from "./db/schema";
 
@@ -83,5 +84,28 @@ describe("POST /api/auth/sign-up/email — data kontak akun", () => {
     expect(row!.phone).toBe("+628111111111");
     const count = await db.select({ id: userTable.id }).from(userTable).where(sql`lower(${userTable.email}) = ${email}`);
     expect(count).toHaveLength(1);
+  });
+});
+
+// § audit keamanan Fase 189A (Low) — pesan galat validasi Elysia MEMUAT nilai yang dikirim pengguna; body kontak berisi data pribadi, jadi `.onError`
+// untuk VALIDATION/PARSE hanya boleh mencatat kode + path, TANPA nilai.
+describe("log galat validasi tidak membocorkan data pribadi", () => {
+  test("PATCH /me/contact dengan body melanggar skema: respons 422, log hanya kode+path (tanpa nilai kiriman)", async () => {
+    const warn = spyOn(logger, "warn");
+    const errorLog = spyOn(logger, "error");
+    const secret = "RAHASIA-0812-9999";
+    const res = await app.handle(
+      new Request("http://localhost/me/contact", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-real-ip": "203.0.113.237" },
+        body: JSON.stringify({ companyName: "PT X", phone: `${"9".repeat(80)}${secret}`, whatsapp: "08123456789" }),
+      }),
+    );
+    expect(res.status).toBe(422);
+    const logged = JSON.stringify([...warn.mock.calls, ...errorLog.mock.calls]);
+    expect(logged).not.toContain(secret);
+    expect(warn.mock.calls.some((c) => (c[0] as { code?: string })?.code === "VALIDATION")).toBe(true);
+    warn.mockRestore();
+    errorLog.mockRestore();
   });
 });

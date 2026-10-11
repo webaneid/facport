@@ -86,6 +86,7 @@ Saat ini cabut/undang seat HANYA lewat `routes/team.route.ts` (hak pemilik Data 
 ### 4.5 Aksi massal & kebijakan hapus akun (ADR-0045)
 - Detail keputusan dan alasan: `docs/decisions/adr-0045-kebijakan-hapus-dan-anonimisasi-akun.md`. Ringkas: Nonaktifkan/Aktifkan (ada) · Hapus permanen hanya untuk akun tanpa jejak bisnis · Anonimisasi untuk akun dengan jejak bisnis yang harus dihapus · semua Super Admin saja, konfirmasi ketik, audit per akun.
 - Alasan tidak ada "hapus total semua": `user.id` direferensikan 28 kolom di 16 file skema, hanya `session`/`account`/`user_roles` yang cascade; menghapus invoice/order merusak angka keuangan yang diminta client.
+- **Dari audit keamanan 189A:** `audit_logs` menyimpan kontak lama→baru (PII) dari koreksi admin. Hapus permanen/anonimisasi (189H) WAJIB juga menangani `audit_logs` yang memuat kontak akun itu (anonimkan isi `changes`), bukan hanya tabel `user`.
 - Dikerjakan sebagai sub-fase 189H (setelah Insight), bukan bersama 189G, karena risikonya jauh lebih tinggi.
 
 ## 5. Rancangan API (read-only, kecuali aksi di 4.3)

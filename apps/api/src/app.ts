@@ -147,7 +147,14 @@ export const app = new Elysia()
       set.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains";
     }
   })
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set, request }) => {
+    // § Fase 189A (audit keamanan, Low) — pesan galat VALIDATION/PARSE Elysia MEMUAT nilai yang dikirim pengguna (terbukti lewat eksperimen: nilai body
+    // muncul di `error.message`). Body kini bisa berisi data pribadi (telepon/WhatsApp/Nama Perusahaan), jadi untuk galat input klien cukup catat
+    // kode + path — TANPA pesan/nilai. Galat tak terduga tetap dicatat penuh (dan ke Sentry di bawah).
+    if (code === "VALIDATION" || code === "PARSE") {
+      logger.warn({ code, path: new URL(request.url).pathname }, "Invalid request");
+      return { message: "Invalid request", code };
+    }
     logger.error({ err: error, code }, "Unhandled error");
     // Body error SELALU bare {code, message} — BUKAN {data,error} manual
     // (§ docs/decisions/adr-0010-response-format-eden.md — Eden Treaty
@@ -157,9 +164,6 @@ export const app = new Elysia()
     // JANGAN ditimpa jadi 500 (bug yang ketemu sendiri pas security review
     // Fase 00: sebelumnya semua error non-NOT_FOUND dipaksa 500, termasuk
     // input tidak valid yang seharusnya 400/422).
-    if (code === "VALIDATION" || code === "PARSE") {
-      return { message: "Invalid request", code };
-    }
     if (code === "NOT_FOUND") {
       set.status = 404;
       return { message: "Not found", code };
@@ -270,7 +274,13 @@ export const app = new Elysia()
           await db.insert(userRoles).values({ userId: body.user.id, roleId: customerRole.id }).onConflictDoNothing();
         }
         if (created && contact) {
-          await db.update(userTable).set(contact).where(eq(userTable.id, created.id));
+          // Akun SUDAH dibuat Better Auth di titik ini: kegagalan menyimpan kontak tidak boleh mengubah respons jadi 500 (pengguna yang mengulang akan kena
+          // 409). Dicatat TANPA nilai kontak; modal Lengkapi Profil menangkap akun yang kontaknya kosong.
+          try {
+            await db.update(userTable).set(contact).where(eq(userTable.id, created.id));
+          } catch (err) {
+            logger.error({ err: (err as Error).name, userId: created.id }, "Gagal menyimpan kontak setelah sign-up");
+          }
         }
       }
     }

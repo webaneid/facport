@@ -19,6 +19,9 @@
 | Varian | Sub-modul/tipe-transaksi konkret DI DALAM 1 Produk (mis. Sales Invoice adalah varian Produk Facport) — field `module`/`moduleKey`, unit gating/billing sesungguhnya, sama konsep "sub-modul" ADR-0019 |
 | Konverter | Produk untuk pengguna Accurate DESKTOP — convert Excel→XML 100% di browser (client-side), user import manual ke Accurate Desktop, TIDAK ADA koneksi/API Accurate Online. Awalnya aplikasi PHP terpisah, sedang dilebur ke Facport § ADR-0033 |
 | AutoProduksi | Produk manufaktur/formula (BOM) — resep produk jadi dari bahan baku+takaran, input jumlah produksi otomatis memotong stok bahan baku. Belum ada kode, direncanakan sebagai Produk ke-3 § ADR-0033 |
+| Nama Perusahaan (akun) | Isian milik AKUN pengguna (`user.company_name`), diisi saat daftar/lengkapi profil. **BUKAN** Data Usaha dan tidak diturunkan darinya — lihat `architecture-contact.md` |
+| Data Usaha | Workspace Accurate (`data_usaha`) dengan nama sendiri, tempat langganan/koneksi Accurate/User Tambahan menempel. Terpisah total dari Nama Perusahaan akun dan tidak menyimpan kontak pelanggan |
+| Lengkapi Profil | Modal yang tidak bisa ditutup untuk akun pelanggan yang Nama Perusahaan/Telepon/WhatsApp-nya masih kosong; hanya lapisan tampilan, tanpa memblokir API |
 | Pesanan Penjualan | Sales Order — dokumen transaksi modul Penjualan |
 | Delivery Order | Pengiriman Pesanan — dokumen transaksi modul Penjualan |
 | Sales Invoice | Faktur Penjualan — dokumen transaksi modul Penjualan |

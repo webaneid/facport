@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { normalizePhone, isValidE164, displayPhone, toWaDigits, waLink } from "./phone";
+import { normalizePhone, isValidE164, displayPhone, toWaDigits, waLink, telLink } from "./phone";
 
 // Kasus normalisasi SAMA dengan `apps/api/src/lib/phone.test.ts` (paritas dua salinan).
 describe("normalizePhone", () => {
@@ -55,5 +55,15 @@ describe("toWaDigits & waLink", () => {
     expect(waLink("abc")).toBeNull();
     expect(waLink("+62123")).toBeNull();
     expect(waLink("+62812345678<script>")).toBeNull();
+  });
+});
+
+describe("telLink", () => {
+  test("hanya dari E.164 sah; selain itu null", () => {
+    expect(telLink("+628123456789")).toBe("tel:+628123456789");
+    expect(telLink("08123456789")).toBe("tel:+628123456789");
+    expect(telLink(null)).toBeNull();
+    expect(telLink("abc")).toBeNull();
+    expect(telLink("+62<script>")).toBeNull();
   });
 });

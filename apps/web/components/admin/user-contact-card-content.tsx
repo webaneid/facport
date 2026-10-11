@@ -1,10 +1,11 @@
 import { MessageCircle, Phone, Building2 } from "lucide-react";
-import { displayPhone, waLink } from "@/lib/phone";
+import { displayPhone, telLink, waLink } from "@/lib/phone";
 
 // § Fase 189A, ADR-0044 — tampilan kontak AKUN di detail user admin. WhatsApp = tautan `wa.me` dari nilai E.164 ASLI (`waLink`, tidak pernah dari hasil
 // `displayPhone`), tab baru, supaya admin bisa langsung chat lewat WhatsApp Web/Desktop. Nomor tidak sah/kosong → tanpa tautan ("Belum diisi").
 export function UserContactCardContent({ companyName, phone, whatsapp }: { companyName: string | null; phone: string | null; whatsapp: string | null }) {
   const wa = waLink(whatsapp);
+  const tel = telLink(phone);
   const empty = <span className="text-muted-foreground">Belum diisi</span>;
   return (
     <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
@@ -20,9 +21,13 @@ export function UserContactCardContent({ companyName, phone, whatsapp }: { compa
         </dt>
         <dd className="mt-0.5 text-foreground">
           {phone ? (
-            <a href={`tel:${phone}`} className="hover:underline">
-              {displayPhone(phone)}
-            </a>
+            tel ? (
+              <a href={tel} className="hover:underline">
+                {displayPhone(phone)}
+              </a>
+            ) : (
+              <span>{displayPhone(phone)}</span>
+            )
           ) : (
             empty
           )}

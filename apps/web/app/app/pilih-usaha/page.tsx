@@ -33,7 +33,7 @@ export default async function PilihUsahaPage() {
   // § Fase 189A, ADR-0044 — halaman pertama setelah login ini juga di luar grup `(protected)`, jadi gerbang Lengkapi Profil dipasang di sini juga.
   return (
     <>
-      {!me.profileComplete && (
+      {me.profileComplete === false && (
         <ProfileCompletionGate initial={{ companyName: me.companyName ?? "", phone: me.phone ?? "", whatsapp: me.whatsapp ?? "" }} />
       )}
       <PilihUsahaForm

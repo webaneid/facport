@@ -105,12 +105,13 @@ export default async function AppProtectedLayout({ children }: { children: React
       user={{ name: me.name, email: me.email }}
     >
       {/* § Fase 189A, ADR-0044 — modal Lengkapi Profil (tak bisa ditutup) bila kontak AKUN belum lengkap. Didahulukan dari popup gerbang Accurate: selama
-          profil belum lengkap gerbang Accurate tidak dirender (dua modal sekaligus berebut fokus); setelah tersimpan, layout dirender ulang dan gerbang muncul. */}
-      {!me.profileComplete && (
+          profil belum lengkap gerbang Accurate tidak dirender (dua modal sekaligus berebut fokus); setelah tersimpan, layout dirender ulang dan gerbang muncul.
+          `=== false` (bukan `!`): API lama (jeda deploy, field belum ada → undefined) TIDAK boleh memunculkan modal untuk semua pelanggan. */}
+      {me.profileComplete === false && (
         <ProfileCompletionGate initial={{ companyName: me.companyName ?? "", phone: me.phone ?? "", whatsapp: me.whatsapp ?? "" }} />
       )}
       <AccurateGateProvider
-        gate={me.profileComplete ? accurateGate : null}
+        gate={me.profileComplete === false ? null : accurateGate}
         dataUsahaId={activeDataUsaha.id}
         dataUsahaName={activeDataUsaha.name}
       >

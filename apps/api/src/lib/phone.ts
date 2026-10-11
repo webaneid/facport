@@ -23,6 +23,11 @@ export function normalizePhone(raw: string | null | undefined): string | null {
 
 export const COMPANY_NAME_MAX_LENGTH = 200;
 
+// § audit keamanan Fase 189A (Low) — nama perusahaan dirender di panel admin; karakter kontrol, zero-width, dan penimpa arah (bidi) tidak punya alasan sah
+// di nama usaha dan memungkinkan spoofing tampilan. Spasi/tab/baris-baru biasa sudah dipadatkan jadi satu spasi sebelum cek ini.
+// eslint-disable-next-line no-control-regex
+const FORBIDDEN_COMPANY_CHARS = /[\u0000-\u001F\u007F-\u009F\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/;
+
 export type ContactInput = { companyName?: unknown; phone?: unknown; whatsapp?: unknown };
 export type ContactValue = { companyName: string; phone: string; whatsapp: string };
 export type ContactField = keyof ContactValue;
@@ -33,7 +38,7 @@ export type ContactField = keyof ContactValue;
  */
 export function parseContact(input: ContactInput): { ok: true; value: ContactValue } | { ok: false; field: ContactField } {
   const companyName = typeof input.companyName === "string" ? input.companyName.trim().replace(/\s+/g, " ") : "";
-  if (companyName.length < 1 || companyName.length > COMPANY_NAME_MAX_LENGTH) return { ok: false, field: "companyName" };
+  if (companyName.length < 1 || companyName.length > COMPANY_NAME_MAX_LENGTH || FORBIDDEN_COMPANY_CHARS.test(companyName)) return { ok: false, field: "companyName" };
 
   const phone = typeof input.phone === "string" ? normalizePhone(input.phone) : null;
   if (!phone || !isValidE164(phone)) return { ok: false, field: "phone" };

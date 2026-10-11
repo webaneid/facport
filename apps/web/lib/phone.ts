@@ -39,3 +39,9 @@ export function waLink(raw: string | null | undefined): string | null {
   const digits = toWaDigits(raw);
   return digits ? `https://wa.me/${digits}` : null;
 }
+
+/** Tautan `tel:` dari nilai E.164 tervalidasi, atau null (defense-in-depth: data yang masuk lewat jalur lain, mis. SQL manual, tidak jadi tautan). */
+export function telLink(raw: string | null | undefined): string | null {
+  const normalized = normalizePhone(raw);
+  return normalized && isValidE164(normalized) ? `tel:${normalized}` : null;
+}

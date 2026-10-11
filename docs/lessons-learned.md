@@ -6176,3 +6176,20 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Pencegahan:** langkah 2b di STANDAR DEPLOY: cek `pgboss.job where state='active'` = 0 sebelum `up -d`. Perbaikan permanen (belum dikerjakan): worker menangani SIGTERM (`boss.stop` graceful + `stop_grace_period` compose) dan/atau pemulihan batch yatim otomatis saat worker start.
 **Pelajaran:** restart worker = membunuh job yang sedang jalan; job idempoten per-baris tidak cukup bila batch bergantung pada satu job tunggal tanpa retry.
 
+## 2026-10-12 — Pesan galat validasi Elysia memuat nilai kiriman pengguna; `.onError` mencatatnya ke log (risiko PII)
+**Gejala:** ditemukan audit keamanan Fase 189A (Low): body `PATCH /me/contact` yang melanggar skema (mis. `phone` terlalu panjang) → `logger.error({ err })` menulis `error.message` Elysia ke log.
+**Akar masalah:** terbukti lewat eksperimen kecil — `error.message` Elysia untuk `VALIDATION` berisi JSON galat yang MENYERTAKAN nilai yang dikirim. `redact` Pino hanya mencakup `authorization`/`password`/`token`. Selama body hanya berisi data non-sensitif ini tak terasa; mulai Fase 189A body memuat telepon/WhatsApp/Nama Perusahaan.
+**Perbaikan:** `app.ts` `.onError`: untuk `VALIDATION`/`PARSE` hanya `logger.warn({ code, path })` tanpa pesan/nilai; tes regresi `app.signup-contact.test.ts`.
+**Pelajaran:** setiap kali sebuah endpoint mulai menerima data pribadi, cek jalur log galat global — bukan hanya log di handler. Bila ada field sensitif baru, tambahkan juga ke daftar `redact` atau jangan log pesan galatnya.
+
+## 2026-10-12 — `db:cleanup-test-data` gagal FK 23503 (tabel AutoProduksi belum dicakup)
+**Gejala:** setelah `bun run test` penuh, skrip pembersih data uji gagal: `update or delete on table "subscriptions" violates foreign key constraint "autoproduksi_intermediary_accounts_subscription_id_subscription"`; transaksi di-rollback sehingga tidak ada yang terhapus dan DB dev menumpuk (±17.900 akun uji, ±12.000 Data Usaha).
+**Akar masalah:** `autoproduksi_intermediary_accounts` dan `autoproduksi_defaults` (Fase 159+) punya FK ke `subscriptions`/`data_usaha` tetapi tidak ditambahkan ke skrip saat tabelnya dibuat.
+**Perbaikan:** skrip menghapus kedua tabel itu (kondisi subscription/data usaha uji) sebelum `subscriptions`/`data_usaha`.
+**Pelajaran:** tabel baru yang punya FK ke `user`/`subscriptions`/`data_usaha` → tambahkan ke `cleanup-test-data.ts` DI FASE YANG SAMA (satu baris di checklist registrasi tabel); jalankan skrip ini setelah fase yang menambah tabel supaya celahnya ketahuan segera.
+
+## 2026-10-12 — Aturan lint React Compiler: dilarang setState di effect dan menulis variabel luar saat render
+**Gejala:** `bun run lint` gagal pada `PhoneInput` (`react-hooks/set-state-in-effect`) dan pada tes (`react-hooks/globals`, variabel `latest` ditulis saat render).
+**Perbaikan:** `PhoneInput` menurunkan nomor/negara dari prop `value` (hanya negara pilihan disimpan di state); tes memakai callback `onValue` di event handler.
+**Pelajaran:** komponen input terkontrol yang di-port dari project lain (Jalajogja) yang menyalin prop ke state lewat effect harus disusun ulang jadi turunan prop; lint di project ini lebih ketat daripada di sumbernya.
+
