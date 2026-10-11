@@ -28,12 +28,14 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
   .get("/summary", async () => getSummary(new Date(), await getCompanyTimezone()), { permission: "insights.view" })
   .get(
     "/customers",
-    async ({ query }) => listCustomers({ q: query.q, type: query.type ?? "all", page: query.page ?? 0, pageSize: query.pageSize ?? 20, now: new Date() }),
+    async ({ query }) => listCustomers({ q: query.q, type: query.type ?? "all", kind: query.kind ?? "semua", page: query.page ?? 0, pageSize: query.pageSize ?? 20, now: new Date() }),
     {
       permission: "insights.view",
       query: t.Object({
         q: t.Optional(t.String({ maxLength: 100 })),
         type: t.Optional(t.Union([t.Literal("all"), t.Literal("commercial"), t.Literal("internal")])),
+        // jenis akun: pemilik (punya Data Usaha) · tambahan (pemegang slot aktif) · belum · semua
+        kind: t.Optional(t.Union([t.Literal("semua"), t.Literal("pemilik"), t.Literal("tambahan"), t.Literal("belum")])),
         ...pageQuery,
       }),
     },

@@ -144,6 +144,36 @@ describe("GET /customers", () => {
   });
 });
 
+describe("GET /customers — jumlah slot User Tambahan & filter jenis akun (tab Akses)", () => {
+  type Row = { id: string; kind: string; seats: { active: number; invited: number; available: number } };
+  test("pemilik membawa ringkasan slot (aktif/diundang/tersedia) lintas Data Usaha miliknya; filter kind memisahkan pemilik/tambahan/belum", async () => {
+    const admin = await loginAs(app, "admin");
+    const tag = `slot${runId}`;
+    const owner = await insertAccount(`${tag}-pemilik`);
+    const member = await insertAccount(`${tag}-anggota`);
+    const lone = await insertAccount(`${tag}-belum`);
+    const du1 = await insertDataUsaha(owner.id, "Slot DU Satu");
+    const du2 = await insertDataUsaha(owner.id, "Slot DU Dua");
+    const active = await createTestSeat(owner.id, du1);
+    await db.update(memberSeats).set({ status: "active", memberUserId: member.id }).where(eq(memberSeats.id, active));
+    const invited = await createTestSeat(owner.id, du1);
+    await db.update(memberSeats).set({ status: "invited", invitedEmail: "undangan@test.local" }).where(eq(memberSeats.id, invited));
+    await createTestSeat(owner.id, du1); // tersedia
+    await createTestSeat(owner.id, du2); // tersedia
+
+    const list = async (kind: string) => json<{ items: Row[]; total: number }>(await get(admin.cookie, `/customers?q=${tag}&kind=${kind}&pageSize=50`));
+    const owners = await list("pemilik");
+    expect(owners.items.map((i) => i.id)).toEqual([owner.id]);
+    expect(owners.items[0]!.seats).toEqual({ active: 1, invited: 1, available: 2 });
+    expect((await list("tambahan")).items.map((i) => i.id)).toEqual([member.id]);
+    expect((await list("belum")).items.map((i) => i.id)).toEqual([lone.id]);
+    const all = await list("semua");
+    expect(all.total).toBe(3);
+    expect(all.items.find((i) => i.id === lone.id)!.seats).toEqual({ active: 0, invited: 0, available: 0 });
+    expect((await get(admin.cookie, "/customers?kind=lain")).status).toBe(422);
+  });
+});
+
 describe("GET /customers/:userId/access", () => {
   test("per Data Usaha milik pelanggan: slot (member/undangan/tersedia) + info Data Usaha; user tak dikenal 404; tanpa Data Usaha → daftar kosong", async () => {
     const admin = await loginAs(app, "admin");

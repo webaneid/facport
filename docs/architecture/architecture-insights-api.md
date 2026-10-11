@@ -29,7 +29,7 @@
 | Endpoint | Query | Isi |
 |---|---|---|
 | `GET /summary` | – | `accounts{commercial,internal,disabled}` (disabled = himpunan bagian), `dataUsaha{total,connected}`, `customers{active,activeFeatures}`, `expiring{owners14,subscriptions14,owners30,subscriptions30}`, `money{thisMonth,thisYear}{verified,adminSettled,total}` |
-| `GET /customers` | `q` (nama/email/perusahaan), `type=all\|commercial\|internal`, `page`, `pageSize≤100` | akun customer (pemilik & tambahan): kontak, `internalReason`, `kind` (`pemilik`/`tambahan`/`belum`), Data Usaha, fitur aktif, `nearestEndAt` |
+| `GET /customers` | `q` (nama/email/perusahaan), `type=all\|commercial\|internal`, `kind=semua\|pemilik\|tambahan\|belum` (Fase 189D, tab Akses), `page`, `pageSize≤100` | akun customer (pemilik & tambahan): kontak, `internalReason`, `kind`, Data Usaha, fitur aktif, `nearestEndAt`, `seats{active,invited,available}` (slot User Tambahan milik akun sebagai pemilik; satu query ringkasan per halaman, tanpa N+1) |
 | `GET /customers/:userId/access` | – | pemilik + tiap Data Usaha + slot User Tambahan (`seatExpired` dihitung server) |
 | `GET /features` | – | per fitur: `dataUsaha`, `customers`, `subscriptions` (aktif sekarang, komersil) |
 | `GET /features/:moduleKey/customers` | `page`,`pageSize` | baris per Data Usaha: pemilik+kontak, paket, mulai/berakhir, `renewalInterval`; 404 modul tak dikenal |

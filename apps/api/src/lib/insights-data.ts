@@ -1,4 +1,4 @@
-import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
+import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
 import { asc } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -130,7 +130,10 @@ async function expiringCounts(now: Date, windowDays: number) {
 // ---------- daftar akun ----------
 export type CustomerType = "all" | "commercial" | "internal";
 
-export async function listCustomers(p: { q?: string; type: CustomerType; page: number; pageSize: number; now: Date }) {
+/** Jenis akun: pemilik = punya Data Usaha; tambahan = bukan pemilik tetapi memegang slot aktif; belum = keduanya tidak. */
+export type CustomerKind = "semua" | "pemilik" | "tambahan" | "belum";
+
+export async function listCustomers(p: { q?: string; type: CustomerType; kind?: CustomerKind; page: number; pageSize: number; now: Date }) {
   const q = p.q?.trim();
   const search = q ? or(ilike(userTable.name, likePattern(q)), ilike(userTable.email, likePattern(q)), ilike(userTable.companyName, likePattern(q))) : undefined;
   const typeCondition =
@@ -139,7 +142,17 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
       : p.type === "commercial"
         ? inArray(userTable.id, commercialCustomerIdsSubquery())
         : inArray(userTable.id, customerUserIdsSubquery());
-  const where = and(typeCondition, search);
+  const ownerIds = db.select({ id: dataUsaha.userId }).from(dataUsaha);
+  const activeSeatMemberIds = db.select({ id: memberSeats.memberUserId }).from(memberSeats).where(and(eq(memberSeats.status, "active"), isNotNull(memberSeats.memberUserId)));
+  const kindCondition =
+    p.kind === "pemilik"
+      ? inArray(userTable.id, ownerIds)
+      : p.kind === "tambahan"
+        ? and(notInArray(userTable.id, ownerIds), inArray(userTable.id, activeSeatMemberIds))
+        : p.kind === "belum"
+          ? and(notInArray(userTable.id, ownerIds), notInArray(userTable.id, activeSeatMemberIds))
+          : undefined;
+  const where = and(typeCondition, search, kindCondition);
 
   const [rows, totalRows] = await Promise.all([
     // kolom EKSPLISIT (bukan select()) — kolom lain tabel user tidak pernah masuk memori objek respons/ekspor (audit 189C, Low)
@@ -165,7 +178,7 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
   const ids = rows.map((r) => r.id);
   if (ids.length === 0) return { items: [], total: totalRows[0]?.n ?? 0, page: p.page, pageSize: p.pageSize };
 
-  const [roleRows, duRows, featureRows, seatRows] = await Promise.all([
+  const [roleRows, duRows, featureRows, seatRows, ownedSeatRows] = await Promise.all([
     db.select({ userId: userRoles.userId, name: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(inArray(userRoles.userId, ids)),
     db
       .select({ userId: dataUsaha.userId, total: count(), connected: sql<number>`count(${dataUsaha.accurateConnectionId})` })
@@ -183,7 +196,20 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
       .from(memberSeats)
       .where(and(eq(memberSeats.status, "active"), inArray(memberSeats.memberUserId, ids)))
       .groupBy(memberSeats.memberUserId),
+    // ringkasan slot User Tambahan pada Data Usaha MILIK akun ini (tab Akses; satu query untuk seluruh halaman, bukan N+1)
+    db
+      .select({ ownerId: dataUsaha.userId, status: memberSeats.status, n: count() })
+      .from(memberSeats)
+      .innerJoin(dataUsaha, eq(dataUsaha.id, memberSeats.dataUsahaId))
+      .where(inArray(dataUsaha.userId, ids))
+      .groupBy(dataUsaha.userId, memberSeats.status),
   ]);
+  const seatsByOwner = new Map<string, { active: number; invited: number; available: number }>();
+  for (const r of ownedSeatRows) {
+    const entry = seatsByOwner.get(r.ownerId) ?? { active: 0, invited: 0, available: 0 };
+    if (r.status === "active" || r.status === "invited" || r.status === "available") entry[r.status] = r.n;
+    seatsByOwner.set(r.ownerId, entry);
+  }
 
   const rolesByUser = new Map<string, string[]>();
   for (const r of roleRows) rolesByUser.set(r.userId, [...(rolesByUser.get(r.userId) ?? []), r.name]);
@@ -212,6 +238,7 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
       kind: owned > 0 ? ("pemilik" as const) : (seatsByUser.get(u.id) ?? 0) > 0 ? ("tambahan" as const) : ("belum" as const),
       ownedDataUsaha: owned,
       connectedDataUsaha: duByUser.get(u.id)?.connected ?? 0,
+      seats: seatsByOwner.get(u.id) ?? { active: 0, invited: 0, available: 0 },
       activeFeatures: [...(feature?.keys ?? [])].sort(),
       nearestEndAt: feature?.nearestEnd ?? null,
       createdAt: u.createdAt,
