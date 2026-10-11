@@ -1,8 +1,17 @@
 # Fase 145 — Cutover Koneksi Accurate ke Production (Carry-over, Pemberitahuan, Runbook, Kontrak)
 
-**Status:** In Progress (cutover dirilis sebagai v2.7.0 pada 2026-09-22; tersisa verifikasi browser, pengumuman pasca, pemantauan, dan kontrak)
+**Status:** Done (bagian cutover/kode — dirilis sebagai v2.7.0 pada 2026-09-22; diverifikasi ulang di kode 2026-10-12). Tindak lanjut non-kode & pembersihan (T4, T8b, T9b, T10, T11) dipisah, lihat "Tindak Lanjut" di bawah.
 **Mulai:** 2026-09-22
-**Selesai:** —
+**Selesai:** 2026-10-12 (penutupan bagian cutover; T11 kontrak tetap terbuka sebagai rilis terpisah)
+
+> **Penutupan 2026-10-12:** disepakati dengan user — "putus total" sudah live. Bukti di kode: migrasi `0030_putus_total_koneksi_lama`
+> (dirilis v2.7.0), `lib/accurate-gate.ts` hanya menerima koneksi ber-`accurateUserId` (koneksi lama tidak terbaca) dan memakai pointer
+> lama hanya untuk narasi `migrated`. Item `[ ]` yang tersisa di bawah BUKAN bagian cutover kode; dilacak sebagai tindak lanjut.
+
+## Tindak Lanjut (dipisah dari penutupan fase ini)
+- T4 paket SQL pemantauan T+1…T+7 — tidak lagi relevan (masa pemantauan lewat); cukup SQL ad-hoc bila ada laporan.
+- T8b pengumuman ke customer · T9b uji browser production · T10 pemantauan T+1…T+7 — konfirmasi ke user apakah sudah dilakukan di luar catatan ini; bila ya, centang.
+- **T11 kontrak** (hapus `subscriptions.accurate_connection_id`, `accurate_connections.accurate_db_id/alias`, baris koneksi `revoked`, endpoint tanpa pemakai) — masih TERBUKA; syarat ≥ T+7 sudah terpenuhi. Perlu fase/rilis sendiri dengan backup + "rilis" eksplisit dari user.
 
 > **AMANDEMEN 2026-09-22:** user memutuskan PUTUS TOTAL (tanpa carry-over/pengumuman T-3). Task T1–T3 (skrip carry-over & notify) **DIBATALKAN**;
 > digantikan migrasi `0030_putus_total_koneksi_lama` + guard job refresh + `migrated` dari pointer lama (selesai, lihat ADR-0037 #11). Sisa fase:

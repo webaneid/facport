@@ -152,7 +152,7 @@
 | 142  | Mesin Scope Accurate (registri endpoint → scope turunan, simpan `granted_scopes`, `missingScopes`, tes CI) | Done | `docs/architecture/architecture-accurate-scope-engine.md` | `docs/phases/phase-142-mesin-scope-accurate.md` |
 | 143  | Model Koneksi Accurate 1-per-Akun dipegang Data Usaha (cutover langsung), refresh aman-rotasi, transfer memutus koneksi | Done | `docs/decisions/adr-0037-cutover-koneksi-per-akun-dipegang-data-usaha.md` | `docs/phases/phase-143-model-koneksi-accurate-per-akun.md` |
 | 144  | Gerbang Koneksi Accurate: popup glass di dashboard, mesin status per Data Usaha, halaman koneksi baru | Done | `docs/architecture/architecture-accurate-connect-gate.md` | `docs/phases/phase-144-gerbang-koneksi-accurate-ui.md` |
-| 145  | Cutover Koneksi Accurate ke Production: putus total (migrasi 0030), dirilis v2.7.0; tersisa uji browser, pengumuman, pemantauan, kontrak | In Progress | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
+| 145  | Cutover Koneksi Accurate ke Production: putus total (migrasi 0030), dirilis v2.7.0 — ditutup 2026-10-12 (bagian cutover); **T11 kontrak (hapus kolom/endpoint lama) masih terbuka sebagai rilis terpisah** | Done | `docs/architecture/architecture-accurate-cutover.md` | `docs/phases/phase-145-cutover-koneksi-accurate-production.md` |
 | 146  | Modul Roll Over (Penyelesaian Pesanan) — penutup Job Costing, kategori Manufacture | Done | `docs/architecture/architecture-roll-over.md` | `docs/phases/phase-146-modul-roll-over.md` |
 | 147  | Modul Work Order (Perintah Kerja) — produksi berbasis BOM, 4 array, lookup cabang & PIC | Done | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-147-modul-work-order.md` |
 | 148  | Modul Material Slip (Pengambilan Bahan Baku) — realisasi bahan baku dari Work Order | Done | `docs/architecture/architecture-material-slip.md` | `docs/phases/phase-148-modul-material-slip.md` |
@@ -196,6 +196,8 @@
 | 186  | Konsistensi UI import Excel AutoProduksi + Import Formula asinkron (job queue, progress bar) | Done | `docs/architecture/architecture-autoproduksi.md` | `docs/phases/phase-186-konsistensi-ui-import-autoproduksi.md` |
 | 187  | Nama Formula AutoProduksi wajib unik per Data Usaha (manual + import Excel; permintaan client, membalik Fase 166/184) — rilis v2.33.0 | Done | `docs/architecture/architecture-autoproduksi.md` | (tanpa phase doc; lihat `docs/lessons-learned.md` 2026-10-09 untuk insiden deploy) |
 | 188  | Hapus Massal transaksi Accurate dari Excel (nomor transaksi → pratinjau → hapus) — **menunggu keputusan client: Opsi 1 tombol per modul vs Opsi 2 fitur berbayar** | Planned (belum ada kode) | `docs/architecture/architecture-bulk-delete.md` (DRAFT) | — |
+| 189  | Insight Pelanggan Admin (kebutuhan data FAC 10/10/2026: komersil vs internal, pengguna per fitur, akses, langganan baru/berakhir, kohort, kontak, riwayat koneksi) — perencanaan selesai; sub-fase 189A–F belum dimulai; menunggu SQL baseline production + keputusan D1–D6 | Planned (belum ada kode) | `docs/architecture/architecture-admin-insight.md` | `docs/phases/phase-189-insight-pelanggan-admin.md` |
+| 190  | Redesign UI Admin: riset, design system (arah "Kompak & tajam"), dashboard + Insight; admin dulu, pelanggan menyusul — **dikerjakan SETELAH Fase 189D** | Not Started | `docs/architecture/architecture-admin-insight.md` § 6, 8 | — |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

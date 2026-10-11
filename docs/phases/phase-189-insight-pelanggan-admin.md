@@ -1,0 +1,62 @@
+# Fase 189 — Insight Pelanggan Admin (Kebutuhan Data FAC)
+
+**Status:** Planned (perencanaan selesai 2026-10-12; belum ada kode)
+**Mulai:** 2026-10-12
+**Selesai:** —
+
+## Tujuan
+Memenuhi 9 butir kebutuhan data client (`docs/referencehtml/facport/masukan-client-12-oct.xlsx`, FAC 10/10/2026) di portal admin: komersil vs internal,
+pengguna per fitur dan fitur per pengguna, akses per pelanggan, pelanggan baru dan yang akan berakhir, kohort/retensi, kontak pelanggan,
+riwayat pemutusan koneksi. Dikerjakan SEBELUM redesign UI (Fase 190) — urutan disepakati user 2026-10-12: kebutuhan client dulu, UI kemudian.
+Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
+
+## Scope perencanaan (fase ini)
+- [x] Baca & petakan 9 butir kebutuhan ke data/kode yang ada (`architecture-admin-insight.md` § 3)
+- [x] Audit kode dashboard admin & skema (user, subscriptions, member_seats, data_usaha, audit_logs)
+- [x] Paket SQL baseline production (`phase-189-sql-pack-baseline.md`) — **belum dijalankan user**
+- [x] Dokumen arsitektur + daftar keputusan (D1–D8)
+- [x] Tutup Fase 145 (bagian cutover) sebagai prasyarat kebersihan PROGRESS
+- [ ] User menjalankan SQL baseline, hasil dicatat di phase-189-sql-pack-baseline.md
+- [ ] Keputusan D1, D2, D3, D5, D6 (lihat arsitektur § 9) — D2/D3 perlu client
+- [ ] ADR-0044 (model komersil/internal + data kontak) setelah D1–D4 jatuh
+
+## Sub-fase eksekusi (masing-masing punya phase doc sendiri saat dimulai)
+| Sub-fase | Isi | Status |
+|---|---|---|
+| 189A | Profil pelanggan: `is_internal`, `phone`, `company_name`; form daftar; "Lengkapi profil"; admin menandai internal | Not Started |
+| 189B | Pencatatan sambung/pilih database + alasan putus; aksi admin cabut/mutasi seat | Not Started |
+| 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
+| 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
+| 189E | KPI komersil/internal & nilai rupiah di `/admin` | Not Started |
+| 189F | (Opsional) Log aktivitas user | Ditunda |
+
+## Di luar scope
+- Redesign visual / design system (→ Fase 190).
+- Bulk delete Accurate (→ Fase 188, tetap menunggu keputusan client).
+- Dashboard pelanggan (`/app`) — disesuaikan setelah design system admin selesai.
+- Penyesuaian `maxRows` trial, concurrency antrean import (Fase 167), dan evaluasi client 2026-10-03 — dikerjakan terpisah.
+
+## Referensi
+- Architecture doc: `docs/architecture/architecture-admin-insight.md`
+- SQL baseline: `docs/phases/phase-189-sql-pack-baseline.md`
+- Dashboard admin yang ada: `docs/architecture/architecture-admin-dashboard.md`, `docs/phases/phase-59-redesign-dashboard-admin.md`
+
+## Keputusan Kecil Selama Eksekusi
+- 2026-10-12 — Penanda internal = flag di akun user (`is_internal`), dipilih user (bukan role khusus).
+- 2026-10-12 — Redesign UI: arah "Kompak & tajam", cakupan admin dulu lalu pelanggan; dikerjakan SETELAH fungsi data (Fase 190).
+- 2026-10-12 — Fase 145 ditutup (bagian cutover). T11 kontrak (hapus kolom/endpoint koneksi lama) tetap terbuka, rilis terpisah.
+
+## Checklist Sebelum Ditutup (sesuai SOP) — berlaku per sub-fase eksekusi
+- [ ] Type check nol error (`bun run typecheck`)
+- [ ] Security review (skill `security-review`; 189C → subagent `security-auditor`)
+- [ ] Temuan Critical/High diperbaiki
+- [ ] Temuan Medium/Low dicatat di `docs/lessons-learned.md` bila ditunda
+- [ ] `docs/PROGRESS.md` diupdate
+- [ ] Data test dibersihkan dari DB dev
+
+## Known Limitations
+- Data historis koneksi sebelum 189B hanya punya sisi "putus"; sisi "benar" diturunkan dari keadaan sekarang.
+- Kohort tahun ke-2 baru terisi 2027.
+- Riwayat tanggal berakhir mengikuti nilai terkini bila admin pernah mengubah tanggal manual.
+
+## Ringkasan Hasil (isi pas fase Done)
