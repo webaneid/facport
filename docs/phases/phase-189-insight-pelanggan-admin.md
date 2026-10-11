@@ -30,7 +30,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
 | 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
 | 189E | KPI komersil/internal & nilai rupiah di `/admin` | Not Started |
-| 189H | Aksi massal pengguna (nonaktifkan/aktifkan, hapus permanen aman, anonimisasi; ADR-0045) + akses pengguna untuk admin ber-role ganda | Not Started |
+| 189H | Aksi massal pengguna (nonaktifkan/aktifkan, hapus permanen aman, anonimisasi; ADR-0045) + aksi role dua arah (akses pengguna untuk admin; jadikan admin untuk customer) | Not Started |
 | 189F | (Opsional) Log aktivitas user | Ditunda |
 
 ## Di luar scope

@@ -76,8 +76,12 @@ Saat ini cabut/undang seat HANYA lewat `routes/team.route.ts` (hak pemilik Data 
 
 ### 4.4 Satu akun, dua role (diputuskan user 2026-10-12: "1 email boleh 2 role bila dibutuhkan")
 - Fakta kode: email unik di Better Auth (1 email = 1 akun) dan `user_roles` (PK `userId+roleId`) mengizinkan banyak role per akun. Layout `app.` mensyaratkan role `customer` (`app/app/(protected)/layout.tsx`); admin hanya perlu `admin`/`staff`. Jadi secara teknis admin yang juga customer BISA, tetapi hari ini tidak ada cara memberi role itu: daftar ulang dengan email yang sama ditolak (duplikat) dan akun admin tidak otomatis ber-role customer.
-- Rancangan: aksi Super Admin "Aktifkan akses pengguna" pada halaman Tim Internal (memberi role `customer`, tercatat di audit). Begitu admin membuka `app.` dan datanya kosong → modal Lengkapi Profil seperti akun lain.
-- Dampak laporan: `getCustomerIdsSubquery()` akan ikut menghitung akun admin ber-role ganda sebagai customer. Usulan (menunggu persetujuan): akun yang memegang role `admin`/`staff` dihitung **internal otomatis** di semua laporan (tanpa flag manual), sedangkan `is_internal` untuk akun customer biasa (trainer, mitra).
+- Rancangan dua arah (hanya Super Admin = `users.manage`, tiap aksi tercatat di `audit_logs`):
+  - **Aktifkan akses pengguna** (admin/staf → customer): memberi role `customer` pada akun yang sudah ada.
+  - **Jadikan admin / Cabut role admin** (customer → admin/staf, dan kebalikannya): memberi atau mencabut role `admin` (Super Admin) / `staff` (Admin) pada akun yang sudah ada, tanpa membuat akun baru dan tanpa mengubah kata sandinya. Hari ini mustahil: `POST /admin/staff` selalu membuat akun BARU dan email yang sudah ada ditolak (`EMAIL_ALREADY_EXISTS`).
+  - Pengaman: konfirmasi ketik (ini kenaikan hak akses = risiko eskalasi hak), notifikasi email ke akun yang diangkat/dicabut, tidak bisa mengubah role diri sendiri, tidak bisa mencabut Super Admin terakhir, dan ringkasan dampak sebelum eksekusi.
+  - Ringkasan dampak untuk pengangkatan customer → admin: jumlah langganan berbayar aktif yang dimiliki, Data Usaha miliknya, dan total uang terbayar yang akan keluar dari laporan (akun jadi internal otomatis). Tagihan perpanjangan terjadwal untuk langganan berbayar akun itu akan diblokir (kontrol keuangan Lapis 1) — Super Admin diperingatkan agar sengaja memutuskan (mis. langganan dialihkan/ditutup lebih dulu).
+- Dampak laporan (**D16 diputuskan user 2026-10-12**): akun yang memegang role `admin`/`staff` dihitung **internal otomatis** di semua laporan, tanpa flag manual — baik admin yang kemudian jadi customer maupun customer yang diangkat jadi admin. `is_internal` tetap untuk akun customer biasa (trainer, mitra). Rumus: internal = `is_internal` ATAU punya role `admin`/`staff`. Konsekuensi: pengangkatan ke admin menghapus riwayat uang akun itu dari laporan (peringatan di atas).
 
 ### 4.5 Aksi massal & kebijakan hapus akun (ADR-0045)
 - Detail keputusan dan alasan: `docs/decisions/adr-0045-kebijakan-hapus-dan-anonimisasi-akun.md`. Ringkas: Nonaktifkan/Aktifkan (ada) · Hapus permanen hanya untuk akun tanpa jejak bisnis · Anonimisasi untuk akun dengan jejak bisnis yang harus dihapus · semua Super Admin saja, konfirmasi ketik, audit per akun.
@@ -165,7 +169,7 @@ Setiap tab: ekspor CSV. Halaman `/admin/users/[id]` yang ada tetap sebagai detai
 | 189D | Halaman Insight fungsional (komponen yang ada) + ekspor CSV | 189C |
 | 189E | Dashboard `/admin`: KPI komersil/internal & nilai rupiah | 189C |
 | 189F | (Opsional) Log aktivitas user | keputusan terpisah |
-| 189H | Aksi massal pengguna: nonaktifkan/aktifkan, hapus permanen aman, anonimisasi (ADR-0045) + aksi Super Admin "Aktifkan akses pengguna" untuk admin ber-role ganda | 189G; audit keamanan penuh |
+| 189H | Aksi massal pengguna: nonaktifkan/aktifkan, hapus permanen aman, anonimisasi (ADR-0045) + aksi role dua arah Super Admin: "Aktifkan akses pengguna", "Jadikan admin"/"Cabut role admin" (§ 4.4) | 189G; audit keamanan penuh |
 | **190** | Riset & desain UI → design system admin → redesign dashboard & Insight (arah "Kompak & tajam", admin dulu, pelanggan menyusul) | 189D (agar ada layar nyata untuk di-redesign) |
 | 191 | Hibah Akses Internal (D9 Lapis 2): langganan gratis tanpa tanggal akhir, "beri semua fitur", notifikasi kedaluwarsa dimatikan untuk internal | 189G + hasil SQL P11 |
 
@@ -199,8 +203,8 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | D13 | Awal berlangganan (butir 5) | Dari langganan BERBAYAR pertama (bukan tanggal daftar, bukan trial) | **Diputuskan user 2026-10-12** |
 | D14 | Daftar "akan berakhir" | Dua preset 14 dan 30 hari; kolom status tagihan perpanjangan (belum terbit/terbit/lunas); tabel ringkas + tombol Lihat + tombol WhatsApp | **Diputuskan user 2026-10-12** |
 | D15 | Notifikasi cabut/pindah akses | Ke pemilik Data Usaha saja | **Diputuskan user 2026-10-12** |
-| D16 | Akun ber-role admin/staf dihitung internal otomatis di laporan | Ya (usulan, § 4.4) | **Menunggu user** |
-| D17 | Admin ber-role ganda | Aksi Super Admin "Aktifkan akses pengguna"; modal Lengkapi Profil berlaku saat membuka `app.` | **Diputuskan arah oleh user; rincian aksi disarankan** |
+| D16 | Akun ber-role admin/staf dihitung internal otomatis di laporan | Ya | **Diputuskan user 2026-10-12** |
+| D17 | Akun ber-role ganda / promosi akun | Dua arah, Super Admin saja: "Aktifkan akses pengguna" (admin→customer) dan "Jadikan admin/Cabut role admin" (customer↔admin/staf), dengan konfirmasi ketik, email pemberitahuan, audit, ringkasan dampak (§ 4.4) | **Diputuskan arah oleh user 2026-10-12** |
 | D18 | Hapus akun | Tiga tingkat (nonaktifkan / hapus permanen tanpa jejak bisnis / anonimisasi) — ADR-0045 | **Menunggu user (Proposed)** |
 | D19 | Metrik grafik tren | 5 metrik: pengguna terdaftar, pelanggan berlangganan aktif, baru, berhenti, uang terbayar; evaluasi kemudian | **Diputuskan user 2026-10-12** |
 | D20 | Admin/staf Tim Internal dikecualikan dari modal Lengkapi Profil | Ya, kecuali saat membuka `app.` sebagai ber-role ganda | **Diputuskan user 2026-10-12** |
