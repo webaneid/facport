@@ -10,6 +10,9 @@ import { displayPhone } from "./phone";
 /** Batas baris ekspor (D5: unduh langsung, ringan). Melebihi batas → dipotong dan ditandai `truncated`. */
 export const EXPORT_MAX_ROWS = 10_000;
 
+/** Kuota ekspor per akun per jam (melengkapi rate limit per IP di app.ts). */
+export const EXPORT_HOURLY_QUOTA = 30;
+
 export function capRows<T>(rows: T[], max = EXPORT_MAX_ROWS): { rows: T[]; truncated: boolean } {
   return rows.length > max ? { rows: rows.slice(0, max), truncated: true } : { rows, truncated: false };
 }

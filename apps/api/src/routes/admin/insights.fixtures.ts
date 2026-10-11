@@ -118,7 +118,7 @@ export async function insertPaidInvoice(userId: string, total: number, opts: { m
 export function makeTestApp(route: Elysia<any, any, any, any, any, any, any>) {
   return new Elysia().mount(auth.handler).use(route);
 }
-export async function loginAs(app: Elysia, roleName: "admin" | "staff" | "customer", label = roleName) {
+export async function loginAs(app: Elysia, roleName: "admin" | "staff" | "customer", label: string = roleName) {
   const email = `ins-login-${label}-${runId}-${nextSeq()}@test.local`;
   const res = await app.handle(
     new Request("http://localhost/api/auth/sign-up/email", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TestPassword123!", name: `Insight ${label}` }) }),

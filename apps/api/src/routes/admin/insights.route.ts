@@ -1,12 +1,13 @@
 import { Elysia, t } from "elysia";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, count, eq, gte, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { auditLogs, dataUsaha, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { getCompanyTimezone } from "../../lib/company-timezone";
+import { customerUserIdsSubquery } from "../../lib/internal-accounts";
 import { getConnectionHistory, getSummary, getTenure, getTrend, isKnownModule, listCustomers, listExpiring, listFeatureCustomers, listFeatures, listNewSubscriptions } from "../../lib/insights-data";
 import { monthKey, monthOf, parseMonthKey, resolveDateRange } from "../../lib/admin-insights";
-import { EXPORT_MAX_ROWS, capRows, connectionHistoryCsv, csvFile, customersCsv, expiringCsv, featureUsersCsv, formatLocalDateTime, newCsv, trendCsv } from "../../lib/insights-export";
+import { EXPORT_HOURLY_QUOTA, EXPORT_MAX_ROWS, capRows, connectionHistoryCsv, csvFile, customersCsv, expiringCsv, featureUsersCsv, formatLocalDateTime, newCsv, trendCsv } from "../../lib/insights-export";
 import { moduleLabel } from "../../lib/module-catalog";
 import { listSeatsForDataUsaha } from "../../lib/seat-queries";
 
@@ -14,9 +15,13 @@ import { listSeatsForDataUsaha } from "../../lib/seat-queries";
 // `lib/insights-data.ts` dan merumuskan lewat `lib/admin-insights.ts` (murni, diuji data sintetis). Definisi baku: docs/phases/phase-189c-api-insight.md. Berisi DATA PRIBADI
 // (email/telepon/perusahaan): jangan masuk log; ekspor CSV dicatat audit.
 const pageQuery = {
-  page: t.Optional(t.Numeric({ minimum: 0, maximum: 100_000 })),
+  // maks 2.000 halaman × 100 = OFFSET ≤ 200.000 (OFFSET besar memaksa Postgres memindai & membuang baris — audit 189C, Low)
+  page: t.Optional(t.Numeric({ minimum: 0, maximum: 2000 })),
   pageSize: t.Optional(t.Numeric({ minimum: 1, maximum: 100 })),
 };
+
+// Audit ekspor TIDAK menyimpan teks pencarian mentah (bisa berisi email/nama pelanggan = PII ikutan, audit 189C Medium) — hanya penanda dan panjangnya.
+const searchFilter = (q: string | undefined) => ({ hasQ: !!q?.trim(), qLength: q?.trim().length ?? 0 });
 
 export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
   .use(permissionPlugin)
@@ -37,7 +42,11 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
   .get(
     "/customers/:userId/access",
     async ({ params, set }) => {
-      const [owner] = await db.select({ id: userTable.id, name: userTable.name, email: userTable.email, companyName: userTable.companyName }).from(userTable).where(eq(userTable.id, params.userId));
+      // hanya akun ber-role customer (konsisten dengan definisi "pelanggan"); akun admin/staf tidak ditelusuri lewat endpoint ini (audit 189C, Low)
+      const [owner] = await db
+        .select({ id: userTable.id, name: userTable.name, email: userTable.email, companyName: userTable.companyName })
+        .from(userTable)
+        .where(and(eq(userTable.id, params.userId), inArray(userTable.id, customerUserIdsSubquery())));
       if (!owner) {
         set.status = 404;
         return { code: "USER_NOT_FOUND" };
@@ -150,6 +159,16 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
     async ({ params, query, user, set }) => {
       const timeZone = await getCompanyTimezone();
       const now = new Date();
+      // KUOTA PER AKUN (bukan hanya per IP): rate limit IP di app.ts mudah dihindari akun yang dibajak (ganti IP) dan menghukum IP kantor bersama. Dihitung dari audit ekspor
+      // akun ini dalam 1 jam terakhir (insert audit sudah ada → murah, memakai indeks entity_type+action+created_at).
+      const [recent] = await db
+        .select({ n: count() })
+        .from(auditLogs)
+        .where(and(eq(auditLogs.entityType, "insight_export"), eq(auditLogs.action, "export"), eq(auditLogs.actorId, user.id), gte(auditLogs.createdAt, new Date(now.getTime() - 60 * 60 * 1000))));
+      if ((recent?.n ?? 0) >= EXPORT_HOURLY_QUOTA) {
+        set.status = 429;
+        return { code: "EXPORT_QUOTA_EXCEEDED" };
+      }
       const fail = (status: number, code: string) => {
         set.status = status;
         return { code };
@@ -164,7 +183,7 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
         const capped = capRows(items);
         truncated = capped.truncated;
         csv = customersCsv(capped.rows, timeZone);
-        filters = { q: query.q ?? null, type: query.type ?? "all" };
+        filters = { ...searchFilter(query.q), type: query.type ?? "all" };
       } else if (params.report === "feature-users") {
         if (!query.moduleKey) return fail(422, "MODULE_REQUIRED");
         if (!isKnownModule(query.moduleKey)) return fail(404, "MODULE_NOT_FOUND");
@@ -203,7 +222,7 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
         const capped = capRows(items);
         truncated = capped.truncated;
         csv = connectionHistoryCsv(capped.rows, timeZone);
-        filters = { q: query.q ?? null, kind: query.kind ?? "all", from: query.from ?? null, to: query.to ?? null };
+        filters = { ...searchFilter(query.q), kind: query.kind ?? "all", from: query.from ?? null, to: query.to ?? null };
       } else {
         if (query.year === undefined || !query.metric) return fail(422, "TREND_PARAMS_REQUIRED");
         const trend = await getTrend({ year: query.year, metric: query.metric, now, timeZone });

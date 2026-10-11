@@ -25,7 +25,7 @@ describe("bulan", () => {
   test("monthKey / parseMonthKey bolak-balik; format salah → null", () => {
     expect(monthKey({ year: 2026, month: 3 })).toBe("2026-03");
     expect(parseMonthKey("2026-10")).toEqual({ year: 2026, month: 10 });
-    for (const bad of ["2026-13", "2026-00", "26-10", "2026/10", "", "abcd-ef"]) expect(parseMonthKey(bad)).toBeNull();
+    for (const bad of ["2026-13", "2026-00", "26-10", "2026/10", "", "abcd-ef", "0050-01", "1999-12", "2101-01"]) expect(parseMonthKey(bad)).toBeNull(); // tahun di luar 2000–2100 ditolak (Date.UTC memetakan 0–99 ke 1900-an)
   });
 
   test("monthOf memakai zona waktu perusahaan: 31 Okt 18:00 UTC = 1 Nov 01:00 WIB → November", () => {

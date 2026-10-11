@@ -142,7 +142,24 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
   const where = and(typeCondition, search);
 
   const [rows, totalRows] = await Promise.all([
-    db.select().from(userTable).where(where).orderBy(desc(userTable.createdAt), userTable.id).limit(p.pageSize).offset(p.page * p.pageSize),
+    // kolom EKSPLISIT (bukan select()) — kolom lain tabel user tidak pernah masuk memori objek respons/ekspor (audit 189C, Low)
+    db
+      .select({
+        id: userTable.id,
+        name: userTable.name,
+        email: userTable.email,
+        disabled: userTable.disabled,
+        companyName: userTable.companyName,
+        phone: userTable.phone,
+        whatsapp: userTable.whatsapp,
+        isInternal: userTable.isInternal,
+        createdAt: userTable.createdAt,
+      })
+      .from(userTable)
+      .where(where)
+      .orderBy(desc(userTable.createdAt), userTable.id)
+      .limit(p.pageSize)
+      .offset(p.page * p.pageSize),
     db.select({ n: count() }).from(userTable).where(where),
   ]);
   const ids = rows.map((r) => r.id);
@@ -465,6 +482,26 @@ export const CONNECTION_EVENT_ACTIONS = ["connect_accurate", "select_database", 
 /** Koreksi = pelanggan memperbaiki sendiri ("Pilih yang Lain") atau admin memutus koneksi — indikator "salah koneksi" (butir 9). */
 export const CORRECTION_ACTIONS = ["reset_database", "disconnect_accurate"];
 
+const CHANGE_STRING_KEYS = ["via", "accountEmail", "accurateDbId", "alias", "previousDbId", "previousAlias", "previousAccurateDbAlias"] as const;
+
+/**
+ * Proyeksi WHITELIST isi `audit_logs.changes` untuk laporan lintas pelanggan: hanya kunci yang dibutuhkan laporan. Id internal koneksi (`*ConnectionId`), daftar Data Usaha
+ * terdampak, dan kolom apa pun yang ditambahkan di masa depan TIDAK ikut otomatis. `reason` hanya `{code, note}` (catatan internal admin, untuk admin berizin).
+ */
+export function projectConnectionChanges(_action: string, changes: unknown): Record<string, unknown> {
+  if (typeof changes !== "object" || changes === null || Array.isArray(changes)) return {};
+  const c = changes as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of CHANGE_STRING_KEYS) if (typeof c[key] === "string") out[key] = c[key];
+  if (typeof c.removedAccount === "boolean") out.removedAccount = c.removedAccount;
+  const reason = c.reason;
+  if (typeof reason === "object" && reason !== null && !Array.isArray(reason)) {
+    const r = reason as Record<string, unknown>;
+    out.reason = { code: typeof r.code === "string" ? r.code : null, note: typeof r.note === "string" ? r.note : null };
+  }
+  return out;
+}
+
 export async function getConnectionHistory(p: { q?: string; kind: "all" | "koreksi"; range?: { start: Date; endExclusive: Date }; page: number; pageSize: number }) {
   const owner = userTable;
   const actor = alias(userTable, "actor");
@@ -512,7 +549,7 @@ export async function getConnectionHistory(p: { q?: string; kind: "all" | "korek
   ]);
 
   return {
-    items: items.map((i) => ({ ...i, actor: i.actor?.id ? i.actor : null })),
+    items: items.map((i) => ({ ...i, changes: projectConnectionChanges(i.action, i.changes), actor: i.actor?.id ? i.actor : null })),
     total: totalRows[0]?.n ?? 0,
     page: p.page,
     pageSize: p.pageSize,

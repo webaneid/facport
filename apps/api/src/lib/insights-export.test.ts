@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { EXPORT_MAX_ROWS, capRows, connectionEventText, customersCsv, expiringCsv, featureUsersCsv, formatLocalDateTime, newCsv, trendCsv, connectionHistoryCsv } from "./insights-export";
 import { displayPhone } from "./phone";
+import { projectConnectionChanges } from "./insights-data";
 
 // § Fase 189C, D5 — ekspor CSV: pembangun MURNI (tanpa DB). Sel berawalan = + - @ dinetralkan; telepon Indonesia diekspor format lokal (08…) agar tidak berapostrof.
 const TZ = "Asia/Jakarta";
@@ -79,5 +80,26 @@ describe("pembangun CSV", () => {
 
     const tr = trendCsv([{ month: "2026-01", value: 15, previous: 10, delta: 5, percent: 50, future: false }, { month: "2026-12", value: null, previous: null, delta: null, percent: null, future: true }]);
     expect(tr.rows).toEqual([["2026-01", 15, 10, 5, 50], ["2026-12", null, null, null, null]]);
+  });
+});
+
+describe("projectConnectionChanges (whitelist)", () => {
+  test("hanya kunci yang dibutuhkan laporan; id internal koneksi & daftar Data Usaha terdampak tidak ikut; alasan hanya code+note", () => {
+    const out = projectConnectionChanges("disconnect_accurate", {
+      previousConnectionId: "c1",
+      previousAccurateDbId: "9",
+      previousAccurateDbAlias: "PT A",
+      removedAccount: true,
+      affectedDataUsahaIds: ["d1", "d2"],
+      viaDataUsahaId: "d1",
+      reason: { code: "salah_akun", note: "catatan", rahasia: "x" },
+      kolomBaruDiMasaDepan: "bocor",
+    });
+    expect(out).toEqual({ previousAccurateDbAlias: "PT A", removedAccount: true, reason: { code: "salah_akun", note: "catatan" } });
+    expect(projectConnectionChanges("connect_accurate", { via: "oauth", accountEmail: "a@x.id", accurateConnectionId: "c" })).toEqual({ via: "oauth", accountEmail: "a@x.id" });
+    expect(projectConnectionChanges("reset_database", { previousDbId: "7", previousAlias: "PT X", lain: 1 })).toEqual({ previousDbId: "7", previousAlias: "PT X" });
+    expect(projectConnectionChanges("select_database", { accurateDbId: "7", alias: "PT Y" })).toEqual({ accurateDbId: "7", alias: "PT Y" });
+    for (const bad of [null, undefined, "teks", 5, []]) expect(projectConnectionChanges("select_database", bad)).toEqual({});
+    expect(projectConnectionChanges("disconnect_accurate", { reason: null })).toEqual({});
   });
 });

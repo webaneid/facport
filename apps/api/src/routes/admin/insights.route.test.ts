@@ -139,6 +139,8 @@ describe("GET /customers", () => {
     expect((await get(admin.cookie, "/customers?pageSize=101")).status).toBe(422);
     expect((await get(admin.cookie, "/customers?type=semua")).status).toBe(422);
     expect((await get(admin.cookie, "/customers?page=-1")).status).toBe(422);
+    expect((await get(admin.cookie, "/customers?page=2001")).status).toBe(422); // OFFSET dibatasi (maks 2.000 halaman)
+    expect((await get(admin.cookie, "/customers?page=2000")).status).toBe(200);
   });
 });
 
@@ -162,6 +164,9 @@ describe("GET /customers/:userId/access", () => {
     expect(byName.get("DU Akses Dua")!.seats).toMatchObject([{ status: "available", memberEmail: null }]);
 
     expect((await get(admin.cookie, "/customers/tidak-ada/access")).status).toBe(404);
+    // hanya akun customer: akun admin/staf tidak bisa ditelusuri lewat endpoint pelanggan
+    const staffAccount = await insertAccount("akses-staf", { roleName: "staff" });
+    expect((await get(admin.cookie, `/customers/${staffAccount.id}/access`)).status).toBe(404);
     const lone = await insertAccount("akses-sendiri");
     expect(await json<{ dataUsaha: unknown[] }>(await get(admin.cookie, `/customers/${lone.id}/access`))).toMatchObject({ dataUsaha: [] });
     void userTable;
@@ -533,7 +538,7 @@ describe("GET /connection-history (laporan lintas pelanggan)", () => {
     await insertDataUsahaEventRow(du, "reset_database", owner.id, { previousDbId: "1", previousAlias: "PT Salah" }, wib(2019, 5, 3, 10)); // koreksi mandiri
     await insertDataUsahaEventRow(du, "select_database", owner.id, { accurateDbId: "2", alias: "PT Benar" }, wib(2019, 5, 3, 10, 2));
     await insertDataUsahaEventRow(du2, "disconnect_accurate", adminUser.id, { previousAccurateDbAlias: "PT X", reason: { code: "salah_akun", note: null } }, wib(2019, 5, 10, 8));
-    await insertDataUsahaEventRow(du2, "disconnect_accurate", adminUser.id, { previousAccurateDbAlias: "PT X", reason: { code: "salah_database", note: null } }, wib(2019, 5, 20, 8)); // berulang
+    await insertDataUsahaEventRow(du2, "disconnect_accurate", adminUser.id, { previousAccurateDbAlias: "PT X", previousConnectionId: "conn-rahasia", affectedDataUsahaIds: ["a", "b"], reason: { code: "salah_database", note: null } }, wib(2019, 5, 20, 8)); // berulang
     await insertDataUsahaEventRow(du, "connect_accurate", owner.id, { via: "oauth" }, wib(2019, 4, 30, 23)); // di luar jendela (30 Apr)
     await insertDataUsahaEventRow(du, "update", owner.id, { name: "bukan koneksi" }, wib(2019, 5, 5)); // aksi lain
     await insertDataUsahaEventRow(duI, "reset_database", internal.id, { previousAlias: "PT Int" }, wib(2019, 5, 6)); // internal
@@ -547,6 +552,10 @@ describe("GET /connection-history (laporan lintas pelanggan)", () => {
     const reset = mine.find((i) => i.action === "reset_database")!;
     expect(reset).toMatchObject({ dataUsaha: { id: du, name: `${tag} DU Satu` }, owner: { id: owner.id, email: owner.email, companyName: "PT Salah Sambung", phone: "+6281400000001", whatsapp: "+6281400000002" }, changes: { previousAlias: "PT Salah" } });
     expect(reset.actor?.id).toBe(owner.id);
+    // proyeksi whitelist: id internal koneksi & daftar Data Usaha terdampak TIDAK ikut walau tersimpan di audit_logs
+    const disc = mine.find((i) => i.action === "disconnect_accurate")!;
+    expect(disc.changes).toEqual({ previousAccurateDbAlias: "PT X", reason: { code: "salah_database", note: null } });
+    expect(JSON.stringify(mine.map((i) => i.changes))).not.toMatch(/ConnectionId|affectedDataUsahaIds/);
     expect(mine.find((i) => i.action === "disconnect_accurate")!.actor?.id).toBe(adminUser.id);
     // ringkasan (delta): byAction, DU dengan koreksi (du: reset; du2: 2x disconnect) = +2, pemilik +2, berulang +1 (du2)
     const byAction = (k: string) => (after.summary.byAction[k] ?? 0) - (before.summary.byAction[k] ?? 0);
@@ -612,7 +621,9 @@ describe("GET /export/:report (CSV, D5)", () => {
 
     const [log] = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "insight_export"), eq(auditLogs.actorId, admin.id))).orderBy(desc(auditLogs.createdAt)).limit(1);
     expect(log).toMatchObject({ action: "export", entityId: "customers" });
-    expect(log!.changes).toMatchObject({ report: "customers", rows: 2, truncated: false, filters: { q: tag } });
+    // filter pencarian mentah (bisa berisi email/nama) TIDAK disimpan di audit — hanya penanda dan panjangnya
+    expect(log!.changes).toMatchObject({ report: "customers", rows: 2, truncated: false, filters: { hasQ: true, qLength: tag.length } });
+    expect(JSON.stringify(log!.changes)).not.toContain(tag);
   });
 
   test("Admin (staff) boleh; fitur/baru/akan berakhir/riwayat/tren menghasilkan CSV dengan header khas", async () => {
@@ -660,5 +671,27 @@ describe("GET /export/:report (CSV, D5)", () => {
     const customer = await loginAs(app, "customer");
     expect((await get(null, "/export/customers")).status).toBe(401);
     expect((await get(customer.cookie, "/export/customers")).status).toBe(403);
+  });
+
+  test("kuota ekspor PER AKUN (30/jam): akun yang sudah mencapai kuota ditolak 429 walau IP sama; akun lain tidak terpengaruh; ditolak tidak menambah audit", async () => {
+    const busy = await loginAs(app, "admin", "busy");
+    const other = await loginAs(app, "staff", "other");
+    const now = Date.now();
+    await db.insert(auditLogs).values(
+      Array.from({ length: 30 }, (_, i) => ({ entityType: "insight_export", entityId: "customers", action: "export", changes: { seed: i }, actorId: busy.id, createdAt: new Date(now - 5 * 60 * 1000) })),
+    );
+    const blocked = await get(busy.cookie, "/export/trend?year=2023&metric=money");
+    expect(blocked.status).toBe(429);
+    expect(await blocked.json()).toMatchObject({ code: "EXPORT_QUOTA_EXCEEDED" });
+    expect((await get(other.cookie, "/export/trend?year=2023&metric=money")).status).toBe(200);
+    const rows = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "insight_export"), eq(auditLogs.actorId, busy.id)));
+    expect(rows).toHaveLength(30); // tidak bertambah
+
+    // ekspor lama (>1 jam) tidak dihitung
+    const old = await loginAs(app, "admin", "old");
+    await db.insert(auditLogs).values(
+      Array.from({ length: 30 }, (_, i) => ({ entityType: "insight_export", entityId: "customers", action: "export", changes: { seed: i }, actorId: old.id, createdAt: new Date(now - 2 * 60 * 60 * 1000) })),
+    );
+    expect((await get(old.cookie, "/export/trend?year=2023&metric=money")).status).toBe(200);
   });
 });

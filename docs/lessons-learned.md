@@ -6210,3 +6210,17 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Gejala:** tes 189B menangkap alasan 501 karakter lolos karena batas skema sengaja diberi ruang 2× untuk spasi tepi; yang tersimpan setelah trim melebihi batas.
 **Perbaikan:** server memeriksa panjang SETELAH trim (`REASON_TOO_LONG`). **Pelajaran:** bila skema memberi kelonggaran untuk normalisasi, ulangi batas pada nilai TERNORMALISASI sebelum disimpan, dan uji tepat di perbatasan.
 
+## 2026-10-12 — Tes DB dengan data bertanggal LAMPAU menumpuk antar-run (bukan bug kode): pakai delta
+**Gejala:** tes tren (tahun 2021–2023) mengembalikan angka tepat 3× lipat setelah tiga kali jalan yang gagal, padahal kodenya benar.
+**Akar masalah:** data uji bertanggal masa lalu tidak "bergeser" seperti data bertanggal `now`; baris `@test.local` baru dibersihkan oleh `db:cleanup-test-data`, bukan otomatis. Tes dengan nilai eksak per bulan jadi bergantung pada kebersihan DB.
+**Perbaikan:** asersi memakai SELISIH sebelum/sesudah per bulan (dan keanggotaan id pelanggan uji); terbukti lulus saat dijalankan ulang tanpa pembersihan.
+**Pelajaran:** untuk laporan agregat lintas semua baris di DB dev bersama, jangan menegaskan total eksak — pakai delta atau scoping ke fixture sendiri.
+
+## 2026-10-12 — Rate limit per IP saja tidak cukup untuk data pribadi; kuota per akun dari audit
+**Temuan audit 189C (Medium):** limiter in-memory berkunci `prefix:IP` jalan sebelum autentikasi — akun admin yang dibajak bisa ganti IP, sementara pihak tak berwenang bisa mengunci IP kantor bersama.
+**Perbaikan:** kuota ekspor per `actor_id` dihitung dari `audit_logs` (insert audit sudah ada, indeks tersedia) + limiter IP dipertahankan.
+**Pelajaran:** kontrol anti-penarikan massal harus terikat ke AKTOR (akun), bukan hanya jaringan; jangan menyimpan teks pencarian pengguna mentah di audit (PII ikutan).
+
+## 2026-10-12 — `Date.UTC` memetakan tahun 0–99 ke 1900-an
+**Temuan audit 189C (Info):** `parseMonthKey("0050-01")` lolos regex dan menghasilkan bulan yang salah diam-diam. **Perbaikan:** tahun dibatasi 2000–2100. **Pelajaran:** validasi rentang tahun masuk akal pada setiap parser tanggal/bulan yang memakai `Date.UTC`.
+

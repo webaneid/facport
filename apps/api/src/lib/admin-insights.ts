@@ -14,7 +14,8 @@ export function parseMonthKey(value: string): MonthRef | null {
   if (!m) return null;
   const year = Number(m[1]);
   const month = Number(m[2]);
-  return month >= 1 && month <= 12 ? { year, month } : null;
+  // tahun di luar 2000–2100 ditolak: Date.UTC memetakan tahun 0–99 ke 1900-an sehingga bulan "0050-01" diam-diam salah (temuan audit 189C, Info)
+  return month >= 1 && month <= 12 && year >= 2000 && year <= 2100 ? { year, month } : null;
 }
 
 /** Urutan bulan sebagai bilangan bulat (untuk selisih/pembanding). */
