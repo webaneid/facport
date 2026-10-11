@@ -24,7 +24,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 ## Sub-fase eksekusi (masing-masing punya phase doc sendiri saat dimulai)
 | Sub-fase | Isi | Status |
 |---|---|---|
-| 189A | Profil pelanggan: `is_internal`, `phone`, `company_name`; form daftar; "Lengkapi profil"; admin menandai internal | Not Started |
+| 189A | Profil akun: `phone`, `whatsapp`, `company_name`; `PhoneInput` (E.164); form daftar; modal Lengkapi Profil tak bisa ditutup; tampil + WhatsApp klik di admin — rencana detail: `phase-189a-profil-kontak-akun.md` | In Progress |
 | 189G | Akun internal & kontrol keuangan (Lapis 1) + aksi massal tandai internal di `/admin/users`; urutan: setelah 189A, sebelum 189C | Not Started |
 | 189B | Pencatatan sambung/pilih database + alasan putus; aksi admin cabut/mutasi seat | Not Started |
 | 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |

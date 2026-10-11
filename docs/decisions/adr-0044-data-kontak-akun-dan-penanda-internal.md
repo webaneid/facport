@@ -1,6 +1,6 @@
 # ADR-0044: Data kontak melekat pada AKUN, penanda internal, dan kontrol keuangan akun internal
 
-**Status:** Proposed (menunggu persetujuan user; keputusan-keputusan di bawah sudah diucapkan user 2026-10-12)
+**Status:** Accepted (2026-10-12, disetujui user: "setuju ADR")
 **Tanggal:** 2026-10-12
 **Terkait:** `docs/architecture/architecture-admin-insight.md`, Fase 189, ADR-0042, ADR-0027
 

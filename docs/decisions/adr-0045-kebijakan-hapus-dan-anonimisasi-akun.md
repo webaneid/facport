@@ -1,6 +1,6 @@
 # ADR-0045: Kebijakan hapus permanen dan anonimisasi akun pelanggan
 
-**Status:** Proposed (menunggu persetujuan user; user menyatakan "boleh" untuk aksi massal termasuk hapus total, 2026-10-12)
+**Status:** Accepted (2026-10-12, disetujui user: "setuju ADR")
 **Tanggal:** 2026-10-12
 **Terkait:** `docs/architecture/architecture-admin-insight.md` § 5.4 & 5.5, ADR-0027 (nonaktifkan user), Fase 189H
 
