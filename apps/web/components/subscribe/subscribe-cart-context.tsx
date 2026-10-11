@@ -210,7 +210,9 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
           ? "Salah satu fitur yang dipilih masih punya pesanan yang belum selesai dibayar — selesaikan atau batalkan pesanan itu dulu."
           : code === "PLAN_NOT_ACTIVE"
             ? "Salah satu paket sudah tidak tersedia."
-            : "Gagal membuat pesanan. Coba lagi.",
+            : code === "INTERNAL_ACCOUNT_NO_BILLING"
+              ? "Akun Anda terdaftar sebagai akun internal sehingga tidak ditagih dan tidak dapat membuat pesanan berbayar. Hubungi admin untuk mendapatkan akses."
+              : "Gagal membuat pesanan. Coba lagi.",
       );
       return;
     }

@@ -133,7 +133,9 @@ export function TeamForm({ dataUsahaId }: { dataUsahaId: string }) {
             ? "Paket User Tambahan untuk periode ini belum tersedia."
             : code === "SEAT_NOT_RENEWABLE"
               ? "Salah satu slot tidak bisa diperpanjang."
-              : "Gagal membuat tagihan perpanjangan. Coba lagi.",
+              : code === "INTERNAL_ACCOUNT_NO_BILLING"
+                ? "Akun Anda terdaftar sebagai akun internal sehingga tidak ditagih. Hubungi admin untuk memperpanjang akses."
+                : "Gagal membuat tagihan perpanjangan. Coba lagi.",
       );
       return;
     }

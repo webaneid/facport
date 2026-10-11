@@ -25,6 +25,9 @@ import { api } from "@/lib/api-client";
 import { Can } from "@/components/auth/can";
 import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dialog";
 import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
+import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
+import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { Button } from "@/components/ui/button";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
 // diagnosa saat user telepon minta support: profil singkat + riwayat
@@ -40,7 +43,7 @@ import { UserContactCardContent } from "@/components/admin/user-contact-card-con
 // customer tinggal "Hubungkan Ulang" dari sisi mereka.
 type ImportBatch = { id: string; module: string; fileName: string; status: string; totalRows: number; createdAt: string };
 type Detail = {
-  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null };
+  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null; internalFlag: boolean; internalReason: InternalReason; isInternal: boolean };
   batches: ImportBatch[];
   total: number;
 };
@@ -80,6 +83,7 @@ export default function AdminUserDetailPage() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[] | null>(null);
   const [dataUsahaList, setDataUsahaList] = useState<DataUsahaRow[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [internalDialog, setInternalDialog] = useState(false); // § Fase 189G — dialog tandai/cabut internal (1 akun)
 
   const loadSubscriptions = useCallback(async () => {
     const res = await api.admin.users({ id: params.id }).subscriptions.get();
@@ -90,15 +94,19 @@ export default function AdminUserDetailPage() {
     }
   }, [params.id]);
 
+  const loadDetail = useCallback(async () => {
+    const res = await api.admin.users({ id: params.id })["import-batches"].get();
+    if (res.data) setDetail(res.data as unknown as Detail);
+    else if (res.error) setNotFound(true);
+  }, [params.id]);
+
   useEffect(() => {
     async function load() {
-      const res = await api.admin.users({ id: params.id })["import-batches"].get();
-      if (res.data) setDetail(res.data as unknown as Detail);
-      else if (res.error) setNotFound(true);
+      await loadDetail();
       await loadSubscriptions();
     }
     load();
-  }, [params.id, loadSubscriptions]);
+  }, [loadDetail, loadSubscriptions]);
 
   if (notFound) {
     return <EmptyState icon={Inbox} title="User tidak ditemukan" />;
@@ -143,7 +151,10 @@ export default function AdminUserDetailPage() {
               <CardTitle>{user.name || "-"}</CardTitle>
               <CardDescription>{user.email}</CardDescription>
             </div>
-            {user.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <Badge variant="success">Aktif</Badge>}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <InternalBadge reason={user.internalReason} />
+              {user.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <Badge variant="success">Aktif</Badge>}
+            </div>
           </div>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
@@ -152,11 +163,21 @@ export default function AdminUserDetailPage() {
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
             <Can permission="users.manage">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* § Fase 189G, ADR-0044 — tandai/cabut internal 1 akun (dialog dampak yang sama dengan aksi massal). Internal karena ROLE admin/staf tidak bisa diubah lewat tanda. */}
+                {user.internalReason === "role" ? (
+                  <span className="text-xs text-muted-foreground">Internal otomatis (memegang role Admin).</span>
+                ) : (
+                  <Button variant="outline" size="sm" type="button" onClick={() => setInternalDialog(true)}>
+                    {user.internalFlag ? "Cabut tanda internal" : "Tandai internal"}
+                  </Button>
+                )}
               <EditUserContactDialog
                 userId={user.id}
                 initial={{ companyName: user.companyName ?? "", phone: user.phone ?? "", whatsapp: user.whatsapp ?? "" }}
                 onSaved={(values) => setDetail((d) => (d ? { ...d, user: { ...d.user, ...values } } : d))}
               />
+              </div>
             </Can>
           </div>
         </CardContent>
@@ -337,6 +358,13 @@ export default function AdminUserDetailPage() {
           )}
         </CardContent>
       </Card>
+      <InternalAccountsDialog
+        open={internalDialog}
+        onOpenChange={setInternalDialog}
+        userIds={[user.id]}
+        isInternal={!user.internalFlag}
+        onDone={loadDetail}
+      />
     </div>
   );
 }
