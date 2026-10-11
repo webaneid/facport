@@ -34,6 +34,11 @@ export function internalUserIdsSubquery() {
   return db.select({ id: userTable.id }).from(userTable).where(or(eq(userTable.isInternal, true), inArray(userTable.id, roleHolderIds())));
 }
 
+/** Subquery id SEMUA akun ber-role customer (komersil maupun internal) — daftar akun manusia pengguna produk (D12). */
+export function customerUserIdsSubquery() {
+  return db.select({ id: userRoles.userId }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(roles.name, "customer"));
+}
+
 /** Subquery id pelanggan KOMERSIL: role customer dan bukan internal. Dasar semua hitungan/laporan uang pengguna komersil. */
 export function commercialCustomerIdsSubquery() {
   const customerIds = db

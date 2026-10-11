@@ -56,5 +56,10 @@ export const auditLogs = pgTable(
   // tinggi), tapi endpoint admin list SELALU `ORDER BY created_at DESC
   // LIMIT` — index murah untuk itu, sekalian ditambah waktu migration
   // index lain di batch yang sama.
-  (t) => [index("audit_logs_created_at_idx").on(t.createdAt)],
+  (t) => [
+    index("audit_logs_created_at_idx").on(t.createdAt),
+    // § Fase 189C — laporan Insight membaca riwayat Data Usaha / koneksi lintas pelanggan (`entity_type='data_usaha'` + daftar `action`, terbaru dulu); tanpa ini
+    // setiap laporan memindai seluruh tabel audit yang terus bertambah. Aditif (hanya indeks).
+    index("audit_logs_entity_action_idx").on(t.entityType, t.action, t.createdAt),
+  ],
 );

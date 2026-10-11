@@ -1,10 +1,11 @@
 import { Elysia, t } from "elysia";
 import { eq } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { dataUsaha, memberSeats, subscriptions, user as userTable } from "../../db/schema";
+import { dataUsaha, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
 import { listDataUsahaEvents, REASON_NOTE_MAX_LENGTH } from "../../lib/data-usaha-events";
+import { listSeatsForDataUsaha } from "../../lib/seat-queries";
 import { SEAT_ERROR_STATUS, SeatActionError, revokeSeat, sendSeatAccessChangedEmailToOwner, sendSeatInviteEmail } from "../../lib/seat-actions";
 import { logger } from "../../lib/logger";
 
@@ -25,32 +26,7 @@ export const adminSeatsRoute = new Elysia({ prefix: "/admin/data-usaha" })
         set.status = 404;
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
-      const memberUser = userTable;
-      const seats = await db
-        .select({
-          id: memberSeats.id,
-          status: memberSeats.status,
-          invitedEmail: memberSeats.invitedEmail,
-          invitedAt: memberSeats.invitedAt,
-          acceptedAt: memberSeats.acceptedAt,
-          revokedAt: memberSeats.revokedAt,
-          memberUserId: memberSeats.memberUserId,
-          memberName: memberUser.name,
-          memberEmail: memberUser.email,
-          seatEndAt: subscriptions.endAt,
-          seatSubscriptionStatus: subscriptions.status,
-        })
-        .from(memberSeats)
-        .innerJoin(subscriptions, eq(subscriptions.id, memberSeats.seatSubscriptionId))
-        .leftJoin(memberUser, eq(memberUser.id, memberSeats.memberUserId))
-        .where(eq(memberSeats.dataUsahaId, params.id));
-      // `seatExpired` dihitung di server (sama seperti `/me/team`): kursi tak aktif/lewat `end_at` → member tidak bisa memakai Data Usaha walau slot masih terisi.
-      const now = Date.now();
-      return {
-        dataUsaha: du,
-        seats: seats.map((seat) => ({ ...seat, seatExpired: seat.seatSubscriptionStatus !== "active" || (seat.seatEndAt !== null && seat.seatEndAt.getTime() <= now) })),
-        history: await listDataUsahaEvents(params.id, 50),
-      };
+      return { dataUsaha: du, seats: await listSeatsForDataUsaha(params.id), history: await listDataUsahaEvents(params.id, 50) };
     },
     { permission: "users.view", params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
