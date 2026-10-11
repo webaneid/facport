@@ -16,7 +16,9 @@ dan edukasi koneksi. Bukan sekadar angka agregat (dashboard Fase 59): kebutuhan 
 | Istilah | Arti |
 |---|---|
 | **Pelanggan** | Akun pemilik (`user`) yang memiliki satu atau lebih Data Usaha. Di Excel disebut "PT A". *(Keputusan D1 — lihat § 9)* |
-| **Data Usaha** | Workspace (`data_usaha`); langganan, koneksi Accurate, dan seat menempel di sini. Satu pelanggan bisa punya banyak. |
+| **Data Usaha** | Workspace Accurate (`data_usaha`); langganan, koneksi Accurate, dan seat menempel di sini. Satu akun bisa punya banyak. **BUKAN** "nama perusahaan" akun dan TIDAK menyimpan nomor telepon pelanggan. |
+| **Nama Perusahaan (akun)** | Isian milik **AKUN** (`user.company_name`), diisi pengguna sendiri saat daftar/lengkapi profil. Terpisah total dari Data Usaha: tidak diturunkan dari nama Data Usaha dan tidak mengubahnya. Dipakai untuk kontak (butir 8). |
+| **Telepon / WhatsApp (akun)** | Milik AKUN manusia (`user.phone`, `user.whatsapp`), berlaku untuk akun utama maupun User Tambahan. Bukan milik Data Usaha. |
 | **Fitur** | Satu langganan modul aktif (`subscriptions` → `plans.modules`, 1 SKU = 1 sub-modul) pada sebuah Data Usaha. |
 | **Akses** | Orang yang bisa masuk ke Data Usaha: pemilik + User Tambahan (`member_seats`, status `active`/`invited`). |
 | **Komersil** | DEFAULT setiap akun customer yang TIDAK ditandai internal. Ditentukan oleh **status akun**, bukan status langganan: pengguna trial tetap komersil. Nilai rupiah = total uang yang sudah dibayar (D3). |
@@ -35,7 +37,7 @@ Legenda kesiapan: **Siap** = data sudah ada, tinggal endpoint+halaman · **Gap d
 | 5 | Pelanggan baru per tanggal + fiturnya | `subscriptions.start_at/created_at`, `user.created_at` | **Siap** | Endpoint `new-customers?from&to` |
 | 6 | Pelanggan yang akan berakhir + fiturnya | `subscriptions.end_at` (H-7 sudah diingatkan ke pelanggan, belum ada tampilan untuk FAC) | **Siap** | Endpoint `expiring?window=14|30` (hanya dua preset: 14 dan 30 hari, diputuskan user 2026-10-12) |
 | 7 | Kohort pelanggan tahun ke-1, ke-2, …; retensi | `subscriptions` + `subscription_renewals` (tidak dihapus job purge) | **Siap (hitung)**, data baru sejak 2026-09 | Endpoint `cohorts`; kohort tahun ke-2 baru bermakna 2027 |
-| 8 | Nama, email, telepon, perusahaan | `user.name/email` saja; telepon & perusahaan tidak ada (hanya `company.phone` di settings = telepon FAC, bukan pelanggan) | **Gap data** | Kolom `user.phone`, `user.whatsapp`, `user.company_name`; form daftar + gerbang wajib Lengkapi Profil untuk Google & user lama; standar nomor E.164 dari Jalajogja |
+| 8 | Nama, email, telepon, perusahaan | `user.name/email` saja; telepon & nama perusahaan tidak ada (hanya `company.phone` di settings = telepon FAC, bukan pelanggan) | **Gap data** | Kolom di AKUN: `user.phone`, `user.whatsapp`, `user.company_name`; diisi saat daftar, dan modal wajib tak bisa ditutup untuk akun yang masih kosong (Google & user lama); standar nomor E.164 dari Jalajogja |
 | 9 | Riwayat pemutusan koneksi oleh admin (salah → putus → benar) | `audit_logs` `entity_type='data_usaha'`, `action='disconnect_accurate'` (sudah memuat DB lama, alias, `removedAccount`, admin) | **Gap data** (setengah) | Catat juga sisi *sambung/pilih database* + `alasan` pada dialog putus; endpoint riwayat per Data Usaha |
 
 ## 4. Gap skema & pencatatan (perubahan data)
@@ -45,16 +47,16 @@ Tambah di `user` (migrasi Drizzle, `docs/architecture/architecture-database.md`)
 - `is_internal boolean not null default false`
 - `phone varchar(20)` dan `whatsapp varchar(20)` nullable — format baku **E.164 dengan tanda `+`** (mis. `+6281234567890`), mengikuti standar project Jalajogja (`/Users/webane/sites/jalajogja/docs/arsitektur-kontak.md`): satu komponen (`PhoneInput`: pemilih kode negara, default +62, keluaran E.164), satu helper (`normalizePhone()` WAJIB di server saat simpan; `displayPhone()` untuk tampilan `08xx`; `toWaDigits()` untuk tautan `wa.me`, dibangun dari nilai E.164 ASLI, bukan dari hasil `displayPhone()` — bug yang pernah terjadi di Jalajogja), satu format. Port `components/ui/phone-input.tsx` + `lib/phone.ts` dari Jalajogja ke `apps/web`; `normalizePhone` juga di API sebagai pertahanan berlapis. Isian WhatsApp punya opsi "Sama dengan nomor telepon" (kolom `whatsapp` tetap diisi nilainya).
 - ⚠ `customer_care_agents.whatsapp_number` (Fase 46) memakai format lain (`628…` tanpa `+`). Dibiarkan, tidak dimigrasi; bila perlu tautan, lewat `toWaDigits()`.
-- `company_name varchar(200)` nullable.
+- `company_name varchar(200)` nullable — **nama perusahaan milik AKUN**, diisi pengguna (bukan diturunkan dari Data Usaha). Label UI "Nama Perusahaan"; jangan dicampur dengan menu/konsep Data Usaha.
 
 Catatan penting:
 - `user` dikelola Better Auth. Kolom `disabled` sudah pernah ditambahkan sebagai field custom (§ `auth.schema.ts`) → ikuti pola itu;
   **verifikasi** apakah perlu `additionalFields` agar `signUpEmail` menerima `phone/companyName`. Jangan tebak — cek instalasi (pola Fase 106).
-- **Alur pengisian (diputuskan user 2026-10-12, WAJIB & tidak bisa dilewati):** telepon dan WhatsApp adalah isian wajib untuk setiap akun customer.
-  1. Daftar email+password → form daftar menyertakan telepon, WhatsApp (centang "Sama dengan nomor telepon"), dan perusahaan.
-  2. Google (langsung masuk) dan user lama → setiap login/navigasi dicek; bila telepon atau WhatsApp kosong, diarahkan ke halaman Lengkapi Profil sampai terisi. Satu-satunya aksi lain yang diizinkan: keluar (logout).
-  3. Penegakan di lapisan web (middleware app shell), BUKAN 403 di API, supaya import yang sedang berjalan dan job latar tidak terganggu.
-  Perlu diputuskan sebelum eksekusi (D2b-D2d): pengumuman sebelum pemblokiran untuk pelanggan lama, apakah member User Tambahan ikut wajib, dan apakah perusahaan wajib.
+- **Alur pengisian (diputuskan user 2026-10-12; koreksi atas persepsi awal):** nama perusahaan, telepon, dan WhatsApp adalah data AKUN dan WAJIB. TIDAK ada pemblokiran akses dan TIDAK ada pengumuman/masa tenggang khusus.
+  1. Daftar email+password → form daftar menambah Nama Perusahaan, Telepon, WhatsApp (centang "Sama dengan nomor telepon").
+  2. Akun yang masih kosong (Google, user lama, akun tambahan hasil undangan) → otomatis tampil **satu halaman/modal Lengkapi Profil yang tidak bisa ditutup** sampai Nama Perusahaan dan Telepon (+WhatsApp) terisi. Hanya itu; tidak ada pengalihan berulang, kolom penanda, atau notifikasi tambahan.
+  3. Berlaku untuk akun berperan customer (pemilik dan User Tambahan). Admin/staf (Tim Internal) dikecualikan. Penegakan di lapisan tampilan web, bukan 403 di API, sehingga import yang berjalan tidak terganggu.
+  Perlu dikonfirmasi: akun User Tambahan juga ditanya Nama Perusahaan (isian akun), sesuai prinsip data melekat pada akun.
 - Admin/staf/Tim Internal (role `admin`/`staff`) TIDAK diperlakukan sebagai "pengguna internal" butir ini — itu tim FAC. "Internal" = akun customer-role yang ditandai trainer/mitra.
 - Menandai internal = aksi admin yang tercatat di `audit_logs` (`entity_type='user'`, `action='update'`, `changes.is_internal`).
 
@@ -142,7 +144,7 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | ID | Pertanyaan | Rekomendasi | Status |
 |---|---|---|---|
 | D1 | "Pelanggan" = akun pemilik atau Data Usaha? | Akun pemilik sebagai baris utama, Data Usaha sebagai anak (tab Akses/Fitur per Data Usaha, karena seat & langganan menempel di Data Usaha) | **Menunggu user** |
-| D2 | Telepon & WhatsApp wajib? | Wajib, tidak bisa dilewati: form daftar + gerbang Lengkapi Profil untuk Google/user lama (§ 4.1) | **Diputuskan user 2026-10-12**; rincian rollout D2b-D2d terbuka |
+| D2 | Telepon, WhatsApp, Nama Perusahaan wajib? | Wajib; modal tak bisa ditutup untuk akun yang masih kosong; tanpa pemblokiran akses (§ 4.1) | **Diputuskan user 2026-10-12** |
 | D3 | Definisi "nilai rupiah" | Total uang yang sudah dibayar (akun komersil saja) | **Diputuskan user 2026-10-12** |
 | D4 | Siapa yang menandai internal & arti flag | Admin (`users.manage`), tercatat di audit. Flag = label status akun untuk laporan; komersil = default | **Diputuskan user 2026-10-12**; sisa: apakah flag mengubah AKSES (D9) |
 | D5 | Ekspor CSV: sinkron atau job queue (aturan root: export data lewat job) | Sinkron dengan batas baris (mis. ≤ 10.000) dan dicatat sebagai pengecualian sadar di ADR; di atas batas → job. Volume B2B kecil | **Menunggu user** |
