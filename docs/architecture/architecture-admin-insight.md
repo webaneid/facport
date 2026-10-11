@@ -74,6 +74,16 @@ Saat ini cabut/undang seat HANYA lewat `routes/team.route.ts` (hak pemilik Data 
 - Transfer kepemilikan Data Usaha oleh admin SUDAH ada (`admin/data-usaha.route.ts`, `transfer_ownership`) — tidak diulang.
 - Wajib konfirmasi dua langkah di UI dan peringatan bahwa tindakan memengaruhi orang lain.
 
+### 4.4 Satu akun, dua role (diputuskan user 2026-10-12: "1 email boleh 2 role bila dibutuhkan")
+- Fakta kode: email unik di Better Auth (1 email = 1 akun) dan `user_roles` (PK `userId+roleId`) mengizinkan banyak role per akun. Layout `app.` mensyaratkan role `customer` (`app/app/(protected)/layout.tsx`); admin hanya perlu `admin`/`staff`. Jadi secara teknis admin yang juga customer BISA, tetapi hari ini tidak ada cara memberi role itu: daftar ulang dengan email yang sama ditolak (duplikat) dan akun admin tidak otomatis ber-role customer.
+- Rancangan: aksi Super Admin "Aktifkan akses pengguna" pada halaman Tim Internal (memberi role `customer`, tercatat di audit). Begitu admin membuka `app.` dan datanya kosong → modal Lengkapi Profil seperti akun lain.
+- Dampak laporan: `getCustomerIdsSubquery()` akan ikut menghitung akun admin ber-role ganda sebagai customer. Usulan (menunggu persetujuan): akun yang memegang role `admin`/`staff` dihitung **internal otomatis** di semua laporan (tanpa flag manual), sedangkan `is_internal` untuk akun customer biasa (trainer, mitra).
+
+### 4.5 Aksi massal & kebijakan hapus akun (ADR-0045)
+- Detail keputusan dan alasan: `docs/decisions/adr-0045-kebijakan-hapus-dan-anonimisasi-akun.md`. Ringkas: Nonaktifkan/Aktifkan (ada) · Hapus permanen hanya untuk akun tanpa jejak bisnis · Anonimisasi untuk akun dengan jejak bisnis yang harus dihapus · semua Super Admin saja, konfirmasi ketik, audit per akun.
+- Alasan tidak ada "hapus total semua": `user.id` direferensikan 28 kolom di 16 file skema, hanya `session`/`account`/`user_roles` yang cascade; menghapus invoice/order merusak angka keuangan yang diminta client.
+- Dikerjakan sebagai sub-fase 189H (setelah Insight), bukan bersama 189G, karena risikonya jauh lebih tinggi.
+
 ## 5. Rancangan API (read-only, kecuali aksi di 4.3)
 
 Route baru `apps/api/src/routes/admin/insights.route.ts`, prefix `/admin/insights`, mengikuti pola `stats.route.ts`:
@@ -121,7 +131,7 @@ Aturan:
 
 ### 5.4 Aksi massal di `/admin/users`
 - Tabel Pengguna mendapat pilihan baris (kotak centang) + bilah aksi massal. `DataTable` sekarang TIDAK punya seleksi baris → ditambah sebagai fitur opsional (aditif, tidak mengubah halaman lain).
-- Aksi pertama: **Tandai internal / Cabut tanda internal**. Hanya Super Admin (`users.manage`). Cakupan seleksi = baris pada halaman yang tampil (daftar sudah server-paginated 20/halaman); "pilih semua hasil filter" ditunda. Tiap perubahan tercatat per akun di `audit_logs`. Daftar aksi massal lain (mis. nonaktifkan) menunggu keputusan user.
+- Aksi massal (hanya Super Admin): **Tandai internal / Cabut tanda internal** (189G); **Nonaktifkan / Aktifkan**, **Hapus permanen (aman)**, **Anonimisasi** (189H, ADR-0045). Cakupan seleksi = baris pada halaman yang tampil (≤ 100); "pilih semua hasil filter" ditunda. Tiap perubahan tercatat per akun di `audit_logs`.
 - Peringatan wajib: menandai internal akun yang sudah punya invoice lunas → riwayatnya otomatis keluar dari laporan uang.
 
 ## 6. Informasi arsitektur halaman (konsep; visual → Fase 190)
@@ -155,8 +165,19 @@ Setiap tab: ekspor CSV. Halaman `/admin/users/[id]` yang ada tetap sebagai detai
 | 189D | Halaman Insight fungsional (komponen yang ada) + ekspor CSV | 189C |
 | 189E | Dashboard `/admin`: KPI komersil/internal & nilai rupiah | 189C |
 | 189F | (Opsional) Log aktivitas user | keputusan terpisah |
+| 189H | Aksi massal pengguna: nonaktifkan/aktifkan, hapus permanen aman, anonimisasi (ADR-0045) + aksi Super Admin "Aktifkan akses pengguna" untuk admin ber-role ganda | 189G; audit keamanan penuh |
 | **190** | Riset & desain UI → design system admin → redesign dashboard & Insight (arah "Kompak & tajam", admin dulu, pelanggan menyusul) | 189D (agar ada layar nyata untuk di-redesign) |
 | 191 | Hibah Akses Internal (D9 Lapis 2): langganan gratis tanpa tanggal akhir, "beri semua fitur", notifikasi kedaluwarsa dimatikan untuk internal | 189G + hasil SQL P11 |
+
+**Urutan eksekusi (keputusan teknis, disetujui user 2026-10-12 "keputusan teknis kamu"):**
+1. Persetujuan ADR-0044/0045 + dokumen ini (gerbang SOP — tidak ada kode sebelum disetujui).
+2. **189A** — profil akun (kolom, `PhoneInput`, form daftar, modal). Paling awal: data kontak baru terkumpul SETELAH ini live, dan fondasi tabel `user` dipakai fase lain.
+3. **189G** — penanda internal + kontrol keuangan + aksi massal tandai internal.
+4. **189B** — pencatatan sambung koneksi + alasan putus (bebas, dengan saran) + aksi admin cabut seat (alasan wajib).
+5. **189C → 189D → 189E** — API Insight, halaman Insight (tabel `DataTable`, tombol Lihat, tombol WhatsApp), tren tahunan di dashboard. Butuh D1 dan hasil SQL baseline.
+6. **189H** — aksi massal pengguna (hapus/anonimisasi) + akses pengguna untuk admin.
+7. **Fase 190** (redesign UI admin) → **Fase 191** (hibah akses internal). Fase 188 (Hapus Massal Accurate) ditunda sesuai keputusan user.
+Tiap sub-fase: rencana detail di phase doc sendiri → kode → typecheck + lint → tes → security review → tutup dokumen → commit+push `develop` (rilis HANYA atas permintaan eksplisit user).
 
 Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta eksplisit (aturan berjalan). 189A sebaiknya dirilis lebih awal dari yang lain karena data telepon/perusahaan baru terkumpul SETELAH form berubah.
 
@@ -178,8 +199,13 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | D13 | Awal berlangganan (butir 5) | Dari langganan BERBAYAR pertama (bukan tanggal daftar, bukan trial) | **Diputuskan user 2026-10-12** |
 | D14 | Daftar "akan berakhir" | Dua preset 14 dan 30 hari; kolom status tagihan perpanjangan (belum terbit/terbit/lunas); tabel ringkas + tombol Lihat + tombol WhatsApp | **Diputuskan user 2026-10-12** |
 | D15 | Notifikasi cabut/pindah akses | Ke pemilik Data Usaha saja | **Diputuskan user 2026-10-12** |
+| D16 | Akun ber-role admin/staf dihitung internal otomatis di laporan | Ya (usulan, § 4.4) | **Menunggu user** |
+| D17 | Admin ber-role ganda | Aksi Super Admin "Aktifkan akses pengguna"; modal Lengkapi Profil berlaku saat membuka `app.` | **Diputuskan arah oleh user; rincian aksi disarankan** |
+| D18 | Hapus akun | Tiga tingkat (nonaktifkan / hapus permanen tanpa jejak bisnis / anonimisasi) — ADR-0045 | **Menunggu user (Proposed)** |
+| D19 | Metrik grafik tren | 5 metrik: pengguna terdaftar, pelanggan berlangganan aktif, baru, berhenti, uang terbayar; evaluasi kemudian | **Diputuskan user 2026-10-12** |
+| D20 | Admin/staf Tim Internal dikecualikan dari modal Lengkapi Profil | Ya, kecuali saat membuka `app.` sebagai ber-role ganda | **Diputuskan user 2026-10-12** |
 
-ADR yang akan ditulis saat keputusan jatuh: **ADR-0044** (model pelanggan komersil/internal + data kontak) dan **ADR-0045** (design system admin, Fase 190).
+ADR terkait: **ADR-0044** (data kontak akun, penanda internal, kontrol keuangan; Proposed), **ADR-0045** (kebijakan hapus/anonimisasi akun; Proposed), **ADR-0046** (design system admin, Fase 190; belum ditulis).
 
 ## 10. Risiko & asumsi
 - Data DEV tidak mewakili production (banyak sisa test: ±16 ribu user, ±2 ribu role admin). Angka nyata hanya dari SQL baseline production (`docs/phases/phase-189-sql-pack-baseline.md`) yang dijalankan user.

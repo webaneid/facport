@@ -18,7 +18,8 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 - [x] Tutup Fase 145 (bagian cutover) sebagai prasyarat kebersihan PROGRESS
 - [ ] User menjalankan SQL baseline, hasil dicatat di phase-189-sql-pack-baseline.md
 - [ ] Keputusan D1, D2, D3, D5, D6 (lihat arsitektur § 9) — D2/D3 perlu client
-- [ ] ADR-0044 (model komersil/internal + data kontak) setelah D1–D4 jatuh
+- [x] ADR-0044 (data kontak akun, internal, kontrol keuangan) dan ADR-0045 (hapus/anonimisasi akun) — ditulis, status Proposed
+- [ ] Persetujuan user atas ADR-0044/0045 (gerbang SOP sebelum kode)
 
 ## Sub-fase eksekusi (masing-masing punya phase doc sendiri saat dimulai)
 | Sub-fase | Isi | Status |
@@ -29,6 +30,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
 | 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
 | 189E | KPI komersil/internal & nilai rupiah di `/admin` | Not Started |
+| 189H | Aksi massal pengguna (nonaktifkan/aktifkan, hapus permanen aman, anonimisasi; ADR-0045) + akses pengguna untuk admin ber-role ganda | Not Started |
 | 189F | (Opsional) Log aktivitas user | Ditunda |
 
 ## Di luar scope
@@ -47,6 +49,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 - 2026-10-12 — Redesign UI: arah "Kompak & tajam", cakupan admin dulu lalu pelanggan; dikerjakan SETELAH fungsi data (Fase 190).
 - 2026-10-12 — Jawaban user atas pertanyaan client: nomor telepon/WA mengikuti standar E.164 Jalajogja; isian saat daftar (email) atau pengalihan sekali pada login (Google/user lama); nilai rupiah = total terbayar; internal = flag akun oleh admin (Trainer/Karyawan/Mitra, tanpa subkategori); komersil = default; tidak ada toleransi di batas habis langganan; alasan pencabutan akses wajib & tercatat. Detail: `architecture-admin-insight.md` § 4.1, 5.1, 9.
 - 2026-10-12 — Keputusan P1–P14 (satuan pengguna = semua akun manusia; D9 dibagi Lapis 1/2; dua baris uang; awal berlangganan = berbayar pertama; tren tahunan + filter tahun; tabel mengikuti gaya `DataTable` + tombol Lihat + tombol WhatsApp; aksi massal di /users; CSV unduh langsung; `insights.view` untuk Super Admin & Admin). Detail: `architecture-admin-insight.md` § 5.2-5.4, § 9.
+- 2026-10-12 — Urutan eksekusi diserahkan ke keputusan teknis: 189A → 189G → 189B → 189C/D/E → 189H → 190 → 191. Satu email boleh dua role (admin + customer) lewat aksi Super Admin; aksi massal pengguna termasuk hapus permanen yang AMAN (hanya akun tanpa jejak bisnis) + anonimisasi; hapus total jejak keuangan TIDAK dilakukan (ADR-0045).
 - 2026-10-12 — Fase 145 ditutup (bagian cutover). T11 kontrak (hapus kolom/endpoint koneksi lama) tetap terbuka, rilis terpisah.
 
 ## Checklist Sebelum Ditutup (sesuai SOP) — berlaku per sub-fase eksekusi
