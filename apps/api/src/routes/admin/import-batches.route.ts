@@ -45,7 +45,17 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
       ]);
 
       return {
-        user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, disabled: targetUser.disabled, createdAt: targetUser.createdAt },
+        user: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email,
+          disabled: targetUser.disabled,
+          createdAt: targetUser.createdAt,
+          // § Fase 189A, ADR-0044 — kontak AKUN (bukan Data Usaha) untuk panel admin + tombol WhatsApp.
+          companyName: targetUser.companyName,
+          phone: targetUser.phone,
+          whatsapp: targetUser.whatsapp,
+        },
         batches: rows,
         total: totalRows[0]?.total ?? 0,
       };

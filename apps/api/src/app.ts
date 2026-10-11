@@ -10,6 +10,7 @@ import { auth } from "./lib/auth";
 import { user as userTable, roles, userRoles } from "./db/schema";
 import { webOriginsProd } from "./lib/env";
 import { rateLimitPlugin } from "./lib/rate-limit";
+import { hasContactKeys, parseContact, type ContactInput, type ContactValue } from "./lib/phone";
 import { settingsRoute } from "./routes/settings.route";
 import { mediaRoute } from "./routes/media.route";
 import { plansRoute } from "./routes/plans.route";
@@ -86,6 +87,16 @@ async function readSignUpEmail(request: Request): Promise<string | null> {
   try {
     const body = (await request.clone().json()) as { email?: unknown };
     return typeof body.email === "string" && body.email.trim() !== "" ? body.email.trim().toLowerCase() : null;
+  } catch {
+    return null;
+  }
+}
+
+// § Fase 189A, ADR-0044 — body sign-up sebagai objek (untuk membaca kunci kontak). `null` bila bukan JSON objek.
+async function readSignUpBody(request: Request): Promise<Record<string, unknown> | null> {
+  try {
+    const body = await request.clone().json();
+    return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
   } catch {
     return null;
   }
@@ -225,6 +236,19 @@ export const app = new Elysia()
   // Konsekuensi yang DISENGAJA (permintaan produk): endpoint ini jadi mengungkap "email sudah terdaftar" (enumerasi email) — dibatasi
   // rate limit `/api/auth` (10/menit/IP, di atas).
   .post("/api/auth/sign-up/email", async ({ request, set }) => {
+    // § Fase 189A, ADR-0044 — kontak AKUN (Nama Perusahaan/Telepon/WhatsApp) dari form daftar. Ada kunci kontak → ketiganya WAJIB sah (422 sebelum
+    // Better Auth, tidak ada user setengah jadi); tanpa kunci kontak (klien lama/cache) → diterima, modal Lengkapi Profil yang menangkap.
+    // Better Auth mengabaikan kunci tak dikenal (diuji `app.signup-contact.test.ts`), jadi nilai mentah tidak pernah tersimpan olehnya.
+    let contact: ContactValue | null = null;
+    const signUpBody = await readSignUpBody(request);
+    if (hasContactKeys(signUpBody)) {
+      const parsed = parseContact(signUpBody as ContactInput);
+      if (!parsed.ok) {
+        set.status = 422;
+        return { code: "INVALID_CONTACT", field: parsed.field, message: "Data kontak tidak valid." };
+      }
+      contact = parsed.value;
+    }
     const email = await readSignUpEmail(request);
     if (email) {
       const [existing] = await db.select({ id: userTable.id }).from(userTable).where(sql`lower(${userTable.email}) = ${email}`).limit(1);
@@ -244,6 +268,9 @@ export const app = new Elysia()
         const [customerRole] = created ? await db.select().from(roles).where(eq(roles.name, "customer")) : [];
         if (created && customerRole) {
           await db.insert(userRoles).values({ userId: body.user.id, roleId: customerRole.id }).onConflictDoNothing();
+        }
+        if (created && contact) {
+          await db.update(userTable).set(contact).where(eq(userTable.id, created.id));
         }
       }
     }

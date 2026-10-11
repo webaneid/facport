@@ -9,6 +9,7 @@ import { relations } from "drizzle-orm";
 import {
   pgTable,
   text,
+  varchar,
   timestamp,
   boolean,
   index,
@@ -27,6 +28,12 @@ export const user = pgTable("user", {
   // `POST /api/auth/sign-in/email` (§ app.ts) SEBELUM diteruskan ke
   // Better Auth, dan sesi existing di-hapus paksa saat di-set true.
   disabled: boolean("disabled").default(false).notNull(),
+  // § Fase 189A, ADR-0044 — data kontak milik AKUN manusia (BUKAN Data Usaha; `data_usaha.name` terpisah total). Field custom di luar hasil
+  // generate Better Auth (sama seperti `disabled`). NULLABLE di DB karena akun lama/Google/undangan belum punya; kewajiban dijaga di antarmuka
+  // (form daftar + modal Lengkapi Profil), tidak dengan menolak sign-up di API. `phone`/`whatsapp` = E.164 dengan "+" (`lib/phone.ts`).
+  companyName: varchar("company_name", { length: 200 }),
+  phone: varchar("phone", { length: 20 }),
+  whatsapp: varchar("whatsapp", { length: 20 }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true })
     .$onUpdate(() => new Date())

@@ -12,6 +12,7 @@ import { boss, JOBS, startQueue } from "../../lib/queue";
 import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
 import { safeSignUpEmail } from "../../lib/auth-errors";
+import { parseContact } from "../../lib/phone";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -125,6 +126,10 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
           emailVerified: u.emailVerified,
           disabled: u.disabled,
           createdAt: u.createdAt,
+          // § Fase 189A, ADR-0044 — kontak AKUN untuk kolom Perusahaan + tombol WhatsApp di daftar admin.
+          companyName: u.companyName,
+          phone: u.phone,
+          whatsapp: u.whatsapp,
           roles: rolesByUser.get(u.id) ?? [],
           activeSubscriptions: subByUser.get(u.id) ?? [],
         })),
@@ -303,6 +308,42 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   // § Fase 29, ADR-0027 — "mengurangi user" = NONAKTIFKAN (reversibel),
   // BUKAN hapus permanen (§ ADR-0027 § Decision 3, alasan FK/finansial).
   // Cuma `users.manage` (Super Admin) — role "staff" (Admin) TIDAK BOLEH.
+  // § Fase 189A, ADR-0044 — Super Admin mengoreksi kontak AKUN pelanggan (mis. salah ketik). Validasi/normalisasi sama dengan `PATCH /me/contact`.
+  // Audit: nilai lama → baru di `audit_logs` (kontak adalah data pribadi, hanya tampil ke admin berizin; TIDAK ditulis ke log aplikasi).
+  .patch(
+    "/:id/contact",
+    async ({ params, body, user, set }) => {
+      const parsed = parseContact(body);
+      if (!parsed.ok) {
+        set.status = 422;
+        return { code: "INVALID_CONTACT", field: parsed.field };
+      }
+      const [before] = await db
+        .select({ companyName: userTable.companyName, phone: userTable.phone, whatsapp: userTable.whatsapp })
+        .from(userTable)
+        .where(eq(userTable.id, params.id));
+      if (!before) {
+        set.status = 404;
+        return { code: "USER_NOT_FOUND" };
+      }
+      await db.transaction(async (tx) => {
+        await tx.update(userTable).set(parsed.value).where(eq(userTable.id, params.id));
+        await tx.insert(auditLogs).values({
+          entityType: "user",
+          entityId: params.id,
+          action: "update",
+          changes: { contact: { from: before, to: parsed.value } },
+          actorId: user.id,
+        });
+      });
+      return { ...parsed.value };
+    },
+    {
+      permission: "users.manage",
+      params: t.Object({ id: t.String({ minLength: 1 }) }),
+      body: t.Object({ companyName: t.String({ maxLength: 400 }), phone: t.String({ maxLength: 60 }), whatsapp: t.String({ maxLength: 60 }) }),
+    },
+  )
   .patch(
     "/:id/disable",
     async ({ params, user, set }) => {
