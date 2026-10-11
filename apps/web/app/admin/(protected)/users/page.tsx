@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft } from "lucide-react";
+import { Building2, CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -22,6 +22,7 @@ import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
+import { displayPhone, waLink } from "@/lib/phone";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { timezoneAbbreviation } from "@/lib/timezone";
 import { type SubscriptionInterval } from "@/lib/subscription-period";
@@ -42,6 +43,9 @@ type UserRow = {
   emailVerified: boolean;
   disabled: boolean;
   createdAt: string;
+  companyName: string | null;
+  phone: string | null;
+  whatsapp: string | null;
   roles: string[];
   activeSubscriptions: ActiveSubscription[];
 };
@@ -741,6 +745,8 @@ export default function AdminUsersPage() {
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
           <TruncateText className="font-medium text-foreground">{row.original.name || "-"}</TruncateText>
+          {/* § Fase 189A, ADR-0044 — Nama Perusahaan milik AKUN, satu baris kecil di sel Nama (tanpa kolom baru → tabel tidak melebar). */}
+          {row.original.companyName && <TruncateText className="text-xs text-muted-foreground">{row.original.companyName}</TruncateText>}
           {row.original.disabled ? (
             <Badge variant="destructive" className="w-fit">
               Nonaktif
@@ -784,6 +790,19 @@ export default function AdminUsersPage() {
       meta: { width: "20%" },
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
+          {/* § Fase 189A, ADR-0044 — chat WhatsApp akun ini (wa.me dari E.164 ASLI, tab baru); tanpa nomor sah → tombol tidak muncul. */}
+          {waLink(row.original.whatsapp) && (
+            <a
+              href={waLink(row.original.whatsapp)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`WhatsApp ${displayPhone(row.original.whatsapp)}`}
+              aria-label={`Chat WhatsApp ${row.original.name}`}
+              className={buttonVariants("ghost", "h-8 w-8 p-0 text-green-700")}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </a>
+          )}
           {/* § diminta user 2026-09-05 — lihat detail user (profil +
               riwayat/log import) buat bantu diagnosa saat user telepon
               support. `users.view` cukup (read-only, sama dgn izin

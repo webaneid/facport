@@ -22,6 +22,9 @@ import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate
 import { EditSubscriptionEndDialog } from "@/components/admin/edit-subscription-end-dialog";
 import { groupByMenu } from "@/lib/group-subscriptions-by-menu";
 import { api } from "@/lib/api-client";
+import { Can } from "@/components/auth/can";
+import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dialog";
+import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
 // diagnosa saat user telepon minta support: profil singkat + riwayat
@@ -37,7 +40,7 @@ import { api } from "@/lib/api-client";
 // customer tinggal "Hubungkan Ulang" dari sisi mereka.
 type ImportBatch = { id: string; module: string; fileName: string; status: string; totalRows: number; createdAt: string };
 type Detail = {
-  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string };
+  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null };
   batches: ImportBatch[];
   total: number;
 };
@@ -143,8 +146,19 @@ export default function AdminUserDetailPage() {
             {user.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <Badge variant="success">Aktif</Badge>}
           </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
+        <CardContent className="flex flex-col gap-3">
+          {/* § Fase 189A, ADR-0044 — kontak milik AKUN (bukan Data Usaha). WhatsApp bisa diklik → wa.me di tab baru. */}
+          <UserContactCardContent companyName={user.companyName} phone={user.phone} whatsapp={user.whatsapp} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
+            <Can permission="users.manage">
+              <EditUserContactDialog
+                userId={user.id}
+                initial={{ companyName: user.companyName ?? "", phone: user.phone ?? "", whatsapp: user.whatsapp ?? "" }}
+                onSaved={(values) => setDetail((d) => (d ? { ...d, user: { ...d.user, ...values } } : d))}
+              />
+            </Can>
+          </div>
         </CardContent>
       </Card>
 
