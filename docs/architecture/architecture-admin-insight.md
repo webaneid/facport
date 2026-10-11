@@ -36,7 +36,7 @@ Legenda kesiapan: **Siap** = data sudah ada, tinggal endpoint+halaman · **Gap d
 | 4 | Jumlah & nama akses per pelanggan (email utama + User Tambahan); eliminasi/mutasi akses | `member_seats` (`member_user_id`, `invited_email`, `status`, `revoked_*`) | **Siap (lihat)** + **Gap fitur (aksi)** | Endpoint `access`; aksi admin **cabut seat** dan **pindahkan akses** (saat ini revoke hanya lewat `team.route.ts` sisi pemilik) |
 | 5 | Pelanggan baru per tanggal + fiturnya | `subscriptions.start_at/created_at`, `user.created_at` | **Siap** | Endpoint `new-customers?from&to` |
 | 6 | Pelanggan yang akan berakhir + fiturnya | `subscriptions.end_at` (H-7 sudah diingatkan ke pelanggan, belum ada tampilan untuk FAC) | **Siap** | Endpoint `expiring?window=14|30` (hanya dua preset: 14 dan 30 hari, diputuskan user 2026-10-12) |
-| 7 | Kohort pelanggan tahun ke-1, ke-2, …; retensi | `subscriptions` + `subscription_renewals` (tidak dihapus job purge) | **Siap (hitung)**, data baru sejak 2026-09 | Endpoint `cohorts`; kohort tahun ke-2 baru bermakna 2027 |
+| 7 | Kohort pelanggan tahun ke-1, ke-2, …; retensi | `subscriptions` + `subscription_renewals` (tidak dihapus job purge) | **Siap (hitung)**, data baru sejak 2026-09 | Endpoint `trend` (grafik, filter tahun) + `tenure` (tabel per bulan menurut usia langganan); tahun ke-2 baru terisi 2027 |
 | 8 | Nama, email, telepon, perusahaan | `user.name/email` saja; telepon & nama perusahaan tidak ada (hanya `company.phone` di settings = telepon FAC, bukan pelanggan) | **Gap data** | Kolom di AKUN: `user.phone`, `user.whatsapp`, `user.company_name`; diisi saat daftar, dan modal wajib tak bisa ditutup untuk akun yang masih kosong (Google & user lama); standar nomor E.164 dari Jalajogja |
 | 9 | Riwayat pemutusan koneksi oleh admin (salah → putus → benar) | `audit_logs` `entity_type='data_usaha'`, `action='disconnect_accurate'` (sudah memuat DB lama, alias, `removedAccount`, admin) | **Gap data** (setengah) | Catat juga sisi *sambung/pilih database* + `alasan` pada dialog putus; endpoint riwayat per Data Usaha |
 
@@ -131,7 +131,7 @@ Satu area **"Insight"** di sidebar admin, `/admin/insight`, dengan tab:
 3. **Fitur** — fitur → pelanggan pemakai.
 4. **Akses** — pelanggan → pemilik + User Tambahan, dengan aksi cabut/mutasi (4.3).
 5. **Langganan** — sub-tab *Baru* dan *Akan berakhir* (rentang tanggal, filter fitur).
-6. **Retensi** — heatmap kohort, toggle jumlah pelanggan ↔ nilai.
+6. **Tren & Retensi** — grafik bulanan dengan filter tahun (pelanggan aktif, baru, berhenti, uang; selisih dan % vs bulan lalu) + tabel per bulan menurut usia langganan (Baru / Tahun ke-2 / Tahun ke-3…). Bukan segitiga kohort klasik (P4, diputuskan user 2026-10-12).
 7. **Riwayat Koneksi** — peristiwa per Data Usaha, alasan, pelanggan yang berulang salah.
 Setiap tab: ekspor CSV. Halaman `/admin/users/[id]` yang ada tetap sebagai detail satu pelanggan dan ditautkan dari semua tabel.
 "Log aktivitas user" (login, import) TIDAK termasuk Excel client → ditunda sebagai tahap kedua (Fase 189F, opsional).
