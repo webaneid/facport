@@ -3,7 +3,7 @@ import { db } from "./db";
 import { asc } from "drizzle-orm";
 import { dataUsaha, invoices, memberSeats, orders, plans, roles, subscriptions, user as userTable, userRoles } from "../db/schema";
 import { commercialCustomerIdsSubquery, customerUserIdsSubquery, deriveInternalReason, internalUserIdsSubquery } from "./internal-accounts";
-import { monthBounds, monthOf, type CountedSubscription } from "./admin-insights";
+import { activeOwnersInMonth, addMonths, buildTrend, firstStartByOwner, monthBounds, monthKey, monthOf, tenureBreakdown, type CountedSubscription, type MonthRef, type TrendPoint } from "./admin-insights";
 import { MODULE_CATALOG, moduleLabel } from "./module-catalog";
 import { openRenewalOrdersBySubscription } from "./renewal-billing";
 
@@ -369,4 +369,92 @@ export async function listExpiring(p: { now: Date; windowDays: 14 | 30; page: nu
     page: p.page,
     pageSize: p.pageSize,
   };
+}
+
+// ---------- tren bulanan ----------
+export type TrendMetric = "registered" | "active" | "new" | "stopped" | "money";
+
+async function commercialAccountCreatedAts(start: Date, end: Date): Promise<Date[]> {
+  const rows = await db.select({ createdAt: userTable.createdAt }).from(userTable).where(and(inArray(userTable.id, commercialCustomerIdsSubquery()), gte(userTable.createdAt, start), lt(userTable.createdAt, end)));
+  return rows.map((r) => r.createdAt);
+}
+
+async function commercialAccountsBefore(before: Date): Promise<number> {
+  const [row] = await db.select({ n: count() }).from(userTable).where(and(inArray(userTable.id, commercialCustomerIdsSubquery()), lt(userTable.createdAt, before)));
+  return row?.n ?? 0;
+}
+
+const tally = (items: Date[], timeZone: string): Map<string, number> => {
+  const byMonth = new Map<string, number>();
+  for (const d of items) byMonth.set(monthKey(monthOf(d, timeZone)), (byMonth.get(monthKey(monthOf(d, timeZone))) ?? 0) + 1);
+  return byMonth;
+};
+
+/** Tren 12 bulan untuk SATU tahun (zona waktu perusahaan). `summary.kind`: "stock" (aktif: nilai terakhir) atau "flow" (jumlah bulan-bulan yang sudah berjalan). */
+export async function getTrend(p: { year: number; metric: TrendMetric; now: Date; timeZone: string }) {
+  const nowMonth = monthOf(p.now, p.timeZone);
+  const rangeStart = monthBounds({ year: p.year - 1, month: 12 }, p.timeZone).start; // Desember tahun lalu = pembanding Januari
+  const rangeEnd = monthBounds({ year: p.year, month: 12 }, p.timeZone).end;
+  const flowSum = (points: TrendPoint[]) => points.reduce((sum, pt) => sum + (pt.value ?? 0), 0);
+
+  if (p.metric === "active" || p.metric === "new" || p.metric === "stopped") {
+    const subs = await fetchCountedSubscriptions();
+    const activeCache = new Map<string, Set<string>>();
+    const activeOf = (ref: MonthRef) => {
+      const key = monthKey(ref);
+      if (!activeCache.has(key)) activeCache.set(key, activeOwnersInMonth(subs, monthBounds(ref, p.timeZone)));
+      return activeCache.get(key)!;
+    };
+    let valueOf: (ref: MonthRef) => number;
+    if (p.metric === "active") valueOf = (ref) => activeOf(ref).size;
+    else if (p.metric === "new") {
+      const newByMonth = tally([...firstStartByOwner(subs).values()], p.timeZone);
+      valueOf = (ref) => newByMonth.get(monthKey(ref)) ?? 0;
+    } else {
+      valueOf = (ref) => {
+        const current = activeOf(ref);
+        let stopped = 0;
+        for (const owner of activeOf(addMonths(ref, -1))) if (!current.has(owner)) stopped += 1;
+        return stopped;
+      };
+    }
+    const points = buildTrend(p.year, valueOf, nowMonth);
+    const stock = p.metric === "active";
+    const last = [...points].reverse().find((pt) => !pt.future);
+    return { year: p.year, metric: p.metric, points, summary: { kind: stock ? ("stock" as const) : ("flow" as const), value: stock ? (last?.value ?? 0) : flowSum(points) } };
+  }
+
+  if (p.metric === "registered") {
+    const [createdAts, baseline] = await Promise.all([commercialAccountCreatedAts(rangeStart, rangeEnd), commercialAccountsBefore(monthBounds({ year: p.year, month: 1 }, p.timeZone).start)]);
+    const byMonth = tally(createdAts, p.timeZone);
+    const points = buildTrend(p.year, (ref) => byMonth.get(monthKey(ref)) ?? 0, nowMonth);
+    let running = baseline;
+    const cumulative = points.map((pt) => (pt.future ? null : (running += pt.value ?? 0)));
+    return { year: p.year, metric: p.metric, points, cumulative, summary: { kind: "flow" as const, value: flowSum(points) } };
+  }
+
+  // money
+  const rows = await paidInvoiceRows(rangeStart, rangeEnd);
+  const sum = (filter: (r: (typeof rows)[number]) => boolean) => {
+    const byMonth = new Map<string, number>();
+    for (const r of rows) if (filter(r)) byMonth.set(monthKey(monthOf(r.paidAt, p.timeZone)), (byMonth.get(monthKey(monthOf(r.paidAt, p.timeZone))) ?? 0) + r.total);
+    return (ref: MonthRef) => byMonth.get(monthKey(ref)) ?? 0;
+  };
+  const points = buildTrend(p.year, sum(() => true), nowMonth);
+  return {
+    year: p.year,
+    metric: p.metric,
+    points,
+    parts: { verified: buildTrend(p.year, sum((r) => !r.adminSettled), nowMonth), adminSettled: buildTrend(p.year, sum((r) => r.adminSettled), nowMonth) },
+    summary: { kind: "flow" as const, value: flowSum(points) },
+  };
+}
+
+// ---------- usia langganan ----------
+export async function getTenure(month: MonthRef, timeZone: string) {
+  const breakdown = tenureBreakdown(await fetchCountedSubscriptions(), month, timeZone);
+  const byYear = Object.entries(breakdown.byYear)
+    .map(([year, n]) => ({ year: Number(year), count: n }))
+    .sort((a, b) => a.year - b.year);
+  return { month: monthKey(month), aktif: breakdown.aktif, baru: breakdown.baru, lanjutanTahun1: breakdown.lanjutanTahun1, byYear, berhenti: breakdown.berhenti, kembali: breakdown.kembali };
 }

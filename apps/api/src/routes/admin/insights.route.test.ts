@@ -17,7 +17,7 @@ describe("izin", () => {
     const admin = await loginAs(app, "admin");
     const staff = await loginAs(app, "staff");
     const owner = await insertAccount("izin");
-    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`, "/features", "/features/other_deposit/customers", "/new?from=2026-01-01&to=2026-01-31", "/expiring?window=14"]) {
+    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`, "/features", "/features/other_deposit/customers", "/new?from=2026-01-01&to=2026-01-31", "/expiring?window=14", "/trend?year=2021&metric=active", "/tenure?month=2024-10"]) {
       expect((await get(null, path)).status).toBe(401);
       expect((await get(customer.cookie, path)).status).toBe(403);
       expect((await get(admin.cookie, path)).status).toBe(200);
@@ -353,5 +353,154 @@ describe("GET /expiring (akan berakhir 14/30 hari)", () => {
     expect((await get(admin.cookie, "/expiring?window=7")).status).toBe(422);
     expect((await get(admin.cookie, "/expiring")).status).toBe(422);
     expect((await get(admin.cookie, "/expiring?window=14")).status).toBe(200);
+  });
+});
+
+describe("GET /trend", () => {
+  type Point = { month: string; value: number | null; previous: number | null; delta: number | null; percent: number | null; future: boolean };
+  type Trend = { year: number; metric: string; points: Point[]; summary: { kind: "flow" | "stock"; value: number }; cumulative?: (number | null)[]; parts?: { verified: Point[]; adminSettled: Point[] } };
+  const trend = async (cookie: string, year: number, metric: string) => json<Trend>(await get(cookie, `/trend?year=${year}&metric=${metric}`));
+  // DB dev dipakai bersama dan data bertahun-lampau TIDAK ikut "bergeser" → asersi memakai SELISIH sebelum/sesudah per bulan (tahan sisa data run lain).
+  const values = (t: Trend) => t.points.map((p) => p.value ?? 0);
+  const diff = (after: Trend, before: Trend) => values(after).map((v, i) => v - values(before)[i]!);
+
+  test("active / new / stopped (2021): aktif menyentuh bulan, baru = awal pertama, berhenti = aktif bulan lalu tapi tidak bulan ini; internal & trial dikecualikan; Januari membandingkan dengan Desember tahun lalu", async () => {
+    const admin = await loginAs(app, "admin");
+    const beforeActive = await trend(admin.cookie, 2021, "active");
+    const beforeNew = await trend(admin.cookie, 2021, "new");
+    const beforeStopped = await trend(admin.cookie, 2021, "stopped");
+    const plan = await insertPlan("sales_invoice");
+    const mk = async (tag: string, opts: { isInternal?: boolean } = {}) => {
+      const acc = await insertAccount(`tren-${tag}`, opts);
+      return { id: acc.id, du: await insertDataUsaha(acc.id, `DU ${tag}`) };
+    };
+    const A = await mk("a");
+    const B = await mk("b");
+    const C = await mk("c");
+    const F = await mk("f");
+    const I = await mk("int", { isInternal: true });
+    const T = await mk("trial");
+    const s = (o: { id: string; du: string }, start: Date, end: Date, extra: { isTrial?: boolean } = {}) => insertSub({ ownerId: o.id, dataUsahaId: o.du, planId: plan.id, start, end, status: "expired", ...extra });
+    await s(A, wib(2021, 1, 15), wib(2021, 4, 20)); // aktif Jan-Apr
+    await s(B, wib(2021, 2, 1), wib(2021, 12, 31)); // Feb-Des
+    await s(C, wib(2021, 3, 10), wib(2021, 3, 25)); // Mar saja
+    await s(F, wib(2020, 11, 1), wib(2021, 2, 10)); // Des 2020 - Feb 2021
+    await s(I, wib(2021, 1, 1), wib(2021, 12, 31)); // internal
+    await s(T, wib(2021, 3, 5), wib(2021, 4, 5), { isTrial: true }); // trial
+
+    const active = await trend(admin.cookie, 2021, "active");
+    expect(active.summary.kind).toBe("stock");
+    // aktif per bulan (selisih): Jan A,F=2 · Feb A,B,F=3 · Mar A,B,C=3 · Apr A,B=2 · Mei s.d. Des B=1
+    expect(diff(active, beforeActive)).toEqual([2, 3, 3, 2, 1, 1, 1, 1, 1, 1, 1, 1]);
+    expect(active.points[0]).toMatchObject({ month: "2021-01", future: false });
+    // Januari dibandingkan dengan Desember 2020 (F aktif di sana): previous naik 1 dibanding sebelum data ditambahkan
+    expect(active.points[0]!.previous! - beforeActive.points[0]!.previous!).toBe(1);
+
+    const fresh = await trend(admin.cookie, 2021, "new");
+    expect(fresh.summary.kind).toBe("flow");
+    expect(diff(fresh, beforeNew).slice(0, 5)).toEqual([1, 1, 1, 0, 0]); // A (Jan), B (Feb), C (Mar); F sudah berlangganan 2020; internal/trial tidak dihitung
+    expect(fresh.summary.value - beforeNew.summary.value).toBe(3);
+
+    const stopped = await trend(admin.cookie, 2021, "stopped");
+    expect(diff(stopped, beforeStopped).slice(0, 6)).toEqual([0, 0, 1, 1, 1, 0]); // Mar: F berhenti, Apr: C, Mei: A
+    expect(stopped.summary.value - beforeStopped.summary.value).toBe(3);
+  });
+
+  test("tahun depan → semua bulan future dengan nilai null; tahun/metrik tidak valid → 422", async () => {
+    const admin = await loginAs(app, "admin");
+    const nextYear = new Date().getUTCFullYear() + 1;
+    const t = await trend(admin.cookie, nextYear, "active");
+    expect(t.points.every((p) => p.future && p.value === null && p.delta === null)).toBe(true);
+    expect((await get(admin.cookie, "/trend?year=2026&metric=lain")).status).toBe(422);
+    expect((await get(admin.cookie, "/trend?year=1999&metric=active")).status).toBe(422);
+    expect((await get(admin.cookie, "/trend?metric=active")).status).toBe(422);
+  });
+
+  test("registered (2022): akun KOMERSIL dibuat per bulan (internal & non-customer dikecualikan), kumulatif konsisten", async () => {
+    const admin = await loginAs(app, "admin");
+    const before = await trend(admin.cookie, 2022, "registered");
+    await insertAccount("reg-des", { createdAt: wib(2021, 12, 20) });
+    await insertAccount("reg-jan1", { createdAt: wib(2022, 1, 5) });
+    await insertAccount("reg-jan2", { createdAt: wib(2022, 1, 20) });
+    await insertAccount("reg-mar", { createdAt: wib(2022, 3, 3) });
+    await insertAccount("reg-int", { createdAt: wib(2022, 2, 10), isInternal: true });
+    await insertAccount("reg-staf", { createdAt: wib(2022, 2, 11), roleName: "staff" });
+    const t = await trend(admin.cookie, 2022, "registered");
+    expect(diff(t, before).slice(0, 3)).toEqual([2, 0, 1]); // internal & staf dikecualikan
+    expect(t.points[0]!.previous! - before.points[0]!.previous!).toBe(1); // akun Des 2021
+    expect(t.summary.kind).toBe("flow");
+    expect(t.summary.value - before.summary.value).toBe(3);
+    // kumulatif: naik 2 di Jan, tetap di Feb, naik 1 di Mar (relatif terhadap sebelum data ditambahkan)
+    const c = t.cumulative!;
+    expect(c).toHaveLength(12);
+    const cb = before.cumulative!;
+    expect([c[0]! - cb[0]!, c[1]! - cb[1]!, c[2]! - cb[2]!]).toEqual([3, 3, 4]); // +1 baseline (Des 2021) +2 Jan, lalu +0, lalu +1
+  });
+
+  test("money (2023): terverifikasi vs dilunasi admin per bulan; internal, tidak lunas, di luar tahun dikecualikan; pembanding Januari = Des 2022", async () => {
+    const admin = await loginAs(app, "admin");
+    const before = await trend(admin.cookie, 2023, "money");
+    const c = await insertAccount("uang-komersil");
+    const i = await insertAccount("uang-int", { isInternal: true });
+    await insertPaidInvoice(c.id, 80_000, { method: "bank_transfer", paidAt: wib(2022, 12, 30) });
+    await insertPaidInvoice(c.id, 100_000, { method: "bank_transfer", paidAt: wib(2023, 1, 10) });
+    await insertPaidInvoice(c.id, 50_000, { method: "manual", paidAt: wib(2023, 1, 20) });
+    await insertPaidInvoice(c.id, 200_000, { method: "qris", paidAt: wib(2023, 2, 5) });
+    await insertPaidInvoice(c.id, 999_000, { status: "void", paidAt: wib(2023, 3, 1) });
+    await insertPaidInvoice(i.id, 7_000_000, { method: "bank_transfer", paidAt: wib(2023, 1, 15) });
+    await insertPaidInvoice(c.id, 5_000, { method: "bank_transfer", paidAt: wib(2024, 1, 1) });
+    const t = await trend(admin.cookie, 2023, "money");
+    expect(t.summary.kind).toBe("flow");
+    expect(diff(t, before).slice(0, 3)).toEqual([150_000, 200_000, 0]); // void, internal, dan tahun 2024 tidak dihitung
+    expect(t.points[0]!.previous! - before.points[0]!.previous!).toBe(80_000); // pembanding Januari = Desember 2022
+    const parts = t.parts!;
+    const partDiff = (after: Point[], b: Point[]) => after.map((p, i) => (p.value ?? 0) - (b[i]!.value ?? 0));
+    expect(partDiff(parts.verified, before.parts!.verified).slice(0, 2)).toEqual([100_000, 200_000]);
+    expect(partDiff(parts.adminSettled, before.parts!.adminSettled).slice(0, 2)).toEqual([50_000, 0]);
+    expect(t.summary.value - before.summary.value).toBe(350_000);
+  });
+});
+
+describe("GET /tenure", () => {
+  type Tenure = { month: string; aktif: number; baru: number; lanjutanTahun1: number; byYear: { year: number; count: number }[]; berhenti: number; kembali: number };
+
+  test("rincian menurut usia langganan di Okt 2024: baru, lanjutan tahun ke-1, tahun ke-2/3, berhenti, kembali; internal dikecualikan", async () => {
+    const admin = await loginAs(app, "admin");
+    const before = await json<Tenure>(await get(admin.cookie, "/tenure?month=2024-10"));
+    const plan = await insertPlan("sales_invoice");
+    const mk = async (tag: string, opts: { isInternal?: boolean } = {}) => {
+      const acc = await insertAccount(`usia-${tag}`, opts);
+      return { id: acc.id, du: await insertDataUsaha(acc.id, `DU ${tag}`) };
+    };
+    const s = (o: { id: string; du: string }, start: Date, end: Date) => insertSub({ ownerId: o.id, dataUsahaId: o.du, planId: plan.id, start, end, status: "expired" });
+    const a = await mk("a"); await s(a, wib(2024, 10, 3), wib(2024, 11, 3));
+    const b = await mk("b"); await s(b, wib(2024, 3, 1), wib(2024, 11, 1));
+    const c = await mk("c"); await s(c, wib(2023, 3, 1), wib(2024, 12, 1));
+    const d = await mk("d"); await s(d, wib(2022, 10, 2), wib(2024, 12, 1));
+    const e = await mk("e"); await s(e, wib(2024, 1, 1), wib(2024, 10, 1));
+    const f = await mk("f"); await s(f, wib(2023, 1, 1), wib(2024, 8, 31)); await s(f, wib(2024, 10, 5), wib(2024, 11, 5));
+    const g = await mk("g", { isInternal: true }); await s(g, wib(2024, 1, 1), wib(2024, 12, 1));
+
+    const t = await json<Tenure>(await get(admin.cookie, "/tenure?month=2024-10"));
+    const yearCount = (r: Tenure, year: number) => r.byYear.find((y) => y.year === year)?.count ?? 0;
+    expect({ aktif: t.aktif - before.aktif, baru: t.baru - before.baru, lanjutanTahun1: t.lanjutanTahun1 - before.lanjutanTahun1, berhenti: t.berhenti - before.berhenti, kembali: t.kembali - before.kembali }).toEqual({
+      aktif: 5, baru: 1, lanjutanTahun1: 1, berhenti: 1, kembali: 1,
+    });
+    expect(yearCount(t, 2) - yearCount(before, 2)).toBe(2); // c (19 bulan) dan f (21 bulan sejak awal pertama)
+    expect(yearCount(t, 3) - yearCount(before, 3)).toBe(1); // d (24 bulan)
+    // kolom usia memartisi pelanggan aktif tepat satu kali
+    expect(t.baru + t.lanjutanTahun1 + t.byYear.reduce((n, y) => n + y.count, 0)).toBe(t.aktif);
+  });
+
+  test("tanpa parameter → bulan berjalan; format salah atau bulan di masa depan → 422", async () => {
+    const admin = await loginAs(app, "admin");
+    const now = await json<Tenure>(await get(admin.cookie, "/tenure"));
+    expect(now.month).toMatch(/^\d{4}-\d{2}$/);
+    expect((await get(admin.cookie, "/tenure?month=2026-13")).status).toBe(422);
+    expect((await get(admin.cookie, "/tenure?month=abc")).status).toBe(422);
+    const future = `${new Date().getUTCFullYear() + 2}-01`;
+    const res = await get(admin.cookie, `/tenure?month=${future}`);
+    expect(res.status).toBe(422);
+    expect(await json<{ code: string }>(res)).toMatchObject({ code: "FUTURE_MONTH" });
   });
 });
