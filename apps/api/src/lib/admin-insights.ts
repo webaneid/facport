@@ -124,3 +124,35 @@ export function csvCell(value: string | number | null | undefined): string {
 export function toCsv(header: string[], rows: (string | number | null | undefined)[][]): string {
   return "﻿" + [header, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n") + "\r\n";
 }
+
+/** Rentang tanggal maksimum laporan (≈ 24 bulan). */
+export const MAX_RANGE_DAYS = 731;
+
+type RangeResult = { ok: true; start: Date; endExclusive: Date } | { ok: false; code: "INVALID_DATE" | "RANGE_ORDER" | "RANGE_TOO_LONG" };
+
+function parseLocalDate(value: string): { year: number; month: number; day: number } | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!m) return null;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  // tanggal mustahil (30 Feb, bulan 13) ditolak — Date.UTC menggulirkannya, jadi bandingkan balik
+  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day ? { year, month, day } : null;
+}
+
+/**
+ * `from`/`to` = tanggal kalender (YYYY-MM-DD) menurut ZONA PERUSAHAAN, `to` INKLUSIF. Hasil [start, endExclusive): awal hari `from` sampai awal hari SETELAH `to`.
+ * Dibatasi `MAX_RANGE_DAYS` (cegah laporan raksasa).
+ */
+export function resolveDateRange(from: string, to: string, timeZone: string): RangeResult {
+  const a = parseLocalDate(from);
+  const b = parseLocalDate(to);
+  if (!a || !b) return { ok: false, code: "INVALID_DATE" };
+  const start = zonedTimeToUtc(a.year, a.month, a.day, 0, 0, 0, 0, timeZone);
+  const endExclusive = zonedTimeToUtc(b.year, b.month, b.day + 1, 0, 0, 0, 0, timeZone);
+  if (endExclusive.getTime() <= start.getTime()) return { ok: false, code: "RANGE_ORDER" };
+  const days = Math.round((Date.UTC(b.year, b.month - 1, b.day) - Date.UTC(a.year, a.month - 1, a.day)) / 86_400_000) + 1;
+  if (days > MAX_RANGE_DAYS) return { ok: false, code: "RANGE_TOO_LONG" };
+  return { ok: true, start, endExclusive };
+}

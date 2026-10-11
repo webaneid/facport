@@ -1,6 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { adminInsightsRoute } from "./insights.route";
-import { DAY, insertAccount, insertDataUsaha, insertPaidInvoice, insertPlan, insertSub, loginAs, makeTestApp, runId } from "./insights.fixtures";
+import { DAY, insertAccount, insertDataUsaha, insertOpenRenewalOrder, insertPaidInvoice, insertPlan, insertSub, loginAs, makeTestApp, runId, wib } from "./insights.fixtures";
 import { db } from "../../lib/db";
 import { eq } from "drizzle-orm";
 import { dataUsaha, memberSeats, user as userTable } from "../../db/schema";
@@ -17,7 +17,7 @@ describe("izin", () => {
     const admin = await loginAs(app, "admin");
     const staff = await loginAs(app, "staff");
     const owner = await insertAccount("izin");
-    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`]) {
+    for (const path of ["/summary", "/customers", `/customers/${owner.id}/access`, "/features", "/features/other_deposit/customers", "/new?from=2026-01-01&to=2026-01-31", "/expiring?window=14"]) {
       expect((await get(null, path)).status).toBe(401);
       expect((await get(customer.cookie, path)).status).toBe(403);
       expect((await get(admin.cookie, path)).status).toBe(200);
@@ -165,5 +165,193 @@ describe("GET /customers/:userId/access", () => {
     const lone = await insertAccount("akses-sendiri");
     expect(await json<{ dataUsaha: unknown[] }>(await get(admin.cookie, `/customers/${lone.id}/access`))).toMatchObject({ dataUsaha: [] });
     void userTable;
+  });
+});
+
+describe("GET /features & /features/:moduleKey/customers", () => {
+  type Features = { features: { moduleKey: string; label: string; dataUsaha: number; customers: number; subscriptions: number }[] };
+  const row = (f: Features, key: string) => f.features.find((x) => x.moduleKey === key) ?? { dataUsaha: 0, customers: 0, subscriptions: 0, label: "" };
+
+  test("DELTA per fitur: pemilik KOMERSIL dengan langganan aktif; internal, kedaluwarsa, trial, seat dikecualikan; satu pemilik dengan 2 Data Usaha = 1 pelanggan, 2 Data Usaha", async () => {
+    const admin = await loginAs(app, "admin");
+    const before = await json<Features>(await get(admin.cookie, "/features"));
+    const key = "other_deposit";
+
+    const a = await insertAccount("fitur-a", { companyName: "PT Fitur A" });
+    const b = await insertAccount("fitur-b");
+    const internal = await insertAccount("fitur-int", { isInternal: true });
+    const d = await insertAccount("fitur-exp");
+    const plan = await insertPlan(key);
+    const a1 = await insertDataUsaha(a.id, "A Satu");
+    const a2 = await insertDataUsaha(a.id, "A Dua");
+    const b1 = await insertDataUsaha(b.id, "B Satu");
+    const i1 = await insertDataUsaha(internal.id, "Int Satu");
+    const d1 = await insertDataUsaha(d.id, "D Satu");
+    const start = new Date(Date.now() - 10 * DAY);
+    const end = new Date(Date.now() + 20 * DAY);
+    await insertSub({ ownerId: a.id, dataUsahaId: a1, planId: plan.id, start, end });
+    await insertSub({ ownerId: a.id, dataUsahaId: a2, planId: plan.id, start, end });
+    await insertSub({ ownerId: b.id, dataUsahaId: b1, planId: plan.id, start, end });
+    await insertSub({ ownerId: internal.id, dataUsahaId: i1, planId: plan.id, start, end });
+    await insertSub({ ownerId: d.id, dataUsahaId: d1, planId: plan.id, start: new Date(Date.now() - 60 * DAY), end: new Date(Date.now() - 30 * DAY), status: "expired" });
+    await insertSub({ ownerId: d.id, dataUsahaId: d1, planId: plan.id, start, end, isTrial: true });
+    const seatPlan = await insertPlan(null, { kind: "seat_addon" });
+    await insertSub({ ownerId: b.id, dataUsahaId: b1, planId: seatPlan.id, start, end });
+
+    const after = await json<Features>(await get(admin.cookie, "/features"));
+    expect(row(after, key).customers - row(before, key).customers).toBe(2);
+    expect(row(after, key).dataUsaha - row(before, key).dataUsaha).toBe(3);
+    expect(row(after, key).subscriptions - row(before, key).subscriptions).toBe(3);
+    expect(row(after, key).label).toBe("Other Deposit (Cash/Bank Receipt)");
+    expect(after.features.every((f) => f.moduleKey !== "")).toBe(true); // seat (tanpa modul) tidak muncul sebagai fitur
+  });
+
+  test("daftar pemakai satu fitur: baris per Data Usaha dengan kontak pemilik, paket, masa berlaku; internal/kedaluwarsa/trial tidak masuk; modul tak dikenal 404", async () => {
+    const admin = await loginAs(app, "admin");
+    const key = "purchase_order";
+    const a = await insertAccount("pakai-a", { companyName: "PT Pemakai A", phone: "+6281200000001", whatsapp: "+6281200000002" });
+    const internal = await insertAccount("pakai-int", { isInternal: true });
+    const plan = await insertPlan(key);
+    const a1 = await insertDataUsaha(a.id, "Pemakai A Satu");
+    const a2 = await insertDataUsaha(a.id, "Pemakai A Dua");
+    const i1 = await insertDataUsaha(internal.id, "Pemakai Int");
+    const end1 = new Date(Date.now() + 5 * DAY);
+    await insertSub({ ownerId: a.id, dataUsahaId: a1, planId: plan.id, start: new Date(Date.now() - DAY), end: end1, renewalInterval: "monthly" });
+    await insertSub({ ownerId: a.id, dataUsahaId: a2, planId: plan.id, start: new Date(Date.now() - DAY), end: new Date(Date.now() + 15 * DAY) });
+    await insertSub({ ownerId: internal.id, dataUsahaId: i1, planId: plan.id, start: new Date(Date.now() - DAY), end: end1 });
+
+    type Users = { moduleKey: string; label: string; items: { owner: { id: string; name: string; email: string; companyName: string | null; phone: string | null; whatsapp: string | null }; dataUsahaName: string; planName: string; startAt: string; endAt: string | null; renewalInterval: string | null }[]; total: number };
+    const res = await json<Users>(await get(admin.cookie, `/features/${key}/customers?pageSize=100`));
+    expect(res).toMatchObject({ moduleKey: key, label: "Purchase Order" });
+    const mine = res.items.filter((i) => i.owner.id === a.id);
+    expect(mine.map((i) => i.dataUsahaName).sort()).toEqual(["Pemakai A Dua", "Pemakai A Satu"]);
+    expect(mine[0]!.owner).toMatchObject({ companyName: "PT Pemakai A", phone: "+6281200000001", whatsapp: "+6281200000002", email: a.email });
+    expect(mine.find((i) => i.dataUsahaName === "Pemakai A Satu")).toMatchObject({ renewalInterval: "monthly", planName: plan.name });
+    expect(res.items.some((i) => i.owner.id === internal.id)).toBe(false);
+
+    expect((await get(admin.cookie, "/features/tidak_ada_modul/customers")).status).toBe(404);
+  });
+});
+
+describe("GET /new (pelanggan/langganan baru dalam rentang)", () => {
+  type NewRes = {
+    range: { from: string; to: string };
+    summary: { customers: number; newCustomers: number; subscriptions: number };
+    items: { owner: { id: string; email: string; companyName: string | null; phone: string | null }; isNewCustomer: boolean; firstStartAt: string; features: { moduleKey: string; label: string; dataUsahaName: string; startAt: string }[] }[];
+    total: number;
+  };
+  // rentang masa lalu yang tidak bertabrakan dengan data tes lain: Maret 2020 (WIB)
+  const range = "from=2020-03-01&to=2020-03-31&pageSize=100";
+
+  test("pelanggan baru vs lama; trial/internal/di luar rentang/dibatalkan dikecualikan; batas tengah malam zona perusahaan", async () => {
+    const admin = await loginAs(app, "admin");
+    const fresh = await insertAccount("baru-fresh", { companyName: "PT Baru" });
+    const old = await insertAccount("baru-lama");
+    const internal = await insertAccount("baru-int", { isInternal: true });
+    const edge = await insertAccount("baru-tepi");
+    const planA = await insertPlan("sales_invoice");
+    const planB = await insertPlan("purchase_invoice");
+    const duFresh = await insertDataUsaha(fresh.id, "DU Fresh");
+    const duOld = await insertDataUsaha(old.id, "DU Lama");
+    const duInt = await insertDataUsaha(internal.id, "DU Int");
+    const duEdge = await insertDataUsaha(edge.id, "DU Tepi");
+    // fresh: 2 fitur dimulai di Maret 2020 (pertama kali)
+    await insertSub({ ownerId: fresh.id, dataUsahaId: duFresh, planId: planA.id, start: wib(2020, 3, 10, 9), end: wib(2020, 4, 10, 9), status: "expired" });
+    await insertSub({ ownerId: fresh.id, dataUsahaId: duFresh, planId: planB.id, start: wib(2020, 3, 12, 9), end: wib(2020, 4, 12, 9), status: "expired" });
+    // lama: pernah berlangganan 2019, fitur tambahan Maret 2020 → bukan pelanggan baru
+    await insertSub({ ownerId: old.id, dataUsahaId: duOld, planId: planA.id, start: wib(2019, 6, 1), end: wib(2019, 7, 1), status: "expired" });
+    await insertSub({ ownerId: old.id, dataUsahaId: duOld, planId: planB.id, start: wib(2020, 3, 20), end: wib(2020, 4, 20), status: "expired" });
+    // dikecualikan: internal, trial, dibatalkan, di luar rentang
+    await insertSub({ ownerId: internal.id, dataUsahaId: duInt, planId: planA.id, start: wib(2020, 3, 5), end: wib(2020, 4, 5), status: "expired" });
+    await insertSub({ ownerId: fresh.id, dataUsahaId: duFresh, planId: planA.id, start: wib(2020, 3, 15), end: wib(2020, 3, 20), status: "expired", isTrial: true });
+    await insertSub({ ownerId: fresh.id, dataUsahaId: duFresh, planId: planA.id, start: wib(2020, 3, 16), end: wib(2020, 4, 16), status: "cancelled" });
+    // tepi: 31 Mar 23:30 WIB masuk Maret; 1 Apr 00:00 WIB tidak
+    await insertSub({ ownerId: edge.id, dataUsahaId: duEdge, planId: planA.id, start: wib(2020, 3, 31, 23, 30), end: wib(2020, 4, 30), status: "expired" });
+    await insertSub({ ownerId: edge.id, dataUsahaId: duEdge, planId: planB.id, start: wib(2020, 4, 1, 0, 0), end: wib(2020, 5, 1), status: "expired" });
+
+    const res = await json<NewRes>(await get(admin.cookie, `/new?${range}`));
+    expect(res.range).toEqual({ from: "2020-03-01", to: "2020-03-31" });
+    const mine = new Map(res.items.filter((i) => [fresh.id, old.id, internal.id, edge.id].includes(i.owner.id)).map((i) => [i.owner.id, i]));
+    expect([...mine.keys()].sort()).toEqual([fresh.id, old.id, edge.id].sort());
+    expect(mine.get(fresh.id)).toMatchObject({ isNewCustomer: true, owner: { companyName: "PT Baru", email: fresh.email } });
+    expect(mine.get(fresh.id)!.features.map((f) => f.moduleKey).sort()).toEqual(["purchase_invoice", "sales_invoice"]);
+    expect(mine.get(old.id)).toMatchObject({ isNewCustomer: false });
+    expect(mine.get(old.id)!.features.map((f) => f.moduleKey)).toEqual(["purchase_invoice"]); // fitur 2019 di luar rentang
+    expect(mine.get(edge.id)!.features.map((f) => f.moduleKey)).toEqual(["sales_invoice"]); // hanya yang 31 Mar 23:30
+    expect(mine.get(edge.id)!.isNewCustomer).toBe(true);
+    // ringkasan konsisten dengan daftar
+    expect(res.summary.customers).toBe(res.total);
+    expect(res.summary.newCustomers).toBe(res.items.filter((i) => i.isNewCustomer).length);
+    expect(res.summary.subscriptions).toBe(res.items.reduce((s, i) => s + i.features.length, 0));
+  });
+
+  test("validasi rentang: format salah / mustahil / terbalik / >24 bulan / tanpa parameter → 422 dengan kode", async () => {
+    const admin = await loginAs(app, "admin");
+    const code = async (q: string) => ({ status: (await get(admin.cookie, `/new?${q}`)).status });
+    expect(await code("from=2026-1-1&to=2026-01-31")).toEqual({ status: 422 });
+    expect(await code("from=2026-02-30&to=2026-03-01")).toEqual({ status: 422 });
+    expect(await code("from=2026-03-02&to=2026-03-01")).toEqual({ status: 422 });
+    expect(await code("from=2020-01-01&to=2023-01-01")).toEqual({ status: 422 });
+    expect(await code("")).toEqual({ status: 422 });
+    const body = await json<{ code: string }>(await get(admin.cookie, "/new?from=2026-03-02&to=2026-03-01"));
+    expect(body.code).toBe("RANGE_ORDER");
+  });
+});
+
+describe("GET /expiring (akan berakhir 14/30 hari)", () => {
+  type Exp = {
+    window: number;
+    summary: { owners: number; subscriptions: number };
+    items: { owner: { id: string; email: string; phone: string | null; whatsapp: string | null; companyName: string | null }; nearestEndAt: string; subscriptions: { id: string; moduleKey: string; label: string; dataUsahaName: string; endAt: string; daysLeft: number; renewal: { status: "terbit" | "terjadwal" | "tidak_terjadwal"; invoiceNumber?: string; interval?: string } }[] }[];
+  };
+
+  test("jendela 14 vs 30 hari; hanya langganan aktif berbayar milik pemilik komersil; status tagihan perpanjangan; urut terdekat dulu", async () => {
+    const admin = await loginAs(app, "admin");
+    const owner = await insertAccount("exp-pemilik", { companyName: "PT Akan Habis", phone: "+6281300000001", whatsapp: "+6281300000002" });
+    const other = await insertAccount("exp-lain");
+    const internal = await insertAccount("exp-int", { isInternal: true });
+    const du = await insertDataUsaha(owner.id, "DU Habis");
+    const du2 = await insertDataUsaha(other.id, "DU Lain");
+    const duI = await insertDataUsaha(internal.id, "DU Int");
+    const sales = await insertPlan("sales_invoice");
+    const purchase = await insertPlan("purchase_invoice");
+    const journal = await insertPlan("journal_voucher");
+    const deposit = await insertPlan("other_deposit");
+    const start = new Date(Date.now() - 20 * DAY);
+    const s3 = await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: sales.id, start, end: new Date(Date.now() + 3 * DAY), renewalInterval: "monthly" }); // terjadwal
+    const s13 = await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: purchase.id, start, end: new Date(Date.now() + 13 * DAY) }); // tidak terjadwal
+    await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: journal.id, start, end: new Date(Date.now() + 20 * DAY) }); // hanya jendela 30
+    await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: deposit.id, start, end: new Date(Date.now() + 45 * DAY) }); // di luar 30 hari
+    await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: sales.id, start: new Date(Date.now() - 60 * DAY), end: new Date(Date.now() - DAY), status: "expired" }); // sudah berakhir
+    await insertSub({ ownerId: owner.id, dataUsahaId: du, planId: sales.id, start, end: new Date(Date.now() + 2 * DAY), isTrial: true }); // trial
+    await insertSub({ ownerId: internal.id, dataUsahaId: duI, planId: sales.id, start, end: new Date(Date.now() + 2 * DAY) }); // internal
+    const sOther = await insertSub({ ownerId: other.id, dataUsahaId: du2, planId: sales.id, start, end: new Date(Date.now() + 1 * DAY) }); // terbit
+    await insertOpenRenewalOrder(other.id, du2, sales.id, "sales_invoice", 250_000);
+
+    const w14 = await json<Exp>(await get(admin.cookie, "/expiring?window=14&pageSize=100"));
+    const mine14 = w14.items.find((i) => i.owner.id === owner.id)!;
+    expect(mine14.owner).toMatchObject({ companyName: "PT Akan Habis", phone: "+6281300000001", whatsapp: "+6281300000002", email: owner.email });
+    expect(mine14.subscriptions.map((s) => s.moduleKey)).toEqual(["sales_invoice", "purchase_invoice"]); // terdekat dulu
+    expect(mine14.subscriptions[0]).toMatchObject({ id: s3.id, daysLeft: 3, renewal: { status: "terjadwal", interval: "monthly" }, dataUsahaName: "DU Habis" });
+    expect(mine14.subscriptions[1]).toMatchObject({ id: s13.id, daysLeft: 13, renewal: { status: "tidak_terjadwal" } });
+    expect(new Date(mine14.nearestEndAt).getTime()).toBe(new Date(mine14.subscriptions[0]!.endAt).getTime());
+    expect(w14.items.some((i) => i.owner.id === internal.id)).toBe(false);
+    const otherItem = w14.items.find((i) => i.owner.id === other.id)!;
+    expect(otherItem.subscriptions[0]).toMatchObject({ id: sOther.id, renewal: { status: "terbit" } });
+    expect(otherItem.subscriptions[0]!.renewal.invoiceNumber).toMatch(/^INV\/REN\//);
+    expect(w14.window).toBe(14);
+
+    const w30 = await json<Exp>(await get(admin.cookie, "/expiring?window=30&pageSize=100"));
+    expect(w30.items.find((i) => i.owner.id === owner.id)!.subscriptions.map((s) => s.moduleKey)).toEqual(["sales_invoice", "purchase_invoice", "journal_voucher"]);
+    // pemilik terdekat lebih dulu
+    const order = w30.items.map((i) => i.owner.id);
+    expect(order.indexOf(other.id)).toBeLessThan(order.indexOf(owner.id));
+  });
+
+  test("window selain 14/30 atau tanpa window → 422 (hanya dua preset, D14)", async () => {
+    const admin = await loginAs(app, "admin");
+    expect((await get(admin.cookie, "/expiring?window=7")).status).toBe(422);
+    expect((await get(admin.cookie, "/expiring")).status).toBe(422);
+    expect((await get(admin.cookie, "/expiring?window=14")).status).toBe(200);
   });
 });

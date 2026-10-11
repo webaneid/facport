@@ -1,8 +1,11 @@
 import { and, count, desc, eq, gt, gte, ilike, inArray, isNotNull, isNull, lt, lte, or, sql, type SQL } from "drizzle-orm";
 import { db } from "./db";
+import { asc } from "drizzle-orm";
 import { dataUsaha, invoices, memberSeats, orders, plans, roles, subscriptions, user as userTable, userRoles } from "../db/schema";
 import { commercialCustomerIdsSubquery, customerUserIdsSubquery, deriveInternalReason, internalUserIdsSubquery } from "./internal-accounts";
 import { monthBounds, monthOf, type CountedSubscription } from "./admin-insights";
+import { MODULE_CATALOG, moduleLabel } from "./module-catalog";
+import { openRenewalOrdersBySubscription } from "./renewal-billing";
 
 // § Fase 189C — lapisan DATA API Insight: query mentah (tanpa rumus). Rumus ada di `lib/admin-insights.ts` (murni). Definisi baku — phase-189c-api-insight.md:
 // pelanggan = akun PEMILIK Data Usaha SAAT INI (`data_usaha.user_id`); langganan yang dihitung = modul, bukan trial/seat, status active/expired, sudah dimulai; semua tren/uang
@@ -197,4 +200,173 @@ export async function listCustomers(p: { q?: string; type: CustomerType; page: n
     };
   });
   return { items, total: totalRows[0]?.n ?? 0, page: p.page, pageSize: p.pageSize };
+}
+
+// ---------- pemilik (kontak) ----------
+export type OwnerContact = { id: string; name: string; email: string; companyName: string | null; phone: string | null; whatsapp: string | null };
+const ownerColumns = { id: userTable.id, name: userTable.name, email: userTable.email, companyName: userTable.companyName, phone: userTable.phone, whatsapp: userTable.whatsapp };
+const moduleKeyOf = sql<string>`${plans.modules}->>0`;
+
+// ---------- pengguna per fitur ----------
+export async function listFeatures(now: Date) {
+  const rows = await db
+    .select({
+      moduleKey: moduleKeyOf,
+      dataUsaha: sql<number>`count(distinct ${dataUsaha.id})`,
+      customers: sql<number>`count(distinct ${dataUsaha.userId})`,
+      subscriptions: count(),
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .where(and(COUNTED_SUBSCRIPTION, activeNow(now), inArray(dataUsaha.userId, commercialCustomerIdsSubquery())))
+    .groupBy(moduleKeyOf);
+  return rows
+    .filter((r) => !!r.moduleKey)
+    .map((r) => ({ moduleKey: r.moduleKey, label: moduleLabel(r.moduleKey), dataUsaha: Number(r.dataUsaha), customers: Number(r.customers), subscriptions: r.subscriptions }))
+    .sort((a, b) => b.customers - a.customers || a.label.localeCompare(b.label));
+}
+
+export const isKnownModule = (key: string): boolean => MODULE_CATALOG.some((m) => m.key === key);
+
+export async function listFeatureCustomers(p: { moduleKey: string; now: Date; page: number; pageSize: number }) {
+  const where = and(COUNTED_SUBSCRIPTION, activeNow(p.now), sql`${moduleKeyOf} = ${p.moduleKey}`, inArray(dataUsaha.userId, commercialCustomerIdsSubquery()));
+  const base = db
+    .select({
+      owner: ownerColumns,
+      dataUsahaId: dataUsaha.id,
+      dataUsahaName: dataUsaha.name,
+      planName: plans.name,
+      startAt: subscriptions.startAt,
+      endAt: subscriptions.endAt,
+      renewalInterval: subscriptions.renewalInterval,
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .innerJoin(userTable, eq(userTable.id, dataUsaha.userId))
+    .where(where);
+  const [items, totalRows] = await Promise.all([
+    base.orderBy(asc(userTable.name), asc(subscriptions.endAt), asc(subscriptions.id)).limit(p.pageSize).offset(p.page * p.pageSize),
+    db
+      .select({ n: count() })
+      .from(subscriptions)
+      .innerJoin(plans, eq(plans.id, subscriptions.planId))
+      .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+      .where(where),
+  ]);
+  return { moduleKey: p.moduleKey, label: moduleLabel(p.moduleKey), items, total: totalRows[0]?.n ?? 0, page: p.page, pageSize: p.pageSize };
+}
+
+// ---------- pelanggan / langganan baru ----------
+export async function listNewSubscriptions(p: { start: Date; endExclusive: Date; page: number; pageSize: number }) {
+  const rows = await db
+    .select({
+      owner: ownerColumns,
+      moduleKey: moduleKeyOf,
+      dataUsahaName: dataUsaha.name,
+      startAt: subscriptions.startAt,
+      endAt: subscriptions.endAt,
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .innerJoin(userTable, eq(userTable.id, dataUsaha.userId))
+    .where(and(COUNTED_SUBSCRIPTION, gte(subscriptions.startAt, p.start), lt(subscriptions.startAt, p.endExclusive), inArray(dataUsaha.userId, commercialCustomerIdsSubquery())))
+    .orderBy(asc(subscriptions.startAt));
+
+  // awal pertama SEPANJANG WAKTU per pemilik (D13) → pelanggan baru = awal pertamanya jatuh di rentang ini
+  const ownerIds = [...new Set(rows.map((r) => r.owner.id))];
+  const firsts = ownerIds.length
+    ? await db
+        .select({ ownerId: dataUsaha.userId, first: sql<Date>`min(${subscriptions.startAt})` })
+        .from(subscriptions)
+        .innerJoin(plans, eq(plans.id, subscriptions.planId))
+        .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+        .where(and(COUNTED_SUBSCRIPTION, inArray(dataUsaha.userId, ownerIds)))
+        .groupBy(dataUsaha.userId)
+    : [];
+  const firstByOwner = new Map(firsts.map((f) => [f.ownerId, new Date(f.first)]));
+
+  const grouped = new Map<string, { owner: OwnerContact; firstStartAt: Date; features: { moduleKey: string; label: string; dataUsahaName: string; startAt: Date; endAt: Date | null }[] }>();
+  for (const r of rows) {
+    const entry = grouped.get(r.owner.id) ?? { owner: r.owner, firstStartAt: r.startAt!, features: [] };
+    entry.features.push({ moduleKey: r.moduleKey, label: moduleLabel(r.moduleKey), dataUsahaName: r.dataUsahaName, startAt: r.startAt!, endAt: r.endAt });
+    grouped.set(r.owner.id, entry);
+  }
+  const all = [...grouped.values()]
+    .map((g) => {
+      const global = firstByOwner.get(g.owner.id);
+      return { ...g, isNewCustomer: !!global && global.getTime() >= p.start.getTime() && global.getTime() < p.endExclusive.getTime() };
+    })
+    .sort((a, b) => b.firstStartAt.getTime() - a.firstStartAt.getTime());
+  return {
+    summary: { customers: all.length, newCustomers: all.filter((g) => g.isNewCustomer).length, subscriptions: rows.length },
+    items: all.slice(p.page * p.pageSize, (p.page + 1) * p.pageSize),
+    total: all.length,
+    page: p.page,
+    pageSize: p.pageSize,
+  };
+}
+
+// ---------- akan berakhir ----------
+export type RenewalState = { status: "terbit" | "terjadwal" | "tidak_terjadwal"; interval?: string; invoiceNumber?: string; amountDue?: number };
+
+export async function listExpiring(p: { now: Date; windowDays: 14 | 30; page: number; pageSize: number }) {
+  const rows = await db
+    .select({
+      id: subscriptions.id,
+      owner: ownerColumns,
+      moduleKey: moduleKeyOf,
+      dataUsahaId: dataUsaha.id,
+      dataUsahaName: dataUsaha.name,
+      endAt: subscriptions.endAt,
+      renewalInterval: subscriptions.renewalInterval,
+    })
+    .from(subscriptions)
+    .innerJoin(plans, eq(plans.id, subscriptions.planId))
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .innerJoin(userTable, eq(userTable.id, dataUsaha.userId))
+    .where(
+      and(
+        COUNTED_SUBSCRIPTION,
+        activeNow(p.now),
+        isNotNull(subscriptions.endAt),
+        lte(subscriptions.endAt, new Date(p.now.getTime() + p.windowDays * DAY_MS)),
+        inArray(dataUsaha.userId, commercialCustomerIdsSubquery()),
+      ),
+    )
+    .orderBy(asc(subscriptions.endAt), asc(subscriptions.id));
+
+  const openOrders = await openRenewalOrdersBySubscription(rows.map((r) => ({ id: r.id, dataUsahaId: r.dataUsahaId, moduleKey: r.moduleKey })));
+  const grouped = new Map<string, { owner: OwnerContact; nearestEndAt: Date; subscriptions: { id: string; moduleKey: string; label: string; dataUsahaId: string; dataUsahaName: string; endAt: Date; daysLeft: number; renewal: RenewalState }[] }>();
+  for (const r of rows) {
+    const open = openOrders.get(r.id);
+    const renewal: RenewalState = open
+      ? { status: "terbit", invoiceNumber: open.invoiceNumber, amountDue: open.amountDue }
+      : r.renewalInterval
+        ? { status: "terjadwal", interval: r.renewalInterval }
+        : { status: "tidak_terjadwal" };
+    const entry = grouped.get(r.owner.id) ?? { owner: r.owner, nearestEndAt: r.endAt!, subscriptions: [] };
+    entry.subscriptions.push({
+      id: r.id,
+      moduleKey: r.moduleKey,
+      label: moduleLabel(r.moduleKey),
+      dataUsahaId: r.dataUsahaId,
+      dataUsahaName: r.dataUsahaName,
+      endAt: r.endAt!,
+      daysLeft: Math.max(0, Math.ceil((r.endAt!.getTime() - p.now.getTime()) / DAY_MS)),
+      renewal,
+    });
+    grouped.set(r.owner.id, entry);
+  }
+  const all = [...grouped.values()]; // urutan kemunculan = pemilik dengan akhir terdekat dulu
+  return {
+    window: p.windowDays,
+    summary: { owners: all.length, subscriptions: rows.length },
+    items: all.slice(p.page * p.pageSize, (p.page + 1) * p.pageSize),
+    total: all.length,
+    page: p.page,
+    pageSize: p.pageSize,
+  };
 }

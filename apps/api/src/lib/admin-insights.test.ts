@@ -11,6 +11,8 @@ import {
   tenureBreakdown,
   csvCell,
   toCsv,
+  resolveDateRange,
+  MAX_RANGE_DAYS,
   type CountedSubscription,
 } from "./admin-insights";
 
@@ -150,5 +152,31 @@ describe("CSV aman", () => {
     const csv = toCsv(["Nama", "Email"], [["Budi", "b@x.id"], ["Sari, S.", null]]);
     expect(csv.startsWith("﻿")).toBe(true);
     expect(csv).toBe('﻿Nama,Email\r\nBudi,b@x.id\r\n"Sari, S.",\r\n');
+  });
+});
+
+describe("resolveDateRange (YYYY-MM-DD dalam zona perusahaan; sampai-dengan inklusif)", () => {
+  test("rentang sah: awal hari `from` s.d. AWAL hari setelah `to` (eksklusif); sehari penuh = 24 jam", () => {
+    const r = resolveDateRange("2026-10-01", "2026-10-31", TZ);
+    expect(r).toMatchObject({ ok: true });
+    if (r.ok) {
+      expect(r.start.toISOString()).toBe("2026-09-30T17:00:00.000Z");
+      expect(r.endExclusive.toISOString()).toBe("2026-10-31T17:00:00.000Z");
+    }
+    const oneDay = resolveDateRange("2026-10-05", "2026-10-05", TZ);
+    expect(oneDay.ok && oneDay.endExclusive.getTime() - oneDay.start.getTime()).toBe(24 * 60 * 60 * 1000);
+  });
+  test("akhir tahun/bulan melompat benar (31 Des → 1 Jan)", () => {
+    const r = resolveDateRange("2026-12-31", "2026-12-31", TZ);
+    expect(r.ok && r.endExclusive.toISOString()).toBe("2026-12-31T17:00:00.000Z");
+  });
+  test("galat: format salah / tanggal mustahil → INVALID_DATE; from > to → RANGE_ORDER; > 24 bulan → RANGE_TOO_LONG", () => {
+    for (const [from, to] of [["2026-1-1", "2026-10-01"], ["2026-02-30", "2026-03-01"], ["abc", "2026-10-01"], ["2026-10-01", "2026-13-01"], ["", ""]]) {
+      expect(resolveDateRange(from!, to!, TZ)).toEqual({ ok: false, code: "INVALID_DATE" });
+    }
+    expect(resolveDateRange("2026-10-02", "2026-10-01", TZ)).toEqual({ ok: false, code: "RANGE_ORDER" });
+    expect(resolveDateRange("2024-01-01", "2026-01-01", TZ)).toEqual({ ok: false, code: "RANGE_TOO_LONG" });
+    expect(MAX_RANGE_DAYS).toBe(731);
+    expect(resolveDateRange("2024-10-01", "2026-09-30", TZ).ok).toBe(true); // tepat di batas
   });
 });

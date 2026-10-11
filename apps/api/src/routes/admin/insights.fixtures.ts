@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { eq, inArray } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { db } from "../../lib/db";
-import { dataUsaha, invoices, orders, plans, roles, subscriptions, userRoles, user as userTable } from "../../db/schema";
+import { dataUsaha, invoiceItems, invoices, orders, plans, roles, subscriptions, userRoles, user as userTable } from "../../db/schema";
 
 // § Fase 189C — fixture BERSAMA tes Insight (DB dev dipakai bersama → semua data uji diberi prefiks unik per run dan diasersi lewat pelanggan uji / delta, bukan total global).
 export const DAY = 24 * 60 * 60 * 1000;
@@ -135,3 +135,14 @@ export async function loginAs(app: Elysia, roleName: "admin" | "staff" | "custom
 
 export const wib = (y: number, mo: number, d: number, h = 0, mi = 0) => new Date(Date.UTC(y, mo - 1, d, h - 7, mi));
 export { inArray };
+
+/** Tagihan perpanjangan TERBUKA (order origin 'renewal', pending) untuk modul tertentu di sebuah Data Usaha — sumber status "terbit" di daftar akan berakhir. */
+export async function insertOpenRenewalOrder(userId: string, dataUsahaId: string, planId: string, moduleKey: string, total = 100_000) {
+  const [invoice] = await db
+    .insert(invoices)
+    .values({ invoiceNumber: `INV/REN/${runId}/${nextSeq()}`, userId, status: "unpaid", billToName: "Renewal", subtotal: total, total, dueDate: new Date(Date.now() + 3 * DAY) })
+    .returning();
+  await db.insert(invoiceItems).values({ invoiceId: invoice!.id, planId, moduleKey, label: "Renewal", price: total, durationDays: 30 });
+  await db.insert(orders).values({ invoiceId: invoice!.id, dataUsahaId, origin: "renewal", status: "pending", uniqueCode: 123 });
+  return invoice!;
+}

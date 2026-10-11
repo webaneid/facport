@@ -4,7 +4,8 @@ import { db } from "../../lib/db";
 import { dataUsaha, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { getCompanyTimezone } from "../../lib/company-timezone";
-import { getSummary, listCustomers } from "../../lib/insights-data";
+import { getSummary, isKnownModule, listCustomers, listExpiring, listFeatureCustomers, listFeatures, listNewSubscriptions } from "../../lib/insights-data";
+import { resolveDateRange } from "../../lib/admin-insights";
 import { listSeatsForDataUsaha } from "../../lib/seat-queries";
 
 // § Fase 189C, ADR-0044 — API Insight pelanggan (READ-ONLY) untuk kebutuhan data client FAC. Izin `insights.view` (Super Admin & Admin, D6). Route hanya mengambil data lewat
@@ -45,4 +46,37 @@ export const adminInsightsRoute = new Elysia({ prefix: "/admin/insights" })
       return { owner, dataUsaha: result };
     },
     { permission: "insights.view", params: t.Object({ userId: t.String({ minLength: 1, maxLength: 100 }) }) },
+  )
+  // Butir 2: pengguna per fitur (jumlah) lalu daftar pelanggan pemakai satu fitur.
+  .get("/features", async () => ({ features: await listFeatures(new Date()) }), { permission: "insights.view" })
+  .get(
+    "/features/:moduleKey/customers",
+    async ({ params, query, set }) => {
+      if (!isKnownModule(params.moduleKey)) {
+        set.status = 404;
+        return { code: "MODULE_NOT_FOUND" };
+      }
+      return listFeatureCustomers({ moduleKey: params.moduleKey, now: new Date(), page: query.page ?? 0, pageSize: query.pageSize ?? 20 });
+    },
+    { permission: "insights.view", params: t.Object({ moduleKey: t.String({ minLength: 1, maxLength: 50 }) }), query: t.Object({ ...pageQuery }) },
+  )
+  // Butir 5: pelanggan/langganan baru dalam rentang tanggal (zona waktu perusahaan, `to` inklusif, maks ±24 bulan).
+  .get(
+    "/new",
+    async ({ query, set }) => {
+      const range = resolveDateRange(query.from, query.to, await getCompanyTimezone());
+      if (!range.ok) {
+        set.status = 422;
+        return { code: range.code };
+      }
+      const result = await listNewSubscriptions({ start: range.start, endExclusive: range.endExclusive, page: query.page ?? 0, pageSize: query.pageSize ?? 20 });
+      return { range: { from: query.from, to: query.to }, ...result };
+    },
+    { permission: "insights.view", query: t.Object({ from: t.String({ maxLength: 10 }), to: t.String({ maxLength: 10 }), ...pageQuery }) },
+  )
+  // Butir 6: langganan yang akan berakhir dalam 14 atau 30 hari (hanya dua preset, D14) beserta status tagihan perpanjangan.
+  .get(
+    "/expiring",
+    async ({ query }) => listExpiring({ now: new Date(), windowDays: query.window === "14" ? 14 : 30, page: query.page ?? 0, pageSize: query.pageSize ?? 20 }),
+    { permission: "insights.view", query: t.Object({ window: t.Union([t.Literal("14"), t.Literal("30")]), ...pageQuery }) },
   );
