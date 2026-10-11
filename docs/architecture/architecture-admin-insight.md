@@ -56,7 +56,7 @@ Catatan penting:
   1. Daftar email+password → form daftar menambah Nama Perusahaan, Telepon, WhatsApp (centang "Sama dengan nomor telepon").
   2. Akun yang masih kosong (Google, user lama, akun tambahan hasil undangan) → otomatis tampil **satu halaman/modal Lengkapi Profil yang tidak bisa ditutup** sampai Nama Perusahaan dan Telepon (+WhatsApp) terisi. Hanya itu; tidak ada pengalihan berulang, kolom penanda, atau notifikasi tambahan.
   3. Berlaku untuk akun berperan customer (pemilik dan User Tambahan). Admin/staf (Tim Internal) dikecualikan. Penegakan di lapisan tampilan web, bukan 403 di API, sehingga import yang berjalan tidak terganggu.
-  Perlu dikonfirmasi: akun User Tambahan juga ditanya Nama Perusahaan (isian akun), sesuai prinsip data melekat pada akun.
+  Diputuskan user 2026-10-12: SEMUA akun customer (pemilik maupun User Tambahan) wajib mengisi ketiganya, tanpa pengecualian. Belum dikonfirmasi: apakah admin/staf (Tim Internal) ikut (asumsi: tidak).
 - Admin/staf/Tim Internal (role `admin`/`staff`) TIDAK diperlakukan sebagai "pengguna internal" butir ini — itu tim FAC. "Internal" = akun customer-role yang ditandai trainer/mitra.
 - Menandai internal = aksi admin yang tercatat di `audit_logs` (`entity_type='user'`, `action='update'`, `changes.is_internal`).
 
