@@ -7,7 +7,7 @@ import { useEffect, useRef, useState } from "react";
 type Loaded<T> = { data: T | null | undefined; error: unknown };
 
 export function useInsightQuery<T>(key: string, load: () => Promise<Loaded<T>>) {
-  const [state, setState] = useState<{ key: string; data: T | null; failed: boolean } | null>(null);
+  const [state, setState] = useState<{ key: string; data: T | null; failed: boolean; error: unknown } | null>(null);
   const loadRef = useRef(load);
   useEffect(() => {
     loadRef.current = load;
@@ -17,15 +17,15 @@ export function useInsightQuery<T>(key: string, load: () => Promise<Loaded<T>>) 
     loadRef
       .current()
       .then((res) => {
-        if (!cancelled) setState({ key, data: res.error ? null : ((res.data ?? null) as T | null), failed: Boolean(res.error) });
+        if (!cancelled) setState({ key, data: res.error ? null : ((res.data ?? null) as T | null), failed: Boolean(res.error), error: res.error ?? null });
       })
       .catch(() => {
-        if (!cancelled) setState({ key, data: null, failed: true });
+        if (!cancelled) setState({ key, data: null, failed: true, error: null });
       });
     return () => {
       cancelled = true;
     };
   }, [key]);
   const loading = state?.key !== key;
-  return { loading, data: loading ? null : (state?.data ?? null), failed: !loading && Boolean(state?.failed) };
+  return { loading, data: loading ? null : (state?.data ?? null), failed: !loading && Boolean(state?.failed), error: loading ? null : (state?.error ?? null) };
 }

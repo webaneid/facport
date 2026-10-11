@@ -7,13 +7,20 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { INSIGHT_TABS, parseTab, type InsightTab } from "@/lib/insights";
 import { SummaryTab } from "@/components/admin/insight/summary-tab";
 import { CustomersTab } from "@/components/admin/insight/customers-tab";
+import { FeaturesTab } from "@/components/admin/insight/features-tab";
+import { SubscriptionsTab } from "@/components/admin/insight/subscriptions-tab";
+import { TrendTab } from "@/components/admin/insight/trend-tab";
+import { ConnectionTab } from "@/components/admin/insight/connection-tab";
 
 // § Fase 189D — halaman Insight admin. Tab dari `?tab=` (dapat di-bookmark; nilai tak dikenal → ringkasan). Hanya tab aktif yang dirender/memuat data.
 function TabBody({ tab }: { tab: InsightTab }) {
   if (tab === "ringkasan") return <SummaryTab />;
   if (tab === "pelanggan") return <CustomersTab mode="pelanggan" />;
   if (tab === "akses") return <CustomersTab mode="akses" />;
-  return <p className="text-sm text-muted-foreground">Segera hadir.</p>;
+  if (tab === "fitur") return <FeaturesTab />;
+  if (tab === "langganan") return <SubscriptionsTab />;
+  if (tab === "tren") return <TrendTab />;
+  return <ConnectionTab />;
 }
 
 function InsightContent() {

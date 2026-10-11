@@ -164,6 +164,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Hapus Massal transaksi Accurate dari Excel (RENCANA/DRAFT, Fase 188, menunggu keputusan client) | `docs/architecture/architecture-bulk-delete.md` |
 | Akun internal vs komersil, guard invoice terpusat, kontrol keuangan (WAJIB dibaca sebelum membuat laporan uang/hitung pengguna) | `docs/architecture/architecture-internal-accounts.md` |
 | API Insight pelanggan `/admin/insights/*` (definisi komersil/aktif/baru/berhenti/usia, endpoint, ekspor CSV, data pribadi) | `docs/architecture/architecture-insights-api.md` |
+| Halaman Insight admin `/insight` (peta tab→API, konvensi UI, WhatsApp, ekspor) | `docs/architecture/architecture-insights-page.md` |
 | Riwayat Data Usaha (peristiwa koneksi Accurate + akses User Tambahan, kamus aksi, aksi admin cabut/pindahkan seat) | `docs/architecture/architecture-data-usaha-history.md` |
 | Kontak akun (Nama Perusahaan/Telepon/WhatsApp, standar E.164, modal Lengkapi Profil) — data AKUN, bukan Data Usaha | `docs/architecture/architecture-contact.md` |
 | Insight pelanggan admin (kebutuhan data FAC: komersil/internal, per fitur, akses, kohort, riwayat koneksi; RENCANA Fase 189) | `docs/architecture/architecture-admin-insight.md` |

@@ -35,13 +35,13 @@ Banyak komponen UI + satu tambahan kecil di API (jumlah slot per pelanggan, filt
 - [x] W1 `lib/insights.ts` (tipe respons, label, `exportUrl`, pembantu format delta/persen) + tes; `components/admin/insight/` bersama: `ContactCell` (perusahaan + telepon + WhatsApp), `ExportButton` (unduh berkredensial + galat), `OwnerSummary`.
 - [x] W2 Halaman `app/admin/(protected)/insight/page.tsx` (tab via `?tab=`), item menu "Insight" (ikon, `insights.view`), label breadcrumb; tes tab & navigasi.
 - [x] W3 Tab Ringkasan + Pelanggan (+ dialog Lihat).
-- [~] W4 Tab Fitur + Akses (Akses selesai — memakai `CustomersTab mode="akses"`; Fitur belum).
-- [ ] W5 Tab Langganan (Baru / Akan berakhir).
-- [ ] W6 Tab Tren & Retensi (Recharts + tabel + usia langganan).
-- [ ] W7 Tab Riwayat Koneksi.
-- [ ] W8 Tes komponen per tab (Testing Library, mock `api`), tes ekspor (fetch berkredensial, galat kuota), tes nav ber-izin.
+- [x] W4 Tab Fitur + Akses.
+- [x] W5 Tab Langganan (Baru / Akan berakhir).
+- [x] W6 Tab Tren & Retensi (Recharts + tabel + usia langganan).
+- [x] W7 Tab Riwayat Koneksi.
+- [x] W8 Tes komponen per tab (Testing Library, mock `api`), tes ekspor (fetch berkredensial, galat kuota), tes nav ber-izin.
 **Dokumen**
-- [ ] D1 `architecture-admin-insight.md` § 6 status + `architecture-insights-page.md` (peta tab→API, konvensi), PROGRESS/phase 189, lessons-learned bila ada temuan.
+- [x] D1 `architecture-admin-insight.md` § 6 status + `architecture-insights-page.md` (peta tab→API, konvensi), PROGRESS/phase 189, lessons-learned bila ada temuan.
 
 ## Di luar scope
 Redesain visual/tipografi/design system (Fase 190); KPI di `/admin` dashboard (189E); aksi massal hapus/anonimisasi (189H); mengubah data dari halaman ini (cabut akses tetap di detail user — halaman Insight hanya membaca).

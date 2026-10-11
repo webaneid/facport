@@ -34,7 +34,7 @@ export function CustomersTab({ mode }: { mode: "pelanggan" | "akses" }) {
   const kind = mode === "akses" ? "pemilik" : undefined;
   const key = `customers:${mode}:${q}:${type}:${page}`;
   const { loading, data, failed } = useInsightQuery<CustomersResponse>(key, () =>
-    api.admin.insights.customers.get({ query: { q: q || undefined, type, kind, page: page + 1, pageSize: INSIGHT_PAGE_SIZE } }) as never,
+    api.admin.insights.customers.get({ query: { q: q || undefined, type, kind, page, pageSize: INSIGHT_PAGE_SIZE } }) as never,
   );
 
   const columns = useMemo(

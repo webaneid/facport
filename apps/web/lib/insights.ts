@@ -197,3 +197,63 @@ export function seatStatusLabel(seat: Pick<SeatInfo, "status" | "seatExpired">):
   if (seat.status === "revoked") return "Dicabut";
   return seat.status;
 }
+
+export type FeatureRow = { moduleKey: string; label: string; dataUsaha: number; customers: number; subscriptions: number };
+export type FeatureCustomersResponse = {
+  moduleKey: string;
+  label: string;
+  items: { owner: OwnerContactInfo; dataUsahaId: string; dataUsahaName: string; planName: string; startAt: string | null; endAt: string | null; renewalInterval: string | null }[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type NewResponse = {
+  range: { from: string; to: string };
+  summary: { customers: number; newCustomers: number; subscriptions: number };
+  items: { owner: OwnerContactInfo; firstStartAt: string; isNewCustomer: boolean; features: { moduleKey: string; label: string; dataUsahaName: string; startAt: string; endAt: string | null }[] }[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type ExpiringResponse = {
+  window: 14 | 30;
+  summary: { owners: number; subscriptions: number };
+  items: {
+    owner: OwnerContactInfo;
+    nearestEndAt: string;
+    subscriptions: { id: string; moduleKey: string; label: string; dataUsahaId: string; dataUsahaName: string; endAt: string; daysLeft: number; renewal: { status: RenewalStatus; interval?: string; invoiceNumber?: string; amountDue?: number } }[];
+  }[];
+  total: number;
+  page: number;
+  pageSize: number;
+};
+
+export type TrendMetric = "registered" | "active" | "new" | "stopped" | "money";
+export const TREND_METRICS: { key: TrendMetric; label: string }[] = [
+  { key: "registered", label: "Terdaftar (akun komersil)" },
+  { key: "active", label: "Pelanggan aktif" },
+  { key: "new", label: "Pelanggan baru" },
+  { key: "stopped", label: "Pelanggan berhenti" },
+  { key: "money", label: "Uang masuk (Rp)" },
+];
+export function parseMetric(value: string): TrendMetric {
+  return TREND_METRICS.find((m) => m.key === value)?.key ?? "active";
+}
+export type TrendPointInfo = { month: string; value: number | null; previous: number | null; delta: number | null; percent: number | null; future: boolean };
+export type TrendResponse = { year: number; metric: TrendMetric; points: TrendPointInfo[]; summary: { kind: "stock" | "flow"; value: number } };
+export type TenureResponse = { month: string; aktif: number; baru: number; lanjutanTahun1: number; byYear: { year: number; count: number }[]; berhenti: number; kembali: number };
+
+export type ConnectionResponse = {
+  items: { id: string; action: string; changes: unknown; createdAt: string; actor: { id: string; name: string } | null; dataUsaha: { id: string; name: string }; owner: OwnerContactInfo }[];
+  total: number;
+  page: number;
+  pageSize: number;
+  summary: { byAction: Record<string, number>; dataUsahaWithCorrection: number; ownersWithCorrection: number; repeatedCorrection: number };
+};
+
+/** "YYYY-MM" dari nilai tahun/bulan; dipakai pemilih bulan rincian usia langganan. */
+export function monthParam(year: number, month: number): string {
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
