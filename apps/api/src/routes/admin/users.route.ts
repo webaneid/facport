@@ -63,11 +63,14 @@ const internalBody = t.Object({
 });
 
 // Muat akun target (id unik) beserta flag dan alasan internal efektif (role mengalahkan flag). `requested` = jumlah id unik yang diminta.
-async function loadInternalTargets(userIds: string[]) {
+type DbOrTx = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
+async function loadInternalTargets(userIds: string[], executor: DbOrTx = db, opts: { lock?: boolean } = {}) {
   const ids = [...new Set(userIds)];
-  const rows = await db.select({ id: userTable.id, flag: userTable.isInternal }).from(userTable).where(inArray(userTable.id, ids));
+  // `lock`: FOR UPDATE (urut id → tanpa deadlock antar-Super Admin) agar flag yang dibaca = flag yang ditulis, dan penandaan bersaing dengan guard invoice (FOR SHARE).
+  const base = executor.select({ id: userTable.id, flag: userTable.isInternal }).from(userTable).where(inArray(userTable.id, ids)).orderBy(userTable.id);
+  const rows = opts.lock ? await base.for("update") : await base;
   const roleRows = rows.length
-    ? await db
+    ? await executor
         .select({ userId: userRoles.userId, name: roles.name })
         .from(userRoles)
         .innerJoin(roles, eq(roles.id, userRoles.roleId))
@@ -76,6 +79,13 @@ async function loadInternalTargets(userIds: string[]) {
   const rolesByUser = new Map<string, string[]>();
   for (const r of roleRows) rolesByUser.set(r.userId, [...(rolesByUser.get(r.userId) ?? []), r.name]);
   return { requested: ids.length, targets: rows.map((r) => ({ id: r.id, flag: r.flag, reason: deriveInternalReason(r.flag, rolesByUser.get(r.id) ?? []) })) };
+}
+
+// Apakah flag akun ini akan ditulis? Menandai (isInternal=true) TIDAK menulis flag pada akun ber-role admin/staf: statusnya sudah internal karena role, flag di sana
+// tidak bermakna dan bisa mengejutkan nanti (mis. admin diturunkan jadi customer lalu tiba-tiba internal). Mencabut (false) tetap membersihkan flag lama di akun mana pun.
+function willChangeFlag(target: { flag: boolean; reason: "role" | "flag" | null }, desired: boolean) {
+  if (target.flag === desired) return false;
+  return !(desired && target.reason === "role");
 }
 
 // Dampak perubahan status komersil↔internal pada akun `ids`: uang lunas yang akan keluar dari/masuk ke laporan, langganan berbayar aktif, tagihan perpanjangan
@@ -381,7 +391,7 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
     "/internal/preview",
     async ({ body }) => {
       const { requested, targets } = await loadInternalTargets(body.userIds);
-      const flagChanges = targets.filter((x) => x.flag !== body.isInternal);
+      const flagChanges = targets.filter((x) => willChangeFlag(x, body.isInternal));
       const statusChanging = flagChanges.filter((x) => (body.isInternal ? x.reason === null : x.reason === "flag"));
       return {
         requested,
@@ -401,10 +411,11 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   .post(
     "/internal",
     async ({ body, user }) => {
-      const { requested, targets } = await loadInternalTargets(body.userIds);
-      const toChange = targets.filter((x) => x.flag !== body.isInternal);
-      if (toChange.length > 0) {
-        await db.transaction(async (tx) => {
+      // Muat + ubah + audit dalam SATU transaksi dengan kunci baris (audit "from" selalu benar; tidak balapan dengan Super Admin lain maupun guard invoice).
+      const result = await db.transaction(async (tx) => {
+        const { requested, targets } = await loadInternalTargets(body.userIds, tx, { lock: true });
+        const toChange = targets.filter((x) => willChangeFlag(x, body.isInternal));
+        if (toChange.length > 0) {
           await tx.update(userTable).set({ isInternal: body.isInternal }).where(inArray(userTable.id, toChange.map((x) => x.id)));
           await tx.insert(auditLogs).values(
             toChange.map((x) => ({
@@ -415,15 +426,16 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
               actorId: user.id,
             })),
           );
-        });
-      }
+        }
+        return { requested, targets, changed: toChange.length };
+      });
       return {
-        requested,
-        found: targets.length,
-        notFound: requested - targets.length,
-        changed: toChange.length,
-        unchanged: targets.length - toChange.length,
-        internalByRole: targets.filter((x) => x.reason === "role").length,
+        requested: result.requested,
+        found: result.targets.length,
+        notFound: result.requested - result.targets.length,
+        changed: result.changed,
+        unchanged: result.targets.length - result.changed,
+        internalByRole: result.targets.filter((x) => x.reason === "role").length,
       };
     },
     { permission: "users.manage", body: internalBody },

@@ -21,6 +21,8 @@
 | AutoProduksi | Produk manufaktur/formula (BOM) — resep produk jadi dari bahan baku+takaran, input jumlah produksi otomatis memotong stok bahan baku. Belum ada kode, direncanakan sebagai Produk ke-3 § ADR-0033 |
 | Nama Perusahaan (akun) | Isian milik AKUN pengguna (`user.company_name`), diisi saat daftar/lengkapi profil. **BUKAN** Data Usaha dan tidak diturunkan darinya — lihat `architecture-contact.md` |
 | Data Usaha | Workspace Accurate (`data_usaha`) dengan nama sendiri, tempat langganan/koneksi Accurate/User Tambahan menempel. Terpisah total dari Nama Perusahaan akun dan tidak menyimpan kontak pelanggan |
+| Akun Internal | Akun yang tidak ditagih dan tidak dihitung di laporan uang: trainer, karyawan, mitra (ditandai Super Admin) ATAU pemegang role Admin/Super Admin (otomatis). Lawannya Akun Komersil (default). Lihat `architecture-internal-accounts.md` |
+| Akun Komersil | Akun role customer yang bukan internal — ditentukan status AKUN, bukan trial/langganan |
 | Lengkapi Profil | Modal yang tidak bisa ditutup untuk akun pelanggan yang Nama Perusahaan/Telepon/WhatsApp-nya masih kosong; hanya lapisan tampilan, tanpa memblokir API |
 | Pesanan Penjualan | Sales Order — dokumen transaksi modul Penjualan |
 | Delivery Order | Pengiriman Pesanan — dokumen transaksi modul Penjualan |

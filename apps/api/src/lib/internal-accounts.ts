@@ -47,8 +47,11 @@ export function commercialCustomerIdsSubquery() {
     .where(and(inArray(userTable.id, customerIds), notInArray(userTable.id, internalUserIdsSubquery())));
 }
 
-export async function getInternalReason(userId: string, executor: Executor = db): Promise<InternalReason> {
-  const [row] = await executor.select({ isInternal: userTable.isInternal }).from(userTable).where(eq(userTable.id, userId)).limit(1);
+export async function getInternalReason(userId: string, executor: Executor = db, opts: { lockUser?: boolean } = {}): Promise<InternalReason> {
+  // `lockUser`: kunci BERBAGI atas baris user selama transaksi pemanggil — penanda internal (`/admin/users/internal`) memakai FOR UPDATE pada baris yang sama,
+  // jadi penandaan dan pembuatan invoice saling menunggu (tidak ada invoice lolos di celah antara cek dan commit). Di luar transaksi tidak berefek.
+  const base = executor.select({ isInternal: userTable.isInternal }).from(userTable).where(eq(userTable.id, userId)).limit(1);
+  const [row] = opts.lockUser ? await base.for("share") : await base;
   if (!row) return null;
   const roleRows = await executor
     .select({ name: roles.name })
@@ -80,5 +83,5 @@ export class InternalAccountBillingError extends Error {
 
 /** Guard: lempar `InternalAccountBillingError` bila `userId` internal. User yang tidak ada TIDAK melempar (FK invoice yang menolaknya). */
 export async function assertBillable(executor: Executor, userId: string): Promise<void> {
-  if (await getInternalReason(userId, executor)) throw new InternalAccountBillingError();
+  if (await getInternalReason(userId, executor, { lockUser: true })) throw new InternalAccountBillingError();
 }

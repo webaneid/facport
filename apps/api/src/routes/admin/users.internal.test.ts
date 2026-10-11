@@ -126,16 +126,21 @@ describe("pratinjau & penerapan massal", () => {
     const res = await post(admin.cookie, "/preview", { userIds: [a.id, b.id, c.id, d.id, "tidak-ada"], isInternal: true });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown> & { impact: Record<string, number> };
-    expect(body).toMatchObject({ requested: 5, found: 4, notFound: 1, becomeInternal: 2, alreadyInState: 1, internalByRole: 1 });
+    // d (staff) internal karena ROLE: flag tidak akan ditulis (flagChanges hanya a & b), dilaporkan lewat internalByRole
+    expect(body).toMatchObject({ requested: 5, found: 4, notFound: 1, flagChanges: 2, becomeInternal: 2, alreadyInState: 1, internalByRole: 1 });
     expect(body.impact).toMatchObject({ paidInvoiceCount: 3, paidTotal: 100_000 + 200_000 + 999_999_999, unpaidInvoices: 1 });
     for (const u of [a, b, c, d]) expect(await flagOf(u.id)).toBe(u.id === c.id);
   });
 
   test("terapkan: flag diset, audit log per akun yang berubah (bukan yang sudah di status itu), idempoten", async () => {
-    const { admin, a, b, c } = await scenario();
+    const { admin, a, b, c, d } = await scenario();
     const res = await post(admin.cookie, "", { userIds: [a.id, b.id, c.id], isInternal: true });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ requested: 3, found: 3, changed: 2, unchanged: 1, notFound: 0 });
+    // menandai akun ber-role staf tidak menulis flag (statusnya sudah internal karena role)
+    const staffRes = await post(admin.cookie, "", { userIds: [d.id], isInternal: true });
+    expect(await staffRes.json()).toMatchObject({ changed: 0, internalByRole: 1 });
+    expect(await flagOf(d.id)).toBe(false);
     expect(await flagOf(a.id)).toBe(true);
     expect(await flagOf(b.id)).toBe(true);
 
@@ -152,6 +157,8 @@ describe("pratinjau & penerapan massal", () => {
   test("cabut tanda: kembali komersil; akun role admin/staf tetap internal walau flag dicabut", async () => {
     const { admin, a, c, d } = await scenario();
     await post(admin.cookie, "", { userIds: [a.id, d.id], isInternal: true });
+    // flag lama pada akun ber-role (mis. data warisan) tetap bisa dibersihkan lewat "cabut"
+    await db.update(userTable).set({ isInternal: true }).where(eq(userTable.id, d.id));
     const preview = await post(admin.cookie, "/preview", { userIds: [a.id, c.id, d.id], isInternal: false });
     expect(await preview.json()).toMatchObject({ becomeCommercial: 2, internalByRole: 1 });
 

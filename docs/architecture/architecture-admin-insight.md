@@ -209,6 +209,7 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | D18 | Hapus akun | Tiga tingkat (nonaktifkan / hapus permanen tanpa jejak bisnis / anonimisasi) — ADR-0045 | **Menunggu user (Proposed)** |
 | D19 | Metrik grafik tren | 5 metrik: pengguna terdaftar, pelanggan berlangganan aktif, baru, berhenti, uang terbayar; evaluasi kemudian | **Diputuskan user 2026-10-12** |
 | D20 | Admin/staf Tim Internal dikecualikan dari modal Lengkapi Profil | Ya, kecuali saat membuka `app.` sebagai ber-role ganda | **Diputuskan user 2026-10-12** |
+| D21 | Invoice/order yang SUDAH terbit untuk akun yang baru ditandai internal (masih bisa dibayar & dikonfirmasi) | (c) biarkan, laporan uang wajib punya baris "Kas dari akun internal" agar kas cocok; alternatif (a) batalkan otomatis saat ditandai (dengan persetujuan), (b) tolak konfirmasi pembayaran akun internal | **Menunggu user** (temuan audit 189G, Medium) |
 
 ADR terkait: **ADR-0044** (data kontak akun, penanda internal, kontrol keuangan; Proposed), **ADR-0045** (kebijakan hapus/anonimisasi akun; Proposed), **ADR-0046** (design system admin, Fase 190; belum ditulis).
 

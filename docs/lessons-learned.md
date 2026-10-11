@@ -6193,3 +6193,11 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Perbaikan:** `PhoneInput` menurunkan nomor/negara dari prop `value` (hanya negara pilihan disimpan di state); tes memakai callback `onValue` di event handler.
 **Pelajaran:** komponen input terkontrol yang di-port dari project lain (Jalajogja) yang menyalin prop ke state lewat effect harus disusun ulang jadi turunan prop; lint di project ini lebih ketat daripada di sumbernya.
 
+## 2026-10-12 — Guard keuangan hanya pada PEMBUATAN invoice: invoice yang sudah terbit tetap bisa dibayar (temuan audit 189G, Medium)
+**Gejala/temuan:** `assertBillable` di `createInvoiceAndOrder` mencegah invoice/order BARU untuk akun internal, tetapi invoice/order `unpaid`/`pending`/`submitted` yang terbit sebelum akun ditandai internal tetap bisa dibayar dan dikonfirmasi admin. Uang nyata masuk dari akun yang dianggap "internal" oleh helper laporan, sehingga laporan komersil dan kas tidak cocok.
+**Pelajaran:** kontrol "tidak boleh ditagih" punya DUA titik — pembuatan dan penyelesaian (konfirmasi pembayaran). Saat merancang kontrol serupa, putuskan eksplisit apakah penyelesaian ikut dijaga atau laporan harus merinci kas per tipe akun (D21).
+
+## 2026-10-12 — `mock.module` bocor lintas file tes: halaman yang mengimpor ekspor yang tidak ada di mock tes lain gagal hanya di suite PENUH
+**Gejala:** tes halaman Pengguna lulus sendirian, tetapi di `bun test` penuh gagal: `Export named 'usePermission' not found in module lib/use-permissions.tsx` (tes lain me-mock modul itu hanya dengan `usePermissions`).
+**Perbaikan:** halaman memakai `usePermissions()` (ekspor yang juga dipakai `<Can>` dan oleh mock tes lain). **Pelajaran:** selalu jalankan SUITE PENUH sebelum menutup fase, bukan hanya berkas baru; pakai ekspor yang sudah dipakai mock lain, atau sediakan semua ekspor di mock sendiri.
+

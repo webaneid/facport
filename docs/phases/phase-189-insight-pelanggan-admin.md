@@ -25,7 +25,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | Sub-fase | Isi | Status |
 |---|---|---|
 | 189A | Profil akun: `phone`, `whatsapp`, `company_name`; `PhoneInput` (E.164); form daftar; modal Lengkapi Profil tak bisa ditutup; tampil + WhatsApp klik di admin — rencana detail: `phase-189a-profil-kontak-akun.md` | Done (2026-10-12) |
-| 189G | Akun internal & kontrol keuangan (Lapis 1: guard invoice terpusat, tagihan terjadwal, laporan uang) + aksi massal tandai internal di `/admin/users` — rencana detail: `phase-189g-akun-internal-kontrol-keuangan.md` | In Progress |
+| 189G | Akun internal & kontrol keuangan (Lapis 1: guard invoice terpusat, tagihan terjadwal, laporan uang) + aksi massal tandai internal di `/admin/users` — rencana detail: `phase-189g-akun-internal-kontrol-keuangan.md` | Done (2026-10-12) |
 | 189B | Pencatatan sambung/pilih database + alasan putus; aksi admin cabut/mutasi seat | Not Started |
 | 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
 | 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
