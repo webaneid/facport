@@ -50,6 +50,8 @@ export const NOTIFICATION_TYPES = {
   ADMIN_RENEWAL_INVOICE_FAILED: "admin_renewal_invoice_failed",
   // § Fase 182 — admin memberi paket gratis / mengubah / memperpanjang masa aktif tanpa invoice (tujuan: /subscribe).
   SUBSCRIPTION_CHANGED_BY_ADMIN: "subscription_changed_by_admin",
+  // § Fase 189B — admin mencabut/memindahkan akses User Tambahan (ke PEMILIK Data Usaha saja; tujuan: /team). Isi generik, tanpa catatan alasan admin.
+  SEAT_ACCESS_CHANGED_BY_ADMIN: "seat_access_changed_by_admin",
 } as const;
 export type NotificationType = (typeof NOTIFICATION_TYPES)[keyof typeof NOTIFICATION_TYPES];
 

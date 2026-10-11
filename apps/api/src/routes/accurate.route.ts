@@ -15,6 +15,7 @@ import { createState, consumeState } from "../lib/oauth-state";
 import { encrypt, decrypt } from "../lib/encryption";
 import { env } from "../lib/env";
 import { logger } from "../lib/logger";
+import { DATA_USAHA_EVENT, recordDataUsahaEvent } from "../lib/data-usaha-events";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -226,6 +227,13 @@ export const accurateRoute = new Elysia()
         if (!(await pointDataUsahaToConnection(context.dataUsahaId, context.userId, connection.id, token.access_token))) {
           return redirect(`${appOrigin}/?accurate_error=invalid_state`);
         }
+        // § Fase 189B — riwayat Data Usaha (butir 9 client): pemilik menyambungkan akun Accurate. Non-fatal (tidak boleh menggagalkan callback).
+        await recordDataUsahaEvent({
+          dataUsahaId: context.dataUsahaId,
+          action: DATA_USAHA_EVENT.CONNECT,
+          actorId: context.userId,
+          changes: { via: "oauth", accurateConnectionId: connection.id, accountEmail: token.user?.email ?? null },
+        });
         return redirect(`${appOrigin}/?accurate=connected`);
       } catch (err) {
         logger.error({ err }, "Accurate OAuth callback gagal");
@@ -262,6 +270,12 @@ export const accurateRoute = new Elysia()
         return { code: "DATABASE_NOT_SELECTED" };
       }
       await db.update(dataUsaha).set({ accurateDbConfirmedAt: new Date(), updatedAt: new Date() }).where(eq(dataUsaha.id, body.dataUsahaId));
+      await recordDataUsahaEvent({
+        dataUsahaId: body.dataUsahaId,
+        action: DATA_USAHA_EVENT.CONFIRM_DATABASE,
+        actorId: user.id,
+        changes: { accurateDbId: owned.resolved.accurateDbId, alias: owned.resolved.accurateDbAlias ?? null },
+      });
       return { confirmed: true };
     },
     { auth: true, body: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
@@ -286,10 +300,18 @@ export const accurateRoute = new Elysia()
         set.status = 409;
         return { code: "DATABASE_HAS_IMPORT_HISTORY" };
       }
+      // § Fase 189B — database SEBELUMNYA dicatat di riwayat: ini koreksi mandiri pelanggan ("salah pilih → pilih yang lain").
+      const [before] = await db.select({ accurateDbId: dataUsaha.accurateDbId, accurateDbAlias: dataUsaha.accurateDbAlias }).from(dataUsaha).where(eq(dataUsaha.id, body.dataUsahaId));
       await db
         .update(dataUsaha)
         .set({ accurateDbId: null, accurateDbAlias: null, accurateDbConfirmedAt: null, updatedAt: new Date() })
         .where(eq(dataUsaha.id, body.dataUsahaId));
+      await recordDataUsahaEvent({
+        dataUsahaId: body.dataUsahaId,
+        action: DATA_USAHA_EVENT.RESET_DATABASE,
+        actorId: user.id,
+        changes: { previousDbId: before?.accurateDbId ?? null, previousAlias: before?.accurateDbAlias ?? null },
+      });
       return { reset: true };
     },
     { auth: true, body: t.Object({ dataUsahaId: t.String({ format: "uuid" }) }) },
@@ -341,6 +363,12 @@ export const accurateRoute = new Elysia()
         set.status = 404;
         return { code: "DATA_USAHA_NOT_FOUND" };
       }
+      await recordDataUsahaEvent({
+        dataUsahaId: body.dataUsahaId,
+        action: DATA_USAHA_EVENT.CONNECT,
+        actorId: user.id,
+        changes: { via: "attach", accurateConnectionId: connection.id, accountEmail: connection.accurateUserEmail ?? null },
+      });
       return { dataUsahaId: body.dataUsahaId, accurateConnectionId: connection.id };
     },
     {
@@ -422,6 +450,12 @@ export const accurateRoute = new Elysia()
         }
         throw err;
       }
+      await recordDataUsahaEvent({
+        dataUsahaId: body.dataUsahaId,
+        action: DATA_USAHA_EVENT.SELECT_DATABASE,
+        actorId: user.id,
+        changes: { accurateDbId: String(body.accurateDbId), alias: body.alias },
+      });
       return { accurateDbId: body.accurateDbId, accurateDbAlias: body.alias };
     },
     // `alias` dikirim client (sudah ada dari GET /accurate/databases) — hindari panggilan Accurate kedua.

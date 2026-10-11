@@ -4,6 +4,7 @@ import { db } from "../../lib/db";
 import { dataUsaha, user as userTable, auditLogs, ownershipTransfers, accurateConnections, subscriptions, importBatches } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { REASON_NOTE_MAX_LENGTH, normalizeDisconnectReason } from "../../lib/data-usaha-events";
 
 // § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
 // Usaha DIBANTU ADMIN: LANGSUNG eksekusi tanpa accept-flow token (admin
@@ -90,6 +91,8 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
             previousAccurateDbAlias: du.accurateDbAlias ?? null,
             removedAccount: removeAccount,
             affectedDataUsahaIds: affectedIds,
+            // § Fase 189B, D10 — alasan opsional (saran cepat + catatan bebas) untuk statistik "salah database/akun"; catatan INTERNAL, tidak masuk notifikasi pelanggan.
+            reason: normalizeDisconnectReason(body?.reason),
           },
           actorId: user.id,
         });
@@ -111,7 +114,18 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
     {
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
-      body: t.Optional(t.Object({ removeAccount: t.Optional(t.Boolean()) })),
+      body: t.Optional(
+        t.Object({
+          removeAccount: t.Optional(t.Boolean()),
+          reason: t.Optional(
+            t.Object({
+              // ditulis eksplisit (bukan .map) agar tipe literal terbawa ke klien Eden; kesinkronan dengan DISCONNECT_REASON_CODES dijaga tes
+              code: t.Optional(t.Union([t.Literal("salah_database"), t.Literal("salah_akun"), t.Literal("lainnya")])),
+              note: t.Optional(t.String({ maxLength: REASON_NOTE_MAX_LENGTH })),
+            }),
+          ),
+        }),
+      ),
     },
   )
   .post(

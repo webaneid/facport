@@ -27,6 +27,7 @@ import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dial
 import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
 import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
 import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { DataUsahaAccessPanel } from "@/components/admin/data-usaha-access-panel";
 import { Button } from "@/components/ui/button";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
@@ -297,6 +298,8 @@ export default function AdminUserDetailPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  {/* § Fase 189B — akses User Tambahan + riwayat koneksi/akses per Data Usaha (dimuat saat dibuka). */}
+                    <DataUsahaAccessPanel dataUsahaId={group.du.id} />
                   </AccordionContent>
                 </AccordionItem>
               ))}
