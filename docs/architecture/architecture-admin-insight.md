@@ -88,7 +88,8 @@ Route baru `apps/api/src/routes/admin/insights.route.ts`, prefix `/admin/insight
 | `GET /admin/insights/customers/:userId/access` | per Data Usaha: pemilik + seat (email, status, tanggal) | 4 |
 | `GET /admin/insights/new?from&to` | pelanggan/langganan baru dalam rentang + fiturnya | 5 |
 | `GET /admin/insights/expiring?window=14|30` | langganan akan berakhir + fiturnya + status perpanjangan terjadwal | 6 |
-| `GET /admin/insights/cohorts?basis=customer\|revenue` | matriks kohort × periode | 7 |
+| `GET /admin/insights/trend?year=&metric=` | tren bulanan untuk SATU tahun (12 bulan): nilai per bulan, selisih & % terhadap bulan sebelumnya; `metric` = pengguna terdaftar · pelanggan berlangganan aktif · pelanggan baru · pelanggan berhenti · uang terbayar | 5, 7, uang |
+| `GET /admin/insights/tenure?month=` | rincian bulan itu menurut usia langganan: Baru / Tahun ke-2 / Tahun ke-3… (+ yang berhenti) | 7 |
 | `GET /admin/insights/connection-history?q&page` | peristiwa putus/sambung per Data Usaha, alasan, jumlah kejadian per pelanggan | 9 |
 | `GET /admin/insights/export/:report` | CSV (lihat D5) | semua |
 
@@ -105,6 +106,23 @@ Aturan:
 - **Kohort**: bulan langganan berbayar pertama (non-trial, akun bukan internal) per pelanggan. "Tidak melanjutkan" = tidak ada langganan berbayar aktif sesudah `end_at` (aturan di atas, tanpa toleransi). Pengukuran retensi per **bulan kalender**: pelanggan dihitung aktif di bulan M bila ada langganan berbayar yang masa berlakunya menyentuh bulan M — ini resolusi pengukuran, BUKAN jeda toleransi status (konfirmasi user). Sel yang belum tercapai = kosong, bukan 0%.
 - **Nilai rupiah (D3, diputuskan 2026-10-12)** = **total uang yang sudah dibayar** akun komersil, dari invoice/order berstatus lunas (verifikasi nama status di `architecture-invoice.md` saat eksekusi, jangan menebak). Akun internal tidak dihitung. Nilai langganan aktif per bulan TIDAK dibuat (tidak diminta, hindari melebar).
 - **Perhatian**: `end_at` bisa diubah manual admin (Fase 173–180, quick-extend) — riwayat kohort mengikuti nilai terkini, bukan nilai asli; dicatat sebagai keterbatasan.
+
+### 5.2 Grafik tren tahunan (diputuskan user 2026-10-12)
+- Chart bulanan yang sudah ada (12 bulan bergulir, Fase 59) TETAP; ditambah **filter tahun**: pilih 2026 → 12 bulan 2026; pilih 2027 → 12 bulan 2027. Pilihan tahun diambil dari tahun yang punya data. Default = 12 bulan terakhir (perilaku sekarang).
+- Tiap bulan menampilkan: jumlah bulan itu, bulan sebelumnya, selisih, dan % kenaikan (pola `computeGrowthPercent`, hindari ∞/NaN bila bulan sebelumnya 0). Berlaku untuk pelanggan DAN uang.
+- **Aktif di bulan M** = ada langganan berbayar yang masa berlakunya menyentuh bulan M, termasuk pelanggan yang bulan M adalah bulan aktif TERAKHIR mereka (diputuskan user: "bahkan ketika bulan itu terakhir kali aktif"). Tanpa jeda toleransi status (lihat § 5.1).
+- **Uang** = total terbayar per bulan (invoice `paid`, bulan dari `paid_at` menurut zona waktu perusahaan), akun internal dikecualikan; dua baris terpisah: *Terbayar terverifikasi* dan *Dilunasi admin* (D11).
+- Rumus murni di `lib/admin-insights.ts` (diuji dengan data sintetis, termasuk bulan kosong dan lompat tahun); endpoint hanya mengambil data mentah.
+
+### 5.3 Konvensi tabel & aksi cepat
+- Tabel Insight WAJIB memakai `DataTable` + `createDataTableColumns` yang ada (gaya sama dengan `/admin/users`), paginasi server-side (`offset`/`limit`), kolom sedikit dan tidak melebar ke samping. Detail lengkap TIDAK dijejalkan sebagai kolom: baris punya tombol **Lihat** yang membuka panel/dialog detail (komponen `dialog.tsx` yang ada).
+- **Tombol WhatsApp** di baris tabel dan di halaman detail user (`/admin/users/[id]`): tautan `https://wa.me/<toWaDigits(E.164 asli)>`, buka di tab baru (WhatsApp Web/Desktop). Nomor juga ditampilkan di detail user dan bisa diklik. Tautan SELALU dibangun dari nilai E.164 asli, bukan dari hasil `displayPhone()` (bug Jalajogja).
+- Kolom kontak (telepon, WhatsApp, Nama Perusahaan) juga muncul di daftar Pengguna dan detail user.
+
+### 5.4 Aksi massal di `/admin/users`
+- Tabel Pengguna mendapat pilihan baris (kotak centang) + bilah aksi massal. `DataTable` sekarang TIDAK punya seleksi baris → ditambah sebagai fitur opsional (aditif, tidak mengubah halaman lain).
+- Aksi pertama: **Tandai internal / Cabut tanda internal**. Hanya Super Admin (`users.manage`). Cakupan seleksi = baris pada halaman yang tampil (daftar sudah server-paginated 20/halaman); "pilih semua hasil filter" ditunda. Tiap perubahan tercatat per akun di `audit_logs`. Daftar aksi massal lain (mis. nonaktifkan) menunggu keputusan user.
+- Peringatan wajib: menandai internal akun yang sudah punya invoice lunas → riwayatnya otomatis keluar dari laporan uang.
 
 ## 6. Informasi arsitektur halaman (konsep; visual → Fase 190)
 Satu area **"Insight"** di sidebar admin, `/admin/insight`, dengan tab:
@@ -131,12 +149,14 @@ Setiap tab: ekspor CSV. Halaman `/admin/users/[id]` yang ada tetap sebagai detai
 |---|---|---|
 | **189** | Perencanaan (dokumen ini), SQL baseline production | — |
 | 189A | Profil pelanggan & tipe: `is_internal/phone/company_name`, form daftar, "Lengkapi profil", admin menandai internal, tampil di daftar Pengguna admin | keputusan D1, D2, D4 |
+| 189G | Akun internal & kontrol keuangan (D9 Lapis 1) + aksi massal tandai internal di `/admin/users` (seleksi baris `DataTable`) — dikerjakan SETELAH 189A dan SEBELUM 189C | 189A |
 | 189B | Pencatatan koneksi (connect/select db + alasan putus) + aksi admin seat (cabut/mutasi) | — (bisa paralel 189A) |
 | 189C | API Insight read-only + fungsi murni + tes + index | 189A (kolom), 189B (event) |
 | 189D | Halaman Insight fungsional (komponen yang ada) + ekspor CSV | 189C |
 | 189E | Dashboard `/admin`: KPI komersil/internal & nilai rupiah | 189C |
 | 189F | (Opsional) Log aktivitas user | keputusan terpisah |
 | **190** | Riset & desain UI → design system admin → redesign dashboard & Insight (arah "Kompak & tajam", admin dulu, pelanggan menyusul) | 189D (agar ada layar nyata untuk di-redesign) |
+| 191 | Hibah Akses Internal (D9 Lapis 2): langganan gratis tanpa tanggal akhir, "beri semua fitur", notifikasi kedaluwarsa dimatikan untuk internal | 189G + hasil SQL P11 |
 
 Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta eksplisit (aturan berjalan). 189A sebaiknya dirilis lebih awal dari yang lain karena data telepon/perusahaan baru terkumpul SETELAH form berubah.
 
@@ -147,11 +167,17 @@ Rilis: commit+push `develop` per sub-fase; release HANYA bila user meminta ekspl
 | D2 | Telepon, WhatsApp, Nama Perusahaan wajib? | Wajib; modal tak bisa ditutup untuk akun yang masih kosong; tanpa pemblokiran akses (§ 4.1) | **Diputuskan user 2026-10-12** |
 | D3 | Definisi "nilai rupiah" | Total uang yang sudah dibayar (akun komersil saja) | **Diputuskan user 2026-10-12** |
 | D4 | Siapa yang menandai internal & arti flag | Admin (`users.manage`), tercatat di audit. Flag = label status akun untuk laporan; komersil = default | **Diputuskan user 2026-10-12**; sisa: apakah flag mengubah AKSES (D9) |
-| D5 | Ekspor CSV: sinkron atau job queue (aturan root: export data lewat job) | Sinkron dengan batas baris (mis. ≤ 10.000) dan dicatat sebagai pengecualian sadar di ADR; di atas batas → job. Volume B2B kecil | **Menunggu user** |
-| D6 | Permission `insights.view` baru atau pakai `users.view` | Baru, supaya staf bisa dibatasi dari data kontak | **Menunggu user** |
+| D5 | Ekspor CSV: sinkron atau job queue | Unduh langsung, batas baris (mis. ≤ 10.000), ringan; dicatat sebagai pengecualian sadar atas aturan root di ADR | **Diputuskan user 2026-10-12** ("ikut saran, selama ringan") |
+| D6 | Izin lihat Insight | Izin baru `insights.view` diberikan ke **Super Admin (role `admin`) DAN Admin (role `staff`)** — sama seperti `users.view` yang sudah memperlihatkan email pelanggan ke keduanya; otomatis lewat pola EXCLUDE-list `seed.ts`. Aksi mengubah (tandai internal, aksi massal) tetap `users.manage` = Super Admin saja; cabut akses seat = `subscriptions.manage` | **Disarankan; user bilang "ikut saran" — menunggu konfirmasi akhir** |
 | D7 | Alasan saat admin mencabut/memindah akses | Alasan WAJIB (min. beberapa karakter) dicatat di `audit_logs` (`entity_type='member_seat'`, `action='revoke_seat'`, `changes`: alasan, email, Data Usaha, admin) → jadi riwayat bila akses ditambahkan lagi kelak | **Diputuskan user 2026-10-12** |
 | D8 | Log aktivitas user (189F) | Tunda | Disetujui (ditunda) |
-| D9 | Apakah flag internal juga memberi AKSES fitur tanpa langganan, atau hanya label laporan (admin tetap memberi langganan gratis seperti sekarang)? | Hanya label laporan — tidak mengubah gerbang akses (tidak melebar) | **Menunggu user** |
+| D9 | Flag internal & akses | Dibagi dua: **Lapis 1** (189G): laporan uang mengecualikan internal; invoice/checkout/tagihan otomatis diblokir untuk internal; akses internal hanya mode gratis. **Lapis 2** (Fase 191): hibah akses tanpa tanggal akhir, setelah Insight | **Diputuskan user 2026-10-12** |
+| D10 | Alasan saat admin memutus koneksi | Teks bebas, opsional, dengan saran pilihan cepat (salah database / salah akun Accurate / lainnya) | **Diputuskan user 2026-10-12** |
+| D11 | Dua baris uang | *Terbayar terverifikasi* vs *Dilunasi admin* (`paid_invoice`) dipisah | **Diputuskan user 2026-10-12** |
+| D12 | Satuan "pengguna" | Semua akun manusia (pemilik + User Tambahan), dengan rincian pemilik/tambahan | **Diputuskan user 2026-10-12** |
+| D13 | Awal berlangganan (butir 5) | Dari langganan BERBAYAR pertama (bukan tanggal daftar, bukan trial) | **Diputuskan user 2026-10-12** |
+| D14 | Daftar "akan berakhir" | Dua preset 14 dan 30 hari; kolom status tagihan perpanjangan (belum terbit/terbit/lunas); tabel ringkas + tombol Lihat + tombol WhatsApp | **Diputuskan user 2026-10-12** |
+| D15 | Notifikasi cabut/pindah akses | Ke pemilik Data Usaha saja | **Diputuskan user 2026-10-12** |
 
 ADR yang akan ditulis saat keputusan jatuh: **ADR-0044** (model pelanggan komersil/internal + data kontak) dan **ADR-0045** (design system admin, Fase 190).
 

@@ -24,6 +24,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 | Sub-fase | Isi | Status |
 |---|---|---|
 | 189A | Profil pelanggan: `is_internal`, `phone`, `company_name`; form daftar; "Lengkapi profil"; admin menandai internal | Not Started |
+| 189G | Akun internal & kontrol keuangan (Lapis 1) + aksi massal tandai internal di `/admin/users`; urutan: setelah 189A, sebelum 189C | Not Started |
 | 189B | Pencatatan sambung/pilih database + alasan putus; aksi admin cabut/mutasi seat | Not Started |
 | 189C | API Insight read-only, fungsi murni `lib/admin-insights.ts`, tes, index | Not Started |
 | 189D | Halaman Insight fungsional + ekspor CSV | Not Started |
@@ -45,6 +46,7 @@ Rancangan lengkap: `docs/architecture/architecture-admin-insight.md`.
 - 2026-10-12 — Penanda internal = flag di akun user (`is_internal`), dipilih user (bukan role khusus).
 - 2026-10-12 — Redesign UI: arah "Kompak & tajam", cakupan admin dulu lalu pelanggan; dikerjakan SETELAH fungsi data (Fase 190).
 - 2026-10-12 — Jawaban user atas pertanyaan client: nomor telepon/WA mengikuti standar E.164 Jalajogja; isian saat daftar (email) atau pengalihan sekali pada login (Google/user lama); nilai rupiah = total terbayar; internal = flag akun oleh admin (Trainer/Karyawan/Mitra, tanpa subkategori); komersil = default; tidak ada toleransi di batas habis langganan; alasan pencabutan akses wajib & tercatat. Detail: `architecture-admin-insight.md` § 4.1, 5.1, 9.
+- 2026-10-12 — Keputusan P1–P14 (satuan pengguna = semua akun manusia; D9 dibagi Lapis 1/2; dua baris uang; awal berlangganan = berbayar pertama; tren tahunan + filter tahun; tabel mengikuti gaya `DataTable` + tombol Lihat + tombol WhatsApp; aksi massal di /users; CSV unduh langsung; `insights.view` untuk Super Admin & Admin). Detail: `architecture-admin-insight.md` § 5.2-5.4, § 9.
 - 2026-10-12 — Fase 145 ditutup (bagian cutover). T11 kontrak (hapus kolom/endpoint koneksi lama) tetap terbuka, rilis terpisah.
 
 ## Checklist Sebelum Ditutup (sesuai SOP) — berlaku per sub-fase eksekusi

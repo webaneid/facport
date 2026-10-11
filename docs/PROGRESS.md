@@ -198,6 +198,7 @@
 | 188  | Hapus Massal transaksi Accurate dari Excel (nomor transaksi → pratinjau → hapus) — **menunggu keputusan client: Opsi 1 tombol per modul vs Opsi 2 fitur berbayar** | Planned (belum ada kode) | `docs/architecture/architecture-bulk-delete.md` (DRAFT) | — |
 | 189  | Insight Pelanggan Admin (kebutuhan data FAC 10/10/2026: komersil vs internal, pengguna per fitur, akses, langganan baru/berakhir, kohort, kontak, riwayat koneksi) — perencanaan selesai; sub-fase 189A–F belum dimulai; menunggu SQL baseline production + keputusan D1–D6 | Planned (belum ada kode) | `docs/architecture/architecture-admin-insight.md` | `docs/phases/phase-189-insight-pelanggan-admin.md` |
 | 190  | Redesign UI Admin: riset, design system (arah "Kompak & tajam"), dashboard + Insight; admin dulu, pelanggan menyusul — **dikerjakan SETELAH Fase 189D** | Not Started | `docs/architecture/architecture-admin-insight.md` § 6, 8 | — |
+| 191  | Hibah Akses Internal (langganan gratis tanpa tanggal akhir, "beri semua fitur") — lanjutan Fase 189G; **dikerjakan setelah Insight** | Not Started | `docs/architecture/architecture-admin-insight.md` § 8-9 | — |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
