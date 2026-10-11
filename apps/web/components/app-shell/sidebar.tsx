@@ -50,6 +50,7 @@ import {
   ChefHat,
   ListChecks,
   History,
+  BarChart3,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -260,6 +261,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § diminta user 2026-09-05 — menu KHUSUS tim internal (Super
         // Admin/Admin), terpisah dari "Pengguna" yang sekarang cuma
         // customer (§ ADR-0027 lanjutan).
+        // § Fase 189D — Insight pelanggan (kontak, fitur, akses, langganan, tren, riwayat koneksi); izin `insights.view`.
+        { href: "/insight", label: "Insight", icon: BarChart3, permission: "insights.view" },
         { href: "/staff", label: "Tim Internal", icon: UserCog, permission: "users.view" },
         { href: "/plans", label: "Paket", icon: Package, permission: "plans.manage" },
         // § Fase 27, ADR-0025 — kelola invoice, termasuk bikin baru untuk user existing.

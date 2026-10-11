@@ -144,3 +144,56 @@ export function exportUrl(base: string, name: string, params: Record<string, Que
   const qs = exportQuery(params);
   return `${base}/admin/insights/export/${name}${qs ? `?${qs}` : ""}`;
 }
+
+// ---------- tipe respons API Insight (bentuk JSON: tanggal = string ISO) ----------
+export type OwnerContactInfo = { id: string; name: string; email: string; companyName: string | null; phone: string | null; whatsapp: string | null };
+
+export type SummaryResponse = {
+  accounts: { commercial: number; internal: number; disabled: number };
+  dataUsaha: { total: number; connected: number };
+  customers: { active: number; activeFeatures: number };
+  expiring: { owners14: number; subscriptions14: number; owners30: number; subscriptions30: number };
+  money: { thisMonth: MoneySplit; thisYear: MoneySplit };
+};
+export type MoneySplit = { verified: number; adminSettled: number; total: number };
+
+export type CustomerRow = OwnerContactInfo & {
+  disabled: boolean;
+  internalReason: "flag" | "role" | null;
+  kind: CustomerKind;
+  ownedDataUsaha: number;
+  connectedDataUsaha: number;
+  seats: { active: number; invited: number; available: number };
+  activeFeatures: string[];
+  nearestEndAt: string | null;
+  createdAt: string;
+};
+export type CustomersResponse = { items: CustomerRow[]; total: number; page: number; pageSize: number };
+
+export const INSIGHT_PAGE_SIZE = 20;
+export function totalPagesOf(total: number, pageSize: number): number {
+  return Math.max(1, Math.ceil(total / pageSize));
+}
+
+export type SeatInfo = {
+  id: string;
+  status: "available" | "invited" | "active" | "revoked" | string;
+  invitedEmail: string | null;
+  memberUserId: string | null;
+  memberName: string | null;
+  memberEmail: string | null;
+  seatEndAt: string | null;
+  seatExpired: boolean;
+};
+export type CustomerAccessResponse = {
+  owner: { id: string; name: string; email: string; companyName: string | null };
+  dataUsaha: { id: string; name: string; seats: SeatInfo[] }[];
+};
+
+export function seatStatusLabel(seat: Pick<SeatInfo, "status" | "seatExpired">): string {
+  if (seat.status === "active") return seat.seatExpired ? "Aktif (kursi berakhir)" : "Aktif";
+  if (seat.status === "invited") return "Diundang";
+  if (seat.status === "available") return "Tersedia";
+  if (seat.status === "revoked") return "Dicabut";
+  return seat.status;
+}

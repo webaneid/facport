@@ -32,10 +32,10 @@ Banyak komponen UI + satu tambahan kecil di API (jumlah slot per pelanggan, filt
 **API (tambahan kecil)**
 - [x] A1 `GET /admin/insights/customers`: tambah `seats {active, invited, available}` per akun pemilik + filter `kind=pemilik|tambahan|belum` (untuk tab Akses; tanpa N+1) + tes.
 **Web (`apps/web`)**
-- [~] W1 `lib/insights.ts` (tipe respons, label, `exportUrl`, pembantu format delta/persen) + tes; `components/admin/insight/` bersama: `ContactCell` (perusahaan + telepon + WhatsApp), `ExportButton` (unduh berkredensial + galat), `OwnerSummary`.
-- [ ] W2 Halaman `app/admin/(protected)/insight/page.tsx` (tab via `?tab=`), item menu "Insight" (ikon, `insights.view`), label breadcrumb; tes tab & navigasi.
-- [ ] W3 Tab Ringkasan + Pelanggan (+ dialog Lihat).
-- [ ] W4 Tab Fitur + Akses.
+- [x] W1 `lib/insights.ts` (tipe respons, label, `exportUrl`, pembantu format delta/persen) + tes; `components/admin/insight/` bersama: `ContactCell` (perusahaan + telepon + WhatsApp), `ExportButton` (unduh berkredensial + galat), `OwnerSummary`.
+- [x] W2 Halaman `app/admin/(protected)/insight/page.tsx` (tab via `?tab=`), item menu "Insight" (ikon, `insights.view`), label breadcrumb; tes tab & navigasi.
+- [x] W3 Tab Ringkasan + Pelanggan (+ dialog Lihat).
+- [~] W4 Tab Fitur + Akses (Akses selesai — memakai `CustomersTab mode="akses"`; Fitur belum).
 - [ ] W5 Tab Langganan (Baru / Akan berakhir).
 - [ ] W6 Tab Tren & Retensi (Recharts + tabel + usia langganan).
 - [ ] W7 Tab Riwayat Koneksi.
@@ -53,7 +53,8 @@ Data pribadi hanya tampil untuk `insights.view` (menu & API); tidak ada penyimpa
 - `architecture-insights-api.md`; `architecture-admin-insight.md` § 5.2–5.4, 6; `architecture-contact.md` (WhatsApp/telepon); `architecture-data-usaha-history.md`; pola grafik `components/admin/dashboard/*`
 
 ## Keputusan Kecil Selama Eksekusi
--
+- Pengambil data tunggal `useInsightQuery(key, load)`: hasil kueri lama tidak pernah tampil untuk `key` baru (tanpa data basi); setState hanya di callback async (lint React Compiler).
+- Halaman memakai `router.replace("/insight?tab=…")` tanpa `usePathname`, dan tes nav memeriksa sumber `sidebar.tsx` — `mock.module("next/navigation")` parsial dari tes lain bocor lintas file dan membuat impor modul yang memakai `usePathname` gagal di suite penuh.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
 - [ ] Type check nol error; lint bersih
