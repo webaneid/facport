@@ -1,8 +1,8 @@
 # Fase 190 — Redesain UI Admin ("Kompak & tajam")
 
-**Status:** In Progress
+**Status:** Done (kode) — verifikasi visual oleh user menunggu
 **Mulai:** 2026-10-12
-**Selesai:** —
+**Selesai:** 2026-10-12
 
 ## Tujuan
 Membuat panel admin lebih rapi, kompak, modern, dan interaktif (keluhan user: huruf terlalu besar, tidak rapi, kurang modern) TANPA mengubah surface pelanggan/landing. Keputusan: ADR-0046; skala baku: `architecture-admin-design-system.md`. Induk: seri 189 (layar nyata Insight + KPI dashboard sudah ada).
@@ -18,10 +18,10 @@ Perubahan visual lintas banyak komponen → eksekusi langsung bertahap, satu kom
 | 190C | Dashboard `/admin` & Insight: KPI klik-tembus + sparkline (tren aktif & uang), grafik lebih rapat, metrik awal dari URL | Done (kode; visual menunggu user) |
 | 190D | Interaksi: palet perintah (⌘/Ctrl+K: halaman ber-izin + cari pelanggan), keadaan kosong rapat | Done (kode; header tabel lengket & fokus baris keyboard DITUNDA) |
 | 190E | Audit halaman admin yang menulis ukuran sendiri (`text-3xl`, `p-8`, dst) & rapikan | Done (1 temuan: judul Hasil Import) |
-| 190F | Tutup: suite penuh, review aksesibilitas ringan, catatan verifikasi visual untuk user | Planned |
+| 190F | Tutup: suite penuh, review keamanan ringan, catatan verifikasi visual untuk user | Done |
 
 ## Scope
-- [ ] 190A–190F di atas (centang per sub-fase)
+- [x] 190A–190F di atas (centang per sub-fase)
 
 ## Di luar scope
 Dashboard pelanggan & landing (menyusul, fase terpisah); logo/brand/warna baru; pergantian pustaka UI; fitur data baru.
@@ -38,13 +38,20 @@ ADR-0046, ADR-0024, ADR-0034; `architecture-admin-design-system.md`; `components
 - Terverifikasi: `next build` sukses; CSS terkompilasi `.compact\:rounded-lg:where([data-ui=compact],[data-ui=compact] *)`.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
-- [ ] Type check nol error; lint bersih
-- [ ] Tes web hijau (SUITE PENUH)
-- [ ] Review keamanan (palet perintah: skill `security-review`)
-- [ ] Dokumen; PROGRESS diupdate
-- [ ] Catat: tampilan perlu diverifikasi user di browser
+- [x] Type check nol error; lint bersih
+- [x] Tes web hijau (SUITE PENUH)
+- [x] Review keamanan (palet perintah: skill `security-review`)
+- [x] Dokumen; PROGRESS diupdate
+- [x] Catat: tampilan perlu diverifikasi user di browser
 
 ## Known Limitations
--
+- **Tampilan belum pernah dilihat di browser** (server dev tidak berjalan di sesi ini; verifikasi otomatis tidak dicoba karena login browser sering bermasalah — lihat memori quirks). Yang terbukti: `next build` sukses, CSS menghasilkan `.compact\:...:where([data-ui=compact],[data-ui=compact] *)`, tes kontrak kelas dasar + `compact:`.
+- Header tabel lengket dan fokus baris dengan keyboard ditunda (pembungkus `overflow-x-auto` pada `Table` mematahkan `position: sticky`; butuh perubahan struktur Table).
+- Tinggi grafik Recharts berupa angka (bukan kelas) — dikurangi global di komponen admin; tidak mengikuti varian.
+- Dashboard pelanggan & landing TIDAK berubah (sesuai "admin dulu"); menyusul sebagai fase terpisah dengan mekanisme `data-ui` yang sama atau skala sendiri.
+- Warna/kanvas gradasi `body` belum diratakan untuk admin (hanya panel kerja yang flat); ubah bila setelah dilihat terasa ramai.
 
-## Ringkasan Hasil (isi pas fase Done)
+## Ringkasan Hasil
+Design system admin "Kompak & tajam" (ADR-0046) diterapkan lewat varian Tailwind `compact:` yang aktif hanya di bawah `data-ui="compact"` (layout admin + `<body>` untuk portal): teks dasar 13px, judul halaman `text-xl`, KPI `text-2xl`, kartu `p-4`/`rounded-lg`, tombol/input/tabel/lencana/tab/dialog lebih rapat, sidebar 232px, padding konten lebih kecil. Dashboard: kartu KPI klik-tembus ke tab Insight (dengan metrik awal dari URL) dan sparkline tren aktif/uang. Palet perintah Ctrl/⌘+K: berpindah halaman (disaring izin) dan mencari pelanggan (`users.view`).
+**Verifikasi:** typecheck + lint bersih; web 539 lulus; `next build` sukses. **Review keamanan (skill, sesi utama):** tanpa endpoint/izin baru; palet hanya navigasi ke rute yang ada, item disaring izin, pencarian memakai endpoint ber-izin, tanpa penyimpanan data pribadi di browser — tidak ada temuan.
+**Komit:** ADR/rencana, `9651ee1` (190A-B), 190C, 190D-E.

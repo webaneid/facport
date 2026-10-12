@@ -23,7 +23,10 @@ Keputusan: `docs/decisions/adr-0046-design-system-admin-kompak.md`. Rencana & st
 | Cangkang panel | `rounded-2xl` | `rounded-xl` |
 
 ## Interaksi (admin)
-KPI dapat diklik → tab Insight terkait; sparkline tren mini; palet perintah (Ctrl/⌘+K) untuk berpindah halaman; baris tabel bisa difokus keyboard; skeleton saat memuat; keadaan kosong dengan tindakan lanjutan.
+Terimplementasi: KPI dapat diklik → tab Insight terkait (`StatCard href`), sparkline tren mini (`StatCard spark`), palet perintah Ctrl/⌘+K (`components/app-shell/command-palette.tsx`). Ditunda: header tabel lengket, fokus baris dengan keyboard.
+
+## Cara memakai di komponen baru
+Tulis kelas dasar seperti biasa lalu tambahkan padanan `compact:` (mis. `p-6 compact:p-4`). Jangan menulis ukuran judul/kartu sendiri di halaman — pakai `PageHeader`, `Card`, `StatCard`.
 
 ## Status
 Lihat tabel sub-fase di `phase-190-redesign-ui-admin.md`.
