@@ -14,9 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { authClient } from "@/lib/auth-client";
 import { api } from "@/lib/api-client";
-
-const nameSchema = z.object({ name: z.string().min(1, "Nama wajib diisi") });
-type NameFormValues = z.infer<typeof nameSchema>;
+import { ContactFields, validateContact, type ContactErrors, type ContactValues } from "@/components/profile/contact-fields";
 
 const passwordSchema = z
   .object({
@@ -30,6 +28,101 @@ const passwordSchema = z
   });
 type PasswordFormValues = z.infer<typeof passwordSchema>;
 
+type MeData = { name: string; email: string; companyName: string | null; phone: string | null; whatsapp: string | null };
+
+const toContact = (me: MeData): ContactValues => ({ companyName: me.companyName ?? "", phone: me.phone ?? "", whatsapp: me.whatsapp ?? "" });
+const sameContact = (a: ContactValues, b: ContactValues) => a.companyName === b.companyName && a.phone === b.phone && a.whatsapp === b.whatsapp;
+const isBlankContact = (c: ContactValues) => !c.companyName.trim() && !c.phone && !c.whatsapp;
+
+// § Fase 189I — Data Diri: Nama (Better Auth `updateUser`), Email (baca saja), Nama Perusahaan / Telepon / WhatsApp (`PATCH /me/contact`, validasi +
+// normalisasi E.164 diulang di server). Satu tombol Simpan, tetapi dua penulisan terpisah: kegagalan nama tidak menyembunyikan hasil kontak. Kontak
+// dikirim hanya bila berubah; kontak yang masih kosong dan tidak disentuh (akun admin/staf) tidak memaksa validasi — nama tetap bisa disimpan.
+function DataDiriCard({ me }: { me: MeData }) {
+  const [saved, setSaved] = useState<{ name: string; contact: ContactValues }>({ name: me.name, contact: toContact(me) });
+  const [name, setName] = useState(me.name);
+  const [contact, setContact] = useState<ContactValues>(toContact(me));
+  const [nameError, setNameError] = useState<string | null>(null);
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({});
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setServerError(null);
+    setSuccess(false);
+
+    const nameChanged = name.trim() !== saved.name;
+    const contactChanged = !sameContact(contact, saved.contact);
+    const touchContact = contactChanged && !(isBlankContact(contact) && isBlankContact(saved.contact));
+
+    const nameInvalid = !name.trim();
+    const clientErrors = touchContact ? validateContact(contact) : null;
+    setNameError(nameInvalid ? "Nama wajib diisi" : null);
+    setContactErrors(clientErrors ?? {});
+    if (nameInvalid || clientErrors) return;
+
+    setSaving(true);
+    let ok = true;
+    const next = { ...saved };
+    if (nameChanged) {
+      const { error } = await authClient.updateUser({ name: name.trim() });
+      if (error) {
+        ok = false;
+        setServerError(error.message ?? "Gagal memperbarui nama.");
+      } else next.name = name.trim();
+    }
+    if (touchContact) {
+      const { error } = await api.me.contact.patch(contact);
+      if (error) {
+        ok = false;
+        const field = (error.value as { field?: keyof ContactValues } | undefined)?.field;
+        if (field) setContactErrors({ [field]: "Data ini tidak valid, periksa kembali." });
+        else setServerError((prev) => prev ?? "Gagal menyimpan kontak, coba lagi beberapa saat lagi.");
+      } else next.contact = contact;
+    }
+    setSaving(false);
+    setSaved(next);
+    if (ok) setSuccess(true);
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <UserIcon className="h-4 w-4 text-primary-600" />
+          <CardTitle>Data Diri</CardTitle>
+        </div>
+        <CardDescription>Dipakai tim kami untuk menghubungi kamu bila ada kendala atau informasi penting.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={onSubmit} className="flex flex-col gap-3" noValidate>
+          <FormField label="Nama" error={nameError ?? undefined}>
+            <Input aria-label="Nama" value={name} onChange={(e) => setName(e.target.value)} disabled={saving} autoComplete="name" />
+          </FormField>
+          <FormField label="Email" hint="Tidak bisa diubah sendiri, hubungi admin.">
+            <Input aria-label="Email" value={me.email} readOnly disabled />
+          </FormField>
+          <ContactFields value={contact} onChange={setContact} errors={contactErrors} disabled={saving} showLabels />
+          {serverError && (
+            <p role="alert" className="text-sm text-red-600">
+              {serverError}
+            </p>
+          )}
+          {success && (
+            <p role="status" className="text-sm text-green-700">
+              Data diri tersimpan.
+            </p>
+          )}
+          <Button type="submit" loading={saving} className="self-start">
+            Simpan Data Diri
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 // § Fase 22, ADR-0023 — user dropdown sebelumnya cuma "Logout", belum ada
 // akses akun mandiri sama sekali. Reuse endpoint Better Auth BAWAAN
 // (`change-password`, `update-user` via `authClient`) — TIDAK ada
@@ -38,27 +131,17 @@ type PasswordFormValues = z.infer<typeof passwordSchema>;
 // `/${surface}${pathname}` mensyaratkan 1 file page.tsx PER surface untuk
 // URL path yang sama, tidak bisa 1 file dipakai lintas route group Next.js.
 export function ProfileSettings() {
-  const [me, setMe] = useState<{ name: string; email: string } | null>(null);
+  const [me, setMe] = useState<MeData | null>(null);
 
   useEffect(() => {
     async function load() {
       const res = await api.me.get();
-      if (res.data) setMe(res.data as unknown as { name: string; email: string });
+      if (res.data) setMe(res.data as unknown as MeData);
     }
     load();
   }, []);
 
-  const nameForm = useForm<NameFormValues>({ resolver: zodResolver(nameSchema), values: me ? { name: me.name } : undefined });
   const passwordForm = useForm<PasswordFormValues>({ resolver: zodResolver(passwordSchema) });
-
-  async function onSaveName(values: NameFormValues) {
-    const { error } = await authClient.updateUser({ name: values.name });
-    if (error) {
-      toast.error(error.message ?? "Gagal memperbarui nama.");
-      return;
-    }
-    toast.success("Nama berhasil diperbarui.");
-  }
 
   // § revokeOtherSessions: true — keputusan sengaja (§ phase doc Keputusan
   // Kecil): password baru berarti sesi LAMA di perangkat lain (termasuk
@@ -89,27 +172,9 @@ export function ProfileSettings() {
 
   return (
     <div className="mx-auto flex max-w-xl flex-col gap-6">
-      <PageHeader title="Profil" description="Kelola nama akun & password login kamu." />
+      <PageHeader title="Profil" description="Kelola data diri & password login kamu." />
 
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <UserIcon className="h-4 w-4 text-primary-600" />
-            <CardTitle>Profil</CardTitle>
-          </div>
-          <CardDescription>Email: {me.email} (tidak bisa diubah sendiri, hubungi admin).</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={nameForm.handleSubmit(onSaveName)} className="flex flex-col gap-3">
-            <FormField label="Nama" error={nameForm.formState.errors.name?.message}>
-              <Input {...nameForm.register("name")} />
-            </FormField>
-            <Button type="submit" loading={nameForm.formState.isSubmitting} className="self-start">
-              Simpan Nama
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+      <DataDiriCard me={me} />
 
       <Card>
         <CardHeader>
