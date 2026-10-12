@@ -57,6 +57,11 @@ export const adminInternalGrantsRoute = new Elysia({ prefix: "/admin/users" })
   .post(
     "/:id/internal-grant",
     async ({ params, body, user, set }) => {
+      // pemegang `subscriptions.manage` tidak boleh memberi hibah tanpa batas ke akunnya sendiri
+      if (params.id === user.id) {
+        set.status = 400;
+        return { code: "CANNOT_GRANT_SELF" };
+      }
       try {
         const result = await db.transaction((tx) => grantInternalAccess(tx, { ownerId: params.id, dataUsahaId: body.dataUsahaId, moduleKeys: body.moduleKeys, actorId: user.id }));
         return { ok: true, ...result };

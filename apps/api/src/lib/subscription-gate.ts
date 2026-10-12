@@ -5,6 +5,7 @@ import { db } from "./db";
 import { subscriptions, plans, dataUsaha } from "../db/schema";
 import { memberAccessibleDataUsahaIds } from "./seat-access";
 import { hasAccessToDataUsaha } from "./data-usaha";
+import { internalUserIdsSubquery } from "./internal-accounts";
 
 // § architecture-subscription.md § "Gating Akses Modul" — LAPISAN TERPISAH
 // dari RBAC permission (lib/permission.ts). Permission jawab "role kamu
@@ -36,6 +37,12 @@ import { hasAccessToDataUsaha } from "./data-usaha";
 // § Fase 175, ADR-0041 — akses diputus TEPAT di `end_at`, bukan menunggu job kedaluwarsa menjalankan flip `status`. Sebelumnya gerbang hanya
 // percaya `status = 'active'` (job harian 01:00 UTC) → pelanggan masih bisa memakai fitur sampai ±24 jam setelah jam akhir. `end_at` NULL pada baris
 // aktif (data lama tanpa tanggal akhir) tetap dianggap berlaku — tidak memutus akses siapa pun karena data tak lengkap.
+// § Fase 191 (audit) — pertahanan berlapis: hibah akses internal HANYA berlaku selama pemilik Data Usaha SAAT INI internal. Bila Data Usaha berpindah ke akun komersil (atau pemilik
+// kembali komersil) tanpa hibah sempat dicabut, hibah yatim itu tidak membuka akses.
+function grantStillValid() {
+  return or(eq(subscriptions.internalGrant, false), inArray(subscriptions.dataUsahaId, db.select({ id: dataUsaha.id }).from(dataUsaha).where(inArray(dataUsaha.userId, internalUserIdsSubquery()))));
+}
+
 function notExpiredNow() {
   return or(isNull(subscriptions.endAt), gt(subscriptions.endAt, new Date()));
 }
@@ -54,6 +61,7 @@ export async function getOwnedSubscriptionsWithPlans(userId: string) {
       and(
         eq(subscriptions.status, "active"),
         notExpiredNow(),
+        grantStillValid(),
         inArray(
           subscriptions.dataUsahaId,
           db.select({ id: dataUsaha.id }).from(dataUsaha).where(eq(dataUsaha.userId, userId)),
@@ -78,6 +86,7 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
       and(
         eq(subscriptions.status, "active"),
         notExpiredNow(),
+        grantStillValid(),
         or(
           inArray(
             subscriptions.dataUsahaId,

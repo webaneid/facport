@@ -6236,3 +6236,7 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - Penghapusan kunci PII di JSON audit harus rekursif (riwayat kontak tersimpan bersarang `contact.from/to`) dan penggantian nilai harus pada batas kata agar email/nomor orang lain yang memuat nilai itu tidak rusak.
 - Alasan bebas-teks dari admin bisa memuat PII yang baru dibuang → scrub juga sebelum disimpan.
 - Anonimisasi akun pemilik Data Usaha harus memutus token Accurate; hanya menghapus login tidak menghentikan worker me-refresh token.
+
+## 2026-10-12 — Fase 191: kontrol "hanya akun X" harus mengikuti PEMILIK SAAT INI, bukan pembuat baris
+- Hibah akses internal dibuat atas nama pemilik lama (`subscriptions.user_id`), tetapi gerbang akses menilai kepemilikan Data Usaha SAAT INI. Setelah transfer ke akun komersil, hibah ikut berlaku selamanya dan pencabutan berbasis `user_id` tidak menemukannya. Pelajaran: setiap hak yang diberi dengan syarat status akun harus (a) dicabut di SEMUA jalur perpindahan pemilik, (b) dicabut menurut pemilik saat ini, (c) dicek ulang di gerbang sebagai pertahanan berlapis.
+- `end_at NULL` sudah berarti "tanpa batas" di seluruh job; fitur "tanpa tanggal akhir" cukup memanfaatkannya, tetapi butuh penanda eksplisit (`internal_grant`) agar baris null-end lain tidak ikut tersentuh.

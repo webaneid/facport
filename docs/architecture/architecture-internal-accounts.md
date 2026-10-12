@@ -23,7 +23,7 @@
    - Error berproperti `status`/`toResponse()` sehingga Elysia memetakannya ke 403 JSON sendiri walau aplikasi tes tanpa `.onError`; `app.ts` `.onError` punya cabang eksplisit (tanpa itu jatuh ke 500 + Sentry).
    - Pemeriksaan memakai **penerima tagihan** (`userId` yang ditagih): pembeli untuk checkout, target untuk admin, **pemilik Data Usaha** untuk perpanjangan terjadwal (ADR-0042).
 2. **Tagihan perpanjangan terjadwal** — `findDueRenewalCandidates` mengecualikan pemilik internal (job harian tidak membuat invoice); penerbitan manual admin ditolak guard; balapan (ditandai internal di antara pencarian dan penerbitan) dilewati, bukan dihitung gagal.
-3. **Akses internal hanya lewat mode admin "Gratis"** (tanpa invoice). UI dialog Kelola Langganan mengunci pilihan ke "Gratis" untuk akun internal. Hibah tanpa tanggal akhir = Fase 191.
+3. **Akses internal hanya lewat mode admin "Gratis"** (tanpa invoice). UI dialog Kelola Langganan mengunci pilihan ke "Gratis" untuk akun internal. Hibah tanpa tanggal akhir = Fase 191 (selesai).
 4. **Tidak mengubah gerbang akses** (`subscription-gate.ts`) maupun `/admin/stats` lama.
 
 ## Aksi massal (Super Admin = `users.manage`)
@@ -52,3 +52,8 @@ Untuk "uang terbayar": hanya akun komersil; pisahkan *Terbayar terverifikasi* vs
 - ADR: `docs/decisions/adr-0044-data-kontak-akun-dan-penanda-internal.md`; rancangan induk `architecture-admin-insight.md` § 4.4, 5.4, 9
 - Phase doc: `docs/phases/phase-189g-akun-internal-kontrol-keuangan.md`
 - Pembuatan invoice: `apps/api/src/lib/invoice-order.ts`; perpanjangan terjadwal: `apps/api/src/lib/renewal-billing.ts` (ADR-0042)
+
+## Hibah akses internal (Fase 191, D9 Lapis 2)
+- Langganan modul dengan `end_at = NULL` + `subscriptions.internal_grant = true`, tanpa order/invoice; dibuat lewat `POST /admin/users/:id/internal-grant` (`subscriptions.manage`), pratinjau di `/internal-grant/preview`, dicabut lewat `/internal-grant/revoke` — `lib/internal-grants.ts`, panel "Akses Internal" di detail user.
+- `end_at NULL` dianggap tanpa batas oleh gerbang akses dan diabaikan job kedaluwarsa/pengingat/tagihan perpanjangan — tidak ada notifikasi kedaluwarsa.
+- Aturan: hanya akun internal efektif yang menerima (409 `NOT_INTERNAL`); Data Usaha harus milik akun; tidak boleh ke diri sendiri; hibah dicabut otomatis saat akun kembali komersil (aksi massal internal, aksi peran), saat Data Usaha berpindah ke pemilik komersil (transfer admin & self-service), dan saat anonimisasi. Pencabutan menurut PEMILIK Data Usaha saat ini. Gerbang akses menolak hibah bila pemilik Data Usaha saat ini bukan internal (pertahanan berlapis). Laporan Insight tidak menghitung hibah (`COUNTED_SUBSCRIPTION`).

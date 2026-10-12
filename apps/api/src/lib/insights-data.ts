@@ -16,6 +16,7 @@ import { openRenewalOrdersBySubscription } from "./renewal-billing";
 export const COUNTED_SUBSCRIPTION = and(
   eq(plans.kind, "module"),
   eq(subscriptions.isTrial, false),
+  eq(subscriptions.internalGrant, false), // § Fase 191 — hibah akses internal bukan langganan komersil
   isNotNull(subscriptions.startAt),
   inArray(subscriptions.status, ["active", "expired"]),
 );

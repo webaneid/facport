@@ -225,6 +225,11 @@ export const adminSubscriptionsRoute = new Elysia({ prefix: "/admin/subscription
         set.status = 400;
         return { code: "SUBSCRIPTION_NOT_ACTIVE" };
       }
+      // § Fase 191 — hibah internal tidak punya tanggal akhir; dicabut lewat panel Akses Internal, bukan diberi tanggal akhir
+      if (existing.internalGrant) {
+        set.status = 400;
+        return { code: "GRANT_NOT_EDITABLE" };
+      }
 
       const newEndAt = new Date(body.endAt);
       if (newEndAt.getTime() <= Date.now()) {

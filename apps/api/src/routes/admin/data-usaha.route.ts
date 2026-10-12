@@ -1,3 +1,4 @@
+import { revokeGrantsIfNewOwnerCommercial } from "../../lib/internal-grants";
 import { Elysia, t } from "elysia";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
@@ -174,6 +175,7 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
       await db.transaction(async (tx) => {
         // § Fase 143, ADR-0037 #6 — transfer memutus koneksi Accurate (sama seperti `executeOwnershipTransfer`).
         await tx.update(dataUsaha).set({ userId: body.toUserId, accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, params.id));
+        await revokeGrantsIfNewOwnerCommercial(tx, { dataUsahaId: params.id, newOwnerId: body.toUserId, actorId: user.id }); // § Fase 191 (audit High)
         // § batalkan transfer self-service yang masih pending untuk Data
         // Usaha ini — mencegah link accept lama nyasar dianggap valid lagi
         // di masa depan kalau kepemilikan somehow balik lagi ke

@@ -1,6 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { accurateConnections, account, auditLogs, dataUsaha, importBatches, memberSeats, notifications, ownershipTransfers, roles, session, subscriptions, user as userTable, userRoles, verification } from "../db/schema";
+import { revokeInternalGrants } from "./internal-grants";
 import { ANON_EMAIL_DOMAIN, anonymizedEmail, anonymizedName, classifyFk, dropPiiKeys, emailDigest, isAnonymizedEmail, scrubJson, type FkInfo } from "./account-erasure";
 
 // § Fase 189H, ADR-0045 — orkestrasi DB hapus permanen & anonimisasi. Semua perubahan dalam SATU transaksi dengan kunci baris (urut id); kelayakan dihitung ULANG di dalam transaksi
@@ -178,6 +179,7 @@ export async function applyErasure(kind: EraseKind, userIds: string[], actorId: 
       await tx.delete(session).where(inArray(session.userId, ids));
       await tx.delete(account).where(inArray(account.userId, ids));
       await tx.delete(notifications).where(inArray(notifications.userId, ids));
+      await revokeInternalGrants(tx, { userIds: ids, actorId }); // § Fase 191 (audit) — akun dianonimkan tidak meninggalkan hibah akses tanpa batas
       // koneksi Accurate akun ini diputus: token dibuang (tidak bisa di-refresh worker), status 'revoked', Data Usaha tidak lagi menunjuknya
       const conns = await tx.select({ id: accurateConnections.id }).from(accurateConnections).where(inArray(accurateConnections.userId, ids));
       if (conns.length > 0) {

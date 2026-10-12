@@ -46,12 +46,13 @@ export async function grantInternalAccess(tx: Tx, p: { ownerId: string; dataUsah
   // kunci baris akun: penandaan internal/komersil dan pemberian hibah saling menunggu (tidak ada hibah untuk akun yang baru menjadi komersil)
   await tx.select({ id: userTable.id }).from(userTable).where(eq(userTable.id, p.ownerId)).for("update");
   if ((await getInternalReason(p.ownerId, tx)) === null) throw new InternalGrantError("NOT_INTERNAL", 409);
-  const [du] = await tx.select({ id: dataUsaha.id }).from(dataUsaha).where(and(eq(dataUsaha.id, p.dataUsahaId), eq(dataUsaha.userId, p.ownerId)));
+  // kunci baris Data Usaha: pemberian hibah tidak bersaing dengan perpindahan pemilik / aktivasi di Data Usaha yang sama
+  const [du] = await tx.select({ id: dataUsaha.id }).from(dataUsaha).where(and(eq(dataUsaha.id, p.dataUsahaId), eq(dataUsaha.userId, p.ownerId))).for("update");
   if (!du) throw new InternalGrantError("DATA_USAHA_NOT_FOUND", 404);
 
   const planByModule = await cheapestPlanPerModule(tx, keys);
   const active = await tx
-    .select({ id: subscriptions.id, modules: plans.modules, internalGrant: subscriptions.internalGrant })
+    .select({ id: subscriptions.id, modules: plans.modules, internalGrant: subscriptions.internalGrant, endAt: subscriptions.endAt, isTrial: subscriptions.isTrial })
     .from(subscriptions)
     .innerJoin(plans, eq(plans.id, subscriptions.planId))
     .where(and(eq(subscriptions.dataUsahaId, p.dataUsahaId), eq(subscriptions.status, "active"), eq(plans.kind, "module")));
@@ -70,7 +71,10 @@ export async function grantInternalAccess(tx: Tx, p: { ownerId: string; dataUsah
       continue;
     }
     // tutup langganan aktif lain modul yang sama di Data Usaha ini (cegah dua langganan aktif bersamaan; pola `assignPlanToDataUsaha`)
-    for (const s of existing) await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+    for (const s of existing) {
+      await tx.update(subscriptions).set({ status: "cancelled", endAt: now }).where(eq(subscriptions.id, s.id));
+      await tx.insert(auditLogs).values({ entityType: "subscription", entityId: s.id, action: "update", changes: { status: { old: "active", new: "cancelled" }, replacedByInternalGrant: true, dataUsahaId: p.dataUsahaId, endAtOld: s.endAt?.toISOString() ?? null, isTrial: s.isTrial }, actorId: p.actorId });
+    }
     const [sub] = await tx
       .insert(subscriptions)
       .values({ userId: p.ownerId, planId, status: "active", startAt: now, endAt: null, dataUsahaId: p.dataUsahaId, isTrial: false, renewalInterval: null, internalGrant: true })
@@ -79,7 +83,7 @@ export async function grantInternalAccess(tx: Tx, p: { ownerId: string; dataUsah
       entityType: "subscription",
       entityId: sub!.id,
       action: "create",
-      changes: { userId: p.ownerId, planId, moduleKey: key, endAt: null, internalGrant: true, replaced: existing.map((s) => s.id) },
+      changes: { userId: p.ownerId, dataUsahaId: p.dataUsahaId, planId, moduleKey: key, endAt: null, internalGrant: true, replaced: existing.map((s) => s.id) },
       actorId: p.actorId,
     });
     result.granted.push(key);
@@ -87,18 +91,32 @@ export async function grantInternalAccess(tx: Tx, p: { ownerId: string; dataUsah
   return result;
 }
 
-/** Cabut hibah internal AKTIF (status → cancelled, end_at → sekarang). Filter: `userIds` (semua Data Usaha milik) dan/atau `dataUsahaId`. Mengembalikan jumlah yang dicabut. */
+/**
+ * Cabut hibah internal AKTIF (status → cancelled, end_at → sekarang). Filter menurut PEMILIK Data Usaha SAAT INI (`userIds`; bukan `subscriptions.userId` yang bisa tertinggal setelah transfer)
+ * dan/atau `dataUsahaId`. Tanpa filter tidak mencabut apa pun. Mengembalikan jumlah yang dicabut.
+ */
 export async function revokeInternalGrants(tx: Tx, p: { userIds?: string[]; dataUsahaId?: string; actorId: string }): Promise<number> {
+  if (!p.userIds && !p.dataUsahaId) return 0;
   const conditions = [eq(subscriptions.internalGrant, true), eq(subscriptions.status, "active")];
-  if (p.userIds) conditions.push(inArray(subscriptions.userId, p.userIds));
+  if (p.userIds) conditions.push(inArray(dataUsaha.userId, p.userIds));
   if (p.dataUsahaId) conditions.push(eq(subscriptions.dataUsahaId, p.dataUsahaId));
-  if (!p.userIds && !p.dataUsahaId) return 0; // tanpa filter tidak mencabut apa pun
-  const rows = await tx.select({ id: subscriptions.id }).from(subscriptions).where(and(...conditions)).orderBy(subscriptions.id).for("update");
+  const rows = await tx
+    .select({ id: subscriptions.id, dataUsahaId: subscriptions.dataUsahaId, userId: subscriptions.userId })
+    .from(subscriptions)
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .where(and(...conditions))
+    .orderBy(subscriptions.id)
+    .for("update", { of: subscriptions });
   if (rows.length === 0) return 0;
-  const ids = rows.map((r) => r.id);
-  await tx.update(subscriptions).set({ status: "cancelled", endAt: new Date() }).where(inArray(subscriptions.id, ids));
-  await tx.insert(auditLogs).values(ids.map((id) => ({ entityType: "subscription", entityId: id, action: "update", changes: { internalGrantRevoked: true, status: { new: "cancelled" } }, actorId: p.actorId })));
-  return ids.length;
+  await tx.update(subscriptions).set({ status: "cancelled", endAt: new Date() }).where(inArray(subscriptions.id, rows.map((r) => r.id)));
+  await tx.insert(auditLogs).values(rows.map((r) => ({ entityType: "subscription", entityId: r.id, action: "update", changes: { internalGrantRevoked: true, status: { new: "cancelled" }, dataUsahaId: r.dataUsahaId, userId: r.userId }, actorId: p.actorId })));
+  return rows.length;
+}
+
+/** Dipanggil SETELAH kepemilikan Data Usaha berpindah: bila pemilik baru bukan internal, hibah di Data Usaha itu dicabut (dalam transaksi yang sama). */
+export async function revokeGrantsIfNewOwnerCommercial(tx: Tx, p: { dataUsahaId: string; newOwnerId: string; actorId: string }): Promise<number> {
+  if ((await getInternalReason(p.newOwnerId, tx)) !== null) return 0;
+  return revokeInternalGrants(tx, { dataUsahaId: p.dataUsahaId, actorId: p.actorId });
 }
 
 /** Jumlah hibah internal aktif milik `userIds` (untuk pratinjau dampak). */

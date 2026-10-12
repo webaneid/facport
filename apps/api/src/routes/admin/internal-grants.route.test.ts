@@ -6,14 +6,19 @@ import { db } from "../../lib/db";
 import { adminInternalGrantsRoute } from "./internal-grants.route";
 import { adminUsersRoute } from "./users.route";
 import { adminUserRolesRoute } from "./user-roles.route";
-import { auditLogs, plans, roles, subscriptions, userRoles } from "../../db/schema";
+import { adminDataUsahaRoute } from "./data-usaha.route";
+import { adminSubscriptionsRoute } from "./subscriptions.route";
+import { adminUserErasureRoute } from "./user-erasure.route";
+import { auditLogs, dataUsaha, plans, roles, subscriptions, userRoles } from "../../db/schema";
 import { getOwnedSubscriptionsWithPlans } from "../../lib/subscription-gate";
 import { insertAccount, insertDataUsaha, insertPlan, insertSub, loginAs } from "./insights.fixtures";
 import { resolveGrantModules } from "../../lib/internal-grants";
+import { COUNTED_SUBSCRIPTION } from "../../lib/insights-data";
+import { sql } from "drizzle-orm";
 
 // § Fase 191, D9 Lapis 2 — hibah akses internal tanpa tanggal akhir: hanya akun internal, hanya Data Usaha miliknya, `end_at` NULL + penanda, tanpa order, audit, idempoten,
 // gerbang akses terbuka, dan dicabut otomatis saat akun kembali komersil (aksi massal internal & aksi peran).
-const app = new Elysia().mount(auth.handler).use(adminInternalGrantsRoute).use(adminUsersRoute).use(adminUserRolesRoute);
+const app = new Elysia().mount(auth.handler).use(adminInternalGrantsRoute).use(adminUsersRoute).use(adminUserRolesRoute).use(adminDataUsahaRoute).use(adminSubscriptionsRoute).use(adminUserErasureRoute);
 const post = (cookie: string | null, path: string, body: unknown) =>
   app.handle(new Request(`http://localhost/admin/users${path}`, { method: "POST", headers: { ...(cookie ? { cookie } : {}), "Content-Type": "application/json" }, body: JSON.stringify(body) }));
 const KEYS = ["purchase_invoice", "sales_invoice"];
@@ -147,5 +152,76 @@ describe("pencabutan otomatis saat kembali komersil", () => {
     await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
     await post(admin.cookie, "/internal", { userIds: [owner.id], isInternal: false });
     expect((await subsOf(duId)).every((s) => s.status === "active")).toBe(true);
+  });
+});
+
+const raw = (cookie: string, method: string, path: string, body: unknown) =>
+  app.handle(new Request(`http://localhost${path}`, { method, headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+
+describe("audit Fase 191 — perpindahan pemilik & jalur lain", () => {
+  test("transfer admin ke akun KOMERSIL mencabut hibah; gerbang tidak meloloskan; ke akun INTERNAL hibah tetap dan bisa dicabut oleh pemilik baru", async () => {
+    const { owner, duId } = await setup();
+    const admin = await loginAs(app as never, "admin");
+    await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
+    const commercial = await insertAccount("klien", { isInternal: false });
+    const res = await raw(admin.cookie, "POST", `/admin/data-usaha/${duId}/transfer-ownership`, { toUserId: commercial.id });
+    expect(res.status).toBe(200);
+    for (const s of await subsOf(duId)) expect(s.status).toBe("cancelled");
+    expect(await getOwnedSubscriptionsWithPlans(commercial.id)).toHaveLength(0);
+
+    const { owner: o2, duId: du2 } = await setup();
+    await post(admin.cookie, `/${o2.id}/internal-grant`, { dataUsahaId: du2, moduleKeys: KEYS });
+    const colleague = await insertAccount("rekan", { isInternal: true });
+    expect((await raw(admin.cookie, "POST", `/admin/data-usaha/${du2}/transfer-ownership`, { toUserId: colleague.id })).status).toBe(200);
+    expect((await subsOf(du2)).every((s) => s.status === "active")).toBe(true);
+    const revoked = (await (await post(admin.cookie, `/${colleague.id}/internal-grant/revoke`, { dataUsahaId: du2 })).json()) as { revoked: number };
+    expect(revoked.revoked).toBe(2); // dicabut lewat PEMILIK SAAT INI walau subscriptions.user_id masih pemilik lama
+  });
+
+  test("pertahanan gerbang: hibah yatim (pemilik Data Usaha berpindah ke komersil tanpa pencabutan) tidak membuka akses", async () => {
+    const { owner, duId } = await setup();
+    const admin = await loginAs(app as never, "admin");
+    await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
+    expect(await getOwnedSubscriptionsWithPlans(owner.id)).toHaveLength(2);
+    const commercial = await insertAccount("yatim", { isInternal: false });
+    await db.update(dataUsaha).set({ userId: commercial.id }).where(eq(dataUsaha.id, duId)); // jalur tak terduga yang melewati kode transfer
+    expect(await getOwnedSubscriptionsWithPlans(commercial.id)).toHaveLength(0);
+  });
+
+  test("Insight tidak menghitung hibah internal sebagai langganan komersil", async () => {
+    const { owner, duId } = await setup();
+    const admin = await loginAs(app as never, "admin");
+    await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
+    const rows = await db.select({ id: subscriptions.id }).from(subscriptions).innerJoin(plans, eq(plans.id, subscriptions.planId)).where(and(eq(subscriptions.dataUsahaId, duId), COUNTED_SUBSCRIPTION));
+    expect(rows).toHaveLength(0);
+    void sql;
+  });
+
+  test("PATCH tanggal akhir pada hibah ditolak (400 GRANT_NOT_EDITABLE); memberi hibah ke diri sendiri ditolak (400)", async () => {
+    const { owner, duId } = await setup();
+    const admin = await loginAs(app as never, "admin");
+    await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: ["purchase_invoice"] });
+    const [grant] = await subsOf(duId);
+    const res = await raw(admin.cookie, "PATCH", `/admin/subscriptions/${grant!.id}`, { endAt: new Date(Date.now() + 86_400_000 * 30).toISOString() });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("GRANT_NOT_EDITABLE");
+    const [after] = await db.select().from(subscriptions).where(eq(subscriptions.id, grant!.id));
+    expect(after?.endAt).toBeNull();
+    const self = await post(admin.cookie, `/${admin.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
+    expect(self.status).toBe(400);
+    expect(((await self.json()) as { code: string }).code).toBe("CANNOT_GRANT_SELF");
+  });
+
+  test("anonimisasi akun internal mencabut hibahnya; penggantian langganan lain tercatat di audit per langganan", async () => {
+    const { owner, duId } = await setup();
+    const admin = await loginAs(app as never, "admin");
+    const plan = await insertPlan("purchase_invoice", { price: 900_000 });
+    const old = await insertSub({ ownerId: owner.id, dataUsahaId: duId, planId: plan.id, start: new Date(), end: new Date(Date.now() + 86_400_000) });
+    await post(admin.cookie, `/${owner.id}/internal-grant`, { dataUsahaId: duId, moduleKeys: KEYS });
+    const replacedLog = await db.select().from(auditLogs).where(and(eq(auditLogs.entityId, old.id), eq(auditLogs.action, "update")));
+    expect(replacedLog[0]?.changes).toMatchObject({ replacedByInternalGrant: true, dataUsahaId: duId });
+    const res = await raw(admin.cookie, "POST", "/admin/users/erase", { kind: "anonymize", userIds: [owner.id], confirm: "ANONIMKAN", reason: "uji" });
+    expect(res.status).toBe(200);
+    expect((await subsOf(duId)).filter((s) => s.internalGrant).every((s) => s.status === "cancelled")).toBe(true);
   });
 });

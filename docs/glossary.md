@@ -23,6 +23,7 @@
 | Data Usaha | Workspace Accurate (`data_usaha`) dengan nama sendiri, tempat langganan/koneksi Accurate/User Tambahan menempel. Terpisah total dari Nama Perusahaan akun dan tidak menyimpan kontak pelanggan |
 | Akun Internal | Akun yang tidak ditagih dan tidak dihitung di laporan uang: trainer, karyawan, mitra (ditandai Super Admin) ATAU pemegang role Admin/Super Admin (otomatis). Lawannya Akun Komersil (default). Lihat `architecture-internal-accounts.md` |
 | Anonimisasi Akun | Mengganti identitas akun (nama, email, telepon, WhatsApp, perusahaan) dengan penanda anonim dan menonaktifkannya; invoice/order/langganan tetap utuh. Beda dari Hapus Permanen (hanya akun tanpa jejak bisnis). Lihat `architecture-account-lifecycle.md` |
+| Hibah Akses Internal | Langganan modul TANPA tanggal akhir dan tanpa invoice untuk akun internal (trainer, karyawan, mitra), diberi Super Admin/Admin berizin; dicabut otomatis saat akun kembali komersil. Lihat `architecture-internal-accounts.md` |
 | Akun Komersil | Akun role customer yang bukan internal — ditentukan status AKUN, bukan trial/langganan |
 | Riwayat Data Usaha | Aliran peristiwa per Data Usaha di `audit_logs`: koneksi Accurate (sambung/pilih/konfirmasi/reset/putus+alasan) dan akses User Tambahan (undang/cabut). Lihat `architecture-data-usaha-history.md` |
 | Lengkapi Profil | Modal yang tidak bisa ditutup untuk akun pelanggan yang Nama Perusahaan/Telepon/WhatsApp-nya masih kosong; hanya lapisan tampilan, tanpa memblokir API |
