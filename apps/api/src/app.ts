@@ -10,13 +10,20 @@ import { auth } from "./lib/auth";
 import { user as userTable, roles, userRoles } from "./db/schema";
 import { webOriginsProd } from "./lib/env";
 import { rateLimitPlugin } from "./lib/rate-limit";
+import { hasContactKeys, parseContact, type ContactInput, type ContactValue } from "./lib/phone";
+import { InternalAccountBillingError } from "./lib/internal-accounts";
 import { settingsRoute } from "./routes/settings.route";
 import { mediaRoute } from "./routes/media.route";
 import { plansRoute } from "./routes/plans.route";
 import { subscriptionsRoute } from "./routes/subscriptions.route";
 import { adminPlansRoute } from "./routes/admin/plans.route";
 import { adminUsersRoute } from "./routes/admin/users.route";
+import { adminSeatsRoute } from "./routes/admin/seats.route";
+import { adminInsightsRoute } from "./routes/admin/insights.route";
 import { adminStaffRoute } from "./routes/admin/staff.route";
+import { adminUserRolesRoute } from "./routes/admin/user-roles.route";
+import { adminUserErasureRoute } from "./routes/admin/user-erasure.route";
+import { adminInternalGrantsRoute } from "./routes/admin/internal-grants.route";
 import { adminImportBatchesRoute } from "./routes/admin/import-batches.route";
 import { adminUserSubscriptionsRoute } from "./routes/admin/user-subscriptions.route";
 import { adminSubscriptionsRoute } from "./routes/admin/subscriptions.route";
@@ -91,6 +98,16 @@ async function readSignUpEmail(request: Request): Promise<string | null> {
   }
 }
 
+// § Fase 189A, ADR-0044 — body sign-up sebagai objek (untuk membaca kunci kontak). `null` bila bukan JSON objek.
+async function readSignUpBody(request: Request): Promise<Record<string, unknown> | null> {
+  try {
+    const body = await request.clone().json();
+    return typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
 export const app = new Elysia()
   .use(cors({ origin: allowedOrigins, credentials: true }))
   .use(rateLimitPlugin({ pathPrefix: "/api/auth", windowMs: 60_000, max: 10 }))
@@ -120,6 +137,12 @@ export const app = new Elysia()
   // jadi alasan awal limiter ini TIDAK PERNAH mendekati bahkan 60/menit
   // secara wajar, jadi menaikkan tidak melemahkan proteksinya.
   .use(rateLimitPlugin({ pathPrefix: "/accurate", windowMs: 60_000, max: 180 }))
+  // § Fase 189B (audit, Low) — aksi admin atas Data Usaha (putus koneksi, transfer, cabut/pindahkan akses seat yang bisa mengirim email undangan): batas LONGGAR,
+  // hanya menahan penyalahgunaan (relay email dari akun admin yang dibajak), bukan pemakaian normal.
+  .use(rateLimitPlugin({ pathPrefix: "/admin/data-usaha", windowMs: 60_000, max: 60 }))
+  // § Fase 189C — ekspor CSV Insight memuat data pribadi: batas ketat (10/menit) menahan penarikan massal oleh akun yang dibajak; pemakaian normal jauh di bawahnya.
+  .use(rateLimitPlugin({ pathPrefix: "/admin/insights/export", windowMs: 60_000, max: 10 }))
+  .use(rateLimitPlugin({ pathPrefix: "/admin/users/erase", windowMs: 60_000, max: 10 })) // § Fase 189H — hapus/anonimisasi akun
   // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
   .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.
@@ -136,7 +159,20 @@ export const app = new Elysia()
       set.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains";
     }
   })
-  .onError(({ code, error, set }) => {
+  .onError(({ code, error, set, request }) => {
+    // § Fase 189A (audit keamanan, Low) — pesan galat VALIDATION/PARSE Elysia MEMUAT nilai yang dikirim pengguna (terbukti lewat eksperimen: nilai body
+    // muncul di `error.message`). Body kini bisa berisi data pribadi (telepon/WhatsApp/Nama Perusahaan), jadi untuk galat input klien cukup catat
+    // kode + path — TANPA pesan/nilai. Galat tak terduga tetap dicatat penuh (dan ke Sentry di bawah).
+    if (code === "VALIDATION" || code === "PARSE") {
+      logger.warn({ code, path: new URL(request.url).pathname }, "Invalid request");
+      return { message: "Invalid request", code };
+    }
+    // § Fase 189G, ADR-0044 — guard kontrol keuangan: akun internal ditolak membuat invoice/order. Galat bisnis yang DIHARAPKAN (bukan bug) → 403 dengan
+    // kode stabil untuk UI; TIDAK dikirim ke Sentry dan tidak dicatat sebagai "Unhandled error".
+    if (error instanceof InternalAccountBillingError) {
+      set.status = error.status;
+      return error.toBody();
+    }
     logger.error({ err: error, code }, "Unhandled error");
     // Body error SELALU bare {code, message} — BUKAN {data,error} manual
     // (§ docs/decisions/adr-0010-response-format-eden.md — Eden Treaty
@@ -146,9 +182,6 @@ export const app = new Elysia()
     // JANGAN ditimpa jadi 500 (bug yang ketemu sendiri pas security review
     // Fase 00: sebelumnya semua error non-NOT_FOUND dipaksa 500, termasuk
     // input tidak valid yang seharusnya 400/422).
-    if (code === "VALIDATION" || code === "PARSE") {
-      return { message: "Invalid request", code };
-    }
     if (code === "NOT_FOUND") {
       set.status = 404;
       return { message: "Not found", code };
@@ -225,6 +258,19 @@ export const app = new Elysia()
   // Konsekuensi yang DISENGAJA (permintaan produk): endpoint ini jadi mengungkap "email sudah terdaftar" (enumerasi email) — dibatasi
   // rate limit `/api/auth` (10/menit/IP, di atas).
   .post("/api/auth/sign-up/email", async ({ request, set }) => {
+    // § Fase 189A, ADR-0044 — kontak AKUN (Nama Perusahaan/Telepon/WhatsApp) dari form daftar. Ada kunci kontak → ketiganya WAJIB sah (422 sebelum
+    // Better Auth, tidak ada user setengah jadi); tanpa kunci kontak (klien lama/cache) → diterima, modal Lengkapi Profil yang menangkap.
+    // Better Auth mengabaikan kunci tak dikenal (diuji `app.signup-contact.test.ts`), jadi nilai mentah tidak pernah tersimpan olehnya.
+    let contact: ContactValue | null = null;
+    const signUpBody = await readSignUpBody(request);
+    if (hasContactKeys(signUpBody)) {
+      const parsed = parseContact(signUpBody as ContactInput);
+      if (!parsed.ok) {
+        set.status = 422;
+        return { code: "INVALID_CONTACT", field: parsed.field, message: "Data kontak tidak valid." };
+      }
+      contact = parsed.value;
+    }
     const email = await readSignUpEmail(request);
     if (email) {
       const [existing] = await db.select({ id: userTable.id }).from(userTable).where(sql`lower(${userTable.email}) = ${email}`).limit(1);
@@ -245,6 +291,15 @@ export const app = new Elysia()
         if (created && customerRole) {
           await db.insert(userRoles).values({ userId: body.user.id, roleId: customerRole.id }).onConflictDoNothing();
         }
+        if (created && contact) {
+          // Akun SUDAH dibuat Better Auth di titik ini: kegagalan menyimpan kontak tidak boleh mengubah respons jadi 500 (pengguna yang mengulang akan kena
+          // 409). Dicatat TANPA nilai kontak; modal Lengkapi Profil menangkap akun yang kontaknya kosong.
+          try {
+            await db.update(userTable).set(contact).where(eq(userTable.id, created.id));
+          } catch (err) {
+            logger.error({ err: (err as Error).name, userId: created.id }, "Gagal menyimpan kontak setelah sign-up");
+          }
+        }
       }
     }
     return response;
@@ -256,6 +311,11 @@ export const app = new Elysia()
   .use(subscriptionsRoute)
   .use(adminPlansRoute)
   .use(adminUsersRoute)
+  .use(adminUserRolesRoute)
+  .use(adminUserErasureRoute)
+  .use(adminInternalGrantsRoute)
+  .use(adminSeatsRoute)
+  .use(adminInsightsRoute)
   .use(adminStaffRoute)
   .use(adminImportBatchesRoute)
   .use(adminUserSubscriptionsRoute)

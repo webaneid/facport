@@ -161,6 +161,15 @@ untuk task kecil, itu justru lebih mahal token.
 | Produk Konverter (Excel→XML untuk Accurate Desktop) | `docs/architecture/architecture-konverter.md` |
 | Produk AutoProduksi (Formula/BOM, Input Produksi) | `docs/architecture/architecture-autoproduksi.md` |
 | Dashboard admin (statistik, chart) | `docs/architecture/architecture-admin-dashboard.md` |
+| Hapus Massal transaksi Accurate dari Excel (RENCANA/DRAFT, Fase 188, menunggu keputusan client) | `docs/architecture/architecture-bulk-delete.md` |
+| Akun internal vs komersil, guard invoice terpusat, kontrol keuangan (WAJIB dibaca sebelum membuat laporan uang/hitung pengguna) | `docs/architecture/architecture-internal-accounts.md` |
+| API Insight pelanggan `/admin/insights/*` (definisi komersil/aktif/baru/berhenti/usia, endpoint, ekspor CSV, data pribadi) | `docs/architecture/architecture-insights-api.md` |
+| Halaman Insight admin `/insight` (peta tab→API, konvensi UI, WhatsApp, ekspor) | `docs/architecture/architecture-insights-page.md` |
+| Riwayat Data Usaha (peristiwa koneksi Accurate + akses User Tambahan, kamus aksi, aksi admin cabut/pindahkan seat) | `docs/architecture/architecture-data-usaha-history.md` |
+| Kontak akun (Nama Perusahaan/Telepon/WhatsApp, standar E.164, modal Lengkapi Profil) — data AKUN, bukan Data Usaha | `docs/architecture/architecture-contact.md` |
+| Insight pelanggan admin (kebutuhan data FAC: komersil/internal, per fitur, akses, kohort, riwayat koneksi; RENCANA Fase 189) | `docs/architecture/architecture-admin-insight.md` |
+| Siklus hidup akun: nonaktifkan massal, aksi peran dua arah, hapus permanen aman, anonimisasi (Super Admin, ADR-0045) | `docs/architecture/architecture-account-lifecycle.md` |
+| Design system admin (skala ukuran/jarak, varian `compact:`, interaksi) — baca sebelum mengubah primitif UI | `docs/architecture/architecture-admin-design-system.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan
 > Komponen** yang diisi user saat `project-init` (lihat

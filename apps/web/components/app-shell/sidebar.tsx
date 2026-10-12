@@ -50,6 +50,7 @@ import {
   ChefHat,
   ListChecks,
   History,
+  BarChart3,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -260,6 +261,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         // § diminta user 2026-09-05 — menu KHUSUS tim internal (Super
         // Admin/Admin), terpisah dari "Pengguna" yang sekarang cuma
         // customer (§ ADR-0027 lanjutan).
+        // § Fase 189D — Insight pelanggan (kontak, fitur, akses, langganan, tren, riwayat koneksi); izin `insights.view`.
+        { href: "/insight", label: "Insight", icon: BarChart3, permission: "insights.view" },
         { href: "/staff", label: "Tim Internal", icon: UserCog, permission: "users.view" },
         { href: "/plans", label: "Paket", icon: Package, permission: "plans.manage" },
         // § Fase 27, ADR-0025 — kelola invoice, termasuk bikin baru untuk user existing.
@@ -319,7 +322,7 @@ function IdentityCard({ collapsed, logoUrl, subtitle }: { collapsed: boolean; lo
       <div className="flex items-center gap-3">
         {logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={logoUrl} alt="Logo" className="size-9 shrink-0 rounded-xl bg-white/22 object-contain p-1" />
+          <img src={logoUrl} alt="Logo" className="size-9 shrink-0 rounded-xl bg-white/22 object-contain p-1 compact:size-8 compact:rounded-lg" />
         ) : (
           <div className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-white/22 text-sm font-bold text-white">F</div>
         )}
@@ -485,7 +488,7 @@ function NavCategoryFlyout({
           onMouseLeave={closeSoon}
           title={collapsed ? category : undefined}
           className={cn(
-            "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition",
+            "flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-sm font-medium transition compact:min-h-9 compact:gap-2.5 compact:rounded-lg compact:text-[13px]",
             // § resting SELALU ada background tipis (`bg-white/5`), hover
             // nebel jadi `bg-white/18` — BUKAN "tanpa background lalu
             // muncul pas hover" (transisi dari nol kesannya "saru"/nge-blend,
@@ -565,7 +568,7 @@ function NavRow({
       onClick={onNavigate}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition",
+        "flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm font-medium transition compact:min-h-9 compact:gap-2.5 compact:rounded-lg compact:text-[13px]",
         active ? "bg-white text-admin-accent-strong shadow-[0_10px_26px_rgba(4,18,24,.28)]" : "text-white/90 hover:bg-white/12",
       )}
     >
@@ -687,14 +690,14 @@ export function Sidebar({
       {/* Desktop — selalu tampil */}
       <aside
         className={cn(
-          "hidden shrink-0 flex-col rounded-2xl px-4 py-4 transition-[width] duration-200 lg:flex",
-          collapsed ? "w-[84px]" : "w-[262px]",
+          "hidden shrink-0 flex-col rounded-2xl px-4 py-4 transition-[width] duration-200 lg:flex compact:rounded-xl compact:px-3 compact:py-3",
+          collapsed ? "w-[84px] compact:w-[72px]" : "w-[262px] compact:w-[232px]",
         )}
         style={railStyle}
       >
         <IdentityCard collapsed={collapsed} logoUrl={logoUrl} subtitle={subtitle} />
 
-        <nav className="mt-4 flex-1 space-y-5 overflow-y-auto pr-1">
+        <nav className="mt-4 flex-1 space-y-5 overflow-y-auto pr-1 compact:mt-3 compact:space-y-4">
           {groups.map((group) => (
             <NavGroupBlock key={group.label} group={group} collapsed={collapsed} pathname={pathname} modulePlanNames={modulePlanNames} />
           ))}
@@ -731,7 +734,7 @@ export function Sidebar({
           >
             <DialogPrimitive.Title className="sr-only">Menu Navigasi</DialogPrimitive.Title>
             <IdentityCard collapsed={false} logoUrl={logoUrl} subtitle={subtitle} />
-            <nav className="mt-4 flex-1 space-y-5 overflow-y-auto pr-1">
+            <nav className="mt-4 flex-1 space-y-5 overflow-y-auto pr-1 compact:mt-3 compact:space-y-4">
               {groups.map((group) => (
                 <NavGroupBlock
                   key={group.label}

@@ -1,9 +1,11 @@
+import { revokeGrantsIfNewOwnerCommercial } from "../../lib/internal-grants";
 import { Elysia, t } from "elysia";
 import { eq, and, inArray } from "drizzle-orm";
 import { db } from "../../lib/db";
 import { dataUsaha, user as userTable, auditLogs, ownershipTransfers, accurateConnections, subscriptions, importBatches } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { createNotification, NOTIFICATION_TYPES } from "../../lib/notifications";
+import { REASON_NOTE_MAX_LENGTH, normalizeDisconnectReason } from "../../lib/data-usaha-events";
 
 // § Fase 111, architecture-user-tambahan.md — transfer kepemilikan Data
 // Usaha DIBANTU ADMIN: LANGSUNG eksekusi tanpa accept-flow token (admin
@@ -55,8 +57,11 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
 
       // Data Usaha yang terdampak: hanya ini, atau SEMUA yang memakai koneksi akun yang sama (removeAccount).
       const affected = removeAccount
-        ? await db.select({ id: dataUsaha.id, name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.accurateConnectionId, connectionId))
-        : [{ id: du.id, name: du.name }];
+        ? await db
+            .select({ id: dataUsaha.id, name: dataUsaha.name, accurateDbId: dataUsaha.accurateDbId, accurateDbAlias: dataUsaha.accurateDbAlias })
+            .from(dataUsaha)
+            .where(eq(dataUsaha.accurateConnectionId, connectionId))
+        : [{ id: du.id, name: du.name, accurateDbId: du.accurateDbId, accurateDbAlias: du.accurateDbAlias }];
       const affectedIds = affected.map((a) => a.id);
 
       const [running] = await db
@@ -80,6 +85,8 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
           await tx.update(subscriptions).set({ accurateConnectionId: null }).where(eq(subscriptions.accurateConnectionId, connectionId));
           await tx.delete(accurateConnections).where(eq(accurateConnections.id, connectionId));
         }
+        // § Fase 189B, D10 — alasan opsional (saran cepat + catatan bebas) untuk statistik "salah database/akun"; catatan INTERNAL, tidak masuk notifikasi pelanggan.
+        const reason = normalizeDisconnectReason(body?.reason);
         await tx.insert(auditLogs).values({
           entityType: "data_usaha",
           entityId: du.id,
@@ -90,9 +97,31 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
             previousAccurateDbAlias: du.accurateDbAlias ?? null,
             removedAccount: removeAccount,
             affectedDataUsahaIds: affectedIds,
+            reason,
           },
           actorId: user.id,
         });
+        // Audit 189B: pada "hapus akun Accurate" Data Usaha LAIN yang memakai akun yang sama ikut terputus — masing-masing mendapat entri riwayat sendiri (laporan per Data Usaha
+        // tidak boleh kehilangan peristiwa ini). `viaDataUsahaId` menunjuk Data Usaha yang diklik admin.
+        const others = affected.filter((a) => a.id !== du.id);
+        if (others.length > 0) {
+          await tx.insert(auditLogs).values(
+            others.map((a) => ({
+              entityType: "data_usaha",
+              entityId: a.id,
+              action: "disconnect_accurate",
+              changes: {
+                previousConnectionId: connectionId,
+                previousAccurateDbId: a.accurateDbId ?? null,
+                previousAccurateDbAlias: a.accurateDbAlias ?? null,
+                removedAccount: true,
+                viaDataUsahaId: du.id,
+                reason,
+              },
+              actorId: user.id,
+            })),
+          );
+        }
       });
 
       await createNotification({
@@ -111,7 +140,18 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
     {
       permission: "subscriptions.manage",
       params: t.Object({ id: t.String({ format: "uuid" }) }),
-      body: t.Optional(t.Object({ removeAccount: t.Optional(t.Boolean()) })),
+      body: t.Optional(
+        t.Object({
+          removeAccount: t.Optional(t.Boolean()),
+          reason: t.Optional(
+            t.Object({
+              // ditulis eksplisit (bukan .map) agar tipe literal terbawa ke klien Eden; kesinkronan dengan DISCONNECT_REASON_CODES dijaga tes
+              code: t.Optional(t.Union([t.Literal("salah_database"), t.Literal("salah_akun"), t.Literal("lainnya")])),
+              note: t.Optional(t.String({ maxLength: REASON_NOTE_MAX_LENGTH })),
+            }),
+          ),
+        }),
+      ),
     },
   )
   .post(
@@ -135,6 +175,7 @@ export const adminDataUsahaRoute = new Elysia({ prefix: "/admin/data-usaha" })
       await db.transaction(async (tx) => {
         // § Fase 143, ADR-0037 #6 — transfer memutus koneksi Accurate (sama seperti `executeOwnershipTransfer`).
         await tx.update(dataUsaha).set({ userId: body.toUserId, accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, params.id));
+        await revokeGrantsIfNewOwnerCommercial(tx, { dataUsahaId: params.id, newOwnerId: body.toUserId, actorId: user.id }); // § Fase 191 (audit High)
         // § batalkan transfer self-service yang masih pending untuk Data
         // Usaha ini — mencegah link accept lama nyasar dianggap valid lagi
         // di masa depan kalau kepemilikan somehow balik lagi ke

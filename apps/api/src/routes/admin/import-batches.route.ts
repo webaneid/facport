@@ -1,8 +1,9 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, count } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { importBatches, importBatchRows, user as userTable } from "../../db/schema";
+import { importBatches, importBatchRows, roles, userRoles, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
+import { getInternalReason } from "../../lib/internal-accounts";
 
 // § diminta user 2026-09-05 — admin (Super Admin/Admin) bisa lihat
 // riwayat & detail log import SEMUA user (bukan cuma milik sendiri),
@@ -31,6 +32,10 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
         return { code: "USER_NOT_FOUND" };
       }
 
+      const internalReason = await getInternalReason(targetUser.id);
+      // § Fase 189H — role akun (untuk tombol aksi peran di detail user; hanya nama role, bukan hak akses).
+      const roleRows = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, targetUser.id));
+
       // § disertakan di respons yang SAMA (bukan endpoint terpisah "GET
       // /admin/users/:id") — halaman detail user cukup 1 fetch.
       const [rows, totalRows] = await Promise.all([
@@ -45,7 +50,22 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
       ]);
 
       return {
-        user: { id: targetUser.id, name: targetUser.name, email: targetUser.email, disabled: targetUser.disabled, createdAt: targetUser.createdAt },
+        user: {
+          id: targetUser.id,
+          name: targetUser.name,
+          email: targetUser.email,
+          disabled: targetUser.disabled,
+          createdAt: targetUser.createdAt,
+          // § Fase 189A, ADR-0044 — kontak AKUN (bukan Data Usaha) untuk panel admin + tombol WhatsApp.
+          companyName: targetUser.companyName,
+          phone: targetUser.phone,
+          whatsapp: targetUser.whatsapp,
+          // § Fase 189G, ADR-0044 — status internal efektif (flag ATAU role admin/staf) + alasannya, untuk lencana & tombol tandai di detail user.
+          internalFlag: targetUser.isInternal,
+          internalReason,
+          isInternal: internalReason !== null,
+          roles: roleRows.map((r) => r.name).sort(),
+        },
         batches: rows,
         total: totalRows[0]?.total ?? 0,
       };

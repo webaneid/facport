@@ -337,6 +337,41 @@
       "when": 1791515050030,
       "tag": "0047_formula_number",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1791745348422,
+      "tag": "0048_user_contact",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1791746734328,
+      "tag": "0049_user_is_internal",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1791750923414,
+      "tag": "0050_audit_logs_entity_action_idx",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1791750927288,
+      "tag": "0051_insights_view_permission",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791775064770,
+      "tag": "0052_subscriptions_internal_grant",
+      "breakpoints": true
     }
   ]
 }

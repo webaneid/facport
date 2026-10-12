@@ -31,6 +31,9 @@ export function notificationLink(type: string, surface: Surface): string {
     case "subscription_expired":
     case "subscription_changed_by_admin":
       return "/subscribe";
+    case "seat_access_changed_by_admin":
+      // § Fase 189B — admin mencabut/memindahkan akses User Tambahan; pemilik melihat slot di Kelola Tim.
+      return "/team";
     case "accurate_connection_expired":
     case "accurate_connection_disconnected_by_admin":
       return "/accurate";

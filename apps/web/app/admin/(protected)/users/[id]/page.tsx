@@ -22,6 +22,16 @@ import { DisconnectAccurateDialog } from "@/components/admin/disconnect-accurate
 import { EditSubscriptionEndDialog } from "@/components/admin/edit-subscription-end-dialog";
 import { groupByMenu } from "@/lib/group-subscriptions-by-menu";
 import { api } from "@/lib/api-client";
+import { Can } from "@/components/auth/can";
+import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dialog";
+import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
+import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
+import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { InternalGrantPanel } from "@/components/admin/internal-grant-panel";
+import { RoleActionDialog } from "@/components/admin/role-action-dialog";
+import { ROLE_ACTION_TEXT, availableRoleActions, type RoleAction } from "@/lib/role-actions";
+import { DataUsahaAccessPanel } from "@/components/admin/data-usaha-access-panel";
+import { Button } from "@/components/ui/button";
 
 // § diminta user 2026-09-05 — halaman detail user, tujuannya bantu admin
 // diagnosa saat user telepon minta support: profil singkat + riwayat
@@ -37,7 +47,7 @@ import { api } from "@/lib/api-client";
 // customer tinggal "Hubungkan Ulang" dari sisi mereka.
 type ImportBatch = { id: string; module: string; fileName: string; status: string; totalRows: number; createdAt: string };
 type Detail = {
-  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string };
+  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null; internalFlag: boolean; internalReason: InternalReason; isInternal: boolean; roles?: string[] };
   batches: ImportBatch[];
   total: number;
 };
@@ -52,6 +62,7 @@ type SubscriptionRow = {
   // § Fase 181 — perpanjangan terjadwal (lencana + dialog): penanda, trial/bukan, jenis paket (seat tidak bisa ditandai).
   renewalInterval?: "monthly" | "yearly" | null;
   isTrial?: boolean;
+  internalGrant?: boolean; // § Fase 191 — hibah akses internal (tanpa tanggal akhir)
   planKind?: string;
   moduleKey: string | null;
   planName: string;
@@ -77,6 +88,8 @@ export default function AdminUserDetailPage() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[] | null>(null);
   const [dataUsahaList, setDataUsahaList] = useState<DataUsahaRow[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [roleAction, setRoleAction] = useState<RoleAction | null>(null); // § Fase 189H — dialog aksi peran
+  const [internalDialog, setInternalDialog] = useState(false); // § Fase 189G — dialog tandai/cabut internal (1 akun)
 
   const loadSubscriptions = useCallback(async () => {
     const res = await api.admin.users({ id: params.id }).subscriptions.get();
@@ -87,15 +100,19 @@ export default function AdminUserDetailPage() {
     }
   }, [params.id]);
 
+  const loadDetail = useCallback(async () => {
+    const res = await api.admin.users({ id: params.id })["import-batches"].get();
+    if (res.data) setDetail(res.data as unknown as Detail);
+    else if (res.error) setNotFound(true);
+  }, [params.id]);
+
   useEffect(() => {
     async function load() {
-      const res = await api.admin.users({ id: params.id })["import-batches"].get();
-      if (res.data) setDetail(res.data as unknown as Detail);
-      else if (res.error) setNotFound(true);
+      await loadDetail();
       await loadSubscriptions();
     }
     load();
-  }, [params.id, loadSubscriptions]);
+  }, [loadDetail, loadSubscriptions]);
 
   if (notFound) {
     return <EmptyState icon={Inbox} title="User tidak ditemukan" />;
@@ -140,13 +157,48 @@ export default function AdminUserDetailPage() {
               <CardTitle>{user.name || "-"}</CardTitle>
               <CardDescription>{user.email}</CardDescription>
             </div>
-            {user.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <Badge variant="success">Aktif</Badge>}
+            <div className="flex flex-wrap items-center gap-1.5">
+              <InternalBadge reason={user.internalReason} />
+              {user.disabled ? <Badge variant="destructive">Nonaktif</Badge> : <Badge variant="success">Aktif</Badge>}
+            </div>
           </div>
         </CardHeader>
-        <CardContent>
-          <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
+        <CardContent className="flex flex-col gap-3">
+          {/* § Fase 189A, ADR-0044 — kontak milik AKUN (bukan Data Usaha). WhatsApp bisa diklik → wa.me di tab baru. */}
+          <UserContactCardContent companyName={user.companyName} phone={user.phone} whatsapp={user.whatsapp} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">Terdaftar {formatDate(user.createdAt, companyTimezone)}</p>
+            <Can permission="users.manage">
+              <div className="flex flex-wrap items-center gap-2">
+                {/* § Fase 189G, ADR-0044 — tandai/cabut internal 1 akun (dialog dampak yang sama dengan aksi massal). Internal karena ROLE admin/staf tidak bisa diubah lewat tanda. */}
+                {user.internalReason === "role" ? (
+                  <span className="text-xs text-muted-foreground">Internal otomatis (memegang role Admin).</span>
+                ) : (
+                  <Button variant="outline" size="sm" type="button" onClick={() => setInternalDialog(true)}>
+                    {user.internalFlag ? "Cabut tanda internal" : "Tandai internal"}
+                  </Button>
+                )}
+                {availableRoleActions(user.roles ?? []).map((action) => (
+                  <Button key={action} variant="outline" size="sm" type="button" onClick={() => setRoleAction(action)}>
+                    {ROLE_ACTION_TEXT[action].label}
+                  </Button>
+                ))}
+              <EditUserContactDialog
+                userId={user.id}
+                initial={{ companyName: user.companyName ?? "", phone: user.phone ?? "", whatsapp: user.whatsapp ?? "" }}
+                onSaved={(values) => setDetail((d) => (d ? { ...d, user: { ...d.user, ...values } } : d))}
+              />
+              </div>
+            </Can>
+          </div>
         </CardContent>
       </Card>
+
+      {user.isInternal && (
+        <Can permission="subscriptions.manage">
+          <InternalGrantPanel userId={user.id} dataUsaha={dataUsahaList.filter((d) => d.isOwner).map((d) => ({ id: d.id, name: d.name }))} subscriptions={subscriptions ?? []} onChanged={loadSubscriptions} />
+        </Can>
+      )}
 
       <Card>
         <CardHeader>
@@ -235,14 +287,15 @@ export default function AdminUserDetailPage() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">
-                                    <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
+                                    <TruncateText title={berlakuTitle || undefined}>{sub.internalGrant ? "Tanpa batas · Hibah internal" : sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
                                   </TableCell>
                                   <TableCell>
                                     <StatusBadge domain="subscription" status={sub.status} />
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex justify-end">
-                                      <EditSubscriptionEndDialog
+                                      {/* hibah internal tidak punya tanggal akhir: dicabut lewat panel Akses Internal, bukan diedit di sini */}
+                                      {!sub.internalGrant && <EditSubscriptionEndDialog
                                         subscriptionId={sub.subscriptionId}
                                         planName={sub.planName}
                                         status={sub.status}
@@ -252,7 +305,7 @@ export default function AdminUserDetailPage() {
                                         renewalInterval={sub.renewalInterval}
                                         renewalEligible={!sub.isTrial}
                                         onSaved={loadSubscriptions}
-                                      />
+                                      />}
                                     </div>
                                   </TableCell>
                                 </TableRow>
@@ -262,6 +315,8 @@ export default function AdminUserDetailPage() {
                         ))}
                       </TableBody>
                     </Table>
+                  {/* § Fase 189B — akses User Tambahan + riwayat koneksi/akses per Data Usaha (dimuat saat dibuka). */}
+                    <DataUsahaAccessPanel dataUsahaId={group.du.id} />
                   </AccordionContent>
                 </AccordionItem>
               ))}
@@ -323,6 +378,16 @@ export default function AdminUserDetailPage() {
           )}
         </CardContent>
       </Card>
+      {roleAction ? (
+        <RoleActionDialog open onOpenChange={(o) => !o && setRoleAction(null)} userId={user.id} action={roleAction} onDone={loadDetail} />
+      ) : null}
+      <InternalAccountsDialog
+        open={internalDialog}
+        onOpenChange={setInternalDialog}
+        userIds={[user.id]}
+        isInternal={!user.internalFlag}
+        onDone={loadDetail}
+      />
     </div>
   );
 }

@@ -19,6 +19,8 @@ import {
   conversionLogs,
   autoproduksiFormulas,
   autoproduksiProductionEntries,
+  autoproduksiIntermediaryAccounts,
+  autoproduksiDefaults,
 } from "../db/schema";
 import { announcements, notifications } from "../db/schema/notification.schema";
 import { auditLogs, settings, media } from "../db/schema/core.schema";
@@ -55,7 +57,7 @@ const isTestRole = sql`(${roles.isSystem} = false AND ${roles.name} ~ ${"[0-9]{1
 
 async function main() {
   await db.transaction(async (tx) => {
-    const testUserIds = (await tx.select({ id: userTable.id }).from(userTable).where(like(userTable.email, "%@test.local"))).map((u) => u.id);
+    const testUserIds = (await tx.select({ id: userTable.id }).from(userTable).where(or(like(userTable.email, "%@test.local"), like(userTable.email, "anon-%@anonymized.invalid")))).map((u) => u.id); // § Fase 189H — akun uji yang dianonimkan tes kehilangan @test.local
     const testPlanIds = (await tx.select({ id: plans.id }).from(plans).where(isTestPlanName)).map((p) => p.id);
 
     // § Fase 113 — `dataUsaha` dibuat lewat `createTestDataUsaha(userId, ...)`
@@ -130,6 +132,19 @@ async function main() {
     if (testSubscriptionIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.subscriptionId, testSubscriptionIds));
     if (testDataUsahaIds.length) autoproduksiFormulaConditions.push(inArray(autoproduksiFormulas.dataUsahaId, testDataUsahaIds));
     if (autoproduksiFormulaConditions.length) await tx.delete(autoproduksiFormulas).where(or(...autoproduksiFormulaConditions));
+
+    // § Fase 189A (2026-10-12) — celah ditemukan saat membersihkan run tes: `autoproduksi_intermediary_accounts` dan `autoproduksi_defaults` (Fase 159+) juga
+    // punya FK ke `subscriptions`/`data_usaha` tetapi belum dicakup, sehingga skrip ini gagal 23503 (transaksi rollback, tidak ada yang terhapus).
+    // Dihapus SEBELUM subscriptions/data_usaha di bawah, dengan pola kondisi yang sama.
+    const autoproduksiIntermediaryConditions = [];
+    if (testSubscriptionIds.length) autoproduksiIntermediaryConditions.push(inArray(autoproduksiIntermediaryAccounts.subscriptionId, testSubscriptionIds));
+    if (testDataUsahaIds.length) autoproduksiIntermediaryConditions.push(inArray(autoproduksiIntermediaryAccounts.dataUsahaId, testDataUsahaIds));
+    if (autoproduksiIntermediaryConditions.length) await tx.delete(autoproduksiIntermediaryAccounts).where(or(...autoproduksiIntermediaryConditions));
+
+    const autoproduksiDefaultsConditions = [];
+    if (testSubscriptionIds.length) autoproduksiDefaultsConditions.push(inArray(autoproduksiDefaults.subscriptionId, testSubscriptionIds));
+    if (testDataUsahaIds.length) autoproduksiDefaultsConditions.push(inArray(autoproduksiDefaults.dataUsahaId, testDataUsahaIds));
+    if (autoproduksiDefaultsConditions.length) await tx.delete(autoproduksiDefaults).where(or(...autoproduksiDefaultsConditions));
 
     // § Fase 176 — riwayat perpanjangan (FK -> subscriptions/orders/invoiceItems/user) WAJIB dihapus SEBELUM semuanya itu.
     const renewalConditions = [];

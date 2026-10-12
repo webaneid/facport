@@ -886,7 +886,7 @@ export default function AdminImportBatchDetailPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">{MODULE_TITLE[batch.module] ?? "Hasil Import"}</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground compact:text-xl compact:font-semibold">{MODULE_TITLE[batch.module] ?? "Hasil Import"}</h1>
         <p className="text-sm text-muted-foreground">{batch.fileName}</p>
       </div>
 

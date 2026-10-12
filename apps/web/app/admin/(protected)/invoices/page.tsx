@@ -186,7 +186,9 @@ function CreateInvoiceDialog({ onCreated }: { onCreated: () => void }) {
             ? "Salah satu paket sudah tidak aktif."
             : code === "MODULE_ORDER_IN_PROGRESS"
               ? "Ada fitur yang masih punya invoice belum selesai untuk Data Usaha ini — batalkan invoice lamanya dulu."
-              : "Gagal membuat invoice — coba lagi.",
+              : code === "INTERNAL_ACCOUNT_NO_BILLING"
+                ? "Akun ini internal: tidak bisa dibuatkan invoice. Berikan akses lewat Kelola Langganan (mode Gratis)."
+                : "Gagal membuat invoice — coba lagi.",
       );
       return;
     }

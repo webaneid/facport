@@ -18,12 +18,17 @@ mock.module("next/navigation", () => ({
 
 const { RegisterForm } = await import("./register-form");
 
-async function fillAndSubmit() {
+// § Fase 189A, ADR-0044 — Nama Perusahaan + Telepon (+ WhatsApp, ikut telepon lewat kotak centang) wajib saat daftar email.
+async function fillAndSubmit({ withContact = true }: { withContact?: boolean } = {}) {
   const user = userEvent.setup();
   render(<RegisterForm />);
   await user.type(screen.getByPlaceholderText("Nama"), "Budi");
   await user.type(screen.getByPlaceholderText("Email"), "budi@test.local");
   await user.type(screen.getByPlaceholderText("Password"), "password123");
+  if (withContact) {
+    await user.type(screen.getByPlaceholderText("Nama Perusahaan"), "PT Budi Jaya");
+    await user.type(screen.getByLabelText("Nomor telepon"), "081234567890");
+  }
   await user.click(screen.getByRole("button", { name: "Daftar" }));
   return user;
 }
@@ -55,5 +60,36 @@ describe("RegisterForm — email sudah terdaftar", () => {
     await fillAndSubmit();
     expect(await screen.findByText("Password terlalu pendek")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("RegisterForm — kontak akun (Fase 189A)", () => {
+  test("kontak ikut dikirim ke signUp.email dalam E.164, WhatsApp = telepon (kotak centang bawaan)", async () => {
+    signUpEmail.mockClear();
+    await fillAndSubmit();
+    await waitFor(() => expect(signUpEmail).toHaveBeenCalledTimes(1));
+    expect((signUpEmail.mock.calls[0] as unknown[])[0]).toMatchObject({
+      name: "Budi",
+      email: "budi@test.local",
+      companyName: "PT Budi Jaya",
+      phone: "+6281234567890",
+      whatsapp: "+6281234567890",
+    });
+    expect(await screen.findByText(/Pendaftaran berhasil/)).toBeTruthy();
+  });
+
+  test("kontak kosong → signUp TIDAK dipanggil dan galat tampil per isian", async () => {
+    signUpEmail.mockClear();
+    await fillAndSubmit({ withContact: false });
+    expect(await screen.findByText("Nama perusahaan wajib diisi")).toBeTruthy();
+    expect(screen.getByText(/Nomor telepon wajib/)).toBeTruthy();
+    expect(signUpEmail).not.toHaveBeenCalled();
+  });
+
+  test("server menolak kontak (422 INVALID_CONTACT, field phone) → pesan di isian, bukan layar berhasil", async () => {
+    signUpEmail.mockResolvedValueOnce({ error: { status: 422, code: "INVALID_CONTACT", field: "phone" } as { status: number; code: string } });
+    await fillAndSubmit();
+    expect(await screen.findByText("Data ini tidak valid, periksa kembali.")).toBeTruthy();
+    expect(screen.queryByText(/Pendaftaran berhasil/)).toBeNull();
   });
 });

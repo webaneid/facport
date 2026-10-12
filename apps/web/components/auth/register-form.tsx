@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { IconInput } from "@/components/auth/icon-input";
 import { PasswordInput } from "@/components/auth/password-input";
 import { GoogleSignInButton } from "@/components/auth/google-signin-button";
+import { ContactFields, EMPTY_CONTACT, validateContact, type ContactErrors, type ContactValues } from "@/components/profile/contact-fields";
 
 const schema = z.object({
   name: z.string().min(1, "Nama wajib diisi"),
@@ -68,6 +69,9 @@ function RegisterFormInner() {
   const [existingEmail, setExistingEmail] = useState<string | null>(null);
   const [resendInfo, setResendInfo] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  // § Fase 189A, ADR-0044 — kontak AKUN (Nama Perusahaan/Telepon/WhatsApp) wajib diisi saat daftar email; divalidasi ulang di server (422 INVALID_CONTACT).
+  const [contact, setContact] = useState<ContactValues>(EMPTY_CONTACT);
+  const [contactErrors, setContactErrors] = useState<ContactErrors>({});
   const {
     register,
     handleSubmit,
@@ -76,10 +80,18 @@ function RegisterFormInner() {
 
   async function onSubmit(values: FormValues) {
     setError(null);
+    const clientContactErrors = validateContact(contact);
+    setContactErrors(clientContactErrors ?? {});
+    if (clientContactErrors) return;
     const redirect = searchParams.get("redirect");
     const callbackURL = typeof window !== "undefined" ? `${window.location.origin}${getSafeRedirect(redirect)}` : undefined;
-    const { error: signUpError } = await authClient.signUp.email({ ...values, callbackURL });
+    const { error: signUpError } = await authClient.signUp.email({ ...values, ...contact, callbackURL });
     if (signUpError) {
+      const invalidField = (signUpError as { code?: string; field?: keyof ContactValues }).code === "INVALID_CONTACT" ? (signUpError as { field?: keyof ContactValues }).field : undefined;
+      if (invalidField) {
+        setContactErrors({ [invalidField]: "Data ini tidak valid, periksa kembali." });
+        return;
+      }
       if (signUpError.status === 409 || (signUpError as { code?: string }).code === "USER_ALREADY_EXISTS") {
         setExistingEmail(values.email);
         setResendInfo(null);
@@ -134,6 +146,7 @@ function RegisterFormInner() {
         <PasswordInput placeholder="Password" {...register("password")} />
         {errors.password && <p className="mt-1 text-xs text-red-600">{errors.password.message}</p>}
       </div>
+      <ContactFields value={contact} onChange={setContact} errors={contactErrors} />
       {error && <p className="text-sm text-red-600">{error}</p>}
       {existingEmail && (
         <div role="alert" className="flex flex-col gap-2 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">

@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { memberAccessibleDataUsahaIds } from "../lib/seat-access";
 import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
 import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
+import { parseContact, isContactComplete } from "../lib/phone";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
 import { ownsDataUsaha, hasAccessToDataUsaha } from "../lib/data-usaha";
 import { generateTransferToken } from "../lib/ownership-transfer";
@@ -27,14 +28,18 @@ export const meRoute = new Elysia()
   .get(
     "/me",
     async ({ user }) => {
-      const [userRoleRows, permissionKeys] = await Promise.all([
+      const [userRoleRows, permissionKeys, contactRows] = await Promise.all([
         db
           .select({ name: roles.name })
           .from(userRoles)
           .innerJoin(roles, eq(roles.id, userRoles.roleId))
           .where(eq(userRoles.userId, user.id)),
         getUserPermissionKeys(user.id),
+        // § Fase 189A, ADR-0044 — kolom kontak custom TIDAK ikut objek sesi Better Auth, jadi dibaca dari tabel. `profileComplete` = satu definisi
+        // server (`isContactComplete`) yang dipakai modal Lengkapi Profil di web.
+        db.select({ companyName: userTable.companyName, phone: userTable.phone, whatsapp: userTable.whatsapp }).from(userTable).where(eq(userTable.id, user.id)),
       ]);
+      const contact = contactRows[0] ?? { companyName: null, phone: null, whatsapp: null };
 
       return {
         id: user.id,
@@ -42,9 +47,36 @@ export const meRoute = new Elysia()
         name: user.name,
         roles: userRoleRows.map((r) => r.name),
         permissions: permissionKeys,
+        companyName: contact.companyName,
+        phone: contact.phone,
+        whatsapp: contact.whatsapp,
+        profileComplete: isContactComplete(contact),
       };
     },
     { auth: true },
+  )
+  // § Fase 189A, ADR-0044 — pengguna mengisi/mengubah kontak AKUN-nya sendiri (modal Lengkapi Profil). Hanya diri sendiri (id dari sesi, tidak ada
+  // parameter id → tidak ada IDOR). Validasi + normalisasi di server (`parseContact`), bukan percaya klien. Kontak akun orang lain hanya lewat
+  // `PATCH /admin/users/:id/contact` (Super Admin, tercatat audit).
+  .patch(
+    "/me/contact",
+    async ({ body, user, set }) => {
+      const parsed = parseContact(body);
+      if (!parsed.ok) {
+        set.status = 422;
+        return { code: "INVALID_CONTACT", field: parsed.field };
+      }
+      await db.update(userTable).set(parsed.value).where(eq(userTable.id, user.id));
+      return { ...parsed.value, profileComplete: true };
+    },
+    {
+      auth: true,
+      body: t.Object({
+        companyName: t.String({ maxLength: 400 }),
+        phone: t.String({ maxLength: 60 }),
+        whatsapp: t.String({ maxLength: 60 }),
+      }),
+    },
   )
   // § Fase 109, architecture-user-tambahan.md § Fase B2 — gerbang "Pilih
   // Data Usaha" (`/pilih-usaha`). GANTIKAN `GET /me/data-usaha/default`

@@ -24,9 +24,9 @@ export function buttonVariants(variant: ButtonVariant = "default", classNameOrSi
     // `architecture-component-ui-primitives.md`). Warna TETAP lewat
     // token `primary-*`/`destructive`/`muted`/`border` yang sudah
     // di-reskin biru di `globals.css` — TIDAK perlu ganti di sini.
-    "inline-flex items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50",
-    size === "default" && "px-3.5 py-2",
-    size === "sm" && "h-8 px-2.5 text-xs",
+    "inline-flex items-center justify-center rounded-xl text-sm font-medium transition-all duration-150 disabled:pointer-events-none disabled:opacity-50 compact:rounded-md compact:text-[13px]",
+    size === "default" && "px-3.5 py-2 compact:px-3 compact:py-1.5",
+    size === "sm" && "h-8 px-2.5 text-xs compact:h-7 compact:text-xs",
     size === "icon" && "h-8 w-8 p-0",
     variant === "default" &&
       "bg-primary-600 text-white shadow-sm hover:bg-primary-700 hover:shadow-[var(--shadow-card)] active:bg-primary-800",

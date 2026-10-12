@@ -37,6 +37,10 @@ describe("notificationLink", () => {
     expect(notificationLink("subscription_changed_by_admin", "app")).toBe("/subscribe");
   });
 
+  test("Fase 189B: akses User Tambahan diubah admin → /team (Kelola Tim)", () => {
+    expect(notificationLink("seat_access_changed_by_admin", "app")).toBe("/team");
+  });
+
   test("tipe tidak dikenal di surface app → /", () => {
     expect(notificationLink("some_unknown_type", "app")).toBe("/");
   });

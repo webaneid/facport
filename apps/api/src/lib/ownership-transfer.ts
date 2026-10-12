@@ -1,3 +1,4 @@
+import { revokeGrantsIfNewOwnerCommercial } from "./internal-grants";
 import { randomBytes, createHash } from "node:crypto";
 import { and, eq, gt, ilike } from "drizzle-orm";
 import { db } from "./db";
@@ -74,6 +75,8 @@ export async function linkGoogleSignupToPendingTransfer(userId: string, email: s
 export async function executeOwnershipTransfer(transferId: string, dataUsahaId: string, toUserId: string): Promise<void> {
   await db.transaction(async (tx) => {
     await tx.update(dataUsaha).set({ userId: toUserId, accurateConnectionId: null, updatedAt: new Date() }).where(eq(dataUsaha.id, dataUsahaId));
+    // § Fase 191 (audit High) — hibah akses internal tidak boleh diwarisi pemilik baru yang KOMERSIL
+    await revokeGrantsIfNewOwnerCommercial(tx, { dataUsahaId, newOwnerId: toUserId, actorId: toUserId });
     await tx
       .update(ownershipTransfers)
       .set({ status: "accepted", acceptedAt: new Date(), acceptedBy: toUserId, updatedAt: new Date() })

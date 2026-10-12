@@ -45,16 +45,29 @@ export async function linkGoogleSignupToPendingInvite(userId: string, email: str
       ),
     );
   for (const seat of pending) {
+    // § Fase 189B (audit, Medium) — bersyarat: slot yang DICABUT/dipindahkan di antara pembacaan dan penulisan tidak boleh dihidupkan lagi.
     await db
       .update(memberSeats)
       .set({ memberUserId: userId, status: "active", acceptedAt: new Date(), updatedAt: new Date() })
-      .where(eq(memberSeats.id, seat.id));
+      .where(and(eq(memberSeats.id, seat.id), eq(memberSeats.status, "invited")));
   }
 }
 
-// § Dipakai `POST /me/team/:seatId/revoke` — cabut SEMUA sesi aktif
-// member yang di-revoke (dia harus benar2 langsung ke-logout, bukan
-// tetap bisa akses sampai token/cookie kadaluarsa sendiri).
+// § Menautkan penerima undangan ke slot — dipakai `routes/invites.route.ts` (akun baru & akun existing). BERSYARAT (audit 189B, Medium): hanya bila slot MASIH
+// `invited` dengan hash token yang sama dengan yang divalidasi pemanggil. `revokeSeat` mengunci baris (FOR UPDATE), tetapi penerima undangan membaca dulu lalu menulis
+// belakangan; tanpa syarat ini slot yang baru dicabut/dipindahkan bisa hidup lagi untuk orang yang sudah dicabut. Mengembalikan false bila tidak ada baris yang berubah.
+export async function linkSeatToMember(seatId: string, memberUserId: string, expectedTokenHash: string): Promise<boolean> {
+  const updated = await db
+    .update(memberSeats)
+    .set({ memberUserId, status: "active", acceptedAt: new Date(), inviteTokenHash: null, inviteTokenExpiresAt: null, updatedAt: new Date() })
+    .where(and(eq(memberSeats.id, seatId), eq(memberSeats.status, "invited"), eq(memberSeats.inviteTokenHash, expectedTokenHash)))
+    .returning({ id: memberSeats.id });
+  return updated.length > 0;
+}
+
+// § Dipakai `POST /me/team/:seatId/revoke` dan aksi admin — hapus SEMUA sesi (baris DB) member yang dicabut. Catatan: Better Auth memakai cookie cache 5 menit
+// (`lib/auth.ts`), jadi sesinya bisa tampak valid sampai 5 menit; AKSES ke Data Usaha tetap terputus seketika karena dicek ke tabel seat per request
+// (`lib/seat-access.ts`).
 export async function revokeAllSessions(userId: string): Promise<void> {
   await db.delete(sessionTable).where(eq(sessionTable.userId, userId));
 }

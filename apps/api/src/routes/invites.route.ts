@@ -4,7 +4,7 @@ import { db } from "../lib/db";
 import { safeSignUpEmail } from "../lib/auth-errors";
 import { memberSeats, dataUsaha, user as userTable } from "../db/schema";
 import { assignCustomerRole } from "../lib/assign-customer-role";
-import { hashInviteToken } from "../lib/member-seats";
+import { hashInviteToken, linkSeatToMember } from "../lib/member-seats";
 import { permissionPlugin } from "../lib/permission";
 
 // § Fase 110, architecture-user-tambahan.md — endpoint PUBLIK (tanpa auth,
@@ -76,7 +76,11 @@ export const invitesRoute = new Elysia()
       // TIDAK perlu verifikasi email tambahan.
       await db.update(userTable).set({ emailVerified: true }).where(eq(userTable.id, userId));
       await assignCustomerRole(userId);
-      await linkSeatToMember(seat.id, userId);
+      // § Fase 189B — bersyarat: bila slot dicabut/dipindahkan di sela pembacaan token dan penulisan, undangan ini tidak berlaku lagi (akun yang baru dibuat tetap ada).
+      if (!(await linkSeatToMember(seat.id, userId, seat.inviteTokenHash!))) {
+        set.status = 404;
+        return { code: "INVITE_NOT_FOUND_OR_EXPIRED" };
+      }
 
       return { ok: true };
     },
@@ -103,7 +107,10 @@ export const invitesRoute = new Elysia()
         return { code: "EMAIL_MISMATCH" };
       }
 
-      await linkSeatToMember(seat.id, user.id);
+      if (!(await linkSeatToMember(seat.id, user.id, seat.inviteTokenHash!))) {
+        set.status = 404;
+        return { code: "INVITE_NOT_FOUND_OR_EXPIRED" };
+      }
       return { ok: true };
     },
     { auth: true, params: t.Object({ token: t.String({ minLength: 1 }) }) },
@@ -117,18 +124,4 @@ async function findValidInviteByToken(token: string) {
     .from(memberSeats)
     .where(and(eq(memberSeats.inviteTokenHash, tokenHash), eq(memberSeats.status, "invited"), gt(memberSeats.inviteTokenExpiresAt, now)));
   return seat ?? null;
-}
-
-async function linkSeatToMember(seatId: string, memberUserId: string) {
-  await db
-    .update(memberSeats)
-    .set({
-      memberUserId,
-      status: "active",
-      acceptedAt: new Date(),
-      inviteTokenHash: null,
-      inviteTokenExpiresAt: null,
-      updatedAt: new Date(),
-    })
-    .where(eq(memberSeats.id, seatId));
 }

@@ -20,6 +20,7 @@ const ADMIN_PERMISSION_KEYS = [
   "notifications.broadcast", // § Fase 45 — buat pengumuman/broadcast ke customer
   "customer_care.manage", // § Fase 46 — kelola profil CS, jam kerja, analitik
   "promos.manage", // § Fase 116 — kelola banner promo di /pilih-usaha
+  "insights.view", // § Fase 189C, ADR-0044 — halaman/API Insight pelanggan (kontak, langganan, retensi, riwayat koneksi); admin DAN staff (otomatis lewat pola EXCLUDE). Di production masuk lewat migrasi 0051.
 ];
 
 // § Fase 29, ADR-0027 — role "staff" (label UI "Admin", beda dari

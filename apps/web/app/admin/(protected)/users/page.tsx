@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Building2, CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft } from "lucide-react";
+import { Building2, CreditCard, Pencil, UserX, UserCheck, Eye, ArrowRightLeft, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -22,6 +22,14 @@ import { TruncateText } from "@/components/ui/truncate-text";
 import { StatusBadge } from "@/lib/status-badges";
 import { formatDate, currencyFormatter } from "@/lib/utils";
 import { api } from "@/lib/api-client";
+import { displayPhone, waLink } from "@/lib/phone";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { usePermissions } from "@/lib/use-permissions";
+import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
+import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { BulkStatusDialog } from "@/components/admin/bulk-status-dialog";
+import { BulkEraseDialog } from "@/components/admin/bulk-erase-dialog";
+import type { EraseKind } from "@/lib/role-actions";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { timezoneAbbreviation } from "@/lib/timezone";
 import { type SubscriptionInterval } from "@/lib/subscription-period";
@@ -29,7 +37,6 @@ import { buildPickerRows, summarizeSelection, type ActiveSubscriptionInfo } from
 import { DateTimeField } from "@/components/ui/date-time-field";
 import { PaymentModeField, type PaymentMode } from "@/components/subscription/payment-mode-field";
 import { RenewalIntervalField, type RenewalChoice } from "@/components/subscription/renewal-interval-field";
-import { usePermissions } from "@/lib/use-permissions";
 import { SubscriptionPicker } from "@/components/subscription/subscription-picker";
 
 const PAGE_SIZE = 20;
@@ -42,6 +49,13 @@ type UserRow = {
   emailVerified: boolean;
   disabled: boolean;
   createdAt: string;
+  companyName: string | null;
+  phone: string | null;
+  whatsapp: string | null;
+  // § Fase 189G, ADR-0044 — status internal EFEKTIF (flag ATAU role admin/staf) + alasannya.
+  isInternal: boolean;
+  internalFlag: boolean;
+  internalReason: InternalReason;
   roles: string[];
   activeSubscriptions: ActiveSubscription[];
 };
@@ -283,7 +297,7 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
     setOpen(true);
     setSelectedKeys(new Set());
     setPeriod("monthly");
-    setPayment("paid_invoice");
+    setPayment(user.isInternal ? "free" : "paid_invoice"); // § Fase 189G — akun internal tidak ditagih: hanya mode "Gratis"
     setRenewal("none");
     setSelectedDataUsahaId("");
     setManualEnd(false);
@@ -340,7 +354,9 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                     ? "Ada fitur yang masih punya invoice belum selesai — batalkan invoice lamanya dulu (halaman Invoice), lalu coba lagi."
                     : code === "FORBIDDEN_INVOICE"
                       ? "Kamu tidak punya izin membuat invoice."
-                      : "Gagal assign paket — coba lagi.",
+                      : code === "INTERNAL_ACCOUNT_NO_BILLING"
+                        ? "Akun ini internal: tidak bisa dibuatkan invoice. Berikan akses lewat mode Gratis."
+                        : "Gagal assign paket — coba lagi.",
       );
       return;
     }
@@ -545,7 +561,16 @@ function ManageSubscriptionDialog({ user, onAssigned }: { user: UserRow; onAssig
                 startsAt={payment === "invoice" ? "on-approval" : "exact"}
               />
             )}
-            <PaymentModeField value={payment} onChange={setPayment} allowed={canSendInvoice ? ["paid_invoice", "invoice", "free"] : ["paid_invoice", "free"]} />
+            <PaymentModeField
+              value={payment}
+              onChange={setPayment}
+              allowed={user.isInternal ? ["free"] : canSendInvoice ? ["paid_invoice", "invoice", "free"] : ["paid_invoice", "free"]}
+            />
+            {user.isInternal && (
+              <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                Akun ini internal: tidak ditagih dan tidak ada invoice. Akses diberikan lewat mode Gratis saja.
+              </p>
+            )}
             {summary.count > 0 && <RenewalIntervalField value={renewal} onChange={setRenewal} />}
             {payment === "free" && (
               <div className="flex flex-col gap-2">
@@ -686,9 +711,16 @@ export default function AdminUsersPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(0);
   const [search, setSearch] = useState("");
+  // § Fase 189G, ADR-0044 — filter tipe akun (komersil/internal) + pilihan baris untuk aksi massal (hanya Super Admin / `users.manage`).
+  const [typeFilter, setTypeFilter] = useState<"all" | "commercial" | "internal">("all");
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDialog, setBulkDialog] = useState<{ open: boolean; isInternal: boolean }>({ open: false, isInternal: true });
+  const [statusDialog, setStatusDialog] = useState<{ open: boolean; disabled: boolean }>({ open: false, disabled: true }); // § Fase 189H
+  const [eraseDialog, setEraseDialog] = useState<{ open: boolean; kind: EraseKind }>({ open: false, kind: "anonymize" }); // § Fase 189H
+  const canManage = usePermissions().includes("users.manage"); // sama ekspor dengan <Can> (tahan terhadap mock.module bocor lintas file tes)
 
   async function load() {
-    const res = await api.admin.users.get({ query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: search || undefined } });
+    const res = await api.admin.users.get({ query: { limit: PAGE_SIZE, offset: page * PAGE_SIZE, search: search || undefined, type: typeFilter === "all" ? undefined : typeFilter } });
     if (res.data) {
       const data = res.data as unknown as { users: UserRow[]; total: number };
       setUsers(data.users);
@@ -721,7 +753,7 @@ export default function AdminUsersPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch ulang saat page/search berubah, pola standar
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, search]);
+  }, [page, search, typeFilter]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
@@ -734,26 +766,72 @@ export default function AdminUsersPage() {
   // Tidak dibungkus `useMemo` — lihat catatan sama di admin/orders/page.tsx.
   // § ADR-0034 (2026-09-17) — width eksplisit tiap kolom, Nama/Email
   // dibungkus `TruncateText` (nama/email bebas panjang).
+  const pageIds = (users ?? []).map((u) => u.id);
+  const selectedOnPage = pageIds.filter((id) => selected.has(id)).length;
+  function toggleAllOnPage(checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of pageIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  }
+  function toggleOne(id: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+  // lebar kolom: dengan kolom pilihan (5%) kolom lain sedikit dirampingkan agar total tetap 100% (tabel tidak melebar ke samping)
+  const w = canManage ? { name: "20%", email: "26%", sub: "29%", actions: "20%" } : { name: "22%", email: "28%", sub: "30%", actions: "20%" };
+
   const columns = [
+    ...(canManage
+      ? [
+          columnHelper.display({
+            id: "select",
+            meta: { width: "5%" },
+            header: () => (
+              <Checkbox
+                checked={pageIds.length > 0 && selectedOnPage === pageIds.length ? true : selectedOnPage > 0 ? "indeterminate" : false}
+                onCheckedChange={(c) => toggleAllOnPage(c === true)}
+                aria-label="Pilih semua pengguna di halaman ini"
+              />
+            ),
+            cell: ({ row }) => (
+              <Checkbox checked={selected.has(row.original.id)} onCheckedChange={(c) => toggleOne(row.original.id, c === true)} aria-label={`Pilih ${row.original.name || row.original.email}`} />
+            ),
+          }),
+        ]
+      : []),
     columnHelper.accessor("name", {
       header: "Nama",
-      meta: { width: "22%" },
+      meta: { width: w.name },
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
           <TruncateText className="font-medium text-foreground">{row.original.name || "-"}</TruncateText>
-          {row.original.disabled ? (
-            <Badge variant="destructive" className="w-fit">
-              Nonaktif
-            </Badge>
-          ) : (
-            <span className="text-xs text-muted-foreground">Aktif</span>
-          )}
+          {/* § Fase 189A, ADR-0044 — Nama Perusahaan milik AKUN, satu baris kecil di sel Nama (tanpa kolom baru → tabel tidak melebar). */}
+          {row.original.companyName && <TruncateText className="text-xs text-muted-foreground">{row.original.companyName}</TruncateText>}
+          <div className="flex flex-wrap items-center gap-1.5">
+            {row.original.disabled ? (
+              <Badge variant="destructive" className="w-fit">
+                Nonaktif
+              </Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground">Aktif</span>
+            )}
+            <InternalBadge reason={row.original.internalReason} />
+          </div>
         </div>
       ),
     }),
     columnHelper.accessor("email", {
       header: "Email",
-      meta: { width: "28%" },
+      meta: { width: w.email },
       cell: ({ row }) => (
         <div className="flex flex-col gap-0.5">
           <TruncateText className="text-muted-foreground">{row.original.email}</TruncateText>
@@ -764,7 +842,7 @@ export default function AdminUsersPage() {
     columnHelper.display({
       id: "activeSubscription",
       header: "Langganan Aktif",
-      meta: { width: "30%" },
+      meta: { width: w.sub },
       cell: ({ row }) =>
         row.original.activeSubscriptions.length > 0 ? (
           <div className="flex max-w-56 flex-wrap gap-1">
@@ -781,9 +859,22 @@ export default function AdminUsersPage() {
     columnHelper.display({
       id: "actions",
       header: "Aksi",
-      meta: { width: "20%" },
+      meta: { width: w.actions },
       cell: ({ row }) => (
         <div className="flex items-center justify-end gap-1">
+          {/* § Fase 189A, ADR-0044 — chat WhatsApp akun ini (wa.me dari E.164 ASLI, tab baru); tanpa nomor sah → tombol tidak muncul. */}
+          {waLink(row.original.whatsapp) && (
+            <a
+              href={waLink(row.original.whatsapp)!}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={`WhatsApp ${displayPhone(row.original.whatsapp)}`}
+              aria-label={`Chat WhatsApp ${row.original.name}`}
+              className={buttonVariants("ghost", "h-8 w-8 p-0 text-green-700")}
+            >
+              <MessageCircle className="h-4 w-4" />
+            </a>
+          )}
           {/* § diminta user 2026-09-05 — lihat detail user (profil +
               riwayat/log import) buat bantu diagnosa saat user telepon
               support. `users.view` cukup (read-only, sama dgn izin
@@ -854,15 +945,63 @@ export default function AdminUsersPage() {
             onSearch={(q) => {
               setSearch(q);
               setPage(0);
+              setSelected(new Set());
             }}
             className="mt-2 w-full"
           />
+          <Tabs
+            value={typeFilter}
+            onValueChange={(v) => {
+              setTypeFilter(v as "all" | "commercial" | "internal");
+              setPage(0);
+              setSelected(new Set());
+            }}
+            className="mt-2"
+          >
+            <TabsList>
+              <TabsTrigger value="all">Semua</TabsTrigger>
+              <TabsTrigger value="commercial">Komersil</TabsTrigger>
+              <TabsTrigger value="internal">Internal</TabsTrigger>
+            </TabsList>
+          </Tabs>
         </CardHeader>
         <CardContent>
           {!users ? (
             <Skeleton className="h-40 w-full" />
           ) : (
             <div className="flex flex-col gap-4">
+              {/* § Fase 189G — bilah aksi massal: muncul saat ada akun terpilih; hanya Super Admin (`canManage`). Pilihan = baris yang dicentang (lintas halaman
+                  dibersihkan saat pindah halaman/cari/ganti filter, supaya aksi selalu sesuai yang terlihat). Aksi dikonfirmasi di dialog dampak. */}
+              {canManage && selected.size > 0 && (
+                <div role="region" aria-label="Aksi massal" className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-primary-200 bg-primary-50 px-3 py-2 text-sm">
+                  <span className="text-foreground">
+                    <strong>{selected.size}</strong> akun dipilih
+                  </span>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" type="button" onClick={() => setBulkDialog({ open: true, isInternal: true })}>
+                      Tandai internal
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setBulkDialog({ open: true, isInternal: false })}>
+                      Cabut tanda internal
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setStatusDialog({ open: true, disabled: true })}>
+                      Nonaktifkan
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setStatusDialog({ open: true, disabled: false })}>
+                      Aktifkan
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setEraseDialog({ open: true, kind: "anonymize" })}>
+                      Anonimkan
+                    </Button>
+                    <Button size="sm" variant="destructive" type="button" onClick={() => setEraseDialog({ open: true, kind: "delete" })}>
+                      Hapus permanen
+                    </Button>
+                    <Button size="sm" variant="ghost" type="button" onClick={() => setSelected(new Set())}>
+                      Batal pilih
+                    </Button>
+                  </div>
+                </div>
+              )}
               <DataTable columns={columns} data={users} pageSize={PAGE_SIZE} emptyIcon={CreditCard} emptyTitle="Tidak ada pengguna ditemukan" />
               {/* § Fase 21 — `DataTable` cuma paginasi CLIENT-SIDE (§
                   komentar `data-table.tsx`), sedangkan daftar ini
@@ -871,11 +1010,48 @@ export default function AdminUsersPage() {
                   1 "halaman" client (Pagination bawaan DataTable jadi
                   no-op), navigasi sungguhan pakai `Pagination` yang SAMA
                   komponennya, di-wire ke state server di sini. */}
-              <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+              <Pagination
+                page={page}
+                totalPages={totalPages}
+                onPageChange={(p) => {
+                  setPage(p);
+                  setSelected(new Set());
+                }}
+              />
             </div>
           )}
         </CardContent>
       </Card>
+      <BulkEraseDialog
+        open={eraseDialog.open}
+        onOpenChange={(open) => setEraseDialog((d) => ({ ...d, open }))}
+        userIds={[...selected]}
+        kind={eraseDialog.kind}
+        onDone={() => {
+          setSelected(new Set());
+          load();
+        }}
+      />
+      <BulkStatusDialog
+        open={statusDialog.open}
+        onOpenChange={(open) => setStatusDialog((d) => ({ ...d, open }))}
+        userIds={[...selected]}
+        disabled={statusDialog.disabled}
+        onDone={() => {
+          setSelected(new Set());
+          load();
+        }}
+      />
+      <InternalAccountsDialog
+        open={bulkDialog.open}
+        onOpenChange={(open) => setBulkDialog((d) => ({ ...d, open }))}
+        userIds={[...selected]}
+        isInternal={bulkDialog.isInternal}
+        onDone={() => {
+          setSelected(new Set());
+          load();
+        }}
+      />
     </div>
   );
 }

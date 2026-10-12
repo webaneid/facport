@@ -6,7 +6,10 @@ import { toast } from "sonner";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { api } from "@/lib/api-client";
+import { ReasonQuickPicks } from "@/components/admin/reason-quick-picks";
+import { DISCONNECT_REASON_LABELS } from "@/lib/data-usaha-history";
 
 // § Fase 92 (2026-09-10) — konfirmasi SEDERHANA (BUKAN pola "ketik ulang
 // nama" seperti `cancel-import-dialog.tsx`) — disengaja: risikonya lebih
@@ -29,11 +32,16 @@ export function DisconnectAccurateDialog({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [removeAccount, setRemoveAccount] = useState(false);
+  // § Fase 189B, D10 — alasan OPSIONAL: saran cepat + catatan bebas (internal, tidak dikirim ke pelanggan). Dasar statistik "berapa pelanggan salah database/akun".
+  const [reasonCode, setReasonCode] = useState<"salah_database" | "salah_akun" | "lainnya" | null>(null);
+  const [note, setNote] = useState("");
   const sharedCount = dataUsaha.accountDataUsahaCount ?? 1;
 
   async function handleConfirm() {
     setSubmitting(true);
-    const res = await api.admin["data-usaha"]({ id: dataUsaha.id })["disconnect-accurate"].post({ removeAccount });
+    const trimmedNote = note.trim();
+    const reason = reasonCode || trimmedNote ? { ...(reasonCode ? { code: reasonCode } : {}), ...(trimmedNote ? { note: trimmedNote } : {}) } : undefined;
+    const res = await api.admin["data-usaha"]({ id: dataUsaha.id })["disconnect-accurate"].post({ removeAccount, ...(reason ? { reason } : {}) });
     setSubmitting(false);
     if (res.error) {
       const code = (res.error.value as { code?: string } | undefined)?.code;
@@ -47,6 +55,8 @@ export function DisconnectAccurateDialog({
     );
     setOpen(false);
     setRemoveAccount(false);
+    setReasonCode(null);
+    setNote("");
     onDisconnected();
   }
 
@@ -96,6 +106,27 @@ export function DisconnectAccurateDialog({
               </span>
             </span>
           </label>
+          <div className="flex flex-col gap-2">
+            <span className="font-medium text-foreground">
+              Alasan <span className="font-normal text-muted-foreground">(opsional, catatan internal)</span>
+            </span>
+            <ReasonQuickPicks
+              label="Saran alasan"
+              options={(["salah_database", "salah_akun", "lainnya"] as const).map((c) => ({ value: c, label: DISCONNECT_REASON_LABELS[c]! }))}
+              value={reasonCode}
+              onChange={setReasonCode}
+              disabled={submitting}
+            />
+            <Textarea
+              aria-label="Catatan alasan"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              maxLength={500}
+              placeholder="Mis. pelanggan memilih PT yang salah, dikonfirmasi via WhatsApp"
+              disabled={submitting}
+              className="min-h-16"
+            />
+          </div>
           <p className="text-xs text-muted-foreground">
             User diberi notifikasi otomatis. Catatan: kalau browser user masih login ke akun Accurate yang salah, minta logout dari Accurate dulu
             (atau pakai jendela incognito) sebelum menghubungkan ulang.

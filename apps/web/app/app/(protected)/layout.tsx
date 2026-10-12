@@ -6,6 +6,7 @@ import { CustomerCareWidget } from "@/components/customer-care/customer-care-wid
 import { getActiveDataUsahaIdCookie } from "@/lib/active-data-usaha";
 import { AccurateGateProvider } from "@/components/accurate/accurate-gate-provider";
 import type { AccurateGate } from "@/lib/accurate-gate-copy";
+import { ProfileCompletionGate } from "@/components/profile/profile-completion-gate";
 
 // § Medium finding security review Fase 01 (pola sama dengan
 // app/admin/(protected)/layout.tsx) — proxy.ts cuma cek keberadaan session
@@ -19,7 +20,16 @@ export default async function AppProtectedLayout({ children }: { children: React
   const res = await fetch(`${apiUrl}/me`, { headers: { cookie }, cache: "no-store" });
   if (!res.ok) redirect("/login");
 
-  const me = (await res.json()) as { id: string; email: string; name: string; roles: string[] };
+  const me = (await res.json()) as {
+    id: string;
+    email: string;
+    name: string;
+    roles: string[];
+    companyName: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+    profileComplete: boolean;
+  };
   if (!me.roles.includes("customer")) redirect("/login");
 
   const settings = await getPublicSettings();
@@ -94,7 +104,17 @@ export default async function AppProtectedLayout({ children }: { children: React
       isDataUsahaOwner={activeDataUsaha.isOwner}
       user={{ name: me.name, email: me.email }}
     >
-      <AccurateGateProvider gate={accurateGate} dataUsahaId={activeDataUsaha.id} dataUsahaName={activeDataUsaha.name}>
+      {/* § Fase 189A, ADR-0044 — modal Lengkapi Profil (tak bisa ditutup) bila kontak AKUN belum lengkap. Didahulukan dari popup gerbang Accurate: selama
+          profil belum lengkap gerbang Accurate tidak dirender (dua modal sekaligus berebut fokus); setelah tersimpan, layout dirender ulang dan gerbang muncul.
+          `=== false` (bukan `!`): API lama (jeda deploy, field belum ada → undefined) TIDAK boleh memunculkan modal untuk semua pelanggan. */}
+      {me.profileComplete === false && (
+        <ProfileCompletionGate initial={{ companyName: me.companyName ?? "", phone: me.phone ?? "", whatsapp: me.whatsapp ?? "" }} />
+      )}
+      <AccurateGateProvider
+        gate={me.profileComplete === false ? null : accurateGate}
+        dataUsahaId={activeDataUsaha.id}
+        dataUsahaName={activeDataUsaha.name}
+      >
         {children}
       </AccurateGateProvider>
       <CustomerCareWidget />

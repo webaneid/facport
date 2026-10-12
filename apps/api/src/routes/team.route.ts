@@ -5,18 +5,9 @@ import { memberSeats, dataUsaha, subscriptions, plans, user as userTable } from 
 import { createInvoiceAndOrder, inFlightSeatRenewalIds } from "../lib/invoice-order";
 import { createNotification, NOTIFICATION_TYPES } from "../lib/notifications";
 import { ownsDataUsaha } from "../lib/data-usaha";
-import { generateInviteToken, revokeAllSessions } from "../lib/member-seats";
-import { boss, JOBS, startQueue } from "../lib/queue";
-import { escapeHtml } from "../lib/email";
-import { env } from "../lib/env";
+import { generateInviteToken } from "../lib/member-seats";
+import { SEAT_ERROR_STATUS, SeatActionError, inviteSeat, revokeSeat, sendSeatInviteEmail } from "../lib/seat-actions";
 import { permissionPlugin } from "../lib/permission";
-
-// § pola sama `admin/users.route.ts` `getAppOrigin()` — duplikasi
-// sengaja (konvensi project ini, `||` bukan `??` karena `.env` sering
-// set string kosong bukan unset).
-function getAppOrigin(): string {
-  return env.APP_ORIGIN_PROD || "http://app.localhost:6209";
-}
 
 // § Fase 110, architecture-user-tambahan.md — customer-facing "Kelola
 // Tim": list/invite/resend/revoke seat User Tambahan. SEMUA endpoint
@@ -159,29 +150,20 @@ export const teamRoute = new Elysia()
         set.status = 404;
         return { code: "SEAT_NOT_FOUND" };
       }
-      if (seat.status !== "available") {
-        set.status = 400;
-        return { code: "SEAT_NOT_AVAILABLE" };
+
+      // § Fase 189B — logika bersama di `lib/seat-actions.ts` (kunci baris, ubah, tulis riwayat Data Usaha dalam satu transaksi).
+      try {
+        const invite = await inviteSeat({ seatId: seat.id, dataUsahaId: seat.dataUsahaId, actor: { id: user.id, role: "owner" }, email: body.email });
+        const [du] = await db.select({ name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.id, seat.dataUsahaId));
+        const [primary] = await db.select({ name: userTable.name }).from(userTable).where(eq(userTable.id, user.id));
+        await sendSeatInviteEmail({ to: body.email, inviterName: primary?.name ?? "", dataUsahaName: du?.name ?? "", token: invite.token });
+      } catch (err) {
+        if (err instanceof SeatActionError) {
+          set.status = SEAT_ERROR_STATUS[err.code];
+          return { code: err.code };
+        }
+        throw err;
       }
-
-      const { token, tokenHash, expiresAt } = generateInviteToken();
-      const now = new Date();
-      await db
-        .update(memberSeats)
-        .set({
-          invitedEmail: body.email,
-          inviteTokenHash: tokenHash,
-          inviteTokenExpiresAt: expiresAt,
-          status: "invited",
-          invitedAt: now,
-          updatedAt: now,
-        })
-        .where(eq(memberSeats.id, seat.id));
-
-      const [du] = await db.select({ name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.id, seat.dataUsahaId));
-      const [primary] = await db.select({ name: userTable.name }).from(userTable).where(eq(userTable.id, user.id));
-      await sendInviteEmail({ to: body.email, inviterName: primary?.name ?? "", dataUsahaName: du?.name ?? "", token });
-
       return { ok: true };
     },
     { auth: true, params: t.Object({ seatId: t.String({ format: "uuid" }) }), body: t.Object({ email: t.String({ format: "email" }) }) },
@@ -207,7 +189,7 @@ export const teamRoute = new Elysia()
 
       const [du] = await db.select({ name: dataUsaha.name }).from(dataUsaha).where(eq(dataUsaha.id, seat.dataUsahaId));
       const [primary] = await db.select({ name: userTable.name }).from(userTable).where(eq(userTable.id, user.id));
-      await sendInviteEmail({ to: seat.invitedEmail, inviterName: primary?.name ?? "", dataUsahaName: du?.name ?? "", token });
+      await sendSeatInviteEmail({ to: seat.invitedEmail, inviterName: primary?.name ?? "", dataUsahaName: du?.name ?? "", token });
 
       return { ok: true };
     },
@@ -221,47 +203,17 @@ export const teamRoute = new Elysia()
         set.status = 404;
         return { code: "SEAT_NOT_FOUND" };
       }
-      if (seat.status === "available") {
-        set.status = 400;
-        return { code: "SEAT_ALREADY_AVAILABLE" };
+      // § Fase 189B — logika bersama di `lib/seat-actions.ts`: kunci baris + ubah + riwayat Data Usaha dalam satu transaksi, lalu sesi member dicabut.
+      try {
+        await revokeSeat({ seatId: seat.id, dataUsahaId: seat.dataUsahaId, actor: { id: user.id, role: "owner" } });
+      } catch (err) {
+        if (err instanceof SeatActionError) {
+          set.status = SEAT_ERROR_STATUS[err.code];
+          return { code: err.code };
+        }
+        throw err;
       }
-
-      const previousMemberUserId = seat.memberUserId;
-      await db
-        .update(memberSeats)
-        .set({
-          memberUserId: null,
-          invitedEmail: null,
-          inviteTokenHash: null,
-          inviteTokenExpiresAt: null,
-          status: "available",
-          revokedAt: new Date(),
-          revokedBy: user.id,
-          updatedAt: new Date(),
-        })
-        .where(eq(memberSeats.id, seat.id));
-
-      // § WAJIB cabut sesi aktif member yang di-revoke — dia harus
-      // langsung ke-logout, bukan tetap bisa akses sampai sesi
-      // kadaluarsa sendiri.
-      if (previousMemberUserId) {
-        await revokeAllSessions(previousMemberUserId);
-      }
-
       return { ok: true };
     },
     { auth: true, params: t.Object({ seatId: t.String({ format: "uuid" }) }) },
   );
-
-async function sendInviteEmail(params: { to: string; inviterName: string; dataUsahaName: string; token: string }) {
-  const appOrigin = getAppOrigin();
-  const inviteUrl = `${appOrigin}/invite/${params.token}`;
-  const safeInviter = escapeHtml(params.inviterName);
-  const safeDataUsaha = escapeHtml(params.dataUsahaName);
-  await startQueue();
-  await boss.send(JOBS.SEND_EMAIL, {
-    to: params.to,
-    subject: `${params.inviterName || "Seseorang"} mengundangmu ke Facport`,
-    html: `<p>${safeInviter} mengundang kamu sebagai User Tambahan untuk Data Usaha <strong>${safeDataUsaha}</strong> di Facport.</p><p>Klik link berikut untuk menerima undangan (berlaku 7 hari): <a href="${inviteUrl}">${inviteUrl}</a></p>`,
-  });
-}

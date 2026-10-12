@@ -37,7 +37,7 @@ export function DialogContent({
           // bukan tambal 1 halaman.
           glass
             ? "glass-card fixed left-1/2 top-1/2 z-50 max-h-[90vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-3xl p-7"
-            : "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-border bg-white p-6 shadow-[0_30px_70px_rgba(16,24,40,.22)]",
+            : "fixed left-1/2 top-1/2 z-50 max-h-[85vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 overflow-y-auto rounded-2xl border border-border bg-white p-6 compact:rounded-xl compact:p-5 shadow-[0_30px_70px_rgba(16,24,40,.22)]",
           className,
         )}
         {...props}

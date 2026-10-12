@@ -6169,3 +6169,74 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Perbaikan:** `when` 0047 diset 0046 + 1 jam (lebih besar); migrasi berikutnya yang dibuat `db:generate` otomatis memakai waktu nyata — pastikan selalu > `when` 0046 (1791511450030 ≈ 2026-10-09 02:04 UTC); sebelum itu lewat, setel manual lebih besar.
 **Pelajaran:** jangan mengutak-atik `when`; kalau migrasi "sukses" tapi kolom tidak ada, bandingkan `when` entri jurnal. Verifikasi kolom setelah migrasi (sudah praktik di runbook).
 
+## 2026-10-09 — Deploy v2.33.0 me-restart worker di tengah import 6.302 baris (batch macet "Memproses")
+**Gejala (laporan client, 5 menit tak bergerak):** Import Sales Receipt 121 sukses / 5 gagal / 6.176 menunggu, status "Memproses" 2%.
+**Akar masalah:** `docker compose up -d` mengganti container `worker` saat job `import-to-accurate` aktif (dibuat/mulai 01:40:41–42 UTC, worker baru 01:41:32). Job lama mati tanpa penutupan; baris di pg-boss tertinggal `active` tanpa proses. `retryLimit: 0` (sengaja, anti kirim ganda) → tidak diulang otomatis; kedaluwarsa 2 jam pun tidak mengubah status batch. Diagnosis: jumlah baris per status dua kali berjarak 60 dtk (tidak bergerak) → `pgboss.job` `active` + log worker hanya tugas terjadwal.
+**Pemulihan:** (1) `update import_batches set status='completed_with_errors', completed_at=now() where id='…' and status='processing'` (SQL dijalankan user) supaya tombol "Coba Ulang" (hanya memproses baris pending/failed) muncul; (2) sebelum Coba Ulang, cek di Accurate apakah transaksi terakhir (baris yang sedang dikirim saat worker mati) sudah ada — baris in-flight bisa masih "pending" padahal sudah tersimpan di Accurate (risiko 1 transaksi ganda).
+**Pencegahan:** langkah 2b di STANDAR DEPLOY: cek `pgboss.job where state='active'` = 0 sebelum `up -d`. Perbaikan permanen (belum dikerjakan): worker menangani SIGTERM (`boss.stop` graceful + `stop_grace_period` compose) dan/atau pemulihan batch yatim otomatis saat worker start.
+**Pelajaran:** restart worker = membunuh job yang sedang jalan; job idempoten per-baris tidak cukup bila batch bergantung pada satu job tunggal tanpa retry.
+
+## 2026-10-12 — Pesan galat validasi Elysia memuat nilai kiriman pengguna; `.onError` mencatatnya ke log (risiko PII)
+**Gejala:** ditemukan audit keamanan Fase 189A (Low): body `PATCH /me/contact` yang melanggar skema (mis. `phone` terlalu panjang) → `logger.error({ err })` menulis `error.message` Elysia ke log.
+**Akar masalah:** terbukti lewat eksperimen kecil — `error.message` Elysia untuk `VALIDATION` berisi JSON galat yang MENYERTAKAN nilai yang dikirim. `redact` Pino hanya mencakup `authorization`/`password`/`token`. Selama body hanya berisi data non-sensitif ini tak terasa; mulai Fase 189A body memuat telepon/WhatsApp/Nama Perusahaan.
+**Perbaikan:** `app.ts` `.onError`: untuk `VALIDATION`/`PARSE` hanya `logger.warn({ code, path })` tanpa pesan/nilai; tes regresi `app.signup-contact.test.ts`.
+**Pelajaran:** setiap kali sebuah endpoint mulai menerima data pribadi, cek jalur log galat global — bukan hanya log di handler. Bila ada field sensitif baru, tambahkan juga ke daftar `redact` atau jangan log pesan galatnya.
+
+## 2026-10-12 — `db:cleanup-test-data` gagal FK 23503 (tabel AutoProduksi belum dicakup)
+**Gejala:** setelah `bun run test` penuh, skrip pembersih data uji gagal: `update or delete on table "subscriptions" violates foreign key constraint "autoproduksi_intermediary_accounts_subscription_id_subscription"`; transaksi di-rollback sehingga tidak ada yang terhapus dan DB dev menumpuk (±17.900 akun uji, ±12.000 Data Usaha).
+**Akar masalah:** `autoproduksi_intermediary_accounts` dan `autoproduksi_defaults` (Fase 159+) punya FK ke `subscriptions`/`data_usaha` tetapi tidak ditambahkan ke skrip saat tabelnya dibuat.
+**Perbaikan:** skrip menghapus kedua tabel itu (kondisi subscription/data usaha uji) sebelum `subscriptions`/`data_usaha`.
+**Pelajaran:** tabel baru yang punya FK ke `user`/`subscriptions`/`data_usaha` → tambahkan ke `cleanup-test-data.ts` DI FASE YANG SAMA (satu baris di checklist registrasi tabel); jalankan skrip ini setelah fase yang menambah tabel supaya celahnya ketahuan segera.
+
+## 2026-10-12 — Aturan lint React Compiler: dilarang setState di effect dan menulis variabel luar saat render
+**Gejala:** `bun run lint` gagal pada `PhoneInput` (`react-hooks/set-state-in-effect`) dan pada tes (`react-hooks/globals`, variabel `latest` ditulis saat render).
+**Perbaikan:** `PhoneInput` menurunkan nomor/negara dari prop `value` (hanya negara pilihan disimpan di state); tes memakai callback `onValue` di event handler.
+**Pelajaran:** komponen input terkontrol yang di-port dari project lain (Jalajogja) yang menyalin prop ke state lewat effect harus disusun ulang jadi turunan prop; lint di project ini lebih ketat daripada di sumbernya.
+
+## 2026-10-12 — Guard keuangan hanya pada PEMBUATAN invoice: invoice yang sudah terbit tetap bisa dibayar (temuan audit 189G, Medium)
+**Gejala/temuan:** `assertBillable` di `createInvoiceAndOrder` mencegah invoice/order BARU untuk akun internal, tetapi invoice/order `unpaid`/`pending`/`submitted` yang terbit sebelum akun ditandai internal tetap bisa dibayar dan dikonfirmasi admin. Uang nyata masuk dari akun yang dianggap "internal" oleh helper laporan, sehingga laporan komersil dan kas tidak cocok.
+**Pelajaran:** kontrol "tidak boleh ditagih" punya DUA titik — pembuatan dan penyelesaian (konfirmasi pembayaran). Saat merancang kontrol serupa, putuskan eksplisit apakah penyelesaian ikut dijaga atau laporan harus merinci kas per tipe akun (D21).
+
+## 2026-10-12 — `mock.module` bocor lintas file tes: halaman yang mengimpor ekspor yang tidak ada di mock tes lain gagal hanya di suite PENUH
+**Gejala:** tes halaman Pengguna lulus sendirian, tetapi di `bun test` penuh gagal: `Export named 'usePermission' not found in module lib/use-permissions.tsx` (tes lain me-mock modul itu hanya dengan `usePermissions`).
+**Perbaikan:** halaman memakai `usePermissions()` (ekspor yang juga dipakai `<Can>` dan oleh mock tes lain). **Pelajaran:** selalu jalankan SUITE PENUH sebelum menutup fase, bukan hanya berkas baru; pakai ekspor yang sudah dipakai mock lain, atau sediakan semua ekspor di mock sendiri.
+
+## 2026-10-12 — Menerima undangan tanpa syarat status bisa "menghidupkan" slot yang baru dicabut (temuan audit 189B, Medium)
+**Gejala/temuan:** `revokeSeat` mengunci baris (`FOR UPDATE`), tetapi penerimaan undangan (`linkSeatToMember`) membaca token valid lalu menulis `WHERE id = seatId` saja. Bila slot dicabut/dipindahkan di sela keduanya, penerima undangan lama bisa membuat slot `active` lagi untuk orang yang baru dicabut — riwayat hanya mencatat "revoke".
+**Perbaikan:** `linkSeatToMember` (kini di `lib/member-seats.ts`) bersyarat: `status='invited'` dan `inviteTokenHash` sama dengan yang divalidasi; mengembalikan boolean, route membalas 404 `INVITE_NOT_FOUND_OR_EXPIRED` bila false; jalur Google ikut bersyarat.
+**Pelajaran:** kunci baris di satu sisi tidak cukup bila sisi lain membaca-lalu-menulis tanpa syarat. Penulisan yang bergantung pada pembacaan sebelumnya harus MEMBAWA syarat pembacaan itu di klausa `WHERE` (compare-and-set) dan memeriksa jumlah baris yang berubah.
+
+## 2026-10-12 — Skema validasi bisa terlalu longgar sehingga cek "setelah trim" harus diulang di server
+**Gejala:** tes 189B menangkap alasan 501 karakter lolos karena batas skema sengaja diberi ruang 2× untuk spasi tepi; yang tersimpan setelah trim melebihi batas.
+**Perbaikan:** server memeriksa panjang SETELAH trim (`REASON_TOO_LONG`). **Pelajaran:** bila skema memberi kelonggaran untuk normalisasi, ulangi batas pada nilai TERNORMALISASI sebelum disimpan, dan uji tepat di perbatasan.
+
+## 2026-10-12 — Tes DB dengan data bertanggal LAMPAU menumpuk antar-run (bukan bug kode): pakai delta
+**Gejala:** tes tren (tahun 2021–2023) mengembalikan angka tepat 3× lipat setelah tiga kali jalan yang gagal, padahal kodenya benar.
+**Akar masalah:** data uji bertanggal masa lalu tidak "bergeser" seperti data bertanggal `now`; baris `@test.local` baru dibersihkan oleh `db:cleanup-test-data`, bukan otomatis. Tes dengan nilai eksak per bulan jadi bergantung pada kebersihan DB.
+**Perbaikan:** asersi memakai SELISIH sebelum/sesudah per bulan (dan keanggotaan id pelanggan uji); terbukti lulus saat dijalankan ulang tanpa pembersihan.
+**Pelajaran:** untuk laporan agregat lintas semua baris di DB dev bersama, jangan menegaskan total eksak — pakai delta atau scoping ke fixture sendiri.
+
+## 2026-10-12 — Rate limit per IP saja tidak cukup untuk data pribadi; kuota per akun dari audit
+**Temuan audit 189C (Medium):** limiter in-memory berkunci `prefix:IP` jalan sebelum autentikasi — akun admin yang dibajak bisa ganti IP, sementara pihak tak berwenang bisa mengunci IP kantor bersama.
+**Perbaikan:** kuota ekspor per `actor_id` dihitung dari `audit_logs` (insert audit sudah ada, indeks tersedia) + limiter IP dipertahankan.
+**Pelajaran:** kontrol anti-penarikan massal harus terikat ke AKTOR (akun), bukan hanya jaringan; jangan menyimpan teks pencarian pengguna mentah di audit (PII ikutan).
+
+## 2026-10-12 — `Date.UTC` memetakan tahun 0–99 ke 1900-an
+**Temuan audit 189C (Info):** `parseMonthKey("0050-01")` lolos regex dan menghasilkan bulan yang salah diam-diam. **Perbaikan:** tahun dibatasi 2000–2100. **Pelajaran:** validasi rentang tahun masuk akal pada setiap parser tanggal/bulan yang memakai `Date.UTC`.
+
+
+## 2026-10-12 — Fase 189D: halaman admin harus menggerbang izin sendiri, bukan hanya menu
+- Menu disaring `permission`, tetapi URL bisa dibuka langsung; layout admin hanya memeriksa role. Halaman yang memakai izin khusus WAJIB memeriksa `usePermissions` sendiri (API tetap sumber kebenaran, 403).
+- Paginasi: API Insight 0-based; mengirim `page+1` diam-diam melewatkan halaman pertama — sepakati basis di dokumen API dan uji parameter yang dikirim.
+- Tes yang memuat modul ber-`usePathname`/`next/navigation` bocor lintas file bila ada `mock.module` parsial di file lain; hindari mengimpor `sidebar.tsx` di tes (periksa sumbernya) dan jangan pakai `usePathname` di halaman.
+- Nama parameter query ganda di satu skema (`kind` untuk dua arti) memecah typecheck; beri nama berbeda (`accountKind`).
+
+## 2026-10-12 — Fase 189H: "fail-closed" harus mencakup cascade; scrub PII harus rekursif
+- Klasifikasi FK yang menganggap SEMUA `ON DELETE CASCADE` aman berarti tabel baru berisi catatan bisnis dengan cascade ikut terhapus diam-diam saat hapus akun. Pakai allowlist eksplisit pasangan tabel.kolom untuk cascade yang aman.
+- Penghapusan kunci PII di JSON audit harus rekursif (riwayat kontak tersimpan bersarang `contact.from/to`) dan penggantian nilai harus pada batas kata agar email/nomor orang lain yang memuat nilai itu tidak rusak.
+- Alasan bebas-teks dari admin bisa memuat PII yang baru dibuang → scrub juga sebelum disimpan.
+- Anonimisasi akun pemilik Data Usaha harus memutus token Accurate; hanya menghapus login tidak menghentikan worker me-refresh token.
+
+## 2026-10-12 — Fase 191: kontrol "hanya akun X" harus mengikuti PEMILIK SAAT INI, bukan pembuat baris
+- Hibah akses internal dibuat atas nama pemilik lama (`subscriptions.user_id`), tetapi gerbang akses menilai kepemilikan Data Usaha SAAT INI. Setelah transfer ke akun komersil, hibah ikut berlaku selamanya dan pencabutan berbasis `user_id` tidak menemukannya. Pelajaran: setiap hak yang diberi dengan syarat status akun harus (a) dicabut di SEMUA jalur perpindahan pemilik, (b) dicabut menurut pemilik saat ini, (c) dicek ulang di gerbang sebagai pertahanan berlapis.
+- `end_at NULL` sudah berarti "tanpa batas" di seluruh job; fitur "tanpa tanggal akhir" cukup memanfaatkannya, tetapi butuh penanda eksplisit (`internal_grant`) agar baris null-end lain tidak ikut tersentuh.

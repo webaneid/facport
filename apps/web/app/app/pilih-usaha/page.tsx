@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import { PilihUsahaForm } from "@/components/data-usaha/pilih-usaha-form";
 import { getPublicSettings } from "@/lib/get-public-settings";
+import { ProfileCompletionGate } from "@/components/profile/profile-completion-gate";
 
 // § Fase 109, architecture-user-tambahan.md § Fase B2 — gerbang "Pilih
 // Data Usaha", SENGAJA di LUAR grup `(protected)` (pola sama
@@ -18,14 +19,28 @@ export default async function PilihUsahaPage() {
 
   const [res, settings] = await Promise.all([fetch(`${apiUrl}/me`, { headers: { cookie }, cache: "no-store" }), getPublicSettings()]);
   if (!res.ok) redirect("/login");
-  const me = (await res.json()) as { name: string; email: string; roles: string[] };
+  const me = (await res.json()) as {
+    name: string;
+    email: string;
+    roles: string[];
+    companyName: string | null;
+    phone: string | null;
+    whatsapp: string | null;
+    profileComplete: boolean;
+  };
   if (!me.roles.includes("customer")) redirect("/login");
 
+  // § Fase 189A, ADR-0044 — halaman pertama setelah login ini juga di luar grup `(protected)`, jadi gerbang Lengkapi Profil dipasang di sini juga.
   return (
-    <PilihUsahaForm
-      user={{ name: me.name, email: me.email }}
-      logoUrl={settings["company.logo"]}
-      faviconUrl={settings["company.favicon"]?.["32"]}
-    />
+    <>
+      {me.profileComplete === false && (
+        <ProfileCompletionGate initial={{ companyName: me.companyName ?? "", phone: me.phone ?? "", whatsapp: me.whatsapp ?? "" }} />
+      )}
+      <PilihUsahaForm
+        user={{ name: me.name, email: me.email }}
+        logoUrl={settings["company.logo"]}
+        faviconUrl={settings["company.favicon"]?.["32"]}
+      />
+    </>
   );
 }

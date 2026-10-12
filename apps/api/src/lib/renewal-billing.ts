@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, ne, notInArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { subscriptions, plans, dataUsaha, user as userTable, orders, invoices, invoiceItems } from "../db/schema";
 import { createInvoiceAndOrder, inFlightModuleKeys, inFlightSeatRenewalIds } from "./invoice-order";
@@ -11,6 +11,7 @@ import { boss, JOBS, startQueue } from "./queue";
 import { escapeHtml } from "./email";
 import { env } from "./env";
 import { logger } from "./logger";
+import { InternalAccountBillingError, internalUserIdsSubquery } from "./internal-accounts";
 
 // § Fase 181, ADR-0042 — perpanjangan TERJADWAL: langganan modul (non-trial) yang ditandai `renewal_interval` ditagih OTOMATIS menjelang berakhir. Pembayaran tetap manual
 // (transfer/QRIS, diverifikasi admin) — yang otomatis hanya TERBITNYA tagihan. Setelah dibayar, aktivasi memperpanjang di tempat dari tanggal berakhir (`activateInvoiceItems`).
@@ -76,6 +77,9 @@ export async function findDueRenewalCandidates(now: Date): Promise<RenewalCandid
         gt(subscriptions.endAt, now),
         lte(subscriptions.endAt, new Date(now.getTime() + RENEWAL_INVOICE_DAYS_BEFORE * DAY_MS)),
         or(isNull(subscriptions.renewalInvoicedForEndAt), ne(subscriptions.renewalInvoicedForEndAt, subscriptions.endAt)),
+        // § Fase 189G, ADR-0044 — penerima tagihan (pemilik Data Usaha) yang akun INTERNAL (flag atau role admin/staf) tidak ditagih: kontrol keuangan Lapis 1.
+        // Langganan gratisnya tetap berjalan sampai berakhir; tidak ada invoice yang terbit.
+        notInArray(userTable.id, internalUserIdsSubquery()),
       ),
     )
     .orderBy(asc(subscriptions.endAt));
@@ -228,6 +232,11 @@ export async function issueDueRenewalInvoices(now: Date, timeZone: string): Prom
       summary.skippedInFlight += outcome.skippedInFlight.length;
       summary.missingPlan += outcome.missingPlan.length;
     } catch (err) {
+      // Balapan langka: pemilik baru saja ditandai internal antara pencarian kandidat dan penerbitan → guard menolak. Bukan kegagalan; dilewati.
+      if (err instanceof InternalAccountBillingError) {
+        logger.warn({ dataUsahaId: group[0]?.dataUsahaId }, "Tagihan perpanjangan dilewati: pemilik akun internal");
+        continue;
+      }
       summary.failedGroups += 1;
       logger.error({ err, dataUsahaId: group[0]?.dataUsahaId }, "Gagal menerbitkan tagihan perpanjangan");
     }
