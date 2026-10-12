@@ -64,4 +64,10 @@ describe("RoleActionDialog", () => {
     expect(await screen.findByText(/Tidak ada yang berubah/)).toBeTruthy();
     expect((screen.getByRole("button", { name: "Jadikan Admin" }) as HTMLButtonElement).disabled).toBe(true);
   });
+
+  test("kembali komersil: hibah akses internal yang akan dicabut ditampilkan", async () => {
+    previewPost.mockImplementationOnce(async () => ({ data: { noop: false, rolesBefore: ["customer", "staff"], rolesAfter: ["customer"], becomesInternal: false, becomesCommercial: true, user: { email: "b@test.local", name: "B" }, impact: { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0, activeInternalGrants: 3 } }, error: null }));
+    render(<RoleActionDialog open onOpenChange={() => {}} userId="u" action="revoke_staff" onDone={() => {}} />);
+    expect(await screen.findByText(/3 hibah akses internal/)).toBeTruthy();
+  });
 });

@@ -94,6 +94,9 @@ export const subscriptions = pgTable(
     // (§ architecture-subscription.md § "Trial (Batas Baris)"), BUKAN cuma
     // durasi hari — `endAt` tetap dipakai sebagai backstop kadaluarsa.
     isTrial: boolean("is_trial").notNull().default(false),
+    // § Fase 191 — hibah akses INTERNAL (tanpa tanggal akhir, tanpa order/invoice) untuk akun internal. Penanda eksplisit: hibah dikenali dari kolom ini, BUKAN dari `end_at IS NULL`.
+    // Dicabut otomatis saat akun kembali komersil. Lihat lib/internal-grants.ts.
+    internalGrant: boolean("internal_grant").notNull().default(false),
     // § Fase 45 — nilai terkecil H-berapa yang SUDAH dikirim notifikasi
     // "akan berakhir"-nya (job `NOTIFY_EXPIRING_SOON`, threshold 7/3/1 utk
     // subscription asli, 3/1 utk trial) — cegah reminder terkirim dobel

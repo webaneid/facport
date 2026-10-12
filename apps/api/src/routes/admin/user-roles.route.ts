@@ -5,6 +5,7 @@ import { roles, userRoles, auditLogs, session, user as userTable } from "../../d
 import { permissionPlugin } from "../../lib/permission";
 import { boss, JOBS, startQueue } from "../../lib/queue";
 import { escapeHtml } from "../../lib/email";
+import { revokeInternalGrants } from "../../lib/internal-grants";
 import { internalChangeImpact } from "../../lib/internal-accounts";
 import { ROLE_ACTIONS, canRemoveSuperAdmin, confirmMatches, planRoleChange } from "../../lib/role-actions";
 import { logger } from "../../lib/logger";
@@ -71,7 +72,7 @@ export const adminUserRolesRoute = new Elysia({ prefix: "/admin/users" })
         rolesAfter: plan.after,
         becomesInternal: !plan.noop && !plan.internalBefore && plan.internalAfter,
         becomesCommercial: !plan.noop && plan.internalBefore && !plan.internalAfter,
-        impact: !plan.noop && statusChanges ? await internalChangeImpact([target.id]) : { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0 },
+        impact: !plan.noop && statusChanges ? await internalChangeImpact([target.id]) : { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0, activeInternalGrants: 0 },
       };
     },
     { permission: "users.manage", params: idParams, body: t.Object({ action: actionSchema }) },
@@ -111,6 +112,7 @@ export const adminUserRolesRoute = new Elysia({ prefix: "/admin/users" })
 
         const [role] = await tx.select().from(roles).where(eq(roles.name, spec.role));
         if (!role) return { status: 400, code: "ROLE_NOT_FOUND" } as const;
+        if (plan.internalBefore && !plan.internalAfter) await revokeInternalGrants(tx, { userIds: [target.id], actorId: user.id }); // § Fase 191 — kembali komersil: hibah internal dicabut
         if (spec.mode === "grant") await tx.insert(userRoles).values({ userId: target.id, roleId: role.id }).onConflictDoNothing();
         else await tx.delete(userRoles).where(and(eq(userRoles.userId, target.id), inArray(userRoles.roleId, [role.id])));
         await tx.insert(auditLogs).values({

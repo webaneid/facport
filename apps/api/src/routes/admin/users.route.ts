@@ -14,6 +14,7 @@ import { escapeHtml } from "../../lib/email";
 import { safeSignUpEmail } from "../../lib/auth-errors";
 import { parseContact } from "../../lib/phone";
 import { deriveInternalReason, internalChangeImpact, internalUserIdsSubquery } from "../../lib/internal-accounts";
+import { revokeInternalGrants } from "../../lib/internal-grants";
 import { applyStatusChange, planStatusChange, type StatusPlan } from "../../lib/account-status";
 
 function getAppOrigin(): string {
@@ -405,6 +406,11 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
       const result = await db.transaction(async (tx) => {
         const { requested, targets } = await loadInternalTargets(body.userIds, tx, { lock: true });
         const toChange = targets.filter((x) => willChangeFlag(x, body.isInternal));
+        if (!body.isInternal) {
+          // § Fase 191 — akun yang kembali KOMERSIL kehilangan hibah akses internal (tidak boleh ada akses tanpa akhir gratis di akun komersil)
+          const becomingCommercial = toChange.filter((x) => x.reason === "flag").map((x) => x.id);
+          if (becomingCommercial.length > 0) await revokeInternalGrants(tx, { userIds: becomingCommercial, actorId: user.id });
+        }
         if (toChange.length > 0) {
           await tx.update(userTable).set({ isInternal: body.isInternal }).where(inArray(userTable.id, toChange.map((x) => x.id)));
           await tx.insert(auditLogs).values(

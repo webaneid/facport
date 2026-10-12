@@ -12,7 +12,7 @@ import { currencyFormatter } from "@/lib/utils";
 // § Fase 189G, ADR-0044 — tandai / cabut tanda INTERNAL untuk 1..100 akun. Dua langkah: pratinjau dampak (tanpa mengubah apa pun) lalu terapkan.
 // Reversibel dan tidak menghapus data: invoice lama tetap ada, hanya keluar dari / masuk kembali ke laporan uang. Bila ada uang lunas atau tagihan
 // perpanjangan terjadwal yang terdampak, Super Admin wajib mencentang persetujuan sebelum tombol terapkan aktif.
-type Impact = { paidInvoiceCount: number; paidTotal: number; unpaidInvoices: number; activePaidSubscriptions: number; scheduledRenewals: number };
+type Impact = { paidInvoiceCount: number; paidTotal: number; unpaidInvoices: number; activePaidSubscriptions: number; scheduledRenewals: number; activeInternalGrants?: number };
 type Preview = {
   requested: number;
   found: number;
@@ -124,7 +124,7 @@ export function InternalAccountsDialog({
                 )}
               </ul>
 
-              {impact && (impact.paidInvoiceCount > 0 || impact.unpaidInvoices > 0 || impact.activePaidSubscriptions > 0 || impact.scheduledRenewals > 0) && (
+              {impact && (impact.paidInvoiceCount > 0 || impact.unpaidInvoices > 0 || impact.activePaidSubscriptions > 0 || impact.scheduledRenewals > 0 || (impact.activeInternalGrants ?? 0) > 0) && (
                 <div className="flex flex-col gap-1 rounded-md border border-amber-300 bg-amber-50 p-3 text-amber-900">
                   <p className="font-medium">Dampak pada akun yang berubah status:</p>
                   <ul className="list-disc pl-5">
@@ -139,6 +139,7 @@ export function InternalAccountsDialog({
                         {impact.scheduledRenewals} langganan terjadwal perpanjangan {isInternal ? "tidak akan ditagih lagi" : "akan kembali ditagih otomatis"}.
                       </li>
                     )}
+                    {!isInternal && (impact.activeInternalGrants ?? 0) > 0 && <li>{impact.activeInternalGrants} hibah akses internal (tanpa tanggal akhir) akan DICABUT.</li>}
                     {impact.unpaidInvoices > 0 && <li>{impact.unpaidInvoices} invoice belum dibayar tetap ada (tidak dibatalkan otomatis).</li>}
                   </ul>
                 </div>

@@ -94,7 +94,7 @@ export async function assertBillable(executor: Executor, userId: string): Promis
 // Dampak perubahan status komersil↔internal pada akun `ids`: uang lunas yang akan keluar dari/masuk ke laporan, langganan berbayar aktif, tagihan perpanjangan
 // terjadwal yang akan berhenti/berlanjut (penerima tagihan = pemilik Data Usaha, ADR-0042), dan invoice belum dibayar yang tertinggal (tidak dibatalkan otomatis).
 export async function internalChangeImpact(ids: string[]) {
-  if (ids.length === 0) return { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0 };
+  if (ids.length === 0) return { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0, activeInternalGrants: 0 };
   const [inv] = await db
     .select({
       paidInvoiceCount: sql<number>`count(*) filter (where ${invoices.status} = 'paid')`,
@@ -118,5 +118,7 @@ export async function internalChangeImpact(ids: string[]) {
     unpaidInvoices: Number(inv?.unpaidInvoices ?? 0),
     activePaidSubscriptions: Number(subs?.n ?? 0),
     scheduledRenewals: Number(renewals?.n ?? 0),
+    // § Fase 191 — hibah akses internal aktif (tanpa tanggal akhir) yang akan DICABUT bila akun kembali komersil
+    activeInternalGrants: Number((await db.select({ n: count() }).from(subscriptions).where(and(inArray(subscriptions.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.internalGrant, true))))[0]?.n ?? 0),
   };
 }

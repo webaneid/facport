@@ -1,0 +1,1 @@
+ALTER TABLE "subscriptions" ADD COLUMN "internal_grant" boolean DEFAULT false NOT NULL;

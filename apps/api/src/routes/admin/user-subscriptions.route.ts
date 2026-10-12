@@ -58,6 +58,7 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           // § Fase 181, ADR-0042 — penanda perpanjangan terjadwal (+ siklus yang sudah ditagih) untuk lencana & dialog di detail user.
           renewalInterval: subscriptions.renewalInterval,
           renewalInvoicedForEndAt: subscriptions.renewalInvoicedForEndAt,
+          internalGrant: subscriptions.internalGrant,
           planKind: plans.kind,
           planName: plans.name,
           moduleKey: plans.modules,
@@ -124,6 +125,7 @@ export const adminUserSubscriptionsRoute = new Elysia({ prefix: "/admin" })
           periodMonths: r.periodMonths,
           renewalInterval: r.renewalInterval,
           renewalInvoicedForEndAt: r.renewalInvoicedForEndAt,
+          internalGrant: r.internalGrant,
           planKind: r.planKind,
           moduleKey: r.moduleKey[0] ?? null,
           planName: r.planName,

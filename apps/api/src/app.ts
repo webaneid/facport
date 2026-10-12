@@ -23,6 +23,7 @@ import { adminInsightsRoute } from "./routes/admin/insights.route";
 import { adminStaffRoute } from "./routes/admin/staff.route";
 import { adminUserRolesRoute } from "./routes/admin/user-roles.route";
 import { adminUserErasureRoute } from "./routes/admin/user-erasure.route";
+import { adminInternalGrantsRoute } from "./routes/admin/internal-grants.route";
 import { adminImportBatchesRoute } from "./routes/admin/import-batches.route";
 import { adminUserSubscriptionsRoute } from "./routes/admin/user-subscriptions.route";
 import { adminSubscriptionsRoute } from "./routes/admin/subscriptions.route";
@@ -312,6 +313,7 @@ export const app = new Elysia()
   .use(adminUsersRoute)
   .use(adminUserRolesRoute)
   .use(adminUserErasureRoute)
+  .use(adminInternalGrantsRoute)
   .use(adminSeatsRoute)
   .use(adminInsightsRoute)
   .use(adminStaffRoute)

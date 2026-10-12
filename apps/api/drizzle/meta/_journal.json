@@ -365,6 +365,13 @@
       "when": 1791750927288,
       "tag": "0051_insights_view_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1791775064770,
+      "tag": "0052_subscriptions_internal_grant",
+      "breakpoints": true
     }
   ]
 }

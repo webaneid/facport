@@ -27,6 +27,7 @@ import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dial
 import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
 import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
 import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { InternalGrantPanel } from "@/components/admin/internal-grant-panel";
 import { RoleActionDialog } from "@/components/admin/role-action-dialog";
 import { ROLE_ACTION_TEXT, availableRoleActions, type RoleAction } from "@/lib/role-actions";
 import { DataUsahaAccessPanel } from "@/components/admin/data-usaha-access-panel";
@@ -61,6 +62,7 @@ type SubscriptionRow = {
   // § Fase 181 — perpanjangan terjadwal (lencana + dialog): penanda, trial/bukan, jenis paket (seat tidak bisa ditandai).
   renewalInterval?: "monthly" | "yearly" | null;
   isTrial?: boolean;
+  internalGrant?: boolean; // § Fase 191 — hibah akses internal (tanpa tanggal akhir)
   planKind?: string;
   moduleKey: string | null;
   planName: string;
@@ -192,6 +194,12 @@ export default function AdminUserDetailPage() {
         </CardContent>
       </Card>
 
+      {user.isInternal && (
+        <Can permission="subscriptions.manage">
+          <InternalGrantPanel userId={user.id} dataUsaha={dataUsahaList.filter((d) => d.isOwner).map((d) => ({ id: d.id, name: d.name }))} subscriptions={subscriptions ?? []} onChanged={loadSubscriptions} />
+        </Can>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Langganan & Koneksi Accurate</CardTitle>
@@ -279,14 +287,15 @@ export default function AdminUserDetailPage() {
                                     )}
                                   </TableCell>
                                   <TableCell className="text-muted-foreground">
-                                    <TruncateText title={berlakuTitle || undefined}>{sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
+                                    <TruncateText title={berlakuTitle || undefined}>{sub.internalGrant ? "Tanpa batas · Hibah internal" : sub.endAt ? formatDate(sub.endAt, companyTimezone) : "-"}</TruncateText>
                                   </TableCell>
                                   <TableCell>
                                     <StatusBadge domain="subscription" status={sub.status} />
                                   </TableCell>
                                   <TableCell>
                                     <div className="flex justify-end">
-                                      <EditSubscriptionEndDialog
+                                      {/* hibah internal tidak punya tanggal akhir: dicabut lewat panel Akses Internal, bukan diedit di sini */}
+                                      {!sub.internalGrant && <EditSubscriptionEndDialog
                                         subscriptionId={sub.subscriptionId}
                                         planName={sub.planName}
                                         status={sub.status}
@@ -296,7 +305,7 @@ export default function AdminUserDetailPage() {
                                         renewalInterval={sub.renewalInterval}
                                         renewalEligible={!sub.isTrial}
                                         onSaved={loadSubscriptions}
-                                      />
+                                      />}
                                     </div>
                                   </TableCell>
                                 </TableRow>

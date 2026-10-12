@@ -12,7 +12,7 @@ import { currencyFormatter } from "@/lib/utils";
 import { ROLE_ACTION_TEXT, roleActionError, type RoleAction } from "@/lib/role-actions";
 
 // § Fase 189H, D17 — aksi peran dua arah (Super Admin). Pratinjau dampak dulu, lalu konfirmasi ketik email akun (dicek ulang di server). Kenaikan hak akses = risiko eskalasi.
-type Impact = { paidInvoiceCount: number; paidTotal: number; unpaidInvoices: number; activePaidSubscriptions: number; scheduledRenewals: number };
+type Impact = { paidInvoiceCount: number; paidTotal: number; unpaidInvoices: number; activePaidSubscriptions: number; scheduledRenewals: number; activeInternalGrants?: number };
 type Preview = { noop: boolean; rolesBefore: string[]; rolesAfter: string[]; becomesInternal: boolean; becomesCommercial: boolean; impact: Impact; user: { email: string; name: string } };
 
 export function RoleActionDialog({ open, onOpenChange, userId, action, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; userId: string; action: RoleAction; onDone: () => void }) {
@@ -40,7 +40,7 @@ export function RoleActionDialog({ open, onOpenChange, userId, action, onDone }:
   }, [open, userId, action]);
 
   const impact = preview?.impact;
-  const hasImpact = !!impact && (impact.paidInvoiceCount > 0 || impact.activePaidSubscriptions > 0 || impact.scheduledRenewals > 0 || impact.unpaidInvoices > 0);
+  const hasImpact = !!impact && (impact.paidInvoiceCount > 0 || impact.activePaidSubscriptions > 0 || impact.scheduledRenewals > 0 || impact.unpaidInvoices > 0 || (impact.activeInternalGrants ?? 0) > 0);
   const canApply = !!preview && !preview.noop && confirm.trim().toLowerCase() === preview.user.email.toLowerCase() && !saving;
 
   async function apply() {
@@ -80,6 +80,7 @@ export function RoleActionDialog({ open, onOpenChange, userId, action, onDone }:
                     {impact.paidInvoiceCount > 0 ? <li>{impact.paidInvoiceCount} invoice lunas ({currencyFormatter.format(impact.paidTotal)}) berpindah dari/ke laporan uang.</li> : null}
                     {impact.activePaidSubscriptions > 0 ? <li>{impact.activePaidSubscriptions} langganan berbayar aktif.</li> : null}
                     {impact.scheduledRenewals > 0 ? <li>{impact.scheduledRenewals} perpanjangan terjadwal akan berhenti/berlanjut ditagih.</li> : null}
+                    {(impact.activeInternalGrants ?? 0) > 0 ? <li>{impact.activeInternalGrants} hibah akses internal (tanpa tanggal akhir) akan dicabut.</li> : null}
                     {impact.unpaidInvoices > 0 ? <li>{impact.unpaidInvoices} invoice belum dibayar tetap ada.</li> : null}
                   </ul>
                 </Alert>
