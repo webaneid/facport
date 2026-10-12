@@ -35,13 +35,13 @@ Fase paling berisiko di seri 189 (penghapusan data, kenaikan hak akses) → ekse
 - [x] R2 Endpoint preview/apply + pengaman + sesi dicabut + email + audit + tes (izin 401/403, diri sendiri, Super Admin terakhir, role terakhir, konfirmasi salah, idempoten, dampak)
 - [x] R3 UI detail user: tombol/dialog "Aktifkan akses pengguna", "Jadikan Admin/Super Admin", "Cabut role …" (dampak + ketik email) + tes
 **Bagian 2 — Status massal**
-- [ ] S1 `lib/account-status.ts` (ekstrak) + endpoint tunggal memakainya (perilaku HTTP sama, tes lama hijau)
-- [ ] S2 Endpoint massal preview/apply + tes
-- [ ] S3 UI bilah aksi massal: Nonaktifkan/Aktifkan + dialog + tes
+- [x] S1 `lib/account-status.ts` (ekstrak) + endpoint tunggal memakainya (perilaku HTTP sama, tes lama hijau)
+- [x] S2 Endpoint massal preview/apply + tes
+- [x] S3 UI bilah aksi massal: Nonaktifkan/Aktifkan + dialog + tes
 **Bagian 3 — Hapus & anonimisasi**
-- [ ] H1 `lib/account-erasure.ts`: kelayakan (katalog FK), hapus aman, anonimisasi + scrub audit/seat + tes per FK
-- [ ] H2 Endpoint delete/anonymize preview/apply + rate limit + audit + tes
-- [ ] H3 UI: aksi massal "Hapus permanen" & "Anonimkan" (dampak, alasan, ketik HAPUS/ANONIMKAN, peringatan backup) + tes
+- [x] H1 `lib/account-erasure.ts`: kelayakan (katalog FK), hapus aman, anonimisasi + scrub audit/seat + tes per FK
+- [x] H2 Endpoint delete/anonymize preview/apply + rate limit + audit + tes
+- [x] H3 UI: aksi massal "Hapus permanen" & "Anonimkan" (dampak, alasan, ketik HAPUS/ANONIMKAN, peringatan backup) + tes
 **Penutup**
 - [ ] D1 Dokumen: `architecture-account-lifecycle.md`, `architecture-admin-insight.md` § 4.4/4.5 status, glosarium, CLAUDE.md peta, PROGRESS/phase 189, lessons-learned
 - [ ] A1 Audit penuh `security-auditor`; perbaiki Critical/High; suite penuh API+web; `db:cleanup-test-data`; komit+push

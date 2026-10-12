@@ -22,6 +22,7 @@ import { adminSeatsRoute } from "./routes/admin/seats.route";
 import { adminInsightsRoute } from "./routes/admin/insights.route";
 import { adminStaffRoute } from "./routes/admin/staff.route";
 import { adminUserRolesRoute } from "./routes/admin/user-roles.route";
+import { adminUserErasureRoute } from "./routes/admin/user-erasure.route";
 import { adminImportBatchesRoute } from "./routes/admin/import-batches.route";
 import { adminUserSubscriptionsRoute } from "./routes/admin/user-subscriptions.route";
 import { adminSubscriptionsRoute } from "./routes/admin/subscriptions.route";
@@ -140,6 +141,7 @@ export const app = new Elysia()
   .use(rateLimitPlugin({ pathPrefix: "/admin/data-usaha", windowMs: 60_000, max: 60 }))
   // § Fase 189C — ekspor CSV Insight memuat data pribadi: batas ketat (10/menit) menahan penarikan massal oleh akun yang dibajak; pemakaian normal jauh di bawahnya.
   .use(rateLimitPlugin({ pathPrefix: "/admin/insights/export", windowMs: 60_000, max: 10 }))
+  .use(rateLimitPlugin({ pathPrefix: "/admin/users/erase", windowMs: 60_000, max: 10 })) // § Fase 189H — hapus/anonimisasi akun
   // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
   .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.
@@ -309,6 +311,7 @@ export const app = new Elysia()
   .use(adminPlansRoute)
   .use(adminUsersRoute)
   .use(adminUserRolesRoute)
+  .use(adminUserErasureRoute)
   .use(adminSeatsRoute)
   .use(adminInsightsRoute)
   .use(adminStaffRoute)

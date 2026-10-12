@@ -23,3 +23,16 @@ describe("roleActionError", () => {
     expect(roleActionError("X")).toContain("Gagal");
   });
 });
+
+import { eraseReasonText, ERASE_TEXT } from "./role-actions";
+describe("eraseReasonText / ERASE_TEXT", () => {
+  test("alasan dilewati dibuat ramah; tabel dipetakan ke istilah pengguna", () => {
+    expect(eraseReasonText({ code: "HAS_RECORDS", tables: ["invoices", "subscriptions"] })).toContain("invoice, langganan");
+    expect(eraseReasonText({ code: "SELF" })).toContain("Anda sendiri");
+    expect(eraseReasonText({ code: "IMPORT_RUNNING" })).toContain("import");
+  });
+  test("kata konfirmasi", () => {
+    expect(ERASE_TEXT.delete.word).toBe("HAPUS");
+    expect(ERASE_TEXT.anonymize.word).toBe("ANONIMKAN");
+  });
+});

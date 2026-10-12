@@ -28,6 +28,8 @@ import { usePermissions } from "@/lib/use-permissions";
 import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
 import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
 import { BulkStatusDialog } from "@/components/admin/bulk-status-dialog";
+import { BulkEraseDialog } from "@/components/admin/bulk-erase-dialog";
+import type { EraseKind } from "@/lib/role-actions";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { timezoneAbbreviation } from "@/lib/timezone";
 import { type SubscriptionInterval } from "@/lib/subscription-period";
@@ -714,6 +716,7 @@ export default function AdminUsersPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDialog, setBulkDialog] = useState<{ open: boolean; isInternal: boolean }>({ open: false, isInternal: true });
   const [statusDialog, setStatusDialog] = useState<{ open: boolean; disabled: boolean }>({ open: false, disabled: true }); // § Fase 189H
+  const [eraseDialog, setEraseDialog] = useState<{ open: boolean; kind: EraseKind }>({ open: false, kind: "anonymize" }); // § Fase 189H
   const canManage = usePermissions().includes("users.manage"); // sama ekspor dengan <Can> (tahan terhadap mock.module bocor lintas file tes)
 
   async function load() {
@@ -987,6 +990,12 @@ export default function AdminUsersPage() {
                     <Button size="sm" variant="outline" type="button" onClick={() => setStatusDialog({ open: true, disabled: false })}>
                       Aktifkan
                     </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setEraseDialog({ open: true, kind: "anonymize" })}>
+                      Anonimkan
+                    </Button>
+                    <Button size="sm" variant="destructive" type="button" onClick={() => setEraseDialog({ open: true, kind: "delete" })}>
+                      Hapus permanen
+                    </Button>
                     <Button size="sm" variant="ghost" type="button" onClick={() => setSelected(new Set())}>
                       Batal pilih
                     </Button>
@@ -1013,6 +1022,16 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+      <BulkEraseDialog
+        open={eraseDialog.open}
+        onOpenChange={(open) => setEraseDialog((d) => ({ ...d, open }))}
+        userIds={[...selected]}
+        kind={eraseDialog.kind}
+        onDone={() => {
+          setSelected(new Set());
+          load();
+        }}
+      />
       <BulkStatusDialog
         open={statusDialog.open}
         onOpenChange={(open) => setStatusDialog((d) => ({ ...d, open }))}

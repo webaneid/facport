@@ -57,7 +57,7 @@ const isTestRole = sql`(${roles.isSystem} = false AND ${roles.name} ~ ${"[0-9]{1
 
 async function main() {
   await db.transaction(async (tx) => {
-    const testUserIds = (await tx.select({ id: userTable.id }).from(userTable).where(like(userTable.email, "%@test.local"))).map((u) => u.id);
+    const testUserIds = (await tx.select({ id: userTable.id }).from(userTable).where(or(like(userTable.email, "%@test.local"), like(userTable.email, "anon-%@anonymized.invalid")))).map((u) => u.id); // § Fase 189H — akun uji yang dianonimkan tes kehilangan @test.local
     const testPlanIds = (await tx.select({ id: plans.id }).from(plans).where(isTestPlanName)).map((p) => p.id);
 
     // § Fase 113 — `dataUsaha` dibuat lewat `createTestDataUsaha(userId, ...)`

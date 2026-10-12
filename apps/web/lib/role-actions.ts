@@ -33,3 +33,40 @@ export function availableRoleActions(roles: readonly string[]): RoleAction[] {
   if (has("admin")) out.push("revoke_admin");
   return out;
 }
+
+// ---------- Fase 189H bagian 3: hapus permanen & anonimisasi ----------
+export type EraseKind = "delete" | "anonymize";
+export type EraseReasonInfo = { code: string; tables?: string[] };
+
+const TABLE_LABELS: Record<string, string> = {
+  invoices: "invoice", orders: "order", subscriptions: "langganan", import_batches: "riwayat import", member_seats: "User Tambahan/undangan",
+  ownership_transfers: "transfer kepemilikan", accurate_connections: "koneksi Accurate", data_usaha: "Data Usaha berisi", conversion_logs: "log konversi",
+};
+
+export function eraseReasonText(reason: EraseReasonInfo): string {
+  switch (reason.code) {
+    case "SELF": return "akun Anda sendiri";
+    case "STAFF_ACCOUNT": return "akun Admin/Super Admin (kelola lewat Tim Internal)";
+    case "ALREADY_ANONYMIZED": return "sudah dianonimkan";
+    case "IMPORT_RUNNING": return "ada import yang sedang berjalan";
+    case "HAS_RECORDS": return `punya catatan bisnis: ${(reason.tables ?? []).map((t) => TABLE_LABELS[t] ?? t).join(", ")} — gunakan Anonimkan`;
+    default: return reason.code;
+  }
+}
+
+export const ERASE_TEXT: Record<EraseKind, { title: string; description: string; word: string; button: string; done: (n: number) => string }> = {
+  delete: {
+    title: "Hapus permanen akun",
+    description: "Menghapus akun BERSIH dari database: hanya akun tanpa invoice, langganan, import, atau koneksi. Tidak dapat dibatalkan — pemulihan hanya dari backup.",
+    word: "HAPUS",
+    button: "Hapus permanen",
+    done: (n) => `${n} akun dihapus permanen.`,
+  },
+  anonymize: {
+    title: "Anonimkan akun",
+    description: "Nama, email, telepon, WhatsApp, dan perusahaan diganti penanda anonim; akun dinonaktifkan dan login dibuang. Invoice, order, dan langganan TETAP (angka keuangan utuh). Tidak dapat dibatalkan.",
+    word: "ANONIMKAN",
+    button: "Anonimkan",
+    done: (n) => `${n} akun dianonimkan.`,
+  },
+};
