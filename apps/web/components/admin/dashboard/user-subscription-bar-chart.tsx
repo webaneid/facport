@@ -11,7 +11,7 @@ type MonthlyEntry = { month: string; newUserCount: number; newSubscribingUserCou
 // ini cuma render.
 export function UserSubscriptionBarChart({ data }: { data: MonthlyEntry[] }) {
   return (
-    <ResponsiveContainer width="100%" height={300}>
+    <ResponsiveContainer width="100%" height={250}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" vertical={false} />
         <XAxis dataKey="month" tickFormatter={monthLabel} fontSize={12} />

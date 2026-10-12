@@ -19,7 +19,7 @@ export function ModulePopularityBarChart({ data }: { data: ModulePopularityEntry
 
   const chartData = data.map((d) => ({ ...d, label: moduleLabel(d.moduleKey) }));
   return (
-    <ResponsiveContainer width="100%" height={Math.max(220, chartData.length * 48)}>
+    <ResponsiveContainer width="100%" height={Math.max(200, chartData.length * 40)}>
       <BarChart data={chartData} layout="vertical" margin={{ top: 8, right: 24, left: 8, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" horizontal={false} />
         <XAxis type="number" allowDecimals={false} fontSize={12} />

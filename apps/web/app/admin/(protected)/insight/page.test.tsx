@@ -254,6 +254,13 @@ describe("Halaman Insight", () => {
     await waitFor(() => expect(tenureGet.mock.calls.at(-1)?.[0]).toMatchObject({ query: { month: "2026-09" } }));
   });
 
+  test("Tren: ?metric= dari tautan KPI dipakai sebagai metrik awal; nilai tak dikenal → aktif", async () => {
+    search = "tab=tren&metric=money";
+    render(<AdminInsightPage />);
+    await screen.findByRole("table");
+    expect(trendGet.mock.calls.at(-1)?.[0]).toMatchObject({ query: { metric: "money" } });
+    expect((screen.getByLabelText("Metrik") as HTMLSelectElement).value).toBe("money");
+  });
   test("Riwayat Koneksi: kalimat peristiwa, ringkasan koreksi; rentang separuh terisi tidak memanggil API", async () => {
     search = "tab=koneksi";
     render(<AdminInsightPage />);

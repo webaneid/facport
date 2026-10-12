@@ -6,7 +6,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissions } from "@/lib/use-permissions";
 import { Alert } from "@/components/ui/alert";
-import { INSIGHT_TABS, parseTab, type InsightTab } from "@/lib/insights";
+import { INSIGHT_TABS, parseMetric, parseTab, type InsightTab } from "@/lib/insights";
 import { SummaryTab } from "@/components/admin/insight/summary-tab";
 import { CustomersTab } from "@/components/admin/insight/customers-tab";
 import { FeaturesTab } from "@/components/admin/insight/features-tab";
@@ -15,13 +15,13 @@ import { TrendTab } from "@/components/admin/insight/trend-tab";
 import { ConnectionTab } from "@/components/admin/insight/connection-tab";
 
 // § Fase 189D — halaman Insight admin. Tab dari `?tab=` (dapat di-bookmark; nilai tak dikenal → ringkasan). Hanya tab aktif yang dirender/memuat data.
-function TabBody({ tab }: { tab: InsightTab }) {
+function TabBody({ tab, metric }: { tab: InsightTab; metric: string | null }) {
   if (tab === "ringkasan") return <SummaryTab />;
   if (tab === "pelanggan") return <CustomersTab mode="pelanggan" />;
   if (tab === "akses") return <CustomersTab mode="akses" />;
   if (tab === "fitur") return <FeaturesTab />;
   if (tab === "langganan") return <SubscriptionsTab />;
-  if (tab === "tren") return <TrendTab />;
+  if (tab === "tren") return <TrendTab initialMetric={metric ? parseMetric(metric) : undefined} />;
   return <ConnectionTab />;
 }
 
@@ -52,7 +52,7 @@ function InsightContent() {
           ))}
         </TabsList>
         <TabsContent value={tab}>
-          <TabBody tab={tab} />
+          <TabBody tab={tab} metric={params.get("metric")} />
         </TabsContent>
       </Tabs>
     </div>

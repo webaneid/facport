@@ -54,11 +54,11 @@ function TenurePanel({ month }: { month: string }) {
 
 // § Fase 189D — tab Tren & Retensi (butir 7): filter tahun, 5 metrik, grafik + tabel (bulan lalu · selisih · %), dan rincian usia langganan per bulan.
 // Bulan setelah bulan berjalan tampil "—" (tidak digambar sebagai 0).
-export function TrendTab() {
+export function TrendTab({ initialMetric = "active" }: { initialMetric?: TrendMetric }) {
   const timeZone = useCompanyTimezone();
   const [currentYear] = useState(() => Number(new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric" }).format(new Date())));
   const [year, setYear] = useState(currentYear);
-  const [metric, setMetric] = useState<TrendMetric>("active");
+  const [metric, setMetric] = useState<TrendMetric>(initialMetric);
   const [picked, setPicked] = useState<string | null>(null);
   const { loading, data, failed } = useInsightQuery<TrendResponse>(`trend:${year}:${metric}`, () => api.admin.insights.trend.get({ query: { year, metric } }) as never);
 

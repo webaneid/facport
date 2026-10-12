@@ -13,7 +13,11 @@ const summaryGet = mock(async (): Promise<{ data: unknown; error: unknown }> => 
   },
   error: null,
 }));
-mock.module("@/lib/api-client", () => ({ api: { admin: { insights: { summary: { get: summaryGet } } } }, apiBaseUrl: "" }));
+const trendGet = mock(async (_a: unknown): Promise<{ data: unknown; error: unknown }> => ({
+  data: { year: 2026, metric: "active", summary: { kind: "stock", value: 3 }, points: [{ month: "2026-09", value: 1, previous: 0, delta: 1, percent: 100, future: false }, { month: "2026-10", value: 3, previous: 1, delta: 2, percent: 200, future: false }, { month: "2026-11", value: null, previous: null, delta: null, percent: null, future: true }] },
+  error: null,
+}));
+mock.module("@/lib/api-client", () => ({ api: { admin: { insights: { summary: { get: summaryGet }, trend: { get: trendGet } } } }, apiBaseUrl: "" }));
 mock.module("@/lib/use-permissions", () => ({ usePermissions: () => permissions, usePermission: (k: string) => permissions.includes(k), PermissionsProvider: ({ children }: { children: React.ReactNode }) => children }));
 
 const { InsightKpiSection } = await import("./insight-kpi-section");
@@ -31,6 +35,18 @@ describe("InsightKpiSection", () => {
     expect(screen.getByText(/3 akun internal/)).toBeTruthy();
     expect(screen.getByText("Uang bulan ini")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Buka Insight/ }).getAttribute("href")).toBe("/insight");
+  });
+  test("kartu KPI menjadi tautan ke tab Insight terkait (klik-tembus)", async () => {
+    render(<InsightKpiSection />);
+    await screen.findByText("Akun komersil");
+    const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href"));
+    expect(hrefs).toEqual(expect.arrayContaining(["/insight?tab=pelanggan", "/insight?tab=koneksi", "/insight?tab=tren&metric=active", "/insight?tab=langganan", "/insight?tab=tren&metric=money"]));
+  });
+  test("kegagalan tren tidak merusak kartu (hanya sparkline yang hilang)", async () => {
+    trendGet.mockImplementation(async () => ({ data: null, error: { status: 500 } }));
+    render(<InsightKpiSection />);
+    expect(await screen.findByText("Akun komersil")).toBeTruthy();
+    trendGet.mockImplementation(async () => ({ data: null, error: null }));
   });
   test("tanpa insights.view: tidak ada bagian dan tidak memanggil API", () => {
     permissions = ["users.manage"];
