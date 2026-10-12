@@ -169,6 +169,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Kontak akun (Nama Perusahaan/Telepon/WhatsApp, standar E.164, modal Lengkapi Profil) — data AKUN, bukan Data Usaha | `docs/architecture/architecture-contact.md` |
 | Insight pelanggan admin (kebutuhan data FAC: komersil/internal, per fitur, akses, kohort, riwayat koneksi; RENCANA Fase 189) | `docs/architecture/architecture-admin-insight.md` |
 | Siklus hidup akun: nonaktifkan massal, aksi peran dua arah, hapus permanen aman, anonimisasi (Super Admin, ADR-0045) | `docs/architecture/architecture-account-lifecycle.md` |
+| Design system admin (skala ukuran/jarak, varian `compact:`, interaksi) — baca sebelum mengubah primitif UI | `docs/architecture/architecture-admin-design-system.md` |
 
 > **Semua baris "OPSIONAL" di atas ditentukan oleh Checklist Kebutuhan
 > Komponen** yang diisi user saat `project-init` (lihat
