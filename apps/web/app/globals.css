@@ -181,3 +181,8 @@ body {
     animation: none;
   }
 }
+
+/* § Fase 190, ADR-0046 — varian `compact:` untuk design system admin "Kompak & tajam". Aktif HANYA di dalam elemen ber-`data-ui="compact"`
+   (dipasang `app/admin/layout.tsx` lewat `CompactSurface`, dan juga di <body> agar portal Radix — Dialog/Dropdown — ikut). Surface pelanggan & landing
+   tidak memasang atribut ini sehingga tampilannya tidak berubah. Skala baku: docs/architecture/architecture-admin-design-system.md. */
+@custom-variant compact (&:where([data-ui="compact"], [data-ui="compact"] *));

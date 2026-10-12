@@ -15,9 +15,9 @@ export function PageHeader({
   className?: string;
 }) {
   return (
-    <div className={cn("flex flex-wrap items-center justify-between gap-4", className)}>
+    <div className={cn("flex flex-wrap items-center justify-between gap-4 compact:gap-3", className)}>
       <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">{title}</h1>
+        <h1 className="text-3xl font-bold tracking-tight text-foreground compact:text-xl compact:font-semibold">{title}</h1>
         {description && <p className="text-sm text-muted-foreground">{description}</p>}
       </div>
       {action}

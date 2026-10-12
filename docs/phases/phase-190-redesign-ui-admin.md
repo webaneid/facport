@@ -13,8 +13,8 @@ Perubahan visual lintas banyak komponen → eksekusi langsung bertahap, satu kom
 ## Sub-fase
 | Sub-fase | Isi | Status |
 |---|---|---|
-| 190A | Mekanisme `compact:` (varian + atribut shell) dan primitif: Card, Button, Input/Select/Textarea, Badge, Table/DataTable, StatCard, PageHeader, Tabs, Dialog | Planned |
-| 190B | Cangkang admin: AppShell, Sidebar (lebih ramping), Topbar, Footer, padding konten, kanvas | Planned |
+| 190A | Mekanisme `compact:` (varian + atribut shell) dan primitif: Card, Button, Input/Select/Textarea, Badge, Table/DataTable, StatCard, PageHeader, Tabs, Dialog, EmptyState | Done (kode; visual menunggu user) |
+| 190B | Cangkang admin: AppShell, Sidebar (lebih ramping), Topbar, padding konten | Done (kode; visual menunggu user) |
 | 190C | Dashboard `/admin` & Insight: KPI klik-tembus + sparkline, grafik rapat, tab Insight rapi | Planned |
 | 190D | Interaksi: palet perintah (⌘/Ctrl+K), tabel lengket + fokus keyboard, keadaan kosong/memuat | Planned |
 | 190E | Audit halaman admin yang menulis ukuran sendiri (`text-3xl`, `p-8`, dst) & rapikan | Planned |
@@ -33,7 +33,9 @@ Tidak ada perubahan logika/izin. Palet perintah (190D) hanya navigasi ke rute ya
 ADR-0046, ADR-0024, ADR-0034; `architecture-admin-design-system.md`; `components/ui/*`, `components/app-shell/*`
 
 ## Keputusan Kecil Selama Eksekusi
--
+- Atribut `data-ui="compact"` dipasang di `app/admin/layout.tsx` (pembungkus `display: contents` agar konten SSR tanpa kedip) DAN di `<body>` lewat `CompactSurface` supaya portal Radix (Dialog/Dropdown/Popover) ikut; dilepas saat unmount. Root layout tidak memakai `headers()` (menghindari membuat landing dinamis).
+- Tabel header lengket ditunda ke 190D (pembungkus `overflow-x-auto` pada `Table` mematahkan `sticky`).
+- Terverifikasi: `next build` sukses; CSS terkompilasi `.compact\:rounded-lg:where([data-ui=compact],[data-ui=compact] *)`.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
 - [ ] Type check nol error; lint bersih

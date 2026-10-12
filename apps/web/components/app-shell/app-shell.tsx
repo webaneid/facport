@@ -60,8 +60,8 @@ export function AppShell({
     // dari 1 fetch `/me` yang sama.
     <PermissionsProvider>
       <DataUsahaOwnerProvider isOwner={isDataUsahaOwner ?? true}>
-        <div className="min-h-screen p-3 sm:p-4 lg:p-6">
-          <div className="mx-auto flex max-w-[1600px] gap-3">
+        <div className="min-h-screen p-3 sm:p-4 lg:p-6 compact:p-2 compact:sm:p-3 compact:lg:p-4">
+          <div className="mx-auto flex max-w-[1680px] gap-3 compact:gap-2.5">
             <Sidebar
               surface={surface}
               logoUrl={logoUrl}
@@ -77,7 +77,7 @@ export function AppShell({
                 seluruh kolom keluar viewport di mobile alih-alih di-scroll lokal
                 oleh `overflow-x-auto` milik Table sendiri (gotcha flexbox klasik
                 — flex item defaultnya `min-width: auto`, bukan 0). */}
-            <div className="flex min-h-[calc(100vh-1.5rem)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-admin-line bg-admin-panel-solid shadow-[0_10px_26px_rgba(16,24,40,.05)]">
+            <div className="flex min-h-[calc(100vh-1.5rem)] min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-admin-line bg-admin-panel-solid shadow-[0_10px_26px_rgba(16,24,40,.05)] compact:min-h-[calc(100vh-2rem)] compact:rounded-xl compact:shadow-none compact:text-[13px]">
               <Topbar
                 surface={surface}
                 user={user}
@@ -86,7 +86,7 @@ export function AppShell({
                 activeDataUsahaName={activeDataUsahaName}
                 onMenuClick={() => setMobileNavOpen(true)}
               />
-              <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8">{children}</main>
+              <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 compact:p-4 compact:sm:p-5 compact:lg:p-6">{children}</main>
               <Footer companyName={companyName} copyrightStartYear={copyrightStartYear} appVersion={appVersion} />
             </div>
           </div>

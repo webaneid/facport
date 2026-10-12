@@ -80,7 +80,7 @@ export function Topbar({
           BUKAN logo `absolute` di atas segalanya seperti sebelumnya: kolom kiri/kanan sama lebar (logo tetap tepat di tengah) dan
           isinya dipotong di batas kolom sendiri, jadi breadcrumb panjang (ID user/invoice) tidak bisa menumpuk ke logo. Di bawah md
           (logo disembunyikan) tetap flex biasa. */}
-      <div className={`flex items-center justify-between gap-4 px-4 py-3 sm:px-6 ${headerLogoUrl ? "md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]" : ""}`}>
+      <div className={`flex items-center justify-between gap-4 px-4 py-3 sm:px-6 compact:py-2 compact:sm:px-5 ${headerLogoUrl ? "md:grid md:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]" : ""}`}>
         <div className="flex min-w-0 items-center gap-2">
           <Button variant="ghost" className="shrink-0 px-2 lg:hidden" onClick={onMenuClick} aria-label="Buka menu">
             <Menu className="h-5 w-5" />

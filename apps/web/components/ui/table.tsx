@@ -19,7 +19,7 @@ export function Table({ className, ...props }: React.TableHTMLAttributes<HTMLTab
 }
 
 export function TableHeader(props: React.HTMLAttributes<HTMLTableSectionElement>) {
-  return <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground" {...props} />;
+  return <thead className="border-b border-border text-left text-xs uppercase text-muted-foreground compact:text-[11px] compact:tracking-wide" {...props} />;
 }
 
 export function TableBody(props: React.HTMLAttributes<HTMLTableSectionElement>) {
@@ -27,13 +27,13 @@ export function TableBody(props: React.HTMLAttributes<HTMLTableSectionElement>) 
 }
 
 export function TableRow({ className, ...props }: React.HTMLAttributes<HTMLTableRowElement>) {
-  return <tr className={cn("hover:bg-muted/50", className)} {...props} />;
+  return <tr className={cn("hover:bg-muted/50 compact:hover:bg-primary-50/60", className)} {...props} />;
 }
 
 export function TableHead({ className, ...props }: React.ThHTMLAttributes<HTMLTableCellElement>) {
-  return <th className={cn("whitespace-nowrap px-4 py-2 font-medium", className)} {...props} />;
+  return <th className={cn("whitespace-nowrap px-4 py-2 font-medium compact:px-3 compact:py-1.5", className)} {...props} />;
 }
 
 export function TableCell({ className, ...props }: React.TdHTMLAttributes<HTMLTableCellElement>) {
-  return <td className={cn("whitespace-nowrap px-4 py-3", className)} {...props} />;
+  return <td className={cn("whitespace-nowrap px-4 py-3 compact:px-3 compact:py-2 compact:text-[13px]", className)} {...props} />;
 }

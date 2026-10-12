@@ -35,14 +35,14 @@ export function StatCard({
     <Card className={className}>
       <CardHeader>
         <div className="flex items-center gap-3">
-          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full", TONE_CLASSES[tone])}>
+          <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full compact:h-8 compact:w-8", TONE_CLASSES[tone])}>
             <Icon className="h-5 w-5" />
           </div>
           <CardTitle>{label}</CardTitle>
         </div>
       </CardHeader>
       <CardContent>
-        <p className="text-3xl font-bold text-foreground">{value}</p>
+        <p className="text-3xl font-bold text-foreground compact:text-2xl compact:font-semibold">{value}</p>
         {trend && <p className="mt-1 text-xs text-muted-foreground">{trend}</p>}
       </CardContent>
     </Card>
