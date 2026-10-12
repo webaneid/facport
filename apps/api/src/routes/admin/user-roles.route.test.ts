@@ -142,4 +142,13 @@ describe("apply", () => {
     expect(await rolesOf(other.id)).toEqual(["customer"]);
     void inArray;
   });
+
+  test("akun yang sudah dianonimkan tidak dapat diubah role-nya (409)", async () => {
+    const admin = await makeUser(["admin"]);
+    const anon = await makeUser(["customer"]);
+    await db.update(userTable).set({ email: `anon-${anon.id}@anonymized.invalid` }).where(eq(userTable.id, anon.id));
+    const res = await post(admin.cookie, anon.id, "", { action: "grant_staff", confirm: `anon-${anon.id}@anonymized.invalid` });
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("ACCOUNT_ANONYMIZED");
+  });
 });

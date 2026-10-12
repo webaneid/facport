@@ -75,4 +75,13 @@ describe("pratinjau & penerapan", () => {
     expect(await isDisabled(admin.id)).toBe(false);
     expect(await isDisabled(other.id)).toBe(true);
   });
+
+  test("akun yang sudah dianonimkan tidak dapat diaktifkan kembali (blockedAnonymized)", async () => {
+    const admin = await makeUser("admin");
+    const anon = await makeUser("customer");
+    await db.update(userTable).set({ email: `anon-${anon.id}@anonymized.invalid`, disabled: true }).where(eq(userTable.id, anon.id));
+    const res = (await (await post(admin.cookie, "/status", { userIds: [anon.id], disabled: false })).json()) as { changed: number; blockedAnonymized: number };
+    expect(res).toMatchObject({ changed: 0, blockedAnonymized: 1 });
+    expect(await isDisabled(anon.id)).toBe(true);
+  });
 });

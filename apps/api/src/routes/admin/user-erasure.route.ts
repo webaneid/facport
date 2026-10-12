@@ -2,7 +2,7 @@ import { Elysia, t } from "elysia";
 import { permissionPlugin } from "../../lib/permission";
 import { db } from "../../lib/db";
 import { ERASE_CONFIRM_WORDS } from "../../lib/account-erasure";
-import { applyErasure, evaluateErasure } from "../../lib/account-erasure-db";
+import { anonymizeImpact, applyErasure, evaluateErasure } from "../../lib/account-erasure-db";
 import { logger } from "../../lib/logger";
 
 // § Fase 189H, ADR-0045 — hapus permanen (hanya akun TANPA jejak bisnis) dan anonimisasi (akun berjejak bisnis) MASSAL, hanya Super Admin (`users.manage`). Dua langkah: `/erase/preview`
@@ -25,6 +25,8 @@ export const adminUserErasureRoute = new Elysia({ prefix: "/admin/users/erase" }
         missing: plan.missing.length,
         blocked: plan.targets.filter((x) => x.reasons.length > 0).map((x) => ({ id: x.id, name: x.name, email: x.email, reasons: x.reasons })),
         confirmWord: ERASE_CONFIRM_WORDS[body.kind],
+        // anonimisasi tidak dapat dipulihkan dan memutus koneksi Accurate akun: tampilkan dampaknya di pratinjau
+        impact: body.kind === "anonymize" ? await anonymizeImpact(db, eligible.map((x) => x.id)) : null,
       };
     },
     { permission: "users.manage", body: t.Object({ kind: kindSchema, userIds: idsSchema }) },

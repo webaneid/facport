@@ -13,7 +13,8 @@ import { api } from "@/lib/api-client";
 import { ERASE_TEXT, eraseReasonText, type EraseKind, type EraseReasonInfo } from "@/lib/role-actions";
 
 // § Fase 189H, ADR-0045 — hapus permanen / anonimisasi MASSAL (hanya Super Admin). Pratinjau kelayakan per akun, alasan wajib, konfirmasi ketik kata (dicek ulang di server). Tidak dapat dibatalkan.
-type Preview = { requested: number; eligible: number; missing: number; confirmWord: string; blocked: { id: string; name: string; email: string; reasons: EraseReasonInfo[] }[] };
+type Impact = { activeSubscriptions: number; activeSeats: number; accurateConnections: number };
+type Preview = { requested: number; eligible: number; missing: number; confirmWord: string; impact?: Impact | null; blocked: { id: string; name: string; email: string; reasons: EraseReasonInfo[] }[] };
 
 export function BulkEraseDialog({ open, onOpenChange, userIds, kind, onDone }: { open: boolean; onOpenChange: (open: boolean) => void; userIds: string[]; kind: EraseKind; onDone: () => void }) {
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -84,9 +85,14 @@ export function BulkEraseDialog({ open, onOpenChange, userIds, kind, onDone }: {
                   </ul>
                 </div>
               ) : null}
+              {preview.impact && (preview.impact.activeSubscriptions > 0 || preview.impact.activeSeats > 0 || preview.impact.accurateConnections > 0) ? (
+                <Alert variant="warning">
+                  Dampak pada akun yang dianonimkan: {preview.impact.activeSubscriptions} langganan aktif tetap tercatat tetapi pemiliknya tidak bisa login lagi; {preview.impact.activeSeats} slot User Tambahan aktif kehilangan pemilik; {preview.impact.accurateConnections} koneksi Accurate akan DIPUTUS (token dibuang).
+                </Alert>
+              ) : null}
               <Alert variant="warning">Tindakan ini tidak dapat dibatalkan. Pastikan backup database terbaru tersedia sebelum melanjutkan.</Alert>
               <label className="flex flex-col gap-1">
-                <span>Alasan (wajib, tercatat di audit):</span>
+                <span>Alasan (wajib, tercatat di audit — jangan menulis email atau nomor telepon):</span>
                 <Textarea value={reason} onChange={(e) => setReason(e.target.value)} maxLength={500} rows={2} aria-label="Alasan" />
               </label>
               <label className="flex flex-col gap-1">

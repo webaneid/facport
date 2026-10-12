@@ -4,7 +4,7 @@ import { eq, and, inArray, like } from "drizzle-orm";
 import { auth } from "../../lib/auth";
 import { adminUserErasureRoute } from "./user-erasure.route";
 import { db } from "../../lib/db";
-import { roles, userRoles, auditLogs, session, account, memberSeats, importBatches, dataUsaha, invoices, user as userTable } from "../../db/schema";
+import { roles, userRoles, auditLogs, session, account, memberSeats, importBatches, dataUsaha, invoices, accurateConnections, user as userTable } from "../../db/schema";
 import { listFks } from "../../lib/account-erasure-db";
 import { insertDataUsaha, insertPlan, insertSub } from "./insights.fixtures";
 
@@ -198,5 +198,37 @@ describe("anonimisasi", () => {
     expect(prev.blocked[0]?.reasons.map((r) => r.code)).toContain("IMPORT_RUNNING");
     expect(prev.eligible).toBe(0);
     void like;
+  });
+
+  test("audit lama: riwayat kontak BERSARANG (nomor lama, perusahaan) ikut hilang; alasan admin yang memuat email di-scrub; email orang lain yang memuat email korban tidak rusak", async () => {
+    const admin = await makeUser("admin");
+    const victim = await makeUser("customer", { phone: "+6281200001111" });
+    await db.insert(auditLogs).values({ entityType: "user", entityId: victim.id, action: "update", changes: { contact: { from: { companyName: "PT Lama", phone: "+6281233334444" }, to: { companyName: "PT Baru", phone: "+6281200001111" } } }, actorId: admin.id });
+    const other = await insertDataUsaha((await makeUser()).id, "DU Orang Lain");
+    await db.insert(auditLogs).values({ entityType: "data_usaha", entityId: other, action: "invite_seat", changes: { email: `x${victim.email}` }, actorId: admin.id });
+    const res = await call(admin.cookie, "", { kind: "anonymize", userIds: [victim.id], confirm: "ANONIMKAN", reason: `permintaan ${victim.email} via telepon` });
+    expect(((await res.json()) as Apply).done).toBe(1);
+    const own = JSON.stringify(await db.select({ c: auditLogs.changes }).from(auditLogs).where(eq(auditLogs.entityId, victim.id)));
+    expect(own).not.toContain("PT Lama");
+    expect(own).not.toContain("+6281233334444");
+    expect(own).not.toContain("PT Baru");
+    expect(own.toLowerCase()).not.toContain(victim.email.toLowerCase());
+    const [theirs] = await db.select().from(auditLogs).where(eq(auditLogs.entityId, other));
+    expect(JSON.stringify(theirs?.changes)).toContain(`x${victim.email}`); // milik orang lain tidak diubah
+  });
+
+  test("koneksi Accurate akun diputus: token dibuang, status revoked, Data Usaha tidak lagi menunjuknya; pratinjau memberi dampak", async () => {
+    const admin = await makeUser("admin");
+    const victim = await makeUser();
+    const du = await insertDataUsaha(victim.id, "DU Terhubung");
+    const [conn] = await db.insert(accurateConnections).values({ userId: victim.id, accessTokenEncrypted: "enc-a", refreshTokenEncrypted: "enc-r", expiresAt: new Date(Date.now() + 86_400_000), status: "active" }).returning();
+    await db.update(dataUsaha).set({ accurateConnectionId: conn!.id }).where(eq(dataUsaha.id, du));
+    const prev = (await (await call(admin.cookie, "/preview", { kind: "anonymize", userIds: [victim.id] })).json()) as { impact: { accurateConnections: number } };
+    expect(prev.impact.accurateConnections).toBe(1);
+    expect(((await (await call(admin.cookie, "", { kind: "anonymize", userIds: [victim.id], confirm: "ANONIMKAN", reason: "uji" })).json()) as Apply).done).toBe(1);
+    const [after] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, conn!.id));
+    expect(after).toMatchObject({ status: "revoked", accessTokenEncrypted: "revoked", refreshTokenEncrypted: "revoked" });
+    const [duAfter] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(duAfter?.accurateConnectionId).toBeNull();
   });
 });

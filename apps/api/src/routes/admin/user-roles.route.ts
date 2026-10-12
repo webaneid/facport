@@ -8,6 +8,7 @@ import { escapeHtml } from "../../lib/email";
 import { internalChangeImpact } from "../../lib/internal-accounts";
 import { ROLE_ACTIONS, canRemoveSuperAdmin, confirmMatches, planRoleChange } from "../../lib/role-actions";
 import { logger } from "../../lib/logger";
+import { isAnonymizedEmail } from "../../lib/account-erasure";
 
 // § Fase 189H, D17 (architecture-admin-insight.md § 4.4) — aksi peran dua arah, HANYA Super Admin (`users.manage`): "Aktifkan akses pengguna" (admin/staf → juga customer),
 // "Jadikan Admin/Super Admin" (customer → admin/staf, tanpa akun baru dan tanpa mengubah kata sandi), dan pencabutan role. Kenaikan hak akses = risiko eskalasi → dua langkah
@@ -87,6 +88,7 @@ export const adminUserRolesRoute = new Elysia({ prefix: "/admin/users" })
       const outcome = await db.transaction(async (tx) => {
         const target = await loadTarget(params.id, tx, true);
         if (!target) return { status: 404, code: "USER_NOT_FOUND" } as const;
+        if (isAnonymizedEmail(target.email)) return { status: 409, code: "ACCOUNT_ANONYMIZED" } as const;
         if (!confirmMatches(body.confirm, target.email)) return { status: 400, code: "CONFIRM_MISMATCH" } as const;
         if (target.disabled && spec.mode === "grant" && spec.role !== "customer") return { status: 409, code: "ACCOUNT_DISABLED" } as const;
         const plan = planRoleChange(target.roleNames, body.action, target.isInternal);
@@ -101,6 +103,7 @@ export const adminUserRolesRoute = new Elysia({ prefix: "/admin/users" })
               .from(userRoles)
               .innerJoin(userTable, eq(userTable.id, userRoles.userId))
               .where(and(eq(userRoles.roleId, adminRole.id), eq(userTable.disabled, false)))
+              .orderBy(userRoles.userId)
               .for("update");
             if (!canRemoveSuperAdmin(active.length)) return { status: 400, code: "CANNOT_REMOVE_LAST_SUPER_ADMIN" } as const;
           }

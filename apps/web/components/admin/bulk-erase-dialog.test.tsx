@@ -64,4 +64,11 @@ describe("BulkEraseDialog", () => {
     await waitFor(() => expect(toastError).toHaveBeenCalled());
     expect(onDone).not.toHaveBeenCalled();
   });
+
+  test("anonimisasi menampilkan dampak (langganan aktif, slot, koneksi Accurate diputus)", async () => {
+    previewPost.mockImplementationOnce(async () => ({ data: { ...preview, confirmWord: "ANONIMKAN", impact: { activeSubscriptions: 2, activeSeats: 1, accurateConnections: 1 } }, error: null }));
+    render(<BulkEraseDialog open onOpenChange={() => {}} userIds={["a"]} kind="anonymize" onDone={() => {}} />);
+    expect(await screen.findByText(/1 koneksi Accurate akan DIPUTUS/)).toBeTruthy();
+    expect(screen.getByText(/2 langganan aktif/)).toBeTruthy();
+  });
 });

@@ -14,14 +14,20 @@ export const emailDigest = (email: string) => createHash("sha256").update(email.
 
 const escapeRegex = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// Batas "kata": email tidak boleh menempel pada karakter email lain (mis. `abob@x.id`, `bob@x.id.au`); nomor tidak boleh menempel pada digit lain.
+function boundedPattern(value: string): RegExp {
+  const body = escapeRegex(value);
+  return value.includes("@") ? new RegExp(`(?<![\\w.+-])${body}(?![\\w-]|\\.\\w)`, "gi") : new RegExp(`(?<!\\d)${body}(?!\\d)`, "gi");
+}
+
 /**
- * Ganti PII (email, telepon, …) di seluruh nilai string JSON — tak peka huruf besar/kecil, aman terhadap karakter regex pada nilai. Struktur objek/array tidak berubah.
- * Dipakai men-scrub `audit_logs.changes` yang memuat kontak akun yang dihapus/dianonimkan.
+ * Ganti PII (email, telepon, …) di seluruh nilai string JSON — tak peka huruf besar/kecil, aman terhadap karakter regex pada nilai, dan hanya pada batas kata (tidak merusak email/nomor
+ * ORANG LAIN yang kebetulan memuat nilai ini sebagai substring). Struktur objek/array tidak berubah.
  */
 export function scrubJson<T>(value: T, replacements: readonly { from: string; to: string }[]): T {
   const usable = replacements.filter((r) => r.from.trim() !== "");
   if (usable.length === 0) return value;
-  const patterns = usable.map((r) => ({ re: new RegExp(escapeRegex(r.from), "gi"), to: r.to }));
+  const patterns = usable.map((r) => ({ re: boundedPattern(r.from.trim()), to: r.to }));
   const walk = (v: unknown): unknown => {
     if (typeof v === "string") return patterns.reduce((acc, p) => acc.replace(p.re, () => p.to), v);
     if (Array.isArray(v)) return v.map(walk);
@@ -31,12 +37,24 @@ export function scrubJson<T>(value: T, replacements: readonly { from: string; to
   return walk(value) as T;
 }
 
-export type FkInfo = { table: string; column: string; deleteType: string };
+const PII_KEYS = new Set(["email", "name", "phone", "whatsapp", "companyName", "contact"]);
+/** Buang kunci identitas/kontak di KEDALAMAN BERAPA PUN (mis. `contact.from/to` bersarang) dari JSON audit tentang akun itu. */
+export function dropPiiKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(dropPiiKeys);
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value as Record<string, unknown>).filter(([k]) => !PII_KEYS.has(k)).map(([k, x]) => [k, dropPiiKeys(x)]));
+  return value;
+}
+
+export type FkInfo = { table: string; column: string; deleteType: string; schema?: string };
+/** Cascade yang BOLEH untuk FK ke "user": hanya tabel sesi/identitas ini. FK cascade lain (mis. tabel baru berisi catatan bisnis) MEMBLOKIR — jangan sampai ikut terhapus diam-diam. */
+const SAFE_CASCADE_USER = new Set(["session.user_id", "account.user_id", "user_roles.user_id", "notifications.user_id"]);
 /** FK yang boleh di-NULL-kan saat hapus permanen (jejak "siapa pelaku", bukan catatan bisnis). Daftar SENGAJA sempit: kolom lain apa pun yang berisi baris memblokir (fail-closed). */
 const NULLABLE_FKS = new Set(["audit_logs.actor_id"]);
 
-export function classifyFk(fk: FkInfo): "cascade" | "nullable" | "blocking" {
-  if (fk.deleteType === "c") return "cascade";
-  if (NULLABLE_FKS.has(`${fk.table}.${fk.column}`)) return "nullable";
+/** `parent` = tabel yang dirujuk. Untuk "data_usaha" SEMUA FK (termasuk cascade) memblokir: Data Usaha berisi tidak boleh dianggap kosong. */
+export function classifyFk(fk: FkInfo, parent: "user" | "data_usaha" = "user"): "cascade" | "nullable" | "blocking" {
+  const key = `${fk.table}.${fk.column}`;
+  if (parent === "user" && fk.deleteType === "c" && SAFE_CASCADE_USER.has(key)) return "cascade";
+  if (parent === "user" && NULLABLE_FKS.has(key)) return "nullable";
   return "blocking";
 }

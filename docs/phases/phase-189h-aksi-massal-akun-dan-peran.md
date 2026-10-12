@@ -1,8 +1,8 @@
 # Fase 189H — Aksi Massal Akun (Nonaktifkan/Aktifkan, Hapus Permanen Aman, Anonimisasi) & Aksi Peran Dua Arah
 
-**Status:** In Progress
+**Status:** Done
 **Mulai:** 2026-10-12
-**Selesai:** —
+**Selesai:** 2026-10-12
 
 ## Tujuan
 Memberi Super Admin (`users.manage`) kendali bersih-bersih akun yang aman: (1) nonaktifkan/aktifkan massal, (2) hapus permanen HANYA akun tanpa jejak bisnis, (3) anonimisasi akun berjejak bisnis (permintaan hapus data pribadi), serta (4) aksi peran dua arah: "Aktifkan akses pengguna" (admin/staf → juga customer) dan "Jadikan admin/staf" / "Cabut role admin/staf" (customer ↔ admin/staf). Keputusan: ADR-0045 (Accepted), D17 (arah disetujui user 2026-10-12: "akun user bisa diangkat jadi admin"; "hapus total dari database juga boleh" → dijawab ADR-0045 tiga tingkat). Rancangan: `architecture-admin-insight.md` § 4.4, 4.5, 5.4. Induk: `phase-189-insight-pelanggan-admin.md`.
@@ -43,8 +43,8 @@ Fase paling berisiko di seri 189 (penghapusan data, kenaikan hak akses) → ekse
 - [x] H2 Endpoint delete/anonymize preview/apply + rate limit + audit + tes
 - [x] H3 UI: aksi massal "Hapus permanen" & "Anonimkan" (dampak, alasan, ketik HAPUS/ANONIMKAN, peringatan backup) + tes
 **Penutup**
-- [ ] D1 Dokumen: `architecture-account-lifecycle.md`, `architecture-admin-insight.md` § 4.4/4.5 status, glosarium, CLAUDE.md peta, PROGRESS/phase 189, lessons-learned
-- [ ] A1 Audit penuh `security-auditor`; perbaiki Critical/High; suite penuh API+web; `db:cleanup-test-data`; komit+push
+- [x] D1 Dokumen: `architecture-account-lifecycle.md`, `architecture-admin-insight.md` § 4.4/4.5 status, glosarium, CLAUDE.md peta, PROGRESS/phase 189, lessons-learned
+- [x] A1 Audit penuh `security-auditor`; perbaiki Critical/High; suite penuh API+web; `db:cleanup-test-data`; komit+push
 
 ## Di luar scope
 Penghapusan objek MinIO milik akun (avatar/media) — dicatat bila ada; penghapusan invoice/order (ditolak ADR-0045); "pilih semua hasil filter" (batas 100 baris/halaman); hibah akses internal (Fase 191); pemulihan akun terhapus (tidak ada — backup).
@@ -56,17 +56,28 @@ Eskalasi hak (self-promote, bypass konfirmasi, Super Admin terakhir, TOCTOU dua 
 - ADR-0044, ADR-0045; `architecture-admin-insight.md` § 4.4, 4.5, 5.4, 9 (D16–D18); `architecture-internal-accounts.md`; lessons-learned 2026-09-17 (hapus akun manual berantai); `admin/users.route.ts` (`disable`, aksi massal internal), `admin/staff.route.ts`
 
 ## Keputusan Kecil Selama Eksekusi
--
+- Audit hapus/anonimisasi menyimpan **digest SHA-256** email, BUKAN email (deviasi dari kata "snapshot email" di ADR-0045, agar anonimisasi benar-benar menghilangkan email).
+- Kelayakan hapus dari katalog `pg_constraint` (bukan daftar tabel manual); cascade hanya allowlist; `data_usaha`: semua FK memblokir.
+- Anonimisasi memutus koneksi Accurate akun (token dibuang) — ditambahkan dari audit.
+- `internalChangeImpact` dipindah ke `lib/internal-accounts.ts` (dipakai aksi internal dan aksi peran).
+- Aksi peran di route terpisah `user-roles.route.ts`; status massal memakai `lib/account-status.ts` bersama endpoint tunggal.
+- Cleanup data uji diperluas: akun uji yang dianonimkan (email `anon-…@anonymized.invalid`) ikut dibersihkan.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
-- [ ] Type check nol error; lint bersih
-- [ ] Tes API + web hijau (SUITE PENUH); data uji dibersihkan
-- [ ] Security review (subagent `security-auditor`, audit penuh)
-- [ ] Temuan Critical/High diperbaiki; Medium/Low diperbaiki atau dicatat
-- [ ] Dokumen; PROGRESS/phase 189 diupdate
-- [ ] Catat: UI belum dilihat di browser
+- [x] Type check nol error; lint bersih
+- [x] Tes API + web hijau (SUITE PENUH); data uji dibersihkan
+- [x] Security review (subagent `security-auditor`, audit penuh)
+- [x] Temuan Critical/High diperbaiki; Medium/Low diperbaiki atau dicatat
+- [x] Dokumen; PROGRESS/phase 189 diupdate
+- [x] Catat: UI belum dilihat di browser
 
 ## Known Limitations
--
+- UI belum dilihat di browser.
+- Lihat daftar hasil audit & yang dicatat di `architecture-account-lifecycle.md` (deadlock langka → 500, residu notifikasi admin/pgboss/backup, digest tanpa garam).
+- Nama Data Usaha, `bill_to_name` pada invoice, dan catatan akuntansi lain TIDAK dianonimkan (ADR-0045).
+- Penghapusan objek MinIO tidak ada (media milik akun memblokir hapus permanen).
 
-## Ringkasan Hasil (isi pas fase Done)
+## Ringkasan Hasil
+Super Admin kini dapat: (1) mengubah peran akun dua arah (aktifkan akses pengguna, jadikan Admin/Super Admin, cabut role) dari detail user dengan pratinjau dampak, konfirmasi ketik email, sesi dikeluarkan, email, audit; (2) menonaktifkan/mengaktifkan massal di `/admin/users` (aturan bersama dengan endpoint tunggal); (3) menghapus permanen HANYA akun tanpa jejak bisnis (kelayakan fail-closed dari katalog FK) dan menganonimkan akun berjejak bisnis (invoice/order/langganan utuh, PII dibersihkan dari audit/seat/transfer, koneksi Accurate diputus), dengan kata konfirmasi + alasan wajib.
+**Verifikasi:** typecheck + lint bersih; API 2.327 lulus; web 530 lulus; data uji dibersihkan. **Security review (`security-auditor`, penuh):** 0 Critical, 0 High, 4 Medium + Low terpilih diperbaiki, sisanya dicatat.
+**Komit:** `bddb3aa` (rencana), peran API/UI, status massal, `23aa2d5` (hapus/anonimisasi), perbaikan audit.

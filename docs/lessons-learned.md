@@ -6230,3 +6230,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - Paginasi: API Insight 0-based; mengirim `page+1` diam-diam melewatkan halaman pertama — sepakati basis di dokumen API dan uji parameter yang dikirim.
 - Tes yang memuat modul ber-`usePathname`/`next/navigation` bocor lintas file bila ada `mock.module` parsial di file lain; hindari mengimpor `sidebar.tsx` di tes (periksa sumbernya) dan jangan pakai `usePathname` di halaman.
 - Nama parameter query ganda di satu skema (`kind` untuk dua arti) memecah typecheck; beri nama berbeda (`accountKind`).
+
+## 2026-10-12 — Fase 189H: "fail-closed" harus mencakup cascade; scrub PII harus rekursif
+- Klasifikasi FK yang menganggap SEMUA `ON DELETE CASCADE` aman berarti tabel baru berisi catatan bisnis dengan cascade ikut terhapus diam-diam saat hapus akun. Pakai allowlist eksplisit pasangan tabel.kolom untuk cascade yang aman.
+- Penghapusan kunci PII di JSON audit harus rekursif (riwayat kontak tersimpan bersarang `contact.from/to`) dan penggantian nilai harus pada batas kata agar email/nomor orang lain yang memuat nilai itu tidak rusak.
+- Alasan bebas-teks dari admin bisa memuat PII yang baru dibuang → scrub juga sebelum disimpan.
+- Anonimisasi akun pemilik Data Usaha harus memutus token Accurate; hanya menghapus login tidak menghentikan worker me-refresh token.

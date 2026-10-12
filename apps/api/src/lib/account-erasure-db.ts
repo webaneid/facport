@@ -1,7 +1,7 @@
 import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "./db";
 import { accurateConnections, account, auditLogs, dataUsaha, importBatches, memberSeats, notifications, ownershipTransfers, roles, session, subscriptions, user as userTable, userRoles, verification } from "../db/schema";
-import { ANON_EMAIL_DOMAIN, anonymizedEmail, anonymizedName, classifyFk, emailDigest, isAnonymizedEmail, scrubJson, type FkInfo } from "./account-erasure";
+import { ANON_EMAIL_DOMAIN, anonymizedEmail, anonymizedName, classifyFk, dropPiiKeys, emailDigest, isAnonymizedEmail, scrubJson, type FkInfo } from "./account-erasure";
 
 // § Fase 189H, ADR-0045 — orkestrasi DB hapus permanen & anonimisasi. Semua perubahan dalam SATU transaksi dengan kunci baris (urut id); kelayakan dihitung ULANG di dalam transaksi
 // (preview hanya informasi). Kelayakan hapus permanen FAIL-CLOSED: dibaca dari katalog Postgres (semua FK ke "user"), jadi tabel/FK baru otomatis ikut memblokir tanpa daftar manual.
@@ -18,25 +18,27 @@ export type EraseReason =
   | { code: "HAS_RECORDS"; tables: string[] };
 export type EraseTarget = { id: string; name: string; email: string; phone: string | null; whatsapp: string | null; reasons: EraseReason[] };
 
-/** Semua FK (satu kolom) yang mereferensikan `refTable.id`, dari katalog Postgres. */
+/** Semua FK (SETIAP kolom, termasuk FK multi-kolom dan tabel di skema mana pun) yang mereferensikan `refTable.id`, dari katalog Postgres. */
 export async function listFks(executor: Executor, refTable: string): Promise<FkInfo[]> {
-  const res = await executor.execute<{ tbl: string; col: string; del: string }>(sql`
-    SELECT cl.relname AS tbl, a.attname AS col, c.confdeltype AS del
+  const res = await executor.execute<{ sch: string; tbl: string; col: string; del: string }>(sql`
+    SELECT n.nspname AS sch, cl.relname AS tbl, a.attname AS col, c.confdeltype AS del
     FROM pg_constraint c
     JOIN pg_class cl ON cl.oid = c.conrelid
-    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-    WHERE c.contype = 'f' AND array_length(c.conkey, 1) = 1 AND c.confrelid = to_regclass(${`public."${refTable}"`})
+    JOIN pg_namespace n ON n.oid = cl.relnamespace
+    JOIN LATERAL unnest(c.conkey) AS k(attnum) ON true
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+    WHERE c.contype = 'f' AND c.confrelid = to_regclass(${`public."${refTable}"`})
   `);
-  return res.map((r) => ({ table: r.tbl, column: r.col, deleteType: r.del }));
+  return res.map((r) => ({ schema: r.sch, table: r.tbl, column: r.col, deleteType: r.del }));
 }
 
 /** Jumlah baris per id pada tiap FK yang MEMBLOKIR → Map<id, Set<nama tabel>> (hanya id yang punya baris). */
-async function blockingTables(executor: Executor, fks: FkInfo[], ids: string[], skip: (fk: FkInfo) => boolean = () => false): Promise<Map<string, Set<string>>> {
+async function blockingTables(executor: Executor, fks: FkInfo[], ids: string[], parent: "user" | "data_usaha", skip: (fk: FkInfo) => boolean = () => false): Promise<Map<string, Set<string>>> {
   const out = new Map<string, Set<string>>();
   if (ids.length === 0) return out;
   for (const fk of fks) {
-    if (classifyFk(fk) !== "blocking" || skip(fk)) continue;
-    const rows = await executor.execute<{ id: string }>(sql`SELECT DISTINCT ${sql.identifier(fk.column)}::text AS id FROM ${sql.identifier(fk.table)} WHERE ${sql.identifier(fk.column)}::text IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
+    if (classifyFk(fk, parent) !== "blocking" || skip(fk)) continue;
+    const rows = await executor.execute<{ id: string }>(sql`SELECT DISTINCT ${sql.identifier(fk.column)}::text AS id FROM ${sql.identifier(fk.schema ?? "public")}.${sql.identifier(fk.table)} WHERE ${sql.identifier(fk.column)}::text IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})`);
     for (const r of rows) out.set(r.id, (out.get(r.id) ?? new Set()).add(fk.table));
   }
   return out;
@@ -45,7 +47,7 @@ async function blockingTables(executor: Executor, fks: FkInfo[], ids: string[], 
 /** Data Usaha milik `ownerIds` yang KOSONG (tanpa catatan apa pun yang merujuknya, tanpa koneksi Accurate/hitungan import) → boleh ikut dihapus. */
 async function emptyDataUsaha(executor: Executor, ownerIds: string[]) {
   const owned = await executor.select({ id: dataUsaha.id, userId: dataUsaha.userId, connectionId: dataUsaha.accurateConnectionId, rows: dataUsaha.cumulativeSuccessfulRowCount, formulas: dataUsaha.formulaLastNumber }).from(dataUsaha).where(inArray(dataUsaha.userId, ownerIds));
-  const refs = await blockingTables(executor, await listFks(executor, "data_usaha"), owned.map((d) => d.id));
+  const refs = await blockingTables(executor, await listFks(executor, "data_usaha"), owned.map((d) => d.id), "data_usaha");
   const empty: { id: string; userId: string }[] = [];
   const notEmpty = new Map<string, Set<string>>(); // ownerId → tabel
   for (const d of owned) {
@@ -55,6 +57,17 @@ async function emptyDataUsaha(executor: Executor, ownerIds: string[]) {
     else notEmpty.set(d.userId, new Set([...(notEmpty.get(d.userId) ?? []), ...tables]));
   }
   return { empty, notEmpty };
+}
+
+export type ErasureImpact = { activeSubscriptions: number; activeSeats: number; accurateConnections: number };
+
+/** Dampak anonimisasi pada akun layak: langganan aktif, slot User Tambahan aktif, dan koneksi Accurate yang akan diputus (tidak dapat dipulihkan). */
+export async function anonymizeImpact(executor: Executor, userIds: string[]): Promise<ErasureImpact> {
+  if (userIds.length === 0) return { activeSubscriptions: 0, activeSeats: 0, accurateConnections: 0 };
+  const [subs] = await executor.select({ n: sql<number>`count(*)` }).from(subscriptions).where(and(inArray(subscriptions.userId, userIds), eq(subscriptions.status, "active")));
+  const [seats] = await executor.select({ n: sql<number>`count(*)` }).from(memberSeats).where(and(inArray(memberSeats.primaryUserId, userIds), eq(memberSeats.status, "active")));
+  const [conns] = await executor.select({ n: sql<number>`count(*)` }).from(accurateConnections).where(and(inArray(accurateConnections.userId, userIds), eq(accurateConnections.status, "active")));
+  return { activeSubscriptions: Number(subs?.n ?? 0), activeSeats: Number(seats?.n ?? 0), accurateConnections: Number(conns?.n ?? 0) };
 }
 
 export async function evaluateErasure(executor: Executor, kind: EraseKind, userIds: string[], actorId: string, opts: { lock?: boolean } = {}): Promise<{ requested: number; targets: EraseTarget[]; missing: string[] }> {
@@ -76,7 +89,7 @@ export async function evaluateErasure(executor: Executor, kind: EraseKind, userI
   let records = new Map<string, Set<string>>();
   if (kind === "delete" && found.length) {
     const du = await emptyDataUsaha(executor, found);
-    records = await blockingTables(executor, await listFks(executor, "user"), found, (fk) => fk.table === "data_usaha" && fk.column === "user_id");
+    records = await blockingTables(executor, await listFks(executor, "user"), found, "user", (fk) => fk.table === "data_usaha" && fk.column === "user_id");
     for (const [owner, tables] of du.notEmpty) records.set(owner, new Set([...(records.get(owner) ?? []), ...tables]));
   }
 
@@ -95,19 +108,29 @@ export async function evaluateErasure(executor: Executor, kind: EraseKind, userI
 
 const escapePg = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-/** Hapus PII akun-akun ini dari `audit_logs.changes` (entri tentang akun itu, dan entri lain yang menyebut email/teleponnya, mis. undangan seat & akun Accurate). */
+/** Hapus PII akun-akun ini dari `audit_logs.changes` (entri tentang akun itu, dan entri lain yang menyebut email/telepon, mis. undangan seat & akun Accurate). */
 async function scrubAudit(tx: Tx, victims: EraseTarget[]) {
+  const blank = (v: string | null) => !v || v.trim() === "";
   const replacements = victims.flatMap((v) => [
     { from: v.email, to: anonymizedEmail(v.id) },
-    ...(v.phone ? [{ from: v.phone, to: "[dihapus]" }] : []),
-    ...(v.whatsapp && v.whatsapp !== v.phone ? [{ from: v.whatsapp, to: "[dihapus]" }] : []),
+    ...(!blank(v.phone) ? [{ from: v.phone!, to: "[dihapus]" }] : []),
+    ...(!blank(v.whatsapp) && v.whatsapp !== v.phone ? [{ from: v.whatsapp!, to: "[dihapus]" }] : []),
   ]);
-  // (a) entri tentang akun itu sendiri: buang kunci kontak/identitas
-  await tx.execute(sql`UPDATE audit_logs SET changes = changes - ARRAY['email','name','phone','whatsapp','companyName'] WHERE entity_type = 'user' AND entity_id IN (${sql.join(victims.map((v) => sql`${v.id}`), sql`, `)}) AND jsonb_typeof(changes) = 'object'`);
-  // (b) entri lain yang menyebut email/telepon akun itu (satu pindaian)
-  const alternation = replacements.map((r) => escapePg(r.from)).join("|");
-  const hits = await tx.execute<{ id: string; changes: unknown }>(sql`SELECT id, changes FROM audit_logs WHERE changes IS NOT NULL AND changes::text ~* ${alternation}`);
-  for (const hit of hits) await tx.update(auditLogs).set({ changes: scrubJson(hit.changes, replacements) }).where(eq(auditLogs.id, hit.id));
+  // (a) entri tentang akun itu sendiri: buang kunci identitas/kontak di kedalaman mana pun (mis. `contact.from/to` bersarang, termasuk nomor LAMA sebelum koreksi)
+  const own = await tx.select({ id: auditLogs.id, changes: auditLogs.changes }).from(auditLogs).where(and(eq(auditLogs.entityType, "user"), inArray(auditLogs.entityId, victims.map((v) => v.id)))).orderBy(auditLogs.id);
+  for (const row of own) if (row.changes !== null) await tx.update(auditLogs).set({ changes: dropPiiKeys(row.changes) }).where(eq(auditLogs.id, row.id));
+  // (b) entri lain yang menyebut email/telepon akun itu (satu pindaian, urut id; alternation dibatasi per 20 nilai agar regex Postgres tidak terlalu kompleks)
+  const seen = new Set<string>();
+  for (let i = 0; i < replacements.length; i += 20) {
+    const chunk = replacements.slice(i, i + 20);
+    const alternation = chunk.map((r) => escapePg(r.from.trim())).join("|");
+    const hits = await tx.execute<{ id: string }>(sql`SELECT id FROM audit_logs WHERE changes IS NOT NULL AND changes::text ~* ${alternation} ORDER BY id`);
+    for (const hit of hits) seen.add(hit.id);
+  }
+  for (const id of [...seen].sort()) {
+    const [row] = await tx.select({ changes: auditLogs.changes }).from(auditLogs).where(eq(auditLogs.id, id));
+    if (row?.changes != null) await tx.update(auditLogs).set({ changes: scrubJson(row.changes, replacements) }).where(eq(auditLogs.id, id));
+  }
 }
 
 /** Email/teleponnya yang tersimpan di baris lain (undangan seat, tujuan transfer, email akun Accurate, token verifikasi) → dianonimkan/dibuang. */
@@ -123,6 +146,10 @@ async function scrubReferences(tx: Tx, victims: EraseTarget[]) {
 
 const snapshot = (kind: EraseKind, v: EraseTarget, reason: string, bulk: boolean) => ({ kind, emailDigest: emailDigest(v.email), reason, bulk });
 
+/** Alasan bebas-teks dari admin bisa memuat email/telepon korban → ikut di-scrub sebelum disimpan (tidak menghidupkan lagi PII yang baru dibuang). */
+const cleanReason = (reason: string, victims: EraseTarget[]) =>
+  scrubJson(reason, victims.flatMap((v) => [{ from: v.email, to: "[email dihapus]" }, ...(v.phone ? [{ from: v.phone, to: "[telepon dihapus]" }] : []), ...(v.whatsapp ? [{ from: v.whatsapp, to: "[telepon dihapus]" }] : [])]));
+
 /** Terapkan hapus permanen/anonimisasi untuk akun yang LAYAK (dihitung ulang dengan kunci baris). Akun lain dilewati beserta alasannya. */
 export async function applyErasure(kind: EraseKind, userIds: string[], actorId: string, reason: string) {
   return db.transaction(async (tx) => {
@@ -135,11 +162,12 @@ export async function applyErasure(kind: EraseKind, userIds: string[], actorId: 
     // 1) jejak: scrub PII lama LEBIH DULU, lalu tulis audit baru (hanya digest email — bukan email)
     await scrubAudit(tx, victims);
     await scrubReferences(tx, victims);
-    await tx.insert(auditLogs).values(victims.map((v) => ({ entityType: "user", entityId: v.id, action: kind === "delete" ? "delete" : "anonymize", changes: snapshot(kind, v, reason, bulk), actorId })));
+    const safeReason = cleanReason(reason, victims);
+    await tx.insert(auditLogs).values(victims.map((v) => ({ entityType: "user", entityId: v.id, action: kind === "delete" ? "delete" : "anonymize", changes: snapshot(kind, v, safeReason, bulk), actorId })));
 
     if (kind === "delete") {
       const du = await emptyDataUsaha(tx, ids);
-      if (du.empty.length) await tx.delete(dataUsaha).where(inArray(dataUsaha.id, du.empty.map((d) => d.id)));
+      if (du.empty.length) await tx.delete(dataUsaha).where(and(inArray(dataUsaha.id, du.empty.map((d) => d.id)), inArray(dataUsaha.userId, ids))); // user_id dicek ulang: jangan hapus Data Usaha yang pemiliknya berpindah
       await tx.update(auditLogs).set({ actorId: null }).where(inArray(auditLogs.actorId, ids)); // jejak pelaku di-NULL-kan, entri audit tetap
       // cascade: session, account, user_roles, notifications
       await tx.delete(userTable).where(inArray(userTable.id, ids));
@@ -150,6 +178,13 @@ export async function applyErasure(kind: EraseKind, userIds: string[], actorId: 
       await tx.delete(session).where(inArray(session.userId, ids));
       await tx.delete(account).where(inArray(account.userId, ids));
       await tx.delete(notifications).where(inArray(notifications.userId, ids));
+      // koneksi Accurate akun ini diputus: token dibuang (tidak bisa di-refresh worker), status 'revoked', Data Usaha tidak lagi menunjuknya
+      const conns = await tx.select({ id: accurateConnections.id }).from(accurateConnections).where(inArray(accurateConnections.userId, ids));
+      if (conns.length > 0) {
+        const connIds = conns.map((c) => c.id);
+        await tx.update(dataUsaha).set({ accurateConnectionId: null }).where(inArray(dataUsaha.accurateConnectionId, connIds));
+        await tx.update(accurateConnections).set({ status: "revoked", accessTokenEncrypted: "revoked", refreshTokenEncrypted: "revoked", updatedAt: new Date() }).where(inArray(accurateConnections.id, connIds));
+      }
     }
     return { ...plan, victims };
   });

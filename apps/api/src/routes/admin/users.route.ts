@@ -104,6 +104,7 @@ function summarizeStatusPlan(plan: StatusPlan) {
     alreadyInState: count("ALREADY"),
     blockedSelf: count("SELF"),
     blockedLastSuperAdmin: count("LAST_SUPER_ADMIN"),
+    blockedAnonymized: count("ANONYMIZED"),
   };
 }
 

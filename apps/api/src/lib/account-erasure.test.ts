@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { anonymizedEmail, anonymizedName, isAnonymizedEmail, scrubJson, emailDigest, ERASE_CONFIRM_WORDS, classifyFk } from "./account-erasure";
+import { anonymizedEmail, anonymizedName, isAnonymizedEmail, scrubJson, emailDigest, ERASE_CONFIRM_WORDS, classifyFk, dropPiiKeys } from "./account-erasure";
 
 // § Fase 189H, ADR-0045 — bagian MURNI penghapusan/anonimisasi: penanda anonim, scrub PII di JSON audit, konfirmasi ketik, klasifikasi FK (fail-closed).
 describe("penanda anonim", () => {
@@ -32,7 +32,12 @@ describe("scrubJson", () => {
     expect(scrubJson(input, repl)).toEqual({ email: "anon-1@anonymized.invalid", nested: { list: ["x", "anon-1@anonymized.invalid", { phone: "[dihapus]" }] }, n: 5, ok: true, nul: null });
   });
   test("karakter regex pada nilai ('+', '.') tidak diperlakukan sebagai pola; nilai mirip tidak ikut terganti", () => {
-    expect(scrubJson({ a: "budiXtest.local", b: "+62812345678901" }, repl)).toEqual({ a: "budiXtest.local", b: "[dihapus]1" });
+    expect(scrubJson({ a: "budiXtest.local", b: "+62812345678901" }, repl)).toEqual({ a: "budiXtest.local", b: "+62812345678901" }); // nomor lain yang memuat nomor ini TIDAK tersentuh
+  });
+  test("batas kata: email/nomor ORANG LAIN yang memuat nilai ini sebagai substring tidak rusak", () => {
+    expect(scrubJson({ a: "xbudi@test.local", b: "budi@test.local.au", c: "(budi@test.local)", d: "ke budi@test.local." }, repl)).toEqual({
+      a: "xbudi@test.local", b: "budi@test.local.au", c: "(anon-1@anonymized.invalid)", d: "ke anon-1@anonymized.invalid.",
+    });
   });
   test("teks bebas yang memuat email ikut diganti; tanpa penggantian → objek sama isinya", () => {
     expect(scrubJson({ note: "undang budi@test.local ya" }, repl)).toEqual({ note: "undang anon-1@anonymized.invalid ya" });
@@ -47,5 +52,20 @@ describe("classifyFk (fail-closed)", () => {
     expect(classifyFk({ table: "invoices", column: "user_id", deleteType: "a" })).toBe("blocking");
     expect(classifyFk({ table: "tabel_baru_masa_depan", column: "user_id", deleteType: "a" })).toBe("blocking");
     expect(classifyFk({ table: "media", column: "uploaded_by", deleteType: "a" })).toBe("blocking");
+  });
+  test("cascade hanya untuk allowlist; cascade BARU berisi catatan bisnis memblokir; data_usaha: semuanya memblokir", () => {
+    for (const table of ["session", "account", "user_roles", "notifications"]) expect(classifyFk({ table, column: "user_id", deleteType: "c" })).toBe("cascade");
+    expect(classifyFk({ table: "catatan_baru", column: "user_id", deleteType: "c" })).toBe("blocking");
+    expect(classifyFk({ table: "session", column: "user_id", deleteType: "c" }, "data_usaha")).toBe("blocking");
+    expect(classifyFk({ table: "x", column: "data_usaha_id", deleteType: "a" }, "data_usaha")).toBe("blocking");
+  });
+});
+
+describe("dropPiiKeys", () => {
+  test("membuang kunci kontak/identitas di semua kedalaman (termasuk contact.from/to bersarang), kunci lain tetap", () => {
+    const input = { isInternal: true, contact: { from: { companyName: "PT A", phone: "+62811" }, to: { phone: "+62822" } }, deep: [{ email: "a@b.c", keep: 1, nested: { name: "X", ok: "y" } }] };
+    expect(dropPiiKeys(input)).toEqual({ isInternal: true, deep: [{ keep: 1, nested: { ok: "y" } }] });
+    expect(dropPiiKeys("teks")).toBe("teks");
+    expect(dropPiiKeys(null)).toBeNull();
   });
 });
