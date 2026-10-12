@@ -1,3 +1,8 @@
+## 2.35.0 (2026-10-12)
+
+* chore: rilis Fase 189I (kartu Data Diri di halaman Profil) ([e45b282](https://github.com/webaneid/facport/commit/e45b282))
+* feat(web): kartu Data Diri di /profile — nama, email, perusahaan, telepon, WhatsApp (Fase 189I) ([61b57b9](https://github.com/webaneid/facport/commit/61b57b9))
+
 ## 2.34.0 (2026-10-12)
 
 * chore: rilis Fase 189–191 (Insight pelanggan admin, aksi massal akun, redesain UI admin kompak, hiba ([29181b4](https://github.com/webaneid/facport/commit/29181b4))
