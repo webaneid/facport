@@ -13,7 +13,7 @@ import { env } from "../../lib/env";
 import { escapeHtml } from "../../lib/email";
 import { safeSignUpEmail } from "../../lib/auth-errors";
 import { parseContact } from "../../lib/phone";
-import { deriveInternalReason, internalUserIdsSubquery } from "../../lib/internal-accounts";
+import { deriveInternalReason, internalChangeImpact, internalUserIdsSubquery } from "../../lib/internal-accounts";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -86,36 +86,6 @@ async function loadInternalTargets(userIds: string[], executor: DbOrTx = db, opt
 function willChangeFlag(target: { flag: boolean; reason: "role" | "flag" | null }, desired: boolean) {
   if (target.flag === desired) return false;
   return !(desired && target.reason === "role");
-}
-
-// Dampak perubahan status komersil↔internal pada akun `ids`: uang lunas yang akan keluar dari/masuk ke laporan, langganan berbayar aktif, tagihan perpanjangan
-// terjadwal yang akan berhenti/berlanjut (penerima tagihan = pemilik Data Usaha, ADR-0042), dan invoice belum dibayar yang tertinggal (tidak dibatalkan otomatis).
-async function internalChangeImpact(ids: string[]) {
-  if (ids.length === 0) return { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0 };
-  const [inv] = await db
-    .select({
-      paidInvoiceCount: sql<number>`count(*) filter (where ${invoices.status} = 'paid')`,
-      paidTotal: sql<number>`coalesce(sum(${invoices.total}) filter (where ${invoices.status} = 'paid'), 0)`,
-      unpaidInvoices: sql<number>`count(*) filter (where ${invoices.status} = 'unpaid')`,
-    })
-    .from(invoices)
-    .where(inArray(invoices.userId, ids));
-  const [subs] = await db
-    .select({ n: count() })
-    .from(subscriptions)
-    .where(and(inArray(subscriptions.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false)));
-  const [renewals] = await db
-    .select({ n: count() })
-    .from(subscriptions)
-    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
-    .where(and(inArray(dataUsaha.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false), isNotNull(subscriptions.renewalInterval)));
-  return {
-    paidInvoiceCount: Number(inv?.paidInvoiceCount ?? 0),
-    paidTotal: Number(inv?.paidTotal ?? 0),
-    unpaidInvoices: Number(inv?.unpaidInvoices ?? 0),
-    activePaidSubscriptions: Number(subs?.n ?? 0),
-    scheduledRenewals: Number(renewals?.n ?? 0),
-  };
 }
 
 export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })

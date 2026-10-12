@@ -21,6 +21,7 @@ import { adminUsersRoute } from "./routes/admin/users.route";
 import { adminSeatsRoute } from "./routes/admin/seats.route";
 import { adminInsightsRoute } from "./routes/admin/insights.route";
 import { adminStaffRoute } from "./routes/admin/staff.route";
+import { adminUserRolesRoute } from "./routes/admin/user-roles.route";
 import { adminImportBatchesRoute } from "./routes/admin/import-batches.route";
 import { adminUserSubscriptionsRoute } from "./routes/admin/user-subscriptions.route";
 import { adminSubscriptionsRoute } from "./routes/admin/subscriptions.route";
@@ -307,6 +308,7 @@ export const app = new Elysia()
   .use(subscriptionsRoute)
   .use(adminPlansRoute)
   .use(adminUsersRoute)
+  .use(adminUserRolesRoute)
   .use(adminSeatsRoute)
   .use(adminInsightsRoute)
   .use(adminStaffRoute)

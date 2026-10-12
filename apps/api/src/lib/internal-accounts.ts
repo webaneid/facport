@@ -1,6 +1,6 @@
-import { and, eq, inArray, notInArray, or } from "drizzle-orm";
+import { and, count, eq, inArray, isNotNull, notInArray, or, sql } from "drizzle-orm";
 import { db } from "./db";
-import { roles, user as userTable, userRoles } from "../db/schema";
+import { dataUsaha, invoices, roles, subscriptions, user as userTable, userRoles } from "../db/schema";
 
 // § Fase 189G, ADR-0044, architecture-internal-accounts.md — SATU sumber kebenaran "akun internal vs komersil". JANGAN baca `user.is_internal` langsung di
 // laporan/guard lain: status EFEKTIF = flag `is_internal` (ditetapkan Super Admin; trainer/karyawan/mitra) ATAU memegang role `admin`/`staff` (D16, otomatis,
@@ -89,4 +89,34 @@ export class InternalAccountBillingError extends Error {
 /** Guard: lempar `InternalAccountBillingError` bila `userId` internal. User yang tidak ada TIDAK melempar (FK invoice yang menolaknya). */
 export async function assertBillable(executor: Executor, userId: string): Promise<void> {
   if (await getInternalReason(userId, executor, { lockUser: true })) throw new InternalAccountBillingError();
+}
+
+// Dampak perubahan status komersil↔internal pada akun `ids`: uang lunas yang akan keluar dari/masuk ke laporan, langganan berbayar aktif, tagihan perpanjangan
+// terjadwal yang akan berhenti/berlanjut (penerima tagihan = pemilik Data Usaha, ADR-0042), dan invoice belum dibayar yang tertinggal (tidak dibatalkan otomatis).
+export async function internalChangeImpact(ids: string[]) {
+  if (ids.length === 0) return { paidInvoiceCount: 0, paidTotal: 0, unpaidInvoices: 0, activePaidSubscriptions: 0, scheduledRenewals: 0 };
+  const [inv] = await db
+    .select({
+      paidInvoiceCount: sql<number>`count(*) filter (where ${invoices.status} = 'paid')`,
+      paidTotal: sql<number>`coalesce(sum(${invoices.total}) filter (where ${invoices.status} = 'paid'), 0)`,
+      unpaidInvoices: sql<number>`count(*) filter (where ${invoices.status} = 'unpaid')`,
+    })
+    .from(invoices)
+    .where(inArray(invoices.userId, ids));
+  const [subs] = await db
+    .select({ n: count() })
+    .from(subscriptions)
+    .where(and(inArray(subscriptions.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false)));
+  const [renewals] = await db
+    .select({ n: count() })
+    .from(subscriptions)
+    .innerJoin(dataUsaha, eq(dataUsaha.id, subscriptions.dataUsahaId))
+    .where(and(inArray(dataUsaha.userId, ids), eq(subscriptions.status, "active"), eq(subscriptions.isTrial, false), isNotNull(subscriptions.renewalInterval)));
+  return {
+    paidInvoiceCount: Number(inv?.paidInvoiceCount ?? 0),
+    paidTotal: Number(inv?.paidTotal ?? 0),
+    unpaidInvoices: Number(inv?.unpaidInvoices ?? 0),
+    activePaidSubscriptions: Number(subs?.n ?? 0),
+    scheduledRenewals: Number(renewals?.n ?? 0),
+  };
 }

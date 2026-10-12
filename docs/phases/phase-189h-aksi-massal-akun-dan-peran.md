@@ -31,8 +31,8 @@ Fase paling berisiko di seri 189 (penghapusan data, kenaikan hak akses) → ekse
 
 ## Scope
 **Bagian 1 — Peran**
-- [ ] R1 `lib/role-actions.ts` (murni: validasi aksi, hasil perubahan) + tes
-- [ ] R2 Endpoint preview/apply + pengaman + sesi dicabut + email + audit + tes (izin 401/403, diri sendiri, Super Admin terakhir, role terakhir, konfirmasi salah, idempoten, dampak)
+- [x] R1 `lib/role-actions.ts` (murni: validasi aksi, hasil perubahan) + tes
+- [x] R2 Endpoint preview/apply + pengaman + sesi dicabut + email + audit + tes (izin 401/403, diri sendiri, Super Admin terakhir, role terakhir, konfirmasi salah, idempoten, dampak)
 - [ ] R3 UI detail user: tombol/dialog "Aktifkan akses pengguna", "Jadikan Admin/Super Admin", "Cabut role …" (dampak + ketik email) + tes
 **Bagian 2 — Status massal**
 - [ ] S1 `lib/account-status.ts` (ekstrak) + endpoint tunggal memakainya (perilaku HTTP sama, tes lama hijau)
