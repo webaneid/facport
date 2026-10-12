@@ -27,6 +27,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { usePermissions } from "@/lib/use-permissions";
 import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
 import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { BulkStatusDialog } from "@/components/admin/bulk-status-dialog";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { timezoneAbbreviation } from "@/lib/timezone";
 import { type SubscriptionInterval } from "@/lib/subscription-period";
@@ -712,6 +713,7 @@ export default function AdminUsersPage() {
   const [typeFilter, setTypeFilter] = useState<"all" | "commercial" | "internal">("all");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDialog, setBulkDialog] = useState<{ open: boolean; isInternal: boolean }>({ open: false, isInternal: true });
+  const [statusDialog, setStatusDialog] = useState<{ open: boolean; disabled: boolean }>({ open: false, disabled: true }); // § Fase 189H
   const canManage = usePermissions().includes("users.manage"); // sama ekspor dengan <Can> (tahan terhadap mock.module bocor lintas file tes)
 
   async function load() {
@@ -979,6 +981,12 @@ export default function AdminUsersPage() {
                     <Button size="sm" variant="outline" type="button" onClick={() => setBulkDialog({ open: true, isInternal: false })}>
                       Cabut tanda internal
                     </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setStatusDialog({ open: true, disabled: true })}>
+                      Nonaktifkan
+                    </Button>
+                    <Button size="sm" variant="outline" type="button" onClick={() => setStatusDialog({ open: true, disabled: false })}>
+                      Aktifkan
+                    </Button>
                     <Button size="sm" variant="ghost" type="button" onClick={() => setSelected(new Set())}>
                       Batal pilih
                     </Button>
@@ -1005,6 +1013,16 @@ export default function AdminUsersPage() {
           )}
         </CardContent>
       </Card>
+      <BulkStatusDialog
+        open={statusDialog.open}
+        onOpenChange={(open) => setStatusDialog((d) => ({ ...d, open }))}
+        userIds={[...selected]}
+        disabled={statusDialog.disabled}
+        onDone={() => {
+          setSelected(new Set());
+          load();
+        }}
+      />
       <InternalAccountsDialog
         open={bulkDialog.open}
         onOpenChange={(open) => setBulkDialog((d) => ({ ...d, open }))}

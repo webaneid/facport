@@ -14,6 +14,7 @@ import { escapeHtml } from "../../lib/email";
 import { safeSignUpEmail } from "../../lib/auth-errors";
 import { parseContact } from "../../lib/phone";
 import { deriveInternalReason, internalChangeImpact, internalUserIdsSubquery } from "../../lib/internal-accounts";
+import { applyStatusChange, planStatusChange, type StatusPlan } from "../../lib/account-status";
 
 function getAppOrigin(): string {
   // `||` (bukan `??`) SENGAJA — .env sering set APP_ORIGIN_PROD= (string
@@ -86,6 +87,24 @@ async function loadInternalTargets(userIds: string[], executor: DbOrTx = db, opt
 function willChangeFlag(target: { flag: boolean; reason: "role" | "flag" | null }, desired: boolean) {
   if (target.flag === desired) return false;
   return !(desired && target.reason === "role");
+}
+
+// § Fase 189H — body aksi massal status (1–100 akun) dan ringkasan rencana (tanpa email/nama: hanya hitungan + id yang dilewati beserta alasannya).
+const statusBody = t.Object({
+  userIds: t.Array(t.String({ minLength: 1, maxLength: 100 }), { minItems: 1, maxItems: 100 }),
+  disabled: t.Boolean(),
+});
+function summarizeStatusPlan(plan: StatusPlan) {
+  const count = (reason: string) => plan.skipped.filter((s) => s.reason === reason).length;
+  return {
+    requested: plan.requested,
+    found: plan.found,
+    willChange: plan.toChange.length,
+    notFound: count("NOT_FOUND"),
+    alreadyInState: count("ALREADY"),
+    blockedSelf: count("SELF"),
+    blockedLastSuperAdmin: count("LAST_SUPER_ADMIN"),
+  };
 }
 
 export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
@@ -449,65 +468,14 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   .patch(
     "/:id/disable",
     async ({ params, user, set }) => {
-      if (params.id === user.id) {
-        set.status = 400;
-        return { code: "CANNOT_DISABLE_SELF" };
+      // § Fase 189H — aturan (diri sendiri, Super Admin terakhir, sesi, audit) kini di `lib/account-status.ts`, dipakai juga aksi massal.
+      const plan = await applyStatusChange([params.id], true, user.id);
+      const skip = plan.skipped[0];
+      if (skip && skip.reason !== "ALREADY") {
+        set.status = skip.reason === "NOT_FOUND" ? 404 : 400;
+        return { code: skip.reason === "NOT_FOUND" ? "USER_NOT_FOUND" : skip.reason === "SELF" ? "CANNOT_DISABLE_SELF" : "CANNOT_DISABLE_LAST_SUPER_ADMIN" };
       }
-
-      const [before] = await db.select({ disabled: userTable.disabled }).from(userTable).where(eq(userTable.id, params.id));
-      if (!before) {
-        set.status = 404;
-        return { code: "USER_NOT_FOUND" };
-      }
-      const [adminRole] = await db.select().from(roles).where(eq(roles.name, "admin"));
-
-      // § security review 2026-09-05 (Medium) — guard "jangan nonaktifkan
-      // Super Admin AKTIF terakhir" SEBELUMNYA baca-lalu-tulis TANPA
-      // transaksi/lock (TOCTOU): 2 request bersamaan menyasar 2 admin
-      // BEDA bisa sama-sama lolos hitungan ">1 admin aktif" sebelum
-      // salah satu commit, berakhir 0 admin aktif. `.for("update")`
-      // MENGUNCI baris admin aktif yang di-SELECT — transaksi konkuren
-      // yang coba baca baris SAMA akan BLOCK sampai transaksi ini
-      // commit, baru baca ulang hitungan yang sudah ter-update.
-      const ok = await db.transaction(async (tx) => {
-        if (adminRole) {
-          const targetIsAdmin = await tx
-            .select()
-            .from(userRoles)
-            .where(and(eq(userRoles.userId, params.id), eq(userRoles.roleId, adminRole.id)));
-          if (targetIsAdmin.length > 0) {
-            const activeAdmins = await tx
-              .select({ userId: userRoles.userId })
-              .from(userRoles)
-              .innerJoin(userTable, eq(userTable.id, userRoles.userId))
-              .where(and(eq(userRoles.roleId, adminRole.id), eq(userTable.disabled, false)))
-              .for("update");
-            if (activeAdmins.length <= 1) return false;
-          }
-        }
-        await tx.update(userTable).set({ disabled: true }).where(eq(userTable.id, params.id));
-        return true;
-      });
-
-      if (!ok) {
-        set.status = 400;
-        return { code: "CANNOT_DISABLE_LAST_SUPER_ADMIN" };
-      }
-
-      // § cabut SEMUA sesi aktif SEKETIKA — tanpa ini, sesi lama tetap
-      // jalan sampai expired natural (7 hari) walau `disabled = true`
-      // (§ ADR-0027 § Decision 3, lapis 1 dari 2 mekanisme penegakan).
-      await db.delete(session).where(eq(session.userId, params.id));
-
-      await db.insert(auditLogs).values({
-        entityType: "user",
-        entityId: params.id,
-        action: "update",
-        changes: { disabled: true },
-        actorId: user.id,
-      });
-
-      if (!before.disabled) await sendAccountStatusEmail(params.id, "disabled");
+      if (plan.toChange.length > 0) await sendAccountStatusEmail(params.id, "disabled");
       return { ok: true };
     },
     { permission: "users.manage", params: t.Object({ id: t.String({ minLength: 1 }) }) },
@@ -515,21 +483,31 @@ export const adminUsersRoute = new Elysia({ prefix: "/admin/users" })
   .patch(
     "/:id/enable",
     async ({ params, user, set }) => {
-      const [before] = await db.select({ disabled: userTable.disabled }).from(userTable).where(eq(userTable.id, params.id));
-      if (!before) {
+      const plan = await applyStatusChange([params.id], false, user.id);
+      if (plan.skipped[0]?.reason === "NOT_FOUND") {
         set.status = 404;
         return { code: "USER_NOT_FOUND" };
       }
-      await db.update(userTable).set({ disabled: false }).where(eq(userTable.id, params.id));
-      await db.insert(auditLogs).values({
-        entityType: "user",
-        entityId: params.id,
-        action: "update",
-        changes: { disabled: false },
-        actorId: user.id,
-      });
-      if (before.disabled) await sendAccountStatusEmail(params.id, "enabled");
+      if (plan.toChange.length > 0) await sendAccountStatusEmail(params.id, "enabled");
       return { ok: true };
     },
     { permission: "users.manage", params: t.Object({ id: t.String({ minLength: 1 }) }) },
+  )
+  // § Fase 189H, ADR-0045 — nonaktifkan/aktifkan MASSAL (Super Admin), 1–100 akun, aturan sama dengan endpoint tunggal. `/status/preview` tidak mengubah apa pun.
+  .post(
+    "/status/preview",
+    async ({ body, user }) => {
+      const plan = await planStatusChange(db, body.userIds, body.disabled, user.id);
+      return summarizeStatusPlan(plan);
+    },
+    { permission: "users.manage", body: statusBody },
+  )
+  .post(
+    "/status",
+    async ({ body, user }) => {
+      const plan = await applyStatusChange(body.userIds, body.disabled, user.id, { bulk: body.userIds.length > 1 });
+      for (const target of plan.toChange) await sendAccountStatusEmail(target.id, body.disabled ? "disabled" : "enabled");
+      return { ...summarizeStatusPlan(plan), changed: plan.toChange.length };
+    },
+    { permission: "users.manage", body: statusBody },
   );
