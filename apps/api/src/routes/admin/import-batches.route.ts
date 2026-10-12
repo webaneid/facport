@@ -1,7 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, desc, count } from "drizzle-orm";
 import { db } from "../../lib/db";
-import { importBatches, importBatchRows, user as userTable } from "../../db/schema";
+import { importBatches, importBatchRows, roles, userRoles, user as userTable } from "../../db/schema";
 import { permissionPlugin } from "../../lib/permission";
 import { getInternalReason } from "../../lib/internal-accounts";
 
@@ -33,6 +33,8 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
       }
 
       const internalReason = await getInternalReason(targetUser.id);
+      // § Fase 189H — role akun (untuk tombol aksi peran di detail user; hanya nama role, bukan hak akses).
+      const roleRows = await db.select({ name: roles.name }).from(userRoles).innerJoin(roles, eq(roles.id, userRoles.roleId)).where(eq(userRoles.userId, targetUser.id));
 
       // § disertakan di respons yang SAMA (bukan endpoint terpisah "GET
       // /admin/users/:id") — halaman detail user cukup 1 fetch.
@@ -62,6 +64,7 @@ export const adminImportBatchesRoute = new Elysia({ prefix: "/admin" })
           internalFlag: targetUser.isInternal,
           internalReason,
           isInternal: internalReason !== null,
+          roles: roleRows.map((r) => r.name).sort(),
         },
         batches: rows,
         total: totalRows[0]?.total ?? 0,

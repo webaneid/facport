@@ -27,6 +27,8 @@ import { EditUserContactDialog } from "@/components/admin/edit-user-contact-dial
 import { UserContactCardContent } from "@/components/admin/user-contact-card-content";
 import { InternalBadge, type InternalReason } from "@/components/admin/internal-badge";
 import { InternalAccountsDialog } from "@/components/admin/internal-accounts-dialog";
+import { RoleActionDialog } from "@/components/admin/role-action-dialog";
+import { ROLE_ACTION_TEXT, availableRoleActions, type RoleAction } from "@/lib/role-actions";
 import { DataUsahaAccessPanel } from "@/components/admin/data-usaha-access-panel";
 import { Button } from "@/components/ui/button";
 
@@ -44,7 +46,7 @@ import { Button } from "@/components/ui/button";
 // customer tinggal "Hubungkan Ulang" dari sisi mereka.
 type ImportBatch = { id: string; module: string; fileName: string; status: string; totalRows: number; createdAt: string };
 type Detail = {
-  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null; internalFlag: boolean; internalReason: InternalReason; isInternal: boolean };
+  user: { id: string; name: string; email: string; disabled: boolean; createdAt: string; companyName: string | null; phone: string | null; whatsapp: string | null; internalFlag: boolean; internalReason: InternalReason; isInternal: boolean; roles?: string[] };
   batches: ImportBatch[];
   total: number;
 };
@@ -84,6 +86,7 @@ export default function AdminUserDetailPage() {
   const [subscriptions, setSubscriptions] = useState<SubscriptionRow[] | null>(null);
   const [dataUsahaList, setDataUsahaList] = useState<DataUsahaRow[]>([]);
   const [notFound, setNotFound] = useState(false);
+  const [roleAction, setRoleAction] = useState<RoleAction | null>(null); // § Fase 189H — dialog aksi peran
   const [internalDialog, setInternalDialog] = useState(false); // § Fase 189G — dialog tandai/cabut internal (1 akun)
 
   const loadSubscriptions = useCallback(async () => {
@@ -173,6 +176,11 @@ export default function AdminUserDetailPage() {
                     {user.internalFlag ? "Cabut tanda internal" : "Tandai internal"}
                   </Button>
                 )}
+                {availableRoleActions(user.roles ?? []).map((action) => (
+                  <Button key={action} variant="outline" size="sm" type="button" onClick={() => setRoleAction(action)}>
+                    {ROLE_ACTION_TEXT[action].label}
+                  </Button>
+                ))}
               <EditUserContactDialog
                 userId={user.id}
                 initial={{ companyName: user.companyName ?? "", phone: user.phone ?? "", whatsapp: user.whatsapp ?? "" }}
@@ -361,6 +369,9 @@ export default function AdminUserDetailPage() {
           )}
         </CardContent>
       </Card>
+      {roleAction ? (
+        <RoleActionDialog open onOpenChange={(o) => !o && setRoleAction(null)} userId={user.id} action={roleAction} onDone={loadDetail} />
+      ) : null}
       <InternalAccountsDialog
         open={internalDialog}
         onOpenChange={setInternalDialog}
