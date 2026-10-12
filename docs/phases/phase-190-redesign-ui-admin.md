@@ -15,9 +15,9 @@ Perubahan visual lintas banyak komponen → eksekusi langsung bertahap, satu kom
 |---|---|---|
 | 190A | Mekanisme `compact:` (varian + atribut shell) dan primitif: Card, Button, Input/Select/Textarea, Badge, Table/DataTable, StatCard, PageHeader, Tabs, Dialog, EmptyState | Done (kode; visual menunggu user) |
 | 190B | Cangkang admin: AppShell, Sidebar (lebih ramping), Topbar, padding konten | Done (kode; visual menunggu user) |
-| 190C | Dashboard `/admin` & Insight: KPI klik-tembus + sparkline, grafik rapat, tab Insight rapi | Planned |
-| 190D | Interaksi: palet perintah (⌘/Ctrl+K), tabel lengket + fokus keyboard, keadaan kosong/memuat | Planned |
-| 190E | Audit halaman admin yang menulis ukuran sendiri (`text-3xl`, `p-8`, dst) & rapikan | Planned |
+| 190C | Dashboard `/admin` & Insight: KPI klik-tembus + sparkline (tren aktif & uang), grafik lebih rapat, metrik awal dari URL | Done (kode; visual menunggu user) |
+| 190D | Interaksi: palet perintah (⌘/Ctrl+K: halaman ber-izin + cari pelanggan), keadaan kosong rapat | Done (kode; header tabel lengket & fokus baris keyboard DITUNDA) |
+| 190E | Audit halaman admin yang menulis ukuran sendiri (`text-3xl`, `p-8`, dst) & rapikan | Done (1 temuan: judul Hasil Import) |
 | 190F | Tutup: suite penuh, review aksesibilitas ringan, catatan verifikasi visual untuk user | Planned |
 
 ## Scope

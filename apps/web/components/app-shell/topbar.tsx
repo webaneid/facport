@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Breadcrumbs } from "./breadcrumbs";
-import type { Surface } from "./sidebar";
+import { navItemsFor, type Surface } from "./sidebar";
+import { CommandPalette } from "./command-palette";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -103,6 +104,8 @@ export function Topbar({
         )}
 
         <div className="flex min-w-0 items-center justify-end gap-2 md:justify-self-end">
+          {/* § Fase 190D — pencarian cepat (Ctrl/⌘+K) hanya di panel admin */}
+          {surface === "admin" && <CommandPalette items={navItemsFor("admin")} />}
           <NotificationBell surface={surface} />
 
           <DropdownMenu>
