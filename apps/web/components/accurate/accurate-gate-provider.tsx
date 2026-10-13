@@ -10,12 +10,14 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { api } from "@/lib/api-client";
 import {
+  ADMIN_REQUIRED_MESSAGE,
   DATABASE_HAS_HISTORY_MESSAGE,
   bannerCopy,
   dismissKey,
   gateCopy,
   isGateAutoOpenPath,
   oauthErrorMessage,
+  safeAccurateInstallUrl,
   statusActionLabel,
   statusBadge,
   type AccurateGate,
@@ -167,6 +169,7 @@ function GatePopup({
 }) {
   const [busy, setBusy] = useState<null | "primary" | "secondary" | "attach">(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [installUrl, setInstallUrl] = useState<string | null>(null); // Fase 192 — tautan pemasangan aplikasi bagi Administrator database
   const errorMessage = actionError ?? oauthErrorMessage(oauthError);
   const copy = gateCopy(gate, { dataUsahaName, hasError: !!errorMessage && (gate.state === "not_connected" || gate.state === "reconnect" || gate.state === "update_permissions") });
 
@@ -244,10 +247,17 @@ function GatePopup({
     if (!chosen) return;
     setBusy("primary");
     setActionError(null);
+    setInstallUrl(null);
     const res = await api.accurate.databases.select.post({ dataUsahaId, accurateDbId: chosen.id, alias: chosen.alias });
     setBusy(null);
     if (res.error) {
-      const code = (res.error.value as ApiErrorValue)?.code;
+      const value = res.error.value as (ApiErrorValue & { installUrl?: string | null }) | undefined;
+      const code = value?.code;
+      if (code === "ACCURATE_ADMIN_REQUIRED") {
+        setActionError(ADMIN_REQUIRED_MESSAGE);
+        setInstallUrl(safeAccurateInstallUrl(value?.installUrl));
+        return;
+      }
       setActionError(code === "DATABASE_ALREADY_USED" ? "Database itu sudah dipakai Data Usaha lain." : "Gagal menyimpan pilihan database. Coba lagi.");
       return;
     }
@@ -309,6 +319,14 @@ function GatePopup({
             {errorMessage && (
               <p role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
                 {errorMessage}
+                {installUrl && (
+                  <>
+                    {" "}
+                    <a href={installUrl} target="_blank" rel="noopener noreferrer" className="font-medium underline">
+                      Buka halaman instalasi Accurate
+                    </a>
+                  </>
+                )}
               </p>
             )}
             {copy.primary.disabledReason && <p className="text-center text-xs text-muted-foreground">{copy.primary.disabledReason}</p>}

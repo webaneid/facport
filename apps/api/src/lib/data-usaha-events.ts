@@ -19,6 +19,7 @@ export const DATA_USAHA_EVENT = {
   DISCONNECT: "disconnect_accurate", // admin memutus koneksi (sudah ada sejak Fase 144; kini membawa `reason`)
   INVITE_SEAT: "invite_seat", // undang User Tambahan (pemilik atau admin)
   REVOKE_SEAT: "revoke_seat", // cabut akses User Tambahan (pemilik atau admin; admin WAJIB beralasan)
+  CONNECT_REJECTED: "connect_rejected", // Fase 192, ADR-0047 — penyambungan ditolak (akun Accurate sudah dipakai akun Facport lain); TANPA data pemilik lain
 } as const;
 export type DataUsahaEventAction = (typeof DATA_USAHA_EVENT)[keyof typeof DATA_USAHA_EVENT];
 const ALL_ACTIONS = Object.values(DATA_USAHA_EVENT);

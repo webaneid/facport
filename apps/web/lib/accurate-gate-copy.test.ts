@@ -6,6 +6,7 @@ import {
   isGateAutoOpenPath,
   joinNames,
   oauthErrorMessage,
+  safeAccurateInstallUrl,
   statusActionLabel,
   statusBadge,
   type AccurateGate,
@@ -132,7 +133,11 @@ describe("gateCopy — label tombol per situasi", () => {
 
 describe("oauthErrorMessage", () => {
   test("kode dikenal → kalimat ramah; kode tak dikenal → fallback; kosong → null", () => {
-    expect(oauthErrorMessage("accurate_account_in_use")).toContain("sudah terhubung ke akun Facport lain");
+    const inUse = oauthErrorMessage("accurate_account_in_use")!;
+    expect(inUse).toContain("sudah terhubung ke akun Facport lain");
+    // § Fase 192 — pesan memberi jalan keluar, bukan hanya penolakan; tidak menyebut siapa pemiliknya (privasi).
+    expect(inUse).toContain("memutus koneksinya");
+    expect(inUse).toContain("User Tambahan");
     expect(oauthErrorMessage("access_denied")).toContain("Izin tidak jadi diberikan");
     expect(oauthErrorMessage("kode_aneh")).toContain("belum berhasil");
     expect(oauthErrorMessage(null)).toBeNull();
@@ -195,5 +200,30 @@ describe("helper", () => {
   test("kunci 'Nanti' per Data Usaha + status", () => {
     expect(dismissKey("du1", "not_connected")).not.toBe(dismissKey("du1", "reconnect"));
     expect(dismissKey("du1", "not_connected")).not.toBe(dismissKey("du2", "not_connected"));
+  });
+});
+
+describe("safeAccurateInstallUrl (Fase 192, ADR-0047)", () => {
+  test("hanya https + host persis account.accurate.id tanpa kredensial", () => {
+    expect(safeAccurateInstallUrl("https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=a&databaseId=1")).toBe(
+      "https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=a&databaseId=1",
+    );
+  });
+  test("selain itu → null", () => {
+    for (const bad of [
+      "http://account.accurate.id/x",
+      "https://account.accurate.id:8443/x",
+      "https://evil.example/x",
+      "https://account.accurate.id.evil.example/x",
+      "https://account.accurate.id@evil.example/x",
+      "https://user:pw@account.accurate.id/x",
+      "javascript:alert(1)",
+      "",
+      "bukan url",
+      null,
+      undefined,
+    ]) {
+      expect(safeAccurateInstallUrl(bad as never)).toBeNull();
+    }
   });
 });

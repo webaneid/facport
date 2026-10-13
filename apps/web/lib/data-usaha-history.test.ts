@@ -28,6 +28,16 @@ describe("describeDataUsahaEvent", () => {
     expect(revoke.detail).toBe("Oleh admin · Alasan: Resign · Diganti undangan ke p@x.id");
   });
 
+  test("connect_rejected (Fase 192): kalimat jelas, peringatan, tanpa data pemilik lain", () => {
+    const restored = describeDataUsahaEvent(ev("connect_rejected", { reason: "account_in_use", conflictingConnectionId: "c-1", tokenRestored: true }));
+    expect(restored.title).toBe("Penyambungan ditolak: akun Accurate sudah dipakai akun Facport lain");
+    expect(restored.tone).toBe("warning");
+    expect(restored.detail).toContain("Token pemilik sah dipulihkan");
+    const notRestored = describeDataUsahaEvent(ev("connect_rejected", { reason: "account_in_use", tokenRestored: false }));
+    expect(notRestored.detail).toBeNull();
+    expect(() => describeDataUsahaEvent(ev("connect_rejected", null))).not.toThrow();
+  });
+
   test("defensif: changes null/aneh tidak melempar; aksi tak dikenal tampil apa adanya", () => {
     for (const changes of [null, undefined, "teks", 42, [], { alias: 5 }]) {
       for (const a of ["connect_accurate", "select_database", "reset_database", "disconnect_accurate", "invite_seat", "revoke_seat"]) {

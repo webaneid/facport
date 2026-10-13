@@ -36,6 +36,13 @@ export function describeDataUsahaEvent(event: DataUsahaEvent): { title: string; 
       ].filter(Boolean);
       return { title: c.removedAccount === true ? "Koneksi diputus admin beserta akun Accurate" : "Koneksi diputus admin", detail: parts.length ? parts.join(" · ") : null, tone: "danger" };
     }
+    case "connect_rejected":
+      // § Fase 192, ADR-0047 — TANPA data pemilik lain (privasi): hanya fakta penolakan dan apakah token pemilik sah dipulihkan.
+      return {
+        title: "Penyambungan ditolak: akun Accurate sudah dipakai akun Facport lain",
+        detail: c.tokenRestored === true ? "Token pemilik sah dipulihkan, koneksinya tidak terganggu" : null,
+        tone: "warning",
+      };
     case "invite_seat":
       return { title: `Mengundang ${str(c.email) ?? "User Tambahan"}`, detail: `Oleh ${who(c.by)}`, tone: "info" };
     case "revoke_seat": {

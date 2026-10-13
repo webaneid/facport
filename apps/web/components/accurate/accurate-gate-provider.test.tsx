@@ -203,6 +203,56 @@ describe("popup gerbang — izin/scope baru, terputus, galat callback", () => {
   });
 });
 
+describe("popup gerbang — galat 'hak Administrator' (Fase 192, ADR-0047)", () => {
+  test("ACCURATE_ADMIN_REQUIRED → penjelasan jelas + tautan instalasi (tab baru, noopener), popup tetap di pilih database", async () => {
+    const user = userEvent.setup();
+    selectPost.mockImplementationOnce(async () => ({
+      error: { value: { code: "ACCURATE_ADMIN_REQUIRED", installUrl: "https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=a&databaseId=7" } as { code?: string } },
+    }));
+    renderGate(gate({ state: "select_database" }));
+    await user.click(await screen.findByRole("radio", { name: /PT Satu/ }));
+    await user.click(screen.getByRole("button", { name: "Simpan & Lanjut" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Administrator");
+    expect(alert).not.toHaveTextContent("Gagal menyimpan pilihan database");
+    const link = screen.getByRole("link", { name: /halaman instalasi Accurate/i });
+    expect(link).toHaveAttribute("href", "https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=a&databaseId=7");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    expect(screen.getByRole("button", { name: "Simpan & Lanjut" })).toBeInTheDocument();
+  });
+
+  test("tautan dari server yang bukan account.accurate.id tidak dirender sebagai tautan", async () => {
+    const user = userEvent.setup();
+    selectPost.mockImplementationOnce(async () => ({ error: { value: { code: "ACCURATE_ADMIN_REQUIRED", installUrl: "https://evil.example/phish" } as { code?: string } } }));
+    renderGate(gate({ state: "select_database" }));
+    await user.click(await screen.findByRole("radio", { name: /PT Satu/ }));
+    await user.click(screen.getByRole("button", { name: "Simpan & Lanjut" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Administrator");
+    expect(screen.queryByRole("link", { name: /instalasi/i })).toBeNull();
+  });
+
+  test("tanpa installUrl → tetap ada penjelasan Administrator, tanpa tautan", async () => {
+    const user = userEvent.setup();
+    selectPost.mockImplementationOnce(async () => ({ error: { value: { code: "ACCURATE_ADMIN_REQUIRED", installUrl: null } as { code?: string } } }));
+    renderGate(gate({ state: "select_database" }));
+    await user.click(await screen.findByRole("radio", { name: /PT Satu/ }));
+    await user.click(screen.getByRole("button", { name: "Simpan & Lanjut" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Administrator");
+    expect(screen.queryByRole("link", { name: /instalasi/i })).toBeNull();
+  });
+
+  test("galat lain tetap memakai pesan generik dan tanpa tautan", async () => {
+    const user = userEvent.setup();
+    selectPost.mockImplementationOnce(async () => ({ error: { value: { code: "ACCURATE_REQUEST_FAILED" } } }));
+    renderGate(gate({ state: "select_database" }));
+    await user.click(await screen.findByRole("radio", { name: /PT Satu/ }));
+    await user.click(screen.getByRole("button", { name: "Simpan & Lanjut" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Gagal menyimpan pilihan database");
+    expect(screen.queryByRole("link", { name: /instalasi/i })).toBeNull();
+  });
+});
+
 describe("popup gerbang — konfirmasi database", () => {
   test("'Ya, Sudah Benar' mengonfirmasi dan menampilkan kartu sukses", async () => {
     const user = userEvent.setup();
