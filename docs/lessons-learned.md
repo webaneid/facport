@@ -6248,3 +6248,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Penolakan harus berjejak:** tadinya log hanya memuat id Data Usaha, sehingga akun yang bentrok tak bisa dilacak. Sekarang `connect_rejected` (tanpa data pemilik lain) di riwayat Data Usaha.
 - **Cara menyelidiki produksi** (berguna ulang): log `docker compose logs --since Nh api | grep ...`; kronologi dari `audit_logs` (`entity_type='data_usaha'`, join `data_usaha`/`public.user`); `public.user` tanpa tanda kutip bila di-join sebagai skema-kualifikasi; jangan meminta token/kolom rahasia.
 
+
+## 2026-10-13 — Scope commit ber-koma (`feat(api,web):`) tidak dikenali semantic-release → rilis tidak terbit
+- **Gejala:** merge `develop`→`main` lulus, workflow Release hijau, tetapi log menulis "The commit should not trigger a release / no relevant changes"; tag tidak naik dan job build Deploy dilewati.
+- **Penyebab (dibuktikan dengan `conventional-commits-parser` yang sama):** scope hanya boleh berisi `\w $ @ . - * / spasi`; koma TIDAK. `feat(api,web): ...` terbaca tanpa tipe (type kosong) sehingga tidak dihitung. `feat(web):` terbaca normal. Rilis sebelumnya selamat hanya karena ada commit `feat(web)` lain di rentang yang sama.
+- **Aturan:** satu scope per commit (`feat(api):`, `feat(web):`) atau tanpa scope (`feat:`). Untuk perubahan lintas app pakai tanpa scope. Sebelum merge ke `main`, periksa: `git log --format=%s tagTerakhir..develop | grep -E '^(feat|fix)\('` tidak boleh memuat koma di dalam kurung.
+- **Pemulihan:** commit penanda kosong ber-header benar di `develop` lalu merge ulang ke `main`.
