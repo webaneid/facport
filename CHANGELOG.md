@@ -1,3 +1,12 @@
+## 2.36.0 (2026-10-13)
+
+* chore: rilis Fase 192 (merge ulang dengan commit penanda feat) ([7e7cb6b](https://github.com/webaneid/facport/commit/7e7cb6b))
+* chore: rilis Fase 192 (perbaikan koneksi Accurate pasca insiden, ADR-0047) ([f140242](https://github.com/webaneid/facport/commit/f140242))
+* feat: koneksi Accurate pasca insiden — galat hak Administrator jelas, pesan akun-terpakai bisa ditin ([4c2b396](https://github.com/webaneid/facport/commit/4c2b396))
+* docs: catat jebakan scope ber-koma pada commit semantic-release ([a761b92](https://github.com/webaneid/facport/commit/a761b92))
+* docs: rencana Fase 192 + ADR-0047 (perbaikan koneksi Accurate pasca insiden) ([eeee86b](https://github.com/webaneid/facport/commit/eeee86b))
+* feat(api,web): perbaikan koneksi Accurate pasca insiden — galat hak Administrator jelas, pesan akun- ([0c30c93](https://github.com/webaneid/facport/commit/0c30c93))
+
 ## 2.35.0 (2026-10-12)
 
 * chore: rilis Fase 189I (kartu Data Diri di halaman Profil) ([e45b282](https://github.com/webaneid/facport/commit/e45b282))
