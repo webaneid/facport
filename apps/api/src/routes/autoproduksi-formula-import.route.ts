@@ -32,7 +32,7 @@ function suggestMapping(excelColumns: string[]): Record<string, string> {
 
 // § Fase 186 — Import Formula kini ASINKRON lewat job queue (`JOBS.IMPORT_AUTOPRODUKSI_FORMULA`, inti di `lib/autoproduksi-formula-import.ts`), SAMA seperti modul import lain:
 // confirm/retry → status `processing` + enqueue → halaman Hasil polling + progress bar. (Fase 166 dulu sinkron; dicabut karena file besar tanpa progres + risiko timeout proxy.)
-// Tetap: Formula = data LOKAL murni (tanpa Accurate), TIDAK ada Batal Import, duplikat Nama Resep/Formula DIBOLEHKAN (tiap grup valid = Formula BARU), retry hanya
+// Tetap: Formula = data LOKAL murni (tanpa Accurate), TIDAK ada Batal Import, Nama Resep/Formula WAJIB unik per Data Usaha (nama yang sudah dipakai → grup gagal, tidak pernah menimpa), retry hanya
 // memproses baris pending/failed (grup yang sudah sukses tidak pernah diproses ulang).
 
 export const autoproduksiFormulaImportRoute = new Elysia()

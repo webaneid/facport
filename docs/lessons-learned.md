@@ -6254,3 +6254,8 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Penyebab (dibuktikan dengan `conventional-commits-parser` yang sama):** scope hanya boleh berisi `\w $ @ . - * / spasi`; koma TIDAK. `feat(api,web): ...` terbaca tanpa tipe (type kosong) sehingga tidak dihitung. `feat(web):` terbaca normal. Rilis sebelumnya selamat hanya karena ada commit `feat(web)` lain di rentang yang sama.
 - **Aturan:** satu scope per commit (`feat(api):`, `feat(web):`) atau tanpa scope (`feat:`). Untuk perubahan lintas app pakai tanpa scope. Sebelum merge ke `main`, periksa: `git log --format=%s tagTerakhir..develop | grep -E '^(feat|fix)\('` tidak boleh memuat koma di dalam kurung.
 - **Pemulihan:** commit penanda kosong ber-header benar di `develop` lalu merge ulang ke `main`.
+
+## 2026-10-13 — Fase 193: membalik keputusan produk harus disertai pencarian teks aturan lama di SEMUA lapisan
+- **Gejala:** aturan "Nama Resep/Formula wajib unik" (2026-10-09) membalik "duplikat dibolehkan" (Fase 166), tetapi kalimat lama masih ada di 6 tempat: komentar route import, panduan kolom di template Excel yang diunduh pelanggan (menyesatkan!), komentar halaman import web, mapping & worker Import Produksi.
+- **Pelajaran:** saat sebuah aturan dibalik, `grep` kata kunci aturan lamanya (mis. `DIBOLEHKAN`, `boleh ada`, `TIDAK menimpa`) di kode, tes, template pengguna, dan docs — bukan hanya mengubah perilakunya. Teks yang tampil ke pelanggan (template/petunjuk) paling berisiko.
+- **Jebakan tes web (berulang):** komponen yang mengimpor nama dari `@/lib/api-client` rusak di suite penuh bila tes lain memakai `mock.module("@/lib/api-client", …)` tanpa nama itu (SyntaxError "Export named … not found"). Oper `baseUrl`/fungsi header lewat props dari halaman.

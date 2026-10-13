@@ -48,6 +48,7 @@ export async function processFormulaBatchRows(
             finishedGoodItemName: record.finishedGoodItemName,
             standardCost: record.standardCost,
             adjustmentAccountNo: record.adjustmentAccountNo,
+            isActive: record.isActive,
           })
           .returning();
         await tx.insert(autoproduksiFormulaItems).values(

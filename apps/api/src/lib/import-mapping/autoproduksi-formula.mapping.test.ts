@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   resolveAutoproduksiItemType,
+  resolveFormulaStatus,
   groupAutoproduksiFormulaRows,
   autoproduksiFormulaRowError,
   validateAutoproduksiFormulaGroup,
@@ -164,5 +165,46 @@ describe("buildAutoproduksiFormulaRecord — kasus nyata client", () => {
     expect(record.items).toHaveLength(2);
     expect(record.items[0]).toMatchObject({ itemNo: "100006", itemUnitName: "Kg", quantity: "0.5" });
     expect(record.items[1]).toMatchObject({ itemNo: "100007", itemUnitName: "Kg", quantity: "0.2" });
+  });
+});
+
+// § Fase 193 — kolom Status (Aktif/Nonaktif) supaya Formula nonaktif tetap nonaktif setelah export → import balik.
+describe("Status Formula (Fase 193)", () => {
+  const mapping = { ...columnMapping, Status: "status" };
+  const bj = (status?: unknown): ImportRowRecord => ({
+    id: "bj",
+    rawData: { "Nama Resep/Formula": "Roti", "Akun Perantara": "1105", "Tipe Barang": "BJ", "Nomor Item": "FG1", "Nama Unit": "Pcs", ...(status === undefined ? {} : { Status: status }) },
+  });
+  const bb: ImportRowRecord = { id: "bb", rawData: { "Nama Resep/Formula": "Roti", "Akun Perantara": "1105", "Tipe Barang": "BB", "Nomor Item": "RM1", Jumlah: 2, "Nama Unit": "Kg" } };
+
+  test("resolveFormulaStatus: aktif/nonaktif (berbagai ejaan), kosong = aktif, asing = null", () => {
+    expect(resolveFormulaStatus("Aktif")).toBe(true);
+    expect(resolveFormulaStatus(" aktif ")).toBe(true);
+    expect(resolveFormulaStatus("Nonaktif")).toBe(false);
+    expect(resolveFormulaStatus("non aktif")).toBe(false);
+    expect(resolveFormulaStatus("Tidak Aktif")).toBe(false);
+    expect(resolveFormulaStatus(0)).toBe(false);
+    expect(resolveFormulaStatus(1)).toBe(true);
+    expect(resolveFormulaStatus(undefined)).toBe(true);
+    expect(resolveFormulaStatus("")).toBe(true);
+    expect(resolveFormulaStatus("mungkin")).toBeNull();
+  });
+
+  test("baris BJ dengan Status asing → galat field status; Status kosong/valid lolos", () => {
+    expect(autoproduksiFormulaRowError(bj("mungkin").rawData, mapping)).toContain("status");
+    expect(autoproduksiFormulaRowError(bj("Nonaktif").rawData, mapping)).not.toContain("status");
+    expect(autoproduksiFormulaRowError(bj().rawData, mapping)).not.toContain("status");
+  });
+
+  test("record: isActive diambil dari baris BJ (otoritatif); tanpa kolom = aktif", () => {
+    const group = (rowsIn: ImportRowRecord[]) => ({ groupKey: "Roti", rows: rowsIn });
+    expect(buildAutoproduksiFormulaRecord(group([bb, bj("Nonaktif")]), mapping).isActive).toBe(false);
+    expect(buildAutoproduksiFormulaRecord(group([bb, bj("Aktif")]), mapping).isActive).toBe(true);
+    expect(buildAutoproduksiFormulaRecord(group([bb, bj()]), columnMapping).isActive).toBe(true);
+  });
+
+  test("Status di baris BB diabaikan (hanya BJ yang menentukan)", () => {
+    const bbNon = { ...bb, rawData: { ...bb.rawData, Status: "Nonaktif" } };
+    expect(buildAutoproduksiFormulaRecord({ groupKey: "Roti", rows: [bbNon, bj("Aktif")] }, mapping).isActive).toBe(true);
   });
 });

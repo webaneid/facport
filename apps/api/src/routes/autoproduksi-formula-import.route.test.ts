@@ -37,6 +37,7 @@ const columnMapping = {
   Jumlah: "quantity",
   "Nama Unit": "itemUnitName",
   "Unit Cost": "unitCost",
+  Status: "status",
 };
 
 function buildExcelFile(rows: (string | number)[][], filename = "formula.xlsx"): File {
@@ -259,3 +260,48 @@ describe("runFormulaImportJob — idempoten & nomor Formula", () => {
   });
 });
 
+
+// § Fase 193 — kolom Status: Formula nonaktif hasil Export tetap nonaktif saat diimpor balik.
+describe("Import Formula — kolom Status (Fase 193)", () => {
+  const HEADER_STATUS = [...HEADER, "Status"];
+
+  test("Status Nonaktif di baris BJ → Formula tersimpan isActive=false; tanpa Status → aktif", async () => {
+    const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-status-${runId}@test.local`);
+    const rows = [
+      HEADER_STATUS,
+      ["Resep Mati", "110501", "BB", "100006", "Telur", 0.5, "Kg", "", ""],
+      ["Resep Mati", "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000, "Nonaktif"],
+      ["Resep Hidup", "110501", "BB", "100006", "Telur", 0.5, "Kg", "", ""],
+      ["Resep Hidup", "110501", "BJ", "100008", "Roti", 1, "Pcs", "", ""],
+    ];
+    const { finalStatus } = await uploadAndConfirm(cookie, rows);
+    expect(finalStatus).toBe("completed");
+    const formulas = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
+    expect(formulas.find((f) => f.name === "Resep Mati")!.isActive).toBe(false);
+    expect(formulas.find((f) => f.name === "Resep Hidup")!.isActive).toBe(true);
+  });
+
+  test("Status asing di BJ → baris gagal (bukan ditebak), tidak ada Formula tersimpan", async () => {
+    const { cookie, subscriptionId } = await createProvisionedUser(`ap-formula-status-bad-${runId}@test.local`);
+    const rows = [
+      HEADER_STATUS,
+      ["Resep Aneh", "110501", "BB", "100006", "Telur", 0.5, "Kg", "", ""],
+      ["Resep Aneh", "110501", "BJ", "100005", "Bolu", 1, "Loyang", 17000, "mungkin"],
+    ];
+    const { batchId, finalStatus } = await uploadAndConfirm(cookie, rows);
+    expect(finalStatus).toBe("completed_with_errors");
+    const formulas = await db.select().from(autoproduksiFormulas).where(eq(autoproduksiFormulas.subscriptionId, subscriptionId));
+    expect(formulas).toHaveLength(0);
+    const batchRows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batchId));
+    expect(batchRows.some((r) => r.status === "failed")).toBe(true);
+  });
+
+  test("upload menyarankan pemetaan kolom Status otomatis", async () => {
+    const { cookie } = await createProvisionedUser(`ap-formula-status-map-${runId}@test.local`);
+    const form = new FormData();
+    form.append("file", buildExcelFile([HEADER_STATUS, ["R", "110501", "BJ", "1", "B", "", "Pcs", "", "Aktif"]]));
+    const res = await testApp.handle(new Request("http://localhost/autoproduksi/import-formula/upload", { method: "POST", headers: { cookie }, body: form }));
+    const body = (await res.json()) as { suggestedMapping: Record<string, string> };
+    expect(body.suggestedMapping.Status).toBe("status");
+  });
+});

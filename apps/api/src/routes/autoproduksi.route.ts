@@ -1,6 +1,6 @@
 import { Elysia, t } from "elysia";
 import { allocateFormulaNumber, formatFormulaCode, withFormulaCode, isFormulaNameTaken, lockDataUsahaForFormula } from "../lib/formula-number";
-import { eq, and, desc } from "drizzle-orm";
+import { eq, and, desc, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
 import { applyContextDefaults } from "../lib/autoproduksi";
@@ -9,6 +9,7 @@ import { checkFormulaUnits, unitTargetKey } from "../lib/autoproduksi-unit-check
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { boss, JOBS, startQueue } from "../lib/queue";
+import { generateFormulaExportBuffer } from "../lib/autoproduksi-formula-export";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Produk
 // AutoProduksi. BEDA dari 23 modul Facport/Konverter lain (SEMUA
@@ -113,6 +114,32 @@ export const autoproduksiRoute = new Elysia()
       return { formulas: formulas.map(withFormulaCode) };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  // § Fase 193 — Export Excel (format = template Import Formula + Status + No. Formula). Default hanya Formula AKTIF; `includeInactive=true` menyertakan nonaktif
+  // (Status "Nonaktif" ikut diekspor & dibaca Import). Selalu terbatas pada subscription pemanggil. Rute statis, tidak bentrok dengan `/formulas/:id`.
+  .get(
+    "/autoproduksi/formulas/export",
+    async ({ subscription, query }) => {
+      const includeInactive = query.includeInactive === "true";
+      const formulas = await db
+        .select()
+        .from(autoproduksiFormulas)
+        .where(and(eq(autoproduksiFormulas.subscriptionId, subscription.id), includeInactive ? undefined : eq(autoproduksiFormulas.isActive, true)));
+      const items = formulas.length === 0 ? [] : await db.select().from(autoproduksiFormulaItems).where(inArray(autoproduksiFormulaItems.formulaId, formulas.map((f) => f.id)));
+      const buffer = generateFormulaExportBuffer(formulas.map((f) => ({ ...f, items: items.filter((i) => i.formulaId === f.id) })));
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="export-formula-${new Date().toISOString().slice(0, 10)}.xlsx"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      query: t.Object({ includeInactive: t.Optional(t.Union([t.Literal("true"), t.Literal("false")])) }),
+    },
   )
   .get(
     "/autoproduksi/formulas/:id",

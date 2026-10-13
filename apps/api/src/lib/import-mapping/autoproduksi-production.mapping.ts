@@ -17,8 +17,8 @@
 // baru. `rawMaterialWarehouseName` berlaku SERAGAM ke SEMUA baris Bahan
 // Baku formula yang dipakai (bukan per-Bahan-Baku lagi).
 //
-// § Resolusi nama Formula AMBIGU (duplikat nama DIBOLEHKAN di Import
-// Formula, keputusan eksplisit user) ditangani di WORKER
+// § Resolusi nama Formula AMBIGU (Formula lama sebelum aturan nama-unik
+// 2026-10-09 masih bisa kembar; Import Formula & form kini menolak nama ganda) ditangani di WORKER
 // (`processAutoproduksiProductionImportRow`, workers/index.ts) — butuh
 // akses DB, bukan di file pure ini. File ini CUMA validasi bentuk baris
 // (tanggal valid, qty > 0, nama tidak kosong, kolom tidak kepanjangan).

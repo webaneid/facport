@@ -1852,8 +1852,8 @@ export async function processFinishedGoodSlipGroup(
 // autoproduksi.ts, DIREUSE APA ADANYA dari flow manual single-entry —
 // TIDAK ADA logic Accurate baru ditulis di sini).
 //
-// § Duplikat Nama Resep/Formula DIBOLEHKAN di Import Formula (keputusan
-// eksplisit user) — 2+ match DITOLAK di sini (bukan ditebak salah satu),
+// § Nama Resep/Formula kini WAJIB unik (2026-10-09), tapi Formula lama bisa masih kembar
+// — 2+ match DITOLAK di sini (bukan ditebak salah satu),
 // konsisten "aman di atas cakupan" (ADR-0013).
 //
 // § Entry `autoproduksi_production_entries` DIBUAT DI SINI (bukan di

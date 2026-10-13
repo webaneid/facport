@@ -17,10 +17,10 @@ import { describeImportActionError, type ImportActionErrorValue } from "@/lib/im
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 
 // § architecture-autoproduksi.md — Import Formula (Excel). TIDAK
-// memanggil Accurate, diproses SYNCHRONOUS — begitu confirm selesai,
-// batch SUDAH `completed`/`completed_with_errors` (bukan `processing`).
-// Duplikat Nama Resep/Formula DIBOLEHKAN (keputusan eksplisit user) —
-// setiap grup valid SELALU bikin Formula baru.
+// memanggil Accurate. Sejak Fase 186 diproses ASINKRON (job) — confirm
+// → `processing`, halaman Hasil polling sampai `completed`/`completed_with_errors`.
+// Nama Resep/Formula WAJIB unik per Data Usaha — grup yang namanya sudah
+// dipakai GAGAL (tidak pernah menimpa).
 // § Fase 168 (diminta client) — Cabang/Gudang/Nomor Project/Departemen
 // DIHAPUS dari modul ini (pindah ke Import Produksi) — Formula sekarang
 // murni resep, dipakai lintas cabang/gudang.
@@ -34,6 +34,7 @@ const ACCURATE_FIELDS = [
   { value: "quantity", label: "Jumlah (wajib untuk baris BB)" },
   { value: "itemUnitName", label: "Nama Unit (wajib)" },
   { value: "unitCost", label: "Unit Cost (hanya baris BJ)" },
+  { value: "status", label: "Status: Aktif/Nonaktif (baris BJ, opsional)" },
 ] as const;
 
 const uploadSchema = z.object({
