@@ -1,3 +1,8 @@
+## 2.37.0 (2026-10-13)
+
+* chore: merge develop ke main (Fase 193 — export Formula AutoProduksi) ([5583454](https://github.com/webaneid/facport/commit/5583454))
+* feat: export Formula AutoProduksi (format = template Import, opsi sertakan nonaktif) + kolom Status  ([c233e61](https://github.com/webaneid/facport/commit/c233e61))
+
 ## 2.36.0 (2026-10-13)
 
 * chore: rilis Fase 192 (merge ulang dengan commit penanda feat) ([7e7cb6b](https://github.com/webaneid/facport/commit/7e7cb6b))
