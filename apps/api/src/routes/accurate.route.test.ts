@@ -2,9 +2,9 @@ import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
 import { auth } from "../lib/auth";
 import { accurateRoute } from "./accurate.route";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { db } from "../lib/db";
-import { plans, subscriptions, accurateConnections, memberSeats, dataUsaha, user as userTable } from "../db/schema";
+import { plans, subscriptions, accurateConnections, memberSeats, dataUsaha, auditLogs, user as userTable } from "../db/schema";
 import { decrypt } from "../lib/encryption";
 import { createTestAccurateConnection, createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 import { ALL_ACCURATE_SCOPES, scopesForModules } from "../lib/accurate-scopes";
@@ -85,7 +85,7 @@ async function withAccurateEnv<T>(fn: () => Promise<T>): Promise<T> {
 type TokenReply = { access_token?: string; refresh_token?: string; expires_in?: number; token_type?: string; scope?: string; user?: { id?: number; email?: string } };
 // Mock fetch ke Accurate berdasarkan URL: token endpoint, db-list.do, open-db.do.
 async function withAccurateFetch<T>(
-  replies: { token?: TokenReply; databases?: { id: number; alias: string }[]; openDbOk?: boolean },
+  replies: { token?: TokenReply; databases?: { id: number; alias: string }[]; openDbOk?: boolean; openDbMessage?: string },
   fn: () => Promise<T>,
 ): Promise<T> {
   const original = globalThis.fetch;
@@ -95,7 +95,7 @@ async function withAccurateFetch<T>(
     if (url.includes("/db-list.do")) return new Response(JSON.stringify({ s: true, d: (replies.databases ?? []).map((d) => ({ ...d, trial: false, expired: false })) }), { status: 200 });
     if (url.includes("/open-db.do")) {
       return replies.openDbOk === false
-        ? new Response(JSON.stringify({ s: false, d: ["Gagal"] }), { status: 500 })
+        ? new Response(JSON.stringify({ s: false, d: [replies.openDbMessage ?? "Gagal"] }), { status: 500 })
         : new Response(JSON.stringify({ s: true, d: ["ok"], session: "s", host: "https://zeus.test", dataVersion: 1, licenseEnd: "01/01/2030" }), { status: 200 });
     }
     return original(input as never);
@@ -366,7 +366,7 @@ describe("GET /accurate/oauth/callback — upsert per akun Accurate", () => {
     expect(await db.select().from(accurateConnections).where(eq(accurateConnections.accurateUserId, accountId))).toHaveLength(1);
   });
 
-  test("akun Accurate milik pemilik Facport LAIN → ditolak (accurate_account_in_use), koneksi pemilik lama tidak tersentuh", async () => {
+  test("akun Accurate milik pemilik Facport LAIN → ditolak (accurate_account_in_use); kepemilikan tak berubah, token pemilik DIPULIHKAN (ADR-0047)", async () => {
     const a = await newUser("cb-own-a");
     const b = await newUser("cb-own-b");
     const duA = await createTestDataUsaha(a.userId);
@@ -376,10 +376,57 @@ describe("GET /accurate/oauth/callback — upsert per akun Accurate", () => {
     const location = await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(accountId)) }, () => callback(duB, b.userId, b.cookie)));
     expect(location).toContain("accurate_error=accurate_account_in_use");
     const [rowB] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duB));
-    expect(rowB!.accurateConnectionId).toBeNull();
+    expect(rowB!.accurateConnectionId).toBeNull(); // B tidak mendapat apa pun
     const [after] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, connA.id));
-    expect(after!.userId).toBe(a.userId);
-    expect(decrypt(after!.accessTokenEncrypted)).toBe("test-access-token"); // token pemilik lama tidak ditimpa
+    expect(after!.userId).toBe(a.userId); // tetap milik A
+    expect(after!.status).toBe("active");
+    // Penukaran kode sudah mematikan token lama di sisi Accurate → token baru disimpan di baris A supaya A tidak putus diam-diam.
+    expect(decrypt(after!.accessTokenEncrypted)).toBe("new-access");
+    expect(decrypt(after!.refreshTokenEncrypted)).toBe("new-refresh");
+    expect(await db.select().from(accurateConnections).where(eq(accurateConnections.accurateUserId, accountId))).toHaveLength(1);
+    const [duAfter] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, duA));
+    expect(duAfter!.accurateConnectionId).toBe(connA.id);
+  });
+
+  test("penolakan tercatat di riwayat Data Usaha B (connect_rejected) TANPA data pemilik lain", async () => {
+    const a = await newUser("cb-rej-a");
+    const b = await newUser("cb-rej-b");
+    const duA = await createTestDataUsaha(a.userId);
+    const duB = await createTestDataUsaha(b.userId);
+    const accountId = String(Math.floor(Math.random() * 1e9));
+    const connA = await createTestAccurateConnection(a.userId, { dataUsahaId: duA, accurateUserId: accountId });
+    await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(accountId)) }, () => callback(duB, b.userId, b.cookie)));
+    const events = await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "data_usaha"), eq(auditLogs.entityId, duB), eq(auditLogs.action, "connect_rejected")));
+    expect(events).toHaveLength(1);
+    expect(events[0]!.actorId).toBe(b.userId);
+    expect(events[0]!.changes).toEqual({ reason: "account_in_use", conflictingConnectionId: connA.id, tokenRestored: true });
+    const text = JSON.stringify(events[0]!.changes);
+    expect(text).not.toContain(a.userId);
+    expect(text).not.toContain("accurate.test"); // email akun Accurate tidak bocor
+    // Data Usaha pemilik lama tidak dapat peristiwa apa pun dari penolakan ini.
+    expect(await db.select().from(auditLogs).where(and(eq(auditLogs.entityType, "data_usaha"), eq(auditLogs.entityId, duA), eq(auditLogs.action, "connect_rejected")))).toHaveLength(0);
+  });
+
+  test("koneksi pemilik berstatus expired dipulihkan jadi active; berstatus revoked TIDAK dihidupkan kembali", async () => {
+    const owner = await newUser("cb-rest-o");
+    const other = await newUser("cb-rest-x");
+    const duO = await createTestDataUsaha(owner.userId);
+    const duX = await createTestDataUsaha(other.userId);
+    const expiredId = String(Math.floor(Math.random() * 1e9));
+    const revokedId = String(Math.floor(Math.random() * 1e9));
+    const duO2 = await createTestDataUsaha(owner.userId);
+    const expiredConn = await createTestAccurateConnection(owner.userId, { dataUsahaId: duO, status: "expired", accurateUserId: expiredId });
+    const revokedConn = await createTestAccurateConnection(owner.userId, { dataUsahaId: duO2, status: "revoked", accurateUserId: revokedId });
+    await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(expiredId)) }, () => callback(duX, other.userId, other.cookie)));
+    await withAccurateEnv(() => withAccurateFetch({ token: goodToken(Number(revokedId)) }, () => callback(duX, other.userId, other.cookie)));
+    const [e] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, expiredConn.id));
+    expect(e!.status).toBe("active");
+    expect(decrypt(e!.accessTokenEncrypted)).toBe("new-access");
+    const [r] = await db.select().from(accurateConnections).where(eq(accurateConnections.id, revokedConn.id));
+    expect(r!.status).toBe("revoked");
+    expect(decrypt(r!.accessTokenEncrypted)).toBe("test-access-token");
+    const rejected = await db.select().from(auditLogs).where(and(eq(auditLogs.entityId, duX), eq(auditLogs.action, "connect_rejected")));
+    expect(rejected.map((x) => (x.changes as { tokenRestored: boolean }).tokenRestored).sort()).toEqual([false, true]);
   });
 
   test("respons token tanpa user.id → ditolak (missing_account), tidak ada baris yatim", async () => {
@@ -541,6 +588,30 @@ describe("POST /accurate/databases/select", () => {
     expect(res.status).toBe(502);
     const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
     expect(row!.accurateDbId).toBeNull();
+  });
+
+  test("422 ACCURATE_ADMIN_REQUIRED + tautan instalasi tervalidasi kalau Accurate minta hak Administrator; Data Usaha tidak berubah", async () => {
+    const { userId, cookie } = await newUser("sel-admin");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du });
+    const message =
+      "Anda memerlukan hak Administrator untuk mulai menginstall Aplikasi facport pada data usaha PT Uji. Gunakan link https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=abc&databaseId=7 untuk menginstall.";
+    const res = await withAccurateFetch({ openDbOk: false, openDbMessage: message }, () => post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 7, alias: "PT Uji" }));
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ code: "ACCURATE_ADMIN_REQUIRED", installUrl: "https://account.accurate.id/marketplace/user/application-install-confirm.do?appKey=abc&databaseId=7" });
+    const [row] = await db.select().from(dataUsaha).where(eq(dataUsaha.id, du));
+    expect(row!.accurateDbId).toBeNull();
+  });
+
+  test("ACCURATE_ADMIN_REQUIRED dengan tautan ke host lain → installUrl null (tidak pernah meneruskan tautan tak tepercaya)", async () => {
+    const { userId, cookie } = await newUser("sel-admin-evil");
+    const du = await createTestDataUsaha(userId);
+    await createTestAccurateConnection(userId, { dataUsahaId: du });
+    const res = await withAccurateFetch({ openDbOk: false, openDbMessage: "Anda memerlukan hak Administrator. Gunakan link https://evil.example/phish segera" }, () =>
+      post(cookie, "/accurate/databases/select", { dataUsahaId: du, accurateDbId: 7, alias: "PT Uji" }),
+    );
+    expect(res.status).toBe(422);
+    expect(await res.json()).toEqual({ code: "ACCURATE_ADMIN_REQUIRED", installUrl: null });
   });
 
   test("404 bukan pemilik; 400 NOT_CONNECTED kalau belum terhubung; 422 alias kepanjangan", async () => {

@@ -23,6 +23,26 @@ export class AccurateApiError extends Error {
   }
 }
 
+// § Fase 192, ADR-0047 — Accurate menolak memasang aplikasi di database bila pengguna yang menyambung bukan Administrator database itu
+// ("Anda memerlukan hak Administrator untuk mulai menginstall Aplikasi … Gunakan link https://account.accurate.id/…"). Ini kondisi yang DIHARAPKAN
+// (bukan bug koneksi): pelanggan perlu tindakan Administrator, jadi dikenali agar UI menjelaskannya. `installUrl` diteruskan ke browser HANYA bila
+// https dan host PERSIS `account.accurate.id` tanpa kredensial — pesan berasal dari pihak ketiga, jangan pernah dipercaya mentah.
+const ADMIN_REQUIRED_PATTERN = /hak administrator/i;
+const INSTALL_HOST = "account.accurate.id";
+
+export function parseAdminRequired(err: unknown): { installUrl: string | null } | null {
+  if (!(err instanceof AccurateApiError) || !ADMIN_REQUIRED_PATTERN.test(err.message)) return null;
+  const found = /https?:\/\/[^\s"'<>]+/i.exec(err.message)?.[0];
+  if (!found) return { installUrl: null };
+  try {
+    const url = new URL(found.replace(/[.,;:)\]]+$/, ""));
+    const safe = url.protocol === "https:" && url.hostname === INSTALL_HOST && !url.port && !url.username && !url.password;
+    return { installUrl: safe ? url.toString() : null };
+  } catch {
+    return { installUrl: null };
+  }
+}
+
 // § Fase 141 E6 (TERBUKTI, akun DEV) — scope OAuth kurang → HTTP 403 dengan body XML (BUKAN envelope
 // {s,d}): `<InsufficientScopeException><error>insufficient_scope</error>...<scope>nama</scope>`.
 // Dulu jatuh ke galat generik "non-JSON"/"HTTP 403" tanpa tahu scope apa yang kurang.

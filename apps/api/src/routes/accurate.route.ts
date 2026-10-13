@@ -6,7 +6,7 @@ import { auth } from "../lib/auth";
 import { permissionPlugin } from "../lib/permission";
 import { getAccessibleSubscriptionsWithPlans } from "../lib/subscription-gate";
 import { hasAccessToDataUsaha, ownsDataUsaha } from "../lib/data-usaha";
-import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase, parseGrantedScopes } from "../lib/accurate";
+import { getAuthorizeUrl, exchangeCodeForToken, listDatabases, openDatabase, parseAdminRequired, parseGrantedScopes } from "../lib/accurate";
 import { ALL_ACCURATE_SCOPES } from "../lib/accurate-scopes";
 import { missingScopes } from "../lib/accurate-scope-check";
 import { resolveConnectionForDataUsaha } from "../lib/accurate-connection";
@@ -220,7 +220,33 @@ export const accurateRoute = new Elysia()
           })
           .returning();
         if (!connection) {
-          logger.warn({ dataUsahaId: context.dataUsahaId }, "Accurate OAuth callback: akun Accurate sudah dipakai pemilik Facport lain");
+          // § Fase 192, ADR-0047 — penukaran kode di atas SUDAH mematikan token lama akun Accurate ini di sisi Accurate (Fase 141 E2). Supaya pemilik
+          // yang sah tidak putus diam-diam, token baru (akun Accurate yang SAMA) disimpan di baris pemiliknya — hanya `active`/`expired` (baris
+          // `revoked` = pemutusan yang disengaja, tidak dihidupkan kembali) dan terkunci pada `accurate_user_id` yang sama persis. Pemanggil tetap
+          // ditolak dan tidak mendapat apa pun (tanpa penunjuk koneksi, tanpa data pemilik).
+          const [existing] = await db
+            .select({ id: accurateConnections.id, status: accurateConnections.status })
+            .from(accurateConnections)
+            .where(eq(accurateConnections.accurateUserId, accurateUserId));
+          let tokenRestored = false;
+          if (existing && (existing.status === "active" || existing.status === "expired")) {
+            const restored = await db
+              .update(accurateConnections)
+              .set(values)
+              .where(and(eq(accurateConnections.id, existing.id), eq(accurateConnections.accurateUserId, accurateUserId), inArray(accurateConnections.status, ["active", "expired"])))
+              .returning({ id: accurateConnections.id });
+            tokenRestored = restored.length > 0;
+          }
+          logger.warn(
+            { dataUsahaId: context.dataUsahaId, conflictingConnectionId: existing?.id ?? null, tokenRestored },
+            "Accurate OAuth callback: akun Accurate sudah dipakai pemilik Facport lain",
+          );
+          await recordDataUsahaEvent({
+            dataUsahaId: context.dataUsahaId,
+            action: DATA_USAHA_EVENT.CONNECT_REJECTED,
+            actorId: context.userId,
+            changes: { reason: "account_in_use", conflictingConnectionId: existing?.id ?? null, tokenRestored },
+          });
           return redirect(`${appOrigin}/?accurate_error=accurate_account_in_use`);
         }
 
@@ -434,6 +460,13 @@ export const accurateRoute = new Elysia()
       try {
         await openDatabase(decrypt(owned.connection.accessTokenEncrypted), body.accurateDbId); // validasi id benar-benar bisa dibuka
       } catch (err) {
+        // § Fase 192, ADR-0047 — pemilik akun Accurate bukan Administrator database: kondisi yang diharapkan, pelanggan perlu tindakan (bukan galat sistem).
+        const adminRequired = parseAdminRequired(err);
+        if (adminRequired) {
+          set.status = 422;
+          logger.warn({ dataUsahaId: body.dataUsahaId }, "Accurate meminta hak Administrator untuk memasang aplikasi di database");
+          return { code: "ACCURATE_ADMIN_REQUIRED", installUrl: adminRequired.installUrl };
+        }
         set.status = 502;
         logger.error({ err }, "Gagal buka Data Usaha Accurate");
         return { code: "ACCURATE_REQUEST_FAILED" };

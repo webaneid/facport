@@ -104,6 +104,18 @@ tidak pernah lewat browser"). Implicit grant TIDAK dipakai.
 - **Data Usaha kedua dari akun yang sama** tidak OAuth ulang: `GET /accurate/accounts` (akun milik user) +
   `POST /accurate/attach {dataUsahaId, connectionId}` menunjuk koneksi yang ada (OAuth ulang mematikan token yang sedang dipakai
   import Data Usaha lain). Database dipilih terpisah per Data Usaha (`DATABASE_ALREADY_USED` bila sudah dipakai Data Usaha lain).
+- **Penolakan "akun sudah dipakai" tidak boleh memutus pemilik sah (Fase 192, ADR-0047).** Kode OAuth sudah ditukar SEBELUM identitas akun
+  diketahui, dan penukaran itu mematikan token lama akun tersebut (Fase 141 E2) — jadi pada penolakan, token baru DISIMPAN di baris pemilik
+  (`UPDATE ... WHERE id = existing AND accurate_user_id = <identitas dari token> AND status IN ('active','expired')`; `revoked` tidak dihidupkan
+  kembali). Pemanggil tetap ditolak tanpa mendapat apa pun. Jejak: aksi riwayat Data Usaha `connect_rejected` (`reason`, `conflictingConnectionId`,
+  `tokenRestored` — TANPA email/nama pemilik lain; bukan bagian laporan Insight "Riwayat Koneksi") + log peringatan. Pesan ke pelanggan: putuskan oleh
+  pemilik, atau jadi User Tambahan, atau pakai akun Accurate lain. Berbagi satu akun Accurate antar akun Facport lewat OAuth ganda TIDAK didukung
+  (saling mematikan token) — jalurnya User Tambahan.
+- **Galat "hak Administrator" saat memilih database (Fase 192).** Bila pengguna yang menyambung bukan Administrator database, `open-db.do` menolak
+  dengan pesan "Anda memerlukan hak Administrator untuk mulai menginstall Aplikasi … Gunakan link https://account.accurate.id/…". Ini kondisi
+  yang diharapkan, bukan bug: `POST /accurate/databases/select` membalas `422 {code: "ACCURATE_ADMIN_REQUIRED", installUrl}` (`parseAdminRequired`
+  di `lib/accurate.ts`); `installUrl` hanya bila https + host persis `account.accurate.id` tanpa kredensial (divalidasi lagi di web:
+  `safeAccurateInstallUrl`). UI menjelaskan dan menampilkan tombol tautan instalasi; dicatat sebagai peringatan, bukan galat Sentry.
 - **Callback terikat ke sesi login** pemulai flow (cookie sesi ikut pada navigasi top-level dari Accurate; production
   cross-subdomain, dev host `localhost`) — diperiksa sebelum tukar kode. State OAuth dibatasi 5 aktif per user; `/accurate/*`
   dikenai rate limit; `openDatabase`/`listDatabases` ber-timeout 15 dtk; worker menandai `expired` hanya untuk HTTP 401.

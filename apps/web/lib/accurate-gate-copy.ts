@@ -50,13 +50,28 @@ export function joinNames(names: string[]): string {
 // Kode `?accurate_error=` dari callback OAuth (apps/api/src/routes/accurate.route.ts) → kalimat ramah.
 const OAUTH_ERRORS: Record<string, string> = {
   accurate_account_in_use:
-    "Akun Accurate ini sudah terhubung ke akun Facport lain. Gunakan akun Accurate yang berbeda, atau minta pemilik sebelumnya memutuskannya.",
+    "Akun Accurate ini sudah terhubung ke akun Facport lain. Pilihan Anda: minta pemilik akun Facport itu memutus koneksinya dari menu Koneksi Accurate; minta ditambahkan sebagai User Tambahan di Data Usaha pemiliknya agar bisa memakainya tanpa menyambung ulang; atau gunakan akun Accurate yang berbeda.",
   missing_account: "Accurate tidak mengirim identitas akun. Coba lagi; kalau tetap begini, hubungi kami.",
   invalid_state: "Sesi penghubungan kedaluwarsa atau berbeda. Mulai lagi dari awal ya.",
   access_denied: "Izin tidak jadi diberikan. Tidak apa-apa — Anda bisa mencoba lagi kapan saja.",
   exchange_failed: "Gagal menyelesaikan koneksi dengan Accurate. Coba beberapa saat lagi.",
 };
 const OAUTH_ERROR_FALLBACK = "Penghubungan ke Accurate belum berhasil. Coba lagi, atau hubungi kami kalau terus berulang.";
+
+// § Fase 192, ADR-0047 — Accurate menolak memasang aplikasi bila yang menyambung bukan Administrator database. Tautan instalasi berasal dari API (yang meneruskan pesan
+// pihak ketiga) → divalidasi ULANG di sini: https + host persis `account.accurate.id` tanpa kredensial; selain itu tidak pernah dijadikan tautan.
+export function safeAccurateInstallUrl(value: string | null | undefined): string | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && url.hostname === "account.accurate.id" && !url.port && !url.username && !url.password ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+export const ADMIN_REQUIRED_MESSAGE =
+  "Akun Accurate Anda belum berstatus Administrator di database ini, sehingga Accurate menolak memasang aplikasi Facport. Minta Administrator database itu menyetujui pemasangan aplikasi Facport, lalu klik Simpan & Lanjut lagi.";
 
 export function oauthErrorMessage(code: string | null | undefined): string | null {
   if (!code) return null;

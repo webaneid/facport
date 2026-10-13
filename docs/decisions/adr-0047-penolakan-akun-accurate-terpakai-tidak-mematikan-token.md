@@ -26,3 +26,6 @@ Insiden produksi 2026-10-13 (klien PT Buana Indah + akun uji tim FAC):
 - Orang yang bisa login ke akun Accurate itu (syarat menyelesaikan OAuth) dapat me-refresh token pemilik — tidak memberi kemampuan baru (ia memang dapat mencabut/otorisasi ulang di Accurate), dan sebelumnya justru memutus pemilik.
 - Test lama "koneksi pemilik lama tidak tersentuh" diubah: pemilik TETAP milik A (user, penunjuk), token diperbarui.
 - Satu aksi riwayat baru (panjang 16 ≤ 20) dan satu kode galat baru.
+- **Risiko residual (audit Fase 192, Low, diterima):** dua callback bersamaan untuk akun Accurate yang sama (pemilik menyambung ulang + percobaan akun lain dalam beberapa detik) bisa membuat DB memegang token yang bukan terbitan terakhir (urutan tulis ≠ urutan terbit). Gejalanya 401 → `expired`, pulih dengan Hubungkan Ulang; tidak ada kebocoran data. Penjaga `expires_at` tidak dipasang karena memblokir pemulihan baris `expired` yang `expires_at`-nya masih di masa depan.
+- **Hardening (audit Info):** tautan instalasi juga ditolak bila memuat port (`url.port` harus kosong), di API dan web.
+
