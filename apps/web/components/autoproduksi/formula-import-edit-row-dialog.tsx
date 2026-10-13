@@ -31,6 +31,7 @@ const FIELD_HINTS: Record<string, string> = {
   itemNo: "Kode barang PERSIS seperti di Accurate",
   quantity: "WAJIB untuk baris BB (takaran per 1 unit Barang Jadi) — tidak dipakai untuk baris BJ",
   unitCost: "Hanya berlaku di baris BJ — biaya produksi per unit",
+  status: "Aktif atau Nonaktif (dibaca dari baris BJ) — kosong = Aktif",
 };
 
 export function FormulaImportEditRowDialog({

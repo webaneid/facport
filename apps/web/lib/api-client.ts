@@ -61,7 +61,7 @@ function readActiveDataUsahaId(): string | undefined {
   }
 }
 
-function activeDataUsahaHeaders(): Record<string, string> | undefined {
+export function activeDataUsahaHeaders(): Record<string, string> | undefined {
   const id = readActiveDataUsahaId();
   return id ? { "x-data-usaha-id": id } : undefined;
 }

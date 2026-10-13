@@ -1506,7 +1506,7 @@ export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
 // DIHAPUS dari Formula (pindah ke Import Produksi di bawah) — Formula
 // sekarang murni resep, dipakai lintas cabang/gudang.
 export const autoproduksiFormulaTemplateGuide: TemplateFieldGuide[] = [
-  { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula — baris dengan nama SAMA digabung jadi 1 Formula (header + Bahan Baku + Barang Jadi). Boleh ada Formula dengan nama sama di baris lain (selalu dibuat Formula baru, TIDAK menimpa yang lama)." },
+  { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula — baris dengan nama SAMA digabung jadi 1 Formula (header + Bahan Baku + Barang Jadi). Nama WAJIB unik di Data Usaha ini — kalau sudah dipakai Formula lain, Formula itu GAGAL diimpor (tidak pernah menimpa yang lama)." },
   { column: "Akun Perantara", required: true, example: "110501", description: "Kode Akun Perantara (adjustment account) PERSIS seperti terdaftar di Accurate." },
   { column: "Tipe Barang", required: true, example: "BB", description: "BB = Bahan Baku, BJ = Barang Jadi. Setiap Formula WAJIB tepat 1 baris BJ dan minimal 1 baris BB." },
   { column: "Nomor Item", required: true, example: "100006", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
@@ -1514,6 +1514,7 @@ export const autoproduksiFormulaTemplateGuide: TemplateFieldGuide[] = [
   { column: "Jumlah", required: false, example: "0.5", description: "WAJIB diisi untuk baris Bahan Baku (BB) — takaran PER 1 unit Barang Jadi. Tidak dipakai untuk baris Barang Jadi (BJ), boleh dikosongkan." },
   { column: "Nama Unit", required: true, example: "Kg", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "Unit Cost", required: false, example: "17000", description: "Hanya berlaku di baris Barang Jadi (BJ) — biaya produksi per unit, dipakai saat Input Produksi diproses." },
+  { column: "Status", required: false, example: "Aktif", description: "Aktif atau Nonaktif — dibaca dari baris Barang Jadi (BJ). Kosong = Aktif. Hasil Export Formula memuat kolom ini sehingga Formula nonaktif tetap nonaktif saat diimpor kembali." },
 ];
 
 // § Import Produksi (AutoProduksi, Excel) — "Kirim Dengan Excel". Header

@@ -47,6 +47,20 @@ export function resolveAutoproduksiItemType(raw: unknown): AutoproduksiItemType 
   return ITEM_TYPE_DICTIONARY[normalized] ?? null;
 }
 
+// § Fase 193 — kolom Status (opsional): Formula nonaktif hasil Export tetap nonaktif saat diimpor balik. Kosong = aktif; nilai tidak dikenal → baris gagal
+// (bukan ditebak). Hanya baris BJ yang menentukan (seperti Akun Perantara).
+const INACTIVE_STATUS = new Set(["nonaktif", "non aktif", "non-aktif", "tidak aktif", "inactive", "0", "false", "tidak"]);
+const ACTIVE_STATUS = new Set(["aktif", "active", "1", "true", "ya"]);
+
+export function resolveFormulaStatus(raw: unknown): boolean | null {
+  if (raw === undefined || raw === null) return true;
+  const normalized = String(raw).trim().toLowerCase();
+  if (normalized === "") return true;
+  if (ACTIVE_STATUS.has(normalized)) return true;
+  if (INACTIVE_STATUS.has(normalized)) return false;
+  return null;
+}
+
 export const autoproduksiFormulaMapping = {
   requiredFields: ["formulaName", "adjustmentAccountNo", "itemType", "itemNo", "itemUnitName"] as const,
   fieldToAccuratePath: {
@@ -58,6 +72,7 @@ export const autoproduksiFormulaMapping = {
     quantity: "quantity",
     itemUnitName: "itemUnitName",
     unitCost: "unitCost",
+    status: "status",
   } as Record<string, string>,
   defaultColumnMap: {
     "Nama Resep/Formula": "formulaName",
@@ -68,6 +83,7 @@ export const autoproduksiFormulaMapping = {
     Jumlah: "quantity",
     "Nama Unit": "itemUnitName",
     "Unit Cost": "unitCost",
+    Status: "status",
   } as Record<string, string>,
 };
 
@@ -144,6 +160,8 @@ export function autoproduksiFormulaRowError(rawRow: Record<string, unknown>, col
   if (type === null) return ["itemType"];
   const errors: string[] = [];
   if (type === "BB" && valueOf(rawRow, "quantity", columnMapping) === undefined) errors.push("quantity");
+  // Status hanya dibaca dari baris BJ — nilai asing di BB tidak mengganggu.
+  if (type === "BJ" && resolveFormulaStatus(valueOf(rawRow, "status", columnMapping)) === null) errors.push("status");
   errors.push(...fieldLengthErrors(rawRow, columnMapping));
   return errors;
 }
@@ -168,6 +186,7 @@ export type AutoproduksiFormulaRecord = {
   finishedGoodItemName: string | null;
   standardCost: string | null;
   adjustmentAccountNo: string;
+  isActive: boolean;
   items: {
     itemNo: string;
     itemUnitName: string;
@@ -195,6 +214,7 @@ export function buildAutoproduksiFormulaRecord(group: AutoproduksiFormulaGroup, 
     finishedGoodItemName: textOf(bjRow, columnMapping, "itemName"),
     standardCost: textOf(bjRow, columnMapping, "unitCost"),
     adjustmentAccountNo: textOf(bjRow, columnMapping, "adjustmentAccountNo") ?? "",
+    isActive: resolveFormulaStatus(valueOf(bjRow.rawData, "status", columnMapping)) ?? true,
     items: bbRows.map((row) => ({
       itemNo: textOf(row, columnMapping, "itemNo") ?? "",
       itemUnitName: textOf(row, columnMapping, "itemUnitName") ?? "",

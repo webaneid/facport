@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
+import * as XLSX from "xlsx";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries } from "../db/schema";
@@ -826,5 +827,58 @@ describe("GET /autoproduksi/production-entries/last & /:id (Fase 185)", () => {
     expect((await get(owner.cookie, `/autoproduksi/production-entries/${crypto.randomUUID()}`)).status).toBe(404);
     expect((await get(owner.cookie, "/autoproduksi/production-entries/bukan-uuid")).status).toBe(422);
     expect((await testApp.handle(new Request(`http://localhost/autoproduksi/production-entries/${created.entry.id}`))).status).toBe(401);
+  });
+});
+
+// § Fase 193 — Export Formula (format = template Import + Status + No. Formula).
+describe("GET /autoproduksi/formulas/export", () => {
+  async function createFormula(cookie: string, name: string, extra: Record<string, unknown> = {}) {
+    const res = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie, "Content-Type": "application/json" }, body: JSON.stringify({ ...validFormulaBody, name, ...extra }) }),
+    );
+    return ((await res.json()) as { formula: { id: string } }).formula.id;
+  }
+  async function readSheet(res: Response) {
+    const wb = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    return XLSX.utils.sheet_to_json<Record<string, unknown>>(wb.Sheets[wb.SheetNames[0]!]!, { defval: "" });
+  }
+  const get = (cookie: string, qs = "") => testApp.handle(new Request(`http://localhost/autoproduksi/formulas/export${qs}`, { headers: { cookie } }));
+
+  test("200 xlsx — default HANYA Formula aktif; ?includeInactive=true menyertakan nonaktif dengan Status 'Nonaktif'", async () => {
+    const owner = await createProvisionedUser(`ap-export-${runId}@test.local`);
+    await createFormula(owner.cookie, "Aktif Satu");
+    await createFormula(owner.cookie, "Mati Satu", { isActive: false });
+
+    const res = await get(owner.cookie);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("spreadsheetml.sheet");
+    expect(res.headers.get("content-disposition")).toMatch(/attachment; filename="export-formula-\d{4}-\d{2}-\d{2}\.xlsx"/);
+    const onlyActive = await readSheet(res);
+    expect(new Set(onlyActive.map((r) => r["Nama Resep/Formula"]))).toEqual(new Set(["Aktif Satu"]));
+    expect(onlyActive).toHaveLength(3); // 1 BJ + 2 BB
+
+    const all = await readSheet(await get(owner.cookie, "?includeInactive=true"));
+    expect(new Set(all.map((r) => r["Nama Resep/Formula"]))).toEqual(new Set(["Aktif Satu", "Mati Satu"]));
+    expect(all.filter((r) => r["Nama Resep/Formula"] === "Mati Satu").every((r) => r.Status === "Nonaktif")).toBe(true);
+    expect(all.find((r) => r["Tipe Barang"] === "BJ")!["Unit Cost"]).toBe(20000);
+  });
+
+  test("tidak membocorkan Formula Data Usaha lain", async () => {
+    const a = await createProvisionedUser(`ap-export-a-${runId}@test.local`);
+    const b = await createProvisionedUser(`ap-export-b-${runId}@test.local`);
+    await createFormula(a.cookie, "Rahasia A");
+    const rows = await readSheet(await get(b.cookie, "?includeInactive=true"));
+    expect(rows).toHaveLength(0);
+  });
+
+  test("401 tanpa login; 422 untuk includeInactive tidak valid", async () => {
+    const owner = await createProvisionedUser(`ap-export-auth-${runId}@test.local`);
+    expect((await testApp.handle(new Request("http://localhost/autoproduksi/formulas/export"))).status).toBe(401);
+    expect((await get(owner.cookie, "?includeInactive=banana")).status).toBe(422);
+  });
+
+  test("tidak bentrok dengan GET /formulas/:id (rute 'export' bukan UUID)", async () => {
+    const owner = await createProvisionedUser(`ap-export-route-${runId}@test.local`);
+    expect((await get(owner.cookie)).status).toBe(200);
   });
 });

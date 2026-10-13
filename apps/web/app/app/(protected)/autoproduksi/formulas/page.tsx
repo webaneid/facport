@@ -10,8 +10,9 @@ import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
+import { FormulaExportButton } from "@/components/autoproduksi/formula-export-button";
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
-import { api } from "@/lib/api-client";
+import { api, apiBaseUrl, activeDataUsahaHeaders } from "@/lib/api-client";
 import { filterFormulas, type FormulaStatusFilter } from "@/lib/filter-formulas";
 import { itemComboboxOptions } from "@/lib/accurate-combobox-options";
 import { useDebouncedCallback } from "@/lib/use-debounced-callback";
@@ -499,7 +500,10 @@ export default function AutoProduksiFormulasPage() {
           <h1 className="text-3xl font-bold tracking-tight text-foreground">List Formula</h1>
           <p className="text-sm text-muted-foreground">Resep produksi — Barang Jadi terdiri dari Bahan Baku apa saja & takarannya.</p>
         </div>
-        <FormulaFormDialog onSaved={load} />
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <FormulaExportButton baseUrl={apiBaseUrl} getHeaders={activeDataUsahaHeaders} />
+          <FormulaFormDialog onSaved={load} />
+        </div>
       </div>
 
       <Card>
