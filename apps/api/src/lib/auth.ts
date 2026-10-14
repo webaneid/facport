@@ -10,6 +10,7 @@ import { isDisabled } from "./user-status";
 import { evictOldestSessionsIfOverLimit } from "./session-limit";
 import { linkGoogleSignupToPendingInvite } from "./member-seats";
 import { linkGoogleSignupToPendingTransfer } from "./ownership-transfer";
+import { normalizeVerificationUrl } from "./auth-verification-url";
 
 export const auth = betterAuth({
   secret: env.BETTER_AUTH_SECRET,
@@ -55,7 +56,9 @@ export const auth = betterAuth({
   // langsung, TANPA boot index.ts) tetap bisa enqueue tanpa "Database not
   // opened".
   emailVerification: {
-    sendVerificationEmail: async ({ user, url }) => {
+    sendVerificationEmail: async ({ user, url: rawUrl }) => {
+      // § Fase 194 — callbackURL kosong/relatif ("/" bawaan Better Auth saat login tanpa callback) membuat pelanggan mendarat di domain API (404) setelah verifikasi.
+      const url = normalizeVerificationUrl(rawUrl, env.APP_ORIGIN_PROD || "http://app.localhost:6209");
       await startQueue();
       await boss.send(JOBS.SEND_EMAIL, {
         to: user.email,
