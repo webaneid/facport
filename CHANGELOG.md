@@ -1,3 +1,9 @@
+## <small>2.37.1 (2026-10-14)</small>
+
+* chore: merge develop ke main (Fase 194 — link verifikasi email) ([7cc1aa3](https://github.com/webaneid/facport/commit/7cc1aa3))
+* fix: link verifikasi email dari jalur login tidak lagi mendarat di domain API (404) — callbackURL di ([8031387](https://github.com/webaneid/facport/commit/8031387))
+* docs: insiden 502 deploy tanpa override compose + health check port palsu (3001 -> 3031/3030) ([b931489](https://github.com/webaneid/facport/commit/b931489))
+
 ## 2.37.0 (2026-10-13)
 
 * chore: merge develop ke main (Fase 193 — export Formula AutoProduksi) ([5583454](https://github.com/webaneid/facport/commit/5583454))
