@@ -1,3 +1,8 @@
+## <small>2.37.3 (2026-10-15)</small>
+
+* chore: merge develop ke main (Fase 195 — guard ukuran transaksi + pesan timeout) ([3f2f4d4](https://github.com/webaneid/facport/commit/3f2f4d4))
+* fix: guard ukuran transaksi (baris bernomor sama) + pesan timeout Accurate yang bermakna di 22 modul ([fadb75e](https://github.com/webaneid/facport/commit/fadb75e))
+
 ## <small>2.37.2 (2026-10-15)</small>
 
 * chore: merge develop ke main (Fase 167 — antrean import paralel per koneksi Accurate) ([1d8fa67](https://github.com/webaneid/facport/commit/1d8fa67))
