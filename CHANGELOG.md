@@ -1,3 +1,8 @@
+## <small>2.37.2 (2026-10-15)</small>
+
+* chore: merge develop ke main (Fase 167 — antrean import paralel per koneksi Accurate) ([1d8fa67](https://github.com/webaneid/facport/commit/1d8fa67))
+* fix: antrean import paralel antar koneksi Accurate, berurutan dalam satu koneksi + pembatas Accurate ([8e06c1c](https://github.com/webaneid/facport/commit/8e06c1c))
+
 ## <small>2.37.1 (2026-10-14)</small>
 
 * chore: merge develop ke main (Fase 194 — link verifikasi email) ([7cc1aa3](https://github.com/webaneid/facport/commit/7cc1aa3))
