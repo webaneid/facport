@@ -24,6 +24,7 @@ const envSchema = t.Object({
   BETTER_AUTH_URL: t.String({ minLength: 1 }),
   SENTRY_DSN_API: t.Optional(t.String()),
   LOG_LEVEL: t.Optional(t.String()),
+  IMPORT_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 167, ADR-0048 — jumlah koneksi Accurate yang diproses paralel di worker (default 2, 1–8)
   RESEND_API_KEY: t.Optional(t.String()),
   EMAIL_FROM: t.Optional(t.String()),
   // Origin frontend production, DIPISAH KOMA — WAJIB ketiga surface

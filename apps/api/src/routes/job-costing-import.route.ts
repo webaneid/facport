@@ -9,8 +9,9 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { jobCostingMapping } from "../lib/import-mapping/job-costing.mapping";
 import { jobCostingTemplateGuide } from "../lib/import-mapping/template-guide";
-import { boss, JOBS } from "../lib/queue";
+import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § architecture-security.md §8, pola sama item-transfer-import.route.ts
 const ALLOWED_MIME = [
@@ -185,7 +186,7 @@ export const jobCostingImportRoute = new Elysia()
         .set({ columnMapping: body.columnMapping, status: "processing" })
         .where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -282,7 +283,7 @@ export const jobCostingImportRoute = new Elysia()
       }
 
       await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     {

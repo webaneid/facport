@@ -331,6 +331,8 @@ import {
 
 // § Fase 147 — Work Order (produksi berbasis BOM): 1 panggilan `work-order/save.do` setelah lookup cabang (`branchId`) & PIC
 // (`personInChargeId`), grouping DEFAULT ADR-0011 by "Trans No" (opsional), TIDAK auto-create item/akun (§ architecture-work-order.md).
+import { env } from "../lib/env";
+import { accurateWorkOptions, withAccurateJobContext } from "../lib/accurate-job-dispatch";
 import { findOrCreateWoPic, resolveBranchId, saveWorkOrder } from "../lib/accurate-work-order";
 import {
   buildWorkOrderPayload,
@@ -2408,7 +2410,7 @@ async function main() {
     }
   });
 
-  await boss.work<{ entryId: string }>(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, async ([job]) => {
+  await boss.work<{ entryId: string }>(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, accurateWorkOptions(env.IMPORT_WORKER_CONCURRENCY), withAccurateJobContext<{ entryId: string }>(async ([job]) => {
     if (!job) return;
     const { entryId } = job.data;
 
@@ -2481,7 +2483,7 @@ async function main() {
       Sentry.captureException(err);
       if (isAccurateAuthFailure(err)) await markConnectionExpired(connection);
     }
-  });
+  }));
 
   // § Fase 10, architecture-subscription.md § "Retensi Data Import" —
   // data Excel yang diimpor berisi data bisnis sensitif client, TIDAK
@@ -2601,7 +2603,7 @@ async function main() {
       );
   }
 
-  await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE, async ([job]) => {
+  await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE, accurateWorkOptions(env.IMPORT_WORKER_CONCURRENCY), withAccurateJobContext<{ batchId: string }>(async ([job]) => {
     if (!job) return;
     const { batchId } = job.data;
 
@@ -3375,7 +3377,7 @@ async function main() {
     }
 
     logger.info({ batchId, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length }, "Import batch selesai");
-  });
+  }));
 
   // § Fase 09, ADR-0013 — "Batal Import". Per faktur yang pernah disentuh
   // batch ini: kalau faktur itu 100% milik batch ini → hapus UTUH
@@ -3385,7 +3387,7 @@ async function main() {
   // tercatat → BLOKIR faktur itu (aman, bukan tebak). Kegagalan 1 faktur
   // TIDAK menggagalkan seluruh job — lanjut ke faktur berikutnya, batch
   // berakhir `cancelled_partial`.
-  await boss.work<{ batchId: string; actorId: string }>(JOBS.CANCEL_IMPORT, async ([job]) => {
+  await boss.work<{ batchId: string; actorId: string }>(JOBS.CANCEL_IMPORT, accurateWorkOptions(env.IMPORT_WORKER_CONCURRENCY), withAccurateJobContext<{ batchId: string; actorId: string }>(async ([job]) => {
     if (!job) return;
     const { batchId, actorId } = job.data;
 
@@ -3618,7 +3620,7 @@ async function main() {
     await db.update(importBatches).set({ status: finalStatus, completedAt: new Date() }).where(eq(importBatches.id, batch.id));
 
     logger.info({ batchId, summary, finalStatus }, "Cancel import selesai");
-  });
+  }));
 
   logger.info("apps/api worker started");
 }

@@ -11,6 +11,7 @@ import { checkTrialRowBudget } from "../lib/trial";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { salesInvoiceMapping, customerAutoCreateMapping, itemAutoCreateMapping, type SalesInvoiceField } from "../lib/import-mapping/sales-invoice.mapping";
 import { salesInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § Fase 13 — mirror 1:1 `purchase-invoice-import.route.ts` (module
 // "sales_invoice", moduleAccess "sales_invoice" sejak Fase 14/ADR-0019 —
@@ -189,7 +190,7 @@ export const salesInvoiceImportRoute = new Elysia()
 
       await db.update(importBatches).set({ columnMapping: body.columnMapping, status: "processing" }).where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -295,7 +296,7 @@ export const salesInvoiceImportRoute = new Elysia()
       }
 
       await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
@@ -321,7 +322,7 @@ export const salesInvoiceImportRoute = new Elysia()
         return { code: "BATCH_NOT_CANCELLABLE" };
       }
       await db.update(importBatches).set({ status: "cancelling", completedAt: null }).where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      await enqueueAccurateJob(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "sales_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
