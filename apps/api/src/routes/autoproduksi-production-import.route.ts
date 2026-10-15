@@ -9,8 +9,9 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { autoproduksiProductionMapping, autoproduksiProductionRowError } from "../lib/import-mapping/autoproduksi-production.mapping";
 import { autoproduksiProductionTemplateGuide } from "../lib/import-mapping/template-guide";
-import { boss, JOBS } from "../lib/queue";
+import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 const ALLOWED_MIME = [
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
@@ -178,7 +179,7 @@ export const autoproduksiProductionImportRoute = new Elysia()
         .set({ columnMapping: body.columnMapping, status: "processing" })
         .where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -274,7 +275,7 @@ export const autoproduksiProductionImportRoute = new Elysia()
       }
 
       await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     {

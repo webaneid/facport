@@ -8,8 +8,9 @@ import { loadAutoproduksiDefaults } from "../lib/autoproduksi-defaults";
 import { checkFormulaUnits, unitTargetKey } from "../lib/autoproduksi-unit-check";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
-import { boss, JOBS, startQueue } from "../lib/queue";
+import { JOBS, startQueue } from "../lib/queue";
 import { generateFormulaExportBuffer } from "../lib/autoproduksi-formula-export";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § Fase 159, architecture-autoproduksi.md — modul PERTAMA Produk
 // AutoProduksi. BEDA dari 23 modul Facport/Konverter lain (SEMUA
@@ -426,7 +427,7 @@ export const autoproduksiRoute = new Elysia()
       // langsung, tanpa lewat boot index.ts yang panggil startQueue() sekali di awal
       // proses); idempotent di production (guard `started`, § lib/queue.ts).
       await startQueue();
-      await boss.send(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, { entryId: entry!.id });
+      await enqueueAccurateJob(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, { entryId: entry!.id });
       return { entry };
     },
     {

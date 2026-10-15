@@ -9,8 +9,9 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { itemRequisitionMapping, requisitionTypeRowError, saveAsStatusTypeRowError } from "../lib/import-mapping/item-requisition.mapping";
 import { itemRequisitionTemplateGuide } from "../lib/import-mapping/template-guide";
-import { boss, JOBS } from "../lib/queue";
+import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § architecture-security.md §8, pola sama receive-item-import.route.ts
 const ALLOWED_MIME = [
@@ -184,7 +185,7 @@ export const itemRequisitionImportRoute = new Elysia()
         .set({ columnMapping: body.columnMapping, status: "processing" })
         .where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -281,7 +282,7 @@ export const itemRequisitionImportRoute = new Elysia()
       }
 
       await db.update(importBatches).set({ status: "processing", completedAt: null }).where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     {
@@ -427,7 +428,7 @@ export const itemRequisitionImportRoute = new Elysia()
         .update(importBatches)
         .set({ status: "cancelling", completedAt: null })
         .where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      await enqueueAccurateJob(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "item_requisition", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },

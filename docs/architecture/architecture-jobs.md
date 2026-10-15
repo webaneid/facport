@@ -225,6 +225,13 @@ production) WAJIB lewat `updateQueue()` juga (beneran `UPDATE`), bukan cuma
 ganti opsi di `createQueue()` dan berharap efeknya otomatis — `startQueue()`
 sudah memanggil keduanya untuk queue yang masuk `LONG_RUNNING_QUEUES`.
 
+## Konkurensi Antrean Accurate (Fase 167, ADR-0048)
+`IMPORT_TO_ACCURATE`, `CANCEL_IMPORT`, `PROCESS_AUTOPRODUKSI_ENTRY` diproses **paralel antar koneksi Accurate, berurutan dalam satu koneksi** (batas Accurate 8 request/detik + 8 paralel berlaku PER TOKEN).
+- Kirim job HANYA lewat `enqueueAccurateJob` (`lib/accurate-job-dispatch.ts`) — memasang `group.id` = id koneksi. `boss.send` mentah untuk antrean ini dilarang (tes pagar).
+- Worker: `accurateWorkOptions(env.IMPORT_WORKER_CONCURRENCY)` → `localConcurrency` N (default 2, 1–8) + `localGroupConcurrency: 1`; handler dibungkus `withAccurateJobContext` agar `withAccurateRateLimit` memakai bucket koneksi job (`job.groupId`).
+- `groupConcurrency` berbasis DB sengaja TIDAK dipakai (race pada fetch paralel, terbukti di spike). Konsekuensi: **worker harus 1 container**.
+- Mengubah N: set `IMPORT_WORKER_CONCURRENCY` di `.env.production` lalu recreate worker (saat antrean kosong).
+
 ## Referensi
 - Notifikasi email/WA → `docs/architecture/architecture-notifications.md`
 - Observability (Sentry/Pino) → `docs/architecture/architecture-observability.md`

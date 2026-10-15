@@ -3,6 +3,7 @@
 // single-instance — tradeoff yang sama seperti lib/rate-limit.ts (cukup
 // untuk worker single-process; kalau nanti worker di-scale ke banyak
 // instance, revisit ke limiter terpusat, mis. lewat tabel/Redis).
+import { AsyncLocalStorage } from "node:async_hooks";
 import { AccurateApiError } from "./accurate";
 
 const MAX_PER_SECOND = 8;
@@ -27,54 +28,87 @@ function isAccurateRateLimitError(err: unknown): boolean {
   return err instanceof AccurateApiError && err.message.includes(RATE_LIMIT_ERROR_SNIPPET);
 }
 
-let inFlight = 0;
-const waitingForSlot: Array<() => void> = [];
-const recentCallTimestamps: number[] = [];
+// § Fase 167, ADR-0048 — batas Accurate berlaku PER TOKEN (= per koneksi Accurate), jadi tiap koneksi punya bucket sendiri (in-memory, 1 proses worker).
+// Kunci bucket diambil dari `AsyncLocalStorage` yang di-set handler worker (`runWithAccurateConnection`) — 45+ titik panggilan `withAccurateRateLimit`
+// tidak perlu diubah. Panggilan tanpa konteks (mis. dari proses API) memakai bucket "global" (perilaku lama).
+const GLOBAL_BUCKET_KEY = "global";
+const connectionContext = new AsyncLocalStorage<string>();
 
-function acquireConcurrencySlot(): Promise<void> {
-  if (inFlight < MAX_CONCURRENT) {
-    inFlight += 1;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => waitingForSlot.push(resolve));
+type Bucket = { inFlight: number; waitingForSlot: Array<() => void>; recentCallTimestamps: number[] };
+const buckets = new Map<string, Bucket>();
+
+export function runWithAccurateConnection<T>(connectionKey: string, fn: () => Promise<T>): Promise<T> {
+  return connectionContext.run(connectionKey, fn);
 }
 
-function releaseConcurrencySlot(): void {
-  const next = waitingForSlot.shift();
+/** Hanya untuk tes/diagnostik: jumlah bucket yang masih tersimpan. */
+export function accurateLimiterBucketCount(): number {
+  return buckets.size;
+}
+
+function getBucket(key: string): Bucket {
+  let bucket = buckets.get(key);
+  if (!bucket) {
+    bucket = { inFlight: 0, waitingForSlot: [], recentCallTimestamps: [] };
+    buckets.set(key, bucket);
+  }
+  return bucket;
+}
+
+// Buang bucket yang menganggur (tanpa in-flight, tanpa antrean, tanpa panggilan dalam 1 detik terakhir) supaya Map tidak tumbuh seiring jumlah koneksi.
+function sweepIdleBuckets(): void {
+  const now = Date.now();
+  for (const [key, b] of buckets) {
+    if (b.inFlight === 0 && b.waitingForSlot.length === 0 && b.recentCallTimestamps.every((t) => now - t >= 1000)) buckets.delete(key);
+  }
+}
+
+function acquireConcurrencySlot(bucket: Bucket): Promise<void> {
+  if (bucket.inFlight < MAX_CONCURRENT) {
+    bucket.inFlight += 1;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => bucket.waitingForSlot.push(resolve));
+}
+
+function releaseConcurrencySlot(bucket: Bucket): void {
+  const next = bucket.waitingForSlot.shift();
   if (next) {
     next(); // slot langsung dipakai antrean berikutnya, inFlight tidak berubah
   } else {
-    inFlight -= 1;
+    bucket.inFlight -= 1;
   }
 }
 
-async function waitForRateSlot(): Promise<void> {
+async function waitForRateSlot(bucket: Bucket): Promise<void> {
   for (;;) {
     const now = Date.now();
-    while (recentCallTimestamps.length > 0 && now - recentCallTimestamps[0]! >= 1000) {
-      recentCallTimestamps.shift();
+    while (bucket.recentCallTimestamps.length > 0 && now - bucket.recentCallTimestamps[0]! >= 1000) {
+      bucket.recentCallTimestamps.shift();
     }
-    if (recentCallTimestamps.length < MAX_PER_SECOND) {
-      recentCallTimestamps.push(now);
+    if (bucket.recentCallTimestamps.length < MAX_PER_SECOND) {
+      bucket.recentCallTimestamps.push(now);
       return;
     }
-    const waitMs = 1000 - (now - recentCallTimestamps[0]!);
+    const waitMs = 1000 - (now - bucket.recentCallTimestamps[0]!);
     await new Promise((resolve) => setTimeout(resolve, Math.max(waitMs, 10)));
   }
 }
 
 // Bungkus tiap panggilan HTTP ke Accurate dengan ini — menjamin tidak
-// pernah lebih dari 8/detik atau 8 in-flight bersamaan, TANPA request
-// ditolak (menunggu giliran, bukan error 429 seperti rate limiter inbound).
-// Tetap MENAHAN slot konkurensi selagi retry backoff (§ di atas) — supaya
-// tidak melepas slot lalu ikut menambah tekanan request baru sementara
-// menunggu Accurate reda.
+// pernah lebih dari 8/detik atau 8 in-flight bersamaan PER KONEKSI, TANPA
+// request ditolak (menunggu giliran, bukan error 429 seperti rate limiter
+// inbound). Tetap MENAHAN slot konkurensi selagi retry backoff (§ di atas)
+// — supaya tidak melepas slot lalu ikut menambah tekanan request baru
+// sementara menunggu Accurate reda.
 export async function withAccurateRateLimit<T>(fn: () => Promise<T>): Promise<T> {
-  await acquireConcurrencySlot();
+  sweepIdleBuckets();
+  const bucket = getBucket(connectionContext.getStore() ?? GLOBAL_BUCKET_KEY);
+  await acquireConcurrencySlot(bucket);
   try {
     let attempt = 0;
     for (;;) {
-      await waitForRateSlot();
+      await waitForRateSlot(bucket);
       try {
         return await fn();
       } catch (err) {
@@ -86,6 +120,6 @@ export async function withAccurateRateLimit<T>(fn: () => Promise<T>): Promise<T>
       }
     }
   } finally {
-    releaseConcurrencySlot();
+    releaseConcurrencySlot(bucket);
   }
 }

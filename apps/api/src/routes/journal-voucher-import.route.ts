@@ -9,8 +9,9 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { journalVoucherMapping, debitCreditRowError } from "../lib/import-mapping/journal-voucher.mapping";
 import { journalVoucherTemplateGuide } from "../lib/import-mapping/template-guide";
-import { boss, JOBS } from "../lib/queue";
+import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § architecture-security.md §8, pola sama purchase-payment-import.route.ts
 const ALLOWED_MIME = [
@@ -183,7 +184,7 @@ export const journalVoucherImportRoute = new Elysia()
         .set({ columnMapping: body.columnMapping, status: "processing" })
         .where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -286,7 +287,7 @@ export const journalVoucherImportRoute = new Elysia()
         .update(importBatches)
         .set({ status: "processing", completedAt: null })
         .where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     {
@@ -462,7 +463,7 @@ export const journalVoucherImportRoute = new Elysia()
         .update(importBatches)
         .set({ status: "cancelling", completedAt: null })
         .where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      await enqueueAccurateJob(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "journal_voucher", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },

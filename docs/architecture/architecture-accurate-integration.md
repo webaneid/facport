@@ -533,6 +533,8 @@ diff /tmp/old.txt /tmp/new.txt
 ```
 
 ## 4. Rate Limiting Sisi Client
+> **Fase 167 (ADR-0048):** limiter ini kini **per koneksi/token** (bucket per `group.id` job lewat `AsyncLocalStorage`; tanpa konteks = bucket "global"). Antrean import paralel antar koneksi, berurutan dalam satu koneksi — lihat `architecture-jobs.md` § "Konkurensi Antrean Accurate".
+
 ✅ **Angka pasti TERVERIFIKASI 2026-08-19**: **maksimal 8 request/detik DAN
 maksimal 8 request bersamaan (concurrent)** — dikonfirmasi dari
 implementasi rate limiter pihak ketiga yang eksplisit mengutip "Accurate's

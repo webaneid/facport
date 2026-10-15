@@ -16,6 +16,7 @@ import {
   type PurchaseInvoiceField,
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
+import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
 // § architecture-security.md §8 — validasi tipe + ukuran di schema layer,
 // SEBELUM body di-buffer penuh (pola sama media.route.ts).
@@ -218,7 +219,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         .set({ columnMapping: body.columnMapping, status: "processing" })
         .where(eq(importBatches.id, batch.id));
 
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
 
       return { batchId: batch.id, status: "processing" };
     },
@@ -327,7 +328,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         .update(importBatches)
         .set({ status: "processing", completedAt: null })
         .where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: batch.id });
       return { batchId: batch.id, status: "processing" };
     },
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
@@ -367,7 +368,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         .update(importBatches)
         .set({ status: "cancelling", completedAt: null })
         .where(eq(importBatches.id, batch.id));
-      await boss.send(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
+      await enqueueAccurateJob(JOBS.CANCEL_IMPORT, { batchId: batch.id, actorId: user.id });
       return { batchId: batch.id, status: "cancelling" };
     },
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
