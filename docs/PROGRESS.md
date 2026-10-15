@@ -203,6 +203,7 @@
 | 192 | Perbaikan koneksi Accurate pasca insiden 2026-10-13: galat "hak Administrator" jelas, pesan "akun sudah dipakai" bisa ditindaklanjuti + jejak, penolakan tidak mematikan token pemilik sah (ADR-0047) | Done (2026-10-13, belum dirilis) | `docs/architecture/architecture-accurate-integration.md`, `docs/decisions/adr-0047-penolakan-akun-accurate-terpakai-tidak-mematikan-token.md` | `docs/phases/phase-192-perbaikan-koneksi-accurate-pasca-insiden.md` |
 | 193 | Export Formula AutoProduksi (format = template Import) + opsi sertakan nonaktif + kolom Status di Import; hapus klaim "duplikat dibolehkan" | Done (2026-10-13, belum dirilis) | `docs/phases/phase-193-export-formula-autoproduksi.md` |
 | 194 | Fix: link verifikasi email (jalur login-otomatis) mendarat di `api.*` 404 — callbackURL dinormalisasi ke origin aplikasi | Done (2026-10-14, belum dirilis) | `docs/phases/phase-194-fix-link-verifikasi-mendarat-di-domain-api.md` |
+| 195  | Guard ukuran transaksi (baris bernomor sama digabung) + pesan timeout Accurate yang bermakna — insiden Sales Receipt ±1.250 baris 2026-10-14 | Done (2026-10-16, belum dirilis) | - | `docs/phases/phase-195-guard-ukuran-transaksi-dan-pesan-timeout.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
