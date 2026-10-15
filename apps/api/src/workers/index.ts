@@ -332,6 +332,7 @@ import {
 // § Fase 147 — Work Order (produksi berbasis BOM): 1 panggilan `work-order/save.do` setelah lookup cabang (`branchId`) & PIC
 // (`personInChargeId`), grouping DEFAULT ADR-0011 by "Trans No" (opsional), TIDAK auto-create item/akun (§ architecture-work-order.md).
 import { env } from "../lib/env";
+import { assertGroupSizeWithinLimit, describeAccurateFailure } from "../lib/accurate-group-guard";
 import { accurateWorkOptions, withAccurateJobContext } from "../lib/accurate-job-dispatch";
 import { findOrCreateWoPic, resolveBranchId, saveWorkOrder } from "../lib/accurate-work-order";
 import {
@@ -2681,6 +2682,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           // § Fase 08, ADR-0012 — Retry Cerdas: kalau grup ini SUDAH
           // PERNAH sukses jadi faktur (lintas-batch), append item baru ke
           // faktur itu (UPDATE), BUKAN coba create faktur baru yang bakal
@@ -2717,7 +2719,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2734,6 +2736,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const existing =
             group.groupKey && group.groupColumn
               ? await findExistingAccurateSalesInvoiceId(batch.subscriptionId, group.groupKey, group.groupColumn)
@@ -2756,7 +2759,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2770,6 +2773,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processSalesReceiptGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2783,7 +2787,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2797,6 +2801,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processPurchaseOrderGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2810,7 +2815,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2825,6 +2830,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processReceiveItemGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2838,7 +2844,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2853,6 +2859,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processPurchaseReturnGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2866,7 +2873,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2881,6 +2888,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processSalesQuotationGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2894,7 +2902,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2912,6 +2920,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processSalesOrderGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2925,7 +2934,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2937,6 +2946,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processSalesReturnGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2950,7 +2960,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2965,6 +2975,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processDeliveryOrderGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -2978,7 +2989,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -2992,6 +3003,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processPurchasePaymentGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3005,7 +3017,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3020,6 +3032,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processJournalVoucherGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3033,7 +3046,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3047,6 +3060,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processOtherPaymentGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3060,7 +3074,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3074,6 +3088,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processOtherDepositGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3087,7 +3102,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3102,6 +3117,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processItemTransferGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3115,7 +3131,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3127,6 +3143,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processItemRequisitionGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3140,7 +3157,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3155,6 +3172,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processInventoryAdjustmentGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3168,7 +3186,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3182,6 +3200,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processJobCostingGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3195,7 +3214,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3207,6 +3226,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processRollOverGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3220,7 +3240,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3232,6 +3252,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processWorkOrderGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3245,7 +3266,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3257,6 +3278,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processMaterialSlipGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3270,7 +3292,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3282,6 +3304,7 @@ async function main() {
       for (const group of groups) {
         const rowIds = group.rows.map((r) => r.id);
         try {
+          assertGroupSizeWithinLimit(group.rows.length);
           const result = await processFinishedGoodSlipGroup(session, group, columnMapping);
           await db
             .update(importBatchRows)
@@ -3295,7 +3318,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: err instanceof Error ? err.message : String(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
