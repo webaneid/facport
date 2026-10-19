@@ -140,15 +140,18 @@ describe("parseSalesQuotationDetail — atribut tambahan", () => {
       },
       "SQ-1",
     );
-    expect(lines[0]!.extra).toEqual({ dataClassification5Name: "Week 1", dataClassification3Name: "SPK-9", charField2: "catatan", numericField1: 25, useTax2: true });
+    expect(lines[0]!.extra).toEqual({ dataClassification5Name: "Week 1", dataClassification3Name: "SPK-9", charField2: "catatan", numericField1: 25, dateField1: "01/10/2026", useTax2: true });
   });
-  test("tanpa atribut apa pun → tidak ada `extra`; field tanggal tidak pernah ditarik", () => {
-    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, dateField1: "x", dateField2: "y" }] }, "SQ-1").lines[0]!.extra).toBeUndefined();
+  test("tanpa atribut apa pun → tidak ada `extra`; tanggal berformat selain dd/MM/yyyy tidak ditarik", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, dateField1: "2026-10-01", dateField2: "1/2/2026" }] }, "SQ-1").lines[0]!.extra).toBeUndefined();
   });
   test("header: charField/numericField dibaca (0 diabaikan) → headerExtra; kosong → tidak ada", () => {
     const d = parseSalesQuotationDetail({ detailItem: [base], charField1: "H1", numericField3: 9, numericField4: 0, charField2: null }, "SQ-1");
     expect(d.headerExtra).toEqual({ charField1: "H1", numericField3: 9 });
     expect(parseSalesQuotationDetail({ detailItem: [base] }, "SQ-1").headerExtra).toBeUndefined();
+  });
+  test("header: dateField dibaca hanya bila dd/MM/yyyy", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [base], dateField1: "05/10/2026", dateField2: "2026-10-05" }, "SQ-1").headerExtra).toEqual({ dateField1: "05/10/2026" });
   });
   test("Beban: departemen dibaca bila ada", () => {
     const d = parseSalesQuotationDetail({ detailItem: [base], detailExpense: [{ account: { no: "6101" }, expenseAmount: 5, department: { name: "Umum" } }, { account: { no: "6102" }, expenseAmount: 6 }] }, "SQ-1");

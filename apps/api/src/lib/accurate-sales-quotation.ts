@@ -192,8 +192,11 @@ const salesmanNumbers = (v: unknown): string[] | undefined => {
 // menggelembungkan payload `sales-order/save.do` tanpa kendali. Lebih dari batas → ditolak dengan pesan jelas (isi baris item manual di Excel).
 export const MAX_QUOTATION_LINES = 500;
 
+// Tanggal dari respons Accurate: HANYA bila persis `dd/MM/yyyy` (format tulis Accurate); selain itu tidak ditarik (salah format = data rusak).
+const strictDate = (v: unknown): string | undefined => (typeof v === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(v.trim()) ? v.trim() : undefined);
+
 // § Fase 198 (lanjutan, sedang) — atribut tambahan: klasifikasi (objek relasi `{name}` atau string datar), karakter (string), angka (0 = tidak diisi).
-// Dibaca TOLERAN: bentuk tak dikenal = tidak ditarik. Field tanggal (dateFieldN) SENGAJA tidak ditarik: format nilai di respons Accurate belum diketahui.
+// Dibaca TOLERAN: bentuk tak dikenal = tidak ditarik. Tanggal (dateFieldN) hanya ditarik bila persis dd/MM/yyyy.
 function readLineExtras(it: RawQuotationLine): Record<string, string | number | boolean> {
   const out: Record<string, string | number | boolean> = {};
   for (let n = 1; n <= 10; n++) {
@@ -208,6 +211,10 @@ function readLineExtras(it: RawQuotationLine): Record<string, string | number | 
     const v = num(it[`numericField${n}`]);
     if (v !== null && v !== 0) out[`numericField${n}`] = v;
   }
+  for (let n = 1; n <= 2; n++) {
+    const v = strictDate(it[`dateField${n}`]);
+    if (v) out[`dateField${n}`] = v;
+  }
   const tax2 = taxFlag(it.useTax2, it.tax2);
   if (tax2 !== undefined) out.useTax2 = tax2;
   return out;
@@ -221,6 +228,10 @@ function readHeaderExtras(raw: RawQuotation | null | undefined): Record<string, 
     if (c) out[`charField${n}`] = c;
     const v = num(raw[`numericField${n}`]);
     if (v !== null && v !== 0) out[`numericField${n}`] = v;
+  }
+  for (let n = 1; n <= 2; n++) {
+    const d = strictDate(raw[`dateField${n}`]);
+    if (d) out[`dateField${n}`] = d;
   }
   return out;
 }
@@ -289,7 +300,7 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     taxable: typeof raw?.taxable === "boolean" ? raw.taxable : undefined,
     rate: positiveNum(raw?.rate),
     shipmentName: relation(raw?.shipment, ["name"], raw?.shipmentName),
-    shipDate: typeof raw?.shipDate === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(raw.shipDate.trim()) ? raw.shipDate.trim() : undefined,
+    shipDate: strictDate(raw?.shipDate),
     branchName: relation(raw?.branch, ["name"], raw?.branchName),
   };
   if (headerExtras.cashDiscPercent !== undefined) headerExtras.cashDiscount = undefined; // alasan sama dengan diskon baris

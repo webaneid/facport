@@ -31,6 +31,8 @@ const mapping: Record<string, string> = {
   "Attribut 5": "attribut5",
   "Header Karakter 1": "attributHeaderKarakter1",
   "Item Karakter 2": "attributItemKarakter2",
+  "Header Tanggal 1": "attributHeaderTanggal1",
+  "Item Tanggal 1": "attributItemTanggal1",
   "Item PPnBM": "useTax2",
   "Shipment Name": "shipmentName",
   "Shipment Date": "shipDate",
@@ -314,9 +316,9 @@ describe("expandSourceRowsInPayload — pajak & kurs sumber (memengaruhi angka f
 describe("expandSourceRowsInPayload — atribut tambahan sumber (Kategori Keuangan, custom, PPnBM, Beban dept)", () => {
   const rich: SalesQuotationDetail = {
     header: {},
-    headerExtra: { charField1: "H-src", numericField2: 7 },
+    headerExtra: { charField1: "H-src", numericField2: 7, dateField1: "05/10/2026" },
     lines: [
-      { itemNo: "R-1", itemName: null, unitPrice: 10, quantity: 1, unitName: "PCS", notes: null, extra: { dataClassification5Name: "Week 1", charField2: "c-src", numericField1: 3, useTax2: true } },
+      { itemNo: "R-1", itemName: null, unitPrice: 10, quantity: 1, unitName: "PCS", notes: null, extra: { dataClassification5Name: "Week 1", charField2: "c-src", numericField1: 3, dateField1: "02/10/2026", useTax2: true } },
       { itemNo: "R-2", itemName: null, unitPrice: 20, quantity: 1, unitName: "PCS", notes: null },
     ],
     expenses: [{ accountNo: "6101", expenseName: null, expenseAmount: 5, expenseNotes: null, departmentName: "Umum" }],
@@ -331,17 +333,19 @@ describe("expandSourceRowsInPayload — atribut tambahan sumber (Kategori Keuang
   test("atribut baris & header kosong di Excel → diisi dari sumber (per baris sumber), Beban membawa departemen", async () => {
     const payload = await run({});
     const items = payload.detailItem as Record<string, unknown>[];
-    expect(items[0]).toMatchObject({ dataClassification5Name: "Week 1", charField2: "c-src", numericField1: 3, useTax2: true });
+    expect(items[0]).toMatchObject({ dataClassification5Name: "Week 1", charField2: "c-src", numericField1: 3, dateField1: "02/10/2026", useTax2: true });
     expect(items[1]!.dataClassification5Name).toBeUndefined(); // baris sumber ke-2 tak punya atribut → tidak ada isian
-    expect(payload).toMatchObject({ charField1: "H-src", numericField2: 7 });
+    expect(payload).toMatchObject({ charField1: "H-src", numericField2: 7, dateField1: "05/10/2026" });
     expect(payload.detailExpense).toEqual([{ accountNo: "6101", expenseAmount: 5, salesQuotationNumber: "SQ-1", departmentName: "Umum" }]);
   });
 
   test("Excel menang untuk atribut baris, header, dan PPnBM (FALSE = terisi)", async () => {
-    const payload = await run({ "Attribut 5": "Week 9", "Header Karakter 1": "H-xls", "Item Karakter 2": "c-xls", "Item PPnBM": "FALSE" });
+    const payload = await run({ "Attribut 5": "Week 9", "Header Karakter 1": "H-xls", "Item Karakter 2": "c-xls", "Item PPnBM": "FALSE", "Item Tanggal 1": "01/01/2027", "Header Tanggal 1": "09/09/2026" });
     const items = payload.detailItem as Record<string, unknown>[];
     expect(items[0]).toMatchObject({ dataClassification5Name: "Week 9", charField2: "c-xls", useTax2: false, numericField1: 3 }); // angka kosong di Excel tetap dari sumber
     expect(payload.charField1).toBe("H-xls");
+    expect(items[0]!.dateField1).toBe("01/01/2027"); // Excel menang untuk tanggal baris
+    expect(payload.dateField1).toBe("09/09/2026"); // dan tanggal header
   });
 });
 

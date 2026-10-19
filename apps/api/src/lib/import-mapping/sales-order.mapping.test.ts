@@ -550,8 +550,8 @@ describe("Fase 198 lanjutan — informasi tambahan penawaran untuk Sales Order",
   const header = { "Cust No": "C1", "Trans Date": "06/10/2026" };
   const quotation: SalesQuotationDetail = {
     header: { inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500, shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" },
-    headerExtra: { charField1: "H-src" },
-    lines: [{ itemNo: "A-1", itemName: null, unitPrice: 100, quantity: 1, unitName: "PCS", notes: null, extra: { dataClassification5Name: "Week 1", useTax2: true, charField2: "c-src" } }],
+    headerExtra: { charField1: "H-src", dateField1: "05/10/2026" },
+    lines: [{ itemNo: "A-1", itemName: null, unitPrice: 100, quantity: 1, unitName: "PCS", notes: null, extra: { dataClassification5Name: "Week 1", useTax2: true, charField2: "c-src", dateField1: "02/10/2026" } }],
     expenses: [{ accountNo: "6101", expenseName: null, expenseAmount: 5, expenseNotes: null, departmentName: "Umum" }],
   };
   const run = async (extraRow: Record<string, unknown>) => {
@@ -565,9 +565,11 @@ describe("Fase 198 lanjutan — informasi tambahan penawaran untuk Sales Order",
     const payload = await run({});
     expect(payload).toMatchObject({ inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500, shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" });
     expect(payload.charField1).toBeUndefined();
+    expect(payload.dateField1).toBeUndefined();
     const item = (payload.detailItem as Record<string, unknown>[])[0]!;
     expect(item).toMatchObject({ dataClassification5Name: "Week 1", useTax2: true });
     expect(item.charField2).toBeUndefined();
+    expect(item.dateField1).toBeUndefined();
     expect(payload.detailExpense).toEqual([{ accountNo: "6101", expenseAmount: 5, salesQuotationNumber: "SQ-1", departmentName: "Umum" }]);
   });
 

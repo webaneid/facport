@@ -7,11 +7,11 @@ import type { SalesQuotationDetail, SalesQuotationLine } from "../accurate-sales
 const HEADER_PULL_KEYS = ["inclusiveTax", "taxable", "shipmentName", "shipDate", "branchName"] as const;
 
 export type ExtrasOptions = {
-  /** Atribut custom karakter/angka (`charFieldN`/`numericFieldN`) — hanya modul yang memetakannya (Sales Invoice). */
+  /** Atribut custom karakter/angka/tanggal (`charFieldN`/`numericFieldN`/`dateFieldN`) — hanya modul yang memetakannya (Sales Invoice). */
   includeCustomFields: boolean;
 };
 
-const isCustomField = (key: string) => key.startsWith("charField") || key.startsWith("numericField");
+const isCustomField = (key: string) => key.startsWith("charField") || key.startsWith("numericField") || key.startsWith("dateField");
 
 /** Header tambahan dari dokumen sumber PERTAMA yang diperluas. Kurs (`rate`) hanya ikut bila mata uang payload SAMA dengan mata uang sumber. */
 export function applySourceHeaderExtras(payload: Record<string, unknown>, source: SalesQuotationDetail, options: ExtrasOptions): void {
