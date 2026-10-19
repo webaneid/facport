@@ -88,3 +88,16 @@ describe("parseSalesQuotationDetail — label dokumen (Pesanan)", () => {
     expect(() => parseSalesQuotationDetail({ detailItem: [{ unitPrice: 1, quantity: 1 }] }, "SO-1", "Pesanan")).toThrow(/Baris ke-1 pesanan "SO-1"/);
   });
 });
+
+// § Fase 198 tahap C — gudang baris dibaca bila ada (dipakai sumber Delivery Order); label "Pengiriman".
+describe("parseSalesQuotationDetail — gudang & label Pengiriman", () => {
+  const base = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("warehouse.name / warehouseName dibaca; tanpa gudang = tidak ada field (bukan error)", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, warehouse: { name: "Gudang A" } }] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBe("Gudang A");
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, warehouseName: "Gudang B" }] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBe("Gudang B");
+    expect(parseSalesQuotationDetail({ detailItem: [base] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBeUndefined();
+  });
+  test("pesan galat menyebut Pengiriman", () => {
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "DO-1", "Pengiriman")).toThrow(/Pengiriman "DO-1" tidak punya baris item/);
+  });
+});

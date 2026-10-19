@@ -6,6 +6,7 @@ import {
   missingRequiredFieldsForRow,
   expandSourceRowsInPayload,
   mapDetailIdsToRows,
+  isRequiredFieldExemptForRow,
   sourceOfRow,
 } from "./source-expansion";
 
@@ -52,14 +53,14 @@ describe("isSourceExpansionRow / sourceOfRow", () => {
     expect(isSourceExpansionRow({ ...header }, mapping)).toBe(false);
     expect(isSourceExpansionRow({ ...header, "ITEM: SALES QUOT NO": "   " }, mapping)).toBe(false);
   });
-  test("prioritas DO > SO > SQ; sumber berprioritas tinggi yang BELUM didukung (DO) tidak dilewati demi SO/SQ", () => {
-    const row = { ...header, "ITEM: SALES QUOT NO": "SQ-1", "ITEM: SALES ORDER NO": "SO-1" };
-    expect(sourceOfRow(row, mapping)?.kind).toBe("salesOrder");
-    expect(isSourceExpansionRow(row, mapping)).toBe(true); // SO didukung (tahap B) → perluasan dari SO, bukan SQ
-    expect(isSourceExpansionRow({ ...header, "ITEM: SALES ORDER NO": "SO-1" }, mapping)).toBe(true);
-    expect(sourceOfRow({ ...row, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)?.kind).toBe("deliveryOrder");
-    expect(isSourceExpansionRow({ ...row, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)).toBe(false); // DO belum didukung (tahap C) → item tetap wajib
-    expect(isSourceExpansionRow({ ...header, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)).toBe(false);
+  test("prioritas DO > SO > SQ; semua tiga sumber kini didukung", () => {
+    const all = { ...header, "ITEM: SALES QUOT NO": "SQ-1", "ITEM: SALES ORDER NO": "SO-1", "ITEM: DELIVERY ORDER NO": "DO-1" };
+    expect(sourceOfRow(all, mapping)?.kind).toBe("deliveryOrder");
+    expect(isSourceExpansionRow(all, mapping)).toBe(true);
+    const soSq = { ...header, "ITEM: SALES QUOT NO": "SQ-1", "ITEM: SALES ORDER NO": "SO-1" };
+    expect(sourceOfRow(soSq, mapping)?.kind).toBe("salesOrder");
+    expect(isSourceExpansionRow(soSq, mapping)).toBe(true);
+    expect(isSourceExpansionRow({ ...header, "ITEM: DELIVERY ORDER NO": "DO-1", "Item No": "A-1" }, mapping)).toBe(false); // sebagian → dari Excel
   });
 });
 
@@ -72,6 +73,14 @@ describe("missingRequiredFieldsForRow", () => {
   });
   test("gudang TETAP wajib untuk baris perluasan (baris penawaran tidak membawa gudang)", () => {
     expect(missingRequiredFieldsForRow({ ...header, "Item Warehouse": "", "ITEM: SALES QUOT NO": "SQ-1" }, mapping)).toEqual(["warehouseName"]);
+  });
+  test("gudang dikecualikan HANYA untuk sumber Delivery Order (DO membawa gudang); SO/SQ tetap wajib", () => {
+    const noWh = { ...header, "Item Warehouse": "" };
+    expect(missingRequiredFieldsForRow({ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)).toEqual([]);
+    expect(missingRequiredFieldsForRow({ ...noWh, "ITEM: SALES ORDER NO": "SO-1" }, mapping)).toEqual(["warehouseName"]);
+    expect(isRequiredFieldExemptForRow({ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping, "warehouseName")).toBe(true);
+    // DO tapi kolom item terisi (faktur parsial) → bukan perluasan → gudang wajib lagi
+    expect(isRequiredFieldExemptForRow({ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1", "Item No": "A" }, mapping, "warehouseName")).toBe(false);
   });
   test("sebagian terisi → aturan biasa lagi (harga/qty kosong = salah)", () => {
     expect(missingRequiredFieldsForRow({ ...header, "ITEM: SALES QUOT NO": "SQ-1", "Item No": "A-1" }, mapping).sort()).toEqual(["quantity", "unitPrice"]);
@@ -202,6 +211,55 @@ describe("expandSourceRowsInPayload — sumber Sales Order (tahap B)", () => {
     });
     expect(calls).toEqual(["SO:SO-1"]);
     expect((payload.detailItem as Record<string, unknown>[])[0]).toMatchObject({ salesOrderNumber: "SO-1", salesQuotationNumber: "SQ-1" });
+  });
+});
+
+describe("expandSourceRowsInPayload — sumber Delivery Order (tahap C)", () => {
+  const delivery = (wh?: (string | undefined)[]): SalesQuotationDetail => ({
+    header: {},
+    lines: [
+      { itemNo: "D-1", itemName: null, unitPrice: 300, quantity: 2, unitName: "PCS", notes: null, ...(wh?.[0] ? { warehouseName: wh[0] } : {}) },
+      { itemNo: "D-2", itemName: null, unitPrice: 40, quantity: 5, unitName: "KG", notes: null, ...(wh?.[1] ? { warehouseName: wh[1] } : {}) },
+    ],
+    // pengiriman bukan dokumen biaya — kalaupun parser mengembalikan Beban, TIDAK boleh ditarik (detailExpense SI tak punya deliveryOrderNumber)
+    expenses: [{ accountNo: "6300", expenseName: null, expenseAmount: 5, expenseNotes: null }],
+  });
+  const noWh = { ...header, "Item Warehouse": "" };
+
+  test("gudang kosong di Excel → diisi dari baris pengiriman; membawa Delivery Order No; Beban TIDAK ditarik", async () => {
+    const rawRows = [{ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1" }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    await expandSourceRowsInPayload(payload, rawRows, mapping, { deliveryOrder: async () => delivery(["Gudang A", "Gudang B"]) });
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items.map((i) => [i.itemNo, i.warehouseName, i.deliveryOrderNumber])).toEqual([
+      ["D-1", "Gudang A", "DO-1"],
+      ["D-2", "Gudang B", "DO-1"],
+    ]);
+    expect(payload.detailExpense).toBeUndefined();
+  });
+
+  test("gudang di Excel menang atas gudang pengiriman", async () => {
+    const rawRows = [{ ...header, "ITEM: DELIVERY ORDER NO": "DO-1" }]; // header.Item Warehouse = "Gudang Utama"
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    await expandSourceRowsInPayload(payload, rawRows, mapping, { deliveryOrder: async () => delivery(["Gudang A", "Gudang B"]) });
+    expect((payload.detailItem as Record<string, unknown>[]).map((i) => i.warehouseName)).toEqual(["Gudang Utama", "Gudang Utama"]);
+  });
+
+  test("gudang tidak ada di Excel DAN tidak terbaca dari pengiriman → gagal jelas, tidak kirim kosong", async () => {
+    const rawRows = [{ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1" }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    await expect(expandSourceRowsInPayload(payload, rawRows, mapping, { deliveryOrder: async () => delivery(["Gudang A", undefined]) })).rejects.toThrow(/Gudang untuk baris ke-2 pengiriman "DO-1"/);
+  });
+
+  test("DO dan SO sama-sama terisi → hanya DO yang dibaca (prioritas tertinggi)", async () => {
+    const rawRows = [{ ...noWh, "ITEM: DELIVERY ORDER NO": "DO-1", "ITEM: SALES ORDER NO": "SO-1" }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    const calls: string[] = [];
+    await expandSourceRowsInPayload(payload, rawRows, mapping, {
+      deliveryOrder: async (n) => (calls.push(`DO:${n}`), delivery(["G", "G"])),
+      salesOrder: async (n) => (calls.push(`SO:${n}`), quotation),
+    });
+    expect(calls).toEqual(["DO:DO-1"]);
   });
 });
 

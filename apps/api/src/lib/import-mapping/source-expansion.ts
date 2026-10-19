@@ -5,7 +5,7 @@ import { salesInvoiceMapping } from "./sales-invoice.mapping";
 // § Fase 198, architecture-sales-invoice.md § "Fase 198" — Sales Invoice menarik isi dokumen sumber (SQ / SO / DO) cukup dengan nomornya.
 // Pola Fase 169/172 (Sales Order ← Sales Quotation): baris dengan SALAH SATU nomor sumber terisi DAN keenam kolom item kosong diperluas
 // menjadi SEMUA baris item dokumen sumber; salah satu kolom item terisi → seluruhnya dari Excel (faktur parsial). Isian Excel menang.
-// Tahap A: Sales Quotation. Tahap B: + Sales Order. DO menyusul di tahap C dengan menambah entri `SUPPORTED_SOURCE_KINDS` + fetcher.
+// Tahap A: Sales Quotation. Tahap B: + Sales Order. Tahap C: + Delivery Order (membawa gudang baris; Beban tidak ditarik).
 
 export type SourceKind = "deliveryOrder" | "salesOrder" | "salesQuotation";
 
@@ -18,11 +18,13 @@ const SOURCES: { kind: SourceKind; field: string; entryKey: string }[] = [
 
 // Sumber yang SUDAH bisa diperluas. Sumber berprioritas tinggi yang belum didukung TIDAK boleh dilewati demi sumber di bawahnya (Accurate
 // akan menautkan ke sumber berprioritas tinggi → isi yang ditarik bisa tidak cocok), jadi baris itu diperlakukan biasa (item wajib diisi).
-export const SUPPORTED_SOURCE_KINDS: ReadonlySet<SourceKind> = new Set<SourceKind>(["salesQuotation", "salesOrder"]);
+export const SUPPORTED_SOURCE_KINDS: ReadonlySet<SourceKind> = new Set<SourceKind>(["salesQuotation", "salesOrder", "deliveryOrder"]);
 
 export const SOURCE_EXPANDABLE_FIELDS = ["itemNo", "itemName", "unitPrice", "itemNotes", "quantity", "itemUnitName"] as const;
-// Subset `requiredFields` Sales Invoice yang dikecualikan untuk baris perluasan. `warehouseName` TIDAK dikecualikan (baris SQ tidak membawa gudang).
+// Subset `requiredFields` Sales Invoice yang dikecualikan untuk baris perluasan. `warehouseName` TIDAK dikecualikan untuk SQ/SO (baris penawaran/pesanan
+// tidak membawa gudang) — hanya untuk sumber Delivery Order, yang membawa gudang per baris (§ `expandSourceRowsInPayload` menolak bila tidak terbaca).
 export const SOURCE_EXPANSION_EXEMPT_REQUIRED = new Set<string>(["itemNo", "unitPrice", "quantity"]);
+const DELIVERY_ORDER_EXTRA_EXEMPT = new Set<string>(["warehouseName"]);
 
 function cellOf(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): string {
   const column = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
@@ -46,11 +48,17 @@ export function isSourceExpansionRow(rawRow: Record<string, unknown>, columnMapp
   return !SOURCE_EXPANDABLE_FIELDS.some((f) => cellOf(rawRow, columnMapping, f) !== "");
 }
 
-/** Field wajib yang kosong di SATU baris — baris perluasan tidak diwajibkan mengisi Item No/Harga/Qty. */
+/** Apakah field wajib ini dikecualikan untuk baris ini (hanya berlaku bila baris itu baris perluasan). Satu sumber aturan untuk server DAN UI. */
+export function isRequiredFieldExemptForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): boolean {
+  if (!isSourceExpansionRow(rawRow, columnMapping)) return false;
+  if (SOURCE_EXPANSION_EXEMPT_REQUIRED.has(field)) return true;
+  return sourceOfRow(rawRow, columnMapping)?.kind === "deliveryOrder" && DELIVERY_ORDER_EXTRA_EXEMPT.has(field);
+}
+
+/** Field wajib yang kosong di SATU baris — baris perluasan tidak diwajibkan mengisi Item No/Harga/Qty (+ gudang untuk sumber Delivery Order). */
 export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
-  const expansion = isSourceExpansionRow(rawRow, columnMapping);
   return salesInvoiceMapping.requiredFields.filter((field) => {
-    if (expansion && SOURCE_EXPANSION_EXEMPT_REQUIRED.has(field)) return false;
+    if (isRequiredFieldExemptForRow(rawRow, columnMapping, field)) return false;
     return cellOf(rawRow, columnMapping, field) === "";
   });
 }
@@ -93,7 +101,20 @@ export async function expandSourceRowsInPayload(
       cache.set(key, detail);
       used.push({ entryKey: source.entryKey, number: source.number, detail });
     }
-    expanded.push(...expandQuotationEntry(entry, detail.lines));
+    const entries = expandQuotationEntry(entry, detail.lines);
+    if (source.kind === "deliveryOrder") {
+      // Gudang wajib di Sales Invoice: Excel menang, kosong → dari baris pengiriman; tidak ada keduanya → gagal jelas (tidak kirim data kosong).
+      entries.forEach((e, k) => {
+        const fromDoc = detail!.lines[k]!.warehouseName;
+        if ((e.warehouseName === undefined || e.warehouseName === "") && fromDoc) e.warehouseName = fromDoc;
+        if (e.warehouseName === undefined || e.warehouseName === "") {
+          throw new Error(
+            `Gudang untuk baris ke-${k + 1} pengiriman "${source.number}" tidak terbaca dari Accurate — isi kolom Item Warehouse di Excel (berlaku ke semua baris pengiriman ini).`,
+          );
+        }
+      });
+    }
+    expanded.push(...entries);
   }
   payload.detailItem = expanded;
 
@@ -103,7 +124,8 @@ export async function expandSourceRowsInPayload(
     if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
   }
   if (payload.detailExpense === undefined) {
-    const pulled = used.flatMap(({ entryKey, number, detail }) =>
+    // Beban TIDAK ditarik dari Delivery Order: `detailExpense` Sales Invoice tidak punya `deliveryOrderNumber` (Fase 77) dan pengiriman bukan dokumen biaya.
+    const pulled = used.filter((u) => u.entryKey !== "deliveryOrderNumber").flatMap(({ entryKey, number, detail }) =>
       detail.expenses.map((ex) => ({
         accountNo: ex.accountNo,
         expenseAmount: ex.expenseAmount,

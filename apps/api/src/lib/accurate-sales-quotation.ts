@@ -53,6 +53,8 @@ export type SalesQuotationLine = {
   salesmanListNumber?: string[];
   useTax1?: boolean;
   useTax3?: boolean;
+  // § Fase 198 tahap C — gudang baris (dibaca bila ada; dipakai HANYA oleh sumber Delivery Order, modul lain mengabaikannya).
+  warehouseName?: string;
 };
 
 export type SalesQuotationHeader = {
@@ -100,6 +102,8 @@ type RawQuotationLine = {
   useTax3?: unknown;
   tax1?: unknown;
   tax3?: unknown;
+  warehouse?: Named;
+  warehouseName?: unknown;
 };
 
 type RawQuotationExpense = {
@@ -162,7 +166,7 @@ const salesmanNumbers = (v: unknown): string[] | undefined => {
 export const MAX_QUOTATION_LINES = 500;
 
 // § Fase 198 tahap B — parser yang SAMA dipakai Sales Order sebagai dokumen sumber Sales Invoice (`docLabel` hanya mengubah kata di pesan galat).
-export type SourceDocLabel = "Penawaran" | "Pesanan";
+export type SourceDocLabel = "Penawaran" | "Pesanan" | "Pengiriman";
 
 export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, quotationNumber: string, docLabel: SourceDocLabel = "Penawaran"): SalesQuotationDetail {
   const items = raw?.detailItem ?? [];
@@ -190,6 +194,7 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
       salesmanListNumber: salesmanNumbers(it.salesmanList),
       useTax1: taxFlag(it.useTax1, it.tax1),
       useTax3: taxFlag(it.useTax3, it.tax3),
+      warehouseName: relation(it.warehouse, ["name"], it.warehouseName),
     };
     // Persen DAN nominal diskon sama-sama terisi di respons asli (5% & 50) — nominal turunan dari persen; kirim keduanya berisiko bentrok
     // pembulatan di Accurate, jadi bila persen ada, hanya persen yang ditarik.

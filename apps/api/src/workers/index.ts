@@ -223,7 +223,7 @@ import {
 // LANJUTAN Sales Order/Sales Quotation (TIDAK auto-create customer/item,
 // mirror Receive Item) TAPI grouping DEFAULT ADR-0011 (opsional by
 // "number", BEDA dari Receive Item yang wajib by "receiveNumber").
-import { saveDeliveryOrder } from "../lib/accurate-delivery-order";
+import { saveDeliveryOrder, getDeliveryOrderByNumber } from "../lib/accurate-delivery-order";
 import {
   buildDeliveryOrderPayload,
   groupDeliveryOrderRows,
@@ -1040,11 +1040,12 @@ export async function processSalesInvoiceGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesInvoicePayload(rawRows, columnMapping);
-  // § Fase 198 — baris dengan nomor dokumen sumber (Sales Quot No / Sales Order No) terisi dan kolom item kosong diperluas dari isi dokumen sumber di
+  // § Fase 198 — baris dengan nomor dokumen sumber (Sales Quot No / Sales Order No / Delivery Order No) terisi dan kolom item kosong diperluas dari isi dokumen sumber di
   // Accurate (gagal jelas kalau tidak ketemu/tidak terbaca). `offsets[i]` = indeks detail hasil perluasan tempat baris Excel ke-i mulai.
   const offsets = await expandSourceRowsInPayload(payload, rawRows, columnMapping, {
     salesQuotation: (number) => getSalesQuotationByNumber(ctx, number),
     salesOrder: (number) => getSalesOrderByNumber(ctx, number),
+    deliveryOrder: (number) => getDeliveryOrderByNumber(ctx, number),
   });
 
   const customerNo = String(payload.customerNo ?? "");
