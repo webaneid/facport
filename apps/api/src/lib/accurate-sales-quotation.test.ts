@@ -79,3 +79,98 @@ describe("parseSalesQuotationDetail — header, atribut baris, Beban", () => {
     expect(() => parseSalesQuotationDetail({ detailItem: [line], detailExpense: [{ expenseAmount: 5 }] }, "SQ-1")).toThrow(/Beban ke-1.*SQ-1.*akun/);
   });
 });
+
+// § Fase 198 tahap B — parser yang sama dipakai Sales Order sebagai dokumen sumber; hanya kata di pesan galat yang berganti.
+describe("parseSalesQuotationDetail — label dokumen (Pesanan)", () => {
+  test("pesan galat menyebut Pesanan (bukan Penawaran) bila label Pesanan; default tetap Penawaran", () => {
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "SO-1", "Pesanan")).toThrow(/Pesanan "SO-1" tidak punya baris item/);
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "SQ-1")).toThrow(/Penawaran "SQ-1" tidak punya baris item/);
+    expect(() => parseSalesQuotationDetail({ detailItem: [{ unitPrice: 1, quantity: 1 }] }, "SO-1", "Pesanan")).toThrow(/Baris ke-1 pesanan "SO-1"/);
+  });
+});
+
+// § Fase 198 tahap C — gudang baris dibaca bila ada (dipakai sumber Delivery Order); label "Pengiriman".
+describe("parseSalesQuotationDetail — gudang & label Pengiriman", () => {
+  const base = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("warehouse.name / warehouseName dibaca; tanpa gudang = tidak ada field (bukan error)", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, warehouse: { name: "Gudang A" } }] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBe("Gudang A");
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, warehouseName: "Gudang B" }] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBe("Gudang B");
+    expect(parseSalesQuotationDetail({ detailItem: [base] }, "DO-1", "Pengiriman").lines[0]!.warehouseName).toBeUndefined();
+  });
+  test("pesan galat menyebut Pengiriman", () => {
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "DO-1", "Pengiriman")).toThrow(/Pengiriman "DO-1" tidak punya baris item/);
+  });
+});
+
+// § Fase 198 (lanjutan) — pajak & kurs header: hanya nilai bertipe benar yang dibaca; sisanya TIDAK ditarik (bukan galat).
+describe("parseSalesQuotationDetail — inclusiveTax / taxable / rate", () => {
+  const line = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("boolean dan kurs positif dibaca", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], inclusiveTax: true, taxable: false, rate: 15500 }, "SQ-1");
+    expect(header).toMatchObject({ inclusiveTax: true, taxable: false, rate: 15500 });
+  });
+  test("tipe salah/0/tidak ada → tidak ditarik", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], inclusiveTax: "true", taxable: 1, rate: 0 }, "SQ-1");
+    expect(header.inclusiveTax).toBeUndefined();
+    expect(header.taxable).toBeUndefined();
+    expect(header.rate).toBeUndefined();
+  });
+});
+
+// § Fase 198 (lanjutan, sedang) — atribut tambahan baris/header, PPnBM, departemen Beban: dibaca toleran.
+describe("parseSalesQuotationDetail — atribut tambahan", () => {
+  const base = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("baris: klasifikasi (objek & string datar), karakter, angka (0 diabaikan), PPnBM → line.extra dengan nama field TULIS", () => {
+    const { lines } = parseSalesQuotationDetail(
+      {
+        detailItem: [
+          {
+            ...base,
+            dataClassification5: { id: 1, name: "Week 1" },
+            dataClassification3Name: "SPK-9",
+            dataClassification7: null,
+            charField2: "  catatan  ",
+            charField4: "",
+            numericField1: 25,
+            numericField2: 0,
+            dateField1: "01/10/2026",
+            useTax2: true,
+          },
+        ],
+      },
+      "SQ-1",
+    );
+    expect(lines[0]!.extra).toEqual({ dataClassification5Name: "Week 1", dataClassification3Name: "SPK-9", charField2: "catatan", numericField1: 25, dateField1: "01/10/2026", useTax2: true });
+  });
+  test("tanpa atribut apa pun → tidak ada `extra`; tanggal berformat selain dd/MM/yyyy tidak ditarik", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, dateField1: "2026-10-01", dateField2: "1/2/2026" }] }, "SQ-1").lines[0]!.extra).toBeUndefined();
+  });
+  test("header: charField/numericField dibaca (0 diabaikan) → headerExtra; kosong → tidak ada", () => {
+    const d = parseSalesQuotationDetail({ detailItem: [base], charField1: "H1", numericField3: 9, numericField4: 0, charField2: null }, "SQ-1");
+    expect(d.headerExtra).toEqual({ charField1: "H1", numericField3: 9 });
+    expect(parseSalesQuotationDetail({ detailItem: [base] }, "SQ-1").headerExtra).toBeUndefined();
+  });
+  test("header: dateField dibaca hanya bila dd/MM/yyyy", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [base], dateField1: "05/10/2026", dateField2: "2026-10-05" }, "SQ-1").headerExtra).toEqual({ dateField1: "05/10/2026" });
+  });
+  test("Beban: departemen dibaca bila ada", () => {
+    const d = parseSalesQuotationDetail({ detailItem: [base], detailExpense: [{ account: { no: "6101" }, expenseAmount: 5, department: { name: "Umum" } }, { account: { no: "6102" }, expenseAmount: 6 }] }, "SQ-1");
+    expect(d.expenses[0]!.departmentName).toBe("Umum");
+    expect(d.expenses[1]!.departmentName).toBeUndefined();
+  });
+});
+
+// § Fase 198 (lanjutan, rendah) — pengiriman & cabang header; shipDate hanya format dd/MM/yyyy.
+describe("parseSalesQuotationDetail — pengiriman & cabang", () => {
+  const line = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("shipment.name, shipDate (dd/MM/yyyy), branch.name dibaca", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], shipment: { name: "JNE" }, shipDate: "20/10/2026", branch: { name: "JAKARTA" } }, "SQ-1");
+    expect(header).toMatchObject({ shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" });
+  });
+  test("bentuk datar dibaca; shipDate berformat lain TIDAK ditarik", () => {
+    const flat = parseSalesQuotationDetail({ detailItem: [line], shipmentName: "SiCepat", branchName: "BDG", shipDate: "2026-10-20" }, "SQ-1").header;
+    expect(flat).toMatchObject({ shipmentName: "SiCepat", branchName: "BDG" });
+    expect(flat.shipDate).toBeUndefined();
+    expect(parseSalesQuotationDetail({ detailItem: [line], shipDate: "1/2/2026" }, "SQ-1").header.shipDate).toBeUndefined();
+  });
+});

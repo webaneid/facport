@@ -1,6 +1,7 @@
-import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
+import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFound } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { parseSalesQuotationDetail, type RawQuotation, type SalesQuotationDetail } from "./accurate-sales-quotation";
 
 // § architecture-sales-order.md — Sales Order BUKAN transaksi
 // akuntansi (tidak ada jurnal GL, tidak ada perubahan stok, mirror
@@ -86,5 +87,25 @@ export async function getSalesOrderDetailByNumber(ctx: AccurateSessionContext, n
       dataClassification5Name: it.dataClassification5?.name ?? null,
       charField1: typeof it.charField1 === "string" && it.charField1.trim() !== "" ? it.charField1 : null,
     }));
+  });
+}
+
+// § Fase 198 tahap B — isi Sales Order untuk memperluas baris Sales Invoice (nomor "ITEM: SALES ORDER NO" terisi, kolom item kosong). Bentuk detail
+// Sales Order SAMA dengan Sales Quotation (pola `item.no`/`quantity`/`unitPrice`/`detailName`/`detailNotes` terbukti test call nyata di Fase 158),
+// jadi parser penawaran dipakai ulang (kata di pesan galat: "Pesanan"). ⚠️ Field TAMBAHAN (header/diskon/dept/proyek/penjual/pajak/Beban) belum
+// diverifikasi pada respons Sales Order asli — yang tidak terbaca TIDAK ditarik (aturan parser); inti baris tetap ketat.
+export async function getSalesOrderByNumber(ctx: AccurateSessionContext, number: string): Promise<SalesQuotationDetail> {
+  return withAccurateRateLimit(async () => {
+    const res = await fetch(`${ctx.host}/accurate/api/sales-order/detail.do?${new URLSearchParams({ number })}`, {
+      headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
+    });
+    let raw: RawQuotation;
+    try {
+      raw = await parseAccurateEnvelope<RawQuotation>(res);
+    } catch (err) {
+      if (isAccurateRecordNotFound(err)) throw new Error(`Pesanan "${number}" tidak ditemukan di Accurate — cek kembali kolom "Sales Order No".`);
+      throw err;
+    }
+    return parseSalesQuotationDetail(raw, number, "Pesanan");
   });
 }

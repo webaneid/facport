@@ -532,3 +532,51 @@ describe("Fase 169 — baris perluasan Sales Quotation", () => {
     ).rejects.toThrow('Penawaran "SQ-404" tidak ditemukan');
   });
 });
+
+// § Fase 198 (lanjutan) — Sales Order ← Sales Quotation juga menarik pajak, kurs, pengiriman, cabang, Kategori Keuangan, PPnBM, departemen Beban.
+// Sama seperti Sales Invoice: hanya mengisi yang KOSONG di Excel; custom karakter/angka TIDAK ditarik (tidak dipetakan modul ini).
+describe("Fase 198 lanjutan — informasi tambahan penawaran untuk Sales Order", () => {
+  const mapping = {
+    "Cust No": "customerNo",
+    "Sales Quot No": "salesQuotationNumber",
+    "Currency Code": "currencyCode",
+    Rate: "rate",
+    "Include Tax": "inclusiveTax",
+    "Attribut 5": "attribut5",
+    "Shipment Name": "shipmentName",
+    "Branch Name": "branchName",
+    "Trans Date": "transDate",
+  };
+  const header = { "Cust No": "C1", "Trans Date": "06/10/2026" };
+  const quotation: SalesQuotationDetail = {
+    header: { inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500, shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" },
+    headerExtra: { charField1: "H-src", dateField1: "05/10/2026" },
+    lines: [{ itemNo: "A-1", itemName: null, unitPrice: 100, quantity: 1, unitName: "PCS", notes: null, extra: { dataClassification5Name: "Week 1", useTax2: true, charField2: "c-src", dateField1: "02/10/2026" } }],
+    expenses: [{ accountNo: "6101", expenseName: null, expenseAmount: 5, expenseNotes: null, departmentName: "Umum" }],
+  };
+  const run = async (extraRow: Record<string, unknown>) => {
+    const rawRows = [{ ...header, "Sales Quot No": "SQ-1", ...extraRow }];
+    const payload = buildSalesOrderPayload(rawRows, mapping);
+    await expandQuotationRowsInPayload(payload, rawRows, mapping, async () => quotation);
+    return payload;
+  };
+
+  test("pajak, kurs (mata uang dari sumber), pengiriman, cabang, atribut baris, PPnBM, departemen Beban ditarik; custom karakter/angka TIDAK", async () => {
+    const payload = await run({});
+    expect(payload).toMatchObject({ inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500, shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" });
+    expect(payload.charField1).toBeUndefined();
+    expect(payload.dateField1).toBeUndefined();
+    const item = (payload.detailItem as Record<string, unknown>[])[0]!;
+    expect(item).toMatchObject({ dataClassification5Name: "Week 1", useTax2: true });
+    expect(item.charField2).toBeUndefined();
+    expect(item.dateField1).toBeUndefined();
+    expect(payload.detailExpense).toEqual([{ accountNo: "6101", expenseAmount: 5, salesQuotationNumber: "SQ-1", departmentName: "Umum" }]);
+  });
+
+  test("Excel menang (FALSE = terisi); kurs sumber TIDAK ikut bila mata uang Excel berbeda", async () => {
+    const payload = await run({ "Include Tax": "FALSE", "Currency Code": "SGD", "Attribut 5": "Week 9", "Shipment Name": "SiCepat" });
+    expect(payload).toMatchObject({ inclusiveTax: false, currencyCode: "SGD", shipmentName: "SiCepat" });
+    expect(payload.rate).toBeUndefined();
+    expect((payload.detailItem as Record<string, unknown>[])[0]).toMatchObject({ dataClassification5Name: "Week 9" });
+  });
+});

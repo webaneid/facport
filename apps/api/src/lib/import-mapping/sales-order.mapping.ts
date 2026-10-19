@@ -11,6 +11,7 @@
 // live (2026-09-21, § architecture doc) — TIDAK ada gap dokumentasi API.
 import type { SalesQuotationDetail, SalesQuotationLine } from "../accurate-sales-quotation";
 import { splitIdList } from "./split-id-list";
+import { applySourceHeaderExtras, applySourceLineExtras } from "./source-extras";
 
 export const salesOrderMapping = {
   requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
@@ -280,7 +281,7 @@ export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, col
 // § Fase 172 — atribut baris penawaran yang ikut ditarik; ISIAN EXCEL MENANG (kolom Excel terisi = dipakai, kosong = dari penawaran).
 const QUOTATION_LINE_EXTRA_KEYS = ["itemCashDiscount", "itemDiscPercent", "departmentName", "projectNo", "salesmanListNumber", "useTax1", "useTax3"] as const;
 // Atribut header penawaran yang ikut ditarik (sama aturannya, diambil dari penawaran PERTAMA yang diperluas).
-const QUOTATION_HEADER_KEYS = ["paymentTermName", "toAddress", "description", "cashDiscount", "cashDiscPercent", "currencyCode"] as const;
+export const QUOTATION_HEADER_KEYS = ["paymentTermName", "toAddress", "description", "cashDiscount", "cashDiscPercent", "currencyCode"] as const;
 
 /** Satu entri `detailItem` perluasan → N entri (1 per baris penawaran); kolom lain pada entri asli berlaku ke SEMUA baris hasil. */
 export function expandQuotationEntry(entry: Record<string, unknown>, lines: SalesQuotationLine[]): Record<string, unknown>[] {
@@ -330,7 +331,10 @@ export async function expandQuotationRowsInPayload(
       cache.set(number, detail);
       expandedQuotations.push({ number, detail });
     }
-    expanded.push(...expandQuotationEntry(entry, detail.lines));
+    const entries = expandQuotationEntry(entry, detail.lines);
+    // § Fase 198 (lanjutan) — Kategori Keuangan & PPnBM baris sumber (hanya yang kosong di Excel); custom karakter/angka tidak dipetakan modul ini.
+    entries.forEach((e, k) => applySourceLineExtras(e, detail!.lines[k]!, { includeCustomFields: false }));
+    expanded.push(...entries);
   }
   payload.detailItem = expanded;
 
@@ -339,12 +343,15 @@ export async function expandQuotationRowsInPayload(
   for (const key of QUOTATION_HEADER_KEYS) {
     if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
   }
+  // § Fase 198 (lanjutan) — pajak (inclusiveTax/taxable), kurs (bila mata uang sama), pengiriman, cabang dari penawaran pertama.
+  applySourceHeaderExtras(payload, first.detail, { includeCustomFields: false });
   if (payload.detailExpense === undefined) {
     const pulled = expandedQuotations.flatMap(({ number, detail }) =>
       detail.expenses.map((ex) => ({
         accountNo: ex.accountNo,
         expenseAmount: ex.expenseAmount,
         salesQuotationNumber: number,
+        ...(ex.departmentName ? { departmentName: ex.departmentName } : {}),
         ...(ex.expenseName ? { expenseName: ex.expenseName } : {}),
         ...(ex.expenseNotes ? { expenseNotes: ex.expenseNotes } : {}),
       })),
