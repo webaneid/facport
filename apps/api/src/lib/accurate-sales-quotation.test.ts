@@ -101,3 +101,18 @@ describe("parseSalesQuotationDetail — gudang & label Pengiriman", () => {
     expect(() => parseSalesQuotationDetail({ detailItem: [] }, "DO-1", "Pengiriman")).toThrow(/Pengiriman "DO-1" tidak punya baris item/);
   });
 });
+
+// § Fase 198 (lanjutan) — pajak & kurs header: hanya nilai bertipe benar yang dibaca; sisanya TIDAK ditarik (bukan galat).
+describe("parseSalesQuotationDetail — inclusiveTax / taxable / rate", () => {
+  const line = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("boolean dan kurs positif dibaca", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], inclusiveTax: true, taxable: false, rate: 15500 }, "SQ-1");
+    expect(header).toMatchObject({ inclusiveTax: true, taxable: false, rate: 15500 });
+  });
+  test("tipe salah/0/tidak ada → tidak ditarik", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], inclusiveTax: "true", taxable: 1, rate: 0 }, "SQ-1");
+    expect(header.inclusiveTax).toBeUndefined();
+    expect(header.taxable).toBeUndefined();
+    expect(header.rate).toBeUndefined();
+  });
+});

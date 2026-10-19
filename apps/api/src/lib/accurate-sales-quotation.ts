@@ -64,6 +64,10 @@ export type SalesQuotationHeader = {
   cashDiscount?: number;
   cashDiscPercent?: string;
   currencyCode?: string;
+  // § Fase 198 (lanjutan) — memengaruhi ANGKA faktur: harga termasuk pajak, kena pajak, kurs. Opsional (undefined = tidak terbaca).
+  inclusiveTax?: boolean;
+  taxable?: boolean;
+  rate?: number;
 };
 
 export type SalesQuotationExpense = {
@@ -125,6 +129,10 @@ export type RawQuotation = {
   cashDiscPercent?: unknown;
   currency?: Named;
   currencyCode?: unknown;
+  // § Fase 198 (lanjutan) — pajak & kurs dokumen sumber (dipakai Sales Invoice; Sales Order mengabaikannya).
+  inclusiveTax?: unknown;
+  taxable?: unknown;
+  rate?: unknown;
 };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -222,6 +230,9 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     cashDiscount: positiveNum(raw?.cashDiscount),
     cashDiscPercent: percentText(raw?.cashDiscPercent),
     currencyCode: relation(raw?.currency, ["code"], raw?.currencyCode),
+    inclusiveTax: typeof raw?.inclusiveTax === "boolean" ? raw.inclusiveTax : undefined,
+    taxable: typeof raw?.taxable === "boolean" ? raw.taxable : undefined,
+    rate: positiveNum(raw?.rate),
   };
   if (headerExtras.cashDiscPercent !== undefined) headerExtras.cashDiscount = undefined; // alasan sama dengan diskon baris
   for (const [k, v] of Object.entries(headerExtras)) if (v !== undefined) (header as Record<string, unknown>)[k] = v;

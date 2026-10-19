@@ -50,6 +50,15 @@ Saat ini kolom `Item: Delivery Order No / Sales Order No / Sales Quot No` (Fase 
 - Sales Order TIDAK dimigrasikan; hanya `QUOTATION_HEADER_KEYS` diekspor dan `expandQuotationEntry` dipakai ulang.
 - Dampak scope: modul `sales_invoice` kini membutuhkan `sales_quotation_view`, `sales_order_view` DAN `delivery_order_view` (rilis A+B+C bersamaan agar customer cukup "Perbarui izin" sekali) → SEMUA customer Sales Invoice yang belum punya scope itu harus "Perbarui izin" sebelum import berikutnya (pengecekan scope saat penjadwalan), walau tidak memakai fitur ini. Sejalan keputusan Fase 169 (wajib, bukan opsional).
 
+## Lanjutan 2026-10-20 — analisis celah: info sumber yang belum ditarik
+Setelah tahap A–C, dibandingkan semua field `sales-invoice/save.do` (spec) dengan yang ditarik. Celah (client sudah punya kolom Excel-nya; Fase 172 SO←SQ juga belum menarik):
+- **Prioritas tinggi — memengaruhi ANGKA faktur (dikerjakan):** `inclusiveTax` (harga sudah termasuk pajak; tanpanya Accurate menambah PPN lagi di atas harga sumber), `taxable`, `rate` (kurs; kode mata uang sudah ditarik tapi kursnya belum).
+- **Sedang (menunggu keputusan):** atribut baris Kategori Keuangan 1–10 (`dataClassificationNName`) + custom field, `useTax2` (PPnBM), departemen baris Beban.
+- **Rendah:** `shipmentName`, `shipDate`, `branchName`.
+- **Sengaja TIDAK ditarik:** `poNumber` (kunci grouping/append), `customerNo`/`transDate`/`number` (identitas, wajib dari Excel), uang muka (DP, fitur terpisah).
+- [x] Tinggi: parser membaca `inclusiveTax`/`taxable` (hanya boolean asli) & `rate` (>0); `expandSourceRowsInPayload` menariknya bila kosong di Excel (Excel menang, `FALSE` = terisi). **Kurs hanya ditarik bila mata uang payload SAMA dengan mata uang sumber** (mata uang Excel ≠ sumber → kurs sumber salah). Field tak terbaca = tidak ditarik, bukan galat. Header mengikuti dokumen sumber PERTAMA. ⚠️ Nama field di respons SQ/SO/DO asli belum diverifikasi.
+- Sales Order ← Sales Quotation (Fase 172) TIDAK diubah; menunggu keputusan user (mengubah perilaku fitur berjalan).
+
 ## Risiko / titik rawan yang ditemukan saat perencanaan
 1. **Pemetaan baris↔id detail (RAWAN):** `processSalesInvoiceGroup` memetakan `result.detailItem[i]` ke baris Excel ke-i (`accurateDetailItemId` per baris). Satu baris Excel yang diperluas menjadi N baris membuat indeks bergeser → baris sesudahnya salah id. Id ini dipakai guard hapus faktur (semua baris wajib punya id). Solusi: simpan offset awal tiap baris Excel; baris perluasan menyimpan id detail PERTAMA hasil perluasannya. Wajib ada tes.
 2. **Jalur `appendToExistingSalesInvoice`** (faktur dengan nomor referensi sama sudah ada di Accurate → baris ditambahkan): harus diputuskan — ikut diperluas, atau baris perluasan di jalur append ditolak jelas. Usulan awal: ikut diperluas dengan pemetaan yang sama; tes khusus.

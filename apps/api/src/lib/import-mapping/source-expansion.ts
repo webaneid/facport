@@ -24,6 +24,9 @@ export const SOURCE_EXPANDABLE_FIELDS = ["itemNo", "itemName", "unitPrice", "ite
 // Subset `requiredFields` Sales Invoice yang dikecualikan untuk baris perluasan. `warehouseName` TIDAK dikecualikan untuk SQ/SO (baris penawaran/pesanan
 // tidak membawa gudang) — hanya untuk sumber Delivery Order, yang membawa gudang per baris (§ `expandSourceRowsInPayload` menolak bila tidak terbaca).
 export const SOURCE_EXPANSION_EXEMPT_REQUIRED = new Set<string>(["itemNo", "unitPrice", "quantity"]);
+// § Fase 198 (lanjutan) — header tambahan yang MEMENGARUHI ANGKA faktur (Excel menang). Tanpa `inclusiveTax`, harga sumber yang sudah termasuk pajak akan
+// ditambah PPN lagi oleh Accurate (total faktur ≠ sumber). `rate` (kurs) ditangani terpisah: hanya ikut bila mata uangnya juga dari sumber.
+const SOURCE_TAX_HEADER_KEYS = ["inclusiveTax", "taxable"] as const;
 const DELIVERY_ORDER_EXTRA_EXEMPT = new Set<string>(["warehouseName"]);
 
 function cellOf(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): string {
@@ -122,6 +125,14 @@ export async function expandSourceRowsInPayload(
   if (!first) return offsets;
   for (const key of QUOTATION_HEADER_KEYS) {
     if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
+  }
+  for (const key of SOURCE_TAX_HEADER_KEYS) {
+    if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
+  }
+  // Kurs hanya masuk akal bersama mata uang yang SAMA dengan sumber: mata uang Excel ≠ mata uang sumber (atau tidak ada di sumber) → kurs sumber salah.
+  const sourceCurrency = first.detail.header.currencyCode;
+  if (payload.rate === undefined && first.detail.header.rate !== undefined && sourceCurrency !== undefined && payload.currencyCode === sourceCurrency) {
+    payload.rate = first.detail.header.rate;
   }
   if (payload.detailExpense === undefined) {
     // Beban TIDAK ditarik dari Delivery Order: `detailExpense` Sales Invoice tidak punya `deliveryOrderNumber` (Fase 77) dan pengiriman bukan dokumen biaya.

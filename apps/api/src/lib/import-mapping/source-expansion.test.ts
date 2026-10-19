@@ -24,6 +24,10 @@ const mapping: Record<string, string> = {
   "Item Warehouse": "warehouseName",
   "Item Dept": "departmentName",
   "Payment Term Name": "paymentTermName",
+  "Currency Code": "currencyCode",
+  Rate: "rate",
+  "Inclusive Tax": "inclusiveTax",
+  Taxable: "taxable",
   "ITEM: DELIVERY ORDER NO": "itemDeliveryOrderNo",
   "ITEM: SALES ORDER NO": "itemSalesOrderNo",
   "ITEM: SALES QUOT NO": "itemSalesQuotationNo",
@@ -260,6 +264,43 @@ describe("expandSourceRowsInPayload — sumber Delivery Order (tahap C)", () => 
       salesOrder: async (n) => (calls.push(`SO:${n}`), quotation),
     });
     expect(calls).toEqual(["DO:DO-1"]);
+  });
+});
+
+describe("expandSourceRowsInPayload — pajak & kurs sumber (memengaruhi angka faktur)", () => {
+  const taxedUsd: SalesQuotationDetail = {
+    header: { inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500 },
+    lines: [{ itemNo: "T-1", itemName: null, unitPrice: 100, quantity: 1, unitName: "PCS", notes: null }],
+    expenses: [],
+  };
+  const run = async (extraRow: Record<string, unknown>, detail: SalesQuotationDetail = taxedUsd) => {
+    const rawRows = [{ ...header, "ITEM: SALES QUOT NO": "SQ-1", ...extraRow }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    await expandSourceRowsInPayload(payload, rawRows, mapping, { salesQuotation: async () => detail });
+    return payload;
+  };
+
+  test("inclusiveTax, taxable, mata uang & kurs ditarik dari sumber bila kosong di Excel", async () => {
+    const payload = await run({});
+    expect(payload).toMatchObject({ inclusiveTax: true, taxable: true, currencyCode: "USD", rate: 15500 });
+  });
+
+  test("Excel menang: FALSE di Excel dianggap terisi (tidak ditimpa sumber); kurs Excel dipakai", async () => {
+    const payload = await run({ "Inclusive Tax": "FALSE", Taxable: "FALSE", "Currency Code": "USD", Rate: 16000 });
+    expect(payload).toMatchObject({ inclusiveTax: false, taxable: false, currencyCode: "USD", rate: 16000 });
+  });
+
+  test("kurs sumber TIDAK ikut bila mata uang Excel berbeda dari mata uang sumber", async () => {
+    const payload = await run({ "Currency Code": "SGD" });
+    expect(payload.currencyCode).toBe("SGD");
+    expect(payload.rate).toBeUndefined();
+  });
+
+  test("sumber tanpa mata uang terbaca → kurs tidak ditarik; tanpa pajak terbaca → tidak ditarik (bukan galat)", async () => {
+    const payload = await run({}, { header: { rate: 15500 }, lines: taxedUsd.lines, expenses: [] });
+    expect(payload.rate).toBeUndefined();
+    expect(payload.inclusiveTax).toBeUndefined();
+    expect(payload.taxable).toBeUndefined();
   });
 });
 
