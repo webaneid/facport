@@ -32,6 +32,9 @@ const mapping: Record<string, string> = {
   "Header Karakter 1": "attributHeaderKarakter1",
   "Item Karakter 2": "attributItemKarakter2",
   "Item PPnBM": "useTax2",
+  "Shipment Name": "shipmentName",
+  "Shipment Date": "shipDate",
+  "Branch Name": "branchName",
   "ITEM: DELIVERY ORDER NO": "itemDeliveryOrderNo",
   "ITEM: SALES ORDER NO": "itemSalesOrderNo",
   "ITEM: SALES QUOT NO": "itemSalesQuotationNo",
@@ -339,6 +342,25 @@ describe("expandSourceRowsInPayload — atribut tambahan sumber (Kategori Keuang
     const items = payload.detailItem as Record<string, unknown>[];
     expect(items[0]).toMatchObject({ dataClassification5Name: "Week 9", charField2: "c-xls", useTax2: false, numericField1: 3 }); // angka kosong di Excel tetap dari sumber
     expect(payload.charField1).toBe("H-xls");
+  });
+});
+
+describe("expandSourceRowsInPayload — pengiriman & cabang sumber (Sales Invoice)", () => {
+  const withShip: SalesQuotationDetail = {
+    header: { shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" },
+    lines: [{ itemNo: "S-1", itemName: null, unitPrice: 1, quantity: 1, unitName: "PCS", notes: null }],
+    expenses: [],
+  };
+  test("kosong di Excel → ditarik; Excel menang", async () => {
+    for (const [extra, expected] of [
+      [{}, { shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" }],
+      [{ "Shipment Name": "SiCepat", "Branch Name": "BDG" }, { shipmentName: "SiCepat", shipDate: "20/10/2026", branchName: "BDG" }],
+    ] as const) {
+      const rawRows = [{ ...header, "ITEM: SALES QUOT NO": "SQ-1", ...extra }];
+      const payload = buildSalesInvoicePayload(rawRows, mapping);
+      await expandSourceRowsInPayload(payload, rawRows, mapping, { salesQuotation: async () => withShip });
+      expect(payload).toMatchObject(expected);
+    }
   });
 });
 

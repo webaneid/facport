@@ -156,3 +156,18 @@ describe("parseSalesQuotationDetail — atribut tambahan", () => {
     expect(d.expenses[1]!.departmentName).toBeUndefined();
   });
 });
+
+// § Fase 198 (lanjutan, rendah) — pengiriman & cabang header; shipDate hanya format dd/MM/yyyy.
+describe("parseSalesQuotationDetail — pengiriman & cabang", () => {
+  const line = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("shipment.name, shipDate (dd/MM/yyyy), branch.name dibaca", () => {
+    const { header } = parseSalesQuotationDetail({ detailItem: [line], shipment: { name: "JNE" }, shipDate: "20/10/2026", branch: { name: "JAKARTA" } }, "SQ-1");
+    expect(header).toMatchObject({ shipmentName: "JNE", shipDate: "20/10/2026", branchName: "JAKARTA" });
+  });
+  test("bentuk datar dibaca; shipDate berformat lain TIDAK ditarik", () => {
+    const flat = parseSalesQuotationDetail({ detailItem: [line], shipmentName: "SiCepat", branchName: "BDG", shipDate: "2026-10-20" }, "SQ-1").header;
+    expect(flat).toMatchObject({ shipmentName: "SiCepat", branchName: "BDG" });
+    expect(flat.shipDate).toBeUndefined();
+    expect(parseSalesQuotationDetail({ detailItem: [line], shipDate: "1/2/2026" }, "SQ-1").header.shipDate).toBeUndefined();
+  });
+});

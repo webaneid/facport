@@ -71,6 +71,10 @@ export type SalesQuotationHeader = {
   inclusiveTax?: boolean;
   taxable?: boolean;
   rate?: number;
+  // § Fase 198 (lanjutan, rendah) — pengiriman & cabang. `shipDate` hanya bila PERSIS `dd/MM/yyyy` (format tulis Accurate); selain itu tidak ditarik.
+  shipmentName?: string;
+  shipDate?: string;
+  branchName?: string;
 };
 
 export type SalesQuotationExpense = {
@@ -143,6 +147,11 @@ export type RawQuotation = {
   inclusiveTax?: unknown;
   taxable?: unknown;
   rate?: unknown;
+  shipment?: Named;
+  shipmentName?: unknown;
+  shipDate?: unknown;
+  branch?: Named;
+  branchName?: unknown;
 };
 
 const text = (v: unknown): string | null => (typeof v === "string" && v.trim() !== "" ? v.trim() : null);
@@ -279,6 +288,9 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     inclusiveTax: typeof raw?.inclusiveTax === "boolean" ? raw.inclusiveTax : undefined,
     taxable: typeof raw?.taxable === "boolean" ? raw.taxable : undefined,
     rate: positiveNum(raw?.rate),
+    shipmentName: relation(raw?.shipment, ["name"], raw?.shipmentName),
+    shipDate: typeof raw?.shipDate === "string" && /^\d{2}\/\d{2}\/\d{4}$/.test(raw.shipDate.trim()) ? raw.shipDate.trim() : undefined,
+    branchName: relation(raw?.branch, ["name"], raw?.branchName),
   };
   if (headerExtras.cashDiscPercent !== undefined) headerExtras.cashDiscount = undefined; // alasan sama dengan diskon baris
   for (const [k, v] of Object.entries(headerExtras)) if (v !== undefined) (header as Record<string, unknown>)[k] = v;

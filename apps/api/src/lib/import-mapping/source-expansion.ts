@@ -1,6 +1,7 @@
 import type { SalesQuotationDetail } from "../accurate-sales-quotation";
 import { expandQuotationEntry, QUOTATION_HEADER_KEYS } from "./sales-order.mapping";
 import { salesInvoiceMapping } from "./sales-invoice.mapping";
+import { applySourceHeaderExtras, applySourceLineExtras } from "./source-extras";
 
 // § Fase 198, architecture-sales-invoice.md § "Fase 198" — Sales Invoice menarik isi dokumen sumber (SQ / SO / DO) cukup dengan nomornya.
 // Pola Fase 169/172 (Sales Order ← Sales Quotation): baris dengan SALAH SATU nomor sumber terisi DAN keenam kolom item kosong diperluas
@@ -24,9 +25,6 @@ export const SOURCE_EXPANDABLE_FIELDS = ["itemNo", "itemName", "unitPrice", "ite
 // Subset `requiredFields` Sales Invoice yang dikecualikan untuk baris perluasan. `warehouseName` TIDAK dikecualikan untuk SQ/SO (baris penawaran/pesanan
 // tidak membawa gudang) — hanya untuk sumber Delivery Order, yang membawa gudang per baris (§ `expandSourceRowsInPayload` menolak bila tidak terbaca).
 export const SOURCE_EXPANSION_EXEMPT_REQUIRED = new Set<string>(["itemNo", "unitPrice", "quantity"]);
-// § Fase 198 (lanjutan) — header tambahan yang MEMENGARUHI ANGKA faktur (Excel menang). Tanpa `inclusiveTax`, harga sumber yang sudah termasuk pajak akan
-// ditambah PPN lagi oleh Accurate (total faktur ≠ sumber). `rate` (kurs) ditangani terpisah: hanya ikut bila mata uangnya juga dari sumber.
-const SOURCE_TAX_HEADER_KEYS = ["inclusiveTax", "taxable"] as const;
 const DELIVERY_ORDER_EXTRA_EXEMPT = new Set<string>(["warehouseName"]);
 
 function cellOf(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, field: string): string {
@@ -118,9 +116,7 @@ export async function expandSourceRowsInPayload(
       });
     }
     // § Fase 198 (lanjutan, sedang) — atribut tambahan baris (Kategori Keuangan, custom karakter/angka, PPnBM): hanya mengisi yang KOSONG di Excel.
-    entries.forEach((e, k) => {
-      for (const [key, value] of Object.entries(detail!.lines[k]!.extra ?? {})) if (e[key] === undefined) e[key] = value;
-    });
+    entries.forEach((e, k) => applySourceLineExtras(e, detail!.lines[k]!, { includeCustomFields: true }));
     expanded.push(...entries);
   }
   payload.detailItem = expanded;
@@ -130,15 +126,7 @@ export async function expandSourceRowsInPayload(
   for (const key of QUOTATION_HEADER_KEYS) {
     if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
   }
-  for (const key of SOURCE_TAX_HEADER_KEYS) {
-    if (payload[key] === undefined && first.detail.header[key] !== undefined) payload[key] = first.detail.header[key];
-  }
-  // Kurs hanya masuk akal bersama mata uang yang SAMA dengan sumber: mata uang Excel ≠ mata uang sumber (atau tidak ada di sumber) → kurs sumber salah.
-  const sourceCurrency = first.detail.header.currencyCode;
-  if (payload.rate === undefined && first.detail.header.rate !== undefined && sourceCurrency !== undefined && payload.currencyCode === sourceCurrency) {
-    payload.rate = first.detail.header.rate;
-  }
-  for (const [key, value] of Object.entries(first.detail.headerExtra ?? {})) if (payload[key] === undefined) payload[key] = value;
+  applySourceHeaderExtras(payload, first.detail, { includeCustomFields: true });
   if (payload.detailExpense === undefined) {
     // Beban TIDAK ditarik dari Delivery Order: `detailExpense` Sales Invoice tidak punya `deliveryOrderNumber` (Fase 77) dan pengiriman bukan dokumen biaya.
     const pulled = used.filter((u) => u.entryKey !== "deliveryOrderNumber").flatMap(({ entryKey, number, detail }) =>
