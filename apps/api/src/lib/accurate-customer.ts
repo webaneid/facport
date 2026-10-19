@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { todayAccurateDate } from "./accurate-vendor";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-accurate-integration.md § "Sales Invoice — Fase 13" —
 // mirror 1:1 `accurate-vendor.ts` (Customer setara Vendor untuk sisi
@@ -16,7 +17,7 @@ export type CustomerResult = {
 export async function findCustomerByNo(ctx: AccurateSessionContext, customerNo: string): Promise<{ id: number; name: string } | undefined> {
   return withAccurateRateLimit(async () => {
     const params = new URLSearchParams({ "filter.no.val": customerNo, fields: "id,customerNo,name" });
-    const res = await fetch(`${ctx.host}/accurate/api/customer/list.do?${params}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/customer/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     const list = await parseAccurateEnvelope<{ id: number; name: string }[]>(res);
@@ -26,7 +27,7 @@ export async function findCustomerByNo(ctx: AccurateSessionContext, customerNo: 
 
 async function postCustomerSave(ctx: AccurateSessionContext, payload: Record<string, unknown>) {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/customer/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/customer/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

@@ -15,6 +15,17 @@
 | F8 | Anomali belum didalami: Batal Import Purchase Invoice 331 baris = 57 menit; Purchase Payment 243 baris = 32 menit; Work Order 7.812 baris gagal semua dalam 3 detik (validasi, bukan kapasitas). | tabel di atas |
 | F9 | Insiden 14 Okt (1.239–1.539 baris timeout 6 menit; 1.249 baris sempat DIBALAS Accurate setelah ±4,7 menit dengan galat bisnis) terjadi SEBELUM Fase 167 (15 Okt) → timeout transaksi raksasa bukan akibat perubahan antrean. | lessons-learned Fase 195 |
 
+### Hasil pengukuran A3 (riwayat Sales Receipt 18–19 Okt, guard 1.000 baris aktif sampai 19 Okt 04:23 UTC)
+| Bukti | Hitungan |
+|---|---|
+| 926 baris, 10 grup, semua sukses, 3:54 | **0,25 dtk/baris** |
+| 6.306 baris: grup 598 baris sukses, grup lain ditolak guard seketika; total 2:44 | **≤0,27 dtk/baris** |
+| Insiden 14 Okt: 1.249 baris dibalas Accurate di 4,7 menit | 0,23 dtk/baris |
+| Batch per-baris (6.400–7.650 sukses, 33–40 menit) | 2,9–3,3 baris/dtk = 0,31–0,34 dtk (incl. overhead kita) |
+- **Model biaya:** Accurate ±0,25–0,30 dtk per baris detail, **linear**, baik dokumen kecil maupun besar. Konsekuensi: (1) batas 360 dtk ≈ **±1.300–1.400 baris per dokumen** (di atasnya pasti timeout); (2) throughput berurutan ±3 baris/dtk ≈ kecepatan Accurate per baris, bukan kelambatan loop kita; (3) penerimaan 3.391 baris ≈ 15 menit, 6.000 baris ≈ 26 menit (prediksi linear, belum terbukti).
+- Tabel baru memuat Sales Receipt mulai 18 Okt 02:10 UTC; klaim "Jumat 16 Okt berhasil" tidak terlihat di data ini (tidak terverifikasi).
+- Batch per-baris punya 5–9% baris gagal konsisten (452–1.249/batch): galat data/validasi sisi client, bukan kapasitas.
+
 ## 2. Dua masalah berbeda yang harus dipisah
 1. **Transaksi raksasa (sedikit dokumen, ribuan baris per dokumen):** satu request; lama proses di Accurate naik dengan jumlah baris; kita memutus di 360 detik. Konkurensi/antrean TIDAK memperbaikinya.
 2. **Kapasitas banyak pengguna paralel (banyak dokumen kecil):** dibatasi 2 slot global × throughput berurutan; satu koneksi berurutan; tak ada keadilan antar pelanggan; job yang berakhir timeout menahan slot.
@@ -52,3 +63,10 @@ Keduanya BERKAITAN: setiap timeout 6 menit menahan 1 dari 2 slot (50% kapasitas 
 2. Uji eksplisit di Accurate demo/trial (butuh akun uji): waktu proses penerimaan N baris untuk N = 500/1.000/2.000/4.000; perilaku bila klien memutus; update bertahap (Opsi C).
 3. Telusuri anomali F8 (Batal Import 57 menit, Purchase Payment 32 menit): kemungkinan backoff batas request.
 4. Uji beban terkontrol: 3–10 koneksi paralel (staging) dengan metrik slot/antrean.
+
+## 7. Implementasi tahap 1 (2026-10-20): metrik + timeout adaptif eksplisit
+- `lib/accurate-http.ts` → `accurateFetch` = SATU pintu semua panggilan ke `ctx.host` (45 titik di 28 file dialihkan; tes pagar mencegah `fetch(\`${ctx.host}` mentah). `save.do`: timeout = clamp(baris detail × 600 ms, 6 menit, 60 menit); panggilan lain: 360 dtk eksplisit (= perilaku sebelumnya, kini tertulis). Env: `ACCURATE_SAVE_TIMEOUT_MIN_MS`, `ACCURATE_SAVE_TIMEOUT_MAX_MS`, `ACCURATE_SAVE_MS_PER_LINE`, `ACCURATE_REQUEST_TIMEOUT_MS`.
+- Metrik: log terstruktur `event: "accurate_request"` (save selalu; lainnya hanya bila ≥10 dtk/timeout/galat) berisi `path, lines, bodyBytes, timeoutMs, durationMs, outcome, status, connectionId` → kalibrasi model biaya & utilisasi dari `docker compose logs api worker | grep accurate_request`.
+- **Mekanisme override (diuji, Bun 1.3.11):** `AbortSignal` panjang saja & `timeout:<ms>` tidak mengalahkan default; `timeout: false` + `signal` sendiri bekerja → dipakai `timeoutInit`. Wajib diverifikasi ulang di Bun 1.4.3 production setelah deploy (default di sana 360 dtk).
+- Timeout kita sendiri = `AccurateTimeoutError` (name tetap `TimeoutError`); pesan baris gagal menyebut lama menunggu & jumlah baris, tetap menyarankan cek Accurate dulu.
+- **Belum dilakukan (tahap berikut):** verifikasi setelah timeout, jalur terpisah job besar, paralel dalam satu job, `expireInSeconds` dinamis. Catatan: dengan timeout lebih panjang, satu job raksasa menahan 1 dari 2 slot hingga ±34 menit (sebelumnya 6 menit lalu gagal) → jalur terpisah makin mendesak.

@@ -24,6 +24,10 @@ const envSchema = t.Object({
   BETTER_AUTH_URL: t.String({ minLength: 1 }),
   SENTRY_DSN_API: t.Optional(t.String()),
   LOG_LEVEL: t.Optional(t.String()),
+  ACCURATE_SAVE_TIMEOUT_MIN_MS: t.Optional(t.String()), // Fase 199 — batas bawah timeout save.do (default 360000 = 6 menit, 60000–3600000)
+  ACCURATE_SAVE_TIMEOUT_MAX_MS: t.Optional(t.String()), // Fase 199 — batas atas timeout save.do (default 3600000 = 60 menit, 60000–7200000)
+  ACCURATE_SAVE_MS_PER_LINE: t.Optional(t.String()), // Fase 199 — tambahan timeout per baris detail (default 600 ms; biaya Accurate terukur ±250–280 ms/baris; 50–5000)
+  ACCURATE_REQUEST_TIMEOUT_MS: t.Optional(t.String()), // Fase 199 — timeout panggilan Accurate selain save.do (default 360000; 10000–1800000)
   IMPORT_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 167, ADR-0048 — jumlah koneksi Accurate yang diproses paralel di worker (default 2, 1–8)
   RESEND_API_KEY: t.Optional(t.String()),
   EMAIL_FROM: t.Optional(t.String()),

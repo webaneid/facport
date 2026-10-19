@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { getCompanyTimezone } from "./company-timezone";
+import { accurateFetch } from "./accurate-http";
 
 export type VendorPayableAccountResult = {
   id: number;
@@ -18,7 +19,7 @@ export async function findVendorByNo(
 ): Promise<{ id: number; name: string } | undefined> {
   return withAccurateRateLimit(async () => {
     const params = new URLSearchParams({ "filter.no.val": vendorNo, fields: "id,vendorNo,name" });
-    const res = await fetch(`${ctx.host}/accurate/api/vendor/list.do?${params}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/vendor/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     const list = await parseAccurateEnvelope<{ id: number; name: string }[]>(res);
@@ -45,7 +46,7 @@ export async function todayAccurateDate(now: Date = new Date()): Promise<string>
 
 async function postVendorSave(ctx: AccurateSessionContext, payload: Record<string, unknown>) {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/vendor/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/vendor/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

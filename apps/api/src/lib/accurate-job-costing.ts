@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-job-costing.md — Job Costing panggil 2 endpoint
 // BERURUTAN, TERPISAH (bukan bulk-save.do): `job-order/save.do` DULU
@@ -22,7 +23,7 @@ export type MaterialAdjustmentSaveResult = {
 
 export async function saveJobOrder(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<JobOrderSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/job-order/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/job-order/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -37,7 +38,7 @@ export async function saveJobOrder(ctx: AccurateSessionContext, payload: Record<
 
 export async function saveMaterialAdjustment(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<MaterialAdjustmentSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/material-adjustment/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/material-adjustment/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

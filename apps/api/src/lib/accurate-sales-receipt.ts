@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-sales-receipt.md — bayangan cermin PERSIS
 // accurate-purchase-payment.ts (customerNo ganti vendorNo). save.do
@@ -22,7 +23,7 @@ export async function saveSalesReceipt(
   payload: Record<string, unknown>,
 ): Promise<SalesReceiptSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-receipt/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-receipt/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

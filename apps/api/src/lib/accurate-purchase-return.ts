@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-purchase-return.md — dokumen LANJUTAN (retur terhadap
 // transaksi yang sudah ada), TIDAK ADA "Batal Import" — cuma butuh
@@ -12,7 +13,7 @@ export type PurchaseReturnSaveResult = {
 
 export async function savePurchaseReturn(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<PurchaseReturnSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-return/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-return/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFo
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import { parseInvoiceLines, type InvoiceLine } from "./import-mapping/return-from-invoice";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-accurate-integration.md § 3 — Purchase Invoice VERIFIED.
 // Pakai save.do PER-BARIS (bukan bulk-save.do) — lihat phase-02 doc
@@ -25,7 +26,7 @@ export async function savePurchaseInvoice(
   payload: Record<string, unknown>,
 ): Promise<PurchaseInvoiceSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-invoice/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -66,7 +67,7 @@ export type PurchaseInvoiceDetail = {
 
 export async function getPurchaseInvoiceDetail(ctx: AccurateSessionContext, id: number): Promise<PurchaseInvoiceDetail> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ id: String(id) })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ id: String(id) })}`, {
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
         "X-Session-ID": ctx.session,
@@ -94,7 +95,7 @@ export async function getPurchaseInvoiceDetail(ctx: AccurateSessionContext, id: 
 // (bukan bulk) — caller WAJIB loop kalau ada banyak faktur.
 export async function deletePurchaseInvoice(ctx: AccurateSessionContext, id: number): Promise<void> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/delete.do?${new URLSearchParams({ id: String(id) })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-invoice/delete.do?${new URLSearchParams({ id: String(id) })}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -110,7 +111,7 @@ export async function deletePurchaseInvoice(ctx: AccurateSessionContext, id: num
 // `itemCashDiscount` (nama sama dengan field save.do). ⚠️ Respons diskon belum diverifikasi dengan respons asli — parser KETAT (tidak pernah harga 0 diam-diam).
 export async function getPurchaseInvoiceLinesByNumber(ctx: AccurateSessionContext, number: string): Promise<InvoiceLine[]> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ number })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ number })}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     let raw: Parameters<typeof parseInvoiceLines>[0];

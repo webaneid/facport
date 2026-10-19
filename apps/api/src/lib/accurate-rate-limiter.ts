@@ -41,6 +41,11 @@ export function runWithAccurateConnection<T>(connectionKey: string, fn: () => Pr
   return connectionContext.run(connectionKey, fn);
 }
 
+/** Id koneksi Accurate untuk panggilan yang sedang berjalan (null di luar konteks worker) — dipakai metrik `accurate-http.ts`. */
+export function currentAccurateConnectionId(): string | null {
+  return connectionContext.getStore() ?? null;
+}
+
 /** Hanya untuk tes/diagnostik: jumlah bucket yang masih tersimpan. */
 export function accurateLimiterBucketCount(): number {
   return buckets.size;
