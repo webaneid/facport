@@ -192,7 +192,7 @@ import {
 } from "../lib/import-mapping/sales-quotation.mapping";
 // § Fase 137 — Sales Order, kelanjutan LANGSUNG Sales Quotation, mirror
 // pola auto-create customer+item PERSIS (architecture-sales-order.md).
-import { saveSalesOrder, getSalesOrderDetailByNumber } from "../lib/accurate-sales-order";
+import { saveSalesOrder, getSalesOrderDetailByNumber, getSalesOrderByNumber } from "../lib/accurate-sales-order";
 import {
   buildSalesOrderPayload,
   expandQuotationRowsInPayload,
@@ -1040,9 +1040,12 @@ export async function processSalesInvoiceGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesInvoicePayload(rawRows, columnMapping);
-  // § Fase 198 — baris dengan nomor dokumen sumber (kini: Sales Quot No) terisi dan kolom item kosong diperluas dari isi dokumen sumber di
+  // § Fase 198 — baris dengan nomor dokumen sumber (Sales Quot No / Sales Order No) terisi dan kolom item kosong diperluas dari isi dokumen sumber di
   // Accurate (gagal jelas kalau tidak ketemu/tidak terbaca). `offsets[i]` = indeks detail hasil perluasan tempat baris Excel ke-i mulai.
-  const offsets = await expandSourceRowsInPayload(payload, rawRows, columnMapping, { salesQuotation: (number) => getSalesQuotationByNumber(ctx, number) });
+  const offsets = await expandSourceRowsInPayload(payload, rawRows, columnMapping, {
+    salesQuotation: (number) => getSalesQuotationByNumber(ctx, number),
+    salesOrder: (number) => getSalesOrderByNumber(ctx, number),
+  });
 
   const customerNo = String(payload.customerNo ?? "");
   if (customerNo) {

@@ -52,11 +52,13 @@ describe("isSourceExpansionRow / sourceOfRow", () => {
     expect(isSourceExpansionRow({ ...header }, mapping)).toBe(false);
     expect(isSourceExpansionRow({ ...header, "ITEM: SALES QUOT NO": "   " }, mapping)).toBe(false);
   });
-  test("prioritas DO > SO > SQ; sumber berprioritas tinggi yang BELUM didukung tidak dilewati demi SQ", () => {
+  test("prioritas DO > SO > SQ; sumber berprioritas tinggi yang BELUM didukung (DO) tidak dilewati demi SO/SQ", () => {
     const row = { ...header, "ITEM: SALES QUOT NO": "SQ-1", "ITEM: SALES ORDER NO": "SO-1" };
     expect(sourceOfRow(row, mapping)?.kind).toBe("salesOrder");
-    expect(isSourceExpansionRow(row, mapping)).toBe(false); // SO belum didukung (tahap B) → item tetap wajib, tidak diam-diam menarik SQ
+    expect(isSourceExpansionRow(row, mapping)).toBe(true); // SO didukung (tahap B) → perluasan dari SO, bukan SQ
+    expect(isSourceExpansionRow({ ...header, "ITEM: SALES ORDER NO": "SO-1" }, mapping)).toBe(true);
     expect(sourceOfRow({ ...row, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)?.kind).toBe("deliveryOrder");
+    expect(isSourceExpansionRow({ ...row, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)).toBe(false); // DO belum didukung (tahap C) → item tetap wajib
     expect(isSourceExpansionRow({ ...header, "ITEM: DELIVERY ORDER NO": "DO-1" }, mapping)).toBe(false);
   });
 });
@@ -154,6 +156,52 @@ describe("expandSourceRowsInPayload", () => {
         },
       }),
     ).rejects.toThrow(/tidak ditemukan/);
+  });
+});
+
+describe("expandSourceRowsInPayload — sumber Sales Order (tahap B)", () => {
+  const order: SalesQuotationDetail = {
+    header: { paymentTermName: "Net 14" },
+    lines: [
+      { itemNo: "S-1", itemName: null, unitPrice: 900, quantity: 4, unitName: "PCS", notes: null },
+      { itemNo: "S-2", itemName: null, unitPrice: 50, quantity: 2, unitName: "KG", notes: null },
+    ],
+    expenses: [{ accountNo: "6200", expenseName: null, expenseAmount: 1000, expenseNotes: null }],
+  };
+
+  test("Sales Order No terisi → diperluas dari PESANAN (fetcher SO), membawa Sales Order No; Beban membawa salesOrderNumber", async () => {
+    const rawRows = [{ ...header, "ITEM: SALES ORDER NO": "SO-1" }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    const calls: string[] = [];
+    const offsets = await expandSourceRowsInPayload(payload, rawRows, mapping, {
+      salesOrder: async (n) => {
+        calls.push(`SO:${n}`);
+        return order;
+      },
+      salesQuotation: async (n) => {
+        calls.push(`SQ:${n}`);
+        return quotation;
+      },
+    });
+    expect(calls).toEqual(["SO:SO-1"]);
+    expect(offsets).toEqual([0]);
+    const items = payload.detailItem as Record<string, unknown>[];
+    expect(items.map((i) => i.itemNo)).toEqual(["S-1", "S-2"]);
+    expect(items[0]).toMatchObject({ salesOrderNumber: "SO-1", unitPrice: 900, quantity: 4, warehouseName: "Gudang Utama" });
+    expect(payload.paymentTermName).toBe("Net 14");
+    expect(payload.detailExpense).toEqual([{ accountNo: "6200", expenseAmount: 1000, salesOrderNumber: "SO-1" }]);
+  });
+
+  test("SO dan SQ sama-sama terisi → hanya SO yang dibaca (prioritas Accurate)", async () => {
+    const rawRows = [{ ...header, "ITEM: SALES ORDER NO": "SO-1", "ITEM: SALES QUOT NO": "SQ-1" }];
+    const payload = buildSalesInvoicePayload(rawRows, mapping);
+    const calls: string[] = [];
+    await expandSourceRowsInPayload(payload, rawRows, mapping, {
+      salesOrder: async (n) => (calls.push(`SO:${n}`), order),
+      salesQuotation: async (n) => (calls.push(`SQ:${n}`), quotation),
+    });
+    expect(calls).toEqual(["SO:SO-1"]);
+    expect((payload.detailItem as Record<string, unknown>[])[0]).toMatchObject({ salesOrderNumber: "SO-1", salesQuotationNumber: "SQ-1" });
   });
 });
 

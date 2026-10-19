@@ -79,3 +79,12 @@ describe("parseSalesQuotationDetail — header, atribut baris, Beban", () => {
     expect(() => parseSalesQuotationDetail({ detailItem: [line], detailExpense: [{ expenseAmount: 5 }] }, "SQ-1")).toThrow(/Beban ke-1.*SQ-1.*akun/);
   });
 });
+
+// § Fase 198 tahap B — parser yang sama dipakai Sales Order sebagai dokumen sumber; hanya kata di pesan galat yang berganti.
+describe("parseSalesQuotationDetail — label dokumen (Pesanan)", () => {
+  test("pesan galat menyebut Pesanan (bukan Penawaran) bila label Pesanan; default tetap Penawaran", () => {
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "SO-1", "Pesanan")).toThrow(/Pesanan "SO-1" tidak punya baris item/);
+    expect(() => parseSalesQuotationDetail({ detailItem: [] }, "SQ-1")).toThrow(/Penawaran "SQ-1" tidak punya baris item/);
+    expect(() => parseSalesQuotationDetail({ detailItem: [{ unitPrice: 1, quantity: 1 }] }, "SO-1", "Pesanan")).toThrow(/Baris ke-1 pesanan "SO-1"/);
+  });
+});

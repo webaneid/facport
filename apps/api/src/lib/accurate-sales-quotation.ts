@@ -110,7 +110,7 @@ type RawQuotationExpense = {
   expenseNotes?: unknown;
 };
 
-type RawQuotation = {
+export type RawQuotation = {
   detailItem?: RawQuotationLine[];
   detailExpense?: RawQuotationExpense[];
   paymentTerm?: Named;
@@ -161,11 +161,14 @@ const salesmanNumbers = (v: unknown): string[] | undefined => {
 // menggelembungkan payload `sales-order/save.do` tanpa kendali. Lebih dari batas → ditolak dengan pesan jelas (isi baris item manual di Excel).
 export const MAX_QUOTATION_LINES = 500;
 
-export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, quotationNumber: string): SalesQuotationDetail {
+// § Fase 198 tahap B — parser yang SAMA dipakai Sales Order sebagai dokumen sumber Sales Invoice (`docLabel` hanya mengubah kata di pesan galat).
+export type SourceDocLabel = "Penawaran" | "Pesanan";
+
+export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, quotationNumber: string, docLabel: SourceDocLabel = "Penawaran"): SalesQuotationDetail {
   const items = raw?.detailItem ?? [];
-  if (items.length === 0) throw new Error(`Penawaran "${quotationNumber}" tidak punya baris item di Accurate — tidak ada yang bisa diambil.`);
+  if (items.length === 0) throw new Error(`${docLabel} "${quotationNumber}" tidak punya baris item di Accurate — tidak ada yang bisa diambil.`);
   if (items.length > MAX_QUOTATION_LINES) {
-    throw new Error(`Penawaran "${quotationNumber}" punya ${items.length} baris item — melebihi batas ${MAX_QUOTATION_LINES} baris untuk pengambilan otomatis. Isi baris item di Excel secara manual.`);
+    throw new Error(`${docLabel} "${quotationNumber}" punya ${items.length} baris item — melebihi batas ${MAX_QUOTATION_LINES} baris untuk pengambilan otomatis. Isi baris item di Excel secara manual.`);
   }
   const lines = items.map((it, index) => {
     const itemNo = text(it.item?.no) ?? text(it.itemNo);
@@ -175,7 +178,7 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     const unreadable = [!itemNo && "kode barang", unitPrice === null && "harga", (quantity === null || quantity <= 0) && "qty", !unitName && "satuan"].filter(Boolean);
     if (unreadable.length > 0) {
       throw new Error(
-        `Baris ke-${index + 1} penawaran "${quotationNumber}" tidak bisa dibaca lengkap dari Accurate (${unreadable.join(", ")}) — isi kolom item di Excel secara manual untuk baris ini, atau hubungi support.`,
+        `Baris ke-${index + 1} ${docLabel.toLowerCase()} "${quotationNumber}" tidak bisa dibaca lengkap dari Accurate (${unreadable.join(", ")}) — isi kolom item di Excel secara manual untuk baris ini, atau hubungi support.`,
       );
     }
     const line: SalesQuotationLine = { itemNo: itemNo!, itemName: text(it.detailName), unitPrice: unitPrice!, quantity: quantity!, unitName: unitName!, notes: text(it.detailNotes) };
@@ -200,7 +203,7 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     const expenseAmount = num(ex.expenseAmount);
     if (!accountNo || expenseAmount === null) {
       throw new Error(
-        `Baris Beban ke-${index + 1} penawaran "${quotationNumber}" tidak bisa dibaca lengkap dari Accurate (${[!accountNo && "akun", expenseAmount === null && "jumlah"].filter(Boolean).join(", ")}) — isi kolom Expense di Excel secara manual, atau hubungi support.`,
+        `Baris Beban ke-${index + 1} ${docLabel.toLowerCase()} "${quotationNumber}" tidak bisa dibaca lengkap dari Accurate (${[!accountNo && "akun", expenseAmount === null && "jumlah"].filter(Boolean).join(", ")}) — isi kolom Expense di Excel secara manual, atau hubungi support.`,
       );
     }
     return { accountNo, expenseName: text(ex.expenseName), expenseAmount, expenseNotes: text(ex.expenseNotes) };

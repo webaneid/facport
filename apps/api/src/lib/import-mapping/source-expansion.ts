@@ -5,7 +5,7 @@ import { salesInvoiceMapping } from "./sales-invoice.mapping";
 // § Fase 198, architecture-sales-invoice.md § "Fase 198" — Sales Invoice menarik isi dokumen sumber (SQ / SO / DO) cukup dengan nomornya.
 // Pola Fase 169/172 (Sales Order ← Sales Quotation): baris dengan SALAH SATU nomor sumber terisi DAN keenam kolom item kosong diperluas
 // menjadi SEMUA baris item dokumen sumber; salah satu kolom item terisi → seluruhnya dari Excel (faktur parsial). Isian Excel menang.
-// Tahap A (sekarang): hanya Sales Quotation. SO/DO ditambahkan di tahap B/C dengan menambah entri `SUPPORTED_SOURCE_KINDS` + fetcher.
+// Tahap A: Sales Quotation. Tahap B: + Sales Order. DO menyusul di tahap C dengan menambah entri `SUPPORTED_SOURCE_KINDS` + fetcher.
 
 export type SourceKind = "deliveryOrder" | "salesOrder" | "salesQuotation";
 
@@ -18,7 +18,7 @@ const SOURCES: { kind: SourceKind; field: string; entryKey: string }[] = [
 
 // Sumber yang SUDAH bisa diperluas. Sumber berprioritas tinggi yang belum didukung TIDAK boleh dilewati demi sumber di bawahnya (Accurate
 // akan menautkan ke sumber berprioritas tinggi → isi yang ditarik bisa tidak cocok), jadi baris itu diperlakukan biasa (item wajib diisi).
-export const SUPPORTED_SOURCE_KINDS: ReadonlySet<SourceKind> = new Set<SourceKind>(["salesQuotation"]);
+export const SUPPORTED_SOURCE_KINDS: ReadonlySet<SourceKind> = new Set<SourceKind>(["salesQuotation", "salesOrder"]);
 
 export const SOURCE_EXPANDABLE_FIELDS = ["itemNo", "itemName", "unitPrice", "itemNotes", "quantity", "itemUnitName"] as const;
 // Subset `requiredFields` Sales Invoice yang dikecualikan untuk baris perluasan. `warehouseName` TIDAK dikecualikan (baris SQ tidak membawa gudang).

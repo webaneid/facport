@@ -1,6 +1,6 @@
 # Fase 198 — Sales Invoice: tarik isi dari dokumen sumber (SQ / SO / DO) cukup dengan nomornya
 
-**Status:** In Progress — Tahap A (Sales Quotation) selesai 2026-10-20, belum dirilis; Tahap B (SO) & C (DO) belum dimulai
+**Status:** In Progress — Tahap A (SQ) & B (SO) selesai 2026-10-20, belum dirilis; Tahap C (DO) belum dimulai
 **Mulai:** 2026-10-20
 **Selesai:** -
 
@@ -30,7 +30,10 @@ Saat ini kolom `Item: Delivery Order No / Sales Order No / Sales Quot No` (Fase 
 - [x] A5 Validasi "wajib" dinamis (API: edit baris + edit massal; web: dialog + grid) lewat `missingRequiredFieldsForRow` versi Sales Invoice.
 - [x] A6 Tes (perluasan, Excel menang, parsial, ganda nomor, gagal jelas, pemetaan offset) + panduan template + dokumen.
 
-**Tahap B — Sumber Sales Order** (fetcher+parser baru dari `sales-order/detail.do`; endpoint registri `sales_invoice`; scope `sales_order_view`)
+**Tahap B — Sumber Sales Order** (selesai 2026-10-20)
+- [x] B1 `getSalesOrderByNumber` (`lib/accurate-sales-order.ts`) memakai ulang parser penawaran (`parseSalesQuotationDetail(raw, number, "Pesanan")` — hanya kata di pesan galat berganti; bentuk detail SO = SQ, pola `item.no`/`quantity`/`unitPrice` terbukti Fase 158).
+- [x] B2 Registri `sales_invoice` + `GET sales-order/detail.do` (scope `sales_order_view`); `SUPPORTED_SOURCE_KINDS` + `salesOrder`; fetcher di worker; panduan template (ITEM: SALES ORDER NO + teks "kecuali … Sales Quotation / Sales Order").
+- [x] B3 Tes: prioritas SO > SQ (hanya SO dibaca), Beban membawa `salesOrderNumber`, label galat "Pesanan".
 **Tahap C — Sumber Delivery Order** (fetcher+parser baru `delivery-order/detail.do`; scope BARU `delivery_order_view`; putuskan gudang dari 0.2)
 **Tahap D — Penutup:** typecheck, suite penuh, security review, lessons-learned, PROGRESS.
 
@@ -40,7 +43,7 @@ Saat ini kolom `Item: Delivery Order No / Sales Order No / Sales Quot No` (Fase 
 - **Sumber berprioritas tinggi yang belum didukung tidak dilewati**: baris dengan SO/DO terisi (tahap B/C belum ada) + SQ terisi diperlakukan baris biasa (item wajib), supaya tidak menarik isi SQ padahal Accurate akan menautkan ke SO/DO. `SUPPORTED_SOURCE_KINDS` dilebarkan di tahap B/C.
 - **`warehouseName` tetap wajib** untuk sumber SQ; `itemUnitName` memang tidak wajib di Sales Invoice, jadi hanya Item No/Harga/Qty yang dikecualikan.
 - Sales Order TIDAK dimigrasikan; hanya `QUOTATION_HEADER_KEYS` diekspor dan `expandQuotationEntry` dipakai ulang.
-- Dampak scope: modul `sales_invoice` kini membutuhkan `sales_quotation_view` → SEMUA customer Sales Invoice yang belum punya scope itu harus "Perbarui izin" sebelum import berikutnya (pengecekan scope saat penjadwalan), walau tidak memakai fitur ini. Sejalan keputusan Fase 169 (wajib, bukan opsional).
+- Dampak scope: modul `sales_invoice` kini membutuhkan `sales_quotation_view` DAN `sales_order_view` (rilis A+B bersamaan agar customer cukup "Perbarui izin" sekali) → SEMUA customer Sales Invoice yang belum punya scope itu harus "Perbarui izin" sebelum import berikutnya (pengecekan scope saat penjadwalan), walau tidak memakai fitur ini. Sejalan keputusan Fase 169 (wajib, bukan opsional).
 
 ## Risiko / titik rawan yang ditemukan saat perencanaan
 1. **Pemetaan baris↔id detail (RAWAN):** `processSalesInvoiceGroup` memetakan `result.detailItem[i]` ke baris Excel ke-i (`accurateDetailItemId` per baris). Satu baris Excel yang diperluas menjadi N baris membuat indeks bergeser → baris sesudahnya salah id. Id ini dipakai guard hapus faktur (semua baris wajib punya id). Solusi: simpan offset awal tiap baris Excel; baris perluasan menyimpan id detail PERTAMA hasil perluasannya. Wajib ada tes.
@@ -72,7 +75,7 @@ Penautan baris kembar / pengganti VLOOKUP (Fase 196); migrasi Sales Order ke int
 - [ ] `docs/PROGRESS.md` diupdate
 
 ## Known Limitations
-- Tahap A: hanya sumber Sales Quotation. Faktur parsial dari dokumen sumber → user mengisi kolom item sendiri. Baris perluasan tidak bisa ditambahkan ke nomor transaksi yang sudah ada di Accurate. Bentuk respons SO/DO belum terverifikasi; tautan di sisi Accurate untuk baris hasil perluasan belum terbukti (butuh database Accurate uji).
+- Tahap A+B: sumber Sales Quotation dan Sales Order (field tambahan SO — header/diskon/dept/proyek/penjual/pajak/Beban — belum diverifikasi pada respons SO asli; yang tak terbaca tidak ditarik, inti baris ketat). Faktur parsial dari dokumen sumber → user mengisi kolom item sendiri. Baris perluasan tidak bisa ditambahkan ke nomor transaksi yang sudah ada di Accurate. Bentuk respons SO/DO belum terverifikasi; tautan di sisi Accurate untuk baris hasil perluasan belum terbukti (butuh database Accurate uji).
 
 ## Ringkasan Hasil
-Tahap A selesai: `lib/import-mapping/source-expansion.ts` (+ tes 17), worker `processSalesInvoiceGroup`, validasi wajib dinamis di API/web, registri + panduan template. Suite API 2415 hijau, web 567 hijau, typecheck bersih. Tahap B/C menunggu.
+Tahap A selesai: `lib/import-mapping/source-expansion.ts` (+ tes 17), worker `processSalesInvoiceGroup`, validasi wajib dinamis di API/web, registri + panduan template. Suite API 2418 hijau, web 567 hijau, typecheck bersih. Tahap B (SO) selesai 2026-10-20 (parser SQ dipakai ulang). Tahap C (DO) menunggu.
