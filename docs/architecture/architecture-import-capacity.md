@@ -70,3 +70,10 @@ Keduanya BERKAITAN: setiap timeout 6 menit menahan 1 dari 2 slot (50% kapasitas 
 - **Mekanisme override (diuji, Bun 1.3.11):** `AbortSignal` panjang saja & `timeout:<ms>` tidak mengalahkan default; `timeout: false` + `signal` sendiri bekerja → dipakai `timeoutInit`. Wajib diverifikasi ulang di Bun 1.4.3 production setelah deploy (default di sana 360 dtk).
 - Timeout kita sendiri = `AccurateTimeoutError` (name tetap `TimeoutError`); pesan baris gagal menyebut lama menunggu & jumlah baris, tetap menyarankan cek Accurate dulu.
 - **Belum dilakukan (tahap berikut):** verifikasi setelah timeout, jalur terpisah job besar, paralel dalam satu job, `expireInSeconds` dinamis. Catatan: dengan timeout lebih panjang, satu job raksasa menahan 1 dari 2 slot hingga ±34 menit (sebelumnya 6 menit lalu gagal) → jalur terpisah makin mendesak.
+
+## 8. Implementasi tahap 2 (2026-10-20): jalur terpisah batch besar + expire dinamis (ADR-0050)
+- `JOBS.IMPORT_TO_ACCURATE_LARGE` (`import-to-accurate-large`): handler impor yang SAMA (`importToAccurateHandler`) didaftarkan dua kali di worker — jalur biasa (`IMPORT_WORKER_CONCURRENCY`, default 2) dan jalur besar (`IMPORT_LARGE_WORKER_CONCURRENCY`, default 2, maks 4), masing-masing `localGroupConcurrency: 1`.
+- Routing di SATU titik: `enqueueAccurateJob` memilih antrean dari `import_batches.total_rows` (≥ `IMPORT_LARGE_BATCH_ROWS`, default 1.500 ≈ 7,5 menit pada ±0,3 dtk/baris). Ukuran tak terbaca/galat → jalur biasa (job tidak pernah hilang). `CANCEL_IMPORT`/AutoProduksi tidak pernah dialihkan.
+- `expireInSeconds` per job = `clamp(baris × 0,6 + 900, 7200, 86400)`; batch 25.000 baris kini 15.900 dtk (dulu pasti lewat 7.200).
+- Diuji ke pg-boss asli (Postgres dev): antrean terbentuk, `expire_seconds` per job tersimpan, `group_id` ikut, job terkonsumsi dengan `groupId`/`expireInSeconds` yang sama.
+- **Perhatian operasional:** maksimum job paralel jadi 4; jalur biasa & besar untuk koneksi Accurate yang sama bisa jalan bersamaan (batas 8/dtk tetap dijaga pembatas per koneksi). Pantau CPU/memori worker; tala lewat env tanpa rilis kode.

@@ -28,6 +28,8 @@ const envSchema = t.Object({
   ACCURATE_SAVE_TIMEOUT_MAX_MS: t.Optional(t.String()), // Fase 199 — batas atas timeout save.do (default 3600000 = 60 menit, 60000–7200000)
   ACCURATE_SAVE_MS_PER_LINE: t.Optional(t.String()), // Fase 199 — tambahan timeout per baris detail (default 600 ms; biaya Accurate terukur ±250–280 ms/baris; 50–5000)
   ACCURATE_REQUEST_TIMEOUT_MS: t.Optional(t.String()), // Fase 199 — timeout panggilan Accurate selain save.do (default 360000; 10000–1800000)
+  IMPORT_LARGE_BATCH_ROWS: t.Optional(t.String()), // Fase 199 — batch ≥ N baris masuk jalur BESAR (default 1500, 100–100000)
+  IMPORT_LARGE_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 199 — slot worker jalur besar (default 2, 1–4)
   IMPORT_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 167, ADR-0048 — jumlah koneksi Accurate yang diproses paralel di worker (default 2, 1–8)
   RESEND_API_KEY: t.Optional(t.String()),
   EMAIL_FROM: t.Optional(t.String()),

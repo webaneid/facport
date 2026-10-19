@@ -1,6 +1,6 @@
 # Fase 199 — Evaluasi kapasitas & ketahanan import (antrean, throughput, transaksi besar)
 
-**Status:** In Progress — evaluasi terukur selesai; Tahap C langkah 1 (metrik + timeout adaptif) SELESAI di `develop` (2026-10-20, belum dirilis, perlu verifikasi pasca-deploy di Bun 1.4.3); langkah berikut (verifikasi setelah timeout, jalur terpisah, paralel, expire dinamis) menunggu persetujuan
+**Status:** In Progress — evaluasi selesai; C1 (metrik + timeout adaptif), C3 (jalur besar), C4a (expire dinamis) SELESAI di `develop` (2026-10-20, belum dirilis; perlu verifikasi pasca-deploy di Bun 1.4.3); sisa: C2 verifikasi setelah timeout (butuh scope baru), C4b paralel + uji beban
 **Mulai:** 2026-10-20
 **Selesai:** -
 
@@ -24,8 +24,9 @@ Besar & berisiko (menyentuh jalur kirim ke Accurate, antrean, scope) → evaluas
 - [x] C1a **Temuan uji penting:** `AbortSignal.timeout(lebih-panjang)` SAJA dan `timeout: <ms>` TIDAK mengalahkan default runtime Bun (tetap terputus 300 dtk); yang bekerja `timeout: false` + `signal` sendiri (terbukti: signal 5 dtk terputus di 5 dtk; signal 900 dtk tidak terputus sampai 330 dtk). Tanpa uji ini perubahan akan diam-diam tidak berefek.
 - [ ] C1b **Verifikasi pasca-deploy di Bun 1.4.3 production** (default 360): probe `timeout:false` + signal panjang di container worker, amati > 420 dtk tanpa terputus.
 - [ ] C2 Verifikasi setelah timeout (baca `*/detail.do?number=`) → status sukses/gagal sesuai kenyataan (butuh scope baca).
-- [ ] C3 Jalur terpisah job besar (dengan timeout panjang satu job raksasa menahan 1 dari 2 slot ±34 menit).
-- [ ] C4 `expireInSeconds` dinamis (7200 dtk tetap; batch dengan beberapa grup raksasa bisa melewatinya) + paralel dalam satu job + uji beban.
+- [x] C3 Jalur terpisah batch besar (`import-to-accurate-large`, ambang 1.500 baris, slot sendiri, handler sama) — ADR-0050; diuji ke pg-boss asli.
+- [x] C4a `expireInSeconds` dinamis per job (clamp(baris × 0,6 + 900, 7200, 86400)).
+- [ ] C4b Paralel dalam satu job (modul satu-baris-satu-dokumen) + uji beban 3–10 koneksi.
 **Urutan awal (lama):** (urutan awal yang disarankan: G metrik → B verifikasi setelah timeout → A timeout eksplisit → E kapasitas → C/F bila terbukti).
 **Tahap D — Penutup** (typecheck, suite penuh, security review, lessons-learned, uji beban 3–10 koneksi paralel).
 
