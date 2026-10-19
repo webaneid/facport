@@ -484,3 +484,10 @@ Client meminta 13 nama kolom template diubah mengikuti referensi mereka (`templa
 - `Item Item Dept` (kata "Item" dua kali) ADALAH nama yang diinginkan client (dikonfirmasi 2026-10-06, bukan salah ketik); template memakai persis itu, sedangkan `Item Dept` tetap diterima sebagai alias.
 - Test pengaman: seluruh kolom template harus ter-map otomatis ke field yang dikenal; semua pasangan nama baru/lama ter-map ke field yang sama.
 - Hanya nama header yang berubah; nama field internal/Accurate tidak tersentuh.
+
+## Fase 198 (rencana, 2026-10-19) — Tarik isi dari dokumen sumber (SQ/SO/DO) cukup dengan nomornya
+Permintaan client: isi salah satu nomor sumber (Sales Quot / Sales Order / Delivery Order) di baris faktur, kolom item kosong → isi sumber ditarik dari Accurate. Mengikuti persis Sales Order ← Sales Quotation (`architecture-sales-order.md` § Fase 169/172): Excel menang, salah satu kolom item terisi = seluruhnya dari Excel (faktur parsial), kolom lain berlaku ke semua baris hasil perluasan, header/atribut baris/Beban ditarik seperti Fase 172. Bukan penautan baris kembar (itu Fase 196, ditunda).
+- **Prioritas bila beberapa nomor sumber terisi:** DO > SO > SQ (aturan Accurate untuk field `detailItem.deliveryOrderNumber/salesOrderNumber/salesQuotationNumber`); ketiga nomor tetap dikirim.
+- **Tahapan:** A = SQ (parser terverifikasi Fase 172; scope `sales_quotation_view` ditambahkan ke registri `sales_invoice`), B = SO (`sales_order_view`), C = DO (`delivery_order_view`, scope baru).
+- **Titik rawan:** (1) `accurateDetailItemId` per baris dipetakan lewat indeks `result.detailItem[i]` — perluasan 1→N menggeser indeks; wajib pemetaan berbasis offset (baris perluasan menyimpan id detail pertama). (2) Jalur append ke faktur yang sudah ada (`appendToExistingSalesInvoice`) harus diputuskan. (3) `warehouseName` tetap wajib untuk sumber SQ/SO. (4) Bentuk respons `sales-order/detail.do`/`delivery-order/detail.do` belum diverifikasi respons asli; tautan di Accurate belum terbukti untuk baris hasil perluasan.
+- Detail rencana & pertanyaan terbuka: `docs/phases/phase-198-sales-invoice-tarik-isi-dokumen-sumber.md`.
