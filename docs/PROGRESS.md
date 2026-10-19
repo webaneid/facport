@@ -204,6 +204,8 @@
 | 193 | Export Formula AutoProduksi (format = template Import) + opsi sertakan nonaktif + kolom Status di Import; hapus klaim "duplikat dibolehkan" | Done (2026-10-13, belum dirilis) | `docs/phases/phase-193-export-formula-autoproduksi.md` |
 | 194 | Fix: link verifikasi email (jalur login-otomatis) mendarat di `api.*` 404 — callbackURL dinormalisasi ke origin aplikasi | Done (2026-10-14, belum dirilis) | `docs/phases/phase-194-fix-link-verifikasi-mendarat-di-domain-api.md` |
 | 195  | Guard ukuran transaksi (baris bernomor sama digabung) + pesan timeout Accurate yang bermakna — insiden Sales Receipt ±1.250 baris 2026-10-14 | Done (2026-10-16, belum dirilis) | - | `docs/phases/phase-195-guard-ukuran-transaksi-dan-pesan-timeout.md` |
+| 196  | Penautan baris dokumen sumber otomatis ("pengganti VLOOKUP") — generalisasi Fase 158 ke relasi lintas-dokumen lain (Purchase Invoice←Receive Item dulu), diawali Discovery uji nyata | Planned — DITUNDA 2026-10-16 (menunggu akun/database Accurate dari client untuk Discovery) | `docs/architecture/architecture-source-line-resolution.md` | `docs/phases/phase-196-penautan-baris-dokumen-sumber-otomatis.md` |
+| 197  | Fix: cabut guard batas baris per transaksi Fase 195 (memblokir import 2.019 baris yang sebelumnya berhasil; batas 1000 tebakan sendiri) | Done (2026-10-19, belum dirilis) | - | `docs/phases/phase-197-fix-cabut-guard-batas-baris-transaksi.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
