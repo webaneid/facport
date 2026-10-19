@@ -75,7 +75,7 @@ import {
   extractTaxIdsFromRows as extractTaxIdsFromRowsPP,
   type PurchasePaymentGroup,
 } from "../lib/import-mapping/purchase-payment.mapping";
-import { saveSalesReceipt } from "../lib/accurate-sales-receipt";
+import { saveSalesReceipt, getSalesReceiptByNumber } from "../lib/accurate-sales-receipt";
 import {
   buildSalesReceiptPayload,
   groupSalesReceiptRows,
@@ -179,6 +179,8 @@ import {
 // pattern, TANPA findExisting/append seperti Sales Invoice — tidak ada
 // dampak GL/stok, 2 quotation nominal sama bukan duplikat).
 import { saveSalesQuotation, getSalesQuotationByNumber } from "../lib/accurate-sales-quotation";
+import { AccurateTimeoutError } from "../lib/accurate-http";
+import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
@@ -2799,6 +2801,22 @@ async function main() {
             })
             .where(inArray(importBatchRows.id, result.rowIds));
         } catch (err) {
+          // § Fase 199 (C2) — timeout `save.do` pada grup BERNOMOR: tanya Accurate lewat nomor (polling) untuk tahu keadaan sebenarnya. Ditemukan → SUKSES
+          // (bukan "gagal"); tidak terlihat/tidak diketahui → gagal dengan pesan yang menjelaskan hasil pengecekan. Tanpa nomor → perilaku lama.
+          if (err instanceof AccurateTimeoutError && group.receiptNumber) {
+            const number = group.receiptNumber;
+            const settled = await settleTimedOutGroup(err, number, () => getSalesReceiptByNumber(session, number));
+            logger.info({ event: "accurate_verify_after_timeout", module: "sales_receipt", batchId: batch.id, number, rows: rowIds.length, ...settled.outcome }, "Verifikasi setelah timeout");
+            await db
+              .update(importBatchRows)
+              .set(
+                settled.status === "success"
+                  ? { status: "success", accurateTransactionId: settled.transactionId, errorMessage: null, processedAt: new Date() }
+                  : { status: "failed", errorMessage: settled.message, processedAt: new Date() },
+              )
+              .where(inArray(importBatchRows.id, rowIds));
+            continue;
+          }
           await db
             .update(importBatchRows)
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })

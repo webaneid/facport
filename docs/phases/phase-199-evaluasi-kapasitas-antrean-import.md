@@ -1,6 +1,6 @@
 # Fase 199 — Evaluasi kapasitas & ketahanan import (antrean, throughput, transaksi besar)
 
-**Status:** In Progress — evaluasi selesai; C1 (metrik + timeout adaptif), C3 (jalur besar), C4a (expire dinamis) SELESAI di `develop` (2026-10-20, belum dirilis; perlu verifikasi pasca-deploy di Bun 1.4.3); sisa: C2 verifikasi setelah timeout (butuh scope baru), C4b paralel + uji beban
+**Status:** In Progress — evaluasi selesai; C1 (metrik + timeout adaptif), C2 (verifikasi setelah timeout, Sales Receipt), C3 (jalur besar), C4a (expire dinamis) SELESAI di `develop` (2026-10-20, belum dirilis; perlu verifikasi pasca-deploy di Bun 1.4.3); sisa: C4b paralel + uji beban, perluasan C2 ke modul bernomor lain
 **Mulai:** 2026-10-20
 **Selesai:** -
 
@@ -23,7 +23,7 @@ Besar & berisiko (menyentuh jalur kirim ke Accurate, antrean, scope) → evaluas
 - [x] C1 `lib/accurate-http.ts` `accurateFetch`: satu pintu semua panggilan `ctx.host` (45 titik/28 file), timeout eksplisit (save.do adaptif = baris × 600 ms, 6–60 menit; lain 360 dtk), metrik log `accurate_request`, `AccurateTimeoutError` (pesan menyebut menit & baris), env 4 variabel, tes (14) + tes pagar.
 - [x] C1a **Temuan uji penting:** `AbortSignal.timeout(lebih-panjang)` SAJA dan `timeout: <ms>` TIDAK mengalahkan default runtime Bun (tetap terputus 300 dtk); yang bekerja `timeout: false` + `signal` sendiri (terbukti: signal 5 dtk terputus di 5 dtk; signal 900 dtk tidak terputus sampai 330 dtk). Tanpa uji ini perubahan akan diam-diam tidak berefek.
 - [ ] C1b **Verifikasi pasca-deploy di Bun 1.4.3 production** (default 360): probe `timeout:false` + signal panjang di container worker, amati > 420 dtk tanpa terputus.
-- [ ] C2 Verifikasi setelah timeout (baca `*/detail.do?number=`) → status sukses/gagal sesuai kenyataan (butuh scope baca).
+- [x] C2 Verifikasi setelah timeout untuk Sales Receipt bernomor (`lib/accurate-verify.ts`, `accurate-timeout-settle.ts`, `getSalesReceiptByNumber`): ditemukan → SUKSES; tidak terlihat → GAGAL dengan pesan pasti; gagal cek → perilaku lama. Tanpa scope baru (sales_receipt_view sudah termasuk modul). Modul bernomor lain menyusul bila diminta.
 - [x] C3 Jalur terpisah batch besar (`import-to-accurate-large`, ambang 1.500 baris, slot sendiri, handler sama) — ADR-0050; diuji ke pg-boss asli.
 - [x] C4a `expireInSeconds` dinamis per job (clamp(baris × 0,6 + 900, 7200, 86400)).
 - [ ] C4b Paralel dalam satu job (modul satu-baris-satu-dokumen) + uji beban 3–10 koneksi.
