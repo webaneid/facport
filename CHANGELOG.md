@@ -1,3 +1,15 @@
+## 2.38.0 (2026-10-19)
+
+* chore: rilis Fase 198 — Sales Invoice menarik isi dokumen sumber (SQ/SO/DO) + fix cabut guard batas  ([dc682cf](https://github.com/webaneid/facport/commit/dc682cf))
+* feat: pengiriman & cabang dari dokumen sumber; Sales Order <- Sales Quotation disamakan dengan Sales ([a7e24a6](https://github.com/webaneid/facport/commit/a7e24a6))
+* feat: Sales Invoice juga menarik atribut tambahan dari dokumen sumber — Kategori Keuangan, custom ka ([d773d3c](https://github.com/webaneid/facport/commit/d773d3c))
+* feat: Sales Invoice juga menarik custom tanggal baris/header dari dokumen sumber — hanya format dd/M ([4034604](https://github.com/webaneid/facport/commit/4034604))
+* feat: Sales Invoice juga menarik inclusiveTax, taxable, dan kurs dari dokumen sumber — memengaruhi a ([9fb2b8f](https://github.com/webaneid/facport/commit/9fb2b8f))
+* feat: Sales Invoice menarik isi Delivery Order cukup dengan nomornya — gudang dari pengiriman, Beban ([0ecb77a](https://github.com/webaneid/facport/commit/0ecb77a))
+* feat: Sales Invoice menarik isi Sales Order cukup dengan nomornya — parser penawaran dipakai ulang ( ([d90c022](https://github.com/webaneid/facport/commit/d90c022))
+* feat: Sales Invoice menarik isi Sales Quotation cukup dengan nomornya — kolom item dikosongkan, pola ([f15ec6e](https://github.com/webaneid/facport/commit/f15ec6e))
+* docs: rencana Fase 198 — Sales Invoice tarik isi dokumen sumber (SQ/SO/DO) cukup dengan nomornya ([f0b1fd1](https://github.com/webaneid/facport/commit/f0b1fd1))
+
 ## <small>2.37.4 (2026-10-19)</small>
 
 * chore: rilis fix cabut guard batas baris per transaksi (Fase 197) ([0fa8ab9](https://github.com/webaneid/facport/commit/0fa8ab9))
