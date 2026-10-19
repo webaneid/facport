@@ -1,32 +1,5 @@
-import { env } from "./env";
-
-// § Fase 195 — satu transaksi Accurate (baris-baris Excel dengan nomor yang sama digabung jadi 1 dokumen) yang terlalu besar tidak sanggup diproses Accurate dalam batas waktu
-// (insiden 2026-10-14: 1 Sales Receipt ±1.250 baris → "The operation timed out." setelah ±6 menit, semua baris gagal sekaligus). Guard ini menolak LEBIH AWAL dengan pesan yang
-// bisa ditindaklanjuti, dan `describeAccurateFailure` mengganti pesan timeout mentah dengan penjelasan. Batas default 1000 BELUM diukur — nilai konservatif dari kegagalan yang teramati
-// (1.239–1.539 baris gagal); sesuaikan lewat env `MAX_ROWS_PER_TRANSACTION` setelah ada pengukuran.
-export const DEFAULT_MAX_ROWS_PER_TRANSACTION = 1000;
-const MIN_MAX_ROWS_PER_TRANSACTION = 50;
-const MAX_MAX_ROWS_PER_TRANSACTION = 10_000;
-
-export function parseMaxRowsPerTransaction(raw: string | undefined): number {
-  const n = Number(raw);
-  if (!raw || !Number.isInteger(n) || n < 1) return DEFAULT_MAX_ROWS_PER_TRANSACTION;
-  return Math.min(Math.max(n, MIN_MAX_ROWS_PER_TRANSACTION), MAX_MAX_ROWS_PER_TRANSACTION);
-}
-
-export class GroupTooLargeError extends Error {
-  constructor(rowCount: number, limit: number) {
-    super(
-      `Satu transaksi (baris dengan nomor yang sama) berisi ${rowCount.toLocaleString("id-ID")} baris, melebihi batas ${limit.toLocaleString("id-ID")} baris per transaksi — terlalu besar untuk diproses Accurate. ` +
-        "Pecah menjadi beberapa nomor transaksi (maks. sekitar 200 baris per nomor lebih aman), lalu import ulang.",
-    );
-    this.name = "GroupTooLargeError";
-  }
-}
-
-export function assertGroupSizeWithinLimit(rowCount: number, limit: number = parseMaxRowsPerTransaction(env.MAX_ROWS_PER_TRANSACTION)): void {
-  if (rowCount > limit) throw new GroupTooLargeError(rowCount, limit);
-}
+// § Fase 195 — pesan galat bermakna untuk timeout Accurate (insiden 2026-10-14: 1 Sales Receipt ±1.250 baris → "The operation timed out." setelah ±6 menit).
+// Guard batas baris per transaksi (MAX_ROWS_PER_TRANSACTION) DICABUT 2026-10-19: batas 1000 tebakan sendiri, bukan batas Accurate, dan memblokir client yang sebelumnya berhasil (2.019 baris).
 
 const TIMEOUT_MESSAGE =
   "Accurate tidak membalas dalam batas waktu. Transaksi MUNGKIN sudah tersimpan di Accurate — periksa dulu di Accurate sebelum import ulang agar tidak terjadi duplikat. " +

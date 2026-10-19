@@ -1,6 +1,6 @@
 # Fase 195 — Guard ukuran transaksi (nomor sama) + pesan timeout yang bermakna
 
-**Status:** Done (2026-10-16, belum dirilis)
+**Status:** Done (2026-10-16) — bagian guard batas baris DICABUT di Fase 197 (2026-10-19); pesan timeout bermakna tetap berlaku
 **Mulai:** 2026-10-16
 **Selesai:** 2026-10-16
 

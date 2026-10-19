@@ -24,7 +24,6 @@ const envSchema = t.Object({
   BETTER_AUTH_URL: t.String({ minLength: 1 }),
   SENTRY_DSN_API: t.Optional(t.String()),
   LOG_LEVEL: t.Optional(t.String()),
-  MAX_ROWS_PER_TRANSACTION: t.Optional(t.String()), // Fase 195 — batas baris per transaksi (nomor sama) sebelum ditolak; default 1000, 50–10000
   IMPORT_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 167, ADR-0048 — jumlah koneksi Accurate yang diproses paralel di worker (default 2, 1–8)
   RESEND_API_KEY: t.Optional(t.String()),
   EMAIL_FROM: t.Optional(t.String()),

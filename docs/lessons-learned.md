@@ -6286,3 +6286,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Fix:** guard ukuran transaksi (default 1000, env) + pesan timeout bermakna di 22 loop grup. Pecah-otomatis sengaja ditunda (mengubah catatan akuntansi).
 - **Pelajaran:** (1) jangan asumsikan "timeout" = infrastruktur; cek pola `processed_at`. (2) pesan galat mentah ("The operation timed out.") tidak bisa ditindaklanjuti pelanggan dan mendorong import ulang yang berisiko duplikat — selalu terjemahkan galat infrastruktur. (3) batas 1000 belum diukur; ukur sebelum mengetatkan.
 
+
+## 2026-10-19 — Fase 195 dikoreksi: guard batas 1000 baris per transaksi DICABUT
+- **Gejala:** client tidak bisa import 1 nomor Sales Receipt dengan 2.019 baris ("Satu transaksi … melebihi batas 1.000"), padahal Jumat sebelumnya berhasil.
+- **Penyebab:** batas 1000 adalah tebakan kita sendiri dari satu insiden timeout (bukan batas Accurate), dijadikan penolakan keras tanpa pengukuran.
+- **Fix:** guard + env `MAX_ROWS_PER_TRANSACTION` dihapus; pesan timeout bermakna (`describeAccurateFailure`) dipertahankan.
+- **Pelajaran:** jangan memberlakukan batas keras yang bukan berasal dari Accurate/dokumentasinya; kalau perlu, peringatan lunak setelah diukur. Batas buatan sendiri bisa memblokir alur yang sebelumnya berhasil.
