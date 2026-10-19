@@ -1,3 +1,11 @@
+## 2.39.0 (2026-10-19)
+
+* chore: rilis Fase 199 — timeout adaptif eksplisit + metrik, jalur batch besar, expire dinamis, verif ([885dc36](https://github.com/webaneid/facport/commit/885dc36))
+* feat: jalur terpisah batch besar (import-to-accurate-large) + expireInSeconds dinamis per job, dipil ([4f6c0e1](https://github.com/webaneid/facport/commit/4f6c0e1))
+* feat: timeout eksplisit & adaptif untuk panggilan Accurate + metrik (accurateFetch, 45 titik panggil ([3b3d0dc](https://github.com/webaneid/facport/commit/3b3d0dc))
+* feat: verifikasi setelah timeout untuk Sales Receipt bernomor — tanya Accurate lewat nomor (polling) ([e850bae](https://github.com/webaneid/facport/commit/e850bae))
+* docs: Fase 199 — evaluasi kapasitas & ketahanan import (bukti terukur production, celah, opsi, pengu ([071f742](https://github.com/webaneid/facport/commit/071f742))
+
 ## 2.38.0 (2026-10-19)
 
 * chore: rilis Fase 198 — Sales Invoice menarik isi dokumen sumber (SQ/SO/DO) + fix cabut guard batas  ([dc682cf](https://github.com/webaneid/facport/commit/dc682cf))
