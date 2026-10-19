@@ -208,9 +208,9 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "Document Transaction Type", required: false, example: "", description: "Tipe transaksi dokumen (kalau dipakai)." },
   { column: "Shipment Name", required: false, example: "", description: "Nama pengiriman/ekspedisi (kalau relevan)." },
   { column: "Shipment Date", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal pengiriman (kalau relevan)." },
-  { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Item Unit Price", required: true, example: "50000", description: "Harga jual barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000)." },
-  { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dijual." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online. WAJIB, kecuali baris ini mengambil isi dari Sales Quotation (lihat \"ITEM: SALES QUOT NO\")." },
+  { column: "Item Unit Price", required: true, example: "50000", description: "Harga jual barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000). WAJIB, kecuali baris ini mengambil isi dari Sales Quotation (lihat \"ITEM: SALES QUOT NO\")." },
+  { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dijual. WAJIB, kecuali baris ini mengambil isi dari Sales Quotation (lihat \"ITEM: SALES QUOT NO\")." },
   // § Fase 61 — TIDAK WAJIB (dikonfirmasi sheet "Penjelasan Kolom" Excel
   // resmi client) — SEBELUMNYA diwajibkan di sini, KELIRU.
   { column: "Item Unit Name", required: false, example: "PCS", description: "Satuan barang PERSIS seperti di Accurate (mis. PCS, KG, BOX)." },
@@ -377,7 +377,7 @@ export const salesInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // (sudah tercakup field header "PO No").
   { column: "ITEM: DELIVERY ORDER NO", required: false, example: "", description: "Nomor transaksi Pengiriman (Delivery Order) yang terhubung dengan baris barang ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Sales Order No/Sales Quot No — yang lain diabaikan." },
   { column: "ITEM: SALES ORDER NO", required: false, example: "", description: "Nomor transaksi Pesanan Penjualan (Sales Order) yang terhubung dengan baris barang ini. Diabaikan kalau Delivery Order No juga terisi di baris yang sama." },
-  { column: "ITEM: SALES QUOT NO", required: false, example: "", description: "Nomor transaksi Penawaran Penjualan (Sales Quotation) yang terhubung dengan baris barang ini. PRIORITAS TERENDAH — diabaikan kalau Delivery Order No ATAU Sales Order No juga terisi di baris yang sama." },
+  { column: "ITEM: SALES QUOT NO", required: false, example: "", description: "Nomor transaksi Penawaran Penjualan (Sales Quotation) yang terhubung dengan baris barang ini. PRIORITAS TERENDAH — diabaikan kalau Delivery Order No ATAU Sales Order No juga terisi di baris yang sama. CARA PAKAI \"ambil otomatis\": isi nomor Sales Quotation ini SAJA (Delivery Order No dan Sales Order No kosong) dan KOSONGKAN kolom Item No, Item Name, Item Notes, Item Unit Price, Item Qty, dan Item Unit Name → Facport mengambil SEMUA baris item Sales Quotation itu dari Accurate (kolom di baris ini yang TERISI menang dan berlaku ke semua baris hasil; yang KOSONG diisi dari penawaran: Payment Term Name, To Address, Description, Cash Discount, Cash Disc Percent, Currency Code, diskon baris, Item Dept, Item Project No, Sales List No, PPN, PPh, serta baris Expense bila Excel tidak punya baris Expense). Kolom Item Warehouse TETAP wajib diisi. Isi nomor DAN minimal satu kolom item (mis. faktur sebagian) → semua isi baris dari Excel, nomor hanya menautkan. Butuh izin Accurate \"baca Sales Quotation\" (diminta sekali saat Perbarui Izin). Pengambilan otomatis dari Sales Order/Delivery Order belum tersedia." },
   // § Fase 77 (2026-09-09) — mirror Fase 76 tapi level EXPENSE
   // (`detailExpense`, array TERPISAH dari `detailItem`). DIKONFIRMASI
   // RESMI di spec Accurate. ⚠️ Array ini TIDAK punya field

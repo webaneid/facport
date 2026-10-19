@@ -6292,3 +6292,8 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Penyebab:** batas 1000 adalah tebakan kita sendiri dari satu insiden timeout (bukan batas Accurate), dijadikan penolakan keras tanpa pengukuran.
 - **Fix:** guard + env `MAX_ROWS_PER_TRANSACTION` dihapus; pesan timeout bermakna (`describeAccurateFailure`) dipertahankan.
 - **Pelajaran:** jangan memberlakukan batas keras yang bukan berasal dari Accurate/dokumentasinya; kalau perlu, peringatan lunak setelah diukur. Batas buatan sendiri bisa memblokir alur yang sebelumnya berhasil.
+
+## 2026-10-20 — Fase 198 (Sales Invoice tarik isi dokumen sumber): perluasan 1→N baris menggeser pemetaan id detail
+- **Temuan saat perencanaan (belum jadi bug):** worker Sales Invoice memetakan hasil `save.do` ke baris Excel lewat indeks (`result.detailItem[i]`) dan menyimpan `accurateDetailItemId` per baris (dipakai guard hapus faktur). Fitur "perluas satu nomor sumber jadi banyak baris" memecah asumsi 1 baris Excel = 1 detail → baris sesudahnya akan mendapat id yang salah.
+- **Pelajaran:** sebelum menambah fitur yang mengubah jumlah entri, cari semua tempat yang memetakan hasil balik berdasarkan indeks. Solusi: pemetaan berbasis offset dalam fungsi murni yang menolak (bukan menebak) saat jumlah tidak cocok, plus tes.
+- Jalur "append ke faktur yang sudah ada" memakai pencocokan duplikat per baris Excel untuk retry aman — tidak kompatibel dengan perluasan; ditolak dengan pesan jelas daripada berisiko ganda.

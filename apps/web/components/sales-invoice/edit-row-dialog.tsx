@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { isSourceExpansionRow, SOURCE_EXPANSION_EXEMPT_REQUIRED } from "@/lib/sales-invoice-expansion";
 
 // § Fase 13 — mirror 1:1 `components/purchase-invoice/edit-row-dialog.tsx`
 // (customerNo↔vendorNo, PO Number↔Bill No).
@@ -95,8 +96,13 @@ export function EditRowDialog({
     if (error) scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   }, [error]);
 
+  // § Fase 198 — baris yang mengambil isi dari dokumen sumber (nomor sumber terisi, kolom item kosong) tidak diwajibkan mengisi Item No/Harga/Qty.
+  // Aturan SAMA dengan server (`missingRequiredFieldsForRow`).
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    const expansion = isSourceExpansionRow(vals, columnMapping);
+    return new Set(
+      [...requiredColumns].filter((col) => (vals[col] ?? "").trim() === "" && !(expansion && SOURCE_EXPANSION_EXEMPT_REQUIRED.has(columnMapping[col]!))),
+    );
   }
 
   function openDialog() {

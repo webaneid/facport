@@ -280,7 +280,7 @@ export function missingRequiredFieldsForRow(rawRow: Record<string, unknown>, col
 // § Fase 172 — atribut baris penawaran yang ikut ditarik; ISIAN EXCEL MENANG (kolom Excel terisi = dipakai, kosong = dari penawaran).
 const QUOTATION_LINE_EXTRA_KEYS = ["itemCashDiscount", "itemDiscPercent", "departmentName", "projectNo", "salesmanListNumber", "useTax1", "useTax3"] as const;
 // Atribut header penawaran yang ikut ditarik (sama aturannya, diambil dari penawaran PERTAMA yang diperluas).
-const QUOTATION_HEADER_KEYS = ["paymentTermName", "toAddress", "description", "cashDiscount", "cashDiscPercent", "currencyCode"] as const;
+export const QUOTATION_HEADER_KEYS = ["paymentTermName", "toAddress", "description", "cashDiscount", "cashDiscPercent", "currencyCode"] as const;
 
 /** Satu entri `detailItem` perluasan → N entri (1 per baris penawaran); kolom lain pada entri asli berlaku ke SEMUA baris hasil. */
 export function expandQuotationEntry(entry: Record<string, unknown>, lines: SalesQuotationLine[]): Record<string, unknown>[] {

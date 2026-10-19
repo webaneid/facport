@@ -206,7 +206,7 @@
 | 195  | Guard ukuran transaksi (baris bernomor sama digabung) + pesan timeout Accurate yang bermakna — insiden Sales Receipt ±1.250 baris 2026-10-14 | Done (2026-10-16, belum dirilis) | - | `docs/phases/phase-195-guard-ukuran-transaksi-dan-pesan-timeout.md` |
 | 196  | Penautan baris dokumen sumber otomatis ("pengganti VLOOKUP") — generalisasi Fase 158 ke relasi lintas-dokumen lain (Purchase Invoice←Receive Item dulu), diawali Discovery uji nyata | Planned — DITUNDA 2026-10-16 (menunggu akun/database Accurate dari client untuk Discovery) | `docs/architecture/architecture-source-line-resolution.md` | `docs/phases/phase-196-penautan-baris-dokumen-sumber-otomatis.md` |
 | 197  | Fix: cabut guard batas baris per transaksi Fase 195 (memblokir import 2.019 baris yang sebelumnya berhasil; batas 1000 tebakan sendiri) | Done (2026-10-19, belum dirilis) | - | `docs/phases/phase-197-fix-cabut-guard-batas-baris-transaksi.md` |
-| 198  | Sales Invoice: tarik isi dokumen sumber (SQ/SO/DO) cukup dengan nomornya — pola Fase 169/172; bukan VLOOKUP/Fase 196 | Planned (2026-10-19, menunggu konfirmasi rencana) | - | `docs/phases/phase-198-sales-invoice-tarik-isi-dokumen-sumber.md` |
+| 198  | Sales Invoice: tarik isi dokumen sumber (SQ/SO/DO) cukup dengan nomornya — pola Fase 169/172; bukan VLOOKUP/Fase 196 | In Progress — Tahap A (SQ) selesai 2026-10-20, belum dirilis; B (SO) & C (DO) menunggu | - | `docs/phases/phase-198-sales-invoice-tarik-isi-dokumen-sumber.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

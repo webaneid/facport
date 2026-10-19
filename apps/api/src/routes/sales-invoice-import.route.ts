@@ -10,6 +10,7 @@ import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { salesInvoiceMapping, customerAutoCreateMapping, itemAutoCreateMapping, type SalesInvoiceField } from "../lib/import-mapping/sales-invoice.mapping";
+import { missingRequiredFieldsForRow } from "../lib/import-mapping/source-expansion";
 import { salesInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
 
@@ -346,11 +347,8 @@ export const salesInvoiceImportRoute = new Elysia()
       }
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      const missing = salesInvoiceMapping.requiredFields.filter((field) => {
-        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-        const value = excelColumn ? body.rawData[excelColumn] : undefined;
-        return value === undefined || value === null || String(value).trim() === "";
-      });
+      // § Fase 198 — baris yang mengambil isi dari dokumen sumber tidak diwajibkan mengisi Item No/Harga/Qty (`missingRequiredFieldsForRow`).
+      const missing = missingRequiredFieldsForRow(body.rawData, columnMapping);
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -401,11 +399,7 @@ export const salesInvoiceImportRoute = new Elysia()
           continue;
         }
 
-        const missing = salesInvoiceMapping.requiredFields.filter((field) => {
-          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-          const value = excelColumn ? item.rawData[excelColumn] : undefined;
-          return value === undefined || value === null || String(value).trim() === "";
-        });
+        const missing = missingRequiredFieldsForRow(item.rawData, columnMapping);
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;

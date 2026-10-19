@@ -9,6 +9,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EditRowDialog, DATE_INTERNAL_FIELDS, REQUIRED_INTERNAL_FIELDS } from "@/components/sales-invoice/edit-row-dialog";
+import { isSourceExpansionRow, SOURCE_EXPANSION_EXEMPT_REQUIRED } from "@/lib/sales-invoice-expansion";
 import { EditableGrid } from "@/components/import/editable-grid";
 import { ImportProgress } from "@/components/import/import-progress";
 import { toast } from "sonner";
@@ -175,6 +176,10 @@ export default function SalesInvoiceImportResultPage() {
               rows={rows.filter((r) => r.status === "failed")}
               columnMapping={batch.columnMapping}
               requiredInternalFields={REQUIRED_INTERNAL_FIELDS}
+              // § Fase 198 — baris yang mengambil isi dari dokumen sumber tidak diwajibkan mengisi Item No/Harga/Qty (aturan sama dengan server).
+              isRequiredExempt={(rowValues, internalField) =>
+                SOURCE_EXPANSION_EXEMPT_REQUIRED.has(internalField) && isSourceExpansionRow(rowValues, batch.columnMapping ?? {})
+              }
               dateInternalFields={DATE_INTERNAL_FIELDS}
               onSave={handleGridSave}
               onSaved={load}

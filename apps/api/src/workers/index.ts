@@ -179,6 +179,7 @@ import {
 // pattern, TANPA findExisting/append seperti Sales Invoice — tidak ada
 // dampak GL/stok, 2 quotation nominal sama bukan duplikat).
 import { saveSalesQuotation, getSalesQuotationByNumber } from "../lib/accurate-sales-quotation";
+import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
   groupSalesQuotationRows,
@@ -1039,6 +1040,9 @@ export async function processSalesInvoiceGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+  // § Fase 198 — baris dengan nomor dokumen sumber (kini: Sales Quot No) terisi dan kolom item kosong diperluas dari isi dokumen sumber di
+  // Accurate (gagal jelas kalau tidak ketemu/tidak terbaca). `offsets[i]` = indeks detail hasil perluasan tempat baris Excel ke-i mulai.
+  const offsets = await expandSourceRowsInPayload(payload, rawRows, columnMapping, { salesQuotation: (number) => getSalesQuotationByNumber(ctx, number) });
 
   const customerNo = String(payload.customerNo ?? "");
   if (customerNo) {
@@ -1058,7 +1062,8 @@ export async function processSalesInvoiceGroup(
   const result = await saveSalesInvoice(ctx, payload);
   return {
     invoiceId: result.id,
-    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: result.detailItem[i]!.id })),
+    // § Fase 198 — baris perluasan menyimpan id detail PERTAMA hasil perluasannya (indeks baris ≠ indeks detail bila ada perluasan).
+    rows: mapDetailIdsToRows(group.rows.map((r) => r.id), offsets, result.detailItem, (payload.detailItem as unknown[]).length),
   };
 }
 
@@ -1102,6 +1107,13 @@ export async function appendToExistingSalesInvoice(
   columnMapping: Record<string, string>,
 ): Promise<SalesInvoiceGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
+  // § Fase 198 — jalur append mencocokkan duplikat PER BARIS EXCEL (barang+harga+qty) agar retry aman; baris perluasan (1 baris → banyak baris
+  // sumber) tidak cocok dengan logika itu. Ditolak jelas daripada berisiko ganda/salah-petakan: isi kolom item di Excel untuk menambah ke faktur ini.
+  if (rawRows.some((r) => isSourceExpansionRow(r, columnMapping))) {
+    throw new Error(
+      `Nomor Transaksi "${group.groupKey}" sudah ada sebagai Faktur Penjualan #${existingId} di Accurate, sehingga baris yang mengambil isi dari dokumen sumber (kolom item dikosongkan) tidak bisa ditambahkan ke faktur itu. Isi kolom item (Item No, Harga, Qty) secara manual di Excel untuk menambah baris, atau gunakan Nomor Transaksi lain.`,
+    );
+  }
   const customerNo = String(buildSalesInvoicePayload(rawRows, columnMapping).customerNo ?? "");
 
   // § Fase 82 (2026-09-10) — mirror `appendToExistingPurchaseInvoice`:

@@ -53,6 +53,7 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
       "POST sales-invoice/save.do",
       "GET sales-invoice/detail.do",
       "DELETE sales-invoice/delete.do", // spec: sales_invoice_save (bukan _delete)
+      "GET sales-quotation/detail.do", // § Fase 198 — baris faktur dengan Sales Quot No terisi & kolom item kosong diperluas dari penawaran (scope sales_quotation_view)
       ...CUSTOMER,
       ...ITEM,
       ...CLASSIFICATION,
