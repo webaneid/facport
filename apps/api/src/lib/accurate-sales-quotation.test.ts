@@ -116,3 +116,43 @@ describe("parseSalesQuotationDetail — inclusiveTax / taxable / rate", () => {
     expect(header.rate).toBeUndefined();
   });
 });
+
+// § Fase 198 (lanjutan, sedang) — atribut tambahan baris/header, PPnBM, departemen Beban: dibaca toleran.
+describe("parseSalesQuotationDetail — atribut tambahan", () => {
+  const base = { item: { no: "A" }, unitPrice: 10, quantity: 1, itemUnit: { name: "PCS" } };
+  test("baris: klasifikasi (objek & string datar), karakter, angka (0 diabaikan), PPnBM → line.extra dengan nama field TULIS", () => {
+    const { lines } = parseSalesQuotationDetail(
+      {
+        detailItem: [
+          {
+            ...base,
+            dataClassification5: { id: 1, name: "Week 1" },
+            dataClassification3Name: "SPK-9",
+            dataClassification7: null,
+            charField2: "  catatan  ",
+            charField4: "",
+            numericField1: 25,
+            numericField2: 0,
+            dateField1: "01/10/2026",
+            useTax2: true,
+          },
+        ],
+      },
+      "SQ-1",
+    );
+    expect(lines[0]!.extra).toEqual({ dataClassification5Name: "Week 1", dataClassification3Name: "SPK-9", charField2: "catatan", numericField1: 25, useTax2: true });
+  });
+  test("tanpa atribut apa pun → tidak ada `extra`; field tanggal tidak pernah ditarik", () => {
+    expect(parseSalesQuotationDetail({ detailItem: [{ ...base, dateField1: "x", dateField2: "y" }] }, "SQ-1").lines[0]!.extra).toBeUndefined();
+  });
+  test("header: charField/numericField dibaca (0 diabaikan) → headerExtra; kosong → tidak ada", () => {
+    const d = parseSalesQuotationDetail({ detailItem: [base], charField1: "H1", numericField3: 9, numericField4: 0, charField2: null }, "SQ-1");
+    expect(d.headerExtra).toEqual({ charField1: "H1", numericField3: 9 });
+    expect(parseSalesQuotationDetail({ detailItem: [base] }, "SQ-1").headerExtra).toBeUndefined();
+  });
+  test("Beban: departemen dibaca bila ada", () => {
+    const d = parseSalesQuotationDetail({ detailItem: [base], detailExpense: [{ account: { no: "6101" }, expenseAmount: 5, department: { name: "Umum" } }, { account: { no: "6102" }, expenseAmount: 6 }] }, "SQ-1");
+    expect(d.expenses[0]!.departmentName).toBe("Umum");
+    expect(d.expenses[1]!.departmentName).toBeUndefined();
+  });
+});

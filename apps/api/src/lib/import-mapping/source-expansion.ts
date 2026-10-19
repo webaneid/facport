@@ -117,6 +117,10 @@ export async function expandSourceRowsInPayload(
         }
       });
     }
+    // § Fase 198 (lanjutan, sedang) — atribut tambahan baris (Kategori Keuangan, custom karakter/angka, PPnBM): hanya mengisi yang KOSONG di Excel.
+    entries.forEach((e, k) => {
+      for (const [key, value] of Object.entries(detail!.lines[k]!.extra ?? {})) if (e[key] === undefined) e[key] = value;
+    });
     expanded.push(...entries);
   }
   payload.detailItem = expanded;
@@ -134,6 +138,7 @@ export async function expandSourceRowsInPayload(
   if (payload.rate === undefined && first.detail.header.rate !== undefined && sourceCurrency !== undefined && payload.currencyCode === sourceCurrency) {
     payload.rate = first.detail.header.rate;
   }
+  for (const [key, value] of Object.entries(first.detail.headerExtra ?? {})) if (payload[key] === undefined) payload[key] = value;
   if (payload.detailExpense === undefined) {
     // Beban TIDAK ditarik dari Delivery Order: `detailExpense` Sales Invoice tidak punya `deliveryOrderNumber` (Fase 77) dan pengiriman bukan dokumen biaya.
     const pulled = used.filter((u) => u.entryKey !== "deliveryOrderNumber").flatMap(({ entryKey, number, detail }) =>
@@ -141,6 +146,7 @@ export async function expandSourceRowsInPayload(
         accountNo: ex.accountNo,
         expenseAmount: ex.expenseAmount,
         [entryKey]: number,
+        ...(ex.departmentName ? { departmentName: ex.departmentName } : {}),
         ...(ex.expenseName ? { expenseName: ex.expenseName } : {}),
         ...(ex.expenseNotes ? { expenseNotes: ex.expenseNotes } : {}),
       })),

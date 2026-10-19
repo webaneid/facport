@@ -55,6 +55,9 @@ export type SalesQuotationLine = {
   useTax3?: boolean;
   // § Fase 198 tahap C — gudang baris (dibaca bila ada; dipakai HANYA oleh sumber Delivery Order, modul lain mengabaikannya).
   warehouseName?: string;
+  // § Fase 198 (lanjutan, sedang) — atribut tambahan baris yang dibaca TOLERAN (nama = nama field TULIS Sales Invoice): dataClassificationNName,
+  // charFieldN, numericFieldN, useTax2. Hanya dipakai Sales Invoice; Sales Order mengabaikannya.
+  extra?: Record<string, string | number | boolean>;
 };
 
 export type SalesQuotationHeader = {
@@ -71,6 +74,7 @@ export type SalesQuotationHeader = {
 };
 
 export type SalesQuotationExpense = {
+  departmentName?: string;
   accountNo: string;
   expenseName: string | null;
   expenseAmount: number;
@@ -78,6 +82,8 @@ export type SalesQuotationExpense = {
 };
 
 export type SalesQuotationDetail = {
+  // § Fase 198 (lanjutan, sedang) — atribut tambahan header (charFieldN, numericFieldN), dibaca toleran; hanya dipakai Sales Invoice.
+  headerExtra?: Record<string, string | number>;
   header: SalesQuotationHeader;
   lines: SalesQuotationLine[];
   expenses: SalesQuotationExpense[];
@@ -86,6 +92,7 @@ export type SalesQuotationDetail = {
 type Named = { name?: unknown; no?: unknown; code?: unknown; projectNo?: unknown; number?: unknown; salesmanNumber?: unknown } | null | undefined;
 
 type RawQuotationLine = {
+  [key: string]: unknown; // field atribut dinamis (dataClassificationN, charFieldN, numericFieldN)
   item?: { no?: unknown } | null;
   itemNo?: unknown;
   detailName?: unknown;
@@ -111,6 +118,8 @@ type RawQuotationLine = {
 };
 
 type RawQuotationExpense = {
+  department?: Named;
+  departmentName?: unknown;
   account?: { no?: unknown } | null;
   accountNo?: unknown;
   expenseName?: unknown;
@@ -119,6 +128,7 @@ type RawQuotationExpense = {
 };
 
 export type RawQuotation = {
+  [key: string]: unknown; // field atribut header dinamis (charFieldN, numericFieldN)
   detailItem?: RawQuotationLine[];
   detailExpense?: RawQuotationExpense[];
   paymentTerm?: Named;
@@ -173,6 +183,39 @@ const salesmanNumbers = (v: unknown): string[] | undefined => {
 // menggelembungkan payload `sales-order/save.do` tanpa kendali. Lebih dari batas → ditolak dengan pesan jelas (isi baris item manual di Excel).
 export const MAX_QUOTATION_LINES = 500;
 
+// § Fase 198 (lanjutan, sedang) — atribut tambahan: klasifikasi (objek relasi `{name}` atau string datar), karakter (string), angka (0 = tidak diisi).
+// Dibaca TOLERAN: bentuk tak dikenal = tidak ditarik. Field tanggal (dateFieldN) SENGAJA tidak ditarik: format nilai di respons Accurate belum diketahui.
+function readLineExtras(it: RawQuotationLine): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+  for (let n = 1; n <= 10; n++) {
+    const v = relation(it[`dataClassification${n}`] as Named, ["name"], it[`dataClassification${n}Name`]);
+    if (v) out[`dataClassification${n}Name`] = v;
+  }
+  for (let n = 1; n <= 15; n++) {
+    const v = text(it[`charField${n}`]);
+    if (v) out[`charField${n}`] = v;
+  }
+  for (let n = 1; n <= 10; n++) {
+    const v = num(it[`numericField${n}`]);
+    if (v !== null && v !== 0) out[`numericField${n}`] = v;
+  }
+  const tax2 = taxFlag(it.useTax2, it.tax2);
+  if (tax2 !== undefined) out.useTax2 = tax2;
+  return out;
+}
+
+function readHeaderExtras(raw: RawQuotation | null | undefined): Record<string, string | number> {
+  const out: Record<string, string | number> = {};
+  if (!raw) return out;
+  for (let n = 1; n <= 10; n++) {
+    const c = text(raw[`charField${n}`]);
+    if (c) out[`charField${n}`] = c;
+    const v = num(raw[`numericField${n}`]);
+    if (v !== null && v !== 0) out[`numericField${n}`] = v;
+  }
+  return out;
+}
+
 // § Fase 198 tahap B — parser yang SAMA dipakai Sales Order sebagai dokumen sumber Sales Invoice (`docLabel` hanya mengubah kata di pesan galat).
 export type SourceDocLabel = "Penawaran" | "Pesanan" | "Pengiriman";
 
@@ -208,6 +251,8 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     // pembulatan di Accurate, jadi bila persen ada, hanya persen yang ditarik.
     if (extras.itemDiscPercent !== undefined) extras.itemCashDiscount = undefined;
     for (const [k, v] of Object.entries(extras)) if (v !== undefined) (line as Record<string, unknown>)[k] = v;
+    const lineExtra = readLineExtras(it);
+    if (Object.keys(lineExtra).length > 0) line.extra = lineExtra;
     return line;
   });
 
@@ -219,7 +264,8 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
         `Baris Beban ke-${index + 1} ${docLabel.toLowerCase()} "${quotationNumber}" tidak bisa dibaca lengkap dari Accurate (${[!accountNo && "akun", expenseAmount === null && "jumlah"].filter(Boolean).join(", ")}) — isi kolom Expense di Excel secara manual, atau hubungi support.`,
       );
     }
-    return { accountNo, expenseName: text(ex.expenseName), expenseAmount, expenseNotes: text(ex.expenseNotes) };
+    const departmentName = relation(ex.department, ["name"], ex.departmentName);
+    return { accountNo, expenseName: text(ex.expenseName), expenseAmount, expenseNotes: text(ex.expenseNotes), ...(departmentName ? { departmentName } : {}) };
   });
 
   const header: SalesQuotationHeader = {};
@@ -237,7 +283,8 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
   if (headerExtras.cashDiscPercent !== undefined) headerExtras.cashDiscount = undefined; // alasan sama dengan diskon baris
   for (const [k, v] of Object.entries(headerExtras)) if (v !== undefined) (header as Record<string, unknown>)[k] = v;
 
-  return { header, lines, expenses };
+  const headerExtra = readHeaderExtras(raw);
+  return { header, lines, expenses, ...(Object.keys(headerExtra).length > 0 ? { headerExtra } : {}) };
 }
 
 /** Kompatibilitas Fase 169 — hanya baris item. */
