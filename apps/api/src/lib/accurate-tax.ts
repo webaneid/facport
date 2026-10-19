@@ -1,6 +1,7 @@
 import { parseAccurateEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § Fase 86 (2026-09-10) — validasi "Tax ID" (Sales Receipt), scope
 // `tax_view`. DIKONFIRMASI via test call NYATA ke `/api/tax/list.do`
@@ -22,7 +23,7 @@ export type TaxRecord = {
 
 async function fetchTaxList(ctx: AccurateSessionContext): Promise<TaxRecord[]> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/tax/list.do?sp.pageSize=200`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/tax/list.do?sp.pageSize=200`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     return parseAccurateEnvelope<TaxRecord[]>(res);

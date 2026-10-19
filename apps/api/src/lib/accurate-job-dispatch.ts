@@ -4,6 +4,7 @@ import { importBatches, autoproduksiProductionEntries } from "../db/schema";
 import { resolveConnectionForSubscription } from "./accurate-connection";
 import { boss, JOBS } from "./queue";
 import { logger } from "./logger";
+import { env } from "./env";
 import { runWithAccurateConnection } from "./accurate-rate-limiter";
 import type { Job } from "pg-boss";
 
@@ -14,8 +15,10 @@ import type { Job } from "pg-boss";
 export type AccurateJobName = typeof JOBS.IMPORT_TO_ACCURATE | typeof JOBS.CANCEL_IMPORT | typeof JOBS.PROCESS_AUTOPRODUKSI_ENTRY;
 
 export type AccurateJobDeps = {
-  send: (name: string, data: object, options?: { group: { id: string } }) => Promise<string | null>;
+  send: (name: string, data: object, options?: { group?: { id: string }; expireInSeconds?: number }) => Promise<string | null>;
   subscriptionIdForJob: (name: string, payload: object) => Promise<string | null>;
+  /** Jumlah baris batch untuk job impor (memilih jalur & expire); null = tidak diketahui → jalur biasa. */
+  totalRowsForJob: (name: string, payload: object) => Promise<number | null>;
   connectionIdForSubscription: (subscriptionId: string) => Promise<string | null>;
 };
 
@@ -32,14 +35,44 @@ const defaultDeps: AccurateJobDeps = {
     const [row] = await db.select({ subscriptionId: importBatches.subscriptionId }).from(importBatches).where(eq(importBatches.id, (payload as { batchId: string }).batchId));
     return row?.subscriptionId ?? null;
   },
+  totalRowsForJob: async (name, payload) => {
+    if (name !== JOBS.IMPORT_TO_ACCURATE) return null;
+    const [row] = await db.select({ totalRows: importBatches.totalRows }).from(importBatches).where(eq(importBatches.id, (payload as { batchId: string }).batchId));
+    return row?.totalRows ?? null;
+  },
   connectionIdForSubscription: async (subscriptionId) => (await resolveConnectionForSubscription(subscriptionId))?.connection?.id ?? null,
 };
 
+// § Fase 199 — pemilihan jalur & batas kedaluwarsa job impor berdasarkan jumlah baris (biaya Accurate ±0,25–0,30 dtk/baris, linear; lihat architecture-import-capacity.md).
+export const DEFAULT_IMPORT_LARGE_BATCH_ROWS = 1500;
+const EXPIRE_MIN_SECONDS = 7200;
+const EXPIRE_MAX_SECONDS = 86_400;
+const EXPIRE_SECONDS_PER_ROW = 0.6; // = timeout per baris di `accurate-http.ts` → skenario terburuk (semua timeout) masih tertutup
+const EXPIRE_MARGIN_SECONDS = 900;
+
+/** Nilai env `IMPORT_LARGE_BATCH_ROWS` → bilangan bulat 100–100.000; kosong/tidak valid → default (1.500). */
+export function parseImportLargeBatchRows(raw: string | undefined): number {
+  const n = Number(raw);
+  if (!raw || !Number.isInteger(n)) return DEFAULT_IMPORT_LARGE_BATCH_ROWS;
+  return Math.min(Math.max(n, 100), 100_000);
+}
+
+/** Kedaluwarsa job impor: dasar 2 jam (perilaku lama), naik untuk batch sangat besar, maksimum 24 jam. */
+export function computeImportExpireSeconds(totalRows: number): number {
+  return Math.min(Math.max(Math.ceil(totalRows * EXPIRE_SECONDS_PER_ROW + EXPIRE_MARGIN_SECONDS), EXPIRE_MIN_SECONDS), EXPIRE_MAX_SECONDS);
+}
+
 /**
  * Kirim job + group koneksi. Kegagalan MENCARI grup tidak boleh menghilangkan job (tanpa group = antre biasa, bucket "global" di worker); kegagalan `send`
- * dilempar ke pemanggil, sama seperti `boss.send` sebelumnya.
+ * dilempar ke pemanggil, sama seperti `boss.send` sebelumnya. § Fase 199 — job `IMPORT_TO_ACCURATE` dengan jumlah baris ≥ ambang dikirim ke jalur BESAR
+ * (`IMPORT_TO_ACCURATE_LARGE`) dan diberi `expireInSeconds` sesuai ukuran; pemanggil tetap cukup memakai `JOBS.IMPORT_TO_ACCURATE`.
  */
-export async function enqueueAccurateJob(name: AccurateJobName, payload: object, deps: AccurateJobDeps = defaultDeps): Promise<string | null> {
+export async function enqueueAccurateJob(
+  name: AccurateJobName,
+  payload: object,
+  deps: AccurateJobDeps = defaultDeps,
+  largeBatchRows: number = parseImportLargeBatchRows(env.IMPORT_LARGE_BATCH_ROWS),
+): Promise<string | null> {
   let groupId: string | null = null;
   try {
     const subscriptionId = await deps.subscriptionIdForJob(name, payload);
@@ -47,7 +80,21 @@ export async function enqueueAccurateJob(name: AccurateJobName, payload: object,
   } catch (err) {
     logger.warn({ err: (err as Error).name, job: name }, "Gagal menentukan group koneksi Accurate untuk job — dikirim tanpa group");
   }
-  return deps.send(name, payload, groupId ? { group: { id: groupId } } : undefined);
+  let queue: string = name;
+  let expireInSeconds: number | undefined;
+  if (name === JOBS.IMPORT_TO_ACCURATE) {
+    try {
+      const totalRows = await deps.totalRowsForJob(name, payload);
+      if (totalRows !== null) {
+        expireInSeconds = computeImportExpireSeconds(totalRows);
+        if (totalRows >= largeBatchRows) queue = JOBS.IMPORT_TO_ACCURATE_LARGE;
+      }
+    } catch (err) {
+      logger.warn({ err: (err as Error).name, job: name }, "Gagal membaca ukuran batch — dikirim ke jalur biasa");
+    }
+  }
+  const options = { ...(groupId ? { group: { id: groupId } } : {}), ...(expireInSeconds !== undefined ? { expireInSeconds } : {}) };
+  return deps.send(queue, payload, Object.keys(options).length > 0 ? options : undefined);
 }
 
 export const DEFAULT_IMPORT_WORKER_CONCURRENCY = 2;
@@ -58,6 +105,16 @@ export function parseImportWorkerConcurrency(raw: string | undefined): number {
   const n = Number(raw);
   if (!raw || !Number.isInteger(n) || n < 1) return DEFAULT_IMPORT_WORKER_CONCURRENCY;
   return Math.min(n, MAX_IMPORT_WORKER_CONCURRENCY);
+}
+
+export const DEFAULT_IMPORT_LARGE_WORKER_CONCURRENCY = 2;
+export const MAX_IMPORT_LARGE_WORKER_CONCURRENCY = 4;
+
+/** Nilai env `IMPORT_LARGE_WORKER_CONCURRENCY` → bilangan bulat 1–4; kosong/tidak valid → default (2). */
+export function accurateLargeWorkOptions(raw: string | undefined) {
+  const n = Number(raw);
+  const concurrency = !raw || !Number.isInteger(n) || n < 1 ? DEFAULT_IMPORT_LARGE_WORKER_CONCURRENCY : Math.min(n, MAX_IMPORT_LARGE_WORKER_CONCURRENCY);
+  return { localConcurrency: concurrency, localGroupConcurrency: 1 };
 }
 
 /** Opsi `boss.work` untuk antrean Accurate: N koneksi paralel, tiap koneksi (group) maksimal 1 job sekaligus (batas 8 req/detik per token). */

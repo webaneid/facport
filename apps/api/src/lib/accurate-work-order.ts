@@ -1,6 +1,7 @@
 import { AccurateApiError, parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-work-order.md (Fase 147) — save.do PER-GRUP (1 grup = 1 Work Order) + 2 lookup pendukung yang WAJIB dipanggil worker
 // SEBELUM save: cabang (`branchId` REQUIRED integer, beda dari modul lain) dan PIC (`personInChargeId`). `itemNo`/akun dikirim apa
@@ -15,7 +16,7 @@ export async function saveWorkOrder(
   payload: Record<string, unknown>,
 ): Promise<WorkOrderSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/work-order/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/work-order/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -38,7 +39,7 @@ export async function findByExactName(
 ): Promise<{ id: number; name: string } | undefined> {
   return withAccurateRateLimit(async () => {
     const params = new URLSearchParams({ "filter.keywords.val": name, fields: "id,name", "sp.pageSize": "100" });
-    const res = await fetch(`${ctx.host}/accurate/api/${resource}/list.do?${params}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/${resource}/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     const list = await parseAccurateEnvelope<{ id: number; name: string }[]>(res);
@@ -68,7 +69,7 @@ export async function findOrCreateWoPic(ctx: AccurateSessionContext, name: strin
   if (existing) return existing.id;
   try {
     const created = await withAccurateRateLimit(async () => {
-      const res = await fetch(`${ctx.host}/accurate/api/wo-pic/save.do`, {
+      const res = await accurateFetch(`${ctx.host}/accurate/api/wo-pic/save.do`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${ctx.accessToken}`,

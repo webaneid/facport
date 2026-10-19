@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-roll-over.md (Fase 146) — save.do PER-GRUP (1 grup = 1 Roll Over). TIDAK ada lookup sebelum panggil ini: `jobOrderNumber`,
 // `itemNo`, `accountNo`, `warehouseName` dikirim APA ADANYA, Accurate yang validasi eksistensi (mirror Inventory Adjustment/Job Costing).
@@ -14,7 +15,7 @@ export async function saveRollOver(
   payload: Record<string, unknown>,
 ): Promise<RollOverSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/roll-over/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/roll-over/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

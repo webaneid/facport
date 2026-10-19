@@ -207,6 +207,7 @@
 | 196  | Penautan baris dokumen sumber otomatis ("pengganti VLOOKUP") — generalisasi Fase 158 ke relasi lintas-dokumen lain (Purchase Invoice←Receive Item dulu), diawali Discovery uji nyata | Planned — DITUNDA 2026-10-16 (menunggu akun/database Accurate dari client untuk Discovery) | `docs/architecture/architecture-source-line-resolution.md` | `docs/phases/phase-196-penautan-baris-dokumen-sumber-otomatis.md` |
 | 197  | Fix: cabut guard batas baris per transaksi Fase 195 (memblokir import 2.019 baris yang sebelumnya berhasil; batas 1000 tebakan sendiri) | Done (2026-10-19, belum dirilis) | - | `docs/phases/phase-197-fix-cabut-guard-batas-baris-transaksi.md` |
 | 198  | Sales Invoice: tarik isi dokumen sumber (SQ/SO/DO) cukup dengan nomornya — pola Fase 169/172; bukan VLOOKUP/Fase 196 | Done (2026-10-20, belum dirilis) — Tahap A (SQ), B (SO), C (DO) | - | `docs/phases/phase-198-sales-invoice-tarik-isi-dokumen-sumber.md` |
+| 199  | Evaluasi kapasitas & ketahanan import (antrean, throughput, transaksi besar) — insiden 11 batch Sales Receipt timeout 360 dtk (default HTTP client); pengukuran sebagian selesai, desain menunggu | Planned (2026-10-20) | - | `docs/phases/phase-199-evaluasi-kapasitas-antrean-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

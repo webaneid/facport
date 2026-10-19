@@ -10,10 +10,11 @@
 import { parseAccurateEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 export async function deleteAccurateDocument(ctx: AccurateSessionContext, accuratePath: string, id: number): Promise<void> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/${accuratePath}/delete.do?${new URLSearchParams({ id: String(id) })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/${accuratePath}/delete.do?${new URLSearchParams({ id: String(id) })}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

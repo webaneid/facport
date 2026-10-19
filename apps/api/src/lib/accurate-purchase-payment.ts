@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-purchase-payment.md — save.do PER-GRUP (§ Fase 50 — 1
 // grup bisa berisi banyak faktur via `detailInvoice[]`, bukan cuma 1
@@ -19,7 +20,7 @@ export async function savePurchasePayment(
   payload: Record<string, unknown>,
 ): Promise<PurchasePaymentSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/purchase-payment/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-payment/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

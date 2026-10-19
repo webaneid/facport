@@ -66,9 +66,10 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   // Import" generalisasi dari purchase_invoice/sales_invoice. Koneksi yang
   // SUDAH terhubung sebelum rilis ini belum punya scope baru ini — route
   // cancel cek `checkSubscriptionScopes` dulu, user tinggal reconnect.
+  // § Fase 199 (C2) — `GET sales-receipt/detail.do` kini DIPANGGIL (verifikasi nomor penerimaan setelah timeout `save.do`); scope `sales_receipt_view`
+  // sebelumnya "warisan" (extraScopes) dan kini turunan dari endpoint — himpunan scope modul TIDAK berubah, koneksi yang ada tidak perlu memperbarui izin.
   sales_receipt: {
-    endpoints: ["POST sales-receipt/save.do", "DELETE sales-receipt/delete.do", ...TAX],
-    extraScopes: [legacy("sales_receipt_view")],
+    endpoints: ["POST sales-receipt/save.do", "DELETE sales-receipt/delete.do", "GET sales-receipt/detail.do", ...TAX],
   },
   purchase_payment: {
     endpoints: ["POST purchase-payment/save.do", "DELETE purchase-payment/delete.do", ...TAX],

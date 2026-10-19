@@ -1,6 +1,7 @@
 import { AccurateApiError, parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § Fase 68 — ditemukan 2026-09-08 (client retest Sales Invoice, error
 // Accurate "Kategori Keuangan TES 1 tidak ditemukan atau sudah
@@ -28,7 +29,7 @@ export async function findDataClassificationByName(
       "filter.keywords.val": name,
       fields: "id,index,name",
     });
-    const res = await fetch(`${ctx.host}/accurate/api/data-classification/list.do?${params}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/data-classification/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     const list = await parseAccurateEnvelope<Record<string, unknown>[]>(res);
@@ -65,7 +66,7 @@ export async function findOrCreateDataClassification(
 
   try {
     return await withAccurateRateLimit(async () => {
-      const res = await fetch(`${ctx.host}/accurate/api/data-classification/save.do`, {
+      const res = await accurateFetch(`${ctx.host}/accurate/api/data-classification/save.do`, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${ctx.accessToken}`,

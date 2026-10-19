@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFo
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { parseSalesQuotationDetail, type RawQuotation, type SalesQuotationDetail } from "./accurate-sales-quotation";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-sales-order.md — Sales Order BUKAN transaksi
 // akuntansi (tidak ada jurnal GL, tidak ada perubahan stok, mirror
@@ -13,7 +14,7 @@ export type SalesOrderSaveResult = {
 
 export async function saveSalesOrder(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<SalesOrderSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-order/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-order/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -73,7 +74,7 @@ export type SalesOrderDetailItem = {
 
 export async function getSalesOrderDetailByNumber(ctx: AccurateSessionContext, number: string): Promise<SalesOrderDetailItem[]> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-order/detail.do?${new URLSearchParams({ number })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-order/detail.do?${new URLSearchParams({ number })}`, {
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
         "X-Session-ID": ctx.session,
@@ -96,7 +97,7 @@ export async function getSalesOrderDetailByNumber(ctx: AccurateSessionContext, n
 // diverifikasi pada respons Sales Order asli — yang tidak terbaca TIDAK ditarik (aturan parser); inti baris tetap ketat.
 export async function getSalesOrderByNumber(ctx: AccurateSessionContext, number: string): Promise<SalesQuotationDetail> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-order/detail.do?${new URLSearchParams({ number })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-order/detail.do?${new URLSearchParams({ number })}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     let raw: RawQuotation;

@@ -1,5 +1,14 @@
 import { describe, test, expect } from "bun:test";
-import { enqueueAccurateJob, parseImportWorkerConcurrency, accurateWorkOptions, withAccurateJobContext, type AccurateJobDeps } from "./accurate-job-dispatch";
+import {
+  enqueueAccurateJob,
+  parseImportWorkerConcurrency,
+  accurateWorkOptions,
+  accurateLargeWorkOptions,
+  parseImportLargeBatchRows,
+  computeImportExpireSeconds,
+  withAccurateJobContext,
+  type AccurateJobDeps,
+} from "./accurate-job-dispatch";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import { JOBS } from "./queue";
 
@@ -12,6 +21,7 @@ function makeDeps(over: Partial<AccurateJobDeps> = {}) {
     },
     subscriptionIdForJob: async () => "sub-1",
     connectionIdForSubscription: async () => "conn-1",
+    totalRowsForJob: async () => null,
     ...over,
   };
   return { deps, sent };
@@ -80,7 +90,7 @@ describe("pagar: tidak ada boss.send mentah untuk antrean Accurate", () => {
     for await (const file of new Glob("**/*.ts").scan({ cwd: `${import.meta.dir}/..` })) {
       if (file.endsWith(".test.ts") || file.endsWith("lib/accurate-job-dispatch.ts")) continue;
       const text = await Bun.file(`${import.meta.dir}/../${file}`).text();
-      if (/boss\.send\(\s*JOBS\.(IMPORT_TO_ACCURATE|CANCEL_IMPORT|PROCESS_AUTOPRODUKSI_ENTRY)\b/.test(text)) offenders.push(file);
+      if (/boss\.send\(\s*JOBS\.(IMPORT_TO_ACCURATE|IMPORT_TO_ACCURATE_LARGE|CANCEL_IMPORT|PROCESS_AUTOPRODUKSI_ENTRY)\b/.test(text)) offenders.push(file);
     }
     expect(offenders).toEqual([]);
   });
@@ -116,5 +126,69 @@ describe("withAccurateJobContext — bucket pembatas mengikuti group job", () =>
       ran = true;
     })([job(null)]);
     expect(ran).toBe(true);
+  });
+});
+
+// § Fase 199 — jalur terpisah batch besar + kedaluwarsa job dinamis (dasar: biaya Accurate ±0,25–0,30 dtk/baris, linear).
+describe("enqueueAccurateJob — jalur besar & expire dinamis (Fase 199)", () => {
+  const withRows = (rows: number | null) => makeDeps({ totalRowsForJob: async () => rows });
+
+  test("batch kecil → jalur biasa; expire = dasar 2 jam; group tetap ikut", async () => {
+    const { deps, sent } = withRows(100);
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, deps, 1500);
+    expect(sent).toEqual([{ name: JOBS.IMPORT_TO_ACCURATE, data: { batchId: "b1" }, options: { group: { id: "conn-1" }, expireInSeconds: 7200 } }]);
+  });
+
+  test("batch ≥ ambang → jalur BESAR (payload & group sama); tepat di ambang sudah besar, satu di bawahnya belum", async () => {
+    for (const [rows, queue] of [
+      [1499, JOBS.IMPORT_TO_ACCURATE],
+      [1500, JOBS.IMPORT_TO_ACCURATE_LARGE],
+      [6614, JOBS.IMPORT_TO_ACCURATE_LARGE],
+    ] as const) {
+      const { deps, sent } = withRows(rows);
+      await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, deps, 1500);
+      expect(sent[0]!.name).toBe(queue);
+      expect(sent[0]!.data).toEqual({ batchId: "b1" });
+      expect((sent[0]!.options as { group: { id: string } }).group.id).toBe("conn-1");
+    }
+  });
+
+  test("ukuran tidak diketahui (null) atau pembacaan gagal → jalur biasa tanpa expire khusus (tidak menghilangkan job)", async () => {
+    const a = withRows(null);
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, a.deps, 1500);
+    expect(a.sent[0]).toMatchObject({ name: JOBS.IMPORT_TO_ACCURATE, options: { group: { id: "conn-1" } } });
+    expect((a.sent[0]!.options as Record<string, unknown>).expireInSeconds).toBeUndefined();
+    const b = makeDeps({ totalRowsForJob: async () => { throw new Error("db down"); } });
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, b.deps, 1500);
+    expect(b.sent[0]!.name).toBe(JOBS.IMPORT_TO_ACCURATE);
+  });
+
+  test("CANCEL_IMPORT & PROCESS_AUTOPRODUKSI_ENTRY TIDAK pernah dialihkan ke jalur besar dan tidak diberi expire", async () => {
+    const { deps, sent } = withRows(99_999);
+    await enqueueAccurateJob(JOBS.CANCEL_IMPORT, { batchId: "b1", actorId: "u" }, deps, 1500);
+    await enqueueAccurateJob(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, { entryId: "e1" }, deps, 1500);
+    expect(sent.map((s) => s.name)).toEqual([JOBS.CANCEL_IMPORT, JOBS.PROCESS_AUTOPRODUKSI_ENTRY]);
+    expect(sent.map((s) => s.options)).toEqual([{ group: { id: "conn-1" } }, { group: { id: "conn-1" } }]);
+  });
+});
+
+describe("computeImportExpireSeconds / parseImportLargeBatchRows / accurateLargeWorkOptions", () => {
+  test("expire: minimum 2 jam (perilaku lama), tumbuh 0,6 dtk/baris + 15 menit, maksimum 24 jam", () => {
+    expect(computeImportExpireSeconds(100)).toBe(7200);
+    expect(computeImportExpireSeconds(8275)).toBe(7200); // batch 7–8 ribu baris tetap di dasar
+    expect(computeImportExpireSeconds(25_000)).toBe(15_900); // batch 25.000 baris: lewat 2 jam yang lama
+    expect(computeImportExpireSeconds(10_000_000)).toBe(86_400);
+  });
+  test("ambang jalur besar: default 1500; valid dijepit 100–100000; tidak valid → default", () => {
+    for (const raw of [undefined, "", "abc", "1.5"]) expect(parseImportLargeBatchRows(raw)).toBe(1500);
+    expect(parseImportLargeBatchRows("2500")).toBe(2500);
+    expect(parseImportLargeBatchRows("5")).toBe(100);
+    expect(parseImportLargeBatchRows("9999999")).toBe(100_000);
+  });
+  test("slot jalur besar: default 2, dijepit 1–4; tiap koneksi tetap maksimal 1 job sekaligus", () => {
+    expect(accurateLargeWorkOptions(undefined)).toEqual({ localConcurrency: 2, localGroupConcurrency: 1 });
+    expect(accurateLargeWorkOptions("1")).toEqual({ localConcurrency: 1, localGroupConcurrency: 1 });
+    expect(accurateLargeWorkOptions("99")).toEqual({ localConcurrency: 4, localGroupConcurrency: 1 });
+    expect(accurateLargeWorkOptions("0")).toEqual({ localConcurrency: 2, localGroupConcurrency: 1 });
   });
 });

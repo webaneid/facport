@@ -2,6 +2,7 @@ import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { findByExactName, resolveBranchId } from "./accurate-work-order";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-finished-good-slip.md (Fase 149) — save.do PER-DOKUMEN, setelah resolve `branchId` DAN `detailItem[].warehouseId`
 // (KEDUANYA REQUIRED integer, dikonfirmasi live portal developer 2026-09-22 — beda dari Material Slip yang tidak perlu keduanya).
@@ -31,7 +32,7 @@ export async function saveFinishedGoodSlip(
   payload: Record<string, unknown>,
 ): Promise<FinishedGoodSlipSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/finished-good-slip/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/finished-good-slip/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

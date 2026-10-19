@@ -14,6 +14,9 @@ export const JOBS = {
   EXPIRE_SUBSCRIPTIONS: "expire-subscriptions",
   REFRESH_ACCURATE_TOKEN: "refresh-accurate-token",
   IMPORT_TO_ACCURATE: "import-to-accurate",
+  // § Fase 199 — jalur terpisah untuk batch BESAR (≥ `IMPORT_LARGE_BATCH_ROWS` baris): handler SAMA, slot worker sendiri, supaya batch besar/lama tidak
+  // menghabiskan slot batch kecil milik pelanggan lain. Dikirim HANYA lewat `enqueueAccurateJob` (memilih jalur dari jumlah baris).
+  IMPORT_TO_ACCURATE_LARGE: "import-to-accurate-large",
   CANCEL_IMPORT: "cancel-import", // § Fase 09, ADR-0013
   PURGE_OLD_IMPORTS: "purge-old-imports", // § Fase 10 — retensi data import
   NOTIFY_EXPIRING_SOON: "notify-expiring-soon", // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir
@@ -88,6 +91,7 @@ export const JOBS = {
 // Accurate), 3600 detik sudah margin besar untuk skala saat ini.
 const NO_DUPLICATE_DISPATCH_QUEUE_OPTIONS: Record<string, { expireInSeconds: number; retryLimit: number }> = {
   [JOBS.IMPORT_TO_ACCURATE]: { expireInSeconds: 7200, retryLimit: 0 },
+  [JOBS.IMPORT_TO_ACCURATE_LARGE]: { expireInSeconds: 7200, retryLimit: 0 }, // default; `enqueueAccurateJob` menaikkannya per job sesuai jumlah baris
   [JOBS.CANCEL_IMPORT]: { expireInSeconds: 7200, retryLimit: 0 },
   [JOBS.IMPORT_AUTOPRODUKSI_FORMULA]: { expireInSeconds: 3600, retryLimit: 0 },
   [JOBS.REFRESH_ACCURATE_TOKEN]: { expireInSeconds: 3600, retryLimit: 0 },

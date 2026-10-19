@@ -1,6 +1,7 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFound } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-sales-quotation.md — Sales Quotation BUKAN transaksi
 // akuntansi (tidak ada jurnal GL, tidak ada perubahan stok, sekadar
@@ -14,7 +15,7 @@ export type SalesQuotationSaveResult = {
 
 export async function saveSalesQuotation(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<SalesQuotationSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-quotation/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-quotation/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
@@ -317,7 +318,7 @@ export function parseSalesQuotationLines(raw: RawQuotation | null | undefined, q
 
 export async function getSalesQuotationByNumber(ctx: AccurateSessionContext, number: string): Promise<SalesQuotationDetail> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/sales-quotation/detail.do?${new URLSearchParams({ number })}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-quotation/detail.do?${new URLSearchParams({ number })}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     let raw: RawQuotation;

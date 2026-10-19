@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-journal-voucher.md — save.do PER-BARIS (bukan
 // bulk-save.do, konsisten pola modul lain). TIDAK ada lookup akun COA
@@ -19,7 +20,7 @@ export async function saveJournalVoucher(
   payload: Record<string, unknown>,
 ): Promise<JournalVoucherSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/journal-voucher/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/journal-voucher/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

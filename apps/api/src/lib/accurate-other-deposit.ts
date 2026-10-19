@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-other-deposit.md — save.do PER-GRUP (bukan bulk-save.do,
 // konsisten pola modul lain). TIDAK ada lookup akun COA sebelum panggil
@@ -17,7 +18,7 @@ export async function saveOtherDeposit(
   payload: Record<string, unknown>,
 ): Promise<OtherDepositSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/other-deposit/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/other-deposit/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

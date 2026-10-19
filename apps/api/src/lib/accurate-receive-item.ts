@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-receive-item.md — dokumen bukti FISIK barang diterima,
 // bukan transaksi akuntansi tersendiri (mirror pola Purchase Order/
@@ -13,7 +14,7 @@ export type ReceiveItemSaveResult = {
 
 export async function saveReceiveItem(ctx: AccurateSessionContext, payload: Record<string, unknown>): Promise<ReceiveItemSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/receive-item/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/receive-item/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

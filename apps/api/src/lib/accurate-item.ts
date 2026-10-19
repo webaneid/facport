@@ -1,6 +1,7 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 export type ItemResult = {
   id: number;
@@ -17,7 +18,7 @@ export async function findItemByNo(
 ): Promise<{ id: number; no: string; name: string } | undefined> {
   return withAccurateRateLimit(async () => {
     const params = new URLSearchParams({ "filter.no.val": itemNo, fields: "id,no,name" });
-    const res = await fetch(`${ctx.host}/accurate/api/item/list.do?${params}`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/item/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
     const list = await parseAccurateEnvelope<{ id: number; no: string; name: string }[]>(res);
@@ -45,7 +46,7 @@ export async function findOrCreateItem(
   }
 
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/item/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/item/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

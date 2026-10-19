@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-item-transfer.md — save.do PER-GRUP (bukan bulk-save.do,
 // konsisten pola modul lain). DI-SHARE literal oleh 2 Facport module
@@ -20,7 +21,7 @@ export async function saveItemTransfer(
   payload: Record<string, unknown>,
 ): Promise<ItemTransferSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/item-transfer/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/item-transfer/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,

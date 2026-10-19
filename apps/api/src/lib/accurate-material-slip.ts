@@ -1,6 +1,7 @@
 import { parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
+import { accurateFetch } from "./accurate-http";
 
 // § architecture-material-slip.md (Fase 148) — save.do PER-DOKUMEN. TIDAK ada lookup: `itemNo`/`branchName`/`warehouseName`
 // dikirim apa adanya, Accurate yang validasi eksistensi (mirror Roll Over/Job Costing — beda dari Finished Good Slip/Work
@@ -15,7 +16,7 @@ export async function saveMaterialSlip(
   payload: Record<string, unknown>,
 ): Promise<MaterialSlipSaveResult> {
   return withAccurateRateLimit(async () => {
-    const res = await fetch(`${ctx.host}/accurate/api/material-slip/save.do`, {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/material-slip/save.do`, {
       method: "POST",
       headers: {
         Authorization: `Bearer ${ctx.accessToken}`,
