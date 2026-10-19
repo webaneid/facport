@@ -1,3 +1,10 @@
+## <small>2.37.4 (2026-10-19)</small>
+
+* chore: rilis fix cabut guard batas baris per transaksi (Fase 197) ([0fa8ab9](https://github.com/webaneid/facport/commit/0fa8ab9))
+* fix: cabut guard batas 1000 baris per transaksi (Fase 195) — memblokir import 2.019 baris yang sebel ([1c8b1b0](https://github.com/webaneid/facport/commit/1c8b1b0))
+* docs: Fase 196 ditunda — temuan Discovery sementara + cara melanjutkan (menunggu akses Accurate clie ([30a8f48](https://github.com/webaneid/facport/commit/30a8f48))
+* docs: rencana Fase 196 — penautan baris dokumen sumber otomatis (generalisasi pengganti VLOOKUP), pe ([666ea12](https://github.com/webaneid/facport/commit/666ea12))
+
 ## <small>2.37.3 (2026-10-15)</small>
 
 * chore: merge develop ke main (Fase 195 — guard ukuran transaksi + pesan timeout) ([3f2f4d4](https://github.com/webaneid/facport/commit/3f2f4d4))
