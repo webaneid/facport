@@ -66,7 +66,7 @@ Penyimpanan baris: `import_rows` yang sudah ada tetap sumber; tabel bagian hanya
 - Klaim atomik di DB mencegah paralel ganda.
 - Restart di titik mana pun: bagian dalam keadaan antara diperiksa ulang lewat nomor, tidak dikirim buta.
 - **Batasan jujur**: dokumen tanpa nomor (auto-number) tidak bisa diverifikasi, tetapi dokumen yang dipecah selalu bernomor (baris tanpa nomor menjadi dokumen sendiri), jadi tidak terdampak.
-- Risiko: pesan "tidak ada" Accurate = "tidak tepat" untuk Sales Receipt belum terkonfirmasi → diuji di trial sebelum bergantung padanya; sebelum itu "tak pasti" diperlakukan konservatif.
+- **Terkonfirmasi di trial (2026-10-21, baca-saja):** `detail.do?number=<tidak ada>` → HTTP 200, `{"s":false,"d":["<Jenis> tidak tepat"]}` untuk Sales Receipt ("Penerimaan Penjualan tidak tepat"), Purchase Payment ("Pembayaran Pembelian tidak tepat"), Sales Invoice. Nomor yang ada → `s:true` + detail (~0,2 dtk). Jadi "absen" dapat dibedakan pasti dari "ada"; galat lain (jaringan/5xx/otorisasi) tetap "tak pasti".
 
 ## 8. UI
 - Halaman rencana (setuju/batal), progres per dokumen asli (n/N bagian, bagian gagal + alasan), tombol "Coba lagi bagian gagal", Batal Import (bagian `planned` → `cancelled`; yang sudah `succeeded` tetap dan dilaporkan).
