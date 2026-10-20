@@ -11,6 +11,11 @@ export type ErrorGroup = { key: string; count: number; example: string; hint: Er
 export type ErrorSummary = { totalFailed: number; groups: ErrorGroup[]; otherGroups: number; otherRows: number };
 
 export const ERROR_HINTS: { pattern: RegExp; hint: ErrorHint }[] = [
+  // § Fase 205 — kirim bertahap berhenti di tengah: yang sudah tersimpan tetap ada di dokumen Accurate yang SAMA; Retry membaca isi dokumen lalu melanjutkan dari sana (tanpa duplikat).
+  {
+    pattern: /Pengiriman bertahap dokumen|Accurate menjawab sukses tetapi isi dokumen/i,
+    hint: { action: "retry-ok", advice: "Pengiriman bertahap berhenti di tengah. Bagian yang sudah tersimpan tetap ada di dokumen Accurate yang sama — tekan Retry untuk melanjutkan dari sana (tidak membuat duplikat)." },
+  },
   {
     pattern: /tidak ditemukan di Data Master Pajak/i,
     hint: { action: "fix-data", advice: 'Isi kolom "PPh ID" persis seperti kolom Deskripsi di Master Pajak Accurate (jenis PPh 23), atau kosongkan bila fakturnya tidak kena PPh.' },

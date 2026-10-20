@@ -1,6 +1,6 @@
 # Architecture — Kirim Bertahap ke Dokumen yang Sama & Kirim Ulang Idempoten
 
-> Status: **RENCANA (Fase 205)** — belum ada kode. Keputusan: ADR-0051 (revisi).
+> Status: **DIIMPLEMENTASI (Fase 205)** — saklar `IMPORT_STAGED_MODULES` default MATI. Keputusan: ADR-0051. Bukti: § 4 dan `architecture-import-capacity.md` § 15.
 > Bukti dasar: `architecture-import-capacity.md` § 11–14.
 
 ## 0. Aturan emas
@@ -62,6 +62,25 @@ Sumber kebenaran kemajuan = **isi dokumen di Accurate** (dibaca by nomor), ditam
 4. **Pemulihan restart/deploy:** pemulihan job hantu (Fase 204) untuk batch yang punya grup bertahap → job DIANTRIKAN ULANG otomatis (maks 5×, penghitung di data job), bukan digagalkan. Karena langkah 3a membaca kenyataan, melanjutkan aman.
 5. **Waktu job:** `enqueueAccurateJob` memakai perkiraan waktu bertahap (bukan rumus linear) untuk expire.
 
+## 6b. Batasan & perilaku yang sudah teruji
+- **Dokumen ber-PPh (`detailTax`) TIDAK dicicil** (perilaku update `detailTax` belum terbukti di trial — salah = akuntansi keliru). Dikenali dari kolom Tax ID yang terisi; dicatat di `plan.skippedForTax`, popup memberi catatan, tetap kirim-sekali. Dibuka setelah diuji di database yang punya kode pajak PPh.
+- **Restart di tengah cicilan** (uji `kill -9`): bila cicilan lama masih berjalan di Accurate, kirim ulang kita diserialkan lalu ditolak "Nilai Pembayaran tidak mencukupi"; galat bisnis diperiksa ulang dengan membaca dokumen — jika sudah maju, dilanjutkan (bukan gagal).
+- **Perkiraan waktu** memakai koefisien terukur 7·10⁻⁴·N² (env `IMPORT_STAGED_SECONDS_COEFF`).
+
+## 6c. Hasil audit keamanan (subagent `security-auditor`, 2026-10-21) dan penanganannya
+| Temuan | Tingkat | Penanganan |
+|---|---|---|
+| Awalan-cocok tidak membandingkan header → dokumen milik pelanggan bisa ditambah/ditandai sukses | High | DIPERBAIKI: (1) pelanggan/pemasok DAN bank dokumen harus sama dengan Excel; (2) dokumen yang sudah ada dan lebih besar dari satu cicilan hanya dilanjutkan bila import INI sudah pernah menyimpan baris (`knownProgress`) atau kita sudah menulis ke dokumen itu; selain itu gagal "bukan hasil import ini" tanpa menyentuh dokumen. Tes + uji trial |
+| Satu pelanggan menahan slot jalur besar berhari-hari | Medium | DIPERBAIKI: dokumen dengan perkiraan > `IMPORT_STAGED_MAX_ESTIMATE_SECONDS` (default 24 jam) TIDAK dicicil (`skippedTooLarge`, popup memberi tahu) |
+| Job hantu mengira semua job `active` mati bila ada >1 worker | Medium | DIDOKUMENTASIKAN sebagai invarian: production menjalankan SATU container worker; deploy menghentikan yang lama sebelum yang baru start (SOP). Pemulihan job hantu (Fase 204) memang bergantung pada ini |
+| `failJob` gagal setelah job pengganti dikirim → job ganda; keputusan resume melempar → batch menggantung | Medium | DIPERBAIKI: keputusan (`decideResume`, tanpa efek) → job lama digagalkan → baru job pengganti dikirim; galat di titik mana pun → pemulih lama (baris pending digagalkan dengan pesan) |
+| Dokumen parsial tercatat di Accurate selama/ jika berhenti | Medium | DIPERBAIKI: popup & pesan gagal menyebut "BERISI SEBAGIAN entri — jangan menutup periode/ambil laporan sebelum lengkap" |
+| Retry tidak meminta persetujuan ulang | Low | DITERIMA (pelanggan sudah menyetujui di confirm; baris failed yang diedit tetap dokumen yang sama) |
+| Galat non-Accurate dianggap sementara | Low | DITERIMA (batas percobaan terbatas; lebih aman tak menebak) |
+| Pesan "dokumen lain" menyarankan hapus | Low | DIPERBAIKI: pesan baru tidak menyarankan menghapus |
+| Log memuat pesan Accurate mentah | Low | DITERIMA (tanpa token/rahasia; pesan yang sama sudah ada di `errorMessage` milik pemilik batch) |
+Jawaban pertanyaan fokus: IDOR tidak ditemukan (semua endpoint `permission`+`moduleAccess`+`subscriptionId`); `approveStaged` divalidasi `t.Boolean`; SQL `data->>'resumeCount'` aman (konstanta + parameter).
+
 ## 7. Idempotensi — jaminan
 - Tiap langkah dihitung dari isi dokumen di Accurate, bukan catatan lokal → restart/timeout/kirim ulang tidak membuat baris ganda.
 - Satu pekerja per koneksi Accurate (group concurrency 1) + serialisasi Accurate (poin 3 uji).
@@ -74,7 +93,7 @@ Sumber kebenaran kemajuan = **isi dokumen di Accurate** (dibaca by nomor), ditam
 - Ringkasan galat mendapat petunjuk untuk `failed_exhausted`.
 
 ## 9. Konfigurasi (env, default aman)
-`IMPORT_STAGED_MODULES` (kosong = mati; mis. `sales_receipt,purchase_payment`), `IMPORT_STAGED_THRESHOLD_ROWS` 200, `IMPORT_STAGED_CHUNK_ROWS` 500 (jumlah entri/faktur per cicilan), `IMPORT_STAGED_MAX_ATTEMPTS` 4, `IMPORT_STAGED_BACKOFF_BASE_MS` 30000, `IMPORT_STAGED_POLL_INTERVAL_MS` 15000, `IMPORT_STAGED_SECONDS_COEFF` 5.2e-4 (detik·baris⁻², model trial), `IMPORT_STAGED_MAX_RESUMES` 5.
+`IMPORT_STAGED_MODULES` (kosong = mati; mis. `sales_receipt,purchase_payment`), `IMPORT_STAGED_THRESHOLD_ROWS` 200, `IMPORT_STAGED_CHUNK_ROWS` 500 (jumlah entri/faktur per cicilan), `IMPORT_STAGED_MAX_ATTEMPTS` 4, `IMPORT_STAGED_BACKOFF_BASE_MS` 30000, `IMPORT_STAGED_POLL_INTERVAL_MS` 15000, `IMPORT_STAGED_SECONDS_COEFF` 7e-4 (detik·baris⁻², model trial), `IMPORT_STAGED_MAX_ESTIMATE_SECONDS` 86400 (di atas ini dokumen tidak dicicil), `IMPORT_STAGED_MAX_RESUMES` 5.
 
 ## 10. Pengujian
 - Unit: pemotong cicilan (batas entri tak terbelah), hitung `confirmed_lines`, mesin status, backoff, klaim atomik, pembanding isi dokumen vs Excel.
@@ -86,4 +105,10 @@ Sumber kebenaran kemajuan = **isi dokumen di Accurate** (dibaca by nomor), ditam
 Ambang 200 (env, evaluasi ulang) · penanda/pop-up persetujuan sederhana + alasan Accurate · cakupan awal Sales Receipt + Purchase Payment · paralel antar dokumen dicoba bertahap · uji perilaku "tidak ada" (SELESAI) · **DILARANG mengubah dokumen pelanggan; yang diatur hanya pengiriman**.
 
 ## 12. Terbuka
-Ukuran cicilan 500 vs lain (evaluasi setelah uji trial); batas atas baris yang diizinkan (peringatan vs blokir); penanganan total sementara (§ 4) menunggu hasil uji.
+Ukuran cicilan 500 vs lain (evaluasi setelah tryout di production); batas atas baris (sekarang: tidak diblokir, hanya perkiraan waktu di popup); PPh pada dokumen bertahap (butuh database dengan kode pajak PPh); perluasan ke modul lain.
+
+## 13. Peluncuran (production)
+1. Rilis kode dengan saklar MATI (default) — perilaku identik dengan sebelumnya; tidak ada migrasi database.
+2. Aktifkan di server: tambahkan `IMPORT_STAGED_MODULES=sales_receipt,purchase_payment` ke `.env.production` (opsional `IMPORT_STAGED_THRESHOLD_ROWS=200`, `IMPORT_STAGED_CHUNK_ROWS=500`), lalu recreate container `api` dan `worker` (bukan sekadar restart — env file dibaca saat container dibuat). Cek batch aktif dulu (SOP deploy 2c).
+3. Pantau log worker: `staged_step_ok` / `staged_step_error` / `staged_import_resumed`, dan `accurate_request` (durasi save). Bandingkan perkiraan popup vs kenyataan; setel `IMPORT_STAGED_SECONDS_COEFF` bila meleset.
+4. Mematikan: kosongkan `IMPORT_STAGED_MODULES` + recreate; batch yang sedang berjalan tetap aman (Retry melanjutkan karena kemajuan ada di Accurate).

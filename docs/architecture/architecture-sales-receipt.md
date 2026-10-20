@@ -661,3 +661,7 @@ Dua laporan client dari contoh Excel mereka (faktur `JASA-01` di 2 baris: baris 
 - **Validasi baru** `validateInvoiceRowsConsistencyForReceipt` (dipanggil `processSalesReceiptGroup` sebelum build) — penggabungan tidak boleh membuang data yang bertentangan: "Jumlah Bayar" berbeda di baris faktur yang sama → ditolak (menjumlahkan tidak punya arti, Accurate melarang 2 pembayaran faktur yang sama); Department/Paid PPH/PPh No berbeda → ditolak; "Tax ID" yang sama dobel untuk faktur yang sama → ditolak (PPh dobel).
 - Template: deskripsi No Faktur/Jumlah Bayar/Cheque Amount/Discount diperbarui. Kolom "Jumlah Bayar" tetap WAJIB di tiap baris (tidak ada baris lanjutan dengan kolom kosong).
 - ⚠️ **Belum diverifikasi ke Accurate**: pengurangan diskon dari cheque amount mengikuti logika jurnal, bukan contoh resmi (hanya PPh yang punya contoh resmi). Retest dengan Excel client (JASA-01): bank harus 93.000, faktur lunas 100.000 tanpa lebih bayar, dan dua akun diskon tercatat.
+
+## Dokumen besar: kirim bertahap (Fase 205, ADR-0051)
+Dokumen Sales Receipt bernomor dengan baris di atas `IMPORT_STAGED_THRESHOLD_ROWS` (default 200) dikirim BERTAHAP ke dokumen Accurate yang SAMA bila `IMPORT_STAGED_MODULES` memuat modul ini (default mati): nomor, header, dan isi tidak berubah; yang dicicil hanya pengiriman (create lalu update `id` + baris lama `{id}`). Pelanggan menyetujui lewat popup. Dokumen ber-PPh (Tax ID terisi) tidak dicicil. Detail, batasan, dan bukti: `docs/architecture/architecture-staged-send.md`.
+

@@ -1,6 +1,6 @@
 # ADR-0051: Kirim dokumen besar ke Accurate secara bertahap (cicilan) ke DOKUMEN YANG SAMA, dengan kirim ulang idempoten sampai sukses
 
-**Status:** Proposed (2026-10-21) — arah disetujui user; menunggu konfirmasi rincian dan eksekusi
+**Status:** Accepted (2026-10-21) — diimplementasi di Fase 205; saklar default mati
 **Tanggal:** 2026-10-21
 **Revisi:** menggantikan rancangan awal hari yang sama ("pecah menjadi banyak dokumen bernomor turunan") yang DITOLAK user karena mengubah dokumen pelanggan.
 
@@ -32,7 +32,7 @@ Dokumen berisi ribuan baris dengan nomor sama tidak dapat diproses Accurate dala
 - (+) Dokumen pelanggan utuh; progres tersimpan; tahan timeout/restart; tidak ada pekerjaan hilang.
 - (−) Lebih lambat dari sekali kirim (hukum Accurate): perkiraan total ±10 mnt/1.000 baris, ±45 mnt/2.000, ±6 jam/4.000 (cicilan 500).
 - (−) Dokumen sempat berada dalam keadaan setengah jadi di Accurate selama pengiriman (terlihat jika dibuka); popup menyebutkannya.
-- Risiko yang harus dibuktikan di trial: header (mis. `chequeAmount` / total) harus konsisten pada setiap cicilan; `optLock`/penulisan bersamaan pada dokumen yang sama; perilaku update saat timeout (apakah Accurate tetap menyelesaikannya).
+- Terbukti di trial (205a/g): total sementara diterima; penulisan bersamaan diserialkan Accurate; update tetap selesai walau klien memutus koneksi; restart di tengah cicilan pulih. Belum terbukti: `detailTax` (PPh) → dokumen ber-PPh tidak dicicil.
 
 ---
 > Aturan: file ADR TIDAK diedit setelah Accepted. Kalau keputusan berubah,

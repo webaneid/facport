@@ -122,3 +122,14 @@ Keduanya BERKAITAN: setiap timeout 6 menit menahan 1 dari 2 slot (50% kapasitas 
 2. Karena T = c·N², total waktu L baris yang dipecah menjadi dokumen berukuran N ≈ c·L·N → **dokumen lebih kecil = linear lebih cepat**: N=100 ≈ 0,07 dtk/baris; 8.000 baris sebagai 80 dokumen ≈ 9–10 menit (berurutan), jauh di bawah satu dokumen 8.000 baris (c·N² ≈ 5,7 jam di trial).
 3. Satu-satunya jalan meloloskan ribuan baris adalah **banyak dokumen kecil** (≈100–200 baris/dokumen), yang bisa dikirim paralel dan bergiliran antar pelanggan. Konstanta database produksi berbeda (dokumen 1.125 baris tidak selesai dalam 675 dtk, trial memprediksi ±410 dtk) tetapi BENTUK kurvanya sama.
 4. Konsekuensi akuntansi: satu nomor penerimaan berisi ribuan baris tidak bisa dipertahankan; harus dipecah menjadi beberapa dokumen (persetujuan pemilik data).
+
+## 15. Fase 205 — pengiriman bertahap ke dokumen yang SAMA (2026-10-21): bukti end-to-end di database trial dengan KODE PRODUK
+Kode produk (`sendGroupStaged`/`runStagedSend`, `getStagedDocByNumber`, `saveSalesReceipt`) dijalankan terhadap Accurate trial 2977590 (Sales Receipt; dokumen akhir dibaca ulang dan dibandingkan dengan Excel baris demi baris):
+| Skenario | Dokumen | Hasil | Waktu |
+|---|---|---|---|
+| Normal | 400 entri, cicilan 100 | lengkap; urutan & jumlah bayar IDENTIK (119.800) | 223 dtk (langkah 10 / 34 / 63 / 114 dtk) |
+| Timeout klien (koneksi diputus 3 dtk pada cicilan ke-2) | 400 entri, cicilan 200 | Accurate menyelesaikan sendiri ±110 dtk kemudian; Facport menunggu & membaca ulang, TIDAK kirim ulang (1 save normal + 1 save terputus); lengkap & identik | 153 dtk |
+| Proses dimatikan paksa (`kill -9`) di tengah cicilan 3, dijalankan ulang | 600 entri, cicilan 150 | proses baru membaca 300 entri tersimpan, mengirim ulang cicilan 3 selagi yang lama masih berjalan di Accurate → Accurate menserialkan & menolak yang basi ("Nilai Pembayaran tidak mencukupi", 151 dtk) → Facport membaca ulang, melihat dokumen sudah maju, melanjutkan; lengkap & identik (239.700) | 349 dtk (+ ±2 mnt sebelum dimatikan) |
+Temuan tambahan (trial): header, deskripsi, dan diskon (`detailDiscount`) bertahan saat baris lama ditulis `{id}`; `paymentAmount` tersimpan = nilai input (bukan neto); `chequeAmount` sementara diterima; penulisan bersamaan pada satu dokumen diserialkan Accurate. **Belum terbukti:** perilaku `detailTax` (PPh) saat update — trial tidak punya kode pajak PPh dan izin `tax_save` tidak ada → dokumen ber-PPh TIDAK dicicil (tetap kirim-sekali).
+Koreksi koefisien model: waktu update terukur ≈ 7·10⁻⁴·N² dtk (N=100: 10 dtk, 200: 34, 300: 63, 400: 114) — lebih besar dari 5,2·10⁻⁴ pada draf awal; default `IMPORT_STAGED_SECONDS_COEFF` = 7e-4.
+

@@ -311,3 +311,6 @@ docker compose up -d
 ```
 Karena tiap versi punya image sendiri (bukan cuma `latest` yang ketimpa),
 rollback tinggal ganti tag, tidak perlu rebuild ulang dari source.
+
+## Invarian worker tunggal (Fase 205, audit keamanan)
+Pemulihan job hantu (Fase 204) dan kelanjutan otomatis kirim-bertahap (Fase 205) mengandaikan SATU container `worker`, dan deploy menghentikan yang lama sebelum yang baru start (`docker compose up -d` dengan recreate). Jangan menjalankan dua container worker bersamaan pada database yang sama tanpa menambahkan kunci per batch.

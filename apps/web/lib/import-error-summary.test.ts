@@ -77,4 +77,10 @@ describe("hintFor — saran per jenis galat (kasus nyata)", () => {
     expect(hintFor("Jumlah request API melebihi toleransi yang diperbolehkan")).toMatchObject({ action: "retry-ok" });
     expect(hintFor("galat aneh yang belum dikenal")).toBeNull();
   });
+  test("§ Fase 205 — kirim bertahap berhenti → boleh Retry (melanjutkan, bukan menduplikasi), meski pesan juga menyebut Accurate", () => {
+    expect(hintFor('Pengiriman bertahap dokumen "R1" berhenti setelah 4 percobaan pada 1500 dari 4000 entri (Accurate tidak menyelesaikan atau tidak menjawab).')).toMatchObject({ action: "retry-ok" });
+    // galat bisnis di tengah kirim bertahap TIDAK ikut retry-ok (data harus diperbaiki dulu), walau pesannya memuat catatan kemajuan
+    expect(hintFor("Nilai Pembayaran tidak mencukupi [Pengiriman bertahap: 500 dari 4000 entri faktur sudah tersimpan]")).toBeNull();
+    expect(hintFor("Pembayaran melebihi nilai piutang faktur. [Pengiriman bertahap: 500 dari 4000 entri faktur sudah tersimpan]")).toMatchObject({ action: "fix-data" });
+  });
 });

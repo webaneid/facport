@@ -3,6 +3,7 @@ import { db } from "./db";
 import { importBatches, importBatchRows } from "../db/schema";
 import { boss, JOBS } from "./queue";
 import { logger } from "./logger";
+import { decideResumeStagedBatch, enqueueResumeStagedBatch, type ResumeDecision } from "./staged-batch";
 
 // § Insiden 2026-10-20 (architecture-deployment.md SOP 2c) — import yang dimulai pelanggan DI SELA langkah deploy dibunuh saat container worker diganti: `pgboss.job` tetap
 // `active` (sampai kedaluwarsa), batch tetap `processing`, baris `pending`, tidak ada proses yang mengerjakannya ("job hantu"), dan pelanggan melihat "sedang diproses" tanpa kemajuan.
@@ -13,7 +14,7 @@ import { logger } from "./logger";
 export const ORPHANED_IMPORT_MESSAGE =
   "Import terputus saat pembaruan sistem sebelum selesai. Periksa dulu di Accurate apakah transaksi file ini sudah ada, lalu tekan Retry.";
 
-export type OrphanedJob = { id: string; queue: string; batchId: string | null };
+export type OrphanedJob = { id: string; queue: string; batchId: string | null; resumeCount: number };
 export type RecoverResult = "recovered" | "skipped" | "missing";
 
 /**
@@ -44,6 +45,10 @@ export async function recoverOrphanedBatch(batchId: string, message: string = OR
 export type OrphanDeps = {
   listActiveJobs: (queues: string[], startedBefore: Date) => Promise<OrphanedJob[]>;
   recoverBatch: (batchId: string, message: string) => Promise<RecoverResult>;
+  /** § Fase 205 — batch kirim-bertahap layak dilanjutkan otomatis (job baru) alih-alih digagalkan? "limit"/"not-eligible" → pemulih lama. Tidak menulis apa pun. */
+  decideResume: (batchId: string, resumeCount: number) => Promise<ResumeDecision>;
+  /** Job pengganti (resumeCount+1); dipanggil SETELAH job lama digagalkan. */
+  enqueueResume: (batchId: string, resumeCount: number) => Promise<void>;
   failJob: (queue: string, id: string) => Promise<void>;
   now: () => Date;
 };
@@ -54,28 +59,53 @@ export const defaultOrphanDeps: OrphanDeps = {
   listActiveJobs: async (queues, before) => {
     const names = sql.join(queues.map((q) => sql`${q}`), sql`, `);
     const raw = (await db.execute(
-      sql`select id::text as id, name, data->>'batchId' as batch_id from pgboss.job where name in (${names}) and state = 'active' and started_on < ${before.toISOString()}::timestamptz`,
+      sql`select id::text as id, name, data->>'batchId' as batch_id, data->>'resumeCount' as resume_count from pgboss.job where name in (${names}) and state = 'active' and started_on < ${before.toISOString()}::timestamptz`,
     )) as unknown;
     // driver-agnostik: array langsung (postgres-js) atau { rows } (node-postgres)
-    const rows = (Array.isArray(raw) ? raw : ((raw as { rows?: unknown[] }).rows ?? [])) as { id: string; name: string; batch_id: string | null }[];
-    return rows.map((r) => ({ id: r.id, queue: r.name, batchId: r.batch_id }));
+    const rows = (Array.isArray(raw) ? raw : ((raw as { rows?: unknown[] }).rows ?? [])) as { id: string; name: string; batch_id: string | null; resume_count: string | null }[];
+    return rows.map((r) => ({ id: r.id, queue: r.name, batchId: r.batch_id, resumeCount: Number(r.resume_count) || 0 }));
   },
   recoverBatch: recoverOrphanedBatch,
+  decideResume: decideResumeStagedBatch,
+  enqueueResume: enqueueResumeStagedBatch,
   failJob: async (queue, id) => {
     await boss.fail(queue, id, { reason: "orphaned-after-worker-restart" });
   },
   now: () => new Date(),
 };
 
-export type OrphanSummary = { jobs: number; recovered: number; skipped: number; missing: number; errors: number };
+export type OrphanSummary = { jobs: number; recovered: number; skipped: number; missing: number; errors: number; resumed: number };
 
 /** Panggil SAAT worker mulai, SEBELUM `boss.work(...)` apa pun. Galat per job dicatat dan tidak menghentikan job lain maupun start worker. */
 export async function recoverOrphanedImportJobs(deps: OrphanDeps = defaultOrphanDeps): Promise<OrphanSummary> {
-  const summary: OrphanSummary = { jobs: 0, recovered: 0, skipped: 0, missing: 0, errors: 0 };
+  const summary: OrphanSummary = { jobs: 0, recovered: 0, skipped: 0, missing: 0, errors: 0, resumed: 0 };
   const jobs = await deps.listActiveJobs(IMPORT_QUEUES, deps.now());
   summary.jobs = jobs.length;
   for (const job of jobs) {
     try {
+      // § Fase 205 — batch yang hanya berisi dokumen kirim-bertahap DILANJUTKAN: job lama digagalkan DULU (tak pernah ada dua job hidup untuk satu batch), baru job
+      // pengganti dikirim; baris tidak diubah (aman: langkahnya membaca Accurate). Galat saat memutuskan/mengirim → pemulih lama (gagalkan baris + pesan "periksa dulu").
+      let decision: ResumeDecision = "not-eligible";
+      if (job.batchId) {
+        try {
+          decision = await deps.decideResume(job.batchId, job.resumeCount);
+        } catch (err) {
+          logger.error({ err, jobId: job.id, batchId: job.batchId }, "Gagal memutuskan melanjutkan batch kirim-bertahap — dipulihkan dengan cara lama");
+        }
+      }
+      if (decision === "resume" && job.batchId) {
+        await deps.failJob(job.queue, job.id);
+        try {
+          await deps.enqueueResume(job.batchId, job.resumeCount);
+          summary.resumed += 1;
+          continue;
+        } catch (err) {
+          logger.error({ err, jobId: job.id, batchId: job.batchId }, "Gagal mengirim job lanjutan — dipulihkan dengan cara lama");
+          const result = await deps.recoverBatch(job.batchId, ORPHANED_IMPORT_MESSAGE);
+          summary[result] += 1;
+          continue;
+        }
+      }
       const result = job.batchId ? await deps.recoverBatch(job.batchId, ORPHANED_IMPORT_MESSAGE) : "missing";
       summary[result] += 1;
       logger.warn({ event: "orphaned_import_recovered", jobId: job.id, queue: job.queue, batchId: job.batchId, result }, "Job impor hantu (worker lama mati) dipulihkan");

@@ -71,9 +71,10 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
   sales_receipt: {
     endpoints: ["POST sales-receipt/save.do", "DELETE sales-receipt/delete.do", "GET sales-receipt/detail.do", ...TAX],
   },
+  // § Fase 205 — `GET purchase-payment/detail.do` kini DIPANGGIL (baca isi dokumen by nomor untuk pengiriman bertahap); scope `purchase_payment_view` sebelumnya
+  // "warisan" (extraScopes), kini turunan endpoint — himpunan scope modul TIDAK berubah, koneksi yang ada tidak perlu memperbarui izin.
   purchase_payment: {
-    endpoints: ["POST purchase-payment/save.do", "DELETE purchase-payment/delete.do", ...TAX],
-    extraScopes: [legacy("purchase_payment_view")],
+    endpoints: ["POST purchase-payment/save.do", "DELETE purchase-payment/delete.do", "GET purchase-payment/detail.do", ...TAX],
   },
   // § Fase 98 — data_classification_* WAJIB (attribut1..10 → findOrCreateDataClassification).
   journal_voucher: {

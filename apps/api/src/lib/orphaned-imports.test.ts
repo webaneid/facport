@@ -82,11 +82,13 @@ describe("recoverOrphanedBatch (database nyata)", () => {
 });
 
 describe("recoverOrphanedImportJobs (orkestrasi)", () => {
-  const makeDeps = (jobs: { id: string; queue: string; batchId: string | null }[], results: Record<string, "recovered" | "skipped" | "missing">, over: Partial<OrphanDeps> = {}) => {
+  const makeDeps = (jobs: { id: string; queue: string; batchId: string | null; resumeCount?: number }[], results: Record<string, "recovered" | "skipped" | "missing">, over: Partial<OrphanDeps> = {}) => {
     const failed: string[] = [];
     const recovered: string[] = [];
     const deps: OrphanDeps = {
-      listActiveJobs: async () => jobs,
+      listActiveJobs: async () => jobs.map((j) => ({ resumeCount: 0, ...j })),
+      decideResume: async () => "not-eligible",
+      enqueueResume: async () => {},
       recoverBatch: async (batchId) => {
         recovered.push(batchId);
         return results[batchId] ?? "recovered";
@@ -109,14 +111,61 @@ describe("recoverOrphanedImportJobs (orkestrasi)", () => {
       { b2: "skipped", b3: "missing" },
     );
     const s = await recoverOrphanedImportJobs(deps);
-    expect(s).toEqual({ jobs: 4, recovered: 1, skipped: 1, missing: 2, errors: 0 });
+    expect(s).toEqual({ jobs: 4, recovered: 1, skipped: 1, missing: 2, errors: 0, resumed: 0 });
     expect(recovered).toEqual(["b1", "b2", "b3"]); // job tanpa batchId tidak memanggil recoverBatch
     expect(failed).toEqual(["j1", "j2", "j3", "j4"]); // SEMUA job hantu digagalkan agar tidak menggantung
   });
 
+  test("§ Fase 205 — batch kirim-bertahap DILANJUTKAN: job lama digagalkan dulu lalu job pengganti dikirim; baris/batch TIDAK disentuh; yang tidak layak tetap dipulihkan", async () => {
+    const decideCalls: [string, number][] = [];
+    const order: string[] = [];
+    const { deps, failed, recovered } = makeDeps(
+      [
+        { id: "j1", queue: "import-to-accurate-large", batchId: "staged", resumeCount: 2 },
+        { id: "j2", queue: "import-to-accurate", batchId: "plain" },
+      ],
+      {},
+      {
+        decideResume: async (b, n) => {
+          decideCalls.push([b, n]);
+          return b === "staged" ? "resume" : "not-eligible";
+        },
+        enqueueResume: async (b, n) => void order.push(`enqueue:${b}:${n}`),
+        failJob: async (_q, id) => void (failed2.push(id), order.push(`fail:${id}`)),
+      },
+    );
+    const failed2: string[] = [];
+    const s = await recoverOrphanedImportJobs(deps);
+    expect(s).toEqual({ jobs: 2, recovered: 1, skipped: 0, missing: 0, errors: 0, resumed: 1 });
+    expect(decideCalls).toEqual([["staged", 2], ["plain", 0]]);
+    expect(recovered).toEqual(["plain"]); // batch yang dilanjutkan TIDAK dipulihkan (baris tetap pending)
+    expect(failed2).toEqual(["j1", "j2"]);
+    expect(order.slice(0, 2)).toEqual(["fail:j1", "enqueue:staged:2"]); // job lama digagalkan SEBELUM pengganti dikirim
+    void failed;
+  });
+
+  test("§ Fase 205 — melewati batas lanjut ('limit') atau keputusan gagal → dipulihkan seperti biasa (baris pending digagalkan dengan pesan)", async () => {
+    const a = makeDeps([{ id: "j1", queue: "q", batchId: "b", resumeCount: 5 }], {}, { decideResume: async () => "limit" });
+    const sa = await recoverOrphanedImportJobs(a.deps);
+    expect(sa.resumed).toBe(0);
+    expect(sa.recovered).toBe(1);
+    expect(a.recovered).toEqual(["b"]);
+    const b = makeDeps([{ id: "j2", queue: "q", batchId: "b2" }], {}, { decideResume: async () => { throw new Error("db down"); } });
+    const sb = await recoverOrphanedImportJobs(b.deps);
+    expect(sb.recovered).toBe(1);
+    expect(b.recovered).toEqual(["b2"]);
+  });
+
+  test("§ Fase 205 — job pengganti gagal dikirim → batch dipulihkan dengan cara lama (tidak menggantung)", async () => {
+    const { deps, recovered } = makeDeps([{ id: "j1", queue: "q", batchId: "b" }], {}, { decideResume: async () => "resume", enqueueResume: async () => { throw new Error("queue down"); } });
+    const s = await recoverOrphanedImportJobs(deps);
+    expect(s.resumed).toBe(0);
+    expect(recovered).toEqual(["b"]);
+  });
+
   test("tidak ada job aktif → tidak melakukan apa pun", async () => {
     const { deps, failed } = makeDeps([], {});
-    expect(await recoverOrphanedImportJobs(deps)).toEqual({ jobs: 0, recovered: 0, skipped: 0, missing: 0, errors: 0 });
+    expect(await recoverOrphanedImportJobs(deps)).toEqual({ jobs: 0, recovered: 0, skipped: 0, missing: 0, errors: 0, resumed: 0 });
     expect(failed).toEqual([]);
   });
 
@@ -159,7 +208,7 @@ describe("listActiveJobs / failJob terhadap pg-boss asli", () => {
       expect(fetched?.id).toBe(jobId);
       await new Promise((r) => setTimeout(r, 1100));
       const found = await defaultOrphanDeps.listActiveJobs([queue], new Date());
-      expect(found).toEqual([{ id: jobId, queue, batchId: "00000000-0000-4000-8000-0000000000aa" }]);
+      expect(found).toEqual([{ id: jobId, queue, batchId: "00000000-0000-4000-8000-0000000000aa", resumeCount: 0 }]);
       // job yang dimulai SETELAH ambang (milik proses ini) TIDAK boleh ikut
       expect(await defaultOrphanDeps.listActiveJobs([queue], new Date(Date.now() - 3600_000))).toEqual([]);
       await defaultOrphanDeps.failJob(queue, jobId);

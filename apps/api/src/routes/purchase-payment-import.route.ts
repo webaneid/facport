@@ -12,6 +12,7 @@ import { purchasePaymentTemplateGuide } from "../lib/import-mapping/template-gui
 import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
 import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
+import { loadStagedPlanForBatch } from "../lib/staged-batch";
 
 // § architecture-security.md §8, pola sama vendor-payable-account-import.route.ts
 const ALLOWED_MIME = [
@@ -181,6 +182,16 @@ export const purchasePaymentImportRoute = new Elysia()
         return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
       }
 
+      // § Fase 205, ADR-0051 — dokumen besar dikirim BERTAHAP ke dokumen yang sama (nomor & isi tidak berubah, hanya lebih lama): minta persetujuan pelanggan
+      // SEBELUM mulai. Tanpa `approveStaged` server mengembalikan rencana (409); web menampilkan popup lalu mengulang confirm dengan `approveStaged: true`.
+      if (!body.approveStaged) {
+        const plan = await loadStagedPlanForBatch(batch.id, undefined, body.columnMapping);
+        if (plan && plan.items.length > 0) {
+          set.status = 409;
+          return { code: "STAGED_APPROVAL_REQUIRED", plan };
+        }
+      }
+
       await db
         .update(importBatches)
         .set({ columnMapping: body.columnMapping, status: "processing" })
@@ -194,7 +205,7 @@ export const purchasePaymentImportRoute = new Elysia()
       permission: "import.create",
       moduleAccess: "purchase_payment",
       params: t.Object({ batchId: t.String({ format: "uuid" }) }),
-      body: t.Object({ columnMapping: t.Record(t.String(), t.String()) }),
+      body: t.Object({ columnMapping: t.Record(t.String(), t.String()), approveStaged: t.Optional(t.Boolean()) }),
     },
   )
   .get(

@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   buildSalesReceiptPayload,
+  salesReceiptEntryKeys,
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
   receiptNumberColumnOf,
@@ -635,5 +636,21 @@ describe("validateInvoiceRowsConsistencyForReceipt", () => {
       mapping,
     );
     expect(diffInvoices).toBeNull();
+  });
+});
+
+// § Fase 205 — kunci entri HARUS sejalan dengan penggabungan faktur di builder (worker memakainya untuk tahu baris Excel mana yang sudah tersimpan).
+describe("salesReceiptEntryKeys (selaras dengan builder)", () => {
+  test("faktur sama (beda huruf/spasi) = 1 entri, faktur kosong = entri sendiri; urutan = urutan entri payload", () => {
+    const rawRows = [
+      { Tanggal: "01/01/2026", "No. Sales Receipt": "R1", "No Pelanggan": "C", "Akun Bank/Kas": "B", "No Faktur": "F-1", "Jumlah Bayar": 100 },
+      { "No Faktur": " f-1 ", "Jumlah Bayar": 100 },
+      { "No Faktur": "F-2", "Jumlah Bayar": 50 },
+      { "No Faktur": "", "Jumlah Bayar": 7 },
+    ];
+    const keys = salesReceiptEntryKeys(rawRows, columnMapping);
+    expect(keys).toEqual(["f-1", "f-1", "f-2", "__row3"]);
+    const payload = buildSalesReceiptPayload(rawRows, columnMapping);
+    expect(new Set(keys).size).toBe((payload.detailInvoice as unknown[]).length);
   });
 });
