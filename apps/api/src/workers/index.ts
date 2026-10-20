@@ -182,6 +182,7 @@ import { saveSalesQuotation, getSalesQuotationByNumber } from "../lib/accurate-s
 import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
+import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
@@ -2685,6 +2686,9 @@ async function main() {
           or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
         ),
       );
+    // § Fase 199 (C4b) — grup (dokumen) dalam job ini diproses paralel sampai N (env `IMPORT_GROUP_PARALLELISM`, default 1 = berurutan seperti dulu).
+    const groupParallelism = configuredGroupParallelism();
+    const jobStartedAt = Date.now();
 
     // § Fase 06, ADR-0011 — Purchase Invoice diproses PER GRUP (baris
     // dengan Bill No sama = 1 faktur, bisa banyak detailItem), modul lain
@@ -2699,7 +2703,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           // § Fase 08, ADR-0012 — Retry Cerdas: kalau grup ini SUDAH
@@ -2741,7 +2745,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 13 — Sales Invoice, bayangan cermin blok Purchase Invoice
       // di atas (PO Number/Trans No ganti peran Bill No, Customer ganti
       // Vendor). § Fase 49 — kunci grouping DIGENERALISASI
@@ -2752,7 +2756,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const existing =
@@ -2780,7 +2784,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 49 — Sales Receipt, grouping DALAM 1 batch, create-only
       // (TANPA findExisting/append — lihat komentar `processSalesReceiptGroup`).
     } else if (batch.module === "sales_receipt") {
@@ -2788,7 +2792,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processSalesReceiptGroup(session, group, columnMapping);
@@ -2816,14 +2820,14 @@ async function main() {
                   : { status: "failed", errorMessage: settled.message, processedAt: new Date() },
               )
               .where(inArray(importBatchRows.id, rowIds));
-            continue;
+            return;
           }
           await db
             .update(importBatchRows)
             .set({ status: "failed", errorMessage: annotatePaymentFailure(describeAccurateFailure(err), group.rows, columnMapping), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 120 — Purchase Order, grouping DALAM 1 batch, create-only
       // (TANPA findExisting/append, § komentar `processPurchaseOrderGroup`).
     } else if (batch.module === "purchase_order") {
@@ -2831,7 +2835,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processPurchaseOrderGroup(session, group, columnMapping);
@@ -2850,7 +2854,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 121 — Receive Item, grouping DALAM 1 batch by
       // `receiveNumber` (BUKAN `number`), create-only, TANPA auto-create
       // vendor/item (§ komentar `processReceiveItemGroup`).
@@ -2859,7 +2863,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processReceiveItemGroup(session, group, columnMapping);
@@ -2878,7 +2882,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 122 — Purchase Return, grouping DEFAULT ADR-0011
       // (opsional by "number"), TANPA auto-create vendor/item (§
       // komentar `processPurchaseReturnGroup`).
@@ -2887,7 +2891,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processPurchaseReturnGroup(session, group, columnMapping);
@@ -2906,7 +2910,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 123 — Sales Quotation, grouping DEFAULT ADR-0011
       // (opsional by "number"), auto-create customer+item (§ komentar
       // `processSalesQuotationGroup`).
@@ -2915,7 +2919,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processSalesQuotationGroup(session, group, columnMapping);
@@ -2934,7 +2938,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 124 — Sales Return, grouping DEFAULT ADR-0011 (opsional
       // by "number"), TANPA auto-create customer/item (§ komentar
       // `processSalesReturnGroup`).
@@ -2946,7 +2950,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processSalesOrderGroup(session, group, columnMapping);
@@ -2965,13 +2969,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "sales_return") {
       const groups = groupSalesReturnRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processSalesReturnGroup(session, group, columnMapping);
@@ -2990,7 +2994,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 157 — Delivery Order, grouping DEFAULT ADR-0011 (opsional
       // by "number"), TANPA auto-create customer/item (§ komentar
       // `processDeliveryOrderGroup`).
@@ -2999,7 +3003,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processDeliveryOrderGroup(session, group, columnMapping);
@@ -3018,7 +3022,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 50 — Purchase Payment, mirror PERSIS blok Sales Receipt
       // di atas (lihat komentar `processPurchasePaymentGroup`).
     } else if (batch.module === "purchase_payment") {
@@ -3026,7 +3030,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processPurchasePaymentGroup(session, group, columnMapping);
@@ -3045,7 +3049,7 @@ async function main() {
             .set({ status: "failed", errorMessage: annotatePaymentFailure(describeAccurateFailure(err), group.rows, columnMapping), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Journal Voucher — SELALU diproses per-grup (§ Fase 96, Opsi A/
       // format lebar dipensiunkan total, tidak ada lagi jalur alternatif
       // lewat `processImportRow` generic).
@@ -3054,7 +3058,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processJournalVoucherGroup(session, group, columnMapping);
@@ -3073,7 +3077,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Other Payment — SELALU diproses per-grup (§ Fase 96, modul
       // baru, grouping by "Trans No" sejak awal, mirror Jurnal Voucher).
     } else if (batch.module === "other_payment") {
@@ -3081,7 +3085,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processOtherPaymentGroup(session, group, columnMapping);
@@ -3100,7 +3104,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 128 — Other Deposit, mirror Other Payment PERSIS (grouping
       // by "Trans No" sejak awal).
     } else if (batch.module === "other_deposit") {
@@ -3108,7 +3112,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processOtherDepositGroup(session, group, columnMapping);
@@ -3127,7 +3131,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 134 — Item Transfer, grouping DEFAULT ADR-0011 by "No.
       // Item Transfer" (`number`), create-only, TANPA auto-create item
       // (§ komentar `processItemTransferGroup`).
@@ -3136,7 +3140,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processItemTransferGroup(session, group, columnMapping);
@@ -3155,13 +3159,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "item_requisition") {
       const groups = groupItemRequisitionRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processItemRequisitionGroup(session, group, columnMapping);
@@ -3180,7 +3184,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 138 — Inventory Adjustment, grouping DEFAULT ADR-0011 by
       // "No. Item Adjustment" (opsional), create-only, TANPA auto-create
       // item (§ komentar `processInventoryAdjustmentGroup`).
@@ -3189,7 +3193,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processInventoryAdjustmentGroup(session, group, columnMapping);
@@ -3208,7 +3212,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Fase 139 — Job Costing, 2 panggilan API berurutan per grup
       // (§ komentar `processJobCostingGroup`).
     } else if (batch.module === "job_costing") {
@@ -3216,7 +3220,7 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processJobCostingGroup(session, group, columnMapping);
@@ -3235,13 +3239,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "roll_over") {
       const groups = groupRollOverRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processRollOverGroup(session, group, columnMapping);
@@ -3260,13 +3264,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "work_order") {
       const groups = groupWorkOrderRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processWorkOrderGroup(session, group, columnMapping);
@@ -3285,13 +3289,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "material_slip") {
       const groups = groupMaterialSlipRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processMaterialSlipGroup(session, group, columnMapping);
@@ -3310,13 +3314,13 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
     } else if (batch.module === "finished_good_slip") {
       const groups = groupFinishedGoodSlipRows(
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
-      for (const group of groups) {
+      await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
         try {
           const result = await processFinishedGoodSlipGroup(session, group, columnMapping);
@@ -3335,7 +3339,7 @@ async function main() {
             .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
-      }
+      });
       // § Import Produksi (Excel) — TIDAK ADA grouping (1 baris = 1
       // entry), § `processAutoproduksiProductionImportRow` di atas.
       // dataUsahaId di-resolve SEKALI per batch (dipakai tiap baris utk
@@ -3413,7 +3417,10 @@ async function main() {
       if (sub) await addCumulativeSuccessfulRows(sub.dataUsahaId, newlySucceededCount);
     }
 
-    logger.info({ batchId, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length }, "Import batch selesai");
+    logger.info(
+      { batchId, module: batch.module, total: finalRows.length, failed: finalRows.filter((r) => r.status === "failed").length, parallelism: groupParallelism, durationMs: Date.now() - jobStartedAt },
+      "Import batch selesai",
+    );
   });
   await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE, accurateWorkOptions(env.IMPORT_WORKER_CONCURRENCY), importToAccurateHandler);
   await boss.work<{ batchId: string }>(JOBS.IMPORT_TO_ACCURATE_LARGE, accurateLargeWorkOptions(env.IMPORT_LARGE_WORKER_CONCURRENCY), importToAccurateHandler);

@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
+import { runExclusive } from "./keyed-lock";
 
 export type ItemResult = {
   id: number;
@@ -32,6 +33,14 @@ export async function findItemByNo(
 // ada kolom Excel untuk ini) — hindari kompleksitas tracking stok/gudang
 // yang belum relevan buat kasus "auto-lengkapi item saat import faktur".
 export async function findOrCreateItem(
+  ctx: AccurateSessionContext,
+  itemNo: string,
+  createFields: Record<string, unknown>,
+): Promise<{ id: number; no: string; name: string }> {
+  return runExclusive(`${ctx.session}|item|${String(itemNo).trim().toLowerCase()}`, () => findOrCreateItemImpl(ctx, itemNo, createFields));
+}
+
+async function findOrCreateItemImpl(
   ctx: AccurateSessionContext,
   itemNo: string,
   createFields: Record<string, unknown>,

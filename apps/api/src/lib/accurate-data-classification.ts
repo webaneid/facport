@@ -2,6 +2,7 @@ import { AccurateApiError, parseAccurateEnvelope, parseAccurateSaveEnvelope } fr
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
+import { runExclusive } from "./keyed-lock";
 
 // § Fase 68 — ditemukan 2026-09-08 (client retest Sales Invoice, error
 // Accurate "Kategori Keuangan TES 1 tidak ditemukan atau sudah
@@ -57,6 +58,14 @@ export async function findDataClassificationByName(
 // Kategori Keuangan per slot, nama yang sama di slot berbeda dianggap
 // record BEDA.
 export async function findOrCreateDataClassification(
+  ctx: AccurateSessionContext,
+  index: number,
+  name: string,
+): Promise<{ id: number; name: string } | undefined> {
+  return runExclusive(`${ctx.session}|classification|${index}|${String(name).trim().toLowerCase()}`, () => findOrCreateDataClassificationImpl(ctx, index, name));
+}
+
+async function findOrCreateDataClassificationImpl(
   ctx: AccurateSessionContext,
   index: number,
   name: string,

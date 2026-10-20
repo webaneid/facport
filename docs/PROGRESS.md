@@ -210,6 +210,7 @@
 | 199  | Evaluasi kapasitas & ketahanan import (antrean, throughput, transaksi besar) — insiden 11 batch Sales Receipt timeout 360 dtk (default HTTP client); pengukuran sebagian selesai, desain menunggu | Planned (2026-10-20) | - | `docs/phases/phase-199-evaluasi-kapasitas-antrean-import.md` |
 | 200  | Fix: isian bawaan di kolom pendamping (Standard Cost = 1) memicu kewajiban Item No/Qty bahan baku → 434 Work Order gagal serentak (2026-10-19); section kini dipakai hanya bila kolom identitasnya terisi | Done (2026-10-20, belum dirilis) | - | `docs/phases/phase-200-fix-work-order-isian-bawaan-memicu-section-bahan.md` |
 | 201  | Perbaikan kecil: pesan galat pembayaran memuat daftar faktur menurut Excel (Accurate menyebut nomor lain) + ringkasan galat per jenis dengan saran di 22 halaman hasil import | Done (2026-10-20, belum dirilis — ditahan atas permintaan user) | - | `docs/phases/phase-201-perbaikan-kecil-pesan-galat-pembayaran-dan-ringkasan-galat.md` |
+| 202  | Paralel dalam satu job import (C4b Fase 199): `forEachGroupConcurrent` di 22 loop grup + kunci per-kunci find-or-create; saklar `IMPORT_GROUP_PARALLELISM` default 1 (OFF), peluncuran bertahap menunggu keputusan | Done sisi kode (2026-10-20, belum dirilis) | - | `docs/phases/phase-202-paralel-dalam-satu-job-import.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
