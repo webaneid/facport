@@ -181,6 +181,7 @@ import {
 import { saveSalesQuotation, getSalesQuotationByNumber } from "../lib/accurate-sales-quotation";
 import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
+import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
@@ -2819,7 +2820,7 @@ async function main() {
           }
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: annotatePaymentFailure(describeAccurateFailure(err), group.rows, columnMapping), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }
@@ -3041,7 +3042,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: annotatePaymentFailure(describeAccurateFailure(err), group.rows, columnMapping), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       }

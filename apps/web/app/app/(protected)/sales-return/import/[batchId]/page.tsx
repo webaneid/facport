@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { ImportErrorSummary } from "@/components/import/import-error-summary";
 
 type Row = {
   id: string;
@@ -159,6 +160,8 @@ export default function SalesReturnImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <ImportErrorSummary rows={rows} />
 
       <Card>
         <CardHeader>

@@ -17,6 +17,7 @@ import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findPoNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/sales-invoice-batch-helpers";
+import { ImportErrorSummary } from "@/components/import/import-error-summary";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/[batchId]/page.tsx`
 // (PO Number ganti peran Bill No).
@@ -185,6 +186,8 @@ export default function SalesInvoiceImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <ImportErrorSummary rows={rows} />
 
       <Card>
         <CardHeader>
