@@ -1,3 +1,9 @@
+## <small>2.39.1 (2026-10-20)</small>
+
+* chore: rilis Fase 200 — Work Order: isian bawaan di kolom pendamping tidak lagi memicu kewajiban bah ([0ae568e](https://github.com/webaneid/facport/commit/0ae568e))
+* docs: koreksi evaluasi Fase 199 — anomali Batal Import/Purchase Payment adalah artefak pengukuran (r ([72d9464](https://github.com/webaneid/facport/commit/72d9464))
+* fix: Work Order — section dipakai hanya bila kolom identitasnya terisi; isian bawaan (Standard Cost) ([259abc7](https://github.com/webaneid/facport/commit/259abc7))
+
 ## 2.39.0 (2026-10-19)
 
 * chore: rilis Fase 199 — timeout adaptif eksplisit + metrik, jalur batch besar, expire dinamis, verif ([885dc36](https://github.com/webaneid/facport/commit/885dc36))
