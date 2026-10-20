@@ -1,3 +1,10 @@
+## 2.41.0 (2026-10-20)
+
+* chore: rilis Fase 203-204 — sisa kuantitas Delivery Order untuk faktur, pemulihan otomatis job impor ([9bc2e8b](https://github.com/webaneid/facport/commit/9bc2e8b))
+* fix: faktur dari Delivery Order memakai SISA yang tersedia menurut Accurate (availableQuantity/Price ([887de11](https://github.com/webaneid/facport/commit/887de11))
+* feat: pemulihan otomatis job impor hantu saat worker mulai — baris pending jadi failed dengan pesan, ([fd62b69](https://github.com/webaneid/facport/commit/fd62b69))
+* docs: SOP deploy — cek ulang batch aktif tepat sebelum up -d; kasus job hantu 2026-10-20 + pemulihan ([d570ab3](https://github.com/webaneid/facport/commit/d570ab3))
+
 ## 2.40.0 (2026-10-20)
 
 * chore: rilis Fase 201-203 — pesan galat pembayaran + ringkasan galat, paralel dalam satu job (defaul ([9949a48](https://github.com/webaneid/facport/commit/9949a48))
