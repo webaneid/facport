@@ -65,7 +65,7 @@ Penyimpanan baris: `import_rows` yang sudah ada tetap sumber; tabel bagian hanya
 - Nomor dokumen eksplisit + unik → Accurate menolak duplikat nomor; cek `detail.do?number=` sebelum tiap kirim.
 - Klaim atomik di DB mencegah paralel ganda.
 - Restart di titik mana pun: bagian dalam keadaan antara diperiksa ulang lewat nomor, tidak dikirim buta.
-- **Batasan jujur**: dokumen tanpa nomor eksplisit (auto-number) tidak bisa diverifikasi; untuk dokumen yang dipecah nomor SELALU dibuat eksplisit (turunan nomor asli; bila nomor asli kosong, Facport membuat nomor dasar dari id batch, ditampilkan di Rencana).
+- **Batasan jujur**: dokumen tanpa nomor (auto-number) tidak bisa diverifikasi, tetapi dokumen yang dipecah selalu bernomor (baris tanpa nomor menjadi dokumen sendiri), jadi tidak terdampak.
 - Risiko: pesan "tidak ada" Accurate = "tidak tepat" untuk Sales Receipt belum terkonfirmasi → diuji di trial sebelum bergantung padanya; sebelum itu "tak pasti" diperlakukan konservatif.
 
 ## 8. UI
@@ -85,10 +85,11 @@ Penyimpanan baris: `import_rows` yang sudah ada tetap sumber; tabel bagian hanya
 - Trial Accurate (2977590 saja, `trial:true`): 5.000 baris = 50 bagian; paksa timeout; matikan worker di tengah; verifikasi jumlah dokumen & total = Excel.
 - Pembersihan DB uji sesuai aturan.
 
-## 12. Keputusan terbuka (butuh konfirmasi user)
-1. Ambang 200 / ukuran 100 (env, bisa diubah).
-2. Format nomor `X-01`; penanda di deskripsi.
-3. Persetujuan per batch wajib?
-4. Cakupan awal Sales Receipt + Purchase Payment; faktur belakangan.
-5. Dokumen tanpa nomor eksplisit: wajib dibuatkan nomor dasar dan ditampilkan di Rencana.
-6. Paralel antar bagian: mulai sekuensial, lalu paralel terbatas setelah terbukti.
+## 12. Keputusan (dikonfirmasi user 2026-10-21)
+1. Ambang pecah 200 baris (ukuran bagian 100; keduanya env, dievaluasi ulang setelah tryout).
+2. Penanda "Bagian i/n dari NOMOR" di deskripsi: disetujui. Format nomor `NOMOR-01`.
+3. Persetujuan lewat popup sederhana + alasan dari rancangan Accurate (bahasa awam): wajib.
+4. Cakupan awal: Sales Receipt + Purchase Payment; faktur belakangan.
+5. Dokumen tanpa nomor: TIDAK relevan untuk pemecahan. Baris tanpa nomor menjadi dokumen sendiri (`groupSalesReceiptRows`), jadi dokumen ribuan baris pasti bernomor; nomor asli dipakai, tidak ada "nomor dasar". Dokumen tanpa nomor tetap jalur lama (tak bisa diverifikasi setelah timeout).
+6. Paralel antar bagian: mulai sekuensial, coba paralel terbatas setelah terbukti.
+7. Uji dulu di trial: perilaku `detail.do?number=` untuk nomor yang tidak ada (Sales Receipt) sebelum bergantung padanya.
