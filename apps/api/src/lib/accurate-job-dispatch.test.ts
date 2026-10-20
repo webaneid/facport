@@ -6,6 +6,7 @@ import {
   accurateLargeWorkOptions,
   parseImportLargeBatchRows,
   computeImportExpireSeconds,
+  computeStagedExpireSeconds,
   withAccurateJobContext,
   type AccurateJobDeps,
 } from "./accurate-job-dispatch";
@@ -169,6 +170,30 @@ describe("enqueueAccurateJob — jalur besar & expire dinamis (Fase 199)", () =>
     await enqueueAccurateJob(JOBS.PROCESS_AUTOPRODUKSI_ENTRY, { entryId: "e1" }, deps, 1500);
     expect(sent.map((s) => s.name)).toEqual([JOBS.CANCEL_IMPORT, JOBS.PROCESS_AUTOPRODUKSI_ENTRY]);
     expect(sent.map((s) => s.options)).toEqual([{ group: { id: "conn-1" } }, { group: { id: "conn-1" } }]);
+  });
+});
+
+describe("enqueueAccurateJob — kirim bertahap (Fase 205)", () => {
+  test("batch KECIL berisi dokumen bertahap → jalur BESAR + expire mengikuti model waktu (×1,5 + 15 menit)", async () => {
+    const { deps, sent } = makeDeps({ totalRowsForJob: async () => 400, stagedSecondsForJob: async () => 10_000 });
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, deps, 1500);
+    expect(sent[0]!.name).toBe(JOBS.IMPORT_TO_ACCURATE_LARGE);
+    expect((sent[0]!.options as { expireInSeconds: number }).expireInSeconds).toBe(Math.ceil(10_000 * 1.5) + 900);
+  });
+  test("tanpa dokumen bertahap (0) → perilaku Fase 199 tidak berubah", async () => {
+    const { deps, sent } = makeDeps({ totalRowsForJob: async () => 400, stagedSecondsForJob: async () => 0 });
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, deps, 1500);
+    expect(sent[0]).toMatchObject({ name: JOBS.IMPORT_TO_ACCURATE, options: { expireInSeconds: 7200 } });
+  });
+  test("pembacaan rencana gagal → job TIDAK hilang (jalur biasa)", async () => {
+    const { deps, sent } = makeDeps({ totalRowsForJob: async () => 400, stagedSecondsForJob: async () => { throw new Error("db down"); } });
+    await enqueueAccurateJob(JOBS.IMPORT_TO_ACCURATE, { batchId: "b1" }, deps, 1500);
+    expect(sent.length).toBe(1);
+  });
+  test("computeStagedExpireSeconds: tidak pernah di bawah dasar; maksimum 14 hari", () => {
+    expect(computeStagedExpireSeconds(0, 7200)).toBe(7200);
+    expect(computeStagedExpireSeconds(100, 7200)).toBe(7200);
+    expect(computeStagedExpireSeconds(1e9, 7200)).toBe(14 * 86_400);
   });
 });
 

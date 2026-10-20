@@ -16,6 +16,8 @@ import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { AccurateRequiredNotice } from "@/components/accurate/accurate-gate-provider";
+import { StagedApprovalDialog } from "@/components/import/staged-approval-dialog";
+import { extractStagedPlan, type StagedPlanView } from "@/lib/staged-plan";
 
 // § architecture-sales-receipt.md — aplikasi penerimaan pembayaran ke
 // Faktur Penjualan yang SUDAH ADA di Accurate (customer & faktur WAJIB
@@ -89,6 +91,9 @@ export default function SalesReceiptImportPage() {
   const [result, setResult] = useState<UploadResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  // § Fase 205 — dokumen besar: backend minta persetujuan kirim bertahap; simpan mapping sampai pelanggan memutuskan.
+  const [stagedPlan, setStagedPlan] = useState<StagedPlanView | null>(null);
+  const [pendingMapping, setPendingMapping] = useState<Record<string, string> | null>(null);
 
   const {
     control: uploadControl,
@@ -132,24 +137,35 @@ export default function SalesReceiptImportPage() {
     resetMapping(uploadResult.suggestedMapping);
   }
 
-  async function onConfirmMapping() {
+  async function submitConfirm(columnMapping: Record<string, string>, approveStaged: boolean) {
     if (!result) return;
     setConfirming(true);
     setError(null);
+    const res = await api["sales-receipt"].import({ batchId: result.batchId }).confirm.post({ columnMapping, ...(approveStaged ? { approveStaged: true } : {}) });
+    setConfirming(false);
+    if (res.error) {
+      const plan = extractStagedPlan(res.error.value);
+      if (plan) {
+        setPendingMapping(columnMapping);
+        setStagedPlan(plan);
+        return;
+      }
+      const value = res.error.value as ImportActionErrorValue | undefined;
+      setError(describeImportActionError(value, "Gagal konfirmasi mapping."));
+      return;
+    }
+    setStagedPlan(null);
+    router.push(`/sales-receipt/import/${result.batchId}`);
+  }
+
+  async function onConfirmMapping() {
+    if (!result) return;
     const columnMapping: Record<string, string> = {};
     for (const col of result.excelColumns) {
       const field = getValues(col);
       if (field) columnMapping[col] = field;
     }
-
-    const res = await api["sales-receipt"].import({ batchId: result.batchId }).confirm.post({ columnMapping });
-    setConfirming(false);
-    if (res.error) {
-      const value = res.error.value as ImportActionErrorValue | undefined;
-      setError(describeImportActionError(value, "Gagal konfirmasi mapping."));
-      return;
-    }
-    router.push(`/sales-receipt/import/${result.batchId}`);
+    await submitConfirm(columnMapping, false);
   }
 
   const mappedCount = result ? result.excelColumns.filter((col) => result.suggestedMapping[col]).length : 0;
@@ -264,6 +280,16 @@ export default function SalesReceiptImportPage() {
       )}
 
       {error && <p className="text-sm text-destructive">{error}</p>}
+
+      <StagedApprovalDialog
+        plan={stagedPlan}
+        busy={confirming}
+        onApprove={() => pendingMapping && submitConfirm(pendingMapping, true)}
+        onCancel={() => {
+          setStagedPlan(null);
+          setPendingMapping(null);
+        }}
+      />
     </div>
   );
 }

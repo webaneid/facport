@@ -398,6 +398,16 @@ function buildDetailDiscountFromRowValues(rowValues: Partial<Record<SalesReceipt
   return discount;
 }
 
+// § Fase 205 (kirim bertahap) — kunci "entri" per baris Excel, ATURANNYA SAMA PERSIS dengan penggabungan faktur di builder payload di bawah
+// (faktur sama setelah trim+huruf kecil = 1 entri `detailInvoice`; faktur kosong = entri sendiri `__row<indeks>`). Dipakai worker untuk tahu baris Excel
+// mana yang sudah tersimpan di Accurate setelah N entri pertama masuk. JANGAN ubah salah satu tanpa yang lain (dijaga tes).
+export function salesReceiptEntryKeys(rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): string[] {
+  return rawRows.map((rawRow, rowIndex) => {
+    const key = String(extractRowValues(rawRow, columnMapping).invoiceNo ?? "").trim().toLowerCase();
+    return key === "" ? `__row${rowIndex}` : key;
+  });
+}
+
 // § Fase 49 — signature BERUBAH: dari `(rawRow, columnMapping)` (1
 // baris = 1 payload) jadi `(rawRows[], columnMapping)` (1 GRUP = 1
 // payload, bisa banyak baris). Header (`customerNo`, `bankNo`,

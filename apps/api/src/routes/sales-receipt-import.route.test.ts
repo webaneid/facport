@@ -175,6 +175,45 @@ describe("POST /sales-receipt/import/:batchId/confirm — validasi mapping", () 
   });
 });
 
+// § Fase 205, ADR-0051 — dokumen besar dikirim bertahap: server minta persetujuan (409 + rencana) SEBELUM job dijadwalkan.
+describe("POST /sales-receipt/import/:batchId/confirm — persetujuan kirim bertahap (Fase 205)", () => {
+  test("409 STAGED_APPROVAL_REQUIRED + rencana bila ada dokumen di atas ambang; batch TIDAK berubah jadi processing", async () => {
+    const saved = { m: process.env.IMPORT_STAGED_MODULES, t: process.env.IMPORT_STAGED_THRESHOLD_ROWS, c: process.env.IMPORT_STAGED_CHUNK_ROWS };
+    process.env.IMPORT_STAGED_MODULES = "sales_receipt";
+    process.env.IMPORT_STAGED_THRESHOLD_ROWS = "5";
+    process.env.IMPORT_STAGED_CHUNK_ROWS = "4";
+    try {
+      const owner = await createProvisionedUser(`sr-staged-${runId}@test.local`);
+      const [batch] = await db
+        .insert(importBatches)
+        .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "sales_receipt", fileName: "besar.xlsx", totalRows: 9, status: "mapping_pending" })
+        .returning();
+      await db.insert(importBatchRows).values(
+        Array.from({ length: 9 }, (_, i) => ({ batchId: batch!.id, rowNumber: i + 1, rawData: { No: "BIG-1", Faktur: `F-${i}`, Bayar: 10, Tgl: "01/01/2026", Cust: "C", Bank: "B", Cab: "Pusat" }, status: "pending" })),
+      );
+      const res = await testApp.handle(
+        new Request(`http://localhost/sales-receipt/import/${batch!.id}/confirm`, {
+          method: "POST",
+          headers: { cookie: owner.cookie, "Content-Type": "application/json" },
+          body: JSON.stringify({ columnMapping: { No: "receiptNumber", Faktur: "invoiceNo", Bayar: "chequeAmount", Tgl: "transDate", Cust: "customerNo", Bank: "bankNo", Cab: "branchName" } }),
+        }),
+      );
+      const body = (await res.json()) as { code: string; plan?: { items: { number: string; rows: number; entries: number; steps: number }[]; estimatedSeconds: number } };
+      expect(res.status).toBe(409);
+      expect(body.code).toBe("STAGED_APPROVAL_REQUIRED");
+      expect(body.plan!.items).toEqual([expect.objectContaining({ number: "BIG-1", rows: 9, entries: 9, steps: 3 })]);
+      expect(body.plan!.estimatedSeconds).toBeGreaterThan(0);
+      const [after] = await db.select().from(importBatches).where(eq(importBatches.id, batch!.id));
+      expect(after!.status).toBe("mapping_pending");
+    } finally {
+      for (const [k, v] of [["IMPORT_STAGED_MODULES", saved.m], ["IMPORT_STAGED_THRESHOLD_ROWS", saved.t], ["IMPORT_STAGED_CHUNK_ROWS", saved.c]] as const) {
+        if (v === undefined) delete process.env[k];
+        else process.env[k] = v;
+      }
+    }
+  });
+});
+
 describe("GET /sales-receipt/import (list)", () => {
   test("401 kalau tidak login", async () => {
     const res = await testApp.handle(new Request("http://localhost/sales-receipt/import"));

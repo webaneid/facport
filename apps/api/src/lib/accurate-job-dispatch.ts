@@ -7,6 +7,7 @@ import { logger } from "./logger";
 import { env } from "./env";
 import { runWithAccurateConnection } from "./accurate-rate-limiter";
 import type { Job } from "pg-boss";
+import { loadStagedPlanForBatch } from "./staged-batch";
 
 // § Fase 167, ADR-0048 — SATU-SATUNYA jalan mengirim job antrean yang memanggil Accurate. Tiap job diberi `group.id` = id koneksi Accurate (token),
 // supaya worker (`localGroupConcurrency: 1`) menjalankan koneksi BERBEDA paralel dan koneksi yang SAMA berurutan (batas 8 request/detik berlaku per token).
@@ -20,6 +21,8 @@ export type AccurateJobDeps = {
   /** Jumlah baris batch untuk job impor (memilih jalur & expire); null = tidak diketahui → jalur biasa. */
   totalRowsForJob: (name: string, payload: object) => Promise<number | null>;
   connectionIdForSubscription: (subscriptionId: string) => Promise<string | null>;
+  /** § Fase 205 — perkiraan detik kirim-bertahap untuk batch ini (0/undefined = tidak ada dokumen bertahap). Menentukan kedaluwarsa & jalur BESAR. */
+  stagedSecondsForJob?: (name: string, payload: object) => Promise<number>;
 };
 
 const defaultDeps: AccurateJobDeps = {
@@ -41,6 +44,10 @@ const defaultDeps: AccurateJobDeps = {
     return row?.totalRows ?? null;
   },
   connectionIdForSubscription: async (subscriptionId) => (await resolveConnectionForSubscription(subscriptionId))?.connection?.id ?? null,
+  stagedSecondsForJob: async (name, payload) => {
+    if (name !== JOBS.IMPORT_TO_ACCURATE) return 0;
+    return (await loadStagedPlanForBatch((payload as { batchId: string }).batchId))?.estimatedSeconds ?? 0;
+  },
 };
 
 // § Fase 199 — pemilihan jalur & batas kedaluwarsa job impor berdasarkan jumlah baris (biaya Accurate ±0,25–0,30 dtk/baris, linear; lihat architecture-import-capacity.md).
@@ -49,6 +56,15 @@ const EXPIRE_MIN_SECONDS = 7200;
 const EXPIRE_MAX_SECONDS = 86_400;
 const EXPIRE_SECONDS_PER_ROW = 0.6; // = timeout per baris di `accurate-http.ts` → skenario terburuk (semua timeout) masih tertutup
 const EXPIRE_MARGIN_SECONDS = 900;
+// § Fase 205 — job yang memuat dokumen kirim-bertahap: perkiraan model (kuadrat) × 1,5 + margin, maksimum 14 hari (batas fisik Accurate; pelanggan sudah diberi tahu di popup).
+const STAGED_EXPIRE_FACTOR = 1.5;
+const STAGED_EXPIRE_MAX_SECONDS = 14 * 86_400;
+
+/** Kedaluwarsa job yang memuat dokumen kirim-bertahap (selalu ≥ kedaluwarsa dasar `base`). */
+export function computeStagedExpireSeconds(stagedSeconds: number, base: number): number {
+  if (!(stagedSeconds > 0)) return base;
+  return Math.max(base, Math.min(Math.ceil(stagedSeconds * STAGED_EXPIRE_FACTOR) + EXPIRE_MARGIN_SECONDS, STAGED_EXPIRE_MAX_SECONDS));
+}
 
 /** Nilai env `IMPORT_LARGE_BATCH_ROWS` → bilangan bulat 100–100.000; kosong/tidak valid → default (1.500). */
 export function parseImportLargeBatchRows(raw: string | undefined): number {
@@ -88,6 +104,12 @@ export async function enqueueAccurateJob(
       if (totalRows !== null) {
         expireInSeconds = computeImportExpireSeconds(totalRows);
         if (totalRows >= largeBatchRows) queue = JOBS.IMPORT_TO_ACCURATE_LARGE;
+        // § Fase 205 — dokumen kirim-bertahap bisa berjam-jam: jalur BESAR (tidak menghalangi impor kecil pelanggan lain) + kedaluwarsa sesuai model waktu.
+        const stagedSeconds = (await deps.stagedSecondsForJob?.(name, payload)) ?? 0;
+        if (stagedSeconds > 0) {
+          expireInSeconds = computeStagedExpireSeconds(stagedSeconds, expireInSeconds);
+          queue = JOBS.IMPORT_TO_ACCURATE_LARGE;
+        }
       }
     } catch (err) {
       logger.warn({ err: (err as Error).name, job: name }, "Gagal membaca ukuran batch — dikirim ke jalur biasa");

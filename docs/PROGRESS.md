@@ -213,6 +213,7 @@
 | 202  | Paralel dalam satu job import (C4b Fase 199): `forEachGroupConcurrent` di 22 loop grup + kunci per-kunci find-or-create; saklar `IMPORT_GROUP_PARALLELISM` default 1 (OFF), peluncuran bertahap menunggu keputusan | Done sisi kode (2026-10-20, belum dirilis) | - | `docs/phases/phase-202-paralel-dalam-satu-job-import.md` |
 | 203  | Diagnostik bentuk dokumen sumber (log source_doc_shape) + pesan galat kuantitas: Sales Invoice dari DO yang diretur gagal "melebihi yang dikirim" (kuantitas asli ≠ sisa); hitung sisa menunggu nama field asli | Done sisi kode (2026-10-20, belum dirilis); hitung sisa menunggu | - | `docs/phases/phase-203-diagnostik-bentuk-dokumen-sumber-dan-pesan-kuantitas.md` |
 | 204  | Pemulihan otomatis job impor "hantu" (job aktif milik worker lama yang dibunuh deploy) saat worker mulai: baris pending→failed + pesan, batch→completed_with_errors, job digagalkan | Done (2026-10-20, belum dirilis) | - | `docs/phases/phase-204-pemulihan-otomatis-job-impor-hantu.md` |
+| 205  | Kirim bertahap (cicilan) ke dokumen yang SAMA untuk 1 nomor ribuan baris + kirim ulang idempoten sampai sukses; dokumen pelanggan tidak boleh diubah (saklar IMPORT_STAGED_MODULES default mati; SR + PP) | Done | `docs/architecture/architecture-staged-send.md`, `docs/decisions/adr-0051-kirim-bertahap-ke-dokumen-yang-sama-dan-kirim-ulang-idempoten.md` | `docs/phases/phase-205-kirim-bertahap-dan-kirim-ulang-idempoten.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

@@ -2,7 +2,7 @@ import "../lib/env"; // WAJIB paling awal
 
 import { runFormulaImportJob } from "../lib/autoproduksi-formula-import";
 import { formatFormulaCode } from "../lib/formula-number";
-import { eq, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
+import { eq, ne, and, or, lt, lte, inArray, isNotNull, notInArray, sql, desc } from "drizzle-orm";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { logger } from "../lib/logger";
 import { Sentry } from "../lib/sentry";
@@ -74,10 +74,15 @@ import {
   // buildDetailItemFromRowSI` di bawah.
   extractTaxIdsFromRows as extractTaxIdsFromRowsPP,
   type PurchasePaymentGroup,
+  purchasePaymentEntryKeys,
 } from "../lib/import-mapping/purchase-payment.mapping";
 import { saveSalesReceipt, getSalesReceiptByNumber } from "../lib/accurate-sales-receipt";
+import { getStagedConfig, sendGroupStaged, describeStagedFailure, type StagedModuleCode, type StagedRow } from "../lib/staged-group";
+import { isStagedModule, type StagedConfig, type StagedDeps } from "../lib/staged-send";
+import { groupsByNumber, classifyGroup } from "../lib/staged-plan";
 import {
   buildSalesReceiptPayload,
+  salesReceiptEntryKeys,
   groupSalesReceiptRows,
   validateGroupCustomerConsistencyForReceipt,
   validateInvoiceRowsConsistencyForReceipt,
@@ -1246,11 +1251,12 @@ async function resolveTaxIdsForReceipt(ctx: AccurateSessionContext, rawRows: Rec
   return resolved;
 }
 
-export async function processSalesReceiptGroup(
+// § Fase 205 — validasi + Tax ID + payload penuh 1 dokumen; dipakai jalur kirim-sekali DAN jalur kirim-bertahap (payload SAMA, hanya cara kirim berbeda).
+export async function prepareSalesReceiptPayload(
   ctx: AccurateSessionContext,
   group: SalesReceiptGroup,
   columnMapping: Record<string, string>,
-): Promise<SalesReceiptGroupResult> {
+): Promise<Record<string, unknown>> {
   const mismatchError = validateGroupCustomerConsistencyForReceipt(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
   // § diminta client 2026-10-06 — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
@@ -1259,10 +1265,101 @@ export async function processSalesReceiptGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForReceipt(ctx, rawRows, columnMapping);
-  const payload = buildSalesReceiptPayload(rawRows, columnMapping, resolvedTaxIds);
+  return buildSalesReceiptPayload(rawRows, columnMapping, resolvedTaxIds);
+}
+
+export async function processSalesReceiptGroup(
+  ctx: AccurateSessionContext,
+  group: SalesReceiptGroup,
+  columnMapping: Record<string, string>,
+): Promise<SalesReceiptGroupResult> {
+
+  const payload = await prepareSalesReceiptPayload(ctx, group, columnMapping);
 
   const result = await saveSalesReceipt(ctx, payload);
   return { receiptId: result.id, rowIds: group.rows.map((r) => r.id) };
+}
+
+// ============================================================
+// § Fase 205, ADR-0051 — kirim BERTAHAP dokumen besar (Sales Receipt & Purchase Payment) ke dokumen Accurate yang SAMA. Dokumen pelanggan TIDAK diubah
+// (nomor, header, isi, urutan identik dengan Excel); hanya cara kirim yang dicicil. Sumber kebenaran = isi dokumen di Accurate (dibaca by nomor), jadi aman
+// dilanjutkan oleh Retry maupun pemulihan job. Yang dipakai bila modul bersaklar dan JUMLAH BARIS dokumen (semua baris batch bernomor sama, termasuk yang
+// sudah sukses di percobaan sebelumnya) melebihi ambang.
+type StagedFullGroups = Map<string, { rows: StagedRow[] }>;
+
+/** Semua baris batch (kecuali dibatalkan) dikelompokkan per nomor dokumen, urut `rowNumber` — kunci = nomor huruf kecil (sama dengan `group*Rows`). */
+export async function loadStagedFullGroups(batchId: string, module: StagedModuleCode, columnMapping: Record<string, string>, config: StagedConfig = getStagedConfig()): Promise<StagedFullGroups> {
+  const all = await db
+    .select({ id: importBatchRows.id, rawData: importBatchRows.rawData, status: importBatchRows.status, rowNumber: importBatchRows.rowNumber })
+    .from(importBatchRows)
+    .where(and(eq(importBatchRows.batchId, batchId), ne(importBatchRows.status, "cancelled")))
+    .orderBy(importBatchRows.rowNumber);
+  const statusById = new Map(all.map((r) => [r.id, r.status]));
+  const records = all.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> }));
+  const out: StagedFullGroups = new Map();
+  for (const g of groupsByNumber(module, records, columnMapping)) {
+    // Hanya dokumen yang `classifyGroup` nyatakan "staged" (bukan PPh, bukan terlalu besar, di atas ambang) — selainnya jalur kirim-sekali.
+    if (!g.number || classifyGroup(module, g, columnMapping, config).kind !== "staged") continue;
+    out.set(g.number.toLowerCase(), { rows: g.rows.map((r) => ({ id: r.id, rawData: r.rawData, status: statusById.get(r.id) ?? "pending" })) });
+  }
+  return out;
+}
+
+/** Jumlah baris dokumen bernomor `number` bila harus dikirim bertahap; null = pakai jalur biasa. */
+export function stagedFullRows(full: StagedFullGroups | null, number: string | null): StagedRow[] | null {
+  if (!full || !number) return null;
+  return full.get(number.toLowerCase())?.rows ?? null;
+}
+
+export async function processStagedGroup(
+  ctx: AccurateSessionContext,
+  module: StagedModuleCode,
+  batchId: string,
+  number: string,
+  group: { rows: ImportRowRecord[] },
+  fullRows: StagedRow[],
+  columnMapping: Record<string, string>,
+  overrides: { config?: StagedConfig; deps?: Partial<StagedDeps> } = {}, // untuk tes: Accurate palsu & konfigurasi kecil
+): Promise<void> {
+  const rowIds = group.rows.map((r) => r.id);
+  try {
+    const fullGroup = fullRows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData }));
+    const payload =
+      module === "sales_receipt"
+        ? await prepareSalesReceiptPayload(ctx, { receiptNumber: number, rows: fullGroup }, columnMapping)
+        : await preparePurchasePaymentPayload(ctx, { paymentNumber: number, rows: fullGroup }, columnMapping);
+    const rawRows = fullRows.map((r) => r.rawData);
+    const entryKeys = module === "sales_receipt" ? salesReceiptEntryKeys(rawRows, columnMapping) : purchasePaymentEntryKeys(rawRows, columnMapping);
+    const { result, entryCount, marked } = await sendGroupStaged({
+      ctx,
+      module,
+      number,
+      rows: fullRows,
+      entryKeys,
+      payload,
+      config: overrides.config ?? getStagedConfig(),
+      batchId,
+      deps: overrides.deps,
+      markSuccess: async (ids, docId) => {
+        await db
+          .update(importBatchRows)
+          .set({ status: "success", accurateTransactionId: String(docId), errorMessage: null, processedAt: new Date() })
+          .where(inArray(importBatchRows.id, ids));
+      },
+    });
+    if (result.state === "failed") {
+      const message = describeStagedFailure(result, entryCount);
+      const failedIds = rowIds.filter((id) => !marked.has(id));
+      if (failedIds.length > 0) {
+        await db.update(importBatchRows).set({ status: "failed", errorMessage: message, processedAt: new Date() }).where(inArray(importBatchRows.id, failedIds));
+      }
+    }
+  } catch (err) {
+    await db
+      .update(importBatchRows)
+      .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
+      .where(inArray(importBatchRows.id, rowIds));
+  }
 }
 
 // ============================================================
@@ -1583,11 +1680,12 @@ async function resolveTaxIdsForPurchasePayment(ctx: AccurateSessionContext, rawR
   return resolved;
 }
 
-export async function processPurchasePaymentGroup(
+// § Fase 205 — validasi + PPh ID + payload penuh 1 dokumen (dipakai jalur kirim-sekali dan kirim-bertahap).
+export async function preparePurchasePaymentPayload(
   ctx: AccurateSessionContext,
   group: PurchasePaymentGroup,
   columnMapping: Record<string, string>,
-): Promise<PurchasePaymentGroupResult> {
+): Promise<Record<string, unknown>> {
   const mismatchError = validateGroupVendorConsistencyForPayment(group, columnMapping);
   if (mismatchError) throw new Error(mismatchError);
   // § 2026-10-06 (mirror Sales Receipt) — faktur yang sama di beberapa baris digabung jadi 1 entri; tolak kalau datanya bertentangan.
@@ -1596,7 +1694,15 @@ export async function processPurchasePaymentGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const resolvedTaxIds = await resolveTaxIdsForPurchasePayment(ctx, rawRows, columnMapping);
-  const payload = buildPurchasePaymentPayload(rawRows, columnMapping, resolvedTaxIds);
+  return buildPurchasePaymentPayload(rawRows, columnMapping, resolvedTaxIds);
+}
+
+export async function processPurchasePaymentGroup(
+  ctx: AccurateSessionContext,
+  group: PurchasePaymentGroup,
+  columnMapping: Record<string, string>,
+): Promise<PurchasePaymentGroupResult> {
+  const payload = await preparePurchasePaymentPayload(ctx, group, columnMapping);
 
   const result = await savePurchasePayment(ctx, payload);
   return { paymentId: result.id, rowIds: group.rows.map((r) => r.id) };
@@ -2800,8 +2906,16 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
+      // § Fase 205 — dokumen besar dikirim bertahap (bila modul bersaklar); lainnya jalur lama.
+      const stagedCfg = getStagedConfig();
+      const stagedFull = isStagedModule(stagedCfg, "sales_receipt") && groups.some((g) => g.receiptNumber) ? await loadStagedFullGroups(batch.id, "sales_receipt", columnMapping) : null;
       await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
+        const stagedRows = stagedFullRows(stagedFull, group.receiptNumber);
+        if (stagedRows && group.receiptNumber && stagedRows.length > stagedCfg.thresholdRows) {
+          await processStagedGroup(session, "sales_receipt", batch.id, group.receiptNumber, group, stagedRows, columnMapping);
+          return;
+        }
         try {
           const result = await processSalesReceiptGroup(session, group, columnMapping);
           await db
@@ -3038,8 +3152,16 @@ async function main() {
         rows.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> })),
         columnMapping,
       );
+      // § Fase 205 — dokumen besar dikirim bertahap (bila modul bersaklar); lainnya jalur lama.
+      const stagedCfg = getStagedConfig();
+      const stagedFull = isStagedModule(stagedCfg, "purchase_payment") && groups.some((g) => g.paymentNumber) ? await loadStagedFullGroups(batch.id, "purchase_payment", columnMapping) : null;
       await forEachGroupConcurrent(groups, groupParallelism, async (group) => {
         const rowIds = group.rows.map((r) => r.id);
+        const stagedRows = stagedFullRows(stagedFull, group.paymentNumber);
+        if (stagedRows && group.paymentNumber && stagedRows.length > stagedCfg.thresholdRows) {
+          await processStagedGroup(session, "purchase_payment", batch.id, group.paymentNumber, group, stagedRows, columnMapping);
+          return;
+        }
         try {
           const result = await processPurchasePaymentGroup(session, group, columnMapping);
           await db

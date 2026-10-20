@@ -1,6 +1,7 @@
 import { describe, test, expect } from "bun:test";
 import {
   buildPurchasePaymentPayload,
+  purchasePaymentEntryKeys,
   groupPurchasePaymentRows,
   validateGroupVendorConsistencyForPayment,
   paymentNumberColumnOf,
@@ -572,5 +573,20 @@ describe("buildPurchasePaymentPayload — faktur sama di beberapa baris digabung
     const dup = validateInvoiceRowsConsistencyForPayment(group([{ ...base, "PPh ID": "X", "PPh Amount": 1 }, { ...base, "PPh ID": "x", "PPh Amount": 1 }]), mapping);
     expect(dup).toContain("dobel");
     expect(validateInvoiceRowsConsistencyForPayment(group([{ ...base, "PPh ID": "X", "PPh Amount": 1 }, { ...base, "Invoice No": "B", "PPh ID": "X", "PPh Amount": 1 }]), mapping)).toBeNull();
+  });
+});
+
+// § Fase 205 — kunci entri HARUS sejalan dengan penggabungan faktur di builder.
+describe("purchasePaymentEntryKeys (selaras dengan builder)", () => {
+  test("faktur sama = 1 entri, kosong = entri sendiri", () => {
+    const rawRows = [
+      { Date: "01/01/2026", "Purchase Payment No": "P1", "No. Supplier": "V", "No. Bank Account": "B", "Invoice No": "I-1", Payment: 100 },
+      { "Invoice No": "i-1 ", Payment: 100 },
+      { "Invoice No": "I-2", Payment: 50 },
+      { "Invoice No": "", Payment: 7 },
+    ];
+    const keys = purchasePaymentEntryKeys(rawRows, columnMapping);
+    expect(keys).toEqual(["i-1", "i-1", "i-2", "__row3"]);
+    expect(new Set(keys).size).toBe((buildPurchasePaymentPayload(rawRows, columnMapping).detailInvoice as unknown[]).length);
   });
 });
