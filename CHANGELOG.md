@@ -1,3 +1,10 @@
+## 2.40.0 (2026-10-20)
+
+* chore: rilis Fase 201-203 — pesan galat pembayaran + ringkasan galat, paralel dalam satu job (defaul ([9949a48](https://github.com/webaneid/facport/commit/9949a48))
+* feat: diagnostik bentuk dokumen sumber (log source_doc_shape) + pesan galat kuantitas untuk faktur d ([f578381](https://github.com/webaneid/facport/commit/f578381))
+* feat: paralel dalam satu job import — forEachGroupConcurrent di 22 loop grup + kunci per-kunci find- ([ccf2f44](https://github.com/webaneid/facport/commit/ccf2f44))
+* feat: pesan galat pembayaran memuat daftar faktur menurut Excel + ringkasan galat per jenis dengan s ([78e244b](https://github.com/webaneid/facport/commit/78e244b))
+
 ## <small>2.39.1 (2026-10-20)</small>
 
 * chore: rilis Fase 200 — Work Order: isian bawaan di kolom pendamping tidak lagi memicu kewajiban bah ([0ae568e](https://github.com/webaneid/facport/commit/0ae568e))
