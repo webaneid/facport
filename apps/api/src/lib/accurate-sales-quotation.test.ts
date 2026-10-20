@@ -198,3 +198,58 @@ describe("summarizeSourceShape", () => {
     expect(summarizeSourceShape({ detailItem: "bukan array" } as never).lineCount).toBe(0);
   });
 });
+
+// § Sisa yang boleh ditagih dari Delivery Order — memakai baris NYATA dari respons Accurate production 2026-10-20 (DO001: 10 pcs, retur 3, belum ditagih).
+describe("parseSalesQuotationDetail — DO memakai kelompok available* (sisa menurut Accurate)", () => {
+  const realLine = {
+    item: { no: "AG-IP5" },
+    detailName: "Anti Gores Iphone 5",
+    unitPrice: 50000,
+    quantity: 10,
+    quantityDefault: 10,
+    returnQuantity: 3,
+    returnQuantityDesc: "3 PCS",
+    invoiceQuantity: 0,
+    processQuantityDesc: "0 PCS",
+    availableQuantity: 7,
+    availableUnitPrice: 50000,
+    availableTotalPrice: 350000,
+    availableItemCashDiscount: 0,
+    availableItemUnitName: "PCS",
+    availableUnitRatio: 1,
+    controlQuantity: 0,
+    itemUnit: { name: "PCS" },
+  };
+
+  test("DO: kuantitas = availableQuantity (7), BUKAN kuantitas asli (10); harga & satuan dari available*", () => {
+    const line = parseSalesQuotationDetail({ detailItem: [realLine] }, "DO001", "Pengiriman").lines[0]!;
+    expect(line).toMatchObject({ itemNo: "AG-IP5", quantity: 7, unitPrice: 50000, unitName: "PCS" });
+  });
+
+  test("DO: baris dengan sisa 0 (habis diretur/ditagih) DILEWATI; baris lain tetap", () => {
+    const lines = parseSalesQuotationDetail({ detailItem: [{ ...realLine, availableQuantity: 0, returnQuantity: 10 }, { ...realLine, item: { no: "B-2" } }] }, "DO001", "Pengiriman").lines;
+    expect(lines.map((l) => l.itemNo)).toEqual(["B-2"]);
+  });
+
+  test("DO: semua baris tanpa sisa → galat jelas (tidak mengirim faktur kosong)", () => {
+    expect(() => parseSalesQuotationDetail({ detailItem: [{ ...realLine, availableQuantity: 0 }] }, "DO001", "Pengiriman")).toThrow(/tidak punya sisa yang bisa ditagih/);
+  });
+
+  test("DO: diskon nominal mengikuti availableItemCashDiscount (untuk sisa), bukan diskon qty penuh", () => {
+    const line = parseSalesQuotationDetail({ detailItem: [{ ...realLine, itemCashDiscount: 1000, availableItemCashDiscount: 700 }] }, "DO001", "Pengiriman").lines[0]!;
+    expect(line.itemCashDiscount).toBe(700);
+  });
+
+  test("DO tanpa field available* (respons lama/berbeda) → jatuh ke kuantitas & harga biasa (perilaku sebelumnya)", () => {
+    const { availableQuantity, availableUnitPrice, availableItemUnitName, availableItemCashDiscount, ...plain } = realLine;
+    void availableQuantity; void availableUnitPrice; void availableItemUnitName; void availableItemCashDiscount;
+    expect(parseSalesQuotationDetail({ detailItem: [plain] }, "DO001", "Pengiriman").lines[0]).toMatchObject({ quantity: 10, unitPrice: 50000, unitName: "PCS" });
+  });
+
+  test("SO/SQ TIDAK memakai available* (bentuk belum terbukti): kuantitas asli tetap dipakai, tidak ada baris yang dilewati", () => {
+    for (const label of ["Pesanan", "Penawaran"] as const) {
+      const lines = parseSalesQuotationDetail({ detailItem: [realLine, { ...realLine, availableQuantity: 0 }] }, "X-1", label).lines;
+      expect(lines.map((l) => l.quantity)).toEqual([10, 10]);
+    }
+  });
+});

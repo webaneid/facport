@@ -63,7 +63,7 @@ Setelah tahap A–C, dibandingkan semua field `sales-invoice/save.do` (spec) den
 - [x] Custom tanggal (`dateFieldN`) baris & header (Sales Invoice) ditarik dengan validasi `dd/MM/yyyy` yang sama seperti `shipDate`; Sales Order tidak (tidak dipetakan). **Tidak ada sisa celah yang diketahui** selain verifikasi respons asli.
 
 ## Temuan nyata dari client (2026-10-20) — batasan "sisa kuantitas" terbukti
-DO 10 pcs → retur 3 pcs → faktur dari nomor DO saja → Accurate: "Kuantitas … di faktur melebihi yang dikirim" (Facport mengirim 10; boleh 7). Ditangani di Fase 203 (diagnostik nama field asli + pesan); hitung sisa otomatis menunggu nama field dari log production.
+DO 10 pcs → retur 3 pcs → faktur dari nomor DO saja → Accurate: "Kuantitas … di faktur melebihi yang dikirim" (Facport mengirim 10; boleh 7). Ditangani di Fase 203: diagnostik mengungkap field `available*` (availableQuantity = 7) pada respons DO asli → sumber DO kini memakai sisa menurut Accurate. SO/SQ masih kuantitas asli.
 
 ## Risiko / titik rawan yang ditemukan saat perencanaan
 1. **Pemetaan baris↔id detail (RAWAN):** `processSalesInvoiceGroup` memetakan `result.detailItem[i]` ke baris Excel ke-i (`accurateDetailItemId` per baris). Satu baris Excel yang diperluas menjadi N baris membuat indeks bergeser → baris sesudahnya salah id. Id ini dipakai guard hapus faktur (semua baris wajib punya id). Solusi: simpan offset awal tiap baris Excel; baris perluasan menyimpan id detail PERTAMA hasil perluasannya. Wajib ada tes.

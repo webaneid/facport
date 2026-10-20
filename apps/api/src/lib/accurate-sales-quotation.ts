@@ -266,11 +266,18 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
   if (items.length > MAX_QUOTATION_LINES) {
     throw new Error(`${docLabel} "${quotationNumber}" punya ${items.length} baris item — melebihi batas ${MAX_QUOTATION_LINES} baris untuk pengambilan otomatis. Isi baris item di Excel secara manual.`);
   }
-  const lines = items.map((it, index) => {
+  // § Sisa yang boleh diproses (Delivery Order) — TERBUKTI dari respons asli production (kasus client 2026-10-20: DO 10 pcs, retur 3): baris DO membawa kelompok field
+  // `available*` yang sudah dihitung Accurate sendiri (setelah retur & penagihan sebelumnya): `availableQuantity` (7), `availableUnitPrice`, `availableItemUnitName`,
+  // `availableItemCashDiscount`; `quantity`/`quantityDefault` = kuantitas ASLI (10), `returnQuantity` = 3, `invoiceQuantity` = 0. Faktur dari DO memakai kelompok ini;
+  // baris dengan sisa 0 dilewati. Berlaku HANYA untuk DO (bentuk SO/SQ belum terbukti — kuantitas asli tetap dipakai).
+  const useAvailable = docLabel === "Pengiriman";
+  const mapped = items.map((it, index): SalesQuotationLine | null => {
+    const available = useAvailable ? num(it.availableQuantity) : null;
+    if (available !== null && available <= 0) return null; // sudah habis diretur/ditagih
     const itemNo = text(it.item?.no) ?? text(it.itemNo);
-    const unitName = text(it.itemUnit?.name) ?? text(it.unit?.name) ?? text(it.itemUnitName);
-    const unitPrice = num(it.unitPrice);
-    const quantity = num(it.quantity);
+    const unitName = (available !== null ? text(it.availableItemUnitName) : null) ?? text(it.itemUnit?.name) ?? text(it.unit?.name) ?? text(it.itemUnitName);
+    const unitPrice = (available !== null ? num(it.availableUnitPrice) : null) ?? num(it.unitPrice);
+    const quantity = available ?? num(it.quantity);
     const unreadable = [!itemNo && "kode barang", unitPrice === null && "harga", (quantity === null || quantity <= 0) && "qty", !unitName && "satuan"].filter(Boolean);
     if (unreadable.length > 0) {
       throw new Error(
@@ -279,7 +286,8 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     }
     const line: SalesQuotationLine = { itemNo: itemNo!, itemName: text(it.detailName), unitPrice: unitPrice!, quantity: quantity!, unitName: unitName!, notes: text(it.detailNotes) };
     const extras = {
-      itemCashDiscount: positiveNum(it.itemCashDiscount),
+      // diskon nominal untuk SISA (bukan untuk qty penuh) bila tersedia dari Accurate
+      itemCashDiscount: positiveNum(available !== null && it.availableItemCashDiscount !== undefined ? it.availableItemCashDiscount : it.itemCashDiscount),
       itemDiscPercent: percentText(it.itemDiscPercent),
       departmentName: relation(it.department, ["name"], it.departmentName),
       projectNo: relation(it.project, ["projectNo", "no"], it.projectNo),
@@ -296,6 +304,10 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     if (Object.keys(lineExtra).length > 0) line.extra = lineExtra;
     return line;
   });
+  const lines = mapped.filter((l): l is SalesQuotationLine => l !== null);
+  if (useAvailable && lines.length === 0) {
+    throw new Error(`${docLabel} "${quotationNumber}" tidak punya sisa yang bisa ditagih — semua barangnya sudah ditagih atau diretur.`);
+  }
 
   const expenses = (raw?.detailExpense ?? []).map((ex, index): SalesQuotationExpense => {
     const accountNo = text(ex.account?.no) ?? text(ex.accountNo);

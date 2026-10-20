@@ -398,8 +398,12 @@ describe("annotateSourceExpansionFailure", () => {
     const out = annotateSourceExpansionFailure(msg, [doRow], mapping);
     expect(out.startsWith(msg)).toBe(true);
     expect(out).toContain("Delivery Order DO001");
-    expect(out).toContain("ASLI");
+    expect(out).toContain("sisa yang tersedia"); // DO kini memakai sisa menurut Accurate (bukan kuantitas asli)
     expect(out).toContain("Item Qty");
+  });
+  test("SO/SQ tetap memakai kuantitas ASLI → pesan menyebut ASLI dan meminta isi manual", () => {
+    const so = { ...doRow, "ITEM: DELIVERY ORDER NO": "", "ITEM: SALES ORDER NO": "SO-9" };
+    expect(annotateSourceExpansionFailure(msg, [so], mapping)).toContain("ASLI");
   });
 
   test("baris BUKAN perluasan (kolom item terisi manual) atau galat lain → pesan tidak diubah", () => {

@@ -171,6 +171,13 @@ export function annotateSourceExpansionFailure(message: string, rawRows: Record<
   const expansion = rawRows.map((r) => ({ row: r, source: isSourceExpansionRow(r, columnMapping) ? sourceOfRow(r, columnMapping) : null })).find((x) => x.source);
   if (!expansion?.source) return message;
   const doc = { deliveryOrder: "Delivery Order", salesOrder: "Sales Order", salesQuotation: "Sales Quotation" }[expansion.source.kind];
+  if (expansion.source.kind === "deliveryOrder") {
+    // DO: kuantitas diambil dari SISA yang tersedia menurut Accurate (sudah dikurangi retur & penagihan sebelumnya); galat ini berarti sisa berubah/tidak cocok.
+    return (
+      `${message} Baris ini mengambil sisa yang tersedia dari ${doc} ${expansion.source.number} menurut Accurate (sudah dikurangi retur dan penagihan sebelumnya). ` +
+      "Jika masih ditolak, isi kolom Item No, Item Unit Price, dan Item Qty sendiri di Excel; nomor dokumen sumber tetap diisi untuk menautkan."
+    );
+  }
   return (
     `${message} Baris ini mengambil isi dari ${doc} ${expansion.source.number} dengan kuantitas ASLI dokumen itu; bila dokumen tersebut pernah diretur atau ditagih sebagian, ` +
     "kuantitas yang boleh ditagih lebih kecil. Isi kolom Item No, Item Unit Price, dan Item Qty (sebesar sisa yang boleh ditagih) sendiri di Excel; nomor dokumen sumber tetap diisi untuk menautkan."
