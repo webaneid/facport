@@ -183,6 +183,7 @@ import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
+import { recoverOrphanedImportJobs } from "../lib/orphaned-imports";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
@@ -2154,6 +2155,13 @@ export async function processJobCostingGroup(
 
 async function main() {
   await startQueue();
+  // § Insiden 2026-10-20 — pulihkan job impor "hantu" milik worker lama yang dibunuh deploy; WAJIB sebelum handler apa pun didaftarkan (saat itu tak ada job aktif milik proses ini).
+  try {
+    const orphan = await recoverOrphanedImportJobs();
+    if (orphan.jobs > 0) logger.warn({ ...orphan }, "Pemulihan job impor hantu selesai");
+  } catch (err) {
+    logger.error({ err }, "Pemulihan job impor hantu gagal — worker tetap lanjut");
+  }
 
   await boss.work<{ to: string; subject: string; html: string; sensitive?: boolean }>(
     JOBS.SEND_EMAIL,
