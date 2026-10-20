@@ -88,7 +88,14 @@ describe("workOrderRowError", () => {
   test("bahan baku: itemNo & quantity wajib bila section tersentuh", () => {
     expect(workOrderRowError({ ...header, Qty: 5 }, map)).toEqual(["matItemNo"]);
     expect(workOrderRowError({ ...header, "Item No": "RM-1" }, map)).toEqual(["matQuantity"]);
-    expect(workOrderRowError({ ...header, "Item Notes": "catatan saja" }, map).sort()).toEqual(["matItemNo", "matQuantity"]);
+    // Nama item tanpa kode barang = kesalahan nyata (identitas section terisi, kode kosong) → ditandai, bukan dibuang diam-diam.
+    expect(workOrderRowError({ ...header, "Item Name": "Bahan A" }, map).sort()).toEqual(["matItemNo", "matQuantity"]);
+  });
+  test("kolom PENDAMPING saja (Notes, Standard Cost, Project No, CLS, dst.) TIDAK menyentuh section → tidak ada kewajiban Item No/Qty (isian bawaan template)", () => {
+    expect(workOrderRowError({ ...header, "Item Notes": "catatan saja" }, map)).toEqual([]);
+    expect(workOrderRowError({ ...header, "Standard Cost": 1 }, map)).toEqual([]);
+    expect(workOrderRowError({ ...header, "Standard Cost": 1, "Total Standard Cost": 1, "Project No": "P-1", CLS1: "A" }, map)).toEqual([]);
+    expect(workOrderRowError({ ...header, "Extra FG: Portion": 100 }, map)).toEqual([]);
   });
   test("produk sampingan: itemNo, quantity, portion wajib (portal live)", () => {
     expect(workOrderRowError({ ...header, "Extra FG: Item No": "FG-2" }, map).sort()).toEqual(["fgPortion", "fgQuantity"]);
@@ -169,11 +176,62 @@ describe("extractPersonInCharge", () => {
 
 describe("extractDataClassificationValues", () => {
   test("CLS1-3 dari semua section, index = nomor slot", () => {
-    expect(extractDataClassificationValues({ CLS1: "A", CLS2_1: " B ", CLS3_2: "C", CLS2: "" }, map)).toEqual([
+    const active = { "Item No": "RM-1", "Expense No": "EX-1", "Extra FG: Item No": "FG-2" }; // ketiga section dipakai baris ini
+    expect(extractDataClassificationValues({ ...active, CLS1: "A", CLS2_1: " B ", CLS3_2: "C", CLS2: "" }, map)).toEqual([
       { index: 1, name: "A" },
       { index: 2, name: "B" },
       { index: 3, name: "C" },
     ]);
+  });
+  test("CLS di section yang TIDAK dipakai baris (isian bawaan) tidak diambil → tidak membuat Kategori Keuangan sampah di Accurate", () => {
+    expect(extractDataClassificationValues({ CLS1: "bawaan", CLS2_1: "bawaan", CLS3_2: "bawaan" }, map)).toEqual([]);
+    // hanya section yang dipakai yang menyumbang
+    expect(extractDataClassificationValues({ "Expense No": "EX-1", CLS1: "tidak", CLS2_1: "ya" }, map)).toEqual([{ index: 2, name: "ya" }]);
+  });
+});
+
+// § Regresi 2026-10-19 (production): 434 Work Order (7.812 baris, 18 baris/dokumen) gagal serentak dalam 3 detik — "Kolom wajib kosong atau tidak valid …: matItemNo,
+// matQuantity". Penyebab: template client mengisi "Standard Cost" = 1 di blok bahan baku pada SEMUA baris (baris produk+biaya) → section bahan baku dianggap terpakai.
+describe("regresi baris nyata client (Standard Cost bawaan di blok bahan baku)", () => {
+  const realRow = {
+    "Branch Name": "Kantor Pusat",
+    Description: "Ringer Laktat",
+    "End Date": 46086,
+    "Expense Name": "Beban THR Pabrik",
+    "Expense No": 100002,
+    "Expense Qty": 27,
+    "Product: Item No": 100029,
+    "Product: Qty": 5060,
+    "Product: Unit Name": "Botol",
+    "Save As Status Type": "APPROVED",
+    "Standard Cost": 1,
+    "Standard Cost_1": 1,
+    "Start Date": 46086,
+    "Total Standard Cost_1": 1,
+    "Trans No": "F261C09",
+    "Transaction Date": 46086,
+    "Variance Acc No": 700099,
+    "Work Acc No": 106002,
+    "Work Order Type": "PRODUCT",
+  };
+
+  test("baris produk+biaya dengan Standard Cost bawaan: lolos validasi baris, TANPA entri bahan baku, biaya terkirim lengkap", () => {
+    expect(workOrderRowError(realRow, map)).toEqual([]);
+    const payload = buildWorkOrderPayload([realRow], map);
+    expect(payload.detailMaterial).toEqual([]);
+    expect(payload.detailExpense).toEqual([expect.objectContaining({ itemNo: "100002", quantity: 27, detailName: "Beban THR Pabrik", standardCost: 1, totalStandardCost: 1 })]);
+    expect(extractDataClassificationValues(realRow, map)).toEqual([]);
+  });
+
+  test("hambatan BERIKUTNYA yang kini terlihat jelas (bukan perilaku baru): file ini tidak punya 'Bill Material no' padahal spec Accurate mewajibkannya untuk semua tipe", () => {
+    expect(workOrderHeaderMissing(realRow, map)).toEqual(["Bill Material no"]);
+    expect(workOrderHeaderMissing({ ...realRow, "Bill Material no": "BOM-1" }, map)).toEqual([]);
+  });
+
+  test("bahan baku NYATA di baris yang sama tetap dikirim lengkap (Standard Cost ikut)", () => {
+    const withMaterial = { ...realRow, "Item No": "RM-1", Qty: 3 };
+    expect(workOrderRowError(withMaterial, map)).toEqual([]);
+    expect(buildWorkOrderPayload([withMaterial], map).detailMaterial).toEqual([expect.objectContaining({ itemNo: "RM-1", quantity: 3, standardCost: 1 })]);
   });
 });
 

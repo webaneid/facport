@@ -396,3 +396,6 @@ Saat modul dibangun, daftarkan entry `work_order` di `apps/api/src/lib/accurate-
 HANYA bila kode memanggil `manufacture-order/save.do`. Scope diturunkan otomatis dari endpoint; jangan menulis scope manual. Jalankan `bun run scopes:sync`,
 tes `accurate-scopes.test.ts` hijau, dan pasang `checkSubscriptionScopes` di route import. Catatan: Work Order menambah scope BARU yang dulu belum
 dipakai modul mana pun — customer yang membeli modul ini akan melihat popup "Perbarui Izin" (gerbang koneksi Fase 144).
+
+## Update 2026-10-20 (Fase 200) — section dipakai hanya bila kolom IDENTITASNYA terisi
+Aturan "tersentuh = kolom apa pun di section terisi" (Fase 147) diganti: bahan baku, biaya produksi, dan produk sampingan dianggap dipakai baris ini HANYA bila Item No / nama item / Qty terisi (`SectionSpec.identity`, `isSectionActive`); Proses tetap semua kolom. Kolom pendamping (Standard Cost/Date/Total, Project No, Department, Notes, Process Category, Kategori Keuangan, Portion) tidak lagi memicu section sendirian. Satu aturan untuk validasi baris, pembentukan payload, dan pembuatan Kategori Keuangan. Latar: template client mengisi "Standard Cost" = 1 di blok bahan baku pada semua baris (434 dokumen gagal serentak, 2026-10-19). `billOfMaterialNo` tetap wajib semua tipe (spec `required`).

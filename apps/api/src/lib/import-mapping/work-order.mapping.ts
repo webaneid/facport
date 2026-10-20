@@ -42,7 +42,10 @@ export function resolveWorkOrderType(raw: unknown): WorkOrderType | null {
 
 type Kind = "text" | "num" | "int" | "date" | "bool";
 type FieldSpec = { field: string; path: string; kind: Kind };
-type SectionSpec = { name: string; label: string; array: string; fields: FieldSpec[]; required: string[] };
+// `identity` = kolom yang menandai section ini BENAR-BENAR dipakai baris itu. Kolom pendamping (Standard Cost, Project No, Department, Notes, Kategori Keuangan,
+// ...) TIDAK membuat section "terpakai" sendirian: template client mengisi isian bawaan (mis. "Standard Cost" = 1) di blok bahan baku pada SEMUA baris, dan
+// dulu itu memicu kewajiban Item No + Qty bahan → 434 Work Order gagal serentak (2026-10-19). Tanpa `identity` = semua kolom section dianggap identitas (Proses).
+type SectionSpec = { name: string; label: string; array: string; fields: FieldSpec[]; required: string[]; identity?: string[] };
 
 const CLS_SLOTS = [1, 2, 3] as const;
 
@@ -53,6 +56,7 @@ function costSection(prefix: string, name: string, label: string, array: string)
     label,
     array,
     required: [f("ItemNo"), f("Quantity")],
+    identity: [f("ItemNo"), f("Name"), f("Quantity")],
     fields: [
       { field: f("ItemNo"), path: "itemNo", kind: "text" },
       { field: f("Name"), path: "detailName", kind: "text" },
@@ -91,6 +95,7 @@ const SECTIONS: SectionSpec[] = [
     array: "detailExtraFinishGood",
     // § dikonfirmasi portal developer live 2026-09-21: itemNo, quantity, portion WAJIB per baris.
     required: ["fgItemNo", "fgQuantity", "fgPortion"],
+    identity: ["fgItemNo", "fgItemName", "fgQuantity"],
     fields: [
       { field: "fgItemNo", path: "itemNo", kind: "text" },
       { field: "fgItemName", path: "detailName", kind: "text" },
@@ -326,6 +331,12 @@ function touchedFields(rawRow: Record<string, unknown>, section: SectionSpec, co
   return section.fields.filter((f) => valueOf(rawRow, f.field, columnMapping) !== undefined);
 }
 
+/** Section benar-benar dipakai baris ini (kolom identitasnya terisi). Satu aturan untuk validasi, payload, dan pembuatan Kategori Keuangan. */
+function isSectionActive(rawRow: Record<string, unknown>, section: SectionSpec, columnMapping: Record<string, string>): boolean {
+  const identity = section.identity ?? section.fields.map((f) => f.field);
+  return identity.some((field) => valueOf(rawRow, field, columnMapping) !== undefined);
+}
+
 /**
  * Validasi SATU baris (bukan header): tipe dikenali (bila kolomnya terisi) + tiap section yang tersentuh lengkap field wajibnya dan
  * angka-angkanya numerik. Mengembalikan field internal bermasalah (kosong = valid).
@@ -336,8 +347,8 @@ export function workOrderRowError(rawRow: Record<string, unknown>, columnMapping
   if (typeRaw !== undefined && resolveWorkOrderType(typeRaw) === null) problems.add("workOrderType");
 
   for (const section of SECTIONS) {
+    if (!isSectionActive(rawRow, section, columnMapping)) continue;
     const touched = touchedFields(rawRow, section, columnMapping);
-    if (touched.length === 0) continue;
     for (const field of section.required) {
       if (valueOf(rawRow, field, columnMapping) === undefined) problems.add(field);
     }
@@ -397,8 +408,8 @@ export function validateGroupConsistency(group: WorkOrderGroup, columnMapping: R
 
 /** Entri satu section dari satu baris, atau null bila baris itu tidak menyentuh section tsb. */
 function buildSectionEntry(rawRow: Record<string, unknown>, section: SectionSpec, columnMapping: Record<string, string>): Record<string, unknown> | null {
+  if (!isSectionActive(rawRow, section, columnMapping)) return null;
   const touched = touchedFields(rawRow, section, columnMapping);
-  if (touched.length === 0) return null;
   const entry: Record<string, unknown> = {};
   for (const spec of touched) entry[spec.path] = convert(valueOf(rawRow, spec.field, columnMapping), spec.kind);
   return entry;
@@ -434,6 +445,8 @@ export function extractPersonInCharge(firstRow: Record<string, unknown>, columnM
 export function extractDataClassificationValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): { index: number; name: string }[] {
   const result: { index: number; name: string }[] = [];
   for (const section of SECTIONS) {
+    // Section yang tidak dipakai baris ini tidak boleh membuat nilai Kategori Keuangan baru di Accurate dari isian bawaan.
+    if (!isSectionActive(rawRow, section, columnMapping)) continue;
     for (const n of CLS_SLOTS) {
       const field = section.fields.find((f) => f.path === `dataClassification${n}Name`);
       if (!field) continue;
