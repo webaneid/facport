@@ -1,3 +1,16 @@
+## 2.42.0 (2026-10-20)
+
+* chore: rilis Fase 205 — kirim bertahap dokumen besar ke dokumen yang sama (saklar default mati), doc ([7654031](https://github.com/webaneid/facport/commit/7654031))
+* feat: kirim bertahap ke dokumen yang sama untuk dokumen besar Sales Receipt & Purchase Payment (Fase ([f326b92](https://github.com/webaneid/facport/commit/f326b92))
+* docs: bukti production Fase 199 — override timeout terbukti, waktu Accurate superlinear (4.349 baris ([4b635b1](https://github.com/webaneid/facport/commit/4b635b1))
+* docs: eksperimen terkontrol di trial Accurate — waktu dokumen kuadrat (N^2), pembangunan bertahap ke ([be42bc1](https://github.com/webaneid/facport/commit/be42bc1))
+* docs: Fase 205 — keputusan user (ambang 200, popup persetujuan, cakupan SR+PP, dokumen tanpa nomor t ([f9e48d5](https://github.com/webaneid/facport/commit/f9e48d5))
+* docs: Fase 205 — terkonfirmasi di trial: detail.do?number tak ada = 'tidak tepat' (Sales Receipt, Pu ([16d2cab](https://github.com/webaneid/facport/commit/16d2cab))
+* docs: Fase 205a selesai — hasil uji trial (total sementara diterima, update tetap selesai setelah kl ([a365dbb](https://github.com/webaneid/facport/commit/a365dbb))
+* docs: koreksi model biaya (dokumen besar ~0,6-0,7 dtk/baris, batas 0,6 tepat di tepi) + SOP simpan l ([12bbb2f](https://github.com/webaneid/facport/commit/12bbb2f))
+* docs: rencana Fase 205 — pecah dokumen bernomor sama jadi bagian kecil + kirim ulang idempoten sampa ([c26145c](https://github.com/webaneid/facport/commit/c26145c))
+* docs: revisi Fase 205 — kirim bertahap ke dokumen yang SAMA (dokumen pelanggan tidak boleh diubah),  ([7ec63ef](https://github.com/webaneid/facport/commit/7ec63ef))
+
 ## 2.41.0 (2026-10-20)
 
 * chore: rilis Fase 203-204 — sisa kuantitas Delivery Order untuk faktur, pemulihan otomatis job impor ([9bc2e8b](https://github.com/webaneid/facport/commit/9bc2e8b))
