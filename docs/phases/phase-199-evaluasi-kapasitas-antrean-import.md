@@ -22,13 +22,16 @@ Besar & berisiko (menyentuh jalur kirim ke Accurate, antrean, scope) → evaluas
 **Tahap C — Implementasi bertahap**
 - [x] C1 `lib/accurate-http.ts` `accurateFetch`: satu pintu semua panggilan `ctx.host` (45 titik/28 file), timeout eksplisit (save.do adaptif = baris × 600 ms, 6–60 menit; lain 360 dtk), metrik log `accurate_request`, `AccurateTimeoutError` (pesan menyebut menit & baris), env 4 variabel, tes (14) + tes pagar.
 - [x] C1a **Temuan uji penting:** `AbortSignal.timeout(lebih-panjang)` SAJA dan `timeout: <ms>` TIDAK mengalahkan default runtime Bun (tetap terputus 300 dtk); yang bekerja `timeout: false` + `signal` sendiri (terbukti: signal 5 dtk terputus di 5 dtk; signal 900 dtk tidak terputus sampai 330 dtk). Tanpa uji ini perubahan akan diam-diam tidak berefek.
-- [ ] C1b **Verifikasi pasca-deploy di Bun 1.4.3 production** (default 360): probe `timeout:false` + signal panjang di container worker, amati > 420 dtk tanpa terputus.
+- [x] C1b (TERBUKTI 2026-10-20 lewat log nyata, lihat arsitektur § 12) **Verifikasi pasca-deploy di Bun 1.4.3 production** (default 360): probe `timeout:false` + signal panjang di container worker, amati > 420 dtk tanpa terputus.
 - [x] C2 Verifikasi setelah timeout untuk Sales Receipt bernomor (`lib/accurate-verify.ts`, `accurate-timeout-settle.ts`, `getSalesReceiptByNumber`): ditemukan → SUKSES; tidak terlihat → GAGAL dengan pesan pasti; gagal cek → perilaku lama. Tanpa scope baru (sales_receipt_view sudah termasuk modul). Modul bernomor lain menyusul bila diminta.
 - [x] C3 Jalur terpisah batch besar (`import-to-accurate-large`, ambang 1.500 baris, slot sendiri, handler sama) — ADR-0050; diuji ke pg-boss asli.
 - [x] C4a `expireInSeconds` dinamis per job (clamp(baris × 0,6 + 900, 7200, 86400)).
 - [x] C4b Paralel dalam satu job: sisi kode selesai di Fase 202 (saklar `IMPORT_GROUP_PARALLELISM`, default OFF). Peluncuran bertahap + uji beban 3–10 koneksi menunggu.
 **Urutan awal (lama):** (urutan awal yang disarankan: G metrik → B verifikasi setelah timeout → A timeout eksplisit → E kapasitas → C/F bila terbukti).
 **Tahap D — Penutup** (typecheck, suite penuh, security review, lessons-learned, uji beban 3–10 koneksi paralel).
+
+## Temuan 2026-10-20 (production)
+Override timeout terbukti; C2 bekerja; **waktu Accurate superlinear terhadap ukuran dokumen** (4.349 baris tidak selesai dalam 48 menit dan tidak tersimpan). Penerimaan raksasa tidak layak berapa pun timeout-nya → butuh pengatur alur (peringatan + opsi pecah) — keputusan terbuka di arsitektur § 12.
 
 ## Di luar scope
 Mengubah batas 8 request/detik milik Accurate; Fase 196 (penautan baris, tetap ditunda).
