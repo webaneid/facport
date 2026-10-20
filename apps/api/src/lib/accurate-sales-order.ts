@@ -1,7 +1,8 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFound } from "./accurate";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
-import { parseSalesQuotationDetail, type RawQuotation, type SalesQuotationDetail } from "./accurate-sales-quotation";
+import { parseSalesQuotationDetail, summarizeSourceShape, type RawQuotation, type SalesQuotationDetail } from "./accurate-sales-quotation";
+import { logger } from "./logger";
 import { accurateFetch } from "./accurate-http";
 
 // § architecture-sales-order.md — Sales Order BUKAN transaksi
@@ -107,6 +108,7 @@ export async function getSalesOrderByNumber(ctx: AccurateSessionContext, number:
       if (isAccurateRecordNotFound(err)) throw new Error(`Pesanan "${number}" tidak ditemukan di Accurate — cek kembali kolom "Sales Order No".`);
       throw err;
     }
+    logger.info({ event: "source_doc_shape", doc: "sales-order", number, ...summarizeSourceShape(raw) }, "Bentuk respons dokumen sumber");
     return parseSalesQuotationDetail(raw, number, "Pesanan");
   });
 }

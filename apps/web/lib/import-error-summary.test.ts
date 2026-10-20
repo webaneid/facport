@@ -63,6 +63,11 @@ describe("hintFor — saran per jenis galat (kasus nyata)", () => {
     expect(hintFor(OVER("X"))).toMatchObject({ action: "fix-data" });
     expect(hintFor("Pembayaran faktur \"X\" melebihi nilai piutang fakturnya")!.advice).toContain("SEBELUM");
   });
+  test('kasus nyata client 2026-10-20: "Kuantitas … di faktur melebihi yang dikirim" (DO 10, retur 3) → perbaiki data; isi Qty sendiri', () => {
+    const msg = 'Kuantitas "Anti Gores Iphone 5" di faktur melebihi yang dikirim.';
+    expect(hintFor(msg)).toMatchObject({ action: "fix-data" });
+    expect(hintFor(msg)!.advice).toContain("Item Qty");
+  });
   test("kolom wajib (Work Order) → perbaiki data", () => {
     expect(hintFor(WO("abc"))).toMatchObject({ action: "fix-data" });
   });

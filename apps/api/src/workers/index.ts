@@ -183,7 +183,7 @@ import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
-import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows } from "../lib/import-mapping/source-expansion";
+import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
   groupSalesQuotationRows,
@@ -2781,7 +2781,7 @@ async function main() {
         } catch (err) {
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: annotateSourceExpansionFailure(describeAccurateFailure(err), group.rows.map((r) => r.rawData), columnMapping), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       });

@@ -23,6 +23,14 @@ export const ERROR_HINTS: { pattern: RegExp; hint: ErrorHint }[] = [
     },
   },
   {
+    pattern: /Kuantitas .* melebihi yang (dikirim|dipesan|ditawarkan|diterima)/i,
+    hint: {
+      action: "fix-data",
+      advice:
+        "Jumlah di faktur lebih besar dari yang boleh ditagih (dokumen sumber sudah diretur atau ditagih sebagian). Isi sendiri Item No, Item Unit Price, dan Item Qty sebesar sisa yang boleh ditagih; nomor dokumen sumber tetap diisi.",
+    },
+  },
+  {
     pattern: /tidak ditemukan atau sudah dihapus/i,
     hint: { action: "fix-data", advice: "Nomor faktur tidak ada di Accurate atau sudah dihapus. Periksa kolom nomor faktur di Excel." },
   },

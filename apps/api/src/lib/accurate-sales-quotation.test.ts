@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { parseSalesQuotationLines, parseSalesQuotationDetail, MAX_QUOTATION_LINES } from "./accurate-sales-quotation";
+import { parseSalesQuotationLines, parseSalesQuotationDetail, summarizeSourceShape, MAX_QUOTATION_LINES } from "./accurate-sales-quotation";
 
 // § Fase 169 — parser KETAT: bentuk respons `sales-quotation/detail.do` belum diverifikasi dengan respons asli, jadi data yang tidak
 // terbaca lengkap TIDAK BOLEH lolos jadi baris setengah (harga 0 diam-diam = data akuntansi salah).
@@ -172,5 +172,29 @@ describe("parseSalesQuotationDetail — pengiriman & cabang", () => {
     expect(flat).toMatchObject({ shipmentName: "SiCepat", branchName: "BDG" });
     expect(flat.shipDate).toBeUndefined();
     expect(parseSalesQuotationDetail({ detailItem: [line], shipDate: "1/2/2026" }, "SQ-1").header.shipDate).toBeUndefined();
+  });
+});
+
+// § Diagnostik 2026-10-20 — ringkasan bentuk respons dokumen sumber (nama field baris + field bernuansa kuantitas) untuk dibaca dari log production.
+describe("summarizeSourceShape", () => {
+  test("mengembalikan nama field header/baris dan HANYA field bernuansa kuantitas (objek diringkas, data lain tidak ikut)", () => {
+    const s = summarizeSourceShape({
+      number: "DO001",
+      customer: { name: "Rahasia" },
+      detailItem: [
+        { id: 1, item: { no: "A" }, quantity: 10, returnedQuantity: 3, quantityShipped: 10, detailName: "Nama Barang", unitPrice: 5000, shipment: { name: "x" } },
+        { id: 2, item: { no: "B" }, quantity: 4 },
+      ],
+    } as never);
+    expect(s.lineCount).toBe(2);
+    expect(s.headerKeys).toContain("customer");
+    expect(s.lineKeys).toContain("returnedQuantity");
+    expect(s.quantityFields[0]).toEqual({ quantity: 10, returnedQuantity: 3, quantityShipped: 10, shipment: "[objek]" });
+    expect(JSON.stringify(s)).not.toContain("Rahasia");
+    expect(JSON.stringify(s)).not.toContain("Nama Barang");
+  });
+  test("respons kosong/tidak terduga tidak melempar", () => {
+    expect(summarizeSourceShape(null)).toEqual({ lineCount: 0, headerKeys: [], lineKeys: [], quantityFields: [] });
+    expect(summarizeSourceShape({ detailItem: "bukan array" } as never).lineCount).toBe(0);
   });
 });

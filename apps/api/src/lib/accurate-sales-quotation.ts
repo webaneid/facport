@@ -2,6 +2,7 @@ import { parseAccurateEnvelope, parseAccurateSaveEnvelope, isAccurateRecordNotFo
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
+import { logger } from "./logger";
 
 // § architecture-sales-quotation.md — Sales Quotation BUKAN transaksi
 // akuntansi (tidak ada jurnal GL, tidak ada perubahan stok, sekadar
@@ -237,6 +238,25 @@ function readHeaderExtras(raw: RawQuotation | null | undefined): Record<string, 
   return out;
 }
 
+// § Diagnostik (2026-10-20) — bentuk respons `*/detail.do` dokumen sumber (SQ/SO/DO) belum pernah terdokumentasi, dan field SISA kuantitas (setelah retur/penagihan
+// sebelumnya) belum diketahui — kasus nyata: DO 10 pcs, retur 3, faktur dari DO ditolak "Kuantitas … melebihi yang dikirim". Ringkasan ini (nama field baris pertama +
+// nilai field bernuansa kuantitas) dicatat ke log agar nama field asli bisa dibaca dari production TANPA menebak. Hanya nama field & angka kuantitas, tanpa data pribadi.
+const QUANTITY_LIKE = /quant|qty|ship|return|invoice|remain|avail|deliver|sisa|outstanding/i;
+
+export function summarizeSourceShape(raw: RawQuotation | null | undefined): { lineCount: number; headerKeys: string[]; lineKeys: string[]; quantityFields: Record<string, unknown>[] } {
+  const items = Array.isArray(raw?.detailItem) ? raw!.detailItem! : [];
+  const first = (items[0] ?? {}) as Record<string, unknown>;
+  const quantityFields = items.slice(0, 3).map((it) => {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(it as Record<string, unknown>)) {
+      if (!QUANTITY_LIKE.test(k)) continue;
+      out[k] = v !== null && typeof v === "object" ? "[objek]" : v;
+    }
+    return out;
+  });
+  return { lineCount: items.length, headerKeys: Object.keys(raw ?? {}).slice(0, 80), lineKeys: Object.keys(first), quantityFields };
+}
+
 // § Fase 198 tahap B — parser yang SAMA dipakai Sales Order sebagai dokumen sumber Sales Invoice (`docLabel` hanya mengubah kata di pesan galat).
 export type SourceDocLabel = "Penawaran" | "Pesanan" | "Pengiriman";
 
@@ -328,6 +348,7 @@ export async function getSalesQuotationByNumber(ctx: AccurateSessionContext, num
       if (isAccurateRecordNotFound(err)) throw new Error(`Penawaran "${number}" tidak ditemukan di Accurate — cek kembali kolom "Sales Quot No".`);
       throw err;
     }
+    logger.info({ event: "source_doc_shape", doc: "sales-quotation", number, ...summarizeSourceShape(raw) }, "Bentuk respons dokumen sumber");
     return parseSalesQuotationDetail(raw, number);
   });
 }
