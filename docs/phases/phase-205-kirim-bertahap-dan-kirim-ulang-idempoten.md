@@ -8,8 +8,8 @@
 Dokumen 1 nomor berisi ribuan baris dikirim ke Accurate dalam cicilan ke DOKUMEN YANG SAMA (nomor dan isi tidak berubah — Facport DILARANG mengubah dokumen pelanggan), dengan kirim ulang aman sampai sukses. Lebih lambat daripada sekali kirim, tetapi tiap langkah punya batas waktu sendiri dan dapat dilanjutkan. Lihat ADR-0051 (revisi) dan `architecture-staged-send.md`.
 
 ## Scope (sub-fase; tiap sub-fase dikonfirmasi sebelum lanjut)
-- [ ] 205a Uji trial dulu: total/header sementara, penulisan bersamaan, update timeout, identik dengan Excel (skrip eksperimen, tanpa kode produk)
-- [ ] 205b Pondasi: env, pemotong cicilan murni + tes, migrasi `import_staged_documents`, mesin status + klaim atomik
+- [x] 205a Uji trial: total/header sementara DITERIMA, penulisan bersamaan diserialkan, update tetap selesai walau klien putus, identik dengan Excel (SR & PP) — hasil di arsitektur § 4
+- [ ] 205b Pondasi: env, modul murni `staged-send` (rencana cicilan, awalan, estimasi, pelaksana dengan deps) + tes — TANPA tabel baru (arsitektur § 5)
 - [ ] 205c Eksekutor Sales Receipt (baca nomor → cicilan → verifikasi → backoff) di balik `IMPORT_STAGED_MODULES`
 - [ ] 205d Penjadwal berantai + adaptasi pemulihan job hantu (requeue) + penutupan batch
 - [ ] 205e UI: popup persetujuan, progres, coba lagi, batal
