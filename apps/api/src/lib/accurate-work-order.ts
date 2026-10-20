@@ -2,6 +2,7 @@ import { AccurateApiError, parseAccurateEnvelope, parseAccurateSaveEnvelope } fr
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
+import { runExclusive } from "./keyed-lock";
 
 // § architecture-work-order.md (Fase 147) — save.do PER-GRUP (1 grup = 1 Work Order) + 2 lookup pendukung yang WAJIB dipanggil worker
 // SEBELUM save: cabang (`branchId` REQUIRED integer, beda dari modul lain) dan PIC (`personInChargeId`). `itemNo`/akun dikirim apa
@@ -65,6 +66,10 @@ export async function resolveBranchId(ctx: AccurateSessionContext, branchName: s
  * membuat, save kedua ditolak "sudah ada" → cari ulang, jangan gagalkan Work Order.
  */
 export async function findOrCreateWoPic(ctx: AccurateSessionContext, name: string): Promise<number> {
+  return runExclusive(`${ctx.session}|wopic|${String(name).trim().toLowerCase()}`, () => findOrCreateWoPicImpl(ctx, name));
+}
+
+async function findOrCreateWoPicImpl(ctx: AccurateSessionContext, name: string): Promise<number> {
   const existing = await findByExactName(ctx, "wo-pic", name);
   if (existing) return existing.id;
   try {

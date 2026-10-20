@@ -159,3 +159,20 @@ export function mapDetailIdsToRows(
   }
   return rowIds.map((rowId, i) => ({ rowId, detailItemId: savedDetailItems[offsets[i]!]!.id }));
 }
+
+const SOURCE_QUANTITY_ERROR = /melebihi yang (dikirim|dipesan|ditawarkan|diterima)|melebihi (jumlah|kuantitas|qty)/i;
+
+/**
+ * § 2026-10-20 — galat Accurate "Kuantitas … di faktur melebihi yang dikirim" pada baris yang MENGAMBIL ISI dari dokumen sumber: Facport menarik kuantitas ASLI dokumen sumber,
+ * belum mengurangi retur/penagihan sebelumnya (field sisa kuantitas belum diketahui). Pesan asli Accurate tetap utuh; ditambah penjelasan + cara mengisinya sendiri.
+ */
+export function annotateSourceExpansionFailure(message: string, rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): string {
+  if (!SOURCE_QUANTITY_ERROR.test(message)) return message;
+  const expansion = rawRows.map((r) => ({ row: r, source: isSourceExpansionRow(r, columnMapping) ? sourceOfRow(r, columnMapping) : null })).find((x) => x.source);
+  if (!expansion?.source) return message;
+  const doc = { deliveryOrder: "Delivery Order", salesOrder: "Sales Order", salesQuotation: "Sales Quotation" }[expansion.source.kind];
+  return (
+    `${message} Baris ini mengambil isi dari ${doc} ${expansion.source.number} dengan kuantitas ASLI dokumen itu; bila dokumen tersebut pernah diretur atau ditagih sebagian, ` +
+    "kuantitas yang boleh ditagih lebih kecil. Isi kolom Item No, Item Unit Price, dan Item Qty (sebesar sisa yang boleh ditagih) sendiri di Excel; nomor dokumen sumber tetap diisi untuk menautkan."
+  );
+}

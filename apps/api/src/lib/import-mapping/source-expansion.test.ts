@@ -7,6 +7,7 @@ import {
   expandSourceRowsInPayload,
   mapDetailIdsToRows,
   isRequiredFieldExemptForRow,
+  annotateSourceExpansionFailure,
   sourceOfRow,
 } from "./source-expansion";
 
@@ -385,5 +386,29 @@ describe("mapDetailIdsToRows (pemetaan id detail Accurate → baris Excel)", () 
   });
   test("jumlah detail dari Accurate ≠ yang dikirim → galat, bukan tebakan", () => {
     expect(() => mapDetailIdsToRows(["r0"], [0], [{ id: 1 }], 3)).toThrow(/tidak bisa dipetakan/);
+  });
+});
+
+// § 2026-10-20 — kasus nyata client: DO 10 pcs, retur 3 pcs, faktur hanya isi tanggal + nomor DO → Accurate: "Kuantitas … di faktur melebihi yang dikirim."
+describe("annotateSourceExpansionFailure", () => {
+  const msg = 'Kuantitas "Anti Gores Iphone 5" di faktur melebihi yang dikirim.';
+  const doRow = { "CUST NO": "CSBY-0005", "Trans Date": "01/01/2027", "Branch Name": "SURABAYA", "ITEM: DELIVERY ORDER NO": "DO001" };
+
+  test("baris perluasan dari DO + galat kuantitas → pesan Accurate utuh + penjelasan (sumber DO001, kuantitas asli, isi Qty sendiri)", () => {
+    const out = annotateSourceExpansionFailure(msg, [doRow], mapping);
+    expect(out.startsWith(msg)).toBe(true);
+    expect(out).toContain("Delivery Order DO001");
+    expect(out).toContain("ASLI");
+    expect(out).toContain("Item Qty");
+  });
+
+  test("baris BUKAN perluasan (kolom item terisi manual) atau galat lain → pesan tidak diubah", () => {
+    expect(annotateSourceExpansionFailure(msg, [{ ...doRow, "Item No": "A-1", "Item Price": 1, Qty: 7 }], mapping)).toBe(msg);
+    expect(annotateSourceExpansionFailure("Customer tidak ditemukan", [doRow], mapping)).toBe("Customer tidak ditemukan");
+  });
+
+  test("sumber SO/SQ disebut sesuai jenisnya", () => {
+    const so = { ...doRow, "ITEM: DELIVERY ORDER NO": "", "ITEM: SALES ORDER NO": "SO-9" };
+    expect(annotateSourceExpansionFailure(msg, [so], mapping)).toContain("Sales Order SO-9");
   });
 });

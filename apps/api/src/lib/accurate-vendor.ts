@@ -3,6 +3,7 @@ import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { getCompanyTimezone } from "./company-timezone";
 import { accurateFetch } from "./accurate-http";
+import { runExclusive } from "./keyed-lock";
 
 export type VendorPayableAccountResult = {
   id: number;
@@ -94,6 +95,14 @@ export async function saveVendorPayableAccount(
 // aman untuk kasus ini karena settingnya idempotent & memang tujuan
 // eksplisit user mengisi kolom itu — beda dari field identitas vendor.
 export async function findOrCreateVendor(
+  ctx: AccurateSessionContext,
+  vendorNo: string,
+  createFields: Record<string, unknown>,
+): Promise<{ id: number; name: string }> {
+  return runExclusive(`${ctx.session}|vendor|${String(vendorNo).trim().toLowerCase()}`, () => findOrCreateVendorImpl(ctx, vendorNo, createFields));
+}
+
+async function findOrCreateVendorImpl(
   ctx: AccurateSessionContext,
   vendorNo: string,
   createFields: Record<string, unknown>,

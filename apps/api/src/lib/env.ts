@@ -30,6 +30,7 @@ const envSchema = t.Object({
   ACCURATE_REQUEST_TIMEOUT_MS: t.Optional(t.String()), // Fase 199 — timeout panggilan Accurate selain save.do (default 360000; 10000–1800000)
   ACCURATE_VERIFY_MAX_WAIT_MS: t.Optional(t.String()), // Fase 199 (C2) — lama maksimum memeriksa Accurate setelah timeout save.do (default 300000; 0 = sekali cek)
   ACCURATE_VERIFY_INTERVAL_MS: t.Optional(t.String()), // Fase 199 (C2) — jeda antar pengecekan (default 30000; 5000–120000)
+  IMPORT_GROUP_PARALLELISM: t.Optional(t.String()), // Fase 199 (C4b) — grup (dokumen) dalam satu job diproses paralel sampai N (default 1 = berurutan, 1–6)
   IMPORT_LARGE_BATCH_ROWS: t.Optional(t.String()), // Fase 199 — batch ≥ N baris masuk jalur BESAR (default 1500, 100–100000)
   IMPORT_LARGE_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 199 — slot worker jalur besar (default 2, 1–4)
   IMPORT_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 167, ADR-0048 — jumlah koneksi Accurate yang diproses paralel di worker (default 2, 1–8)

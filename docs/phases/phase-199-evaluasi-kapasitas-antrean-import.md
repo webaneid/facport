@@ -26,7 +26,7 @@ Besar & berisiko (menyentuh jalur kirim ke Accurate, antrean, scope) → evaluas
 - [x] C2 Verifikasi setelah timeout untuk Sales Receipt bernomor (`lib/accurate-verify.ts`, `accurate-timeout-settle.ts`, `getSalesReceiptByNumber`): ditemukan → SUKSES; tidak terlihat → GAGAL dengan pesan pasti; gagal cek → perilaku lama. Tanpa scope baru (sales_receipt_view sudah termasuk modul). Modul bernomor lain menyusul bila diminta.
 - [x] C3 Jalur terpisah batch besar (`import-to-accurate-large`, ambang 1.500 baris, slot sendiri, handler sama) — ADR-0050; diuji ke pg-boss asli.
 - [x] C4a `expireInSeconds` dinamis per job (clamp(baris × 0,6 + 900, 7200, 86400)).
-- [ ] C4b Paralel dalam satu job (modul satu-baris-satu-dokumen) + uji beban 3–10 koneksi.
+- [x] C4b Paralel dalam satu job: sisi kode selesai di Fase 202 (saklar `IMPORT_GROUP_PARALLELISM`, default OFF). Peluncuran bertahap + uji beban 3–10 koneksi menunggu.
 **Urutan awal (lama):** (urutan awal yang disarankan: G metrik → B verifikasi setelah timeout → A timeout eksplisit → E kapasitas → C/F bila terbukti).
 **Tahap D — Penutup** (typecheck, suite penuh, security review, lessons-learned, uji beban 3–10 koneksi paralel).
 

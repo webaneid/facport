@@ -3,6 +3,7 @@ import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { todayAccurateDate } from "./accurate-vendor";
 import { accurateFetch } from "./accurate-http";
+import { runExclusive } from "./keyed-lock";
 
 // § architecture-accurate-integration.md § "Sales Invoice — Fase 13" —
 // mirror 1:1 `accurate-vendor.ts` (Customer setara Vendor untuk sisi
@@ -44,6 +45,14 @@ async function postCustomerSave(ctx: AccurateSessionContext, payload: Record<str
 // update customer yang SUDAH ADA juga (setara `vendorPayableAccountListNo`
 // di sisi vendor, § revisi 2026-08-22), field lain create-only.
 export async function findOrCreateCustomer(
+  ctx: AccurateSessionContext,
+  customerNo: string,
+  createFields: Record<string, unknown>,
+): Promise<{ id: number; name: string }> {
+  return runExclusive(`${ctx.session}|customer|${String(customerNo).trim().toLowerCase()}`, () => findOrCreateCustomerImpl(ctx, customerNo, createFields));
+}
+
+async function findOrCreateCustomerImpl(
   ctx: AccurateSessionContext,
   customerNo: string,
   createFields: Record<string, unknown>,

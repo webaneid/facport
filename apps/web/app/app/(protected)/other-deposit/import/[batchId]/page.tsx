@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
+import { ImportErrorSummary } from "@/components/import/import-error-summary";
 
 // § mirror `journal-voucher/import/[batchId]/page.tsx` — modul baru,
 // satu format saja sejak awal (tidak perlu deteksi format).
@@ -159,6 +160,8 @@ export default function OtherDepositImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <ImportErrorSummary rows={rows} />
 
       <Card>
         <CardHeader>
