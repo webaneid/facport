@@ -15,7 +15,7 @@ Besar & berisiko (menyentuh jalur kirim ke Accurate, antrean, scope) → evaluas
 - [x] A1 Timeout default runtime production (Bun 1.4.3 = 360 dtk) — probe di container worker.
 - [x] A2 Antrean & throughput hari insiden (`pgboss.job`, `import_batch_rows`).
 - [x] A3 Riwayat Sales Receipt: model biaya Accurate ±0,25–0,28 dtk/baris, linear (arsitektur § 1 "Hasil pengukuran A3").
-- [ ] A4 Telusuri anomali: Batal Import 57 menit, Purchase Payment 32 menit, Work Order gagal 3 detik.
+- [x] A4 Anomali ditelusuri: Work Order = bug validasi nyata (Fase 200); Batal Import 57 mnt & Purchase Payment 32 mnt = ARTEFAK pengukuran (rentang processed_at lintas retry, bukan macet) — arsitektur F8 dikoreksi.
 - [ ] A5 Uji di Accurate demo (butuh akun/database uji): waktu proses N baris, perilaku saat klien memutus, update bertahap.
 **Tahap B — Keputusan desain (ADR-0049 sudah dicadangkan Fase 196 → pakai nomor berikutnya)**
 - [ ] B1 Pilih kombinasi opsi A–G (lihat arsitektur § 4) berdasarkan A3–A5.
