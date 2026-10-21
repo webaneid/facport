@@ -1,3 +1,8 @@
+## 2.43.0 (2026-10-21)
+
+* chore: rilis Fase 206 — timeout save.do Sales Receipt & Purchase Payment mengikuti model kuadrat, am ([7dcf17c](https://github.com/webaneid/facport/commit/7dcf17c))
+* feat: timeout save.do Sales Receipt & Purchase Payment mengikuti model kuadrat, ambang parse baris d ([9821d28](https://github.com/webaneid/facport/commit/9821d28))
+
 ## 2.42.0 (2026-10-20)
 
 * chore: rilis Fase 205 — kirim bertahap dokumen besar ke dokumen yang sama (saklar default mati), doc ([7654031](https://github.com/webaneid/facport/commit/7654031))
