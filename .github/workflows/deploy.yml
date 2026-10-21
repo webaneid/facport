@@ -87,7 +87,7 @@ jobs:
       # bukan source repo mentah. Tag pakai nomor versi dari release,
       # bukan "latest" doang, biar tiap versi tetap bisa ditelusuri/rollback.
       - name: Build & push apps/api
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/api/Dockerfile
@@ -102,7 +102,7 @@ jobs:
       # SENGAJA bukan NEXT_PUBLIC_* — tidak perlu baked ke client bundle,
       # cukup dibaca process.env di request-time SSR seperti settings lain.
       - name: Build & push apps/web
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./apps/web/Dockerfile
