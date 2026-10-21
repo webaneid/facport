@@ -13,7 +13,7 @@ import {
 } from "./accurate-http";
 import { describeAccurateFailure } from "./accurate-group-guard";
 
-const cfg: HttpTimeoutConfig = { saveMinMs: 360_000, saveMaxMs: 3_600_000, saveMsPerLine: 600, requestMs: 360_000 };
+const cfg: HttpTimeoutConfig = { saveMinMs: 360_000, saveMaxMs: 3_600_000, saveMsPerLine: 600, requestMs: 360_000, stagedSecondsCoeff: 7e-4 };
 
 describe("parseHttpTimeoutConfig", () => {
   test("default = perilaku lama untuk batas bawah/umum (360 dtk) + atas 60 menit + 600 ms/baris", () => {
@@ -51,13 +51,34 @@ describe("countDetailLines / isSaveUrl / resolveRequestTimeout", () => {
     expect(countDetailLines(undefined)).toBe(0);
     expect(countDetailLines("{bukan json" + "x".repeat(40_000))).toBe(0);
   });
+  test("§ Fase 206 — cicilan SR ringkas (500 detailInvoice, <30 KB) tetap terhitung, bukan lines:0", () => {
+    const body = JSON.stringify({ id: 1, chequeAmount: 1, detailInvoice: Array.from({ length: 500 }, (_, i) => ({ invoiceNo: `SI-${i}`, paymentAmount: 1000 })) });
+    expect(body.length).toBeLessThan(30_000);
+    expect(countDetailLines(body)).toBe(500);
+  });
+  test("§ Fase 206 — save.do SR/PP memakai model kuadrat × 1,5 bila lebih besar dari linear; modul lain tidak berubah", () => {
+    const mk = (n: number, key = "detailInvoice") => JSON.stringify({ [key]: Array.from({ length: n }, (_, i) => ({ invoiceNo: `SI-${i}`, paymentAmount: 1000 })) });
+    const hot = { ...cfg, stagedSecondsCoeff: 1.5e-3 };
+    const sr = "https://h.accurate.id/accurate/api/sales-receipt/save.do";
+    // 500 baris: linear 300 dtk → MIN 360; kuadrat 1,5e-3·500²·1,5 = 562,5 dtk → dipakai
+    expect(resolveRequestTimeout(sr, mk(500), hot).timeoutMs).toBe(562_500);
+    expect(resolveRequestTimeout("https://h.accurate.id/accurate/api/purchase-payment/save.do", mk(500), hot).timeoutMs).toBe(562_500);
+    // 100 baris (body <2 KB parse? tetap terhitung) → kuadrat kecil, MIN menang
+    expect(resolveRequestTimeout(sr, mk(100), hot).timeoutMs).toBe(360_000);
+    // modul lain (mis. sales-invoice) tetap linear/MIN walau baris banyak
+    expect(resolveRequestTimeout("https://h.accurate.id/accurate/api/sales-invoice/save.do", mk(500, "detailItem"), hot).timeoutMs).toBe(360_000);
+    // dijepit batas atas
+    expect(resolveRequestTimeout(sr, mk(5000), hot).timeoutMs).toBe(3_600_000);
+    expect(parseHttpTimeoutConfig({ IMPORT_STAGED_SECONDS_COEFF: "1.5e-3" }).stagedSecondsCoeff).toBe(1.5e-3);
+    expect(parseHttpTimeoutConfig({ IMPORT_STAGED_SECONDS_COEFF: "abc" }).stagedSecondsCoeff).toBe(7e-4);
+  });
   test("hanya path /save.do yang adaptif; query string tidak mengecoh", () => {
     expect(isSaveUrl("https://h.accurate.id/accurate/api/sales-receipt/save.do")).toBe(true);
     expect(isSaveUrl("https://h.accurate.id/accurate/api/sales-receipt/detail.do?number=save.do")).toBe(false);
     expect(isSaveUrl("bukan-url")).toBe(false);
   });
   test("save.do besar → timeout adaptif; save.do kecil & panggilan lain → batas tetap", () => {
-    const url = "https://h.accurate.id/accurate/api/sales-receipt/save.do";
+    const url = "https://h.accurate.id/accurate/api/sales-invoice/save.do";
     const r = resolveRequestTimeout(url, big(3400), cfg);
     expect(r.save).toBe(true);
     expect(r.lines).toBe(3400);

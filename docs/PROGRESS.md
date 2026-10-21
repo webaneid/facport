@@ -214,6 +214,8 @@
 | 203  | Diagnostik bentuk dokumen sumber (log source_doc_shape) + pesan galat kuantitas: Sales Invoice dari DO yang diretur gagal "melebihi yang dikirim" (kuantitas asli ≠ sisa); hitung sisa menunggu nama field asli | Done sisi kode (2026-10-20, belum dirilis); hitung sisa menunggu | - | `docs/phases/phase-203-diagnostik-bentuk-dokumen-sumber-dan-pesan-kuantitas.md` |
 | 204  | Pemulihan otomatis job impor "hantu" (job aktif milik worker lama yang dibunuh deploy) saat worker mulai: baris pending→failed + pesan, batch→completed_with_errors, job digagalkan | Done (2026-10-20, belum dirilis) | - | `docs/phases/phase-204-pemulihan-otomatis-job-impor-hantu.md` |
 | 205  | Kirim bertahap (cicilan) ke dokumen yang SAMA untuk 1 nomor ribuan baris + kirim ulang idempoten sampai sukses; dokumen pelanggan tidak boleh diubah (saklar IMPORT_STAGED_MODULES default mati; SR + PP) | Done | `docs/architecture/architecture-staged-send.md`, `docs/decisions/adr-0051-kirim-bertahap-ke-dokumen-yang-sama-dan-kirim-ulang-idempoten.md` | `docs/phases/phase-205-kirim-bertahap-dan-kirim-ulang-idempoten.md` |
+| 206  | Efisiensi: hitung baris detailInvoice SR di timeout adaptif (log `lines:0`) + tinjau chunk 500 kirim bertahap | Done sisi kode (2026-10-21, belum dirilis); env prod ACCURATE_SAVE_TIMEOUT_MIN_MS=900000 aktif | - | `docs/phases/phase-206-efisiensi-timeout-adaptif-dan-chunk-staged.md` |
+| 207  | Peringatan unggah dobel (file sama masih diproses) + posisi antrean — **DITUNDA, menunggu konsultasi client; sementara file sama BOLEH diunggah** | Planned (belum ada kode) | - | `docs/phases/phase-207-peringatan-unggah-dobel.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

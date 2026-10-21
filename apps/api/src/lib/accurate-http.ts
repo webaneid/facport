@@ -9,7 +9,7 @@ import { currentAccurateConnectionId } from "./accurate-rate-limiter";
 // - panggilan lain: batas tetap eksplisit (default 360 dtk = perilaku sebelumnya, kini tertulis).
 // Semua angka bisa ditala lewat env tanpa rilis kode. Metrik (durasi/ukuran/hasil) dicatat ke log terstruktur untuk kalibrasi.
 
-export type HttpTimeoutConfig = { saveMinMs: number; saveMaxMs: number; saveMsPerLine: number; requestMs: number };
+export type HttpTimeoutConfig = { saveMinMs: number; saveMaxMs: number; saveMsPerLine: number; requestMs: number; stagedSecondsCoeff: number };
 
 function boundedInt(raw: string | undefined, fallback: number, min: number, max: number): number {
   const n = Number(raw);
@@ -25,14 +25,38 @@ export function parseHttpTimeoutConfig(source: Record<string, string | undefined
     saveMaxMs,
     saveMsPerLine: boundedInt(source.ACCURATE_SAVE_MS_PER_LINE, 600, 50, 5_000),
     requestMs: boundedInt(source.ACCURATE_REQUEST_TIMEOUT_MS, 360_000, 10_000, 1_800_000),
+    stagedSecondsCoeff: boundedCoeff(source.IMPORT_STAGED_SECONDS_COEFF, 7e-4),
   };
+}
+
+// § Fase 206 — koefisien model kuadrat yang SAMA dengan perkiraan kirim bertahap (`IMPORT_STAGED_SECONDS_COEFF`, Fase 205; default & batas = `parseStagedConfig`).
+function boundedCoeff(raw: string | undefined, fallback: number): number {
+  const n = Number(raw);
+  if (raw === undefined || raw === "" || !Number.isFinite(n)) return fallback;
+  return Math.min(Math.max(n, 1e-6), 1);
+}
+
+// § Fase 206 — save.do Sales Receipt / Purchase Payment bersifat KUADRATIK terhadap jumlah baris `detailInvoice` (update dokumen N baris ≈ koefisien × N²), bukan linear:
+// log produksi 2026-10-21 mencatat cicilan 16 KB timeout di batas minimum 360 dtk sementara cicilan 25 KB selesai 240 dtk. Timeout = yang LEBIH BESAR antara rumus linear dan model × 1,5.
+const QUADRATIC_SAVE_PATHS = ["/sales-receipt/save.do", "/purchase-payment/save.do"];
+const QUADRATIC_TIMEOUT_FACTOR = 1.5;
+
+export function isQuadraticSaveUrl(url: string): boolean {
+  try {
+    const pathname = new URL(url).pathname;
+    return QUADRATIC_SAVE_PATHS.some((p) => pathname.endsWith(p));
+  } catch {
+    return false;
+  }
 }
 
 export function computeSaveTimeoutMs(lines: number, cfg: HttpTimeoutConfig): number {
   return Math.min(Math.max(Math.round(lines * cfg.saveMsPerLine), cfg.saveMinMs), cfg.saveMaxMs);
 }
 
-const PARSE_THRESHOLD_BYTES = 30_000; // di bawah ini jumlah baris pasti kecil → timeout = MIN, tak perlu parse
+// § Fase 206 — dulu 30_000: cicilan Sales Receipt/Purchase Payment 500 baris `detailInvoice` ringkas (±60 B/baris ≈ 30 KB) lolos ambang → tercatat `lines:0`
+// padahal 500 baris. Parse JSON ribuan byte itu murah; ambang hanya menghindari parse body yang pasti kecil (di bawah ini timeout = MIN).
+const PARSE_THRESHOLD_BYTES = 2_000;
 
 /** Jumlah baris detail pada body `save.do`: jumlah panjang semua array berkunci `detail*` (detailItem, detailInvoice, detailExpense, dst). */
 export function countDetailLines(body: unknown): number {
@@ -70,7 +94,12 @@ export class AccurateTimeoutError extends Error {
 export function resolveRequestTimeout(url: string, body: unknown, cfg: HttpTimeoutConfig): { save: boolean; lines: number; timeoutMs: number } {
   const save = isSaveUrl(url);
   const lines = save ? countDetailLines(body) : 0;
-  return { save, lines, timeoutMs: save ? computeSaveTimeoutMs(lines, cfg) : cfg.requestMs };
+  let timeoutMs = save ? computeSaveTimeoutMs(lines, cfg) : cfg.requestMs;
+  if (save && isQuadraticSaveUrl(url)) {
+    const quadraticMs = Math.round(cfg.stagedSecondsCoeff * lines * lines * QUADRATIC_TIMEOUT_FACTOR * 1000);
+    timeoutMs = Math.min(Math.max(timeoutMs, quadraticMs), cfg.saveMaxMs);
+  }
+  return { save, lines, timeoutMs };
 }
 
 export type AccurateHttpDeps = {
