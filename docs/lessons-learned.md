@@ -6351,3 +6351,17 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Restart di tengah cicilan:** kirim ulang yang basi ditolak Accurate dengan pesan yang terdengar seperti galat data ("Nilai Pembayaran tidak mencukupi"). Jangan berhenti pada galat bisnis tanpa membaca ulang keadaan dokumen — galat itu bisa akibat pekerjaan sebelumnya yang baru selesai.
 - **Yang sengaja belum:** PPh (`detailTax`) pada dokumen bertahap — tidak ada kode pajak PPh/izin `tax_save` di database trial; lebih aman tidak mencicil daripada menebak semantik update.
 
+
+## 2026-10-22 — Insiden keamanan: VPS ditangguhkan Hostinger karena cryptominer XMRig, masuk lewat Redis tanpa password yang port-nya terbuka ke internet
+- **Gejala:** Hostinger menangguhkan VPS KVM 2 (server bersama: facport, webane-admin, tokoambu, jalamandala) setelah mendeteksi proses `/tmp/xmrig-managed-38382d...`.
+- **Penyebab:** container `jalamandala-redis-1` (aplikasi lama yang sudah tidak dipakai) dipublish `0.0.0.0:6379` TANPA password (`redis-cli ping` → `PONG`). Port Postgres (5432), PgBouncer (6432), Gotenberg (3001), dan MinIO (9000/9001) pada compose yang sama juga dipublish ke `0.0.0.0`; Postgres memakai password `secret` dan menerima ±52.000 percobaan login gagal (user `postgres`, `wallabag`). Docker menembus `ufw` untuk port yang dipublish, jadi firewall aktif (hanya 22/80/443) tidak melindungi.
+- **Cara menemukan:** (1) SSH dicek dulu dan terbukti bersih (hanya `publickey` satu user, 1 key, 1 percobaan password gagal sepanjang log); (2) `ss -tlnp` + `docker ps` menunjukkan port terpublish; (3) `docker diff <container>` pada SEMUA container menampilkan folder xmrig hanya di container Redis — jauh lebih cepat daripada menjelajah filesystem; (4) `docker inspect` (`privileged=false`, hanya 1 volume `/data`) membuktikan penyusupan tertahan di container; (5) `find / -iname '*xmrig*'` tidak menemukan apa pun di luar layer Docker.
+- **Catatan forensik:** server sempat reboot sehingga `/tmp` host bersih; bukti tetap ada di layer container. Postgres tidak mencatat login berhasil, sehingga akses ke database tidak bisa dibuktikan tidak terjadi → database dianggap pernah terpapar.
+- **Fix:** bukti disalin (`docker cp`), container dihentikan lalu dihapus bersama volume dan image; dump Postgres disimpan di luar server (hash cocok di dua sisi); proses PM2, site nginx, dan DNS aplikasi dihapus; aplikasi lain tidak diubah. Facport tidak terdampak (Postgres tanpa `ports:`, MinIO/API/web hanya `127.0.0.1`).
+- **Pencegahan (wajib):**
+  1. JANGAN publish port selain 80/443 ke `0.0.0.0`. Di compose selalu `127.0.0.1:HOST:CONTAINER` (atau tanpa `ports:` bila hanya diakses antarcontainer). `ufw` TIDAK melindungi port Docker.
+  2. Redis wajib `requirepass` (atau tidak terpublish sama sekali); jangan pernah password bawaan seperti `secret`.
+  3. Setelah SETIAP deploy: `ss -tlnp` — hanya 22/80/443 dan port loopback yang boleh listen ke luar (pengecualian `*:3002` dilindungi ufw, idealnya bind ke 127.0.0.1).
+  4. Hapus aplikasi yang tidak dipakai dari server bersama (container, volume, nginx, DNS); aplikasi "nganggur" yang terus hidup adalah celah.
+  5. Pantau CPU server (alarm bila >80% berkelanjutan) agar miner terdeteksi sebelum penyedia menangguhkan.
+- **Pelajaran proses:** bagi server bersama, periksa SEMUA aplikasi, bukan hanya yang sedang dikerjakan; periksa jalur masuk dari bukti (log SSH, port terbuka, `docker diff`) sebelum memutuskan "bangun ulang" atau rotasi massal.
