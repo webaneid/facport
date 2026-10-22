@@ -1,3 +1,12 @@
+## <small>2.43.1 (2026-10-22)</small>
+
+* chore: rilis patch keamanan Node 22.23.4 (image web) + lessons-learned insiden 2026-10-22 ([335fecc](https://github.com/webaneid/facport/commit/335fecc))
+* fix(web): pin image produksi ke node:22.23.4-slim — rilis keamanan Node 2026-10-21 (CVE-2026-111497  ([515cce3](https://github.com/webaneid/facport/commit/515cce3))
+* docs: Fase 208 — investigasi terbuka galat jumlah detail Sales Invoice (client Banjaran): bukti, hip ([e34bbbf](https://github.com/webaneid/facport/commit/e34bbbf))
+* docs: lessons-learned celah port Docker terbuka + SSH password di server kedua (Jalajogja), cara men ([3c21da6](https://github.com/webaneid/facport/commit/3c21da6))
+* docs: lessons-learned insiden XMRig 2026-10-22 — Redis tanpa password dengan port Docker terbuka (ja ([6dc3c8e](https://github.com/webaneid/facport/commit/6dc3c8e))
+* docs: lessons-learned PHP2Shell (CVE-2026-109618/109619) — inventaris runtime, patch terarah tanpa a ([7019553](https://github.com/webaneid/facport/commit/7019553))
+
 ## 2.43.0 (2026-10-21)
 
 * chore: rilis Fase 206 — timeout save.do Sales Receipt & Purchase Payment mengikuti model kuadrat, am ([7dcf17c](https://github.com/webaneid/facport/commit/7dcf17c))
