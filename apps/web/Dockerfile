@@ -42,7 +42,7 @@ RUN cd apps/web && bun run build
 # ---- Stage production: image final yang jalan di server (Node, lihat catatan atas) ----
 # Dipin ke patch 22.23.4 (rilis keamanan Node 2026-10-21, termasuk CVE-2026-111497
 # Brotli RCE) — jangan turunkan; naikkan lewat PR Dependabot (docker).
-FROM node:22.23.4-slim AS production
+FROM node:26.11.1-slim AS production
 WORKDIR /repo
 
 # node_modules ROOT (berisi store `.bun/...` asli) WAJIB ikut — symlink di
