@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, settings, memberSeats } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, settings, memberSeats, auditLogs } from "../db/schema";
 import { purchaseInvoiceImportRoute } from "./purchase-invoice-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { TRIAL_MAX_ROWS_SETTING_KEY } from "../lib/trial";
@@ -190,6 +190,37 @@ describe("Ownership batch — user lain TIDAK BOLEH akses batch orang lain", () 
 });
 
 // § phase-03-dashboard-pelanggan.md M3 — kartu "Import Terakhir" di dashboard.
+describe("GET /purchase-invoice/import/:batchId — cancelResult (Batal Import sebagian)", () => {
+  test("batch cancelled_partial mengembalikan hasil pembatalan TERAKHIR dengan alasan per faktur; audit Hapus riwayat tidak ikut terbaca", async () => {
+    const owner = await createProvisionedUser(`pi-cancelresult-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "sebagian.xlsx", totalRows: 1, status: "cancelled_partial" })
+      .returning();
+    // entri audit lama (tanpa failedReasons) + yang terbaru + entri bentuk lain (Hapus riwayat) yang TIDAK boleh terbaca
+    await db.insert(auditLogs).values([
+      { entityType: "import_batch", entityId: batch!.id, action: "delete", changes: { deleted: [], blocked: [], failed: ["200"] }, actorId: owner.userId, createdAt: new Date(Date.now() - 60_000) },
+      { entityType: "import_batch", entityId: batch!.id, action: "delete", changes: { deleted: ["202"], blocked: ["201"], failed: ["200"], failedReasons: { "200": "Faktur sudah dibayar" } }, actorId: owner.userId, createdAt: new Date(Date.now() - 30_000) },
+      { entityType: "import_batch", entityId: batch!.id, action: "delete", changes: { fileName: "sebagian.xlsx", status: "cancelled_partial" }, actorId: owner.userId, createdAt: new Date() },
+    ]);
+
+    const res = await testApp.handle(new Request(`http://localhost/purchase-invoice/import/${batch!.id}`, { headers: { cookie: owner.cookie } }));
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { cancelResult: { deleted: string[]; blocked: string[]; failed: string[]; failedReasons?: Record<string, string> } | null };
+    expect(body.cancelResult).toEqual({ deleted: ["202"], blocked: ["201"], failed: ["200"], failedReasons: { "200": "Faktur sudah dibayar" } });
+  });
+
+  test("batch bukan cancelled_partial → cancelResult null", async () => {
+    const owner = await createProvisionedUser(`pi-cancelresult-null-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "selesai.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+    const res = await testApp.handle(new Request(`http://localhost/purchase-invoice/import/${batch!.id}`, { headers: { cookie: owner.cookie } }));
+    expect(((await res.json()) as { cancelResult: unknown }).cancelResult).toBeNull();
+  });
+});
+
 describe("GET /purchase-invoice/import (list)", () => {
   test("401 kalau tidak login", async () => {
     const res = await testApp.handle(new Request("http://localhost/purchase-invoice/import"));
@@ -446,6 +477,36 @@ describe("POST /purchase-invoice/import/:batchId/cancel — ownership (pemilik v
     );
     expect(res.status).toBe(200);
     expect((await res.json()) as { batchId: string; status: string }).toEqual({ batchId: batch!.id, status: "cancelling" });
+  });
+
+  // § sebagian faktur gagal terhapus (mis. sudah dibayar) → batch `cancelled_partial`.
+  // Dulu buntu (409), padahal user perlu mengulang Batal Import setelah penyebabnya dibereskan.
+  test("200 batch `cancelled_partial` BISA Batal Import ULANG", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-partial-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "sebagian.xlsx", totalRows: 1, status: "cancelled_partial" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; status: string }).toEqual({ batchId: batch!.id, status: "cancelling" });
+  });
+
+  test("409 BATCH_NOT_CANCELLABLE kalau batch sudah `cancelled` utuh (tidak ada yang perlu dibatalkan lagi)", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-done-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "sudah-batal.xlsx", totalRows: 1, status: "cancelled" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_CANCELLABLE");
   });
 
   test("403 CANCEL_OWNER_ONLY kalau yang Batal Import MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {

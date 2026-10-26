@@ -5,7 +5,10 @@
 // menukar export non-komponen jadi client reference opaque saat diimpor
 // dari Server Component, `.has()` gagal runtime (`TypeError: ...has is
 // not a function`, ketemu 2026-08-28 bikin dashboard 500 total).
-export const CANCELLABLE_BATCH_STATUS = new Set(["completed", "completed_with_errors"]);
+// § `cancelled_partial` ikut: sebagian faktur gagal terhapus (mis. sudah
+// dibayar), user perlu bisa Batal Import ULANG setelah penyebabnya
+// dibereskan. Worker cuma memproses baris `success`, jadi aman diulang.
+export const CANCELLABLE_BATCH_STATUS = new Set(["completed", "completed_with_errors", "cancelled_partial"]);
 
 // § dibahas 2026-08-28 — "Delete" (hapus lokal saja) boleh untuk batch
 // status APA PUN kecuali sedang diproses job lain (race condition) —

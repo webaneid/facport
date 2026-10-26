@@ -1,6 +1,7 @@
 import { Elysia, t } from "elysia";
 import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
+import { getCancelResult } from "../lib/import-cancel-result";
 import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
 import { subscriptionGatePlugin } from "../lib/subscription-gate";
@@ -219,7 +220,7 @@ export const finishedGoodSlipImportRoute = new Elysia()
         success: rows.filter((r) => r.status === "success").length,
         failed: rows.filter((r) => r.status === "failed").length,
       };
-      return { batch, summary, rows };
+      return { batch, summary, rows, cancelResult: await getCancelResult(batch) };
     },
     {
       permission: "import.create",
@@ -409,7 +410,7 @@ export const finishedGoodSlipImportRoute = new Elysia()
         set.status = 403;
         return { code: "CANCEL_OWNER_ONLY" };
       }
-      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors" && batch.status !== "cancelled_partial") {
         set.status = 409;
         return { code: "BATCH_NOT_CANCELLABLE" };
       }

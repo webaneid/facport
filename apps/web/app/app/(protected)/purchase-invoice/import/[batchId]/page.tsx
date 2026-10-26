@@ -17,6 +17,11 @@ import { describeImportActionError, type ImportActionErrorValue } from "@/lib/im
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findBillNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/purchase-invoice-batch-helpers";
 import { ImportErrorSummary } from "@/components/import/import-error-summary";
+import { CancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
+import { CancelPartialSection } from "@/components/import/cancel-partial-section";
+import type { CancelResult } from "@/lib/import-cancel-result";
+import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 type Row = {
   id: string;
@@ -37,6 +42,8 @@ type BatchDetail = {
   };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
+  // hasil Batal Import terakhir (cuma ada untuk batch `cancelled_partial`); `failedReasons` kosong di batch lama.
+  cancelResult: CancelResult | null;
 };
 
 // § Fase 81 (2026-09-09) — logic penentuan "Nomor Transaksi" (Trans No
@@ -70,6 +77,7 @@ export default function PurchaseInvoiceImportResultPage() {
   const [detail, setDetail] = useState<BatchDetail | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const isOwner = useIsDataUsahaOwner();
 
   async function load() {
     const res = await api["purchase-invoice"].import({ batchId: params.batchId }).get();
@@ -141,7 +149,13 @@ export default function PurchaseInvoiceImportResultPage() {
                 baris)
               </CardDescription>
             </div>
-            <StatusBadge status={batch.status} />
+            <div className="flex items-center gap-3">
+              {/* Batal Import menghapus transaksi ASLI di Accurate — cuma pemilik Data Usaha (sama seperti tabel riwayat). */}
+              {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && (
+                <CancelImportDialog batch={{ id: batch.id, fileName: batch.fileName }} onCancelled={load} trigger="button" />
+              )}
+              <StatusBadge status={batch.status} />
+            </div>
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
@@ -185,6 +199,13 @@ export default function PurchaseInvoiceImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <CancelPartialSection
+        status={batch.status}
+        rows={rows}
+        cancelResult={detail.cancelResult}
+        numberOf={(row) => invoiceNumberOf(row, numberColumn, billNumberColumn)}
+      />
 
       <ImportErrorSummary rows={rows} />
 

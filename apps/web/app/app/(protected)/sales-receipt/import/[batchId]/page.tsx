@@ -16,6 +16,11 @@ import { api } from "@/lib/api-client";
 import { describeImportActionError, type ImportActionErrorValue } from "@/lib/import-error-message";
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { ImportErrorSummary } from "@/components/import/import-error-summary";
+import { CancelPartialSection } from "@/components/import/cancel-partial-section";
+import { GenericCancelImportDialog } from "@/components/import-archive/generic-cancel-import-dialog";
+import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import { documentNumberOf, numberColumnOf, type CancelResult } from "@/lib/import-cancel-result";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 type Row = {
   id: string;
@@ -30,6 +35,7 @@ type BatchDetail = {
   batch: { id: string; status: string; totalRows: number; fileName: string; columnMapping: Record<string, string> | null };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
+  cancelResult: CancelResult | null; // hasil Batal Import terakhir (hanya batch `cancelled_partial`)
 };
 
 const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destructive" | "warning" | "default" }> = {
@@ -40,6 +46,10 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destru
   completed: { label: "Selesai", variant: "success" },
   completed_with_errors: { label: "Selesai (ada gagal)", variant: "warning" },
   mapping_pending: { label: "Menunggu Konfirmasi", variant: "default" },
+  // § Batal Import — tanpa ini batch yang dibatalkan tampil sebagai teks mentah ("cancelled_partial")
+  cancelling: { label: "Membatalkan...", variant: "warning" },
+  cancelled: { label: "Dibatalkan", variant: "default" },
+  cancelled_partial: { label: "Dibatalkan (sebagian)", variant: "warning" },
 };
 
 function StatusBadge({ status }: { status: string }) {
@@ -52,6 +62,7 @@ export default function SalesReceiptImportResultPage() {
   const [detail, setDetail] = useState<BatchDetail | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const isOwner = useIsDataUsahaOwner();
 
   async function load() {
     const res = await api["sales-receipt"].import({ batchId: params.batchId }).get();
@@ -95,7 +106,9 @@ export default function SalesReceiptImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
-  const isProcessing = batch.status === "processing";
+  // `cancelling` juga sibuk (job Batal Import jalan) — tombol Retry jangan tampil di window itu.
+  const isProcessing = batch.status === "processing" || batch.status === "cancelling";
+  const numberColumn = numberColumnOf(batch.columnMapping);
 
   return (
     <div className="flex flex-col gap-6">
@@ -114,7 +127,18 @@ export default function SalesReceiptImportResultPage() {
                 baris)
               </CardDescription>
             </div>
-            <StatusBadge status={batch.status} />
+            <div className="flex items-center gap-3">
+              {/* Batal Import menghapus transaksi ASLI di Accurate — cuma pemilik Data Usaha (sama seperti tabel riwayat). */}
+              {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && (
+                <GenericCancelImportDialog
+                  batch={{ id: batch.id, fileName: batch.fileName, module: "sales_receipt" }}
+                  onConfirm={() => api["sales-receipt"].import({ batchId: batch.id }).cancel.post()}
+                  onCancelled={load}
+                  trigger="button"
+                />
+              )}
+              <StatusBadge status={batch.status} />
+            </div>
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
@@ -158,6 +182,13 @@ export default function SalesReceiptImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <CancelPartialSection
+        status={batch.status}
+        rows={rows}
+        cancelResult={detail.cancelResult}
+        numberOf={(row) => documentNumberOf(row, numberColumn)}
+      />
 
       <ImportErrorSummary rows={rows} />
 

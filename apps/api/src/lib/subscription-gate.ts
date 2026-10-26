@@ -2,7 +2,7 @@ import { Elysia } from "elysia";
 import { eq, and, or, inArray, desc, gt, isNull } from "drizzle-orm";
 import { auth } from "./auth";
 import { db } from "./db";
-import { subscriptions, plans, dataUsaha } from "../db/schema";
+import { subscriptions, plans, dataUsaha, importBatches } from "../db/schema";
 import { memberAccessibleDataUsahaIds } from "./seat-access";
 import { hasAccessToDataUsaha } from "./data-usaha";
 import { internalUserIdsSubquery } from "./internal-accounts";
@@ -115,6 +115,23 @@ export async function getAccessibleSubscriptionsWithPlans(userId: string) {
 export const DATA_USAHA_HEADER = "x-data-usaha-id";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// § BUG DITEMUKAN & DIPERBAIKI 2026-10-26 (laporan pelanggan Purchase Payment) — "Download Baris Gagal" adalah `<a href>`
+// biasa yang TIDAK bisa membawa header di atas, jadi untuk pemilik >1 Data Usaha di modul yang sama gerbang membalas
+// 409 DATA_USAHA_REQUIRED (browser menampilkan JSON mentah, bukan file). Batch itu SUDAH milik tepat 1 Data Usaha,
+// jadi konteksnya diturunkan dari batch-nya (id di path), BUKAN dari header. Tetap divalidasi `hasAccessToDataUsaha`;
+// kalau batch bukan milik/akses user → tidak diturunkan (route tetap 404/409 seperti sebelumnya, tidak bocor).
+const FAILED_ROWS_EXPORT_PATH_RE = /\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\/failed-rows\/export$/i;
+
+async function batchContextForDownload(userId: string, batchId: string): Promise<{ dataUsahaId: string; subscriptionId: string } | null> {
+  const [row] = await db
+    .select({ dataUsahaId: subscriptions.dataUsahaId, subscriptionId: subscriptions.id })
+    .from(importBatches)
+    .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+    .where(eq(importBatches.id, batchId));
+  if (!row?.dataUsahaId || !(await hasAccessToDataUsaha(userId, row.dataUsahaId))) return null;
+  return { dataUsahaId: row.dataUsahaId, subscriptionId: row.subscriptionId };
+}
+
 export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).macro({
   moduleAccess: (moduleKey: string) => ({
     async resolve({ status, request }) {
@@ -132,7 +149,16 @@ export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).
       // TERBARU lintas semua Data Usaha (tanpa tahu Data Usaha aktif) →
       // upload bisa mendarat di perusahaan yang salah. Sekarang disaring
       // per Data Usaha; kalau ambigu tanpa header → fail closed (409).
-      const requested = headers.get(DATA_USAHA_HEADER)?.trim().toLowerCase();
+      let requested = headers.get(DATA_USAHA_HEADER)?.trim().toLowerCase();
+      let batchSubscriptionId: string | null = null;
+      if (!requested && request.method === "GET") {
+        const batchId = new URL(request.url).pathname.match(FAILED_ROWS_EXPORT_PATH_RE)?.[1];
+        const ctx = batchId ? await batchContextForDownload(session.user.id, batchId.toLowerCase()) : null;
+        if (ctx) {
+          requested = ctx.dataUsahaId;
+          batchSubscriptionId = ctx.subscriptionId;
+        }
+      }
       // Unduh template Excel = `<a href>` biasa (tidak bisa bawa header), isinya
       // STATIS per modul dan tidak menyentuh data tenant — jangan ditolak 409
       // untuk user multi-Data-Usaha (tetap wajib berlangganan modulnya).
@@ -155,7 +181,8 @@ export const subscriptionGatePlugin = new Elysia({ name: "subscription-gate" }).
       } else if (!isStaticTemplateDownload && new Set(candidates.map((s) => s.subscription.dataUsahaId)).size > 1) {
         return status(409, { code: "DATA_USAHA_REQUIRED" });
       }
-      const matching = candidates[0];
+      // unduhan batch: kalau 1 Data Usaha punya >1 subscription aktif untuk modul ini, pakai yang MEMILIKI batch itu
+      const matching = (batchSubscriptionId ? candidates.find((s) => s.subscription.id === batchSubscriptionId) : undefined) ?? candidates[0];
       // § 1 kode error (gabung SUBSCRIPTION_INACTIVE + MODULE_NOT_IN_PLAN
       // lama) — beda-in "tidak ada subscription" vs "ada tapi bukan modul
       // ini" sudah tidak relevan begitu 1 user bisa punya banyak

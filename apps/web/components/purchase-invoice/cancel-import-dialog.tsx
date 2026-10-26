@@ -17,7 +17,17 @@ import { api } from "@/lib/api-client";
 // dibahas bareng Edit nanti) yang nanti pakai `Trash2`.
 type CancellableBatch = { id: string; fileName: string };
 
-export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableBatch; onCancelled?: () => void }) {
+// `trigger="button"` = tombol berlabel (halaman detail batch), default "icon" =
+// ikon `Undo2` kecil (tabel riwayat/dashboard).
+export function CancelImportDialog({
+  batch,
+  onCancelled,
+  trigger = "icon",
+}: {
+  batch: CancellableBatch;
+  onCancelled?: () => void;
+  trigger?: "icon" | "button";
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
@@ -51,15 +61,26 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
         if (!next) setConfirmText("");
       }}
     >
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Batal Import"
-        aria-label={`Batal Import untuk ${batch.fileName}`}
-        className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
-      >
-        <Undo2 className="h-4 w-4" />
-      </button>
+      {trigger === "button" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={buttonVariants("outline", "gap-2 border-destructive text-destructive hover:bg-destructive-bg")}
+        >
+          <Undo2 className="h-4 w-4" />
+          Batal Import
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Batal Import"
+          aria-label={`Batal Import untuk ${batch.fileName}`}
+          className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
+        >
+          <Undo2 className="h-4 w-4" />
+        </button>
+      )}
       <DialogContent>
         <DialogTitle>Batal Import: {batch.fileName}</DialogTitle>
         <div className="mt-3 flex flex-col gap-3 text-sm">

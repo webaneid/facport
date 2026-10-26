@@ -12,7 +12,7 @@ import { api } from "@/lib/api-client";
 // § Fase 13 — mirror 1:1 `components/purchase-invoice/cancel-import-dialog.tsx`.
 type CancellableBatch = { id: string; fileName: string };
 
-export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableBatch; onCancelled?: () => void }) {
+export function CancelImportDialog({ batch, onCancelled, trigger = "icon" }: { batch: CancellableBatch; onCancelled?: () => void; trigger?: "icon" | "button" }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [confirmText, setConfirmText] = useState("");
@@ -46,15 +46,26 @@ export function CancelImportDialog({ batch, onCancelled }: { batch: CancellableB
         if (!next) setConfirmText("");
       }}
     >
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        title="Batal Import"
-        aria-label={`Batal Import untuk ${batch.fileName}`}
-        className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
-      >
-        <Undo2 className="h-4 w-4" />
-      </button>
+      {trigger === "button" ? (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className={buttonVariants("outline", "gap-2 border-destructive text-destructive hover:bg-destructive-bg")}
+        >
+          <Undo2 className="h-4 w-4" />
+          Batal Import
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          title="Batal Import"
+          aria-label={`Batal Import untuk ${batch.fileName}`}
+          className={buttonVariants("ghost", "h-8 w-8 p-0 text-destructive hover:bg-destructive-bg")}
+        >
+          <Undo2 className="h-4 w-4" />
+        </button>
+      )}
       <DialogContent>
         <DialogTitle>Batal Import: {batch.fileName}</DialogTitle>
         <div className="mt-3 flex flex-col gap-3 text-sm">

@@ -3,7 +3,7 @@ import { Elysia } from "elysia";
 import { eq } from "drizzle-orm";
 import { auth } from "../lib/auth";
 import { db } from "../lib/db";
-import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
+import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats, auditLogs } from "../db/schema";
 import { purchasePaymentImportRoute } from "./purchase-payment-import.route";
 import { generateTemplateBuffer } from "../lib/excel";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
@@ -210,6 +210,34 @@ describe("POST /purchase-payment/import/:batchId/confirm — persetujuan kirim b
         else process.env[k] = v;
       }
     }
+  });
+});
+
+describe("GET /purchase-payment/import/:batchId — cancelResult (Batal Import sebagian)", () => {
+  test("batch cancelled_partial mengembalikan alasan Accurate per dokumen; batch lain → null", async () => {
+    const owner = await createProvisionedUser(`pp-cancelresult-${runId}@test.local`);
+    const [partial] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_payment", fileName: "sebagian.xlsx", totalRows: 1, status: "cancelled_partial" })
+      .returning();
+    await db.insert(auditLogs).values({
+      entityType: "import_batch",
+      entityId: partial!.id,
+      action: "delete",
+      changes: { deleted: [], blocked: [], failed: ["5"], failedReasons: { "5": "sudah ada pembayarannya" } },
+      actorId: owner.userId,
+    });
+    const [done] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_payment", fileName: "selesai.xlsx", totalRows: 1, status: "completed" })
+      .returning();
+
+    const partialRes = await testApp.handle(new Request(`http://localhost/purchase-payment/import/${partial!.id}`, { headers: { cookie: owner.cookie } }));
+    expect(partialRes.status).toBe(200);
+    expect(((await partialRes.json()) as { cancelResult: unknown }).cancelResult).toEqual({ deleted: [], blocked: [], failed: ["5"], failedReasons: { "5": "sudah ada pembayarannya" } });
+
+    const doneRes = await testApp.handle(new Request(`http://localhost/purchase-payment/import/${done!.id}`, { headers: { cookie: owner.cookie } }));
+    expect(((await doneRes.json()) as { cancelResult: unknown }).cancelResult).toBeNull();
   });
 });
 

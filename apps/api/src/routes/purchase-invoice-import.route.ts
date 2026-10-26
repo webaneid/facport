@@ -17,6 +17,7 @@ import {
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
+import { getCancelResult } from "../lib/import-cancel-result";
 
 // § architecture-security.md §8 — validasi tipe + ukuran di schema layer,
 // SEBELUM body di-buffer penuh (pola sama media.route.ts).
@@ -244,7 +245,8 @@ export const purchaseInvoiceImportRoute = new Elysia()
         success: rows.filter((r) => r.status === "success").length,
         failed: rows.filter((r) => r.status === "failed").length,
       };
-      return { batch, summary, rows };
+      const cancelResult = await getCancelResult(batch);
+      return { batch, summary, rows, cancelResult };
     },
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },
   )
@@ -360,7 +362,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         set.status = 403;
         return { code: "CANCEL_OWNER_ONLY" };
       }
-      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors" && batch.status !== "cancelled_partial") {
         set.status = 409;
         return { code: "BATCH_NOT_CANCELLABLE" };
       }

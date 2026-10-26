@@ -18,6 +18,11 @@ import { describeImportActionError, type ImportActionErrorValue } from "@/lib/im
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findPoNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/sales-invoice-batch-helpers";
 import { ImportErrorSummary } from "@/components/import/import-error-summary";
+import { CancelPartialSection } from "@/components/import/cancel-partial-section";
+import { CancelImportDialog } from "@/components/sales-invoice/cancel-import-dialog";
+import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import type { CancelResult } from "@/lib/import-cancel-result";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/[batchId]/page.tsx`
 // (PO Number ganti peran Bill No).
@@ -40,6 +45,7 @@ type BatchDetail = {
   };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
+  cancelResult: CancelResult | null; // hasil Batal Import terakhir (hanya batch `cancelled_partial`)
 };
 
 // § Fase 63 — logic penentuan "Nomor Transaksi" (Trans No diutamakan,
@@ -72,6 +78,7 @@ export default function SalesInvoiceImportResultPage() {
   const [detail, setDetail] = useState<BatchDetail | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const isOwner = useIsDataUsahaOwner();
 
   async function load() {
     const res = await api["sales-invoice"].import({ batchId: params.batchId }).get();
@@ -140,7 +147,13 @@ export default function SalesInvoiceImportResultPage() {
                 {summary.success} sukses, {summary.failed} gagal, {summary.pending} menunggu (dari {batch.totalRows} baris)
               </CardDescription>
             </div>
-            <StatusBadge status={batch.status} />
+            <div className="flex items-center gap-3">
+              {/* Batal Import menghapus transaksi ASLI di Accurate — cuma pemilik Data Usaha (sama seperti tabel riwayat). */}
+              {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && (
+                <CancelImportDialog batch={{ id: batch.id, fileName: batch.fileName }} onCancelled={load} trigger="button" />
+              )}
+              <StatusBadge status={batch.status} />
+            </div>
           </div>
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
@@ -186,6 +199,13 @@ export default function SalesInvoiceImportResultPage() {
           </CardContent>
         </Card>
       )}
+
+      <CancelPartialSection
+        status={batch.status}
+        rows={rows}
+        cancelResult={detail.cancelResult}
+        numberOf={(row) => invoiceNumberOf(row, numberColumn, poNumberColumn)}
+      />
 
       <ImportErrorSummary rows={rows} />
 

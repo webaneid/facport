@@ -4,7 +4,7 @@ import { auth } from "./auth";
 import { subscriptionGatePlugin, getOwnedSubscriptionsWithPlans, getAccessibleSubscriptionsWithPlans } from "./subscription-gate";
 import { eq } from "drizzle-orm";
 import { db } from "./db";
-import { plans, subscriptions, memberSeats, dataUsaha, user as userTable } from "../db/schema";
+import { plans, subscriptions, memberSeats, dataUsaha, importBatches, user as userTable } from "../db/schema";
 import { createTestDataUsaha, createTestSeat } from "./test-fixtures";
 import { hasAccessToDataUsaha } from "./data-usaha";
 
@@ -22,6 +22,7 @@ const testApp = new Elysia()
   .use(subscriptionGatePlugin)
   .get("/gate-test", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
   .get("/gate-which", ({ subscription }) => ({ dataUsahaId: subscription.dataUsahaId }), { moduleAccess: "purchase_invoice" })
+  .get("/gate-which/import/:batchId/failed-rows/export", ({ subscription }) => ({ dataUsahaId: subscription.dataUsahaId, subscriptionId: subscription.id }), { moduleAccess: "purchase_invoice" })
   .get("/gate-mod/import/template", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
   .post("/gate-mod/import/upload", () => ({ ok: true }), { moduleAccess: "purchase_invoice" })
   // § security review Fase 166 — path TIDAK berakhiran "/import/template" (pola 2 route baru AutoProduksi).
@@ -355,6 +356,32 @@ describe("moduleAccess — konteks Data Usaha aktif (header X-Data-Usaha-Id)", (
     const res = await get("/gate-which", cookie, newer);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { dataUsahaId: string }).dataUsahaId).toBe(newer);
+  });
+
+  // § 2026-10-26 — `<a href>` unduh baris gagal tidak bisa bawa header; Data Usaha diturunkan dari batch-nya.
+  async function insertBatchIn(userId: string, dataUsahaId: string) {
+    const [sub] = await db.select().from(subscriptions).where(eq(subscriptions.dataUsahaId, dataUsahaId));
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId, subscriptionId: sub!.id, module: "purchase_invoice", fileName: "x.xlsx", totalRows: 1, status: "completed_with_errors" })
+      .returning();
+    return { batchId: batch!.id, subscriptionId: sub!.id };
+  }
+
+  test("unduh baris gagal TANPA header, user punya modul di 2 Data Usaha → 200, subscription = milik batch (BUKAN 409)", async () => {
+    const { userId, cookie, older } = await setupTwoDataUsaha("unduh-lama");
+    const { batchId, subscriptionId } = await insertBatchIn(userId, older);
+    const res = await get(`/gate-which/import/${batchId}/failed-rows/export`, cookie);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ dataUsahaId: older, subscriptionId });
+  });
+
+  test("unduh baris gagal untuk batch milik USER LAIN tidak menurunkan konteks → tetap 409 (tidak bocor/menebak)", async () => {
+    const mine = await setupTwoDataUsaha("unduh-saya");
+    const other = await setupTwoDataUsaha("unduh-orang");
+    const { batchId } = await insertBatchIn(other.userId, other.older);
+    const res = await get(`/gate-which/import/${batchId}/failed-rows/export`, mine.cookie);
+    expect(res.status).toBe(409);
   });
 
   test("tanpa header + modul ada di 2 Data Usaha → 409 DATA_USAHA_REQUIRED (fail closed, tidak menebak)", async () => {
