@@ -124,7 +124,8 @@ import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guar
 // baik dari abstraksi prematur"). `ImportRowRecord` TIDAK diimpor ulang
 // dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
 // impor di atas, reuse type yang sama.
-import { saveSalesInvoice, getSalesInvoiceDetail, getSalesInvoiceLinesByNumber, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
+import { saveSalesInvoice, getSalesInvoiceDetail, getSalesInvoiceByNumber, getSalesInvoiceLinesByNumber, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
+import { isDuplicateNumberError, matchExistingSalesInvoice, type AdoptionResult } from "../lib/accurate-adopt-existing";
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
@@ -1094,11 +1095,44 @@ export async function processSalesInvoiceGroup(
     (info) => logger.info({ invoiceId: result.id, ...info }, "Sales Invoice: Accurate menambah baris otomatis (item paket/grup), baris dikirim terpetakan aman"),
     (err) => logger.warn({ err, invoiceId: result.id }, "Sales Invoice: gagal membaca detail faktur untuk menyelaraskan baris tambahan Accurate"),
   );
-  return {
-    invoiceId: result.id,
+  let rows: { rowId: string; detailItemId: number }[];
+  try {
     // § Fase 198 — baris perluasan menyimpan id detail PERTAMA hasil perluasannya (indeks baris ≠ indeks detail bila ada perluasan).
-    rows: mapDetailIdsToRows(group.rows.map((r) => r.id), offsets, savedForMapping, sentDetail.length),
-  };
+    rows = mapDetailIdsToRows(group.rows.map((r) => r.id), offsets, savedForMapping, sentDetail.length);
+  } catch (err) {
+    // `save.do` SUDAH berhasil: faktur ada di Accurate. Pesan harus menjelaskan itu (bukan terbaca sebagai kesalahan data pelanggan).
+    throw new Error(
+      `Faktur Penjualan "${result.number}" (ID ${result.id}) SUDAH tersimpan di Accurate, tetapi Facport belum bisa memetakan baris-barisnya (${(err as Error).message}). ` +
+        "Ini bukan kesalahan data Anda — jangan unggah ulang. Tekan Retry agar Facport mengenali faktur itu; bila tetap gagal, hubungi support.",
+    );
+  }
+  return { invoiceId: result.id, rows };
+}
+
+/**
+ * § 2026-10-26 — `save.do` menolak karena nomor sudah ada (`isDuplicateNumberError`): cek apakah itu faktur dari baris-baris INI yang tersimpan pada percobaan
+ * sebelumnya (lihat `matchExistingSalesInvoice`). `null` = tidak bisa/perlu dinilai (baris perluasan dokumen sumber, tanpa nomor, atau faktur tidak ditemukan)
+ * → pemanggil memakai galat aslinya. Hanya MEMBACA Accurate.
+ */
+export async function tryAdoptExistingSalesInvoice(
+  ctx: AccurateSessionContext,
+  group: SalesInvoiceGroup,
+  columnMapping: Record<string, string>,
+): Promise<AdoptionResult | null> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  if (rawRows.some((r) => isSourceExpansionRow(r, columnMapping))) return null;
+  const payload = buildSalesInvoicePayload(rawRows, columnMapping);
+  const number = String(payload.number ?? "").trim();
+  if (!number) return null;
+  const existing = await getSalesInvoiceByNumber(ctx, number);
+  if (!existing) return null;
+  const sent = ((payload.detailItem as { itemNo?: unknown; quantity?: unknown; unitPrice?: unknown }[] | undefined) ?? []).map((d) => ({
+    itemNo: String(d.itemNo ?? ""),
+    quantity: Number(d.quantity),
+    unitPrice: Number(d.unitPrice ?? 0),
+  }));
+  if (sent.some((l) => Number.isNaN(l.quantity) || Number.isNaN(l.unitPrice))) return null;
+  return matchExistingSalesInvoice({ rowIds: group.rows.map((r) => r.id), number, customerNo: String(payload.customerNo ?? ""), sent, existing });
 }
 
 // § mirror `findExistingAccurateInvoiceId` — cari lintas-batch by PO
@@ -2913,9 +2947,39 @@ async function main() {
               .where(eq(importBatchRows.id, r.rowId));
           }
         } catch (err) {
+          // § 2026-10-26 — nomor sudah ada di Accurate: kalau itu faktur dari baris-baris ini yang tersimpan pada percobaan sebelumnya, tautkan & tandai SUKSES
+          // dengan keterangan (bukan "gagal"). Gagal menilai → galat asli; terbaca tetapi isinya beda → pesan yang menjelaskan perbedaannya.
+          let adoption: AdoptionResult | null = null;
+          if (isDuplicateNumberError(err)) {
+            try {
+              adoption = await tryAdoptExistingSalesInvoice(session, group, columnMapping);
+            } catch (adoptErr) {
+              logger.warn({ err: adoptErr, batchId: batch.id }, "Sales Invoice: gagal memeriksa faktur yang sudah ada di Accurate");
+            }
+          }
+          if (adoption?.ok) {
+            logger.info({ event: "sales_invoice_adopted_existing", batchId: batch.id, invoiceId: adoption.invoiceId, rows: adoption.rows.length }, "Faktur yang sudah ada di Accurate ditautkan ke baris import");
+            for (const r of adoption.rows) {
+              await db
+                .update(importBatchRows)
+                .set({
+                  status: "success",
+                  accurateTransactionId: String(adoption.invoiceId),
+                  accurateDetailItemId: String(r.detailItemId),
+                  errorMessage: adoption.note, // keterangan "Sudah ada di Accurate …" pada baris SUKSES (dibaca UI lewat ADOPTED_NOTE_PREFIX)
+                  processedAt: new Date(),
+                })
+                .where(eq(importBatchRows.id, r.rowId));
+            }
+            return;
+          }
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: annotateSourceExpansionFailure(describeAccurateFailure(err), group.rows.map((r) => r.rawData), columnMapping), processedAt: new Date() })
+            .set({
+              status: "failed",
+              errorMessage: adoption && !adoption.ok ? adoption.message : annotateSourceExpansionFailure(describeAccurateFailure(err), group.rows.map((r) => r.rawData), columnMapping),
+              processedAt: new Date(),
+            })
             .where(inArray(importBatchRows.id, rowIds));
         }
       });

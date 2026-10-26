@@ -23,6 +23,7 @@ import { CancelImportDialog } from "@/components/sales-invoice/cancel-import-dia
 import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
 import type { CancelResult } from "@/lib/import-cancel-result";
 import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
+import { isAdoptedRow } from "@/lib/import-adopted";
 
 // § Fase 13 — mirror 1:1 `app/app/(protected)/purchase-invoice/import/[batchId]/page.tsx`
 // (PO Number ganti peran Bill No).
@@ -122,6 +123,9 @@ export default function SalesInvoiceImportResultPage() {
   }
 
   const { batch, summary, rows } = detail;
+  // Baris yang ditautkan ke faktur yang SUDAH ada di Accurate (lihat `lib/import-adopted.ts`) — dihitung per faktur untuk banner penjelasan.
+  const adoptedRows = rows.filter(isAdoptedRow);
+  const adoptedInvoiceCount = new Set(adoptedRows.map((r) => r.accurateTransactionId)).size;
   // § audit-temuan-2026-09-27 Batch 5.2 — sebelumnya cuma cek "processing",
   // tombol Retry tetap tampil saat batch "cancelling" (job Batal Import
   // lagi jalan) — race window kecil sebelum backend juga ditutup (409
@@ -200,6 +204,14 @@ export default function SalesInvoiceImportResultPage() {
         </Card>
       )}
 
+      {adoptedRows.length > 0 && (
+        <p className="rounded-md border border-success/40 bg-success-bg px-3 py-2 text-sm text-foreground" data-testid="adopted-banner">
+          <strong>{adoptedInvoiceCount.toLocaleString("id-ID")} faktur ({adoptedRows.length.toLocaleString("id-ID")} baris) sudah ada di Accurate</strong> dari percobaan sebelumnya dan kini
+          ditandai sukses — tidak dibuat ulang. Data Anda benar; kegagalan sebelumnya terjadi karena Facport belum bisa membaca baris tambahan otomatis dari Accurate (mis. item paket),
+          bukan karena isi file. Cari nomor fakturnya di Accurate untuk memastikan.
+        </p>
+      )}
+
       <CancelPartialSection
         status={batch.status}
         rows={rows}
@@ -232,7 +244,10 @@ export default function SalesInvoiceImportResultPage() {
                   <TableCell>
                     <StatusBadge status={row.status} />
                   </TableCell>
-                  <TableCell className="text-muted-foreground"><TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText></TableCell>
+                  <TableCell className="text-muted-foreground">
+                    <TruncateText>{row.accurateTransactionId ?? row.errorMessage ?? "-"}</TruncateText>
+                    {isAdoptedRow(row) && <p className="mt-1 whitespace-normal text-xs text-success">{row.errorMessage}</p>}
+                  </TableCell>
                   <TableCell>
                     {row.status === "failed" && batch.columnMapping && (
                       <div className="flex justify-end">

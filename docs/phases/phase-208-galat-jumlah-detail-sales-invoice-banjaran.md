@@ -25,11 +25,18 @@ bila detail hasil `save.do` > yang dikirim, baca `detail.do` dan cocokkan tiap b
 diterima bila kodenya TIDAK sama dengan baris yang dikirim. Tidak terbukti aman / gagal baca → tetap ditolak seperti sebelumnya. `mapDetailIdsToRows` TIDAK diubah.
 Tes: 13 kasus baru di `source-expansion.test.ts` (termasuk kasus yang HARUS tetap ditolak).
 
+**Pemulihan baris lama — "adopsi" (2026-10-26, dikodekan, belum dirilis):** Retry atau unggah ulang pada baris yang gagal karena galat ini → `save.do` menolak "Sudah ada data lain dengan <nomor>"
+→ worker (`tryAdoptExistingSalesInvoice`) membaca faktur lewat nomor (`getSalesInvoiceByNumber`) dan `matchExistingSalesInvoice` (`lib/accurate-adopt-existing.ts`) menautkan baris HANYA bila SEMUA terpenuhi:
+nomor sama; Customer sama; tiap baris file ketemu berurutan lewat kode item; kuantitas SAMA PERSIS dan harga sama (toleransi Rp1); baris tambahan ≤ jumlah baris file (mencegah file lain berisi sebagian item
+dengan nomor yang sama dianggap "sudah ada"). Berhasil → baris **sukses** dengan keterangan "Sudah ada di Accurate — … sudah tersimpan pada percobaan sebelumnya dan tidak dibuat ulang…" (disimpan di `errorMessage` baris sukses,
+dikenali UI lewat `ADOPTED_NOTE_PREFIX`); tidak cocok → gagal dengan pesan yang menjelaskan perbedaannya. Hanya MEMBACA Accurate. Dukungan UI: banner hijau "N faktur sudah ada di Accurate … bukan karena isi file" +
+keterangan per baris (halaman detail Sales Invoice), petunjuk di Ringkasan Galat untuk pesan lama & baru (bukan kesalahan data, Retry aman). Pesan galat pemetaan juga diganti: "Faktur … SUDAH tersimpan di Accurate … bukan kesalahan data Anda".
+Tes: `accurate-adopt-existing.test.ts` (12 kasus, termasuk 7 yang HARUS ditolak).
+
 **Belum dikerjakan:**
-1. **Pemulihan baris lama** (Banjaran 23 baris, Tuparev 21 baris): faktur ada di Accurate, baris `failed`. Retry/unggah ulang → "Sudah ada data lain dengan …". Pilihan: (a) SQL scoped dijalankan user
-   (pola 2026-10-09), (b) "adopsi" otomatis di worker saat save.do menolak nomor ganda — baca faktur lewat nomor, verifikasi customer + penyelarasan kode item + kuantitas sama, lalu tautkan baris (hanya MEMBACA Accurate; tidak mengubah dokumen pelanggan).
-2. **Jalur "tambah ke faktur yang sudah ada"** (`appendToExistingSalesInvoice`) memakai `result.detailItem.slice(-newRows.length)` untuk id baris baru — diam-diam salah bila Accurate menyisipkan baris NP otomatis. Tidak merusak hapus faktur (hapus faktur utuh) tapi id tercatat keliru. Perlu perbaikan serupa.
-3. **Modul lain** yang memetakan id detail dari hasil simpan (Purchase Invoice dst) belum diperiksa untuk item paket.
+1. Adopsi hanya untuk **Sales Invoice** (modul yang terbukti). Purchase Invoice dan modul lain belum diperiksa untuk item paket / galat serupa.
+2. **Jalur "tambah ke faktur yang sudah ada"** (`appendToExistingSalesInvoice`) memakai `result.detailItem.slice(-newRows.length)` untuk id baris baru — diam-diam salah bila Accurate menyisipkan baris NP otomatis. Tidak merusak hapus faktur (hapus faktur utuh) tapi id tercatat keliru; dampak kecil, ditunda.
+3. Verifikasi dengan Accurate asli (Tuparev/Banjaran) setelah rilis: Retry pada baris lama harus menjadi sukses dengan keterangan.
 
 ## Gejala
 Pelanggan (file `banjaran 29.xlsx`, modul Sales Invoice, 118 baris, batch `a98b7ffa-a632-49c7-88b8-8c24a3e88d0b`, 2026-10-21 10:27 UTC)

@@ -84,3 +84,18 @@ describe("hintFor — saran per jenis galat (kasus nyata)", () => {
     expect(hintFor("Pembayaran melebihi nilai piutang faktur. [Pengiriman bertahap: 500 dari 4000 entri faktur sudah tersimpan]")).toMatchObject({ action: "fix-data" });
   });
 });
+
+describe("hint untuk faktur yang sudah tersimpan di Accurate (item paket)", () => {
+  test("pesan LAMA 'Accurate mengembalikan N baris detail, padahal M dikirim' → boleh Retry, jelas bukan kesalahan data", () => {
+    const hint = hintFor("Accurate mengembalikan 9 baris detail, padahal 6 dikirim — id baris tidak bisa dipetakan dengan aman.");
+    expect(hint?.action).toBe("retry-ok");
+    expect(hint?.advice).toContain("SUDAH tersimpan di Accurate");
+    expect(hint?.advice).toContain("BUKAN kesalahan data");
+  });
+  test("pesan BARU 'SUDAH tersimpan di Accurate' memakai petunjuk yang sama", () => {
+    expect(hintFor('Faktur Penjualan "X" (ID 5) SUDAH tersimpan di Accurate, tetapi Facport belum bisa memetakan baris-barisnya (…).')?.action).toBe("retry-ok");
+  });
+  test("nomor ada di Accurate tetapi isi berbeda → periksa Accurate", () => {
+    expect(hintFor('Nomor Transaksi "X" sudah ada di Accurate (Faktur Penjualan "X" (ID 5)), tetapi isinya tidak sama dengan baris di file ini (…).')?.action).toBe("check-accurate");
+  });
+});
