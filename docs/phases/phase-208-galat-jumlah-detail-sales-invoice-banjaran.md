@@ -1,11 +1,35 @@
 # Fase 208 — Galat "Accurate mengembalikan N baris detail, padahal M dikirim" (Sales Invoice, client Banjaran)
 
-**Status:** Planned — INVESTIGASI TERBUKA, menunggu balasan client (belum ada kode)
+**Status:** PENYEBAB TERBUKTI 2026-10-26 (client Tuparev) + pencegahan dikodekan (belum dirilis); pemulihan baris lama MENUNGGU keputusan (lihat "Update 2026-10-26")
 **Ditemukan:** 2026-10-21 (v2.43.0 di produksi)
 **Selesai:** -
 
 > **Baca ini kalau kamu melanjutkan topik "Banjaran" / galat 10-vs-9 baris.**
 > Semua yang sudah diketahui, sudah dicoba, dan yang belum diketahui ada di sini.
+
+## Update 2026-10-26 — PENYEBAB TERBUKTI (client Tuparev, file `baris-gagal-Tuparev 30 (1).xlsx` + tangkapan layar Accurate)
+Pesan galat yang SAMA muncul pada 3 faktur Tuparev (`Tiktok/Tuparev/3010-001/-002/-003`), dan faktur-fakturnya **tersimpan di Accurate**. Selisih jumlah baris
+= jumlah item berkode **`PKT…`** (paket/grup) pada tiap faktur — bukan kebetulan:
+
+| Faktur | Dikirim | Item `PKT…` | Kembali | Selisih |
+|---|---|---|---|---|
+| …3010-003 | 6 | 3 | 9 | +3 |
+| …3010-001 | 8 | 4 | 12 | +4 |
+| …3010-002 | 6 | 3 | 9 | +3 |
+
+Tangkapan layar Accurate: tiap `PKT013`/`PKT018` diikuti baris OTOMATIS `--NP (BEST SELLER) …` (kode `NP0013`) / `--NP (SPECIAL PRICE) …` (`NP0018`) berharga 0, yang
+tidak ada di Excel. Hipotesis #1 (item Barang Grup/Paket) **terbukti**; Banjaran (+1/+4/+3) konsisten dengan pola yang sama (belum dikonfirmasi dengan data Banjaran).
+
+**Pencegahan (kode, 2026-10-26):** `alignSavedDetailItems` + `selectSavedDetailForMapping` (`lib/import-mapping/source-expansion.ts`), dipakai `processSalesInvoiceGroup`:
+bila detail hasil `save.do` > yang dikirim, baca `detail.do` dan cocokkan tiap baris yang dikirim BERURUTAN berdasarkan kode item; baris sisa (tambahan Accurate) hanya
+diterima bila kodenya TIDAK sama dengan baris yang dikirim. Tidak terbukti aman / gagal baca → tetap ditolak seperti sebelumnya. `mapDetailIdsToRows` TIDAK diubah.
+Tes: 13 kasus baru di `source-expansion.test.ts` (termasuk kasus yang HARUS tetap ditolak).
+
+**Belum dikerjakan:**
+1. **Pemulihan baris lama** (Banjaran 23 baris, Tuparev 21 baris): faktur ada di Accurate, baris `failed`. Retry/unggah ulang → "Sudah ada data lain dengan …". Pilihan: (a) SQL scoped dijalankan user
+   (pola 2026-10-09), (b) "adopsi" otomatis di worker saat save.do menolak nomor ganda — baca faktur lewat nomor, verifikasi customer + penyelarasan kode item + kuantitas sama, lalu tautkan baris (hanya MEMBACA Accurate; tidak mengubah dokumen pelanggan).
+2. **Jalur "tambah ke faktur yang sudah ada"** (`appendToExistingSalesInvoice`) memakai `result.detailItem.slice(-newRows.length)` untuk id baris baru — diam-diam salah bila Accurate menyisipkan baris NP otomatis. Tidak merusak hapus faktur (hapus faktur utuh) tapi id tercatat keliru. Perlu perbaikan serupa.
+3. **Modul lain** yang memetakan id detail dari hasil simpan (Purchase Invoice dst) belum diperiksa untuk item paket.
 
 ## Gejala
 Pelanggan (file `banjaran 29.xlsx`, modul Sales Invoice, 118 baris, batch `a98b7ffa-a632-49c7-88b8-8c24a3e88d0b`, 2026-10-21 10:27 UTC)

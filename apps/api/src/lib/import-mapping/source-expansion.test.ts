@@ -6,6 +6,8 @@ import {
   missingRequiredFieldsForRow,
   expandSourceRowsInPayload,
   mapDetailIdsToRows,
+  alignSavedDetailItems,
+  selectSavedDetailForMapping,
   isRequiredFieldExemptForRow,
   annotateSourceExpansionFailure,
   sourceOfRow,
@@ -386,6 +388,93 @@ describe("mapDetailIdsToRows (pemetaan id detail Accurate → baris Excel)", () 
   });
   test("jumlah detail dari Accurate ≠ yang dikirim → galat, bukan tebakan", () => {
     expect(() => mapDetailIdsToRows(["r0"], [0], [{ id: 1 }], 3)).toThrow(/tidak bisa dipetakan/);
+  });
+});
+
+// § 2026-10-26 — kasus nyata client Tuparev: tiap item PKT… otomatis diikuti baris "--NP …" (NP…) oleh Accurate → 6 dikirim, 9 kembali.
+describe("alignSavedDetailItems (baris tambahan otomatis Accurate pada item paket)", () => {
+  const savedLine = (id: number, itemNo: string) => ({ id, itemNo });
+
+  test("pola nyata Tuparev: 6 dikirim, 9 kembali (3 baris NP tambahan) → tiap baris dikirim terpetakan ke baris aslinya", () => {
+    const sent = ["A004", "PKT014", "A003", "PKT013", "PKT018", "A009"];
+    const saved = [savedLine(1, "A004"), savedLine(2, "PKT014"), savedLine(3, "NP0014"), savedLine(4, "A003"), savedLine(5, "PKT013"), savedLine(6, "NP0013"), savedLine(7, "PKT018"), savedLine(8, "NP0018"), savedLine(9, "A009")];
+    expect(alignSavedDetailItems(sent, saved)).toEqual([0, 1, 3, 4, 6, 8]);
+  });
+
+  test("hasil dipakai mapDetailIdsToRows: id yang tercatat per baris Excel = id baris ASLI, BUKAN baris NP", () => {
+    const saved = [savedLine(10, "PKT013"), savedLine(11, "NP0013"), savedLine(12, "A003")];
+    const alignment = alignSavedDetailItems(["PKT013", "A003"], saved)!;
+    const compact = alignment.map((i) => saved[i]!);
+    expect(mapDetailIdsToRows(["r0", "r1"], [0, 1], compact, 2)).toEqual([
+      { rowId: "r0", detailItemId: 10 },
+      { rowId: "r1", detailItemId: 12 },
+    ]);
+  });
+
+  test("kode item kembar pada baris dikirim tetap terpetakan berurutan (baris tambahan di antaranya dilewati)", () => {
+    const saved = [savedLine(1, "A003"), savedLine(2, "PKT013"), savedLine(3, "NP0013"), savedLine(4, "A003")];
+    expect(alignSavedDetailItems(["A003", "PKT013", "A003"], saved)).toEqual([0, 1, 3]);
+  });
+
+  test("baris tambahan di akhir juga diterima; huruf besar/kecil & spasi tidak membedakan", () => {
+    expect(alignSavedDetailItems([" a003 ", "PKT013"], [savedLine(1, "A003"), savedLine(2, "pkt013"), savedLine(3, "NP0013")])).toEqual([0, 1]);
+  });
+
+  test("jumlah sama (tanpa baris tambahan) → pemetaan identitas", () => {
+    expect(alignSavedDetailItems(["A", "B"], [savedLine(1, "A"), savedLine(2, "B")])).toEqual([0, 1]);
+  });
+
+  // ---- yang TIDAK BOLEH lolos (mapDetailIdsToRows tetap menolak) ----
+  test("baris tambahan berkode SAMA dengan salah satu baris dikirim → ambigu → null (tidak menebak)", () => {
+    expect(alignSavedDetailItems(["A003", "PKT013"], [savedLine(1, "A003"), savedLine(2, "A003"), savedLine(3, "PKT013")])).toBeNull();
+    expect(alignSavedDetailItems(["A003", "PKT013"], [savedLine(1, "A003"), savedLine(2, "PKT013"), savedLine(3, "A003")])).toBeNull();
+  });
+
+  test("ada baris dikirim yang TIDAK ditemukan di hasil simpan → null", () => {
+    expect(alignSavedDetailItems(["A003", "ZZZ"], [savedLine(1, "A003"), savedLine(2, "NP0013"), savedLine(3, "A009")])).toBeNull();
+  });
+
+  test("urutan hasil simpan berbeda dari yang dikirim → null", () => {
+    expect(alignSavedDetailItems(["A", "B"], [savedLine(1, "B"), savedLine(2, "A"), savedLine(3, "NP1")])).toBeNull();
+  });
+
+  test("hasil simpan lebih sedikit, kode item kosong, atau tidak ada yang dikirim → null", () => {
+    expect(alignSavedDetailItems(["A", "B", "C"], [savedLine(1, "A"), savedLine(2, "B")])).toBeNull();
+    expect(alignSavedDetailItems(["A", ""], [savedLine(1, "A"), savedLine(2, "")])).toBeNull();
+    expect(alignSavedDetailItems([], [savedLine(1, "A")])).toBeNull();
+  });
+});
+
+describe("selectSavedDetailForMapping (keputusan memakai detail faktur untuk menyelaraskan)", () => {
+  const line = (id: number, itemNo: string) => ({ id, itemNo });
+  const sent = ["PKT013", "A003"];
+  const fromSave = [{ id: 1 }, { id: 2 }, { id: 3 }];
+
+  test("jumlah sama → daftar asli, TIDAK memanggil detail faktur", async () => {
+    let calls = 0;
+    const out = await selectSavedDetailForMapping(sent, [{ id: 1 }, { id: 2 }], async () => (calls++, []));
+    expect(out).toEqual([{ id: 1 }, { id: 2 }]);
+    expect(calls).toBe(0);
+  });
+
+  test("lebih banyak & terbukti aman → daftar ringkas berisi baris ASLI (bukan baris NP), callback onAligned dipanggil", async () => {
+    let info: unknown;
+    const out = await selectSavedDetailForMapping(sent, fromSave, async () => [line(10, "PKT013"), line(11, "NP0013"), line(12, "A003")], (i) => (info = i));
+    expect(out.map((d) => d.id)).toEqual([10, 12]);
+    expect(info).toEqual({ sent: 2, returned: 3 });
+  });
+
+  test("lebih banyak tapi TIDAK terbukti aman → daftar asli (sehingga mapDetailIdsToRows menolak seperti sebelumnya)", async () => {
+    const out = await selectSavedDetailForMapping(sent, fromSave, async () => [line(10, "PKT013"), line(11, "A003"), line(12, "A003")]);
+    expect(out).toBe(fromSave);
+    expect(() => mapDetailIdsToRows(["r0", "r1"], [0, 1], out, 2)).toThrow(/tidak bisa dipetakan/);
+  });
+
+  test("gagal membaca detail faktur → daftar asli + onFetchError dipanggil, tidak melempar", async () => {
+    let failed = false;
+    const out = await selectSavedDetailForMapping(sent, fromSave, async () => { throw new Error("jaringan"); }, undefined, () => (failed = true));
+    expect(out).toBe(fromSave);
+    expect(failed).toBe(true);
   });
 });
 

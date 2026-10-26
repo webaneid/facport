@@ -189,7 +189,7 @@ import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
 import { recoverOrphanedImportJobs } from "../lib/orphaned-imports";
-import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
+import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, selectSavedDetailForMapping, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
 import {
   buildSalesQuotationPayload,
   groupSalesQuotationRows,
@@ -1083,10 +1083,21 @@ export async function processSalesInvoiceGroup(
   await ensureDataClassifications(ctx, rawRows, columnMapping);
 
   const result = await saveSalesInvoice(ctx, payload);
+  const sentDetail = payload.detailItem as { itemNo?: unknown }[];
+  // § 2026-10-26 — Accurate menambah baris otomatis (item paket/grup: tiap PKT… diikuti "--NP …") sehingga jumlah detail hasil simpan > yang dikirim.
+  // Faktur SUDAH tersimpan; jangan tandai gagal bila baris yang dikirim terbukti cocok berurutan (kode item) — lihat `alignSavedDetailItems`.
+  // Tidak terbukti aman (atau detail.do gagal) → jatuh ke `mapDetailIdsToRows` yang menolak seperti sebelumnya.
+  const savedForMapping = await selectSavedDetailForMapping(
+    sentDetail.map((d) => String(d.itemNo ?? "")),
+    result.detailItem,
+    async () => (await getSalesInvoiceDetail(ctx, result.id)).detailItem,
+    (info) => logger.info({ invoiceId: result.id, ...info }, "Sales Invoice: Accurate menambah baris otomatis (item paket/grup), baris dikirim terpetakan aman"),
+    (err) => logger.warn({ err, invoiceId: result.id }, "Sales Invoice: gagal membaca detail faktur untuk menyelaraskan baris tambahan Accurate"),
+  );
   return {
     invoiceId: result.id,
     // § Fase 198 — baris perluasan menyimpan id detail PERTAMA hasil perluasannya (indeks baris ≠ indeks detail bila ada perluasan).
-    rows: mapDetailIdsToRows(group.rows.map((r) => r.id), offsets, result.detailItem, (payload.detailItem as unknown[]).length),
+    rows: mapDetailIdsToRows(group.rows.map((r) => r.id), offsets, savedForMapping, sentDetail.length),
   };
 }
 
