@@ -1,3 +1,10 @@
+## 2.45.0 (2026-10-26)
+
+* Merge pull request #94 from webaneid/develop ([f8a08b6](https://github.com/webaneid/facport/commit/f8a08b6)), closes [#94](https://github.com/webaneid/facport/issues/94)
+* feat(api web): Sales Invoice mengenali faktur yang sudah ada di Accurate saat Retry/unggah ulang ([c463b85](https://github.com/webaneid/facport/commit/c463b85))
+* fix(api): Sales Invoice tidak lagi gagal saat Accurate menambah baris otomatis (item paket PKT -> -- ([4bb5276](https://github.com/webaneid/facport/commit/4bb5276))
+* fix(api): template 2 baris header terbaca benar + kolom tanggal baris gagal tampil sebagai tanggal ([e98594d](https://github.com/webaneid/facport/commit/e98594d))
+
 ## 2.44.0 (2026-10-26)
 
 * Merge pull request #93 from webaneid/develop ([cb6bb92](https://github.com/webaneid/facport/commit/cb6bb92)), closes [#93](https://github.com/webaneid/facport/issues/93)
