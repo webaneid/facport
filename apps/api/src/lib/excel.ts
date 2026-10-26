@@ -5,6 +5,34 @@ export type ParsedExcel = {
   rows: Record<string, unknown>[];
 };
 
+// § Template buatan FAC (mis. `FACPORT_TEMPLATE_Purchase_Inv_v8.xlsx`) punya 2 baris header: baris 1 = JUDUL GRUP di sel
+// gabungan ("Header Data", "Item Details"), baris 2 = nama kolom sebenarnya. Parser membaca baris 1 sebagai header, jadi file
+// itu terbaca cuma 4 kolom dan SEMUA field wajib "belum dipetakan". Syarat SENGAJA ketat supaya file biasa tidak pernah salah
+// baca (header biasa + 1 sel gabungan + baris data yang lebih lebar HARUS tetap baris 1 sebagai header): baris 1 punya sel
+// gabungan horizontal, baris 2 berisi minimal 2x lebih banyak sel terisi, dan SEMUA sel baris 2 berupa teks (baris data
+// hampir selalu memuat angka/tanggal). Template buatan aplikasi (satu baris header, tanpa sel gabungan) tidak terpengaruh.
+function headerRowIndexOf(sheet: XLSX.WorkSheet): number {
+  const ref = sheet["!ref"];
+  if (!ref) return 0;
+  const hasGroupMerge = (sheet["!merges"] ?? []).some((m) => m.s.r === 0 && m.e.r === 0 && m.e.c > m.s.c);
+  if (!hasGroupMerge) return 0;
+  const range = XLSX.utils.decode_range(ref);
+  const inspectRow = (row: number) => {
+    let filled = 0;
+    let allText = true;
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r: row, c })];
+      if (!cell || cell.v === undefined || String(cell.v).trim() === "") continue;
+      filled++;
+      if (cell.t !== "s") allText = false;
+    }
+    return { filled, allText };
+  };
+  const groupRow = inspectRow(0);
+  const nameRow = inspectRow(1);
+  return nameRow.allText && nameRow.filled >= groupRow.filled * 2 ? 1 : 0;
+}
+
 // § architecture-accurate-integration.md § 3 — parsing generik, mapping
 // kolom→field Accurate ditentukan terpisah (lib/import-mapping/*).
 export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
@@ -13,7 +41,8 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   if (!sheetName) return { headers: [], rows: [] };
   const sheet = workbook.Sheets[sheetName]!;
 
-  const headerRow = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })[0] ?? [];
+  const headerRowIndex = headerRowIndexOf(sheet);
+  const headerRow = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1, range: headerRowIndex })[0] ?? [];
   // § Fase 147 — header DUPLIKAT (Excel client Work Order mengulang "Project No"/"Process Category Name"/"CLS1" di beberapa section):
   // `sheet_to_json` (dipakai `rawRows` di bawah) menamai kemunculan ke-2 dst "X_1", "X_2", sedangkan `header: 1` mengembalikan "X" apa
   // adanya. Tanpa penyamaan, daftar `headers` (UI "Cocokkan Kolom") berisi nama sama berulang dan TIDAK ada key baris yang cocok untuk
@@ -42,7 +71,7 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   // `headers`/`columnMapping` — bug ini generik lintas SEMUA modul import
   // (bukan spesifik Purchase Payment/Tax), karena `parseExcelBuffer`
   // dipakai bersama oleh semua route `*-import.route.ts`.
-  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
+  const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerRowIndex });
   const rows = rawRows.map((row) => {
     const trimmed: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
@@ -142,6 +171,10 @@ function clipCell<T extends string | number>(value: T): T | string {
   return typeof value === "string" && value.length > EXCEL_MAX_CELL_LENGTH ? value.slice(0, EXCEL_MAX_CELL_LENGTH - 1) + "…" : value;
 }
 
+// nama field internal tanggal: berakhiran "Date" (transDate, chequeDate, shipDate, taxDate, serialNumExpDate, ...) atau
+// "Tanggal<n>" (attributHeaderTanggal1, ...).
+const DATE_FIELD_NAME_RE = /(Date|Tanggal\d*)$/;
+
 export function generateFailedRowsBuffer(
   rows: { rawData: Record<string, unknown>; errorMessage: string | null }[],
   columnMapping: Record<string, string>, // excelColumn -> field internal (dari `batch.columnMapping`)
@@ -160,6 +193,17 @@ export function generateFailedRowsBuffer(
 
   const sheet = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
   sheet["!cols"] = header.map(() => ({ wch: 20 }));
+
+  // § Tanggal dari Excel tersimpan sebagai nomor seri (mis. 45938) di `rawData`, jadi file unduhan menampilkan angka, bukan tanggal.
+  // Nilai angkanya TIDAK diubah (upload ulang tetap terbaca sama seperti file asli) — hanya diberi format tampilan tanggal pada
+  // kolom yang dipetakan ke field tanggal (transDate, chequeDate, shipDate, taxDate, ...serialNumExpDate).
+  columns.forEach((column, c) => {
+    if (!DATE_FIELD_NAME_RE.test(columnMapping[column] ?? "")) return;
+    for (let r = 1; r <= dataRows.length; r++) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
+      if (cell && cell.t === "n") cell.z = "yyyy-mm-dd";
+    }
+  });
 
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "Baris Gagal");
