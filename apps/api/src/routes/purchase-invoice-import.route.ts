@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, and, desc, count, inArray, sql } from "drizzle-orm";
+import { eq, and, desc, count, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
 import { importBatches, importBatchRows, auditLogs } from "../db/schema";
 import { permissionPlugin } from "../lib/permission";
@@ -17,6 +17,7 @@ import {
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
 import { enqueueAccurateJob } from "../lib/accurate-job-dispatch";
+import { getCancelResult } from "../lib/import-cancel-result";
 
 // § architecture-security.md §8 — validasi tipe + ukuran di schema layer,
 // SEBELUM body di-buffer penuh (pola sama media.route.ts).
@@ -244,25 +245,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
         success: rows.filter((r) => r.status === "success").length,
         failed: rows.filter((r) => r.status === "failed").length,
       };
-      // § hasil Batal Import TERAKHIR (worker CANCEL_IMPORT menulis `deleted`/`blocked`/`failed`/
-      // `failedReasons` ke audit_logs). Filter key `deleted` supaya tidak ketukar dengan audit
-      // tombol Hapus riwayat (action sama, bentuk `changes` beda). Batch lama tanpa
-      // `failedReasons` tetap terbaca (field itu opsional).
-      const [cancelLog] =
-        batch.status === "cancelled_partial"
-          ? await db
-              .select({ changes: auditLogs.changes })
-              .from(auditLogs)
-              .where(and(eq(auditLogs.entityType, "import_batch"), eq(auditLogs.entityId, batch.id), eq(auditLogs.action, "delete"), sql`${auditLogs.changes} ? 'deleted'`))
-              .orderBy(desc(auditLogs.createdAt))
-              .limit(1)
-          : [];
-      const cancelResult = (cancelLog?.changes ?? null) as {
-        deleted: string[];
-        blocked: string[];
-        failed: string[];
-        failedReasons?: Record<string, string>;
-      } | null;
+      const cancelResult = await getCancelResult(batch);
       return { batch, summary, rows, cancelResult };
     },
     { permission: "import.create", moduleAccess: "purchase_invoice", params: t.Object({ batchId: t.String({ format: "uuid" }) }) },

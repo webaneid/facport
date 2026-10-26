@@ -18,6 +18,8 @@ import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findBillNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/purchase-invoice-batch-helpers";
 import { ImportErrorSummary } from "@/components/import/import-error-summary";
 import { CancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
+import { CancelPartialSection } from "@/components/import/cancel-partial-section";
+import type { CancelResult } from "@/lib/import-cancel-result";
 import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
 import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
@@ -41,7 +43,7 @@ type BatchDetail = {
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
   // hasil Batal Import terakhir (cuma ada untuk batch `cancelled_partial`); `failedReasons` kosong di batch lama.
-  cancelResult: { deleted: string[]; blocked: string[]; failed: string[]; failedReasons?: Record<string, string> } | null;
+  cancelResult: CancelResult | null;
 };
 
 // § Fase 81 (2026-09-09) — logic penentuan "Nomor Transaksi" (Trans No
@@ -68,16 +70,6 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destru
 function StatusBadge({ status }: { status: string }) {
   const info = STATUS_BADGE[status] ?? { label: status, variant: "default" as const };
   return <Badge variant={info.variant}>{info.label}</Badge>;
-}
-
-function describeUndeletedReason(invoiceId: string, result: BatchDetail["cancelResult"]): string {
-  if (result?.blocked.includes(invoiceId)) {
-    return "Faktur ini juga dipakai batch import lain, jadi tidak dihapus otomatis. Hapus manual di Accurate bila perlu.";
-  }
-  const accurateMessage = result?.failedReasons?.[invoiceId];
-  if (accurateMessage) return `Accurate menolak menghapus: ${accurateMessage}`;
-  if (result?.failed.includes(invoiceId)) return "Accurate menolak menghapus (alasan tidak tercatat — kemungkinan sudah dibayar atau dipakai dokumen lain).";
-  return "Belum terhapus.";
 }
 
 export default function PurchaseInvoiceImportResultPage() {
@@ -140,27 +132,6 @@ export default function PurchaseInvoiceImportResultPage() {
   const billNumberColumn = findBillNumberColumn(batch.columnMapping);
   const sortedRows = sortByInvoiceNumber(rows, numberColumn, billNumberColumn);
 
-  // § Batal Import sebagian — faktur yang MASIH ada di Accurate = baris yang tetap `success` (baris
-  // yang terhapus sudah `cancelled`). Dikelompokkan per faktur, alasannya dari hasil pembatalan terakhir.
-  const undeletedInvoices =
-    batch.status === "cancelled_partial"
-      ? [
-          ...rows
-            .filter((r) => r.status === "success" && r.accurateTransactionId)
-            .reduce((acc, r) => {
-              const id = r.accurateTransactionId as string;
-              const entry = acc.get(id) ?? { id, number: invoiceNumberOf(r, numberColumn, billNumberColumn), rowCount: 0 };
-              entry.rowCount += 1;
-              acc.set(id, entry);
-              return acc;
-            }, new Map<string, { id: string; number: string; rowCount: number }>())
-            .values(),
-        ].map((inv) => ({
-          ...inv,
-          reason: describeUndeletedReason(inv.id, detail.cancelResult),
-        }))
-      : [];
-
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -186,12 +157,6 @@ export default function PurchaseInvoiceImportResultPage() {
               <StatusBadge status={batch.status} />
             </div>
           </div>
-          {batch.status === "cancelled_partial" && (
-            <p className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-sm text-foreground">
-              Sebagian faktur belum terhapus dari Accurate — biasanya karena sudah dibayar atau dipakai dokumen lain.
-              Batalkan dokumen turunannya dulu (mis. Purchase Payment), lalu klik <strong>Batal Import</strong> lagi.
-            </p>
-          )}
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
         {(summary.failed > 0 || summary.pending > 0) && !isBusy && batch.columnMapping && (
@@ -235,37 +200,12 @@ export default function PurchaseInvoiceImportResultPage() {
         </Card>
       )}
 
-      {undeletedInvoices.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Faktur yang belum terhapus ({undeletedInvoices.length})</CardTitle>
-            <CardDescription>
-              Faktur ini masih ada di Accurate. Bereskan penyebabnya (mis. batalkan Purchase Payment-nya), lalu klik Batal
-              Import lagi.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-48">Nomor Transaksi</TableHead>
-                  <TableHead className="w-20">Baris</TableHead>
-                  <TableHead>Alasan</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {undeletedInvoices.map((inv) => (
-                  <TableRow key={inv.id}>
-                    <TableCell className="font-medium">{inv.number || `ID Accurate ${inv.id}`}</TableCell>
-                    <TableCell>{inv.rowCount}</TableCell>
-                    <TableCell className="whitespace-normal text-sm text-muted-foreground">{inv.reason}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <CancelPartialSection
+        status={batch.status}
+        rows={rows}
+        cancelResult={detail.cancelResult}
+        numberOf={(row) => invoiceNumberOf(row, numberColumn, billNumberColumn)}
+      />
 
       <ImportErrorSummary rows={rows} />
 
