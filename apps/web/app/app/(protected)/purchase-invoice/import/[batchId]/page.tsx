@@ -40,6 +40,8 @@ type BatchDetail = {
   };
   summary: { pending: number; success: number; failed: number };
   rows: Row[];
+  // hasil Batal Import terakhir (cuma ada untuk batch `cancelled_partial`); `failedReasons` kosong di batch lama.
+  cancelResult: { deleted: string[]; blocked: string[]; failed: string[]; failedReasons?: Record<string, string> } | null;
 };
 
 // § Fase 81 (2026-09-09) — logic penentuan "Nomor Transaksi" (Trans No
@@ -66,6 +68,16 @@ const STATUS_BADGE: Record<string, { label: string; variant: "success" | "destru
 function StatusBadge({ status }: { status: string }) {
   const info = STATUS_BADGE[status] ?? { label: status, variant: "default" as const };
   return <Badge variant={info.variant}>{info.label}</Badge>;
+}
+
+function describeUndeletedReason(invoiceId: string, result: BatchDetail["cancelResult"]): string {
+  if (result?.blocked.includes(invoiceId)) {
+    return "Faktur ini juga dipakai batch import lain, jadi tidak dihapus otomatis. Hapus manual di Accurate bila perlu.";
+  }
+  const accurateMessage = result?.failedReasons?.[invoiceId];
+  if (accurateMessage) return `Accurate menolak menghapus: ${accurateMessage}`;
+  if (result?.failed.includes(invoiceId)) return "Accurate menolak menghapus (alasan tidak tercatat — kemungkinan sudah dibayar atau dipakai dokumen lain).";
+  return "Belum terhapus.";
 }
 
 export default function PurchaseInvoiceImportResultPage() {
@@ -127,6 +139,27 @@ export default function PurchaseInvoiceImportResultPage() {
   const numberColumn = findNumberColumn(batch.columnMapping);
   const billNumberColumn = findBillNumberColumn(batch.columnMapping);
   const sortedRows = sortByInvoiceNumber(rows, numberColumn, billNumberColumn);
+
+  // § Batal Import sebagian — faktur yang MASIH ada di Accurate = baris yang tetap `success` (baris
+  // yang terhapus sudah `cancelled`). Dikelompokkan per faktur, alasannya dari hasil pembatalan terakhir.
+  const undeletedInvoices =
+    batch.status === "cancelled_partial"
+      ? [
+          ...rows
+            .filter((r) => r.status === "success" && r.accurateTransactionId)
+            .reduce((acc, r) => {
+              const id = r.accurateTransactionId as string;
+              const entry = acc.get(id) ?? { id, number: invoiceNumberOf(r, numberColumn, billNumberColumn), rowCount: 0 };
+              entry.rowCount += 1;
+              acc.set(id, entry);
+              return acc;
+            }, new Map<string, { id: string; number: string; rowCount: number }>())
+            .values(),
+        ].map((inv) => ({
+          ...inv,
+          reason: describeUndeletedReason(inv.id, detail.cancelResult),
+        }))
+      : [];
 
   return (
     <div className="flex flex-col gap-6">
@@ -198,6 +231,38 @@ export default function PurchaseInvoiceImportResultPage() {
               onSave={handleGridSave}
               onSaved={load}
             />
+          </CardContent>
+        </Card>
+      )}
+
+      {undeletedInvoices.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Faktur yang belum terhapus ({undeletedInvoices.length})</CardTitle>
+            <CardDescription>
+              Faktur ini masih ada di Accurate. Bereskan penyebabnya (mis. batalkan Purchase Payment-nya), lalu klik Batal
+              Import lagi.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-48">Nomor Transaksi</TableHead>
+                  <TableHead className="w-20">Baris</TableHead>
+                  <TableHead>Alasan</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {undeletedInvoices.map((inv) => (
+                  <TableRow key={inv.id}>
+                    <TableCell className="font-medium">{inv.number || `ID Accurate ${inv.id}`}</TableCell>
+                    <TableCell>{inv.rowCount}</TableCell>
+                    <TableCell className="whitespace-normal text-sm text-muted-foreground">{inv.reason}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       )}

@@ -861,6 +861,15 @@ function extractRowDetailItemNo(rawRow: Record<string, unknown>, columnMapping: 
   return String(value);
 }
 
+// § Batal Import — alasan gagal hapus PER DOKUMEN disimpan di `audit_logs.changes.failedReasons`
+// (tahan lama; log Docker & batch lokal cepat hilang, retensi batch 2 hari) supaya UI bisa
+// menjelaskan kenapa 1 faktur tidak terhapus (mis. sudah dibayar) tanpa investigasi ke log server.
+// Dipotong 300 karakter: cuma pesan Accurate, tidak ada token/data sensitif di sini.
+function cancelFailureReason(err: unknown): string {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.slice(0, 300);
+}
+
 // § Fase 08, ADR-0012 — cari LINTAS-BATCH (bukan cuma batch yang sedang
 // diproses) apakah grup ini SUDAH PERNAH sukses jadi faktur di
 // subscription yang sama. Dipakai supaya retry pada baris `failed` lama
@@ -3624,7 +3633,7 @@ async function main() {
         byDocument.set(row.accurateTransactionId, list);
       }
 
-      const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[] };
+      const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[], failedReasons: {} as Record<string, string> };
       let cancelledRowCount = 0;
 
       for (const [docIdStr, rows] of byDocument) {
@@ -3650,6 +3659,7 @@ async function main() {
           // lanjut ke dokumen berikutnya, batch berakhir `cancelled_partial`.
           logger.error({ err, batchId, docId }, "Cancel import (generic): gagal membatalkan 1 dokumen, lanjut ke dokumen berikutnya");
           summary.failed.push(docIdStr);
+          summary.failedReasons[docIdStr] = cancelFailureReason(err);
         }
       }
 
@@ -3686,7 +3696,7 @@ async function main() {
       byInvoice.set(row.accurateTransactionId, list);
     }
 
-    const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[] };
+    const summary = { deleted: [] as string[], blocked: [] as string[], failed: [] as string[], failedReasons: {} as Record<string, string> };
     // § diminta user 2026-09-27 — counter PERMANEN "efisiensi waktu kerja"
     // (§ komentar kolom `data_usaha.cumulativeSuccessfulRowCount`) HARUS
     // ikut turun kalau baris yang tadinya dihitung "sukses" dibatalkan —
@@ -3776,6 +3786,7 @@ async function main() {
         // diubah), lanjut ke faktur berikutnya.
         logger.error({ err, batchId, invoiceId }, "Cancel import: gagal membatalkan 1 faktur, lanjut ke faktur berikutnya");
         summary.failed.push(invoiceIdStr);
+        summary.failedReasons[invoiceIdStr] = cancelFailureReason(err);
       }
     }
 
