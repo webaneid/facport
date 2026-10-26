@@ -206,3 +206,74 @@ describe("generateFailedRowsBuffer — batas 32767 karakter per sel Excel", () =
     expect(row![2]!.length).toBeLessThanOrEqual(32767);
   });
 });
+
+describe("parseExcelBuffer — baris judul grup (template 2 baris header buatan FAC)", () => {
+  function workbookBuffer(aoa: unknown[][], merges?: XLSX.Range[]): Buffer {
+    const sheet = XLSX.utils.aoa_to_sheet(aoa);
+    if (merges) sheet["!merges"] = merges;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "Format");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  test("baris 1 = judul grup (sel gabungan), baris 2 = nama kolom → header & data diambil dari baris 2/3", () => {
+    const buffer = workbookBuffer(
+      [
+        ["Header Data", "", "", "Item Details", ""],
+        ["Tanggal", "Bill No", "Vendor No", "Item No", "Qty"],
+        ["2026-10-26", "B-1", "V-1", "100009", 2],
+      ],
+      [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 2 } },
+        { s: { r: 0, c: 3 }, e: { r: 0, c: 4 } },
+      ],
+    );
+    const parsed = parseExcelBuffer(buffer);
+    expect(parsed.headers).toEqual(["Tanggal", "Bill No", "Vendor No", "Item No", "Qty"]);
+    expect(parsed.rows).toHaveLength(1);
+    expect(parsed.rows[0]).toMatchObject({ Tanggal: "2026-10-26", "Bill No": "B-1", "Vendor No": "V-1", "Item No": "100009", Qty: 2 });
+  });
+
+  test("file biasa (satu baris header, tanpa sel gabungan) TIDAK berubah", () => {
+    const parsed = parseExcelBuffer(workbookBuffer([["Tanggal", "Bill No"], ["2026-10-26", "B-1"], ["2026-10-27", "B-2"]]));
+    expect(parsed.headers).toEqual(["Tanggal", "Bill No"]);
+    expect(parsed.rows).toHaveLength(2);
+  });
+
+  test("header biasa + 1 sel gabungan + baris data lebih lebar (hanya 1,5x) → tetap baris 1 sebagai header", () => {
+    const parsed = parseExcelBuffer(
+      workbookBuffer([["Tanggal", "Catatan", ""], ["2026-10-26", "x", "y"]], [{ s: { r: 0, c: 1 }, e: { r: 0, c: 2 } }]),
+    );
+    expect(parsed.headers).toEqual(["Tanggal", "Catatan"]);
+    expect(parsed.rows).toHaveLength(1);
+  });
+});
+
+describe("parseExcelBuffer — baris judul grup: kasus yang TIDAK boleh dianggap judul grup", () => {
+  test("baris 2 berisi angka (data) walau lebih lebar 2x → tetap baris 1 sebagai header", () => {
+    const sheet = XLSX.utils.aoa_to_sheet([["Tanggal", "", "Catatan", ""], ["2026-10-26", 100, 200, 300]]);
+    sheet["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, sheet, "S");
+    const parsed = parseExcelBuffer(XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer);
+    expect(parsed.headers).toEqual(["Tanggal", "Catatan"]);
+    expect(parsed.rows).toHaveLength(1);
+  });
+});
+
+describe("generateFailedRowsBuffer — kolom tanggal tampil sebagai tanggal (nilai angka tetap)", () => {
+  test("nomor seri tanggal pada kolom bertipe tanggal diberi format; kolom angka biasa & teks tidak berubah", () => {
+    const buffer = generateFailedRowsBuffer(
+      [{ rawData: { Tanggal: 45938, Qty: 45938, Catatan: "2026-10-08" }, errorMessage: "x" }],
+      { Tanggal: "transDate", Qty: "quantity", Catatan: "shipDate" },
+      ["transDate", "quantity", "shipDate"],
+    );
+    const sheet = XLSX.read(buffer).Sheets["Baris Gagal"]!;
+    const cell = (addr: string) => sheet[addr] as XLSX.CellObject;
+    // kolom urut kanonik: transDate (A), quantity (B), shipDate (C)
+    expect(cell("A2").v).toBe(45938); // nilai TIDAK diubah → upload ulang terbaca sama seperti file asli
+    expect(cell("A2").w).toBe("2025-10-08");
+    expect(cell("B2").w).toBe("45938"); // bukan field tanggal
+    expect(cell("C2").v).toBe("2026-10-08"); // teks tetap teks
+  });
+});

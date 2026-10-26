@@ -160,6 +160,68 @@ export function mapDetailIdsToRows(
   return rowIds.map((rowId, i) => ({ rowId, detailItemId: savedDetailItems[offsets[i]!]!.id }));
 }
 
+/**
+ * § 2026-10-26 (client Tuparev & Banjaran, Fase 208) — Accurate menambah baris OTOMATIS pada faktur yang memuat item paket/grup
+ * (mis. tiap `PKT013` diikuti baris "--NP …" kode `NP0013` berharga 0). Faktur SUDAH tersimpan di Accurate, tapi jumlah detail hasil
+ * simpan ≠ jumlah yang dikirim sehingga `mapDetailIdsToRows` menolak dan SEMUA baris tampil "Gagal" padahal fakturnya ada.
+ *
+ * Penyelarasan AMAN (bukan tebakan): tiap baris yang DIKIRIM harus ketemu, berurutan, pada baris hasil simpan dengan kode item yang sama
+ * (pencocokan berurutan; kode kembar tetap benar karena baris tambahan tidak boleh berkode sama dengan baris yang dikirim). Baris sisa
+ * (tambahan Accurate) hanya diterima bila kodenya TIDAK ada di antara kode yang dikirim — kalau ada, ambigu → `null` (tetap ditolak).
+ * Mengembalikan indeks baris hasil simpan untuk tiap baris yang dikirim (panjang = jumlah dikirim), atau `null` bila tidak terbukti aman.
+ */
+export function alignSavedDetailItems(sentItemNos: string[], saved: { id: number; itemNo: string }[]): number[] | null {
+  const norm = (v: string) => v.trim().toLowerCase();
+  const sent = sentItemNos.map(norm);
+  if (sent.length === 0 || sent.some((code) => code === "")) return null; // kode item kosong → tidak bisa dicocokkan
+  if (saved.length < sent.length) return null;
+  const sentCodes = new Set(sent);
+  const savedCodes = saved.map((d) => norm(d.itemNo));
+
+  const alignment: number[] = [];
+  let cursor = 0;
+  for (const code of sent) {
+    while (cursor < savedCodes.length && savedCodes[cursor] !== code) {
+      // baris yang dilewati = tambahan Accurate; TIDAK boleh berkode sama dengan salah satu baris yang dikirim
+      if (sentCodes.has(savedCodes[cursor]!)) return null;
+      cursor++;
+    }
+    if (cursor >= savedCodes.length) return null;
+    alignment.push(cursor);
+    cursor++;
+  }
+  // sisa di belakang baris terakhir yang dikirim juga harus tambahan murni
+  for (; cursor < savedCodes.length; cursor++) {
+    if (sentCodes.has(savedCodes[cursor]!)) return null;
+  }
+  return alignment;
+}
+
+/**
+ * Pilih daftar detail hasil simpan yang dipakai `mapDetailIdsToRows`. Jumlah sama → apa adanya (tanpa panggilan tambahan). Lebih banyak →
+ * baca detail faktur (butuh kode item) dan selaraskan lewat `alignSavedDetailItems`; berhasil → daftar ringkas sepanjang baris yang dikirim.
+ * Gagal membaca / tidak terbukti aman → kembalikan daftar asli, sehingga `mapDetailIdsToRows` menolak seperti sebelumnya (tidak pernah menebak).
+ */
+export async function selectSavedDetailForMapping(
+  sentItemNos: string[],
+  savedFromSave: { id: number }[],
+  fetchSavedDetail: () => Promise<{ id: number; itemNo: string }[]>,
+  onAligned?: (info: { sent: number; returned: number }) => void,
+  onFetchError?: (err: unknown) => void,
+): Promise<{ id: number }[]> {
+  if (savedFromSave.length <= sentItemNos.length) return savedFromSave;
+  try {
+    const detail = await fetchSavedDetail();
+    const alignment = alignSavedDetailItems(sentItemNos, detail);
+    if (!alignment) return savedFromSave;
+    onAligned?.({ sent: sentItemNos.length, returned: detail.length });
+    return alignment.map((index) => detail[index]!);
+  } catch (err) {
+    onFetchError?.(err);
+    return savedFromSave;
+  }
+}
+
 const SOURCE_QUANTITY_ERROR = /melebihi yang (dikirim|dipesan|ditawarkan|diterima)|melebihi (jumlah|kuantitas|qty)/i;
 
 /**

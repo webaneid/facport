@@ -1,11 +1,42 @@
 # Fase 208 — Galat "Accurate mengembalikan N baris detail, padahal M dikirim" (Sales Invoice, client Banjaran)
 
-**Status:** Planned — INVESTIGASI TERBUKA, menunggu balasan client (belum ada kode)
+**Status:** PENYEBAB TERBUKTI 2026-10-26 (client Tuparev) + pencegahan dikodekan (belum dirilis); pemulihan baris lama MENUNGGU keputusan (lihat "Update 2026-10-26")
 **Ditemukan:** 2026-10-21 (v2.43.0 di produksi)
 **Selesai:** -
 
 > **Baca ini kalau kamu melanjutkan topik "Banjaran" / galat 10-vs-9 baris.**
 > Semua yang sudah diketahui, sudah dicoba, dan yang belum diketahui ada di sini.
+
+## Update 2026-10-26 — PENYEBAB TERBUKTI (client Tuparev, file `baris-gagal-Tuparev 30 (1).xlsx` + tangkapan layar Accurate)
+Pesan galat yang SAMA muncul pada 3 faktur Tuparev (`Tiktok/Tuparev/3010-001/-002/-003`), dan faktur-fakturnya **tersimpan di Accurate**. Selisih jumlah baris
+= jumlah item berkode **`PKT…`** (paket/grup) pada tiap faktur — bukan kebetulan:
+
+| Faktur | Dikirim | Item `PKT…` | Kembali | Selisih |
+|---|---|---|---|---|
+| …3010-003 | 6 | 3 | 9 | +3 |
+| …3010-001 | 8 | 4 | 12 | +4 |
+| …3010-002 | 6 | 3 | 9 | +3 |
+
+Tangkapan layar Accurate: tiap `PKT013`/`PKT018` diikuti baris OTOMATIS `--NP (BEST SELLER) …` (kode `NP0013`) / `--NP (SPECIAL PRICE) …` (`NP0018`) berharga 0, yang
+tidak ada di Excel. Hipotesis #1 (item Barang Grup/Paket) **terbukti**; Banjaran (+1/+4/+3) konsisten dengan pola yang sama (belum dikonfirmasi dengan data Banjaran).
+
+**Pencegahan (kode, 2026-10-26):** `alignSavedDetailItems` + `selectSavedDetailForMapping` (`lib/import-mapping/source-expansion.ts`), dipakai `processSalesInvoiceGroup`:
+bila detail hasil `save.do` > yang dikirim, baca `detail.do` dan cocokkan tiap baris yang dikirim BERURUTAN berdasarkan kode item; baris sisa (tambahan Accurate) hanya
+diterima bila kodenya TIDAK sama dengan baris yang dikirim. Tidak terbukti aman / gagal baca → tetap ditolak seperti sebelumnya. `mapDetailIdsToRows` TIDAK diubah.
+Tes: 13 kasus baru di `source-expansion.test.ts` (termasuk kasus yang HARUS tetap ditolak).
+
+**Pemulihan baris lama — "adopsi" (2026-10-26, dikodekan, belum dirilis):** Retry atau unggah ulang pada baris yang gagal karena galat ini → `save.do` menolak "Sudah ada data lain dengan <nomor>"
+→ worker (`tryAdoptExistingSalesInvoice`) membaca faktur lewat nomor (`getSalesInvoiceByNumber`) dan `matchExistingSalesInvoice` (`lib/accurate-adopt-existing.ts`) menautkan baris HANYA bila SEMUA terpenuhi:
+nomor sama; Customer sama; tiap baris file ketemu berurutan lewat kode item; kuantitas SAMA PERSIS dan harga sama (toleransi Rp1); baris tambahan ≤ jumlah baris file (mencegah file lain berisi sebagian item
+dengan nomor yang sama dianggap "sudah ada"). Berhasil → baris **sukses** dengan keterangan "Sudah ada di Accurate — … sudah tersimpan pada percobaan sebelumnya dan tidak dibuat ulang…" (disimpan di `errorMessage` baris sukses,
+dikenali UI lewat `ADOPTED_NOTE_PREFIX`); tidak cocok → gagal dengan pesan yang menjelaskan perbedaannya. Hanya MEMBACA Accurate. Dukungan UI: banner hijau "N faktur sudah ada di Accurate … bukan karena isi file" +
+keterangan per baris (halaman detail Sales Invoice), petunjuk di Ringkasan Galat untuk pesan lama & baru (bukan kesalahan data, Retry aman). Pesan galat pemetaan juga diganti: "Faktur … SUDAH tersimpan di Accurate … bukan kesalahan data Anda".
+Tes: `accurate-adopt-existing.test.ts` (12 kasus, termasuk 7 yang HARUS ditolak).
+
+**Belum dikerjakan:**
+1. Adopsi hanya untuk **Sales Invoice** (modul yang terbukti). Purchase Invoice dan modul lain belum diperiksa untuk item paket / galat serupa.
+2. **Jalur "tambah ke faktur yang sudah ada"** (`appendToExistingSalesInvoice`) memakai `result.detailItem.slice(-newRows.length)` untuk id baris baru — diam-diam salah bila Accurate menyisipkan baris NP otomatis. Tidak merusak hapus faktur (hapus faktur utuh) tapi id tercatat keliru; dampak kecil, ditunda.
+3. Verifikasi dengan Accurate asli (Tuparev/Banjaran) setelah rilis: Retry pada baris lama harus menjadi sukses dengan keterangan.
 
 ## Gejala
 Pelanggan (file `banjaran 29.xlsx`, modul Sales Invoice, 118 baris, batch `a98b7ffa-a632-49c7-88b8-8c24a3e88d0b`, 2026-10-21 10:27 UTC)

@@ -68,6 +68,42 @@ export async function getSalesInvoiceDetail(ctx: AccurateSessionContext, id: num
   });
 }
 
+// § 2026-10-26 — baca faktur LENGKAP lewat nomor (id, customer, baris + id baris) untuk mengenali faktur yang SUDAH tersimpan di Accurate dari percobaan
+// sebelumnya (`matchExistingSalesInvoice`). Hanya MEMBACA. Tidak ada faktur dengan nomor itu → `null`.
+export type ExistingSalesInvoice = {
+  id: number;
+  number: string;
+  customerNo: string;
+  detailItem: { id: number; itemNo: string; unitPrice: number; quantity: number }[];
+};
+
+export async function getSalesInvoiceByNumber(ctx: AccurateSessionContext, number: string): Promise<ExistingSalesInvoice | null> {
+  return withAccurateRateLimit(async () => {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/sales-invoice/detail.do?${new URLSearchParams({ number })}`, {
+      headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
+    });
+    let raw: (RawSalesInvoiceDetail & { id?: number; number?: string }) | undefined;
+    try {
+      raw = await parseAccurateEnvelope<RawSalesInvoiceDetail & { id?: number; number?: string }>(res);
+    } catch (err) {
+      if (isAccurateRecordNotFound(err)) return null;
+      throw err;
+    }
+    if (typeof raw?.id !== "number") return null;
+    return {
+      id: raw.id,
+      number: String(raw.number ?? number),
+      customerNo: raw.customer?.customerNo ?? "",
+      detailItem: (raw.detailItem ?? []).map((it) => ({
+        id: it.id,
+        itemNo: it.item?.no ?? "",
+        unitPrice: Number(it.unitPrice ?? 0),
+        quantity: Number(it.quantity ?? 0),
+      })),
+    };
+  });
+}
+
 export async function deleteSalesInvoice(ctx: AccurateSessionContext, id: number): Promise<void> {
   return withAccurateRateLimit(async () => {
     const res = await accurateFetch(`${ctx.host}/accurate/api/sales-invoice/delete.do?${new URLSearchParams({ id: String(id) })}`, {

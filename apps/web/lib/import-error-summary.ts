@@ -11,6 +11,20 @@ export type ErrorGroup = { key: string; count: number; example: string; hint: Er
 export type ErrorSummary = { totalFailed: number; groups: ErrorGroup[]; otherGroups: number; otherRows: number };
 
 export const ERROR_HINTS: { pattern: RegExp; hint: ErrorHint }[] = [
+  // § 2026-10-26 — Accurate menambah baris otomatis (item paket) sehingga Facport menolak membaca hasil simpan, PADAHAL fakturnya sudah tersimpan di Accurate.
+  // Pesan lama ("Accurate mengembalikan N baris detail, padahal M dikirim") dan pesan baru ("… SUDAH tersimpan di Accurate …") sama-sama bukan kesalahan data.
+  {
+    pattern: /Accurate mengembalikan \d+ baris detail, padahal \d+ dikirim|SUDAH tersimpan di Accurate/i,
+    hint: {
+      action: "retry-ok",
+      advice:
+        "Faktur ini kemungkinan besar SUDAH tersimpan di Accurate — ini BUKAN kesalahan data Anda, melainkan Facport belum bisa membaca baris tambahan otomatis dari Accurate (mis. item paket). Tekan Retry: Facport akan mengenali faktur yang sudah ada dan menandainya sukses tanpa membuat duplikat. Jangan unggah ulang file dengan nomor yang sama.",
+    },
+  },
+  {
+    pattern: /sudah ada di Accurate \(Faktur .*tetapi isinya tidak sama/i,
+    hint: { action: "check-accurate", advice: "Nomor ini sudah dipakai faktur di Accurate dengan isi yang berbeda dari file Anda. Buka faktur itu di Accurate; bila itu faktur lain, gunakan Nomor Transaksi yang berbeda." },
+  },
   // § Fase 205 — kirim bertahap berhenti di tengah: yang sudah tersimpan tetap ada di dokumen Accurate yang SAMA; Retry membaca isi dokumen lalu melanjutkan dari sana (tanpa duplikat).
   {
     pattern: /Pengiriman bertahap dokumen|Accurate menjawab sukses tetapi isi dokumen/i,
