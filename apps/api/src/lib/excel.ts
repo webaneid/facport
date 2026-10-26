@@ -135,6 +135,13 @@ export function generateTemplateBuffer(fields: TemplateFieldGuide[], extraExampl
 // menjamin urutan insersinya), kolom yang TIDAK di-mapping (ekstra di
 // Excel asli, jarang tapi mungkin) ditaruh di akhir diurutkan alfabetis
 // (tidak ada sumber urutan asli yang bisa diandalkan untuk kasus ini).
+// § batas Excel: 1 sel maksimal 32767 karakter — lebih dari itu `XLSX.write` melempar error dan
+// endpoint export baris gagal jadi 500 (sel catatan panjang dari Excel pelanggan / pesan error sangat panjang).
+const EXCEL_MAX_CELL_LENGTH = 32767;
+function clipCell<T extends string | number>(value: T): T | string {
+  return typeof value === "string" && value.length > EXCEL_MAX_CELL_LENGTH ? value.slice(0, EXCEL_MAX_CELL_LENGTH - 1) + "…" : value;
+}
+
 export function generateFailedRowsBuffer(
   rows: { rawData: Record<string, unknown>; errorMessage: string | null }[],
   columnMapping: Record<string, string>, // excelColumn -> field internal (dari `batch.columnMapping`)
@@ -149,7 +156,7 @@ export function generateFailedRowsBuffer(
   const columns = [...mappedColumns, ...unmappedColumns];
 
   const header = [...columns, "Pesan Error"];
-  const dataRows = rows.map((r) => [...columns.map((c) => (r.rawData[c] as string | number | undefined) ?? ""), r.errorMessage ?? ""]);
+  const dataRows = rows.map((r) => [...columns.map((c) => clipCell((r.rawData[c] as string | number | undefined) ?? "")), clipCell(r.errorMessage ?? "")]);
 
   const sheet = XLSX.utils.aoa_to_sheet([header, ...dataRows]);
   sheet["!cols"] = header.map(() => ({ wch: 20 }));
@@ -167,5 +174,8 @@ export function generateFailedRowsBuffer(
 // ketat) supaya nama file tetap mirip aslinya buat user, sambil aman
 // dipakai di header.
 export function sanitizeFilenamePart(name: string): string {
-  return name.replace(/[\r\n"\\]/g, "").trim() || "file";
+  // § karakter di luar ASCII tercetak (mis. "–", "’", huruf Jepang, emoji) diganti "_": header
+  // HTTP wajib Latin-1, sedangkan `new Response()` dengan nilai di luar itu melempar TypeError →
+  // endpoint download jadi 500 (nama file hasil copy-paste dengan tanda hubung/kutip melengkung).
+  return name.replace(/[\r\n"\\]/g, "").replace(/[^\x20-\x7E]/g, "_").trim() || "file";
 }

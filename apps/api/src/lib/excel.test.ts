@@ -188,4 +188,21 @@ describe("sanitizeFilenamePart — cegah header injection dari nama file upload 
   test("string kosong setelah sanitasi -> fallback 'file'", () => {
     expect(sanitizeFilenamePart('"\r\n')).toBe("file");
   });
+
+  test("karakter non-ASCII (en-dash, kutip melengkung, CJK, emoji) diganti '_' supaya header Content-Disposition tidak melempar", () => {
+    const safe = sanitizeFilenamePart("Faktur – Oktober ’26 日本 🙂.xlsx");
+    expect(safe).toMatch(/^[\x20-\x7E]+$/);
+    expect(() => new Response("x", { headers: { "Content-Disposition": `attachment; filename="baris-gagal-${safe}.xlsx"` } })).not.toThrow();
+  });
+});
+
+describe("generateFailedRowsBuffer — batas 32767 karakter per sel Excel", () => {
+  test("sel/pesan error lebih panjang dari batas dipotong, TIDAK melempar", () => {
+    const buffer = generateFailedRowsBuffer([{ rawData: { Vendor: "V", Catatan: "n".repeat(40000) }, errorMessage: "e".repeat(40000) }], { Vendor: "vendorNo" }, ["vendorNo"]);
+    const sheet = XLSX.read(buffer).Sheets["Baris Gagal"]!;
+    const [header, row] = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 });
+    expect(header).toEqual(["Vendor", "Catatan", "Pesan Error"]);
+    expect(row![1]!.length).toBeLessThanOrEqual(32767);
+    expect(row![2]!.length).toBeLessThanOrEqual(32767);
+  });
 });
