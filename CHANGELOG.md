@@ -1,3 +1,12 @@
+## 2.44.0 (2026-10-26)
+
+* Merge pull request #93 from webaneid/develop ([cb6bb92](https://github.com/webaneid/facport/commit/cb6bb92)), closes [#93](https://github.com/webaneid/facport/issues/93)
+* feat(api web): alasan gagal hapus + tombol Batal Import di detail semua modul ([914766a](https://github.com/webaneid/facport/commit/914766a))
+* feat(api web): alasan gagal hapus per faktur di Batal Import sebagian ([69fefaf](https://github.com/webaneid/facport/commit/69fefaf))
+* fix(api): download baris gagal 409 DATA_USAHA_REQUIRED untuk pelanggan multi-Data-Usaha ([e67d289](https://github.com/webaneid/facport/commit/e67d289))
+* fix(api): download baris gagal 500 untuk nama file non-Latin1 dan sel > 32767 karakter ([8477eb1](https://github.com/webaneid/facport/commit/8477eb1))
+* fix(web api): batch cancelled_partial bisa Batal Import ulang + tombol di detail PI ([2532fe0](https://github.com/webaneid/facport/commit/2532fe0))
+
 ## <small>2.43.1 (2026-10-22)</small>
 
 * chore: rilis patch keamanan Node 22.23.4 (image web) + lessons-learned insiden 2026-10-22 ([335fecc](https://github.com/webaneid/facport/commit/335fecc))
