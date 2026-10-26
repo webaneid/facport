@@ -17,6 +17,9 @@ import { describeImportActionError, type ImportActionErrorValue } from "@/lib/im
 import { getProdApiOrigin } from "@/lib/get-prod-api-origin";
 import { findNumberColumn, findBillNumberColumn, invoiceNumberOf, siblingRowNumbersOf, sortByInvoiceNumber } from "@/lib/purchase-invoice-batch-helpers";
 import { ImportErrorSummary } from "@/components/import/import-error-summary";
+import { CancelImportDialog } from "@/components/purchase-invoice/cancel-import-dialog";
+import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
+import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
 
 type Row = {
   id: string;
@@ -70,6 +73,7 @@ export default function PurchaseInvoiceImportResultPage() {
   const [detail, setDetail] = useState<BatchDetail | null>(null);
   const [retrying, setRetrying] = useState(false);
   const [gridOpen, setGridOpen] = useState(false);
+  const isOwner = useIsDataUsahaOwner();
 
   async function load() {
     const res = await api["purchase-invoice"].import({ batchId: params.batchId }).get();
@@ -141,8 +145,20 @@ export default function PurchaseInvoiceImportResultPage() {
                 baris)
               </CardDescription>
             </div>
-            <StatusBadge status={batch.status} />
+            <div className="flex items-center gap-3">
+              {/* Batal Import menghapus transaksi ASLI di Accurate — cuma pemilik Data Usaha (sama seperti tabel riwayat). */}
+              {isOwner && CANCELLABLE_BATCH_STATUS.has(batch.status) && (
+                <CancelImportDialog batch={{ id: batch.id, fileName: batch.fileName }} onCancelled={load} trigger="button" />
+              )}
+              <StatusBadge status={batch.status} />
+            </div>
           </div>
+          {batch.status === "cancelled_partial" && (
+            <p className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-sm text-foreground">
+              Sebagian faktur belum terhapus dari Accurate — biasanya karena sudah dibayar atau dipakai dokumen lain.
+              Batalkan dokumen turunannya dulu (mis. Purchase Payment), lalu klik <strong>Batal Import</strong> lagi.
+            </p>
+          )}
           <ImportProgress status={batch.status} total={batch.totalRows} processed={summary.success + summary.failed} />
         </CardHeader>
         {(summary.failed > 0 || summary.pending > 0) && !isBusy && batch.columnMapping && (

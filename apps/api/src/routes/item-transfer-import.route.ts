@@ -408,7 +408,7 @@ export const itemTransferImportRoute = new Elysia()
         set.status = 403;
         return { code: "CANCEL_OWNER_ONLY" };
       }
-      if (batch.status !== "completed" && batch.status !== "completed_with_errors") {
+      if (batch.status !== "completed" && batch.status !== "completed_with_errors" && batch.status !== "cancelled_partial") {
         set.status = 409;
         return { code: "BATCH_NOT_CANCELLABLE" };
       }

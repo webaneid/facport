@@ -448,6 +448,36 @@ describe("POST /purchase-invoice/import/:batchId/cancel — ownership (pemilik v
     expect((await res.json()) as { batchId: string; status: string }).toEqual({ batchId: batch!.id, status: "cancelling" });
   });
 
+  // § sebagian faktur gagal terhapus (mis. sudah dibayar) → batch `cancelled_partial`.
+  // Dulu buntu (409), padahal user perlu mengulang Batal Import setelah penyebabnya dibereskan.
+  test("200 batch `cancelled_partial` BISA Batal Import ULANG", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-partial-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "sebagian.xlsx", totalRows: 1, status: "cancelled_partial" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(200);
+    expect((await res.json()) as { batchId: string; status: string }).toEqual({ batchId: batch!.id, status: "cancelling" });
+  });
+
+  test("409 BATCH_NOT_CANCELLABLE kalau batch sudah `cancelled` utuh (tidak ada yang perlu dibatalkan lagi)", async () => {
+    const owner = await createProvisionedUser(`pi-cancel-done-${runId}@test.local`);
+    const [batch] = await db
+      .insert(importBatches)
+      .values({ userId: owner.userId, subscriptionId: owner.subscriptionId, module: "purchase_invoice", fileName: "sudah-batal.xlsx", totalRows: 1, status: "cancelled" })
+      .returning();
+
+    const res = await testApp.handle(
+      new Request(`http://localhost/purchase-invoice/import/${batch!.id}/cancel`, { method: "POST", headers: { cookie: owner.cookie } }),
+    );
+    expect(res.status).toBe(409);
+    expect(((await res.json()) as { code: string }).code).toBe("BATCH_NOT_CANCELLABLE");
+  });
+
   test("403 CANCEL_OWNER_ONLY kalau yang Batal Import MEMBER (bukan pemilik Data Usaha), walau seat-nya aktif di Data Usaha yang sama", async () => {
     const owner = await createProvisionedUser(`pi-cancel-memberowner-${runId}@test.local`);
     const [batch] = await db
