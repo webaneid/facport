@@ -6413,3 +6413,8 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Gejala:** 69 baris Sales Invoice gagal "Customer dengan nomor "CUST IN " belum ada di Accurate" padahal customernya ada.
 - **Penyebab:** Excel client berisi "CUST IN " (spasi di ujung); Accurate `list.do` mencocokkan nomor PERSIS (huruf besar-kecil diabaikan, spasi tidak). Facport tidak memangkas nilai Excel sebelum mencari/mengirim.
 - **Pelajaran:** nilai kunci master (customerNo/vendorNo/itemNo) dari Excel WAJIB dinormalisasi (trim + NBSP) sebelum lookup dan sebelum dikirim. Diagnosa terbukti lewat `raw_data` di DB production + uji baca di Accurate dev, bukan tebakan. Follow-up: vendor/item/DO belum dinormalisasi.
+
+## 2026-10-27 — Kebersihan data input Excel dipusatkan, bukan ditambal per kolom (Fase 211, ADR-0052)
+- **Pola:** spasi/karakter tak terlihat dari salin-tempel membuat Accurate tidak mengenali data (header 2026-09-11, customerNo Fase 210). Perbaikan per kolom tidak berkesudahan.
+- **Solusi:** `lib/input-hygiene.ts` (lapis 1 bersihkan karakter tak terlihat saat unggah + saat job memuat baris; lapis 2 normalisasi kolom kunci berdasar `columnMapping`), `lib/data-check.ts` + `DataCheckNotice` (lapis 3, laporan di Pratinjau), `oddCharsHint` di pesan galat (lapis 4). Modul baru ikut otomatis bila nama field mengikuti konvensi (`isKeyField`).
+- **Jebakan alat:** menulis escape `\u00a0` lewat alat penulis file bisa menghasilkan karakter tak terlihat LITERAL di source (regex tampak rusak/tidak terbaca). Tulis file berisi escape lewat skrip yang membangun backslash dengan `chr(92)`, lalu periksa tidak ada karakter non-ASCII tak sengaja di file.

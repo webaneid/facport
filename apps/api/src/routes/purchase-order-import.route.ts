@@ -8,6 +8,7 @@ import { subscriptionGatePlugin } from "../lib/subscription-gate";
 import { checkSubscriptionScopes } from "../lib/accurate-scope-check";
 import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
+import { buildDataCheck } from "../lib/data-check";
 import { purchaseOrderMapping } from "../lib/import-mapping/purchase-order.mapping";
 import { purchaseOrderTemplateGuide } from "../lib/import-mapping/template-guide";
 import { JOBS } from "../lib/queue";
@@ -82,8 +83,9 @@ export const purchaseOrderImportRoute = new Elysia()
 
       let headers: string[];
       let rows: Record<string, unknown>[];
+      let cleanedCells: number;
       try {
-        ({ headers, rows } = parseExcelBuffer(buffer));
+        ({ headers, rows, cleanedCells } = parseExcelBuffer(buffer));
       } catch {
         set.status = 400;
         return { code: "INVALID_EXCEL_FILE" };
@@ -125,6 +127,8 @@ export const purchaseOrderImportRoute = new Elysia()
         excelColumns: headers,
         previewRows: rows.slice(0, 5),
         suggestedMapping: suggestMapping(headers),
+        // § Fase 211 lapis 3 (ADR-0052) — "Pemeriksaan Data": hanya melaporkan, tidak mengubah data.
+        dataCheck: buildDataCheck(rows, suggestMapping(headers), cleanedCells),
       };
     },
     {

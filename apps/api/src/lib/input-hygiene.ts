@@ -41,19 +41,25 @@ export function hygieneHint(value: unknown): string {
   return ` Nilai di file: [${visibleChars(raw)}] - ada spasi/karakter tak terlihat (di awal, tengah, atau akhir).`;
 }
 
+/** Daftar karakter non-ASCII pada `value` beserta kode U+ (maks 5 jenis), mis. `"X" (U+0421)`. Kosong kalau semuanya ASCII. */
+export function describeNonAscii(value: unknown): string[] {
+  const found = new Set<string>();
+  for (const ch of String(value ?? "")) {
+    const code = ch.codePointAt(0)!;
+    if (code > 127) found.add(`"${ch}" (U+${code.toString(16).toUpperCase().padStart(4, "0")})`);
+  }
+  return [...found].slice(0, 5);
+}
+
 /**
  * Lapis 4 - petunjuk untuk karakter yang TERLIHAT tapi mencurigakan SETELAH pembersihan (tidak diubah otomatis, ADR-0052): karakter non-ASCII (mis. huruf Cyrillic
  * yang mirip "C", tanda hubung panjang) dan spasi ganda. Dipakai di pesan "tidak ditemukan di Accurate". Kosong kalau tidak ada yang mencurigakan.
  */
 export function oddCharsHint(value: unknown): string {
   const raw = String(value ?? "");
-  const found: string[] = [];
-  for (const ch of raw) {
-    const code = ch.codePointAt(0)!;
-    if (code > 127) found.push(`"${ch}" (U+${code.toString(16).toUpperCase().padStart(4, "0")})`);
-  }
+  const nonAscii = describeNonAscii(raw);
   const parts: string[] = [];
-  if (found.length > 0) parts.push(`karakter non-ASCII ${[...new Set(found)].slice(0, 5).join(", ")}`);
+  if (nonAscii.length > 0) parts.push(`karakter non-ASCII ${nonAscii.join(", ")}`);
   if (/ {2,}/.test(raw)) parts.push("spasi ganda di tengah");
   return parts.length > 0 ? ` Periksa nomor/nama ini - ada ${parts.join(" dan ")}; pastikan sama persis dengan yang tercatat di Accurate.` : "";
 }

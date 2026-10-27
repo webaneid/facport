@@ -7,7 +7,7 @@ Keputusan & alasan → `docs/decisions/adr-0052-kebersihan-data-input-excel.md`.
 |---|---|---|
 | 1 Karakter tak terlihat | `lib/excel.ts` `parseExcelBuffer` (semua route import) + helper bersama `lib/input-hygiene.ts` `cleanCell`/`cleanRawData` dipakai saat Retry (worker memuat baris) dan simpan edit baris (PUT rows/:rowId, ada di tiap route modul) | Satu helper, dipanggil dari titik pusat — bukan disalin per modul |
 | 2 Kolom kunci | `normalizeKeyColumns(rawData, columnMapping)` di `lib/input-hygiene.ts`, dipanggil di titik muat baris worker (bersama lapis 1). `isKeyField(field)` menentukan field kunci dari NAMA field internal (akhiran No/Number/Code, nama master, `rmUnit`) dikurangi nomor milik dokumen sendiri | Modul BARU otomatis ikut bila field-nya mengikuti konvensi nama; nama field kunci yang menyimpang harus ditambahkan ke `EXTRA_KEY_FIELDS`, nomor milik dokumen ke `OWN_OR_FREE_NUMBER_FIELDS` (tes `isKeyField` menjaga ini) |
-| 3 Peringatan | Langkah Pratinjau (web) + endpoint pratinjau API | Hanya peringatan, tidak mengubah data |
+| 3 Peringatan | API: `buildDataCheck` (`lib/data-check.ts`) dipanggil di endpoint unggah tiap modul → `dataCheck` di respons. Web: `DataCheckNotice` (`components/import/data-check-notice.tsx`) di langkah Cocokkan Kolom tiap halaman import | Hanya melaporkan (sel dirapikan + karakter non-ASCII di kolom kunci); berdasar pemetaan yang disarankan. Modul import BARU wajib memanggil keduanya (lihat 25 route/halaman yang ada sebagai contoh) |
 | 4 Pesan galat | helper `visibleChars(value)` dipakai di pesan galat pencarian master (customer/vendor/item/dst) | |
 
 ## Urutan eksekusi (Fase 211)
