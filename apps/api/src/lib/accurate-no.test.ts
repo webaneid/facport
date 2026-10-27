@@ -6,9 +6,9 @@ describe("normalizeAccurateNo", () => {
     expect(normalizeAccurateNo("CUST IN ")).toBe("CUST IN");
     expect(normalizeAccurateNo("  C.001")).toBe("C.001");
   });
-  test("membuang non-breaking space & zero-width di ujung", () => {
-    expect(normalizeAccurateNo("C.001 ")).toBe("C.001");
-    expect(normalizeAccurateNo("﻿C.001​")).toBe("C.001");
+  test("membuang non-breaking space & zero-width", () => {
+    expect(normalizeAccurateNo("C.001\u00a0")).toBe("C.001");
+    expect(normalizeAccurateNo("\ufeffC.001\u200b")).toBe("C.001");
   });
   test("spasi di tengah tidak diubah; angka jadi string; null jadi kosong", () => {
     expect(normalizeAccurateNo("CUST IN 01")).toBe("CUST IN 01");

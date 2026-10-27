@@ -4,6 +4,7 @@ import type { AccurateSessionContext } from "./accurate-session";
 import { todayAccurateDate } from "./accurate-vendor";
 import { accurateFetch } from "./accurate-http";
 import { runExclusive } from "./keyed-lock";
+import { oddCharsHint } from "./input-hygiene";
 import { normalizeAccurateNo } from "./accurate-no";
 
 // § architecture-accurate-integration.md § "Sales Invoice — Fase 13" —
@@ -72,7 +73,7 @@ async function findOrCreateCustomerImpl(
   }
 
   if (!createFields.name) {
-    throw new Error(`Customer dengan nomor "${customerNo}" belum ada di Accurate, dan kolom "Nama Customer" kosong — wajib diisi untuk membuat customer baru`);
+    throw new Error(`Customer dengan nomor "${customerNo}" belum ada di Accurate, dan kolom "Nama Customer" kosong — wajib diisi untuk membuat customer baru.${oddCharsHint(customerNo)}`);
   }
 
   return postCustomerSave(ctx, {

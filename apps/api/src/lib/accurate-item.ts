@@ -1,4 +1,5 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
+import { oddCharsHint } from "./input-hygiene";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
@@ -50,7 +51,7 @@ async function findOrCreateItemImpl(
 
   if (!createFields.name || !createFields.unit1Name) {
     throw new Error(
-      `Barang dengan kode "${itemNo}" belum ada di Accurate, dan "Nama Barang"/"Satuan Barang" kosong — wajib diisi untuk membuat barang baru`,
+      `Barang dengan kode "${itemNo}" belum ada di Accurate, dan "Nama Barang"/"Satuan Barang" kosong — wajib diisi untuk membuat barang baru.${oddCharsHint(itemNo)}`,
     );
   }
 

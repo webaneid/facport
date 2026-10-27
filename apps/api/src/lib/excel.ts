@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import { cleanCell } from "./input-hygiene";
 
 export type ParsedExcel = {
   headers: string[];
@@ -49,7 +50,7 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   // kemunculan ke-2+ (nilainya hilang diam-diam). Di sini `headers` diberi penamaan dedupe yang SAMA dengan key baris.
   const usedHeaders = new Set<string>();
   const headers = headerRow
-    .map((h) => String(h ?? "").trim())
+    .map((h) => cleanCell(String(h ?? "")))
     .filter(Boolean)
     .map((name) => {
       let candidate = name;
@@ -73,9 +74,11 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   // dipakai bersama oleh semua route `*-import.route.ts`.
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerRowIndex });
   const rows = rawRows.map((row) => {
+    // § Fase 211, ADR-0052 lapis 1 — kunci DAN nilai sel teks dibersihkan dari karakter tak terlihat (NBSP, zero-width, BOM, dst) + dipangkas.
+    // Angka/tanggal dibiarkan. Header memakai fungsi yang SAMA supaya kunci baris selalu cocok dengan `headers`/`columnMapping`.
     const trimmed: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
-      trimmed[key.trim()] = value;
+      trimmed[cleanCell(key)] = cleanCell(value);
     }
     return trimmed;
   });
