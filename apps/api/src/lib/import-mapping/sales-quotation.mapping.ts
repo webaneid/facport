@@ -16,6 +16,7 @@
 // Quotation TIDAK punya `projectNo` sama sekali (dikonfirmasi
 // `accurate-openapi.json`). SENGAJA tidak dimasukkan `defaultColumnMap`.
 import { splitIdList } from "./split-id-list";
+import { normalizeAccurateNo } from "../accurate-no";
 
 export const salesQuotationMapping = {
   requiredFields: ["customerNo", "transDate", "itemNo", "unitPrice", "quantity", "itemUnitName", "branchName"] as const,
@@ -311,6 +312,7 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
         const list = splitIdList(raw);
         if (list.length > 0) values[f] = list;
       }
+      else if (f === "customerNo") values[f] = normalizeAccurateNo(raw);
       else values[f] = raw;
     }
   }

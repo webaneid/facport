@@ -77,7 +77,7 @@ Purchase Invoice, dst).
 | Sales Order Detail ID | detailItem.salesOrderDetailId | item | Opsional — **AUTO-RESOLVE server-side sejak Fase 158**, § di bawah |
 | Item Sales Quot No | detailItem.salesQuotationNumber | item | Opsional |
 | Item Reverse Invoice | detailItem.reverseInvoiceNumber | item | Opsional |
-| CLS2/CLS5 (posisi ITEM, setelah "Item Reverse Invoice") | detailItem.dataClassification2Name/5Name | item | Opsional, AKTIF — CLS5 dipakai client sebagai label "Week N" (§ di bawah) |
+| CLS1–CLS10 (posisi ITEM, setelah "Item Reverse Invoice") | detailItem.dataClassification1Name..10Name | item | Opsional, AKTIF sejak Fase 209 (sebelumnya hanya CLS2/CLS5) — nama kolom tetap "CLS" sesuai permintaan client; CLS5 dipakai client sebagai label "Week N" (§ di bawah). Nilai yang belum ada di Accurate dibuatkan otomatis (`findOrCreateDataClassification`). Belum ada auto-suggest nama kolom (header CLS2/CLS5 ganda di template lama) — user memilih manual di Cocokkan Kolom |
 | Serial Num / Qty / Exp Date | detailItem.detailSerialNumber[] | item | Opsional |
 
 ## Fase 158 — Auto-Resolve `Sales Order Detail ID` Server-Side

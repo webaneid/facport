@@ -9,6 +9,34 @@ function bufferFromRows(rows: unknown[][]): Buffer {
   return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
 }
 
+// § Fase 211, ADR-0052 lapis 1 — karakter tak terlihat di sel (hasil salin-tempel) dibersihkan saat unggah, di mana pun posisinya.
+describe("parseExcelBuffer — pembersihan karakter tak terlihat (Fase 211)", () => {
+  test("nilai sel: spasi ujung, NBSP, zero-width di tengah dibersihkan; angka tidak berubah", () => {
+    const buffer = bufferFromRows([
+      ["Cust No", "Item No", "Qty"],
+      ["CUST IN ", "DB\u200b009", 3],
+      ["\u00a0C.002\u00a0", "A\u00a0B", 5],
+    ]);
+    const { rows } = parseExcelBuffer(buffer);
+    expect(rows).toEqual([
+      { "Cust No": "CUST IN", "Item No": "DB009", Qty: 3 },
+      { "Cust No": "C.002", "Item No": "A B", Qty: 5 },
+    ]);
+  });
+
+  test("header dengan karakter tak terlihat: headers DAN key baris sama-sama bersih", () => {
+    const buffer = bufferFromRows([["Cust\u200b No\u00a0", "\ufeffItem No"], ["C.001", "X"]]);
+    const { headers, rows } = parseExcelBuffer(buffer);
+    expect(headers).toEqual(["Cust No", "Item No"]);
+    expect(rows).toEqual([{ "Cust No": "C.001", "Item No": "X" }]);
+  });
+
+  test("karakter terlihat (en dash) TIDAK diubah", () => {
+    const buffer = bufferFromRows([["No"], ["C\u2013001"]]);
+    expect(parseExcelBuffer(buffer).rows).toEqual([{ No: "C\u2013001" }]);
+  });
+});
+
 // § BUG DITEMUKAN 2026-09-11 (client retest Purchase Payment nyata,
 // error Accurate "Nilai Pembayaran tidak mencukupi") — header Excel
 // dengan spasi nyempil (" Payment ") bikin `rawRow[trimmedName]` di

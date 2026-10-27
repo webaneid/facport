@@ -1,5 +1,6 @@
 "use client";
 
+import { DataCheckNotice, type DataCheck } from "@/components/import/data-check-notice";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, Controller } from "react-hook-form";
@@ -81,6 +82,7 @@ type UploadResult = {
   totalRows: number;
   excelColumns: string[];
   previewRows: Record<string, unknown>[];
+  dataCheck?: DataCheck;
   suggestedMapping: Record<string, string>;
 };
 
@@ -210,6 +212,7 @@ export default function ItemRequisitionImportPage() {
             <CardDescription>{result.totalRows} baris terdeteksi dari file Excel.</CardDescription>
           </CardHeader>
           <CardContent>
+            <DataCheckNotice dataCheck={result.dataCheck} />
             <form onSubmit={handleMappingSubmit(onConfirmMapping)} className="flex flex-col gap-4">
               <Accordion type="single" collapsible>
                 <AccordionItem value="mapping" className="border-none">

@@ -170,6 +170,7 @@ untuk task kecil, itu justru lebih mahal token.
 | Insight pelanggan admin (kebutuhan data FAC: komersil/internal, per fitur, akses, kohort, riwayat koneksi; RENCANA Fase 189) | `docs/architecture/architecture-admin-insight.md` |
 | Siklus hidup akun: nonaktifkan massal, aksi peran dua arah, hapus permanen aman, anonimisasi (Super Admin, ADR-0045) | `docs/architecture/architecture-account-lifecycle.md` |
 | Kirim BERTAHAP dokumen besar (1 nomor, ribuan baris) ke dokumen Accurate yang SAMA, kirim ulang idempoten — dokumen pelanggan TIDAK boleh diubah (Fase 205, ADR-0051) | `docs/architecture/architecture-staged-send.md` |
+| Kebersihan data input Excel (spasi/karakter tak terlihat, normalisasi kolom kunci, peringatan karakter terlihat) — baca sebelum menambah modul import/field kunci baru | `docs/architecture/architecture-input-hygiene.md` |
 | Kapasitas import, timeout adaptif, jalur batch besar, model biaya Accurate (N²) | `docs/architecture/architecture-import-capacity.md` |
 | Design system admin (skala ukuran/jarak, varian `compact:`, interaksi) — baca sebelum mengubah primitif UI | `docs/architecture/architecture-admin-design-system.md` |
 

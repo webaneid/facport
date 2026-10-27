@@ -10,6 +10,7 @@
 // Field mapping SUDAH diverifikasi 100% ke portal developer Accurate
 // live (2026-09-21, § architecture doc) — TIDAK ada gap dokumentasi API.
 import type { SalesQuotationDetail, SalesQuotationLine } from "../accurate-sales-quotation";
+import { normalizeAccurateNo } from "../accurate-no";
 import { splitIdList } from "./split-id-list";
 import { applySourceHeaderExtras, applySourceLineExtras } from "./source-extras";
 
@@ -215,6 +216,7 @@ function extractRowValues(rawRow: Record<string, unknown>, columnMapping: Record
         const list = splitIdList(raw);
         if (list.length > 0) values[f] = list;
       }
+      else if (f === "customerNo") values[f] = normalizeAccurateNo(raw);
       else values[f] = raw;
     }
   }

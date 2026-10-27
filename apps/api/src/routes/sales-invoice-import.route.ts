@@ -10,6 +10,7 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { boss, JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
+import { buildDataCheck } from "../lib/data-check";
 import { salesInvoiceMapping, customerAutoCreateMapping, itemAutoCreateMapping, type SalesInvoiceField } from "../lib/import-mapping/sales-invoice.mapping";
 import { missingRequiredFieldsForRow } from "../lib/import-mapping/source-expansion";
 import { salesInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
@@ -95,8 +96,9 @@ export const salesInvoiceImportRoute = new Elysia()
 
       let headers: string[];
       let rows: Record<string, unknown>[];
+      let cleanedCells: number;
       try {
-        ({ headers, rows } = parseExcelBuffer(buffer));
+        ({ headers, rows, cleanedCells } = parseExcelBuffer(buffer));
       } catch {
         set.status = 400;
         return { code: "INVALID_EXCEL_FILE" };
@@ -138,6 +140,8 @@ export const salesInvoiceImportRoute = new Elysia()
         excelColumns: headers,
         previewRows: rows.slice(0, 5),
         suggestedMapping: suggestMapping(headers),
+        // § Fase 211 lapis 3 (ADR-0052) — "Pemeriksaan Data": hanya melaporkan, tidak mengubah data.
+        dataCheck: buildDataCheck(rows, suggestMapping(headers), cleanedCells),
       };
     },
     {

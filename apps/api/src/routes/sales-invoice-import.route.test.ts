@@ -5,6 +5,7 @@ import { auth } from "../lib/auth";
 import { db } from "../lib/db";
 import { user as userTable, roles, userRoles, plans, subscriptions, importBatches, importBatchRows, memberSeats } from "../db/schema";
 import { salesInvoiceImportRoute } from "./sales-invoice-import.route";
+import * as XLSX from "xlsx";
 import { generateTemplateBuffer } from "../lib/excel";
 import { createTestDataUsaha, createTestSeat } from "../lib/test-fixtures";
 
@@ -90,6 +91,41 @@ describe("POST /sales-invoice/import/upload", () => {
     form.append("file", new Blob([new Uint8Array(buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "test.xlsx");
     const res = await testApp.handle(new Request("http://localhost/sales-invoice/import/upload", { method: "POST", body: form }));
     expect(res.status).toBe(401);
+  });
+});
+
+// § Fase 211 lapis 3 (ADR-0052) — "Pemeriksaan Data" ikut respons unggah (semua modul memakai pola yang sama; diuji di satu modul).
+describe("POST /sales-invoice/import/upload — dataCheck", () => {
+  test("sel kotor dirapikan & dihitung, karakter non-ASCII di kolom kunci diperingatkan, data tersimpan sudah bersih", async () => {
+    const email = `si-datacheck-${runId}@test.local`;
+    const user = await createProvisionedUser(email);
+    const ws = XLSX.utils.aoa_to_sheet([
+      ["Customer No", "Item No", "Description"],
+      ["CUST IN ", "A1", "ok"],
+      ["C\u00a0.002", "B\u04211", "barang \u2013 baru"],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Sheet1");
+    const buffer = XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(buffer)], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }), "kotor.xlsx");
+
+    const res = await testApp.handle(
+      new Request("http://localhost/sales-invoice/import/upload", { method: "POST", body: form, headers: { cookie: user.cookie, "x-data-usaha-id": user.dataUsahaId } }),
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      batchId: string;
+      dataCheck: { cleanedCells: number; normalizedKeyCells: number; warnings: { column: string; count: number; rows: number[]; example: string }[] };
+    };
+    expect(body.dataCheck.cleanedCells).toBe(2); // "CUST IN " dan "C<NBSP>.002"
+    expect(body.dataCheck.warnings).toHaveLength(1);
+    expect(body.dataCheck.warnings[0]).toMatchObject({ column: "Item No", count: 1, rows: [2] });
+    expect(body.dataCheck.warnings[0]!.example).toContain("U+0421");
+
+    const rows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, body.batchId));
+    const cust = rows.map((r) => (r.rawData as Record<string, unknown>)["Customer No"]).sort();
+    expect(cust).toEqual(["C .002", "CUST IN"]);
   });
 });
 

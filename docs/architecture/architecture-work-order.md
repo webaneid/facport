@@ -329,6 +329,7 @@ harus terjadi SETELAH lookup nama→ID berhasil (gagal lookup = gagal
 validasi), bukan sekadar cek string kosong seperti modul lain.
 
 ## Known Limitations / Butuh Konfirmasi Saat Eksekusi
+- **TERBUKA (2026-10-27) — "Bill Material no" wajib untuk tipe PRODUCT?** Spec `work-order/save.do` memasukkan `billOfMaterialNo` ke `required` (satu skema untuk semua tipe), dan Facport menolak baris tanpa kolom itu (Fase 200). Belum terbukti apakah Accurate sungguh menolak tipe Kode Produk (`PRODUCT`) tanpa Nomor Formula. Rencana: client mengirim Excel Work Order aktual (diminta 2026-10-28), lalu diuji di Accurate (opsi: panggil `save.do` tanpa `billOfMaterialNo`, tipe PRODUCT, di database demo — bila berhasil, ada Work Order uji yang harus dihapus manual). Jangan melonggarkan aturan sebelum terbukti.
 - **`workOrderType`** SUDAH resolved (§ di atas) — TAPI dictionary
   mapping istilah client ("Kode Produk"/"Nomor Formula"/"Nomor Rencana
   Produksi") ke isi kolom Excel RIIL belum diverifikasi (istilah dari

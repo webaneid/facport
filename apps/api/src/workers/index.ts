@@ -234,6 +234,7 @@ import {
 // LANJUTAN Sales Order/Sales Quotation (TIDAK auto-create customer/item,
 // mirror Receive Item) TAPI grouping DEFAULT ADR-0011 (opsional by
 // "number", BEDA dari Receive Item yang wajib by "receiveNumber").
+import { cleanRawData, normalizeKeyColumns } from "../lib/input-hygiene";
 import { saveDeliveryOrder, getDeliveryOrderByNumber } from "../lib/accurate-delivery-order";
 import {
   buildDeliveryOrderPayload,
@@ -1349,7 +1350,7 @@ export async function loadStagedFullGroups(batchId: string, module: StagedModule
     .where(and(eq(importBatchRows.batchId, batchId), ne(importBatchRows.status, "cancelled")))
     .orderBy(importBatchRows.rowNumber);
   const statusById = new Map(all.map((r) => [r.id, r.status]));
-  const records = all.map((r): ImportRowRecord => ({ id: r.id, rawData: r.rawData as Record<string, unknown> }));
+  const records = all.map((r): ImportRowRecord => ({ id: r.id, rawData: normalizeKeyColumns(cleanRawData(r.rawData as Record<string, unknown>), columnMapping) })); // § Fase 211 lapis 1+2
   const out: StagedFullGroups = new Map();
   for (const g of groupsByNumber(module, records, columnMapping)) {
     // Hanya dokumen yang `classifyGroup` nyatakan "staged" (bukan PPh, bukan terlalu besar, di atas ambang) — selainnya jalur kirim-sekali.
@@ -2845,15 +2846,19 @@ async function main() {
     }
 
     const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-    const rows = await db
-      .select()
-      .from(importBatchRows)
-      .where(
-        and(
-          eq(importBatchRows.batchId, batch.id),
-          or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
-        ),
-      );
+    // § Fase 211, ADR-0052 lapis 1+2 (lapis 2 = kolom kunci, § `normalizeKeyColumns`) — baris yang diproses (termasuk Retry atas baris lama yang tersimpan sebelum pembersihan ada) dibersihkan dari karakter
+    // tak terlihat di SATU titik ini, sehingga semua modul (grouping, validasi, payload, lookup) melihat data yang sama bersihnya.
+    const rows = (
+      await db
+        .select()
+        .from(importBatchRows)
+        .where(
+          and(
+            eq(importBatchRows.batchId, batch.id),
+            or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
+          ),
+        )
+    ).map((r) => ({ ...r, rawData: normalizeKeyColumns(cleanRawData(r.rawData as Record<string, unknown>), columnMapping) }));
     // § Fase 199 (C4b) — grup (dokumen) dalam job ini diproses paralel sampai N (env `IMPORT_GROUP_PARALLELISM`, default 1 = berurutan seperti dulu).
     const groupParallelism = configuredGroupParallelism();
     const jobStartedAt = Date.now();

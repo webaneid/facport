@@ -23,6 +23,12 @@ import {
 // beneran (di-split dari 1 kolom "dipisah koma" — BEDA dari Sales
 // Quotation yang cuma wrap 1 nilai).
 describe("buildSalesOrderPayload", () => {
+  // § Fase 210 — "CUST IN " (spasi di ujung hasil salin Excel) membuat customer yang SUDAH ADA di Accurate dianggap tidak ada.
+  test("customerNo dipangkas dari spasi/NBSP di ujung", () => {
+    const payload = buildSalesOrderPayload([{ "Cust No": "CUST IN \u00a0" }], { "Cust No": "customerNo" });
+    expect(payload.customerNo).toBe("CUST IN");
+  });
+
   test("field header masuk ke root payload, field item masuk ke detailItem[0]", () => {
     const rawRow = {
       "Cust No": "C.00001",

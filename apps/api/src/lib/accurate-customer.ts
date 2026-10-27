@@ -4,6 +4,8 @@ import type { AccurateSessionContext } from "./accurate-session";
 import { todayAccurateDate } from "./accurate-vendor";
 import { accurateFetch } from "./accurate-http";
 import { runExclusive } from "./keyed-lock";
+import { oddCharsHint } from "./input-hygiene";
+import { normalizeAccurateNo } from "./accurate-no";
 
 // § architecture-accurate-integration.md § "Sales Invoice — Fase 13" —
 // mirror 1:1 `accurate-vendor.ts` (Customer setara Vendor untuk sisi
@@ -17,7 +19,7 @@ export type CustomerResult = {
 
 export async function findCustomerByNo(ctx: AccurateSessionContext, customerNo: string): Promise<{ id: number; name: string } | undefined> {
   return withAccurateRateLimit(async () => {
-    const params = new URLSearchParams({ "filter.no.val": customerNo, fields: "id,customerNo,name" });
+    const params = new URLSearchParams({ "filter.no.val": normalizeAccurateNo(customerNo), fields: "id,customerNo,name" });
     const res = await accurateFetch(`${ctx.host}/accurate/api/customer/list.do?${params}`, {
       headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
     });
@@ -71,7 +73,7 @@ async function findOrCreateCustomerImpl(
   }
 
   if (!createFields.name) {
-    throw new Error(`Customer dengan nomor "${customerNo}" belum ada di Accurate, dan kolom "Nama Customer" kosong — wajib diisi untuk membuat customer baru`);
+    throw new Error(`Customer dengan nomor "${customerNo}" belum ada di Accurate, dan kolom "Nama Customer" kosong — wajib diisi untuk membuat customer baru.${oddCharsHint(customerNo)}`);
   }
 
   return postCustomerSave(ctx, {

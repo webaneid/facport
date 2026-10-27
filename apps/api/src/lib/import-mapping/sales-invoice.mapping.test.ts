@@ -20,6 +20,12 @@ import {
 // § Fase 13 — mirror 1:1 `purchase-invoice.mapping.test.ts` (customerNo↔
 // vendorNo, poNumber↔billNumber).
 describe("buildSalesInvoicePayload", () => {
+  // § Fase 210 — "CUST IN " (spasi di ujung hasil salin Excel) membuat customer yang SUDAH ADA di Accurate dianggap tidak ada.
+  test("customerNo dipangkas dari spasi/NBSP di ujung", () => {
+    const payload = buildSalesInvoicePayload([{ "Cust No": "CUST IN \u00a0" }], { "Cust No": "customerNo" });
+    expect(payload.customerNo).toBe("CUST IN");
+  });
+
   // § field 2026-09-22 — "Fiscal Rate" (Kurs Pajak) ADA di format Excel lama client (v7 Sales Invoice/v8 Purchase Invoice) DAN
   // di API resmi Accurate (`fiscalRate`, root), sebelumnya belum dipetakan di sini — client bertanya "Rate Pajak" kok tidak ada.
   test("fiscalRate (Kurs Pajak) masuk ke root payload, sejajar dengan rate (kurs mata uang biasa)", () => {

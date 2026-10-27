@@ -5,6 +5,7 @@
 // Accurate di `fieldToAccuratePath` diverifikasi dari OpenAPI spec resmi
 // (`docs/referencehtml/accurate-openapi.json`), BUKAN tebakan.
 import { splitIdList } from "./split-id-list";
+import { normalizeAccurateNo } from "../accurate-no";
 
 export const salesInvoiceMapping = {
   // § disamakan persis dengan aturan WAJIB/TIDAK WAJIB di format Excel
@@ -566,6 +567,7 @@ function extractRowValues(
         const list = splitIdList(raw);
         if (list.length > 0) values[f] = list;
       }
+      else if (f === "customerNo") values[f] = normalizeAccurateNo(raw);
       else values[f] = raw;
     }
   }

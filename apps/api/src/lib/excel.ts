@@ -1,8 +1,11 @@
 import * as XLSX from "xlsx";
+import { cleanCell } from "./input-hygiene";
 
 export type ParsedExcel = {
   headers: string[];
   rows: Record<string, unknown>[];
+  /** Jumlah sel teks (bukan header) yang berubah oleh pembersihan karakter tak terlihat (Fase 211 lapis 1) — bahan ringkasan "N sel dirapikan". */
+  cleanedCells: number;
 };
 
 // § Template buatan FAC (mis. `FACPORT_TEMPLATE_Purchase_Inv_v8.xlsx`) punya 2 baris header: baris 1 = JUDUL GRUP di sel
@@ -38,7 +41,7 @@ function headerRowIndexOf(sheet: XLSX.WorkSheet): number {
 export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const sheetName = workbook.SheetNames[0];
-  if (!sheetName) return { headers: [], rows: [] };
+  if (!sheetName) return { headers: [], rows: [], cleanedCells: 0 };
   const sheet = workbook.Sheets[sheetName]!;
 
   const headerRowIndex = headerRowIndexOf(sheet);
@@ -49,7 +52,7 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   // kemunculan ke-2+ (nilainya hilang diam-diam). Di sini `headers` diberi penamaan dedupe yang SAMA dengan key baris.
   const usedHeaders = new Set<string>();
   const headers = headerRow
-    .map((h) => String(h ?? "").trim())
+    .map((h) => cleanCell(String(h ?? "")))
     .filter(Boolean)
     .map((name) => {
       let candidate = name;
@@ -72,15 +75,20 @@ export function parseExcelBuffer(buffer: Buffer): ParsedExcel {
   // (bukan spesifik Purchase Payment/Tax), karena `parseExcelBuffer`
   // dipakai bersama oleh semua route `*-import.route.ts`.
   const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", range: headerRowIndex });
+  let cleanedCells = 0;
   const rows = rawRows.map((row) => {
+    // § Fase 211, ADR-0052 lapis 1 — kunci DAN nilai sel teks dibersihkan dari karakter tak terlihat (NBSP, zero-width, BOM, dst) + dipangkas.
+    // Angka/tanggal dibiarkan. Header memakai fungsi yang SAMA supaya kunci baris selalu cocok dengan `headers`/`columnMapping`.
     const trimmed: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(row)) {
-      trimmed[key.trim()] = value;
+      const cleaned = cleanCell(value);
+      if (cleaned !== value) cleanedCells++;
+      trimmed[cleanCell(key)] = cleaned;
     }
     return trimmed;
   });
 
-  return { headers, rows };
+  return { headers, rows, cleanedCells };
 }
 
 export type TemplateFieldGuide = {

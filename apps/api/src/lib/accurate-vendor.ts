@@ -1,4 +1,5 @@
 import { parseAccurateEnvelope, parseAccurateSaveEnvelope } from "./accurate";
+import { oddCharsHint } from "./input-hygiene";
 import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { getCompanyTimezone } from "./company-timezone";
@@ -122,7 +123,7 @@ async function findOrCreateVendorImpl(
 
   if (!createFields.name) {
     throw new Error(
-      `Pemasok dengan nomor "${vendorNo}" belum ada di Accurate, dan kolom "Nama Vendor" kosong — wajib diisi untuk membuat vendor baru`,
+      `Pemasok dengan nomor "${vendorNo}" belum ada di Accurate, dan kolom "Nama Vendor" kosong — wajib diisi untuk membuat vendor baru.${oddCharsHint(vendorNo)}`,
     );
   }
 
