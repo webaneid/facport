@@ -1,3 +1,13 @@
+## 2.46.0 (2026-10-27)
+
+* chore: rilis Fase 209-211 (DO CLS1-10, nomor customer spasi ujung, kebersihan data input Excel) ([4269033](https://github.com/webaneid/facport/commit/4269033))
+* feat(api web): Delivery Order memetakan CLS1-CLS10 level item (sebelumnya hanya CLS2/CLS5) ([b1aae8a](https://github.com/webaneid/facport/commit/b1aae8a))
+* feat(api web): kebersihan data input Excel lapis 3 (Pemeriksaan Data di langkah Cocokkan Kolom, 25 m ([f2f1172](https://github.com/webaneid/facport/commit/f2f1172))
+* feat(api): kebersihan data input Excel lapis 1+4 (karakter tak terlihat dibersihkan saat unggah/Retr ([b511210](https://github.com/webaneid/facport/commit/b511210))
+* feat(api): kebersihan data input Excel lapis 2 (normalisasi kolom kunci: NFKC + ringkas spasi, linta ([d11e833](https://github.com/webaneid/facport/commit/d11e833))
+* docs: rencana Fase 211 kebersihan data input Excel (ADR-0052, architecture-input-hygiene) ([514e10a](https://github.com/webaneid/facport/commit/514e10a))
+* fix(api): nomor Customer dengan spasi di ujung tidak lagi dianggap belum ada di Accurate (Sales Invo ([da7faac](https://github.com/webaneid/facport/commit/da7faac))
+
 ## 2.45.0 (2026-10-26)
 
 * Merge pull request #94 from webaneid/develop ([f8a08b6](https://github.com/webaneid/facport/commit/f8a08b6)), closes [#94](https://github.com/webaneid/facport/issues/94)
