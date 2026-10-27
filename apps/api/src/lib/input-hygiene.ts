@@ -57,3 +57,38 @@ export function oddCharsHint(value: unknown): string {
   if (/ {2,}/.test(raw)) parts.push("spasi ganda di tengah");
   return parts.length > 0 ? ` Periksa nomor/nama ini - ada ${parts.join(" dan ")}; pastikan sama persis dengan yang tercatat di Accurate.` : "";
 }
+
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+// Lapis 2 (Fase 211, ADR-0052) - normalisasi KOLOM KUNCI: kode/nama master & nomor dokumen RUJUKAN yang dicocokkan PERSIS oleh Accurate.
+// Selain `cleanCell`: NFKC (huruf/angka lebar penuh -> biasa) dan spasi/baris-baru berurutan di tengah -> satu spasi. Teks bebas (Description, Notes, nama
+// barang baru) TIDAK pernah lewat sini, dan nomor milik dokumen itu sendiri (Trans No, dst) dikecualikan - mengubahnya berarti mengubah dokumen client.
+// ---------------------------------------------------------------------------------------------------------------------------------------------
+
+// Nomor yang MILIK dokumen yang sedang dibuat, atau referensi bebas client - bukan kunci pencarian master.
+const OWN_OR_FREE_NUMBER_FIELDS = new Set([
+  "number", "transNo", "billNumber", "poNumber", "paymentNumber", "receiptNumber", "journalNumber", "receiveNumber",
+  "pphNumber", "taxNumber", "chequeNo", "itemSerialNo", "serialNo", "requisitionNo",
+]);
+const EXTRA_KEY_FIELDS = new Set(["rmUnit"]); // satuan bahan baku (nama field tidak berakhiran Name)
+const KEY_BY_SUFFIX = /(No|Number|Code)$/;
+const MASTER_NAME_FIELD = /(department|dept|warehouse|branch|unit|paymentTerm|shipment|fob)Name$/i;
+
+/** Apakah field internal modul (nama di `fieldToAccuratePath`) berisi kode/nama master atau nomor rujukan yang dicocokkan persis oleh Accurate. */
+export function isKeyField(field: string): boolean {
+  if (OWN_OR_FREE_NUMBER_FIELDS.has(field)) return false;
+  return EXTRA_KEY_FIELDS.has(field) || KEY_BY_SUFFIX.test(field) || MASTER_NAME_FIELD.test(field);
+}
+
+export function normalizeKeyValue(value: string): string {
+  return cleanCell(value).normalize("NFKC").replace(/\s+/g, " ").trim();
+}
+
+/** Terapkan `normalizeKeyValue` pada kolom Excel yang dipetakan ke field kunci. Kolom lain dan nilai non-teks tidak berubah. */
+export function normalizeKeyColumns(rawData: Record<string, unknown>, columnMapping: Record<string, string>): Record<string, unknown> {
+  const out = { ...rawData };
+  for (const [column, field] of Object.entries(columnMapping)) {
+    const value = out[column];
+    if (typeof value === "string" && isKeyField(field)) out[column] = normalizeKeyValue(value);
+  }
+  return out;
+}

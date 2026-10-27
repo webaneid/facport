@@ -1,8 +1,7 @@
-import { cleanCell } from "./input-hygiene";
+import { normalizeKeyValue } from "./input-hygiene";
 
-// Nomor master Accurate (customerNo dst) dicocokkan PERSIS oleh `list.do` (huruf besar-kecil diabaikan, spasi TIDAK) - spasi/karakter tak terlihat
-// hasil salin Excel ("CUST IN ") membuat customer yang sudah ada dianggap tidak ada (Fase 210). Pembersihan karakter tak terlihat dipusatkan di
-// `input-hygiene.ts` (Fase 211, ADR-0052); fungsi ini tempat lapis 2 (normalisasi kolom kunci) dipasang.
+// Nomor master Accurate (customerNo dst) dicocokkan PERSIS oleh `list.do` (huruf besar-kecil diabaikan, spasi TIDAK) - Fase 210 (spasi ujung), Fase 211 lapis 2
+// (ADR-0052): aturan normalisasi kolom kunci dipusatkan di `input-hygiene.ts`; fungsi ini tinggal pintu pakai untuk satu nilai.
 export function normalizeAccurateNo(value: unknown): string {
-  return cleanCell(String(value ?? ""));
+  return normalizeKeyValue(String(value ?? ""));
 }

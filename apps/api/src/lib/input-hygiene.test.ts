@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cleanCell, cleanRawData, hygieneHint, oddCharsHint, visibleChars } from "./input-hygiene";
+import { cleanCell, cleanRawData, hygieneHint, isKeyField, normalizeKeyColumns, normalizeKeyValue, oddCharsHint, visibleChars } from "./input-hygiene";
 
 describe("cleanCell", () => {
   test("spasi di awal/akhir dipangkas", () => {
@@ -71,5 +71,38 @@ describe("oddCharsHint", () => {
   });
   test("menyebut spasi ganda", () => {
     expect(oddCharsHint("CUST  IN")).toContain("spasi ganda");
+  });
+});
+
+describe("isKeyField (lapis 2)", () => {
+  test("kode/nama master & nomor rujukan = kunci", () => {
+    for (const f of ["customerNo", "vendorNo", "itemNo", "rmItemNo", "expenseAccountNo", "lineAccountNo", "bankNo", "warehouseName", "departmentName", "lineDepartmentName", "deptName", "branchName", "projectNo", "itemUnitName", "paymentTermName", "currencyCode", "salesOrderNumber", "itemSalesOrderNo", "reverseInvoiceNumber", "invoiceNumber", "rmUnit"]) {
+      expect(isKeyField(f)).toBe(true);
+    }
+  });
+  test("nomor milik dokumen sendiri & teks bebas BUKAN kunci", () => {
+    for (const f of ["number", "transNo", "billNumber", "poNumber", "paymentNumber", "receiptNumber", "journalNumber", "taxNumber", "chequeNo", "itemSerialNo", "description", "itemName", "expenseName", "itemNotes", "toAddress", "quantity", "unitPrice"]) {
+      expect(isKeyField(f)).toBe(false);
+    }
+  });
+});
+
+describe("normalizeKeyValue / normalizeKeyColumns (lapis 2)", () => {
+  test("huruf & angka lebar penuh -> biasa (NFKC)", () => {
+    expect(normalizeKeyValue("\uff23\uff0e\uff10\uff10\uff11")).toBe("C.001");
+  });
+  test("spasi ganda & baris baru di tengah -> satu spasi", () => {
+    expect(normalizeKeyValue("CUST   IN")).toBe("CUST IN");
+    expect(normalizeKeyValue("CUST\nIN\t01")).toBe("CUST IN 01");
+  });
+  test("hanya kolom yang dipetakan ke field kunci yang disentuh", () => {
+    const raw = { "Cust No": "C  001", Description: "dua  spasi dipertahankan", "Trans No": "INV  1", Qty: 5 };
+    const mapping = { "Cust No": "customerNo", Description: "description", "Trans No": "number", Qty: "quantity" };
+    expect(normalizeKeyColumns(raw, mapping)).toEqual({ "Cust No": "C 001", Description: "dua  spasi dipertahankan", "Trans No": "INV  1", Qty: 5 });
+  });
+  test("tidak mengubah objek asli", () => {
+    const raw = { "Cust No": "C  001" };
+    normalizeKeyColumns(raw, { "Cust No": "customerNo" });
+    expect(raw["Cust No"]).toBe("C  001");
   });
 });
