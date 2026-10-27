@@ -21,6 +21,12 @@ import {
 // (tidak diminta Excel client), `detailExpense[]` TIDAK punya
 // `projectNo` (dikonfirmasi tidak ada di API).
 describe("buildSalesQuotationPayload", () => {
+  // § Fase 210 — "CUST IN " (spasi di ujung hasil salin Excel) membuat customer yang SUDAH ADA di Accurate dianggap tidak ada.
+  test("customerNo dipangkas dari spasi/NBSP di ujung", () => {
+    const payload = buildSalesQuotationPayload([{ "Cust No": "CUST IN \u00a0" }], { "Cust No": "customerNo" });
+    expect(payload.customerNo).toBe("CUST IN");
+  });
+
   test("field header masuk ke root payload, field item masuk ke detailItem[0]", () => {
     const rawRow = {
       "Customer Number": "C.00001",
