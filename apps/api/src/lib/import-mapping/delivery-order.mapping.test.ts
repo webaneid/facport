@@ -171,11 +171,21 @@ describe("validateGroupCustomerConsistency", () => {
   });
 });
 
-describe("extractDataClassificationValues (khusus CLS2/CLS5, § tidak ada versi header)", () => {
+describe("extractDataClassificationValues (CLS1-CLS10 level item, § tidak ada versi header)", () => {
   test("ambil index 2 dan 5 yang terisi, skip yang kosong", () => {
     const rawRow = { CLS2_1: "KATKEG 2", CLS5_1: "" };
     const columnMapping = { CLS2_1: "attribut2", CLS5_1: "attribut5" };
     expect(extractDataClassificationValues(rawRow, columnMapping)).toEqual([{ index: 2, name: "KATKEG 2" }]);
+  });
+
+  test("slot 1-10 semua terbaca, termasuk CLS1/CLS10", () => {
+    const rawRow = { CLS1: " A ", CLS3: "C", CLS10: "J" };
+    const columnMapping = { CLS1: "attribut1", CLS3: "attribut3", CLS10: "attribut10" };
+    expect(extractDataClassificationValues(rawRow, columnMapping)).toEqual([
+      { index: 1, name: "A" },
+      { index: 3, name: "C" },
+      { index: 10, name: "J" },
+    ]);
   });
 });
 
@@ -188,6 +198,8 @@ describe("defaultColumnMap — TIDAK ada auto-suggest untuk CLS2/CLS5 (§ ambigu
   test("field attribut2/attribut5 TETAP bisa dipetakan manual (ada di fieldToAccuratePath)", () => {
     expect(deliveryOrderMapping.fieldToAccuratePath.attribut2).toBe("detailItem.dataClassification2Name");
     expect(deliveryOrderMapping.fieldToAccuratePath.attribut5).toBe("detailItem.dataClassification5Name");
+    expect(deliveryOrderMapping.fieldToAccuratePath.attribut1).toBe("detailItem.dataClassification1Name");
+    expect(deliveryOrderMapping.fieldToAccuratePath.attribut10).toBe("detailItem.dataClassification10Name");
   });
 });
 

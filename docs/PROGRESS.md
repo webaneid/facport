@@ -217,6 +217,7 @@
 | 206  | Efisiensi: hitung baris detailInvoice SR di timeout adaptif (log `lines:0`) + tinjau chunk 500 kirim bertahap | Done sisi kode (2026-10-21, belum dirilis); env prod ACCURATE_SAVE_TIMEOUT_MIN_MS=900000 aktif | - | `docs/phases/phase-206-efisiensi-timeout-adaptif-dan-chunk-staged.md` |
 | 207  | Peringatan unggah dobel (file sama masih diproses) + posisi antrean — **DITUNDA, menunggu konsultasi client; sementara file sama BOLEH diunggah** | Planned (belum ada kode) | - | `docs/phases/phase-207-peringatan-unggah-dobel.md` |
 | 208  | **TERBUKA** — galat "Accurate mengembalikan N baris detail, padahal M dikirim" Sales Invoice client Banjaran (3 faktur sudah ada di Accurate, 23 baris tercatat Gagal); menunggu balasan client; JANGAN Retry/unggah ulang | Planned (investigasi, belum ada kode) | - | `docs/phases/phase-208-galat-jumlah-detail-sales-invoice-banjaran.md` |
+| 209  | Delivery Order: petakan CLS1–CLS10 level item (sebelumnya hanya CLS2/CLS5), nama kolom tetap "CLS" sesuai client | Done sisi kode (2026-10-27, belum dirilis) | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-209-delivery-order-cls1-10.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

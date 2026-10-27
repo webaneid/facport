@@ -70,9 +70,17 @@ export const deliveryOrderMapping = {
     reverseInvoiceNumber: "detailItem.reverseInvoiceNumber",
     // § DITUNDA — lihat komentar atas, di-exclude eksplisit di `DEFERRED_FIELDS`.
     salesOrderDetailId: "detailItem.salesOrderDetailId",
-    // Kategori Keuangan level ITEM (posisi Excel SETELAH "Item Reverse Invoice", § komentar atas — AKTIF, beda dari versi header yang tidak dipetakan sama sekali).
+    // Kategori Keuangan level ITEM, slot 1-10 (nama kolom Excel client tetap "CLS1".."CLS10"; posisi Excel SETELAH "Item Reverse Invoice", § komentar atas — AKTIF, beda dari versi header yang tidak dipetakan sama sekali).
+    attribut1: "detailItem.dataClassification1Name",
     attribut2: "detailItem.dataClassification2Name",
+    attribut3: "detailItem.dataClassification3Name",
+    attribut4: "detailItem.dataClassification4Name",
     attribut5: "detailItem.dataClassification5Name",
+    attribut6: "detailItem.dataClassification6Name",
+    attribut7: "detailItem.dataClassification7Name",
+    attribut8: "detailItem.dataClassification8Name",
+    attribut9: "detailItem.dataClassification9Name",
+    attribut10: "detailItem.dataClassification10Name",
     // Serial Number — 1 entri per baris Item (§ komentar atas soal struktur).
     serialNum: "detailItem.detailSerialNumber.serialNumberNo",
     serialNumQty: "detailItem.detailSerialNumber.quantity",
@@ -240,7 +248,7 @@ export function validateGroupCustomerConsistency(group: DeliveryOrderGroup, colu
 
 export function extractDataClassificationValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): { index: number; name: string }[] {
   const result: { index: number; name: string }[] = [];
-  for (const index of [2, 5]) {
+  for (const index of [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]) {
     const excelColumn = Object.entries(columnMapping).find(([, f]) => f === `attribut${index}`)?.[0];
     const value = excelColumn ? rawRow[excelColumn] : undefined;
     if (value === undefined || value === "") continue;
