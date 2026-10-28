@@ -27,7 +27,7 @@ const ACCURATE_FIELDS = [
   { value: "number", label: "Trans No (kunci gabung baris)" },
   { value: "workAccountNo", label: "Work Acc No (wajib)" },
   { value: "workOrderType", label: "Work Order Type (wajib)" },
-  { value: "billOfMaterialNo", label: "Bill Material no (wajib)" },
+  { value: "billOfMaterialNo", label: "Bill Material no (wajib kecuali tipe Kode Produk)" },
   { value: "branchName", label: "Branch Name (wajib)" },
   { value: "description", label: "Description" },
   { value: "productItemNo", label: "Product: Item No (wajib)" },

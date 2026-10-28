@@ -220,6 +220,8 @@
 | 209  | Delivery Order: petakan CLS1–CLS10 level item (sebelumnya hanya CLS2/CLS5), nama kolom tetap "CLS" sesuai client | Done sisi kode (2026-10-27, belum dirilis) | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-209-delivery-order-cls1-10.md` |
 | 210  | Nomor Customer dengan spasi di ujung ("CUST IN ") tidak lagi dianggap "belum ada di Accurate" (Sales Invoice/Quotation/Order) | Done sisi kode (2026-10-27, belum dirilis) | - | `docs/phases/phase-210-customer-no-spasi-ujung.md` |
 | 211  | Kebersihan data input Excel lintas modul: karakter tak terlihat otomatis dibersihkan (unggah/Retry/edit), kolom kunci dinormalisasi, karakter terlihat diperingatkan, galat menampakkan karakter | Done sisi kode (2026-10-27, belum dirilis; lapis 1-4) | `docs/architecture/architecture-input-hygiene.md`, `docs/decisions/adr-0052-kebersihan-data-input-excel.md` | `docs/phases/phase-211-kebersihan-data-input-excel.md` |
+| 212  | Delivery Order: Atribut Tambahan (Custom Character/Number/Date) level header + item, 44 kolom; terbukti lewat uji nyata ke Accurate demo | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-212-delivery-order-atribut-tambahan.md` |
+| 213  | Work Order: "Bill Material no" tidak wajib untuk tipe Kode Produk (PRODUCT), tetap wajib untuk tipe lain | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-213-work-order-bom-opsional-tipe-produk.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

@@ -179,7 +179,7 @@ describe("POST /work-order/import/:batchId/confirm — validasi mapping", () => 
     expect(body.fields).toContain("branchName");
     expect(body.fields).toContain("workAccountNo");
     expect(body.fields).toContain("workOrderType");
-    expect(body.fields).toContain("billOfMaterialNo");
+    expect(body.fields).not.toContain("billOfMaterialNo"); // § Fase 213: kolom boleh tidak ada (tipe Kode Produk tidak memerlukannya)
     // § kolom section (bahan baku dst) BUKAN wajib di level mapping — wajib bersyarat per baris
     expect(body.fields).not.toContain("matItemNo");
     expect(body.fields).not.toContain("number"); // § "No Trans" OPSIONAL, beda dari Item Transfer

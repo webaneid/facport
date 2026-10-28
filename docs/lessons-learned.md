@@ -6409,6 +6409,22 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Pelajaran:** (1) galat SETELAH `save.do` berhasil berarti dokumen sudah ada di sistem pelanggan — status "Gagal" menyesatkan dan mengundang unggah ulang; rancang galat pasca-simpan sebagai kondisi tersendiri, bukan kegagalan. (2) Hipotesis dari investigasi sebelumnya (Fase 208) benar tetapi baru terbukti ketika data pelanggan kedua datang — simpan hipotesis terbuka lengkap dengan cara membuktikannya.
 - **Lanjutan (2026-10-26): pemulihan & komunikasi ke pengguna.** Baris lama yang sudah "Gagal" dipulihkan lewat "adopsi" saat Retry/unggah ulang (membaca faktur lewat nomor, syarat kecocokan ketat, baris ditandai sukses + keterangan "Sudah ada di Accurate …", banner di halaman hasil). Pelajaran produk: pengguna yang melihat "Gagal" menyimpulkan datanya salah; galat yang berasal dari keterbatasan Facport harus dikatakan terus terang ("bukan kesalahan data Anda") dan disertai cara memverifikasi sendiri (cari nomor faktur di Accurate), bukan hanya diperbaiki diam-diam. Syarat adopsi harus menutup kasus "nomor sama, isi beda" (nomor, Customer, kode item berurutan, kuantitas persis, harga ±Rp1, baris tambahan ≤ baris file).
 
+## 2026-10-29 — Aturan "wajib" dari spec resmi dipakai untuk semua tipe dokumen, padahal wajibnya tergantung tipe (Work Order, Fase 213)
+**Masalah:** Fase 200 mewajibkan "Bill Material no" untuk semua tipe Work Order karena spec `save.do` memasukkannya ke `required` (satu skema untuk 3 tipe). File aktual client bertipe `PRODUCT` dan tidak punya kolom itu, sehingga 434 Work Order ditolak sebelum sampai ke Accurate.
+**Root cause:** Spec OpenAPI tidak bisa mengekspresikan "wajib bergantung tipe"; kita menerjemahkan `required` secara harfiah tanpa menanyakan ke pengguna Accurate sungguhan.
+**Fix:** Tanya client (jawab: tipe produk tidak perlu) + uji ke demo (tidak ada galat Bill Material) -> wajib hanya untuk tipe selain `PRODUCT`.
+**Pencegahan:** Untuk field `required` di spec pada endpoint bertipe-ganda (parameter enum seperti `workOrderType`), jangan jadikan wajib mutlak; tanyakan ke client per tipe dan uji ke demo sebelum mengeraskan aturan. Bila demo tidak bisa dipakai uji penuh, catat batas bukti di dokumen fase.
+
+---
+
+## 2026-10-29 — Klaim "endpoint X tidak punya field Y" dari spec resmi terbukti keliru untuk Delivery Order; selesai dalam 1 uji nyata (±10 menit)
+**Masalah:** Fase 171 mencatat "`delivery-order/save.do` tidak punya field `charField*`" hanya berdasarkan spec resmi. Client lalu meminta kolom Custom Character/Number/Date di Delivery Order.
+**Root cause:** Pengulangan pola 2026-09-09: spec Accurate tidak mencantumkan `charField/numericField/dateField` di SATU PUN `save.do` (sudah dicek 100+ endpoint), padahal fiturnya jalan lintas transaksi.
+**Fix:** Uji nyata ke database demo (2 DO: kontrol vs berisi field kustom header+item, baca `detail.do`, hapus lewat `delete.do`) -> terbukti didukung -> Fase 212.
+**Pencegahan:** Untuk keluarga Atribut Tambahan, JANGAN simpulkan "tidak ada" dari spec; uji nyata dulu di database demo (murah, ~10 menit, bisa dibersihkan lewat API). Catatan lama yang menyimpulkan dari spec harus dianggap belum terverifikasi.
+
+---
+
 ## 2026-10-27 — Nomor master dengan spasi di ujung dianggap "belum ada" di Accurate (Fase 210)
 - **Gejala:** 69 baris Sales Invoice gagal "Customer dengan nomor "CUST IN " belum ada di Accurate" padahal customernya ada.
 - **Penyebab:** Excel client berisi "CUST IN " (spasi di ujung); Accurate `list.do` mencocokkan nomor PERSIS (huruf besar-kecil diabaikan, spasi tidak). Facport tidak memangkas nilai Excel sebelum mencari/mengirim.

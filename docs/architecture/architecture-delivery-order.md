@@ -188,10 +188,30 @@ kolom ini (murni internal atau ada maksud lain yang belum kita tangkap).
 - ADR rujukan: ADR-0011 (grouping default), ADR-0019 (SKU per sub-modul)
 
 ## Fase 171 (2026-10-06) — Sales Order Detail ID otomatis via Atribut Tambahan 1 ("Week")
-**Koreksi asumsi Fase 158:** label "Week N" client TIDAK ada di CLS5, melainkan di **Atribut Tambahan 1 / Custom Character 1** (`charField1`) baris Sales Order; di Excel DO client mengetiknya di kolom **Item Notes**. `delivery-order/save.do` tidak punya field `charField*`, jadi nilai Week hanya kunci pencarian (tidak dikirim).
+**Koreksi asumsi Fase 158:** label "Week N" client TIDAK ada di CLS5, melainkan di **Atribut Tambahan 1 / Custom Character 1** (`charField1`) baris Sales Order; di Excel DO client mengetiknya di kolom **Item Notes**. ~~`delivery-order/save.do` tidak punya field `charField*`~~ (**DIKOREKSI Fase 212**: klaim itu hanya dari spec resmi yang tidak lengkap; uji nyata 2026-10-29 membuktikan `charField*` didukung). Nilai Week tetap hanya kunci pencarian (kolom Item Notes), tidak dikirim.
 **Aturan resolver** (`resolveSalesOrderDetailId`, fungsi murni; dipakai worker lewat `resolveSalesOrderDetailIdsInPayload`): Item No hanya sekali di SO → langsung; kembar → saring CLS5 (HANYA bila baris SO punya data CLS5; perilaku Fase 158) lalu **Item Notes ↔ `charField1`** (tanpa beda huruf besar-kecil/spasi berlebih); sisa ≠ 1 → error jelas. "Sales Order Detail ID" manual tetap override.
 **Pembersihan sel:** spasi/baris baru di ujung semua nilai teks dibuang; Item No & No SO juga spasi di dalam (file client: Item No `"\n9900016"` dari copy-paste membuat pencocokan persis gagal). Sel berisi hanya spasi/baris baru dianggap kosong.
 **Pengganti proses manual client:** sheet bantu (SO, Item No, Item Name, Qty, Description, kunci `SO&Description`) + VLOOKUP ke kolom "Sales Order Detail ID" tidak diperlukan lagi. Catatan: kunci lama `SO&Description` tanpa Item No bentrok bila dua barang berbeda di 1 SO punya Week sama; resolver baru mencocokkan Item No + Week.
 ⚠️ Nama field BACA `charField1` di respons `sales-order/detail.do` belum diverifikasi respons asli.
 
 **Update 2026-10-06 (kalimat error ramah user Excel):** setelah uji client, mesin pencocokan terbukti benar tetapi kalimat error membingungkan (menyebut "Atribut Tambahan 1", istilah sisi Sales Order, padahal yang harus diisi client adalah kolom **Item Notes** di Excel DO). Pesan sekarang menyebut kolom yang harus diisi dan **menampilkan pilihan label yang ada di SO** (mis. "Pilihan yang ada: Week 1, Week 2") untuk 3 kasus: Item Notes kosong, tidak cocok, dan ambigu (label sama di >1 baris SO → minta Sales Order Detail ID manual). Template: deskripsi Item Notes ditulis ulang. Label "Error terakhir dari Accurate:" di dialog edit baris semua modul diganti "Error terakhir:" karena pesan seperti ini berasal dari Facport, bukan dari Accurate.
+
+## Fase 212 (2026-10-29) — Atribut Tambahan (Custom Character/Number/Date) header + item
+Kolom Excel "Custom Character 1-10 / Custom Number 1-10 / Custom Date 1-2" (header) dan "ITEM: ..." (item) = Atribut Tambahan Accurate, BUKAN Kategori Keuangan (CLS, Fase 209).
+
+**Bukti (uji nyata, database demo "Data Sample", 2026-10-29):** spec resmi `delivery-order/save.do` TIDAK mencantumkan `charField/numericField/dateField` (sama dengan seluruh `save.do` di spec; lessons-learned 2026-09-09), tetapi 2 DO uji (kontrol tanpa field kustom vs dengan field kustom header + item) menunjukkan nilai tersimpan dan terbaca balik lewat `detail.do` di KEDUA level. Dua DO uji dihapus lewat `delete.do`.
+
+| Level | Kolom Excel | Field internal | Field Accurate |
+|---|---|---|---|
+| Header | Custom Character 1-10 | `attributHeaderKarakter1-10` | `charField1-10` |
+| Header | Custom Number 1-10 | `attributHeaderAngka1-10` | `numericField1-10` |
+| Header | Custom Date 1-2 | `attributHeaderTanggal1-2` | `dateField1-2` |
+| Item | ITEM: Custom Character 1-10 | `attributItemKarakter1-10` | `detailItem[].charField1-10` |
+| Item | ITEM: Custom Number 1-10 | `attributItemAngka1-10` | `detailItem[].numericField1-10` |
+| Item | ITEM: Custom Date 1-2 | `attributItemTanggal1-2` | `detailItem[].dateField1-2` |
+
+- Nama internal SAMA dengan Receive Item/Sales Invoice. Level item: API menyediakan `charField1-15`; Excel client memakai 10, slot 11-15 belum dipetakan.
+- Auto-suggest nama kolom aktif (header "Custom Character 1" vs item "ITEM: Custom Character 1" berbeda teks, tidak ambigu seperti CLS).
+- Tanggal (4 field) dikonversi serial Excel/ISO -> `dd/MM/yyyy`; angka dikirim apa adanya (pola Receive Item).
+- Header diambil dari BARIS PERTAMA grup (pola semua field header DO); nilai header di baris berikutnya diabaikan.
+- Tidak berhubungan dengan resolver Fase 171 (itu MEMBACA `charField1` Sales Order; ini MENULIS `charField*` Delivery Order).

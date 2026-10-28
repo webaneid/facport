@@ -113,6 +113,23 @@ describe("workOrderHeaderMissing", () => {
   test("lengkap → kosong; kosong/tipe tak dikenali → label kolom Excel", () => {
     expect(workOrderHeaderMissing(header, map)).toEqual([]);
     expect(workOrderHeaderMissing({ ...header, "Bill Material no": "", "End Date": "" }, map)).toEqual(["End Date", "Bill Material no"]);
+  });
+
+  test("Fase 213 — Bill Material no wajib untuk tipe Nomor Formula & Rencana Produksi, TIDAK wajib untuk Kode Produk (PRODUCT)", () => {
+    const noBom = { ...header, "Bill Material no": "" };
+    expect(workOrderHeaderMissing({ ...noBom, "Work Order Type": "Nomor Formula" }, map)).toEqual(["Bill Material no"]);
+    expect(workOrderHeaderMissing({ ...noBom, "Work Order Type": "Nomor Rencana Produksi" }, map)).toEqual(["Bill Material no"]);
+    expect(workOrderHeaderMissing({ ...noBom, "Work Order Type": "Kode Produk" }, map)).toEqual([]);
+    expect(workOrderHeaderMissing({ ...noBom, "Work Order Type": "PRODUCT" }, map)).toEqual([]);
+    // tipe tak dikenali tetap ditolak, dan tidak dianggap PRODUCT (BOM tetap dilaporkan bersama tipe)
+    expect(workOrderHeaderMissing({ ...noBom, "Work Order Type": "zzz" }, map)).toEqual(["Work Order Type", "Bill Material no"]);
+  });
+
+  test("Fase 213 — tipe Kode Produk tanpa BOM: payload tidak memuat billOfMaterialNo; kalau diisi tetap dikirim", () => {
+    const productRow = { ...header, "Work Order Type": "Kode Produk", "Bill Material no": "" };
+    expect("billOfMaterialNo" in buildWorkOrderPayload([productRow], map)).toBe(false);
+    expect(buildWorkOrderPayload([{ ...productRow, "Bill Material no": "BOM-9" }], map).billOfMaterialNo).toBe("BOM-9");
+    expect(workOrderMapping.requiredFields).not.toContain("billOfMaterialNo");
     expect(workOrderHeaderMissing({ ...header, "Work Order Type": "zzz" }, map)).toEqual(["Work Order Type"]);
   });
 });
@@ -223,9 +240,10 @@ describe("regresi baris nyata client (Standard Cost bawaan di blok bahan baku)",
     expect(extractDataClassificationValues(realRow, map)).toEqual([]);
   });
 
-  test("hambatan BERIKUTNYA yang kini terlihat jelas (bukan perilaku baru): file ini tidak punya 'Bill Material no' padahal spec Accurate mewajibkannya untuk semua tipe", () => {
-    expect(workOrderHeaderMissing(realRow, map)).toEqual(["Bill Material no"]);
-    expect(workOrderHeaderMissing({ ...realRow, "Bill Material no": "BOM-1" }, map)).toEqual([]);
+  test("Fase 213 — file aktual client (tipe PRODUCT, tanpa kolom 'Bill Material no') kini lolos cek header; tipe Nomor Formula pada file yang sama tetap diminta BOM", () => {
+    expect(workOrderHeaderMissing(realRow, map)).toEqual([]);
+    expect(workOrderHeaderMissing({ ...realRow, "Work Order Type": "Nomor Formula" }, map)).toEqual(["Bill Material no"]);
+    expect(workOrderHeaderMissing({ ...realRow, "Work Order Type": "Nomor Formula", "Bill Material no": "BOM-1" }, map)).toEqual([]);
   });
 
   test("bahan baku NYATA di baris yang sama tetap dikirim lengkap (Standard Cost ikut)", () => {
