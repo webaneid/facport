@@ -135,7 +135,7 @@ export const WORK_ORDER_HEADER_REQUIRED: { field: string; label: string }[] = [
   { field: "endDate", label: "End Date" },
   { field: "workAccountNo", label: "Work Acc No" },
   { field: "workOrderType", label: "Work Order Type" },
-  { field: "billOfMaterialNo", label: "Bill Material no" },
+  { field: "billOfMaterialNo", label: "Bill Material no" }, // § Fase 213: TIDAK wajib untuk tipe PRODUCT (lihat `workOrderHeaderMissing`)
   { field: "branchName", label: "Branch Name" },
   { field: "productItemNo", label: "Product: Item No" },
   { field: "productQuantity", label: "Product: Qty" },
@@ -151,7 +151,7 @@ const fieldToAccuratePath: Record<string, string> = {
 
 export const workOrderMapping = {
   // § hanya field yang HARUS dipetakan kolomnya; kelengkapan NILAI header dicek per grup di worker (header boleh hanya di baris pertama).
-  requiredFields: ["transDate", "startDate", "endDate", "workAccountNo", "workOrderType", "billOfMaterialNo", "branchName", "productItemNo", "productQuantity", "varianceAccountNo"] as const,
+  requiredFields: ["transDate", "startDate", "endDate", "workAccountNo", "workOrderType", "branchName", "productItemNo", "productQuantity", "varianceAccountNo"] as const,
   fieldToAccuratePath,
   // § URUTAN mengikuti sheet "Work Order" (developmen-15-september-2026.xlsx). Akhiran _1/_2 = hasil dedupe `parseExcelBuffer` untuk
   // nama kolom berulang (kemunculan ke-2/ke-3: biaya produksi / proses / produk sampingan).
@@ -369,7 +369,10 @@ export function workOrderRowError(rawRow: Record<string, unknown>, columnMapping
  * (Work Order Type juga harus dikenali).
  */
 export function workOrderHeaderMissing(firstRow: Record<string, unknown>, columnMapping: Record<string, string>): string[] {
+  // § Fase 213 — tipe Kode Produk (PRODUCT) tidak butuh Bill Material no (konfirmasi client + uji Accurate); tipe lain tetap wajib.
+  const isProduct = resolveWorkOrderType(valueOf(firstRow, "workOrderType", columnMapping)) === "PRODUCT";
   return WORK_ORDER_HEADER_REQUIRED.filter(({ field }) => {
+    if (field === "billOfMaterialNo" && isProduct) return false;
     const value = valueOf(firstRow, field, columnMapping);
     if (value === undefined) return true;
     return field === "workOrderType" && resolveWorkOrderType(value) === null;

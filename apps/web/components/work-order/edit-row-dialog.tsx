@@ -28,7 +28,7 @@ export const REQUIRED_INTERNAL_FIELDS = new Set<string>();
 
 const FIELD_HINTS: Record<string, string> = {
   workOrderType: "Kode Produk, Nomor Formula, atau Nomor Rencana Produksi",
-  billOfMaterialNo: "Nomor formula (BOM) yang sudah ada di Accurate",
+  billOfMaterialNo: "Nomor formula (BOM) yang sudah ada di Accurate — tidak perlu diisi untuk tipe Kode Produk",
   branchName: "Nama cabang PERSIS seperti di Accurate — harus sudah ada",
   personInChargeName: "Nama penanggung jawab — dibuatkan otomatis kalau belum ada",
   matItemNo: "Wajib diisi bersama Qty kalau baris ini berisi bahan baku",

@@ -1350,7 +1350,7 @@ export const workOrderTemplateGuide: TemplateFieldGuide[] = [
   { column: "Trans No", required: false, example: "WO-2026-0001", description: `${WO_DOC}Nomor transaksi — kunci penggabungan baris jadi 1 Work Order (isi SAMA di semua baris dokumen yang sama). Kosongkan untuk penomoran otomatis Accurate (1 baris = 1 Work Order).` },
   { column: "Work Acc No", required: true, example: "1-1500", description: `${WO_DOC}Nomor akun barang dalam proses (Work in Process) PERSIS seperti di Accurate.${WO_FIRST_ROW}` },
   { column: "Work Order Type", required: true, example: "Nomor Formula", description: `${WO_DOC}Sumber referensi: Kode Produk, Nomor Formula, atau Nomor Rencana Produksi.${WO_FIRST_ROW}` },
-  { column: "Bill Material no", required: true, example: "BOM-001", description: `${WO_DOC}Nomor formula produksi (Bill of Material) yang sudah ada di Accurate.${WO_FIRST_ROW}` },
+  { column: "Bill Material no", required: false, example: "BOM-001", description: `${WO_DOC}Nomor formula produksi (Bill of Material) yang sudah ada di Accurate. WAJIB diisi kecuali Work Order Type = Kode Produk (PRODUCT), yang tidak memerlukannya.${WO_FIRST_ROW}` },
   { column: "Save As Status Type", required: false, example: "", description: "TIDAK diproses (fitur persetujuan otomatis ditunda) — boleh dikosongkan." },
   { column: "Branch Name", required: true, example: "Kantor Pusat", description: `${WO_DOC}Nama cabang PERSIS seperti di Accurate — harus sudah ada (tidak dibuatkan otomatis).${WO_FIRST_ROW}` },
   { column: "Description", required: false, example: "Produksi batch September", description: `${WO_DOC}Keterangan Work Order.` },
