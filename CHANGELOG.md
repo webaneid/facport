@@ -1,3 +1,9 @@
+## 2.47.0 (2026-10-28)
+
+* chore: merge develop into main (Fase 212 Delivery Order Atribut Tambahan, Fase 213 Work Order BOM op ([a96beb6](https://github.com/webaneid/facport/commit/a96beb6))
+* feat(api web): Delivery Order Atribut Tambahan (Custom Character/Number/Date) header + item, 44 kolo ([0145853](https://github.com/webaneid/facport/commit/0145853))
+* feat(api web): Work Order - Bill Material no tidak wajib untuk tipe Kode Produk (Fase 213) ([6777fb0](https://github.com/webaneid/facport/commit/6777fb0))
+
 ## 2.46.0 (2026-10-27)
 
 * chore: rilis Fase 209-211 (DO CLS1-10, nomor customer spasi ujung, kebersihan data input Excel) ([4269033](https://github.com/webaneid/facport/commit/4269033))
