@@ -363,3 +363,90 @@ describe("Fase 171 — pesan error resolver menampilkan pilihan label", () => {
     expect(message(() => resolveSalesOrderDetailId(noLabel, "9900016", "SO", undefined, "Week 1"))).toContain('"Sales Order Detail ID" secara manual');
   });
 });
+
+// § Fase 212 — Atribut Tambahan (charField/numericField/dateField) level header + item. Terbukti uji nyata ke Accurate demo 2026-10-29.
+describe("Fase 212 — Atribut Tambahan level header + item", () => {
+  const row = {
+    "Cust No": "C.00001",
+    "Trans Date": "2026-10-29",
+    "Item No": "9900012",
+    "Item Qty": 1,
+    "Custom Character 1": "HDR-KAR-1",
+    "Custom Character 10": "HDR-KAR-10",
+    "Custom Number 1": 111,
+    "Custom Number 10": 1010,
+    "Custom Date 1": 46296, // serial Excel = 01/10/2026
+    "Custom Date 2": "2026-10-02",
+    "ITEM: Custom Character 1": "ITM-KAR-1",
+    "ITEM: Custom Character 10": "ITM-KAR-10",
+    "ITEM: Custom Number 1": 222,
+    "ITEM: Custom Number 10": 2020,
+    "ITEM: Custom Date 1": "03/10/2026",
+    "ITEM: Custom Date 2": 46300, // serial Excel = 05/10/2026
+  };
+  const columnMapping: Record<string, string> = {
+    "Cust No": "customerNo",
+    "Trans Date": "transDate",
+    "Item No": "itemNo",
+    "Item Qty": "quantity",
+    ...Object.fromEntries(Object.entries(deliveryOrderMapping.defaultColumnMap).filter(([col]) => /Custom (Character|Number|Date)/.test(col))),
+  };
+
+  const itemsOf = (payload: Record<string, unknown>) => payload.detailItem as Record<string, unknown>[];
+  const firstItem = (payload: Record<string, unknown>) => itemsOf(payload)[0] ?? {};
+
+  test("jumlah field: 22 header + 22 item, semua ada di fieldToAccuratePath", () => {
+    const paths = Object.entries(deliveryOrderMapping.fieldToAccuratePath);
+    expect(paths.filter(([f]) => f.startsWith("attributHeader")).length).toBe(22);
+    expect(paths.filter(([f]) => f.startsWith("attributItem")).length).toBe(22);
+  });
+
+  test("auto-suggest nama kolom: header dan item TIDAK saling tertukar", () => {
+    expect(deliveryOrderMapping.defaultColumnMap["Custom Character 1"]).toBe("attributHeaderKarakter1");
+    expect(deliveryOrderMapping.defaultColumnMap["ITEM: Custom Character 1"]).toBe("attributItemKarakter1");
+    expect(deliveryOrderMapping.defaultColumnMap["Custom Number 10"]).toBe("attributHeaderAngka10");
+    expect(deliveryOrderMapping.defaultColumnMap["ITEM: Custom Date 2"]).toBe("attributItemTanggal2");
+  });
+
+  test("level header masuk ke ROOT payload, level item masuk ke detailItem[0] (bukan sebaliknya)", () => {
+    const payload = buildDeliveryOrderPayload([row], columnMapping);
+    expect(payload.charField1).toBe("HDR-KAR-1");
+    expect(payload.charField10).toBe("HDR-KAR-10");
+    expect(payload.numericField1).toBe(111);
+    expect(payload.numericField10).toBe(1010);
+    const item = firstItem(payload);
+    expect(item.charField1).toBe("ITM-KAR-1");
+    expect(item.charField10).toBe("ITM-KAR-10");
+    expect(item.numericField1).toBe(222);
+    expect(item.numericField10).toBe(2020);
+    expect(item.dateField1).toBe("03/10/2026");
+  });
+
+  test("tanggal kustom (serial Excel & ISO) dikonversi ke dd/MM/yyyy di kedua level", () => {
+    const payload = buildDeliveryOrderPayload([row], columnMapping);
+    expect(payload.dateField1).toBe("01/10/2026");
+    expect(payload.dateField2).toBe("02/10/2026");
+    const item = firstItem(payload);
+    expect(item.dateField2).toBe("05/10/2026");
+  });
+
+  test("sel kustom kosong tidak dikirim (tidak menimpa dengan string kosong)", () => {
+    const payload = buildDeliveryOrderPayload([{ ...row, "Custom Character 1": "", "ITEM: Custom Number 1": "" }], columnMapping);
+    expect("charField1" in payload).toBe(false);
+    expect("numericField1" in firstItem(payload)).toBe(false);
+  });
+
+  test("tiap baris item membawa nilai kustom item-nya sendiri; header diambil dari baris pertama", () => {
+    const payload = buildDeliveryOrderPayload([row, { ...row, "Custom Character 1": "ABAIKAN", "ITEM: Custom Character 1": "ITM-BARIS-2" }], columnMapping);
+    expect(payload.charField1).toBe("HDR-KAR-1");
+    const items = itemsOf(payload);
+    expect(items[0]?.charField1).toBe("ITM-KAR-1");
+    expect(items[1]?.charField1).toBe("ITM-BARIS-2");
+  });
+
+  test("tidak mengganggu Kategori Keuangan (CLS) yang sudah ada", () => {
+    const detail = buildDetailItemFromRow({ ...row, CLS1: "Kat A" }, { ...columnMapping, CLS1: "attribut1" });
+    expect(detail.dataClassification1Name).toBe("Kat A");
+    expect(detail.charField1).toBe("ITM-KAR-1");
+  });
+});
