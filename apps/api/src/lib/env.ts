@@ -39,6 +39,8 @@ const envSchema = t.Object({
   IMPORT_STAGED_SECONDS_COEFF: t.Optional(t.String()), // Fase 205 — koefisien model waktu detik·entri⁻² (default 7e-4, terukur di trial)
   IMPORT_STAGED_MAX_ESTIMATE_SECONDS: t.Optional(t.String()), // Fase 205 — dokumen dengan perkiraan kirim bertahap > N detik TIDAK dicicil (default 86400 = 24 jam)
   IMPORT_STAGED_MAX_RESUMES: t.Optional(t.String()), // Fase 205 — berapa kali job bertahap dilanjutkan otomatis setelah worker restart/deploy (default 5)
+  IMPORT_PARALLEL_MODULES: t.Optional(t.String()), // Fase 215 — modul yang boleh paralel (koma; default: sales_invoice,purchase_invoice,sales_receipt,purchase_payment; "*" = semua). Paralel juga hanya bila semua baris bernomor eksplisit
+  ACCURATE_LOOKUP_CACHE: t.Optional(t.String()), // Fase 215 — cache hasil positif pencarian pelanggan/vendor/barang per sesi Accurate (default AKTIF; "0"/"off"/"false" = mati)
   IMPORT_GROUP_PARALLELISM: t.Optional(t.String()), // Fase 199 (C4b) — grup (dokumen) dalam satu job diproses paralel sampai N (default 1 = berurutan, 1–6)
   IMPORT_LARGE_BATCH_ROWS: t.Optional(t.String()), // Fase 199 — batch ≥ N baris masuk jalur BESAR (default 1500, 100–100000)
   IMPORT_LARGE_WORKER_CONCURRENCY: t.Optional(t.String()), // Fase 199 — slot worker jalur besar (default 2, 1–4)

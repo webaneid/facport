@@ -4,6 +4,7 @@ import { withAccurateRateLimit } from "./accurate-rate-limiter";
 import type { AccurateSessionContext } from "./accurate-session";
 import { accurateFetch } from "./accurate-http";
 import { runExclusive } from "./keyed-lock";
+import { lookupCacheGet, lookupCacheSet } from "./accurate-lookup-cache";
 
 export type ItemResult = {
   id: number;
@@ -46,8 +47,14 @@ async function findOrCreateItemImpl(
   itemNo: string,
   createFields: Record<string, unknown>,
 ): Promise<{ id: number; no: string; name: string }> {
+  // § Fase 215 — hasil positif dicache per sesi (lihat accurate-lookup-cache.ts): barang yang sama tidak dicari ulang di tiap faktur.
+  const cached = lookupCacheGet<{ id: number; no: string; name: string }>(ctx, "item", itemNo);
+  if (cached) return cached;
   const existing = await findItemByNo(ctx, itemNo);
-  if (existing) return existing;
+  if (existing) {
+    lookupCacheSet(ctx, "item", itemNo, existing);
+    return existing;
+  }
 
   if (!createFields.name || !createFields.unit1Name) {
     throw new Error(
@@ -55,7 +62,7 @@ async function findOrCreateItemImpl(
     );
   }
 
-  return withAccurateRateLimit(async () => {
+  const created = await withAccurateRateLimit(async () => {
     const res = await accurateFetch(`${ctx.host}/accurate/api/item/save.do`, {
       method: "POST",
       headers: {
@@ -72,4 +79,6 @@ async function findOrCreateItemImpl(
     });
     return parseAccurateSaveEnvelope<ItemResult>(res);
   });
+  lookupCacheSet(ctx, "item", itemNo, created);
+  return created;
 }

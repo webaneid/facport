@@ -42,6 +42,7 @@ import { resolveConnectionForSubscription } from "../lib/accurate-connection";
 import { addCumulativeSuccessfulRows } from "../lib/data-usaha";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
+import { loadProcessableRows } from "../lib/import-rows-loader";
 import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, buildExpiryReminder, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
@@ -192,6 +193,7 @@ import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
+import { decideGroupParallelism } from "../lib/import-parallelism";
 import { recoverOrphanedImportJobs } from "../lib/orphaned-imports";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, selectSavedDetailForMapping, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
 import {
@@ -2921,19 +2923,15 @@ async function main() {
     const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
     // § Fase 211, ADR-0052 lapis 1+2 (lapis 2 = kolom kunci, § `normalizeKeyColumns`) — baris yang diproses (termasuk Retry atas baris lama yang tersimpan sebelum pembersihan ada) dibersihkan dari karakter
     // tak terlihat di SATU titik ini, sehingga semua modul (grouping, validasi, payload, lookup) melihat data yang sama bersihnya.
-    const rows = (
-      await db
-        .select()
-        .from(importBatchRows)
-        .where(
-          and(
-            eq(importBatchRows.batchId, batch.id),
-            or(eq(importBatchRows.status, "pending"), eq(importBatchRows.status, "failed")),
-          ),
-        )
-    ).map((r) => ({ ...r, rawData: normalizeKeyColumns(cleanRawData(r.rawData as Record<string, unknown>), columnMapping) }));
+    // § Fase 215 — dimuat per halaman + hanya kolom yang dipetakan (lib/import-rows-loader.ts): memori per baris turun drastis, hasil pada kolom yang dipetakan identik.
+    const rows = await loadProcessableRows(batch.id, columnMapping);
     // § Fase 199 (C4b) — grup (dokumen) dalam job ini diproses paralel sampai N (env `IMPORT_GROUP_PARALLELISM`, default 1 = berurutan seperti dulu).
-    const groupParallelism = configuredGroupParallelism();
+    // § Fase 215 — paralel HANYA untuk modul terbukti & bila semua baris punya nomor dokumen eksplisit (lib/import-parallelism.ts); selain itu berurutan seperti dulu.
+    const parallelDecision = decideGroupParallelism({ module: batch.module, rows, columnMapping });
+    const groupParallelism = parallelDecision.parallelism;
+    if (parallelDecision.reason !== "off" && parallelDecision.reason !== "ok") {
+      logger.info({ batchId, module: batch.module, configured: configuredGroupParallelism(), reason: parallelDecision.reason }, "Import: paralel tidak dipakai untuk batch ini, diproses berurutan");
+    }
     const jobStartedAt = Date.now();
 
     // § Fase 06, ADR-0011 — Purchase Invoice diproses PER GRUP (baris
@@ -3712,7 +3710,8 @@ async function main() {
       }
     }
 
-    const finalRows = await db.select().from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
+    // § Fase 215 — hanya id & status yang dipakai di bawah; JANGAN memuat ulang seluruh baris lengkap dengan data mentah.
+    const finalRows = await db.select({ id: importBatchRows.id, status: importBatchRows.status }).from(importBatchRows).where(eq(importBatchRows.batchId, batch.id));
     const hasFailed = finalRows.some((r) => r.status === "failed");
     await db
       .update(importBatches)

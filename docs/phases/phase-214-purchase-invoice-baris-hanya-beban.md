@@ -17,7 +17,7 @@ Akar masalah (terbukti dari `raw_data` client): template resmi memuat pola "bari
 - [x] Jalur append (lintas-batch): baris hanya-Beban ditolak dengan pesan jelas (jalur update hanya mengirim `detailItem`; Beban tidak akan sampai ke Accurate)
 - [x] Edit Baris (satu baris + grid edit massal): baris hanya-Beban tidak diwajibkan mengisi kolom barang; header (Vendor/Tanggal/Trans No) tetap wajib. Satu sumber aturan `isRequiredFieldExemptForRow` + `missingRequiredValues` (API) dipakai ulang web lewat `apps/web/lib/purchase-invoice-expense-only.ts` (pola Sales Invoice Fase 198); dialog (`edit-row-dialog.tsx`) dan `EditableGrid` (`isRequiredExempt`) memakainya
 - [x] Unit test dengan data persis client (payload, adopsi, validasi Edit Baris)
-- [ ] Verifikasi ke Accurate nyata: (a) bentuk `detailExpense[]` di `detail.do` (nama field akun/jumlah) untuk adopsi; (b) perilaku faktur hanya-Beban (tanpa barang); (c) alur unggah→worker ujung ke ujung
+- [x] Verifikasi ke Accurate nyata (2026-11-06, DB trial "facport"): (a) `detail.do` mengembalikan `detailExpense[].account.no` + `expenseAmount`, parser adopsi benar; (b) faktur hanya-Beban tanpa barang diterima Accurate (`detailItem: [{}]`, tanpa, dan `[]`; hasil `detailItem` kosong); (c) alur unggah → worker asli: 100 faktur × (3 barang + 1 baris hanya-Beban) = 400/400 baris sukses (`docs/architecture/architecture-import-speed-lab.md` § 17).
 - [ ] Sales Invoice: kode yang sama (`sales-invoice.mapping.ts` `payload.detailItem = rawRows.map(...)`). Belum diubah — baris tanpa item di SI juga bisa berarti baris perluasan dokumen sumber (Fase 198) dan pemetaan id memakai offset per baris; butuh rancangan terpisah + uji
 
 ## Referensi

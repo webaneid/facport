@@ -223,6 +223,7 @@
 | 212  | Delivery Order: Atribut Tambahan (Custom Character/Number/Date) level header + item, 44 kolom; terbukti lewat uji nyata ke Accurate demo | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-212-delivery-order-atribut-tambahan.md` |
 | 213  | Work Order: "Bill Material no" tidak wajib untuk tipe Kode Produk (PRODUCT), tetap wajib untuk tipe lain | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-213-work-order-bom-opsional-tipe-produk.md` |
 | 214  | Purchase Invoice: baris hanya-Beban (tanpa Item No) tidak lagi menggagalkan seluruh grup; Retry mengenali faktur yang sudah ada di Accurate | In Progress — kode & unit test selesai 2026-11-05; menunggu verifikasi ke Accurate nyata | `docs/architecture/architecture-purchase-invoice.md` § Fase 214 | `docs/phases/phase-214-purchase-invoice-baris-hanya-beban.md` |
+| 215  | Cache pencarian data master per sesi Accurate (pelanggan/vendor/barang) — kecepatan import: permintaan/faktur 5,0 → ±1,1; paralel 8 1,59 → 6,94 faktur/dtk (terukur) | In Progress — kode & unit test selesai 2026-11-06; belum dirilis | `docs/architecture/architecture-import-speed-lab.md` § 13 | `docs/phases/phase-215-cache-pencarian-data-master.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

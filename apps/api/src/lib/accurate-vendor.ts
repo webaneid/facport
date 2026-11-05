@@ -5,6 +5,7 @@ import type { AccurateSessionContext } from "./accurate-session";
 import { getCompanyTimezone } from "./company-timezone";
 import { accurateFetch } from "./accurate-http";
 import { runExclusive } from "./keyed-lock";
+import { lookupCacheGet, lookupCacheSet } from "./accurate-lookup-cache";
 
 export type VendorPayableAccountResult = {
   id: number;
@@ -108,16 +109,23 @@ async function findOrCreateVendorImpl(
   vendorNo: string,
   createFields: Record<string, unknown>,
 ): Promise<{ id: number; name: string }> {
-  const existing = await findVendorByNo(ctx, vendorNo);
+  // § Fase 215 — cache hasil positif per sesi (lihat accurate-customer.ts): update akun hutang dilewati HANYA bila nilainya sama dengan yang sudah diterapkan di sesi ini.
+  const wanted = createFields.vendorPayableAccountListNo ? String(createFields.vendorPayableAccountListNo) : undefined;
+  const cached = lookupCacheGet<{ result: { id: number; name: string }; applied?: string }>(ctx, "vendor", vendorNo);
+  if (cached && (wanted === undefined || cached.applied === wanted)) return cached.result;
+  const existing = cached?.result ?? (await findVendorByNo(ctx, vendorNo));
   if (existing) {
-    if (createFields.vendorPayableAccountListNo) {
-      return postVendorSave(ctx, {
+    if (wanted !== undefined) {
+      const updated = await postVendorSave(ctx, {
         id: existing.id,
         name: existing.name,
         transDate: await todayAccurateDate(),
         vendorPayableAccountListNo: createFields.vendorPayableAccountListNo,
       });
+      lookupCacheSet(ctx, "vendor", vendorNo, { result: updated, applied: wanted });
+      return updated;
     }
+    lookupCacheSet(ctx, "vendor", vendorNo, { result: existing });
     return existing;
   }
 
@@ -127,10 +135,12 @@ async function findOrCreateVendorImpl(
     );
   }
 
-  return postVendorSave(ctx, {
+  const created = await postVendorSave(ctx, {
     vendorNo,
     transDate: await todayAccurateDate(),
     categoryName: "Umum", // default, di-override kalau createFields punya categoryName sendiri
     ...createFields,
   });
+  lookupCacheSet(ctx, "vendor", vendorNo, { result: created, ...(wanted !== undefined ? { applied: wanted } : {}) });
+  return created;
 }
