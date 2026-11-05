@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { isRequiredFieldExemptForRow } from "@/lib/purchase-invoice-expense-only";
 
 // § dibahas 2026-08-28 — edit baris GAGAL langsung di aplikasi, tanpa
 // upload ulang seluruh file: perbaiki nilai lalu pakai tombol "Retry
@@ -134,7 +135,8 @@ export function EditRowDialog({
   }, [error]);
 
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    // § Fase 214 — baris hanya-Beban (tanpa barang) tidak diwajibkan mengisi kolom barang; aturan sama dengan server.
+    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === "" && !isRequiredFieldExemptForRow(vals, columnMapping, columnMapping[col]!)));
   }
 
   function openDialog() {

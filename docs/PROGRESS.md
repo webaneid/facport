@@ -222,6 +222,7 @@
 | 211  | Kebersihan data input Excel lintas modul: karakter tak terlihat otomatis dibersihkan (unggah/Retry/edit), kolom kunci dinormalisasi, karakter terlihat diperingatkan, galat menampakkan karakter | Done sisi kode (2026-10-27, belum dirilis; lapis 1-4) | `docs/architecture/architecture-input-hygiene.md`, `docs/decisions/adr-0052-kebersihan-data-input-excel.md` | `docs/phases/phase-211-kebersihan-data-input-excel.md` |
 | 212  | Delivery Order: Atribut Tambahan (Custom Character/Number/Date) level header + item, 44 kolom; terbukti lewat uji nyata ke Accurate demo | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-delivery-order.md` | `docs/phases/phase-212-delivery-order-atribut-tambahan.md` |
 | 213  | Work Order: "Bill Material no" tidak wajib untuk tipe Kode Produk (PRODUCT), tetap wajib untuk tipe lain | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-213-work-order-bom-opsional-tipe-produk.md` |
+| 214  | Purchase Invoice: baris hanya-Beban (tanpa Item No) tidak lagi menggagalkan seluruh grup; Retry mengenali faktur yang sudah ada di Accurate | In Progress — kode & unit test selesai 2026-11-05; menunggu verifikasi ke Accurate nyata | `docs/architecture/architecture-purchase-invoice.md` § Fase 214 | `docs/phases/phase-214-purchase-invoice-baris-hanya-beban.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

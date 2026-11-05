@@ -22,6 +22,7 @@ import { CancelPartialSection } from "@/components/import/cancel-partial-section
 import type { CancelResult } from "@/lib/import-cancel-result";
 import { CANCELLABLE_BATCH_STATUS } from "@/lib/import-batch-status";
 import { useIsDataUsahaOwner } from "@/lib/use-data-usaha-owner";
+import { isRequiredFieldExemptForRow } from "@/lib/purchase-invoice-expense-only";
 
 type Row = {
   id: string;
@@ -192,6 +193,7 @@ export default function PurchaseInvoiceImportResultPage() {
               rows={rows.filter((r) => r.status === "failed")}
               columnMapping={batch.columnMapping}
               requiredInternalFields={REQUIRED_INTERNAL_FIELDS}
+              isRequiredExempt={(rowValues, internalField) => isRequiredFieldExemptForRow(rowValues, batch.columnMapping ?? {}, internalField)}
               dateInternalFields={DATE_INTERNAL_FIELDS}
               onSave={handleGridSave}
               onSaved={load}

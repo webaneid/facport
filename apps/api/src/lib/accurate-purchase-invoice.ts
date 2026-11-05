@@ -86,6 +86,55 @@ export async function getPurchaseInvoiceDetail(ctx: AccurateSessionContext, id: 
   });
 }
 
+// § Fase 214 — baca faktur LENGKAP lewat nomor (id, vendor, baris barang + id baris, baris Beban) untuk mengenali faktur yang SUDAH tersimpan di Accurate dari
+// percobaan sebelumnya (`matchExistingPurchaseInvoice`). Hanya MEMBACA. Tidak ada faktur dengan nomor itu → `null`.
+// ⚠️ Bentuk `detailExpense[]` di respons `detail.do` (akun: `account.no`? jumlah: `expenseAmount`?) BELUM diverifikasi dengan respons asli — parser menerima kedua
+// kemungkinan nama; bila bentuknya ternyata lain, hasilnya "isi tidak cocok" (aman: tidak menautkan), bukan salah tautan. Verifikasi saat uji ke Accurate nyata.
+export type ExistingPurchaseInvoice = {
+  id: number;
+  number: string;
+  vendorNo: string;
+  detailItem: { id: number; itemNo: string; unitPrice: number; quantity: number }[];
+  detailExpense: { accountNo: string; amount: number }[];
+};
+
+type RawExistingPurchaseInvoice = RawPurchaseInvoiceDetail & {
+  id?: number;
+  number?: string;
+  detailExpense?: { account?: { no?: string }; accountNo?: string; expenseAmount?: number; amount?: number }[];
+};
+
+export async function getPurchaseInvoiceByNumber(ctx: AccurateSessionContext, number: string): Promise<ExistingPurchaseInvoice | null> {
+  return withAccurateRateLimit(async () => {
+    const res = await accurateFetch(`${ctx.host}/accurate/api/purchase-invoice/detail.do?${new URLSearchParams({ number })}`, {
+      headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
+    });
+    let raw: RawExistingPurchaseInvoice | undefined;
+    try {
+      raw = await parseAccurateEnvelope<RawExistingPurchaseInvoice>(res);
+    } catch (err) {
+      if (isAccurateRecordNotFound(err)) return null;
+      throw err;
+    }
+    if (typeof raw?.id !== "number") return null;
+    return {
+      id: raw.id,
+      number: String(raw.number ?? number),
+      vendorNo: raw.vendor?.vendorNo ?? "",
+      detailItem: (raw.detailItem ?? []).map((it) => ({
+        id: it.id,
+        itemNo: it.item?.no ?? "",
+        unitPrice: Number(it.unitPrice ?? 0),
+        quantity: Number(it.quantity ?? 0),
+      })),
+      detailExpense: (raw.detailExpense ?? []).map((ex) => ({
+        accountNo: String(ex.account?.no ?? ex.accountNo ?? ""),
+        amount: Number(ex.expenseAmount ?? ex.amount ?? 0),
+      })),
+    };
+  });
+}
+
 // § Fase 09, ADR-0013 — hapus SELURUH faktur (semua detailItem-nya
 // sekaligus). DIKONFIRMASI via test call nyata 2026-08-28: envelope
 // respons `{s, d}` BIASA (TIDAK ada field `r` seperti save.do — pakai

@@ -47,11 +47,14 @@ import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, format
 import { findApplicableReminderThreshold, buildExpiryReminder, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
 import { resolveAnnouncementRecipients } from "../lib/announcements";
 import { fillReturnPricesFromInvoice } from "../lib/import-mapping/return-from-invoice";
-import { savePurchaseInvoice, getPurchaseInvoiceDetail, getPurchaseInvoiceLinesByNumber, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
+import { savePurchaseInvoice, getPurchaseInvoiceDetail, getPurchaseInvoiceByNumber, getPurchaseInvoiceLinesByNumber, deletePurchaseInvoice, type PurchaseInvoiceDetail } from "../lib/accurate-purchase-invoice";
 import { deleteAccurateDocument, GENERIC_CANCELLABLE_MODULES } from "../lib/accurate-generic-delete";
 import {
   buildPurchaseInvoicePayload,
   buildDetailItemFromRow,
+  buildDetailExpenseFromRow,
+  planPurchaseInvoiceRows,
+  EXPENSE_ONLY_ROW_MARKER,
   extractVendorCreateFields,
   extractItemCreateFields,
   extractDataClassificationValues as extractDataClassificationValuesPI,
@@ -125,7 +128,7 @@ import { isCoincidentalDuplicateAcrossBatches } from "../lib/append-invoice-guar
 // dari sales-invoice.mapping — shape-nya identik dengan yang PI sudah
 // impor di atas, reuse type yang sama.
 import { saveSalesInvoice, getSalesInvoiceDetail, getSalesInvoiceByNumber, getSalesInvoiceLinesByNumber, deleteSalesInvoice, type SalesInvoiceDetail } from "../lib/accurate-sales-invoice";
-import { isDuplicateNumberError, matchExistingSalesInvoice, type AdoptionResult } from "../lib/accurate-adopt-existing";
+import { isDuplicateNumberError, matchExistingSalesInvoice, matchExistingPurchaseInvoice, type AdoptionResult } from "../lib/accurate-adopt-existing";
 import {
   buildSalesInvoicePayload,
   buildDetailItemFromRow as buildDetailItemFromRowSI,
@@ -808,7 +811,8 @@ async function processImportRow(
 // baris mana di faktur yang mungkin gabungan lintas-batch).
 export type PurchaseInvoiceGroupResult = {
   invoiceId: number;
-  rows: { rowId: string; detailItemId: number }[];
+  // § Fase 214 — baris hanya-Beban (tanpa barang) tidak punya id baris Accurate: diberi `EXPENSE_ONLY_ROW_MARKER` (string), bukan id.
+  rows: { rowId: string; detailItemId: number | string }[];
 };
 
 // § Fase 06, ADR-0011 — proses 1 GRUP baris Excel (1 Faktur Pembelian,
@@ -847,10 +851,71 @@ export async function processPurchaseInvoiceGroup(
   // yang dikirim (= `rawRows` = `group.rows`, DIKONFIRMASI test call nyata
   // 2026-08-28, § ADR-0013) — index-match langsung, tidak perlu matching by value.
   const result = await savePurchaseInvoice(ctx, payload);
+  // § Fase 214 — baris hanya-Beban tidak ikut `detailItem[]` (lihat `planPurchaseInvoiceRows`), jadi hanya baris barang yang dipetakan ke `result.detailItem`.
+  // Jumlah hasil simpan tidak sama dengan yang dikirim → faktur SUDAH tersimpan; jangan tandai gagal bila terbukti cocok berurutan (kode item), selain itu
+  // tolak dengan pesan yang menjelaskan fakturnya sudah ada (bukan terbaca sebagai salah data pelanggan).
+  const plan = planPurchaseInvoiceRows(rawRows, columnMapping);
+  const mappedIdx = group.rows.map((_, i) => i).filter((i) => plan.mappedFromResult[i]);
+  const sentItemNos = mappedIdx.map((i) => extractRowDetailItemNo(rawRows[i]!, columnMapping) ?? "");
+  const saved = await selectSavedDetailForMapping(
+    sentItemNos,
+    result.detailItem ?? [],
+    async () => (await getPurchaseInvoiceDetail(ctx, result.id)).detailItem,
+    (info) => logger.info({ invoiceId: result.id, ...info }, "Purchase Invoice: Accurate menambah baris otomatis, baris dikirim terpetakan aman"),
+    (err) => logger.warn({ err, invoiceId: result.id }, "Purchase Invoice: gagal membaca detail faktur untuk menyelaraskan baris"),
+  );
+  if (saved.length !== mappedIdx.length) {
+    throw new Error(
+      `Faktur Pembelian "${result.number}" (ID ${result.id}) SUDAH tersimpan di Accurate, tetapi Facport belum bisa memetakan baris-barisnya (Accurate mengembalikan ${saved.length} baris barang, ${mappedIdx.length} dikirim). ` +
+        "Ini bukan kesalahan data Anda — jangan unggah ulang. Tekan Retry agar Facport mengenali faktur itu; bila tetap gagal, hubungi support.",
+    );
+  }
+  let nextSaved = 0;
   return {
     invoiceId: result.id,
-    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: result.detailItem[i]!.id })),
+    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: plan.mappedFromResult[i] ? saved[nextSaved++]!.id : EXPENSE_ONLY_ROW_MARKER })),
   };
+}
+
+/**
+ * § Fase 214 — `save.do` menolak karena nomor sudah ada (`isDuplicateNumberError`): cek apakah itu faktur dari baris-baris INI yang tersimpan pada percobaan
+ * sebelumnya (lihat `matchExistingPurchaseInvoice`). `null` = tidak bisa/perlu dinilai (tanpa nomor, atau faktur tidak ditemukan) → pemanggil memakai galat
+ * aslinya. Hanya MEMBACA Accurate.
+ */
+export async function tryAdoptExistingPurchaseInvoice(
+  ctx: AccurateSessionContext,
+  group: PurchaseInvoiceGroup,
+  columnMapping: Record<string, string>,
+): Promise<AdoptionResult | null> {
+  const rawRows = group.rows.map((r) => r.rawData);
+  const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+  const number = String(payload.number ?? "").trim();
+  if (!number) return null;
+  const existing = await getPurchaseInvoiceByNumber(ctx, number);
+  if (!existing) return null;
+  const plan = planPurchaseInvoiceRows(rawRows, columnMapping);
+  const sentItems = rawRows
+    .map((raw, i) => ({ raw, i }))
+    .filter(({ i }) => !plan.expenseOnly[i])
+    .map(({ raw }) => {
+      const d = buildDetailItemFromRow(raw, columnMapping);
+      return { itemNo: String(d.itemNo ?? ""), quantity: Number(d.quantity), unitPrice: Number(d.unitPrice ?? 0) };
+    });
+  if (sentItems.some((l) => l.itemNo === "" || Number.isNaN(l.quantity) || Number.isNaN(l.unitPrice))) return null;
+  const sentExpenses = rawRows
+    .map((raw) => buildDetailExpenseFromRow(raw, columnMapping))
+    .filter((e): e is Record<string, unknown> => e !== null)
+    .map((e) => ({ accountNo: String(e.accountNo ?? ""), amount: Number(e.expenseAmount) }));
+  if (sentExpenses.some((e) => Number.isNaN(e.amount))) return null;
+  return matchExistingPurchaseInvoice({
+    rowIds: group.rows.map((r) => r.id),
+    expenseOnly: plan.expenseOnly,
+    number,
+    vendorNo: String(payload.vendorNo ?? ""),
+    sentItems,
+    sentExpenses,
+    existing,
+  });
 }
 
 // Ambil nilai kolom yang di-mapping ke "itemNo" dari 1 baris mentah —
@@ -929,6 +994,14 @@ export async function appendToExistingPurchaseInvoice(
 ): Promise<PurchaseInvoiceGroupResult> {
   const rawRows = group.rows.map((r) => r.rawData);
   const vendorNo = String(buildPurchaseInvoicePayload(rawRows, columnMapping).vendorNo ?? "");
+
+  // § Fase 214 — jalur update hanya mengirim `detailItem`; Beban TIDAK ikut. Baris hanya-Beban di sini tidak boleh ditandai sukses (bebannya tidak akan
+  // pernah sampai ke Accurate) — tolak jelas. Perilaku `save.do` update untuk `detailExpense` belum teruji.
+  if (planPurchaseInvoiceRows(rawRows, columnMapping).expenseOnly.some(Boolean)) {
+    throw new Error(
+      `Nomor grup "${group.groupKey}" sudah punya Faktur Pembelian #${existingId} di Accurate, sedangkan file ini memuat baris yang hanya berisi Beban. Facport belum bisa menambahkan Beban ke faktur yang sudah ada. Tambahkan Beban itu langsung di Accurate, atau gunakan Nomor Transaksi yang berbeda.`,
+    );
+  }
 
   // § Fase 82 (2026-09-10) — evaluasi client: faktur dihapus LANGSUNG di
   // Accurate (bukan lewat Facport), lalu upload ulang Trans No yang sama
@@ -2913,9 +2986,35 @@ async function main() {
               .where(eq(importBatchRows.id, r.rowId));
           }
         } catch (err) {
+          // § Fase 214 — mirror Sales Invoice: nomor sudah ada di Accurate → bila itu faktur dari baris-baris ini yang tersimpan pada percobaan sebelumnya,
+          // tautkan & tandai SUKSES dengan keterangan. Gagal menilai → galat asli; terbaca tetapi isinya beda → pesan yang menjelaskan perbedaannya.
+          let adoption: AdoptionResult | null = null;
+          if (isDuplicateNumberError(err)) {
+            try {
+              adoption = await tryAdoptExistingPurchaseInvoice(session, group, columnMapping);
+            } catch (adoptErr) {
+              logger.warn({ err: adoptErr, batchId: batch.id }, "Purchase Invoice: gagal memeriksa faktur yang sudah ada di Accurate");
+            }
+          }
+          if (adoption?.ok) {
+            logger.info({ event: "purchase_invoice_adopted_existing", batchId: batch.id, invoiceId: adoption.invoiceId, rows: adoption.rows.length }, "Faktur yang sudah ada di Accurate ditautkan ke baris import");
+            for (const r of adoption.rows) {
+              await db
+                .update(importBatchRows)
+                .set({
+                  status: "success",
+                  accurateTransactionId: String(adoption.invoiceId),
+                  accurateDetailItemId: String(r.detailItemId),
+                  errorMessage: adoption.note,
+                  processedAt: new Date(),
+                })
+                .where(eq(importBatchRows.id, r.rowId));
+            }
+            return;
+          }
           await db
             .update(importBatchRows)
-            .set({ status: "failed", errorMessage: describeAccurateFailure(err), processedAt: new Date() })
+            .set({ status: "failed", errorMessage: adoption && !adoption.ok ? adoption.message : describeAccurateFailure(err), processedAt: new Date() })
             .where(inArray(importBatchRows.id, rowIds));
         }
       });

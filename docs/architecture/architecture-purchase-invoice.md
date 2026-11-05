@@ -302,6 +302,17 @@ sheet "Penjelasan Kolom"): kolom **"Fiscal Rate"** ("Nilai Tukar Pajak") memang 
 memetakannya — gap ini spesifik di Sales Invoice/Purchase Invoice. Fix: `fiscalRate` ditambahkan ke `fieldToAccuratePath`/
 `defaultColumnMap` (kolom "Fiscal Rate", persis sejajar "Rate"), opsional (BUKAN wajib, sama seperti di format lama).
 
+## Fase 214 — Baris hanya-Beban (2026-11-05)
+
+Template memungkinkan 1 faktur = baris barang + baris Beban TERPISAH (baris Beban hanya mengisi `Akun Beban`/`Jumlah Beban`). Aturan:
+- **Payload:** baris hanya-Beban (`detailItem` kosong + `accountNo`&`expenseAmount` terisi) TIDAK ikut `detailItem[]`; bebannya tetap di `detailExpense[]`. Dulu dikirim sebagai `{}`, Accurate membuangnya → `save.do` sukses tetapi jumlah `result.detailItem` < jumlah baris → Facport menandai seluruh grup gagal padahal faktur sudah tersimpan (bukti: client PI-2026-0001, galat `result.detailItem[i].id`). Sumber kebenaran: `planPurchaseInvoiceRows`.
+- **Grup SEMUA hanya-Beban:** payload lama dipertahankan (perilaku Accurate untuk faktur tanpa barang BELUM teruji); id baris tidak dibaca dari `result.detailItem`.
+- **Pelacakan baris:** baris barang → id `detailItem` Accurate (dipetakan berurutan; `detail.do` dibaca bila jumlah hasil > dikirim). Baris hanya-Beban → `accurate_detail_item_id = "expense-only"` (`EXPENSE_ONLY_ROW_MARKER`; BUKAN id, jangan di-parse angka). Alasan: Batal Import menolak faktur bila ada baris sukses tanpa id (Fase 09), dan selalu menghapus faktur UTUH (ADR-0014), sehingga id per baris hanya bukti "terlacak".
+- **Retry setelah faktur sudah tersimpan:** `save.do` menolak "Sudah ada data lain dengan No Form" → `tryAdoptExistingPurchaseInvoice` membaca faktur lewat nomor dan menautkan baris bila SEMUA cocok (nomor, Vendor, barang berurutan, qty, harga ±Rp1, daftar Beban akun+jumlah). Tidak cocok → pesan perbedaan, tidak ada tautan. Hanya MEMBACA Accurate.
+- **Edit Baris:** baris hanya-Beban tidak diwajibkan mengisi kolom barang (`isRequiredFieldExemptForRow`/`missingRequiredValues`, dipakai server + UI); header tetap wajib. Baris dengan Beban setengah (akun saja) BUKAN hanya-Beban → aturan penuh.
+- **Jalur append lintas-batch** hanya mengirim `detailItem`; baris hanya-Beban di sana ditolak dengan pesan jelas (Beban tidak akan sampai ke Accurate, jangan dilaporkan sukses).
+- ⚠️ Belum diverifikasi ke Accurate nyata: nama field `detailExpense[]` di `detail.do`, dan faktur hanya-Beban. Sales Invoice memakai pola kode yang sama dan BELUM diperbaiki (baris tanpa item di SI bisa berarti perluasan dokumen sumber, Fase 198).
+
 ## Referensi
 - Infra OAuth/sesi Data Usaha/rate-limit/error-handling bersama →
   `docs/architecture/architecture-accurate-integration.md`
