@@ -4,6 +4,7 @@ import { salesInvoiceMapping } from "./import-mapping/sales-invoice.mapping";
 import { purchaseInvoiceMapping } from "./import-mapping/purchase-invoice.mapping";
 import { salesReceiptMapping } from "./import-mapping/sales-receipt.mapping";
 import { purchasePaymentMapping } from "./import-mapping/purchase-payment.mapping";
+import { salesReturnMapping } from "./import-mapping/sales-return.mapping";
 
 // § Fase 215 (architecture-import-speed-lab.md § 20–21) — dua penjaga sebelum pengiriman PARALEL dinyalakan untuk sebuah batch. Hanya CARA PENGIRIMAN yang dipilih; isi/nomor
 // dokumen tidak pernah diubah ([[feedback-never-alter-customer-documents]]).
@@ -14,8 +15,8 @@ import { purchasePaymentMapping } from "./import-mapping/purchase-payment.mappin
 //    bisa tidak mengikuti urutan baris Excel (terukur: paralel 4 → 7 dari 30 pasangan terbalik, geser maks 2 posisi). Karena itu paralel HANYA dipakai bila SEMUA baris yang
 //    diproses punya nomor dokumen eksplisit; selain itu seluruh batch berurutan seperti dulu (pilihan "aman"; versi campuran sengaja tidak dibuat).
 
-/** Modul yang sudah terbukti paralel di Accurate asli (Sales/Purchase Invoice, Sales Receipt, Purchase Payment). */
-export const DEFAULT_PARALLEL_MODULES: readonly string[] = ["sales_invoice", "purchase_invoice", "sales_receipt", "purchase_payment"];
+/** Modul yang sudah terbukti paralel di Accurate asli (Sales/Purchase Invoice, Sales Receipt, Purchase Payment, Sales Return — termasuk retur serentak pada faktur asal yang SAMA). */
+export const DEFAULT_PARALLEL_MODULES: readonly string[] = ["sales_invoice", "purchase_invoice", "sales_receipt", "purchase_payment", "sales_return"];
 
 type PathMapping = { fieldToAccuratePath: Record<string, string> };
 
@@ -25,6 +26,7 @@ const NUMBER_MAPPINGS: Record<string, PathMapping> = {
   purchase_invoice: purchaseInvoiceMapping,
   sales_receipt: salesReceiptMapping,
   purchase_payment: purchasePaymentMapping,
+  sales_return: salesReturnMapping,
 };
 
 /** Nilai env `IMPORT_PARALLEL_MODULES` → himpunan modul, atau `"all"`; kosong/tidak diisi → daftar default (modul terbukti). */

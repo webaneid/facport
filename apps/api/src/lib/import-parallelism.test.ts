@@ -33,11 +33,11 @@ describe("decideGroupParallelism", () => {
 
   test("modul yang belum terbukti → berurutan walau paralel dinyalakan dan bernomor", () => {
     expect(decide({ module: "journal_voucher" })).toEqual({ parallelism: 1, reason: "module_not_enabled" });
-    expect(decide({ module: "sales_return" }).reason).toBe("module_not_enabled");
+    expect(decide({ module: "purchase_return" }).reason).toBe("module_not_enabled");
   });
 
   test("daftar default = 4 modul terbukti, masing-masing dengan field nomornya sendiri", () => {
-    expect([...DEFAULT_PARALLEL_MODULES].sort()).toEqual(["purchase_invoice", "purchase_payment", "sales_invoice", "sales_receipt"]);
+    expect([...DEFAULT_PARALLEL_MODULES].sort()).toEqual(["purchase_invoice", "purchase_payment", "sales_invoice", "sales_receipt", "sales_return"]);
     expect(numberColumnsOf("sales_receipt", { "No. Sales Receipt": "receiptNumber", "Customer No": "customerNo" })).toEqual(["No. Sales Receipt"]);
     expect(numberColumnsOf("purchase_payment", { "Purchase Payment No": "paymentNumber" })).toEqual(["Purchase Payment No"]);
     expect(numberColumnsOf("purchase_invoice", { "Trans No": "number", "Bill No": "billNumber" })).toEqual(["Trans No"]); // Bill No BUKAN nomor dokumen
@@ -59,6 +59,18 @@ describe("decideGroupParallelism", () => {
 
   test("batch tanpa baris (tidak ada yang perlu diproses) tidak melempar", () => {
     expect(decide({ rows: [] })).toEqual({ parallelism: 4, reason: "ok" });
+  });
+});
+
+describe("Retur Penjualan di penjaga", () => {
+  const retMapping = { "Customer No": "customerNo", "Retur No": "number", "Item No": "itemNo" };
+  const rows = (nums: unknown[]) => nums.map((n) => ({ rawData: { "Retur No": n } as Record<string, unknown> }));
+  test("ada di daftar default: bernomor → paralel; ada nomor kosong → berurutan", () => {
+    expect(decideGroupParallelism({ module: "sales_return", rows: rows(["R1", "R2"]), columnMapping: retMapping, configured: 4 })).toEqual({ parallelism: 4, reason: "ok" });
+    expect(decideGroupParallelism({ module: "sales_return", rows: rows(["R1", ""]), columnMapping: retMapping, configured: 4 }).reason).toBe("blank_numbers");
+  });
+  test("Retur Pembelian (belum terbukti) tetap berurutan", () => {
+    expect(decideGroupParallelism({ module: "purchase_return", rows: rows(["R1"]), columnMapping: retMapping, configured: 4 }).reason).toBe("module_not_enabled");
   });
 });
 

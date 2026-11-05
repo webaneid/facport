@@ -268,7 +268,25 @@ Semua: 100% baris sukses, `retry=0`, CPU ≤ 14%, RSS ≤ 182 MB; data uji dihap
 Tes unit: 12 (`import-parallelism.test.ts`): mati→1; bernomor+modul terbukti→paralel; satu baris kosong/spasi/null/undefined→berurutan; nomor numerik 0 dianggap terisi; kolom nomor tak dipetakan→berurutan; modul belum terbukti→berurutan; Bill No bukan nomor; `all` tetap berurutan untuk modul tanpa field nomor dikenal; parsing env.
 **Catatan jujur:** pola import besar client produksi (mis. Sales Receipt dengan "No Bukti" terisi) bernomor → paralel berlaku; file yang mengosongkan nomor tetap mendapat percepatan cache (SI/PI ≈ 1,4–1,5×) tetapi tidak paralel. Pergeseran nomor akibat paralel TIDAK mungkin lagi untuk batch tanpa nomor.
 
-## 22. Daftar percobaan berikutnya (status)
+## 22. Retur Penjualan (modul paling lambat di produksi: ±0,8 baris/dtk) — worker asli + Accurate asli (2026-11-06)
+**Akar (kode `processSalesReturnGroup` + `fillReturnPricesFromInvoice`):** bila Unit Price kosong (Return Type INVOICE), TIAP retur mengambil SELURUH isi faktur asal (`sales-invoice/detail.do?number=`, respons besar) lalu `save`; hasil pengambilan TIDAK dicache, sehingga retur yang merujuk faktur yang sama mengambilnya berulang → **2,0 permintaan/retur**. Pola yang sama di Retur Pembelian (`getPurchaseInvoiceLinesByNumber`).
+**Perbaikan (Fase 215):** `cachedLookup` (`accurate-lookup-cache.ts`): hasil POSITIF pengambilan isi faktur asal dicache per sesi; panggilan SERENTAK dengan kunci sama menunggu satu pengambilan (`runExclusive`); galat tidak dicache; mati lewat `ACCURATE_LOOKUP_CACHE=0`. Dipakai pada Retur Penjualan & Retur Pembelian. Dokumen retur yang dikirim tidak berubah. 5 tes unit baru.
+**Hasil (retur 2 baris, Unit Price kosong, 10 faktur asal berbagi atau 1 faktur per retur; "sekarang" = kode v2.49.0, paralel tidak dipakai karena modul belum dikenal penjaga):**
+| Pola | Konfigurasi | Waktu | Retur/dtk | Permintaan/retur | vs sekarang |
+|---|---|---|---|---|---|
+| 80 retur berbagi 10 faktur | sekarang | 54,1 s | 1,48 | 2,01 | 1,0× |
+| 80 retur berbagi 10 faktur | cache, paralel 1 | 49,1 s | 1,63 | **1,14** | 1,1× |
+| 80 retur berbagi 10 faktur | cache, paralel 4 | **13,6 s** | **5,88** | 1,14 | **4,0×** |
+| 80 retur diurutkan per faktur (retur serentak pada faktur SAMA) | cache, paralel 1 | 47,9 s | 1,67 | 1,14 | — |
+| 80 retur diurutkan per faktur | cache, paralel 4 | **15,8 s** | **5,06** | 1,14 | 3,0× vs paralel 1 |
+| 60 retur, tiap retur faktur sendiri | sekarang | 41,8 s | 1,44 | 2,02 | 1,0× |
+| 60 retur, tiap retur faktur sendiri | cache, paralel 4 | 16,1 s | 3,73 | 2,02 | 2,6× |
+Semua: 100% baris sukses (≥ 500 retur total), `retry=0`, CPU ≤ 12%, RSS ≤ 160 MB.
+**Temuan 19:** (a) cache mengurangi permintaan 2,0 → 1,14/retur pada pola berbagi faktur; waktu berurutan hanya −9% di lab karena faktur uji kecil (detail ±60–90 ms vs save ±600 ms) — di produksi faktur asal besar membuat `detail.do` jauh lebih mahal, sehingga penghematan lebih besar (belum diukur); (b) paralel 4 menghasilkan **4,0×** pada pola berbagi faktur dan 2,6× pada pola faktur-sendiri (langit-langit 8 req/dtk ÷ 2,02 = 3,96/dtk, tercapai 94%); (c) **retur serentak pada faktur asal yang SAMA tidak bentrok** (80/80 sukses, paralel 4) — kekhawatiran awal (bentrok pada dokumen induk) tidak terjadi pada penyimpanan retur; (d) bentrok HANYA terlihat pada PENGHAPUSAN paralel retur pada faktur yang sama (pembersihan skrip uji: 73/80 dan 68/80 terhapus; sisa 19 retur & 13 faktur dibersihkan manual lewat `returnHistory` faktur) — tidak relevan bagi import, tetapi menunjukkan operasi PARALEL pada dokumen induk yang sama bisa bentrok (kandidat bila nanti ada fitur Hapus Massal/Batal Import paralel: serialkan per faktur). (e) `sales-return/list.do` mengembalikan respons kosong (tidak bisa dipakai untuk daftar); retur ditemukan lewat `returnHistory` pada `sales-invoice/detail.do`.
+**Keputusan:** `sales_return` MASUK daftar default modul paralel (`DEFAULT_PARALLEL_MODULES`), tetap dijaga nomor-dokumen-eksplisit; `purchase_return` TIDAK (belum diuji paralel; cache faktur asalnya sudah aktif).
+
+## 23. Daftar percobaan berikutnya (status)
+- [x] Retur Penjualan via worker asli (§ 22): cache faktur asal + paralel 4 → 2,6–4,0×.
 - [x] Penjaga nomor otomatis + daftar modul terbukti (§ 21), diuji di Accurate asli.
 - [x] Purchase Payment via worker asli (§ 19) — modul uji utama selesai (SI, PI, SR, PP).
 - [x] Sales Receipt via worker asli (§ 18): per-baris 2,71 → 7,54 baris/dtk.
@@ -283,5 +301,5 @@ Tes unit: 12 (`import-parallelism.test.ts`): mati→1; bernomor+modul terbukti�
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
 - [ ] Uji `bulk-save.do` sebagai jalur kirim untuk modul per-baris (menembus langit-langit 8 req/dtk; perlu rancangan pemulihan per dokumen).
-- [ ] Modul lain yang belum diuji via worker: Sales Quotation/Order, Delivery Order, Purchase Order, Receive Item, Retur, Jurnal Umum, Other Payment/Deposit, Work Order, dst. (memakai `findOrCreate*` yang sama → cache berlaku; per-baris tanpa pencarian → paralel).
+- [ ] Modul lain yang belum diuji via worker: Purchase Return, Sales Quotation/Order, Delivery Order, Purchase Order, Receive Item, Jurnal Umum, Other Payment/Deposit, Work Order, dst. (memakai `findOrCreate*` yang sama → cache berlaku; per-baris tanpa pencarian → paralel).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).

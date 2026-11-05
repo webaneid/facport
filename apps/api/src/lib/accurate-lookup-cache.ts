@@ -1,5 +1,6 @@
 import { env } from "./env";
 import type { AccurateSessionContext } from "./accurate-session";
+import { runExclusive } from "./keyed-lock";
 
 // § Fase 215 (architecture-import-speed-lab.md § 9 & § 11) — tanpa cache, TIAP faktur mencari ulang pelanggan/vendor dan TIAP kode barang di Accurate (±60–95 ms per
 // pencarian; faktur dengan k barang berbeda = k + 2 permintaan, pencarian ±35% waktu per faktur) walau barang yang sama sudah ditemukan di faktur sebelumnya dalam
@@ -12,7 +13,7 @@ import type { AccurateSessionContext } from "./accurate-session";
 //  - Bila data dihapus manual di Accurate di tengah job, `save.do` menolak dengan galat jelas ("… tidak ditemukan atau sudah dihapus") → baris gagal, Retry memakai sesi/cache baru.
 //  - Dapat dimatikan tanpa rilis kode: env `ACCURATE_LOOKUP_CACHE=0` (default AKTIF).
 
-type LookupKind = "item" | "customer" | "vendor";
+type LookupKind = "item" | "customer" | "vendor" | "salesInvoiceLines" | "purchaseInvoiceLines";
 
 const caches = new WeakMap<AccurateSessionContext, Map<string, unknown>>();
 
@@ -46,4 +47,21 @@ export function lookupCacheSet<T>(ctx: AccurateSessionContext, kind: LookupKind,
 /** Hanya untuk tes/diagnostik. */
 export function lookupCacheSize(ctx: AccurateSessionContext): number {
   return caches.get(ctx)?.size ?? 0;
+}
+
+/**
+ * § Fase 215 (Retur) — cache hasil POSITIF sebuah pengambilan (mis. isi faktur asal untuk mengisi harga retur) per sesi: panggilan berikutnya dengan kunci sama tidak mengambil ulang, dan
+ * panggilan SERENTAK dengan kunci sama menunggu satu pengambilan (kunci per data, bukan 5 pengambilan sekaligus). Galat TIDAK dicache (diteruskan apa adanya). Cache mati
+ * (`ACCURATE_LOOKUP_CACHE=0`) → tiap panggilan tetap mengambil sendiri (tetap diserialkan per kunci).
+ */
+export async function cachedLookup<T>(ctx: AccurateSessionContext, kind: LookupKind, no: string, fetchValue: () => Promise<T>): Promise<T> {
+  const hit = lookupCacheGet<T>(ctx, kind, no);
+  if (hit !== undefined) return hit;
+  return runExclusive(`${ctx.session}|${kind}|${String(no).trim().toLowerCase()}`, async () => {
+    const again = lookupCacheGet<T>(ctx, kind, no);
+    if (again !== undefined) return again;
+    const value = await fetchValue();
+    lookupCacheSet(ctx, kind, no, value);
+    return value;
+  });
 }
