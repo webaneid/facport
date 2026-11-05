@@ -1,3 +1,9 @@
+## <small>2.49.1 (2026-11-05)</small>
+
+* chore: merge develop into main (Fase 215 lanjutan: cache faktur asal retur, 16 modul terbukti parale ([fefb9ae](https://github.com/webaneid/facport/commit/fefb9ae))
+* perf(api): 16 modul terbukti paralel di Accurate asli (PO, SQ, SO, DO, RI, JV, OP, OD, PR, IA, IR +  ([2ef4f76](https://github.com/webaneid/facport/commit/2ef4f76))
+* perf(api): cache isi faktur asal untuk Retur Penjualan/Pembelian dan sales_return masuk daftar paral ([1501faf](https://github.com/webaneid/facport/commit/1501faf))
+
 ## 2.49.0 (2026-11-05)
 
 * chore: merge develop into main (Fase 215 kecepatan import: cache pencarian, memori per baris, penjag ([edf5464](https://github.com/webaneid/facport/commit/edf5464))
