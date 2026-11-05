@@ -14,7 +14,8 @@ Keluhan pengguna: Facport baru terasa lebih lambat. Laboratorium kecepatan (`doc
 - [x] 10 unit test (`accurate-lookup-cache.test.ts`).
 - [x] Ukur ke Accurate asli: berurutan 1,17 → 1,75 faktur/dtk; paralel 8 1,59 → 6,94; permintaan/faktur 5,0 → ±1,1 (lab § 13).
 - [ ] Cache untuk pencarian berulang lain (klasifikasi data, PIC Work Order, dokumen sumber) — fase lanjutan.
-- [ ] Rilis + uji batch nyata; evaluasi bersama `IMPORT_GROUP_PARALLELISM` (keputusan terpisah).
+- [x] Uji ujung-ke-ujung lewat worker asli (lab § 14): 100 faktur × 3 baris, 89 s → 60 s (cache) → 31,7 s (+paralel 2) → 16,9 s (+paralel 4) → 14,7 s (+paralel 6); semua sukses, tanpa Retry.
+- [ ] Rilis; lalu aktifkan `IMPORT_GROUP_PARALLELISM` bertahap di produksi (keputusan terpisah, rencana di import-capacity § 11) dan ukur memori worker.
 
 ## Keputusan Kecil Selama Eksekusi
 - Hanya hasil POSITIF yang dicache; "tidak ketemu" tidak pernah disimpan (tidak boleh salah mengira data tidak ada / melewatkan pembuatan).

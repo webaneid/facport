@@ -142,7 +142,24 @@ Perkiraan waktu per faktur (k = 3, angka § 6/§ 9): 1 pelanggan (±90 ms) + 3 b
 **Temuan 11:** (a) cache menurunkan permintaan per faktur 5,0 → ±1,1–1,2 dan mempercepat berurutan ±33–50%; (b) **TANPA cache, paralel tidak menolong**: paralel 4 dan 8 sama-sama mentok 1,59 faktur/dtk = tepat batas pembatas 8 req/dtk ÷ 5 permintaan/faktur (prediksi § 11 terbukti); (c) dengan cache paralel baru bekerja: dari 1,17 (berurutan, tanpa cache) ke 6,94 faktur/dtk (paralel 8 + cache) ≈ **5,9×**, tetap di bawah batas resmi 8 req/dtk. Tes unit (10) menjaga: hasil "tidak ketemu" tidak dicache, sesi berbeda tidak berbagi cache, update akun piutang/hutang tetap dikirim bila nilai berbeda, 5 grup paralel dengan barang sama → 1 pencarian, `ACCURATE_LOOKUP_CACHE=0` mematikan.
 Batas uji: barang NON_INVENTORY/jasa, 3 barang per faktur (faktur dengan lebih banyak barang berbeda diuntungkan lebih besar), satu mesin dev; cache baru diterapkan pada pelanggan/vendor/barang (BELUM pada klasifikasi data, PIC Work Order, pencarian dokumen sumber, dst — lihat `findOrCreate*` lain).
 
-## 14. Daftar percobaan berikutnya (status)
+## 14. UJI UJUNG-KE-UJUNG lewat WORKER ASLI (2026-11-06): Excel → batch → pg-boss → worker → Accurate "facport"
+Metode: file Excel 100 faktur × 3 baris (300 baris; 6 pelanggan bergilir, 3 barang, gudang "Utama") diparse `parseExcelBuffer`, dimasukkan sebagai batch + baris persis seperti route (`upload` + `confirm`, tanpa sesi login: skrip menulis langkah DB yang sama), diantre `enqueueAccurateJob(IMPORT_TO_ACCURATE)`, lalu diproses worker Facport ASLI (proses `src/workers/index.ts` dinyalakan ulang per konfigurasi dengan env berbeda). Waktu = `pgboss.job` (`completed_on - started_on`). Faktur uji dihapus di Accurate & DB dev setelah tiap uji.
+| Konfigurasi | Waktu job | Faktur/dtk | Baris/dtk | vs sekarang |
+|---|---|---|---|---|
+| cache MATI, paralel 1 (= produksi sekarang) | 89,0 s | 1,12 | 3,37 | 1,0× |
+| cache HIDUP, paralel 1 | 60,2 s | 1,66 | 4,98 | 1,5× |
+| cache HIDUP, paralel 2 | 31,7 s | 3,15 | 9,46 | 2,8× |
+| cache HIDUP, paralel 3 | 21,3 s | 4,69 | 14,08 | 4,2× |
+| cache HIDUP, paralel 4 | 16,9 s | 5,92 | 17,75 | 5,3× |
+| cache HIDUP, paralel 6 | 14,7 s | 6,80 | 20,41 | **6,1×** |
+| cache MATI, paralel 4 | 63,5 s | 1,57 | 4,72 | 1,4× |
+**Hasil:** 7 dari 7 batch: 300/300 baris sukses, 100/100 faktur, `retry=0`, tanpa satu galat (termasuk paralel 6).
+**Temuan 12:** (a) uji ujung-ke-ujung MENGONFIRMASI hasil skrip § 13 (cache saja ±+48% di sini; skrip: +50%); (b) **tanpa cache paralel hampir tidak menolong** (paralel 4: 1,57 ≈ batas 8 req/dtk ÷ 5 permintaan/faktur = 1,6), **dengan cache paralel menskala** (1,66 → 3,15 → 4,69 → 5,92); (c) **hasil menurun di atas paralel 4** (paralel 6 hanya +15% dari paralel 4): 6,80 faktur/dtk ≈ 93% dari langit-langit `8 req/dtk ÷ ±1,1 permintaan/faktur` = ±7,3 faktur/dtk → penghambatnya kini pembatas 8 req/dtk (batas resmi), bukan Accurate maupun kode kita; (d) total: 89 s → 14,7 s = **6,1× lebih cepat** untuk 300 baris, semua tetap di bawah batas resmi Accurate.
+**Cara menembus langit-langit berikutnya (belum dikerjakan):** kurangi permintaan per faktur lebih jauh (sisa ±1,1 = 1 save + pencarian pelanggan baru), atau kirim banyak faktur per permintaan lewat `bulk-save.do` (§ 3: 1 permintaan membawa N faktur → langit-langit permintaan tidak lagi mengikat; hasil per item berurutan; kompleksitas pemulihan/adopsi per faktur perlu dirancang), atau (keputusan bisnis, § 12) memperlonggar batas.
+**Batas uji:** barang jasa/NON_INVENTORY, 3 baris/faktur, satu koneksi/DB trial, mesin dev (latensi VPS bisa beda), `IMPORT_WORKER_CONCURRENCY` default (2): beberapa pelanggan serentak di produksi berbagi CPU/memori worker (384 MB) — memori & CPU di paralel tinggi BELUM diukur.
+
+## 15. Daftar percobaan berikutnya (status)
+- [x] Uji ujung-ke-ujung via worker dengan paralel 1/2/3/4/6 + cache hidup/mati (§ 14).
 - [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
 - [x] Biaya pencarian (§ 9), pembuatan data master & balapan (§ 10), bulk & galat parsial (§ 3, 5), biaya per baris (§ 6), dokumen besar paralel (§ 7).
 - [x] Beban berkelanjutan: penegakan batas untuk BACA (§ 12).
@@ -150,5 +167,6 @@ Batas uji: barang NON_INVENTORY/jasa, 3 barang per faktur (faktur dengan lebih b
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
-- [ ] Simulasi end-to-end lewat worker Facport (unggah → batch → worker) dengan `IMPORT_GROUP_PARALLELISM` 1/2/3/4 di DB facport, cache hidup.
+- [ ] Ukur memori/CPU worker (384 MB) pada paralel 3–4 dan beberapa pelanggan serentak.
+- [ ] Modul lain via worker (Purchase Invoice + Beban, Sales Receipt, Purchase Payment) dan uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
