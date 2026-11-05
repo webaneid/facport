@@ -216,7 +216,48 @@ Semua: 400/400 baris sukses (termasuk 100 baris hanya-Beban), 100/100 faktur, `r
 **Temuan 15:** Purchase Invoice berperilaku SAMA dengan Sales Invoice: 5,0 → 1,1 permintaan/faktur dengan cache; paralel menskala sampai ±6,8 faktur/dtk (langit-langit batas 8 req/dtk ÷ 1,1); 85,5 s → 14,7 s (5,8×). Jalur baris hanya-Beban Fase 214 TERBUKTI di Accurate asli pada skala 100 faktur.
 **Penutupan item terbuka Fase 214 (diuji di Accurate asli, DB facport):** (a) `detail.do?number=` mengembalikan `detailExpense[]` dengan `account.no` dan `expenseAmount` (+ banyak field lain) — parser `getPurchaseInvoiceByNumber` membacanya benar (akun 600001/5000 dan 600002/700, urutan terjaga); (b) faktur HANYA-Beban tanpa satu pun barang diterima Accurate dalam tiga bentuk: `detailItem: [{}]` (payload lama yang dipertahankan Fase 214), tanpa `detailItem`, dan `detailItem: []` — hasil `detailItem` selalu kosong (sesuai pemetaan "tidak dipetakan dari result" di Fase 214).
 
-## 18. Daftar percobaan berikutnya (status)
+## 18. Modul Sales Receipt — worker asli + Accurate asli (2026-11-06)
+Metode: faktur penjualan yang akan dibayar dibuat dulu lewat `bulk-save.do` (dihapus setelah uji); Excel → batch → worker. Dua pola: (1) 100 penerimaan × 3 faktur (dikelompokkan kolom "No. Sales Receipt", 300 baris); (2) 150 penerimaan, SATU BARIS = SATU PENERIMAAN (pola import besar client di produksi). Akun bank 110102, cabang Kantor Pusat, 6 pelanggan bergilir.
+| Pola | Paralel | Waktu job | Penerimaan/dtk | Baris/dtk | Permintaan/penerimaan | vs paralel 1 |
+|---|---|---|---|---|---|---|
+| 3 faktur/penerimaan | 1 | 52,2 s | 1,92 | 5,75 | 1,01 | 1,0× |
+| 3 faktur/penerimaan | 2 | 26,6 s | 3,76 | 11,28 | 1,01 | 2,0× |
+| 3 faktur/penerimaan | 4 | 14,3 s | 6,99 | 20,98 | 1,01 | 3,7× |
+| 3 faktur/penerimaan | 6 | 13,7 s | 7,30 | 21,90 | 1,01 | 3,8× |
+| 1 baris/penerimaan | 1 | 55,3 s | **2,71** | 2,71 | 1,01 | 1,0× |
+| 1 baris/penerimaan | 4 | 19,9 s | **7,54** | 7,54 | 1,01 | 2,8× |
+| 1 baris/penerimaan | 6 | 20,0 s | 7,50 | 7,50 | 1,01 | 2,8× |
+Semua: 100% baris sukses, `retry=0`, CPU rata-rata ≤ 16%, RSS ≤ 183 MB; faktur persiapan & penerimaan dihapus semua.
+**Temuan 16:** (a) Sales Receipt TIDAK punya pencarian per baris: hanya ±1,01 permintaan/penerimaan (cuma `save`), jadi cache pencarian tidak berpengaruh — seluruh percepatan datang dari paralel; (b) paralel 1 untuk pola 1 baris = penerimaan menghasilkan **2,71 baris/dtk, persis angka produksi yang terukur** (`architecture-import-capacity.md` F4 ±2,7) → uji ini mereproduksi perilaku produksi; (c) paralel 4 mencapai **7,54 baris/dtk ≈ 95% dari batas resmi 8 req/dtk ÷ 1,01** — untuk modul per-baris batas per-akun "8 baris/dtk" praktis sudah tercapai pada paralel 4; paralel 6 tidak menambah (langit-langit batas resmi); (d) menembus lebih jauh untuk modul per-baris hanya mungkin dengan mengirim banyak dokumen per permintaan (`bulk-save.do`, § 3) atau memperlonggar batas (keputusan bisnis, § 12).
+
+## 19. Modul Purchase Payment — worker asli + Accurate asli (2026-11-06)
+Metode sama dengan § 18 (faktur pembelian persiapan dibuat lewat `bulk-save.do`, dihapus setelah uji): 100 pembayaran × 3 faktur (kolom "Purchase Payment No") dan 150 pembayaran satu-baris-satu-dokumen; vendor `BENCH-V1..6` bergilir.
+| Pola | Paralel | Waktu job | Pembayaran/dtk | Baris/dtk | Permintaan/pembayaran | vs paralel 1 |
+|---|---|---|---|---|---|---|
+| 3 faktur/pembayaran | 1 | 48,6 s | 2,06 | 6,17 | 1,01 | 1,0× |
+| 3 faktur/pembayaran | 2 | 25,6 s | 3,91 | 11,72 | 1,01 | 1,9× |
+| 3 faktur/pembayaran | 4 | 14,4 s | 6,94 | 20,83 | 1,01 | 3,4× |
+| 3 faktur/pembayaran | 6 | 13,9 s | 7,19 | 21,58 | 1,01 | 3,5× |
+| 1 baris/pembayaran | 1 | 63,9 s | 2,35 | 2,35 | 1,01 | 1,0× |
+| 1 baris/pembayaran | 4 | 21,1 s | 7,11 | 7,11 | 1,01 | 3,0× |
+| 1 baris/pembayaran | 6 | 19,7 s | 7,61 | 7,61 | 1,01 | 3,2× |
+Semua: 100% baris sukses, `retry=0`, CPU ≤ 14%, RSS ≤ 182 MB; data uji dihapus semua.
+**Temuan 17:** Purchase Payment berperilaku SAMA dengan Sales Receipt: ±1,01 permintaan/dokumen (hanya `save`), tanpa pencarian per baris (cache tidak berpengaruh), seluruh percepatan dari paralel, mentok di langit-langit batas resmi 8 req/dtk ÷ 1,01 ≈ 7,9 (paralel 4 sudah 7,1–7,0, paralel 6 7,2–7,6).
+
+## 20. RINGKASAN lintas modul (satu akun, 100–150 dokumen, worker asli, Accurate asli; "sekarang" = cache mati, paralel 1)
+| Modul / pola | Sekarang | Terbaik terukur | Konfigurasi terbaik | Percepatan |
+|---|---|---|---|---|
+| Sales Invoice (3 baris/faktur) | 1,12 faktur/dtk (3,37 baris/dtk) | 6,80 faktur/dtk (20,4 baris/dtk) | cache + paralel 6 | **6,1×** |
+| Purchase Invoice (3 baris + Beban) | 1,17 faktur/dtk (4,68 baris/dtk) | 6,80 faktur/dtk (27,2 baris/dtk) | cache + paralel 6 | **5,8×** |
+| Sales Receipt (3 faktur/penerimaan) | 1,92 /dtk (5,75 baris/dtk) | 7,30 /dtk (21,9 baris/dtk) | paralel 6 | 3,8× |
+| Sales Receipt (1 baris = 1 dokumen) | 2,71 baris/dtk | 7,54 baris/dtk | paralel 4 | 2,8× |
+| Purchase Payment (3 faktur/pembayaran) | 2,06 /dtk (6,17 baris/dtk) | 7,19 /dtk (21,6 baris/dtk) | paralel 6 | 3,5× |
+| Purchase Payment (1 baris = 1 dokumen) | 2,35 baris/dtk | 7,61 baris/dtk | paralel 6 | 3,2× |
+**Pola umum:** setelah cache, modul menjadi ±1,0–1,1 permintaan/dokumen sehingga satu akun mentok di batas resmi 8 req/dtk (≈ 7,0–7,6 dokumen/dtk); paralel 4 sudah memberi ±90% dari hasil terbaik, paralel 6 hanya +4–12%. **Rekomendasi `IMPORT_GROUP_PARALLELISM` = 4** (memori & CPU aman, § 15–16). Menembus langit-langit ini untuk modul per-baris butuh `bulk-save.do` (banyak dokumen per permintaan) atau keputusan bisnis soal batas (§ 12).
+
+## 21. Daftar percobaan berikutnya (status)
+- [x] Purchase Payment via worker asli (§ 19) — modul uji utama selesai (SI, PI, SR, PP).
+- [x] Sales Receipt via worker asli (§ 18): per-baris 2,71 → 7,54 baris/dtk.
 - [x] Purchase Invoice via worker asli (§ 17), termasuk baris hanya-Beban dan penutupan item terbuka Fase 214.
 - [x] Kurangi memori per baris (§ 16): 383 → 223 MB pada 9.600 baris lebar; paralel/akun nyaris tak menambah memori.
 - [x] Uji ujung-ke-ujung via worker dengan paralel 1/2/3/4/6 + cache hidup/mati (§ 14).
@@ -227,5 +268,6 @@ Semua: 400/400 baris sukses (termasuk 100 baris hanya-Beban), 100/100 faktur, `r
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
-- [ ] Modul lain via worker: Sales Receipt, Purchase Payment (tersisa). Lalu uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
+- [ ] Uji `bulk-save.do` sebagai jalur kirim untuk modul per-baris (menembus langit-langit 8 req/dtk; perlu rancangan pemulihan per dokumen).
+- [ ] Modul lain yang belum diuji via worker: Sales Quotation/Order, Delivery Order, Purchase Order, Receive Item, Retur, Jurnal Umum, Other Payment/Deposit, Work Order, dst. (memakai `findOrCreate*` yang sama → cache berlaku; per-baris tanpa pencarian → paralel).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
