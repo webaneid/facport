@@ -203,7 +203,21 @@ Semua batch: 100% baris sukses, tanpa galat.
 **Temuan 14:** puncak memori turun 383 → 223 MB (−42% total, **−71% di atas dasar**, +225 → +65 MB) tanpa mengubah kecepatan; heap JavaScript puncak hanya 49 MB — sisanya adalah lonjakan sesaat memori native (buffer driver DB) saat banyak job memuat baris bersamaan, sehingga halaman kecil yang menurunkannya. Titik belok di sekitar 25–50 baris/halaman (di bawahnya hasil menipis, kueri bertambah dan lonjakan CPU sesaat naik: 127% pada 10 baris). Regresi ke Accurate ASLI (100 faktur × 3 baris, paralel 4, cache hidup): 300/300 sukses, 16,9 s — identik dengan sebelum perubahan.
 **Sisa/diketahui:** ada satu tempat lain dengan pola lama (`workers/index.ts` ±baris 1427, jalur modul lain) — belum diubah; modul selain Sales Invoice diverifikasi secara statis (akses lewat `columnMapping`) dan akan teruji nyata pada uji modul lain.
 
-## 17. Daftar percobaan berikutnya (status)
+## 17. Modul Purchase Invoice (+ baris hanya-Beban, pola file client) — worker asli + Accurate asli (2026-11-06)
+Metode: 100 faktur × (3 baris barang + 1 baris HANYA-Beban `Akun Beban 600001 / Jumlah Beban 5000`) = 400 baris, 6 vendor bergilir, Excel → batch → worker (`mod-run.ts`); jumlah permintaan per jalur dihitung dari DALAM worker (preload) dan dibagi jumlah faktur; faktur dihapus setelah tiap uji.
+| Konfigurasi | Waktu job | Faktur/dtk | Baris/dtk | Permintaan/faktur | vs sekarang |
+|---|---|---|---|---|---|
+| cache MATI, paralel 1 (= produksi sekarang) | 85,5 s | 1,17 | 4,68 | **5,01** (item 3,00 + vendor 1,00 + save 1,00) | 1,0× |
+| cache HIDUP, paralel 1 | 59,4 s | 1,68 | 6,73 | **1,10** (save 1,00 + vendor 0,06 + item 0,03) | 1,4× |
+| cache HIDUP, paralel 2 | 29,9 s | 3,34 | 13,38 | 1,10 | 2,9× |
+| cache HIDUP, paralel 4 | 16,4 s | 6,10 | 24,39 | 1,10 | 5,2× |
+| cache HIDUP, paralel 6 | 14,7 s | 6,80 | 27,21 | 1,10 | **5,8×** |
+Semua: 400/400 baris sukses (termasuk 100 baris hanya-Beban), 100/100 faktur, `retry=0`; worker CPU rata-rata ≤ 17% (puncak 36%), RSS puncak 158–184 MB.
+**Temuan 15:** Purchase Invoice berperilaku SAMA dengan Sales Invoice: 5,0 → 1,1 permintaan/faktur dengan cache; paralel menskala sampai ±6,8 faktur/dtk (langit-langit batas 8 req/dtk ÷ 1,1); 85,5 s → 14,7 s (5,8×). Jalur baris hanya-Beban Fase 214 TERBUKTI di Accurate asli pada skala 100 faktur.
+**Penutupan item terbuka Fase 214 (diuji di Accurate asli, DB facport):** (a) `detail.do?number=` mengembalikan `detailExpense[]` dengan `account.no` dan `expenseAmount` (+ banyak field lain) — parser `getPurchaseInvoiceByNumber` membacanya benar (akun 600001/5000 dan 600002/700, urutan terjaga); (b) faktur HANYA-Beban tanpa satu pun barang diterima Accurate dalam tiga bentuk: `detailItem: [{}]` (payload lama yang dipertahankan Fase 214), tanpa `detailItem`, dan `detailItem: []` — hasil `detailItem` selalu kosong (sesuai pemetaan "tidak dipetakan dari result" di Fase 214).
+
+## 18. Daftar percobaan berikutnya (status)
+- [x] Purchase Invoice via worker asli (§ 17), termasuk baris hanya-Beban dan penutupan item terbuka Fase 214.
 - [x] Kurangi memori per baris (§ 16): 383 → 223 MB pada 9.600 baris lebar; paralel/akun nyaris tak menambah memori.
 - [x] Uji ujung-ke-ujung via worker dengan paralel 1/2/3/4/6 + cache hidup/mati (§ 14).
 - [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
@@ -211,8 +225,7 @@ Semua batch: 100% baris sukses, tanpa galat.
 - [x] Beban berkelanjutan: penegakan batas untuk BACA (§ 12).
 - [x] Prototipe cache pencarian positif per batch + ukur di jalur Sales Invoice (§ 13, Fase 215).
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
-- [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
-- [ ] Modul lain via worker (Purchase Invoice + Beban, Sales Receipt, Purchase Payment) dan uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
+- [ ] Modul lain via worker: Sales Receipt, Purchase Payment (tersisa). Lalu uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
