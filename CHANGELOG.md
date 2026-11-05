@@ -1,3 +1,16 @@
+## 2.49.0 (2026-11-05)
+
+* chore: merge develop into main (Fase 215 kecepatan import: cache pencarian, memori per baris, penjag ([edf5464](https://github.com/webaneid/facport/commit/edf5464))
+* feat(api): cache pencarian data master per sesi Accurate - permintaan per faktur 5,0 ke 1,1, berurut ([3c535f6](https://github.com/webaneid/facport/commit/3c535f6))
+* feat(api): penjaga pengiriman paralel - hanya modul terbukti dan hanya bila semua baris bernomor eks ([9b89439](https://github.com/webaneid/facport/commit/9b89439))
+* docs: catat keluhan kecepatan Facport baru vs lama (terbuka, menunggu kode PHP lama) ([0b4ca51](https://github.com/webaneid/facport/commit/0b4ca51))
+* docs: hasil uji ujung-ke-ujung via worker asli (cache + paralel 1-6, 89 s ke 14,7 s untuk 300 baris) ([ca225be](https://github.com/webaneid/facport/commit/ca225be))
+* docs: laboratorium kecepatan import - hasil uji tulis/bulk/paralel/pencarian ke Accurate asli (DB uj ([4facdd2](https://github.com/webaneid/facport/commit/4facdd2))
+* docs: uji CPU dan memori worker banyak akun serentak (server Accurate palsu) - CPU bukan penghambat, ([396ed19](https://github.com/webaneid/facport/commit/396ed19))
+* docs: uji Purchase Invoice via worker asli (5,8x), tutup item verifikasi Accurate asli Fase 214 ([31508ef](https://github.com/webaneid/facport/commit/31508ef))
+* docs: uji Sales Receipt dan Purchase Payment via worker asli, ringkasan lintas modul (paralel 4 dire ([2987920](https://github.com/webaneid/facport/commit/2987920))
+* perf(api): memori per baris import turun (muat per halaman, hanya kolom dipetakan, tanpa muat ulang  ([b5e9a14](https://github.com/webaneid/facport/commit/b5e9a14))
+
 ## 2.48.0 (2026-11-05)
 
 * chore: merge develop into main (Fase 214 Purchase Invoice baris hanya-Beban) ([39b6a19](https://github.com/webaneid/facport/commit/39b6a19))
