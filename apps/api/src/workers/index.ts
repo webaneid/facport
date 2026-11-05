@@ -43,6 +43,7 @@ import { addCumulativeSuccessfulRows } from "../lib/data-usaha";
 import { encrypt, decrypt } from "../lib/encryption";
 import { openAccurateSession } from "../lib/accurate-session";
 import { loadProcessableRows } from "../lib/import-rows-loader";
+import { cachedLookup } from "../lib/accurate-lookup-cache";
 import { checkConnectionScopes } from "../lib/accurate-scope-check";
 import { createNotification, createNotificationsBulk, NOTIFICATION_TYPES, formatNotificationDate } from "../lib/notifications";
 import { findApplicableReminderThreshold, buildExpiryReminder, SUBSCRIPTION_REMINDER_THRESHOLDS, TRIAL_REMINDER_THRESHOLDS } from "../lib/subscription-reminders";
@@ -1596,7 +1597,7 @@ export async function processPurchaseReturnGroup(
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildPurchaseReturnPayload(rawRows, columnMapping);
   // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Pembelian asal, termasuk diskon baris; tipe lain → error jelas.
-  await fillReturnPricesFromInvoice(payload, (number) => getPurchaseInvoiceLinesByNumber(ctx, number));
+  await fillReturnPricesFromInvoice(payload, (number) => cachedLookup(ctx, "purchaseInvoiceLines", number, () => getPurchaseInvoiceLinesByNumber(ctx, number))); // § Fase 215: isi faktur asal dicache per sesi
 
   await ensurePurchaseReturnDataClassifications(ctx, rawRows, columnMapping);
 
@@ -1724,7 +1725,7 @@ export async function processSalesReturnGroup(
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildSalesReturnPayload(rawRows, columnMapping);
   // § Fase 170 — Unit Price kosong (return type INVOICE/INVOICE_DP) diisi dari Faktur Penjualan asal, termasuk diskon baris; tipe lain → error jelas.
-  await fillReturnPricesFromInvoice(payload, (number) => getSalesInvoiceLinesByNumber(ctx, number));
+  await fillReturnPricesFromInvoice(payload, (number) => cachedLookup(ctx, "salesInvoiceLines", number, () => getSalesInvoiceLinesByNumber(ctx, number))); // § Fase 215: isi faktur asal dicache per sesi
 
   await ensureSalesReturnDataClassifications(ctx, rawRows, columnMapping);
 

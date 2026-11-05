@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, spyOn } from "bun:test";
 import { findOrCreateItem } from "./accurate-item";
 import { findOrCreateCustomer } from "./accurate-customer";
 import { findOrCreateVendor } from "./accurate-vendor";
-import { lookupCacheSize, parseLookupCacheEnabled } from "./accurate-lookup-cache";
+import { lookupCacheSize, parseLookupCacheEnabled, cachedLookup } from "./accurate-lookup-cache";
 import type { AccurateSessionContext } from "./accurate-session";
 
 // § Fase 215 — cache pencarian positif per sesi Accurate. Semua panggilan ke Accurate di-stub di `fetch`; yang dihitung = JUMLAH permintaan.
@@ -150,5 +150,53 @@ describe("parseLookupCacheEnabled", () => {
     expect(parseLookupCacheEnabled("0")).toBe(false);
     expect(parseLookupCacheEnabled("OFF")).toBe(false);
     expect(parseLookupCacheEnabled(" false ")).toBe(false);
+  });
+});
+
+describe("cachedLookup (isi faktur asal untuk retur)", () => {
+  const lines = [{ itemNo: "A", unitPrice: 1000, quantity: 5, discPercent: null, cashDiscount: null }];
+
+  test("panggilan kedua dengan kunci sama (huruf besar/kecil & spasi dinormalkan) tidak mengambil ulang", async () => {
+    const ctx = newCtx(); let n = 0;
+    const fetchValue = async () => { n++; return lines; };
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-1", fetchValue);
+    await cachedLookup(ctx, "salesInvoiceLines", " inv-1 ", fetchValue);
+    expect(n).toBe(1);
+  });
+
+  test("5 panggilan SERENTAK dengan kunci sama → hanya 1 pengambilan; kunci beda tetap mengambil sendiri", async () => {
+    const ctx = newCtx(); let n = 0;
+    const slow = async () => { n++; await new Promise((r) => setTimeout(r, 30)); return lines; };
+    await Promise.all(Array.from({ length: 5 }, () => cachedLookup(ctx, "salesInvoiceLines", "INV-1", slow)));
+    expect(n).toBe(1);
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-2", slow);
+    expect(n).toBe(2);
+  });
+
+  test("galat TIDAK dicache: pengambilan berikutnya mencoba lagi dan bisa berhasil", async () => {
+    const ctx = newCtx(); let n = 0;
+    await expect(cachedLookup(ctx, "salesInvoiceLines", "INV-X", async () => { n++; throw new Error("tidak ditemukan"); })).rejects.toThrow("tidak ditemukan");
+    expect(lookupCacheSize(ctx)).toBe(0);
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-X", async () => { n++; return lines; });
+    expect(n).toBe(2);
+  });
+
+  test("jenis berbeda (faktur penjualan vs pembelian) dan sesi berbeda tidak berbagi cache", async () => {
+    let n = 0;
+    const f = async () => { n++; return lines; };
+    const ctx = newCtx();
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-1", f);
+    await cachedLookup(ctx, "purchaseInvoiceLines", "INV-1", f);
+    await cachedLookup(newCtx(), "salesInvoiceLines", "INV-1", f);
+    expect(n).toBe(3);
+  });
+
+  test("cache mati (ACCURATE_LOOKUP_CACHE=0) → tiap panggilan mengambil sendiri", async () => {
+    process.env.ACCURATE_LOOKUP_CACHE = "0";
+    const ctx = newCtx(); let n = 0;
+    const f = async () => { n++; return lines; };
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-1", f);
+    await cachedLookup(ctx, "salesInvoiceLines", "INV-1", f);
+    expect(n).toBe(2);
   });
 });

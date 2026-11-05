@@ -32,12 +32,12 @@ describe("decideGroupParallelism", () => {
   });
 
   test("modul yang belum terbukti → berurutan walau paralel dinyalakan dan bernomor", () => {
-    expect(decide({ module: "journal_voucher" })).toEqual({ parallelism: 1, reason: "module_not_enabled" });
-    expect(decide({ module: "sales_return" }).reason).toBe("module_not_enabled");
+    expect(decide({ module: "item_transfer" })).toEqual({ parallelism: 1, reason: "module_not_enabled" });
+    expect(decide({ module: "item_transfer" }).reason).toBe("module_not_enabled");
   });
 
   test("daftar default = 4 modul terbukti, masing-masing dengan field nomornya sendiri", () => {
-    expect([...DEFAULT_PARALLEL_MODULES].sort()).toEqual(["purchase_invoice", "purchase_payment", "sales_invoice", "sales_receipt"]);
+    expect([...DEFAULT_PARALLEL_MODULES].sort()).toEqual(["delivery_order", "inventory_adjustment", "item_requisition", "journal_voucher", "other_deposit", "other_payment", "purchase_invoice", "purchase_order", "purchase_payment", "purchase_return", "receive_item", "sales_invoice", "sales_order", "sales_quotation", "sales_receipt", "sales_return"]);
     expect(numberColumnsOf("sales_receipt", { "No. Sales Receipt": "receiptNumber", "Customer No": "customerNo" })).toEqual(["No. Sales Receipt"]);
     expect(numberColumnsOf("purchase_payment", { "Purchase Payment No": "paymentNumber" })).toEqual(["Purchase Payment No"]);
     expect(numberColumnsOf("purchase_invoice", { "Trans No": "number", "Bill No": "billNumber" })).toEqual(["Trans No"]); // Bill No BUKAN nomor dokumen
@@ -49,7 +49,7 @@ describe("decideGroupParallelism", () => {
   });
 
   test("allowedModules='all' membuka modul lain, tetapi modul tanpa field nomor yang dikenal tetap berurutan", () => {
-    expect(decide({ module: "journal_voucher", allowedModules: "all" })).toEqual({ parallelism: 1, reason: "no_number_column" });
+    expect(decide({ module: "autoproduksi_production", allowedModules: "all" })).toEqual({ parallelism: 1, reason: "no_number_column" });
   });
 
   test("Sales Receipt satu-baris-satu-dokumen TANPA kolom nomor penerimaan (pola uji sr1) → berurutan", () => {
@@ -59,6 +59,20 @@ describe("decideGroupParallelism", () => {
 
   test("batch tanpa baris (tidak ada yang perlu diproses) tidak melempar", () => {
     expect(decide({ rows: [] })).toEqual({ parallelism: 4, reason: "ok" });
+  });
+});
+
+describe("Retur Penjualan di penjaga", () => {
+  const retMapping = { "Customer No": "customerNo", "Retur No": "number", "Item No": "itemNo" };
+  const rows = (nums: unknown[]) => nums.map((n) => ({ rawData: { "Retur No": n } as Record<string, unknown> }));
+  test("ada di daftar default: bernomor → paralel; ada nomor kosong → berurutan", () => {
+    expect(decideGroupParallelism({ module: "sales_return", rows: rows(["R1", "R2"]), columnMapping: retMapping, configured: 4 })).toEqual({ parallelism: 4, reason: "ok" });
+    expect(decideGroupParallelism({ module: "sales_return", rows: rows(["R1", ""]), columnMapping: retMapping, configured: 4 }).reason).toBe("blank_numbers");
+  });
+  test("Item Transfer & modul manufaktur (belum teruji) tetap berurutan walau bernomor", () => {
+    for (const module of ["item_transfer", "work_order", "material_slip", "finished_good_slip", "roll_over", "job_costing"]) {
+      expect(decideGroupParallelism({ module, rows: rows(["R1"]), columnMapping: retMapping, configured: 4 }).reason).toBe("module_not_enabled");
+    }
   });
 });
 
