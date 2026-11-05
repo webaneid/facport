@@ -255,7 +255,21 @@ Semua: 100% baris sukses, `retry=0`, CPU ≤ 14%, RSS ≤ 182 MB; data uji dihap
 | Purchase Payment (1 baris = 1 dokumen) | 2,35 baris/dtk | 7,61 baris/dtk | paralel 6 | 3,2× |
 **Pola umum:** setelah cache, modul menjadi ±1,0–1,1 permintaan/dokumen sehingga satu akun mentok di batas resmi 8 req/dtk (≈ 7,0–7,6 dokumen/dtk); paralel 4 sudah memberi ±90% dari hasil terbaik, paralel 6 hanya +4–12%. **Rekomendasi `IMPORT_GROUP_PARALLELISM` = 4** (memori & CPU aman, § 15–16). Menembus langit-langit ini untuk modul per-baris butuh `bulk-save.do` (banyak dokumen per permintaan) atau keputusan bisnis soal batas (§ 12).
 
-## 21. Daftar percobaan berikutnya (status)
+## 21. Urutan nomor otomatis & penjaga pengiriman paralel (Fase 215)
+**Temuan 18 (Accurate asli, 30 faktur tanpa nomor):** paralel 1 → nomor otomatis (`SI.2026.11.00001…`) PERSIS mengikuti urutan baris; **paralel 4 → tidak**: 7 dari 30 pasangan terbalik, pergeseran maks 2 posisi (contoh urutan baris menurut nomor: 0,2,3,1,5,4,6,7,8,10,11,9,…). Sebab: dokumen DIMULAI berurutan tetapi SELESAI tidak berurutan, dan Accurate menomori menurut urutan TIBA. Bila kolom nomor diisi di Excel tidak ada dampak.
+**Keputusan (user, 2026-11-06): pilihan "aman".** `lib/import-parallelism.ts` — `decideGroupParallelism` memilih CARA PENGIRIMAN sebelum batch diproses (isi/nomor dokumen tidak berubah): paralel (> 1) hanya bila (1) `IMPORT_GROUP_PARALLELISM` > 1, (2) modul termasuk daftar terbukti (default `sales_invoice, purchase_invoice, sales_receipt, purchase_payment`; ubah tanpa rilis lewat env `IMPORT_PARALLEL_MODULES`, `*` = semua), (3) kolom nomor dokumen (field berpath Accurate `number`: `number` / `receiptNumber` / `paymentNumber`) dipetakan, dan (4) SETIAP baris yang diproses punya nomor tidak kosong. Selain itu SELURUH batch berurutan (perilaku lama persis) + log `Import: paralel tidak dipakai untuk batch ini` dengan `reason`. Versi campuran (sebagian bernomor) sengaja TIDAK dibuat (lebih rumit & lebih berisiko). `Bill No` Purchase Invoice BUKAN nomor dokumen.
+**Pembuktian di Accurate asli lewat worker asli (paralel dikonfigurasi 4):**
+| Skenario | Hasil |
+|---|---|
+| Sales Invoice, kolom nomor dipetakan tapi KOSONG (40 baris) | berurutan (log "paralel tidak dipakai"), 1,74 dok/dtk; nomor `SI.2026.11.00101…00140` **mengikuti urutan baris Excel, 0 pasangan terbalik** |
+| Sales Receipt satu-baris-satu-dokumen TANPA kolom nomor (30) | berurutan (log), 2,31 dok/dtk |
+| Sales Receipt bernomor (40 penerimaan) | paralel, 6,06 dok/dtk (18,2 baris/dtk) |
+| Purchase Invoice bernomor (40 faktur) | paralel, 4,88 dok/dtk (19,5 baris/dtk) |
+Tes unit: 12 (`import-parallelism.test.ts`): mati→1; bernomor+modul terbukti→paralel; satu baris kosong/spasi/null/undefined→berurutan; nomor numerik 0 dianggap terisi; kolom nomor tak dipetakan→berurutan; modul belum terbukti→berurutan; Bill No bukan nomor; `all` tetap berurutan untuk modul tanpa field nomor dikenal; parsing env.
+**Catatan jujur:** pola import besar client produksi (mis. Sales Receipt dengan "No Bukti" terisi) bernomor → paralel berlaku; file yang mengosongkan nomor tetap mendapat percepatan cache (SI/PI ≈ 1,4–1,5×) tetapi tidak paralel. Pergeseran nomor akibat paralel TIDAK mungkin lagi untuk batch tanpa nomor.
+
+## 22. Daftar percobaan berikutnya (status)
+- [x] Penjaga nomor otomatis + daftar modul terbukti (§ 21), diuji di Accurate asli.
 - [x] Purchase Payment via worker asli (§ 19) — modul uji utama selesai (SI, PI, SR, PP).
 - [x] Sales Receipt via worker asli (§ 18): per-baris 2,71 → 7,54 baris/dtk.
 - [x] Purchase Invoice via worker asli (§ 17), termasuk baris hanya-Beban dan penutupan item terbuka Fase 214.

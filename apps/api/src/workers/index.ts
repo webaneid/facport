@@ -193,6 +193,7 @@ import { AccurateTimeoutError } from "../lib/accurate-http";
 import { settleTimedOutGroup } from "../lib/accurate-timeout-settle";
 import { annotatePaymentFailure } from "../lib/payment-error-context";
 import { forEachGroupConcurrent, configuredGroupParallelism } from "../lib/group-concurrency";
+import { decideGroupParallelism } from "../lib/import-parallelism";
 import { recoverOrphanedImportJobs } from "../lib/orphaned-imports";
 import { expandSourceRowsInPayload, isSourceExpansionRow, mapDetailIdsToRows, selectSavedDetailForMapping, annotateSourceExpansionFailure } from "../lib/import-mapping/source-expansion";
 import {
@@ -2925,7 +2926,12 @@ async function main() {
     // § Fase 215 — dimuat per halaman + hanya kolom yang dipetakan (lib/import-rows-loader.ts): memori per baris turun drastis, hasil pada kolom yang dipetakan identik.
     const rows = await loadProcessableRows(batch.id, columnMapping);
     // § Fase 199 (C4b) — grup (dokumen) dalam job ini diproses paralel sampai N (env `IMPORT_GROUP_PARALLELISM`, default 1 = berurutan seperti dulu).
-    const groupParallelism = configuredGroupParallelism();
+    // § Fase 215 — paralel HANYA untuk modul terbukti & bila semua baris punya nomor dokumen eksplisit (lib/import-parallelism.ts); selain itu berurutan seperti dulu.
+    const parallelDecision = decideGroupParallelism({ module: batch.module, rows, columnMapping });
+    const groupParallelism = parallelDecision.parallelism;
+    if (parallelDecision.reason !== "off" && parallelDecision.reason !== "ok") {
+      logger.info({ batchId, module: batch.module, configured: configuredGroupParallelism(), reason: parallelDecision.reason }, "Import: paralel tidak dipakai untuk batch ini, diproses berurutan");
+    }
     const jobStartedAt = Date.now();
 
     // § Fase 06, ADR-0011 — Purchase Invoice diproses PER GRUP (baris
