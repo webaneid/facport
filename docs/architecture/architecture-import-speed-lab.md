@@ -285,8 +285,30 @@ Semua: 100% baris sukses (≥ 500 retur total), `retry=0`, CPU ≤ 12%, RSS ≤ 
 **Temuan 19:** (a) cache mengurangi permintaan 2,0 → 1,14/retur pada pola berbagi faktur; waktu berurutan hanya −9% di lab karena faktur uji kecil (detail ±60–90 ms vs save ±600 ms) — di produksi faktur asal besar membuat `detail.do` jauh lebih mahal, sehingga penghematan lebih besar (belum diukur); (b) paralel 4 menghasilkan **4,0×** pada pola berbagi faktur dan 2,6× pada pola faktur-sendiri (langit-langit 8 req/dtk ÷ 2,02 = 3,96/dtk, tercapai 94%); (c) **retur serentak pada faktur asal yang SAMA tidak bentrok** (80/80 sukses, paralel 4) — kekhawatiran awal (bentrok pada dokumen induk) tidak terjadi pada penyimpanan retur; (d) bentrok HANYA terlihat pada PENGHAPUSAN paralel retur pada faktur yang sama (pembersihan skrip uji: 73/80 dan 68/80 terhapus; sisa 19 retur & 13 faktur dibersihkan manual lewat `returnHistory` faktur) — tidak relevan bagi import, tetapi menunjukkan operasi PARALEL pada dokumen induk yang sama bisa bentrok (kandidat bila nanti ada fitur Hapus Massal/Batal Import paralel: serialkan per faktur). (e) `sales-return/list.do` mengembalikan respons kosong (tidak bisa dipakai untuk daftar); retur ditemukan lewat `returnHistory` pada `sales-invoice/detail.do`.
 **Keputusan:** `sales_return` MASUK daftar default modul paralel (`DEFAULT_PARALLEL_MODULES`), tetap dijaga nomor-dokumen-eksplisit; `purchase_return` TIDAK (belum diuji paralel; cache faktur asalnya sudah aktif).
 
-## 23. Daftar percobaan berikutnya (status)
-- [x] Retur Penjualan via worker asli (§ 22): cache faktur asal + paralel 4 → 2,6–4,0×.
+## 23. Gelombang uji semua modul (2026-11-06): PO, SQ, SO, DO, RI, JV, Other Payment/Deposit, Purchase Return, Inventory Adjustment, Item Requisition
+Metode sama (§ 17–22): Excel → batch → worker asli → Accurate asli (DB facport), 60–80 dokumen/konfigurasi, permintaan dihitung dari dalam worker, data uji dihapus (semua pembersihan penuh kecuali 4 permintaan pembelian uji — lihat catatan). Pembanding "sekarang" = cache mati + paralel 1 (kode v2.49.0).
+| Modul | Sekarang | Terbaik terukur | Percepatan | Permintaan/dokumen (sekarang → sesudah) |
+|---|---|---|---|---|
+| Purchase Order (3 baris) | 47,3 s | 9,9 s (cache + paralel 4) | **4,8×** | 5,02 → 1,17 |
+| Sales Quotation | 44,6 s | 9,9 s | **4,5×** | 5,02 → 1,17 |
+| Sales Order | 47,3 s | 10,1 s | **4,7×** | 5,02 → 1,17 |
+| Delivery Order | 26,4 s | 8,8 s (paralel 4) | 3,0× | 1,02 |
+| Receive Item | 26,9 s | 9,0 s | 3,0× | 1,02 |
+| Jurnal Umum (2 baris) | 11,2 s | 8,3 s | 1,35× | 1,02 (sudah dekat batas 8 req/dtk) |
+| Other Payment (2 baris) | 14,5 s | 8,5 s | 1,7× | 1,02 |
+| Other Deposit | 14,3 s | 8,5 s | 1,7× | 1,02 |
+| Purchase Return, diurutkan per faktur (80) | 55,7 s | 14,5 s (cache + paralel 4) | **3,8×** | 2,01 → 1,14 |
+| Purchase Return, faktur sendiri (60) | 39,0 s | 16,6 s | 2,4× | 2,02 |
+| Inventory Adjustment (3 baris, 3 barang SAMA di semua dokumen) | 30,1 s | 8,6 s | **3,5×** | 1,02 |
+| Item Requisition (PURCHASE) | 25,1 s | 8,9 s | 2,8× | 1,02 |
+Semua: 100% baris sukses, `retry=0`. **Temuan 20:** (a) modul yang mencari pelanggan/vendor/barang (PO, SQ, SO + SI/PI) mendapat dua kali lipat sekaligus: cache (5,0 → 1,17 permintaan) lalu paralel; (b) modul per-dokumen tanpa pencarian (DO, RI, JV, OP, OD, IA, IR) hanya dipercepat paralel dan mentok di batas resmi 8 req/dtk (≈ 7–8 dok/dtk); (c) 60 Inventory Adjustment paralel pada 3 barang persediaan yang SAMA tidak menimbulkan bentrok stok; (d) **jebakan pengujian:** modul yang belum didaftarkan di penjaga (`NUMBER_MAPPINGS`) otomatis berurutan — hasil "paralel 4" awal Inventory Adjustment/Item Requisition (1,28×/1,13×) ternyata berurutan; setelah didaftarkan 3,5×/2,8×.
+**Tidak teruji (TETAP berurutan lewat penjaga):** Item Transfer — butuh gudang kedua; koneksi Accurate ini tidak memiliki scope `warehouse_save` (HTTP 403 `insufficient_scope`), sehingga gudang tujuan tidak bisa dibuat; bila diperlukan, buat "Gudang B" manual di Accurate lalu uji; Work Order, Material Slip, Finished Good Slip, Roll Over, Job Costing — rantai dokumen manufaktur (BOM, akun kerja, WO → Slip) yang belum disiapkan; AutoProduksi — per baris & sengaja tidak paralel (Fase 199). Modul-modul ini tetap mendapat cache pencarian bila memakainya.
+**Keputusan:** `DEFAULT_PARALLEL_MODULES` = 16 modul terbukti (Sales/Purchase Invoice, Sales/Purchase Return, Sales Receipt, Purchase Payment, PO, SQ, SO, DO, RI, Jurnal Umum, Other Payment/Deposit, Inventory Adjustment, Item Requisition); semua tetap dijaga aturan nomor-dokumen-eksplisit.
+**Catatan sisa data uji:** 4 permintaan pembelian (`IR-…`) dari uji asap pertama tertinggal di DB uji "facport" (endpoint daftar tidak terbaca untuk menghapusnya); tidak berbahaya. DB uji juga masih memuat pelanggan `BENCH-C1..6`, vendor `BENCH-V1..6`, barang `BENCH-I1/K2/K3/K4/INV1..3`, faktur `BENCH-SETUP-001`.
+
+## 24. Daftar percobaan berikutnya (status)
+- [x] Gelombang uji semua modul yang bisa disiapkan (§ 22–23).
+- [ ] Item Transfer (butuh gudang kedua manual + stok) dan rantai manufaktur (WO/Material Slip/FGS/Roll Over/Job Costing) — tetap berurutan sampai diuji.
 - [x] Penjaga nomor otomatis + daftar modul terbukti (§ 21), diuji di Accurate asli.
 - [x] Purchase Payment via worker asli (§ 19) — modul uji utama selesai (SI, PI, SR, PP).
 - [x] Sales Receipt via worker asli (§ 18): per-baris 2,71 → 7,54 baris/dtk.
@@ -301,5 +323,4 @@ Semua: 100% baris sukses (≥ 500 retur total), `retry=0`, CPU ≤ 12%, RSS ≤ 
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
 - [ ] Uji `bulk-save.do` sebagai jalur kirim untuk modul per-baris (menembus langit-langit 8 req/dtk; perlu rancangan pemulihan per dokumen).
-- [ ] Modul lain yang belum diuji via worker: Purchase Return, Sales Quotation/Order, Delivery Order, Purchase Order, Receive Item, Jurnal Umum, Other Payment/Deposit, Work Order, dst. (memakai `findOrCreate*` yang sama → cache berlaku; per-baris tanpa pencarian → paralel).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).

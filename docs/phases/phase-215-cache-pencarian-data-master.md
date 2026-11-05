@@ -17,6 +17,7 @@ Keluhan pengguna: Facport baru terasa lebih lambat. Laboratorium kecepatan (`doc
 - [x] Uji lintas modul via worker asli (lab § 17–20): PI 5,8×, SR 2,8–3,8×, PP 3,2–3,5×, SI 6,1×; semua 100% sukses; rekomendasi `IMPORT_GROUP_PARALLELISM=4`.
 - [x] Penjaga pengiriman paralel (`lib/import-parallelism.ts`): hanya modul terbukti (`IMPORT_PARALLEL_MODULES`) dan hanya bila SEMUA baris bernomor dokumen eksplisit; selain itu berurutan (nomor otomatis Accurate tetap mengikuti urutan Excel; terbukti 0 pasangan terbalik vs 7/30 tanpa penjaga). 12 tes + uji worker asli (lab § 21).
 - [x] Retur Penjualan/Pembelian: cache isi faktur asal (`cachedLookup`) + `sales_return` masuk daftar paralel default; terukur 2,6–4,0× di Accurate asli, 500+ retur tanpa galat (lab § 22). BELUM dirilis (setelah v2.49.0).
+- [x] Uji semua modul yang bisa disiapkan (lab § 22–23): 16 modul terbukti masuk `DEFAULT_PARALLEL_MODULES`; PO/SQ/SO 4,5–4,8×, PR 3,8×, IA 3,5×, DO/RI 3,0×, IR 2,8×, OP/OD 1,7×, JV 1,35×. Item Transfer & manufaktur tidak teruji → tetap berurutan.
 - [ ] Cache untuk pencarian berulang lain (klasifikasi data, PIC Work Order, dokumen sumber) — fase lanjutan.
 - [x] Uji ujung-ke-ujung lewat worker asli (lab § 14): 100 faktur × 3 baris, 89 s → 60 s (cache) → 31,7 s (+paralel 2) → 16,9 s (+paralel 4) → 14,7 s (+paralel 6); semua sukses, tanpa Retry.
 - [x] CPU/memori worker banyak akun serentak (lab § 15): CPU bukan penghambat; memori batas nyata (9.600 baris lebar serentak = 383–409 MB > mem_limit 384m); paralel per akun nyaris tidak menambah memori.

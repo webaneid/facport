@@ -5,6 +5,18 @@ import { purchaseInvoiceMapping } from "./import-mapping/purchase-invoice.mappin
 import { salesReceiptMapping } from "./import-mapping/sales-receipt.mapping";
 import { purchasePaymentMapping } from "./import-mapping/purchase-payment.mapping";
 import { salesReturnMapping } from "./import-mapping/sales-return.mapping";
+import { purchaseOrderMapping } from "./import-mapping/purchase-order.mapping";
+import { receiveItemMapping } from "./import-mapping/receive-item.mapping";
+import { salesQuotationMapping } from "./import-mapping/sales-quotation.mapping";
+import { salesOrderMapping } from "./import-mapping/sales-order.mapping";
+import { deliveryOrderMapping } from "./import-mapping/delivery-order.mapping";
+import { journalVoucherMapping } from "./import-mapping/journal-voucher.mapping";
+import { otherPaymentMapping } from "./import-mapping/other-payment.mapping";
+import { otherDepositMapping } from "./import-mapping/other-deposit.mapping";
+import { purchaseReturnMapping } from "./import-mapping/purchase-return.mapping";
+import { inventoryAdjustmentMapping } from "./import-mapping/inventory-adjustment.mapping";
+import { itemRequisitionMapping } from "./import-mapping/item-requisition.mapping";
+import { itemTransferMapping } from "./import-mapping/item-transfer.mapping";
 
 // § Fase 215 (architecture-import-speed-lab.md § 20–21) — dua penjaga sebelum pengiriman PARALEL dinyalakan untuk sebuah batch. Hanya CARA PENGIRIMAN yang dipilih; isi/nomor
 // dokumen tidak pernah diubah ([[feedback-never-alter-customer-documents]]).
@@ -15,8 +27,17 @@ import { salesReturnMapping } from "./import-mapping/sales-return.mapping";
 //    bisa tidak mengikuti urutan baris Excel (terukur: paralel 4 → 7 dari 30 pasangan terbalik, geser maks 2 posisi). Karena itu paralel HANYA dipakai bila SEMUA baris yang
 //    diproses punya nomor dokumen eksplisit; selain itu seluruh batch berurutan seperti dulu (pilihan "aman"; versi campuran sengaja tidak dibuat).
 
-/** Modul yang sudah terbukti paralel di Accurate asli (Sales/Purchase Invoice, Sales Receipt, Purchase Payment, Sales Return — termasuk retur serentak pada faktur asal yang SAMA). */
-export const DEFAULT_PARALLEL_MODULES: readonly string[] = ["sales_invoice", "purchase_invoice", "sales_receipt", "purchase_payment", "sales_return"];
+/**
+ * Modul yang sudah terbukti paralel di Accurate asli (lab § 14–25): Sales/Purchase Invoice, Sales/Purchase Return (termasuk retur serentak pada faktur asal yang SAMA), Sales Receipt,
+ * Purchase Payment, Purchase Order, Sales Quotation, Sales Order, Delivery Order, Receive Item, Jurnal Umum, Other Payment, Other Deposit, Inventory Adjustment (termasuk 60 penyesuaian
+ * serentak pada 3 barang yang sama), Item Requisition. TIDAK ada di sini (tetap berurutan): Item Transfer (butuh dua gudang + stok; tak teruji), Work Order, Material Slip, Finished
+ * Good Slip, Roll Over, Job Costing (rantai dokumen manufaktur; tak teruji), AutoProduksi.
+ */
+export const DEFAULT_PARALLEL_MODULES: readonly string[] = [
+  "sales_invoice", "purchase_invoice", "sales_receipt", "purchase_payment", "sales_return", "purchase_return",
+  "purchase_order", "sales_quotation", "sales_order", "delivery_order", "receive_item",
+  "journal_voucher", "other_payment", "other_deposit", "inventory_adjustment", "item_requisition",
+];
 
 type PathMapping = { fieldToAccuratePath: Record<string, string> };
 
@@ -27,6 +48,19 @@ const NUMBER_MAPPINGS: Record<string, PathMapping> = {
   sales_receipt: salesReceiptMapping,
   purchase_payment: purchasePaymentMapping,
   sales_return: salesReturnMapping,
+  // Dikenal field nomornya agar BISA diuji/diaktifkan lewat IMPORT_PARALLEL_MODULES; masuk daftar default HANYA setelah terbukti paralel di Accurate asli (lab).
+  purchase_order: purchaseOrderMapping,
+  receive_item: receiveItemMapping,
+  sales_quotation: salesQuotationMapping,
+  sales_order: salesOrderMapping,
+  delivery_order: deliveryOrderMapping,
+  journal_voucher: journalVoucherMapping,
+  other_payment: otherPaymentMapping,
+  other_deposit: otherDepositMapping,
+  purchase_return: purchaseReturnMapping,
+  inventory_adjustment: inventoryAdjustmentMapping,
+  item_requisition: itemRequisitionMapping,
+  item_transfer: itemTransferMapping,
 };
 
 /** Nilai env `IMPORT_PARALLEL_MODULES` → himpunan modul, atau `"all"`; kosong/tidak diisi → daftar default (modul terbukti). */
