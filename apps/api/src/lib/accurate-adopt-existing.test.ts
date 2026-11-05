@@ -82,3 +82,63 @@ describe("isDuplicateNumberError", () => {
     expect(isDuplicateNumberError(new Error("Sudah ada data lain dengan X"))).toBe(false); // bukan AccurateApiError
   });
 });
+
+// § Fase 214 — faktur Pembelian client (PI-2026-0001) yang sudah tersimpan di Accurate: 1 barang + 1 Beban, file 2 baris (baris 2 hanya-Beban).
+describe("matchExistingPurchaseInvoice — faktur Pembelian yang sudah ada dikenali", async () => {
+  const { matchExistingPurchaseInvoice } = await import("./accurate-adopt-existing");
+  const { EXPENSE_ONLY_ROW_MARKER } = await import("./import-mapping/purchase-invoice.mapping");
+  const existing = { id: 7001, number: "PI-2026-0001", vendorNo: "VJKT-0003", detailItem: [saved(11, "9900012", 3, 500000)], detailExpense: [{ accountNo: "114.100-01", amount: 40000 }] };
+  const args = {
+    rowIds: ["r0", "r1"],
+    expenseOnly: [false, true],
+    number: "PI-2026-0001",
+    vendorNo: "VJKT-0003",
+    sentItems: [sentLine("9900012", 3, 500000)],
+    sentExpenses: [{ accountNo: "114.100-01", amount: 40000 }],
+    existing,
+  };
+
+  test("data client: baris barang dapat id baris Accurate, baris hanya-Beban dapat penanda; keterangan memuat nomor & jumlah baris", () => {
+    const r = matchExistingPurchaseInvoice(args);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.invoiceId).toBe(7001);
+    expect(r.rows).toEqual([{ rowId: "r0", detailItemId: 11 }, { rowId: "r1", detailItemId: EXPENSE_ONLY_ROW_MARKER }]);
+    expect(r.note.startsWith(ADOPTED_NOTE_PREFIX)).toBe(true);
+    expect(r.note).toContain("PI-2026-0001");
+  });
+
+  test("Beban di file berbeda dari Accurate (60.000 vs 40.000) → TIDAK ditautkan, pesan menyebut jumlah Beban", () => {
+    const r = matchExistingPurchaseInvoice({ ...args, sentExpenses: [{ accountNo: "114.100-01", amount: 60000 }] });
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.message).toContain("jumlah Beban");
+  });
+
+  test("jumlah baris Beban berbeda (file memuat 2 Beban, Accurate 1) → tidak ditautkan", () => {
+    const r = matchExistingPurchaseInvoice({ ...args, rowIds: ["r0", "r1", "r2"], expenseOnly: [false, true, true], sentExpenses: [{ accountNo: "114.100-01", amount: 40000 }, { accountNo: "114.100-01", amount: 60000 }] });
+    expect(r.ok).toBe(false);
+  });
+
+  test("Vendor berbeda / kuantitas berbeda / barang berbeda → tidak ditautkan", () => {
+    expect(matchExistingPurchaseInvoice({ ...args, vendorNo: "LAIN" }).ok).toBe(false);
+    expect(matchExistingPurchaseInvoice({ ...args, sentItems: [sentLine("9900012", 4, 500000)] }).ok).toBe(false);
+    expect(matchExistingPurchaseInvoice({ ...args, sentItems: [sentLine("X", 3, 500000)] }).ok).toBe(false);
+  });
+
+  test("Accurate punya baris barang lebih banyak dari file → tidak ditautkan (tidak ada baris otomatis yang dikenal di Faktur Pembelian)", () => {
+    const r = matchExistingPurchaseInvoice({ ...args, existing: { ...existing, detailItem: [saved(11, "9900012", 3, 500000), saved(12, "Z", 1, 1)] } });
+    expect(r.ok).toBe(false);
+  });
+
+  test("faktur hanya-Beban (tanpa barang): semua baris dapat penanda", () => {
+    const r = matchExistingPurchaseInvoice({ ...args, expenseOnly: [true, true], sentItems: [], sentExpenses: [{ accountNo: "114.100-01", amount: 40000 }, { accountNo: "114.100-01", amount: 5000 }], existing: { ...existing, detailItem: [], detailExpense: [{ accountNo: "114.100-01", amount: 40000 }, { accountNo: "114.100-01", amount: 5000 }] } });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.rows.map((x) => x.detailItemId)).toEqual([EXPENSE_ONLY_ROW_MARKER, EXPENSE_ONLY_ROW_MARKER]);
+  });
+
+  test("nomor berbeda → tidak ditautkan", () => {
+    expect(matchExistingPurchaseInvoice({ ...args, number: "PI-LAIN" }).ok).toBe(false);
+  });
+});

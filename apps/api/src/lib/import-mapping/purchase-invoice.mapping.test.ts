@@ -609,3 +609,114 @@ describe("Beban - Proyek (detailExpense.projectNo) — Fase 80", () => {
     expect(purchaseInvoiceMapping.defaultColumnMap["Beban - Proyek"]).toBe("expenseProjectNo");
   });
 });
+
+// § Fase 214 — pola nyata client (PI-2026-0001): baris 1 barang, baris 2 HANYA Beban (tanpa Item No). Dulu baris 2 ikut `detailItem[]` sebagai `{}`, Accurate
+// membuangnya, jumlah detail hasil simpan < jumlah baris, dan SELURUH grup ditandai gagal padahal faktur sudah tersimpan.
+describe("Fase 214 — baris hanya-Beban tidak ikut detailItem[]", async () => {
+  const { planPurchaseInvoiceRows, EXPENSE_ONLY_ROW_MARKER } = await import("./purchase-invoice.mapping");
+  const mapping: Record<string, string> = {
+    "Trans No": "number",
+    "Bill No": "billNumber",
+    "Vendor No": "vendorNo",
+    Tanggal: "transDate",
+    "Item No": "itemNo",
+    "Item Qty": "quantity",
+    "Unit Price": "unitPrice",
+    "Akun Beban": "expenseAccountNo",
+    "Jumlah Beban": "expenseAmount",
+  };
+  const itemRow = { "Trans No": "PI-2026-0001", "Bill No": "INV-VENDOR-001", "Vendor No": "VJKT-0003", Tanggal: 46331, "Item No": "9900012", "Item Qty": 3, "Unit Price": 500000 };
+  const expenseRow = { "Trans No": "PI-2026-0001", "Bill No": "INV-VENDOR-001", "Vendor No": "VJKT-0003", Tanggal: 46331, "Akun Beban": "114.100-01", "Jumlah Beban": 40000 };
+
+  test("barang + Beban terpisah: detailItem hanya 1 entri, detailExpense 1 entri", () => {
+    const payload = buildPurchaseInvoicePayload([itemRow, expenseRow], mapping);
+    expect(payload.detailItem as unknown[]).toHaveLength(1);
+    expect((payload.detailItem as { itemNo: unknown }[])[0]!.itemNo).toBe("9900012");
+    expect(payload.detailExpense as unknown[]).toHaveLength(1);
+  });
+
+  test("rencana baris: baris 2 hanya-Beban, tidak dikirim di detailItem & tidak dipetakan dari hasil simpan", () => {
+    const plan = planPurchaseInvoiceRows([itemRow, expenseRow], mapping);
+    expect(plan.expenseOnly).toEqual([false, true]);
+    expect(plan.sentInDetailItem).toEqual([true, false]);
+    expect(plan.mappedFromResult).toEqual([true, false]);
+    expect(plan.allExpense).toBe(false);
+  });
+
+  test("baris yang berisi barang SEKALIGUS Beban tetap baris barang (bukan hanya-Beban)", () => {
+    const both = { ...itemRow, "Akun Beban": "114.100-01", "Jumlah Beban": 60000 };
+    const plan = planPurchaseInvoiceRows([both, expenseRow], mapping);
+    expect(plan.expenseOnly).toEqual([false, true]);
+    const payload = buildPurchaseInvoicePayload([both, expenseRow], mapping);
+    expect(payload.detailItem as unknown[]).toHaveLength(1);
+    expect(payload.detailExpense as unknown[]).toHaveLength(2);
+  });
+
+  test("baris kosong tanpa barang & tanpa Beban TIDAK dianggap hanya-Beban (perilaku lama dipertahankan)", () => {
+    const blank = { "Trans No": "PI-2026-0001", "Bill No": "INV-VENDOR-001", "Vendor No": "VJKT-0003" };
+    const plan = planPurchaseInvoiceRows([itemRow, blank], mapping);
+    expect(plan.expenseOnly).toEqual([false, false]);
+    expect((buildPurchaseInvoicePayload([itemRow, blank], mapping).detailItem as unknown[]).length).toBe(2);
+  });
+
+  test("grup SEMUA baris hanya-Beban: payload lama dipertahankan (belum teruji ke Accurate), tidak ada baris yang dipetakan dari hasil simpan", () => {
+    const plan = planPurchaseInvoiceRows([expenseRow, { ...expenseRow, "Jumlah Beban": 5000 }], mapping);
+    expect(plan.allExpense).toBe(true);
+    expect(plan.sentInDetailItem).toEqual([true, true]);
+    expect(plan.mappedFromResult).toEqual([false, false]);
+  });
+
+  test("penanda baris hanya-Beban bukan angka (jangan salah dibaca sebagai id Accurate)", () => {
+    expect(Number.isNaN(Number(EXPENSE_ONLY_ROW_MARKER))).toBe(true);
+  });
+});
+
+// § Fase 214 — "Edit Baris": baris hanya-Beban tidak diwajibkan mengisi kolom barang (dulu MISSING_REQUIRED_VALUES untuk itemNo/unitPrice/quantity/dst).
+describe("Fase 214 — validasi nilai wajib saat Edit Baris", async () => {
+  const { missingRequiredValues, isRequiredFieldExemptForRow } = await import("./purchase-invoice.mapping");
+  const mapping: Record<string, string> = {
+    "Trans No": "number",
+    "Vendor No": "vendorNo",
+    Tanggal: "transDate",
+    "Item No": "itemNo",
+    "Item Qty": "quantity",
+    "Unit Price": "unitPrice",
+    "Item Unit Name": "itemUnitName",
+    "Item Warehouse": "warehouseName",
+    "Akun Beban": "expenseAccountNo",
+    "Jumlah Beban": "expenseAmount",
+  };
+  const header = { "Trans No": "PI-2026-0001", "Vendor No": "VJKT-0003", Tanggal: "05/11/2026" };
+  const expenseRow = { ...header, "Item No": "", "Item Qty": "", "Unit Price": "", "Item Unit Name": "", "Item Warehouse": "", "Akun Beban": "114.100-01", "Jumlah Beban": "40000" };
+
+  test("baris hanya-Beban (data client) lolos: tidak ada field wajib yang dianggap kosong", () => {
+    expect(missingRequiredValues(expenseRow, mapping)).toEqual([]);
+  });
+
+  test("baris hanya-Beban tetap WAJIB header: tanpa Trans No / Vendor / Tanggal ditolak", () => {
+    expect(missingRequiredValues({ ...expenseRow, "Trans No": "" }, mapping)).toEqual(["number"]);
+    expect(missingRequiredValues({ ...expenseRow, "Vendor No": "", Tanggal: "" }, mapping).sort()).toEqual(["transDate", "vendorNo"]);
+  });
+
+  test("baris barang tanpa Beban tetap memakai aturan lama: semua kolom wajib barang harus terisi", () => {
+    const itemRow = { ...header, "Item No": "9900012", "Item Qty": "3", "Unit Price": "500000", "Item Unit Name": "", "Item Warehouse": "GD. JAKARTA", "Akun Beban": "", "Jumlah Beban": "" };
+    expect(missingRequiredValues(itemRow, mapping)).toEqual(["itemUnitName"]);
+  });
+
+  test("baris dengan Beban TIDAK lengkap (akun saja) bukan hanya-Beban → kolom barang tetap wajib", () => {
+    const half = { ...expenseRow, "Jumlah Beban": "" };
+    expect(missingRequiredValues(half, mapping)).toEqual(["itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"]);
+  });
+
+  test("baris campur (ada barang + Beban) bukan hanya-Beban → aturan penuh", () => {
+    const mixed = { ...expenseRow, "Item No": "9900012" };
+    expect(missingRequiredValues(mixed, mapping)).toEqual(["unitPrice", "quantity", "itemUnitName", "warehouseName"]);
+  });
+
+  test("pembebasan hanya untuk kolom barang, tidak untuk header", () => {
+    expect(isRequiredFieldExemptForRow(expenseRow, mapping, "itemNo")).toBe(true);
+    expect(isRequiredFieldExemptForRow(expenseRow, mapping, "number")).toBe(false);
+    expect(isRequiredFieldExemptForRow(expenseRow, mapping, "vendorNo")).toBe(false);
+    expect(isRequiredFieldExemptForRow({ ...expenseRow, "Item No": "X" }, mapping, "unitPrice")).toBe(false);
+  });
+});

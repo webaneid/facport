@@ -14,6 +14,7 @@ import {
   purchaseInvoiceMapping,
   vendorAutoCreateMapping,
   itemAutoCreateMapping,
+  missingRequiredValues,
   type PurchaseInvoiceField,
 } from "../lib/import-mapping/purchase-invoice.mapping";
 import { purchaseInvoiceTemplateGuide } from "../lib/import-mapping/template-guide";
@@ -410,11 +411,8 @@ export const purchaseInvoiceImportRoute = new Elysia()
       // adalah ISI-nya tidak kosong) — feedback cepat sebelum retry
       // beneran manggil Accurate.
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
-      const missing = purchaseInvoiceMapping.requiredFields.filter((field) => {
-        const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-        const value = excelColumn ? body.rawData[excelColumn] : undefined;
-        return value === undefined || value === null || String(value).trim() === "";
-      });
+      // § Fase 214 — baris hanya-Beban (tanpa barang) tidak diwajibkan mengisi kolom barang.
+      const missing = missingRequiredValues(body.rawData, columnMapping);
       if (missing.length > 0) {
         set.status = 400;
         return { code: "MISSING_REQUIRED_VALUES", fields: missing };
@@ -471,11 +469,7 @@ export const purchaseInvoiceImportRoute = new Elysia()
           continue;
         }
 
-        const missing = purchaseInvoiceMapping.requiredFields.filter((field) => {
-          const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
-          const value = excelColumn ? item.rawData[excelColumn] : undefined;
-          return value === undefined || value === null || String(value).trim() === "";
-        });
+        const missing = missingRequiredValues(item.rawData, columnMapping);
         if (missing.length > 0) {
           errors.push({ rowId: item.id, rowNumber: row.rowNumber, fields: missing });
           continue;

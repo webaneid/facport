@@ -473,7 +473,12 @@ export function buildPurchaseInvoicePayload(
     if (value !== undefined) payload[accuratePath] = value;
   }
 
-  payload.detailItem = rawRows.map((rawRow) => buildDetailItemFromRow(rawRow, columnMapping));
+  // § Fase 214 — baris yang HANYA berisi Beban (tanpa Item No) tidak boleh ikut `detailItem[]`: Accurate membuang entri kosong itu sehingga `save.do` berhasil
+  // tetapi jumlah `detailItem` hasil simpan < jumlah baris, dan Facport salah menandai SELURUH grup gagal padahal fakturnya sudah ada (client, PI-2026-0001).
+  // Beban tetap terkirim lewat `detailExpense[]` di bawah. Grup yang SEMUA barisnya hanya-Beban tetap memakai bentuk payload lama (perilaku Accurate untuk
+  // faktur tanpa barang belum teruji — jangan diubah diam-diam).
+  const plan = planPurchaseInvoiceRows(rawRows, columnMapping);
+  payload.detailItem = rawRows.filter((_, i) => plan.sentInDetailItem[i]).map((rawRow) => buildDetailItemFromRow(rawRow, columnMapping));
 
   // § Fase 75 — mirror Sales Invoice Fase 74: 1 baris BISA sumbang 1
   // entri `detailExpense` TERPISAH dari `detailItem`-nya, kalau kolom
@@ -483,6 +488,62 @@ export function buildPurchaseInvoicePayload(
   if (detailExpense.length > 0) payload.detailExpense = detailExpense;
 
   return payload;
+}
+
+/**
+ * § Fase 214 — penanda `accurateDetailItemId` untuk baris hanya-Beban: baris itu tidak punya `detailItem` di Accurate (bebannya ada di `detailExpense`), tetapi
+ * "Batal Import" menolak faktur bila ADA baris sukses tanpa id (aturan Fase 09 untuk baris lama sebelum tracking). Penanda ini menyatakan "baris ini SUDAH
+ * terlacak — memang tidak punya baris barang". Bukan id Accurate; jangan di-parse sebagai angka.
+ */
+export const EXPENSE_ONLY_ROW_MARKER = "expense-only";
+
+export type PurchaseInvoiceRowPlan = {
+  /** Baris tanpa isi `detailItem` sama sekali tetapi punya Beban (`accountNo` + `expenseAmount`). */
+  expenseOnly: boolean[];
+  /** Baris yang entrinya ikut `payload.detailItem` (urutan = urutan baris). */
+  sentInDetailItem: boolean[];
+  /** Baris yang id barisnya DIPETAKAN dari `result.detailItem` (urutan sama). Kosong untuk grup hanya-Beban (tidak ada baris barang untuk dipetakan). */
+  mappedFromResult: boolean[];
+  allExpense: boolean;
+};
+
+/** Baris hanya-Beban: tanpa isi `detailItem` sama sekali, tetapi `accountNo` + `expenseAmount` terisi. */
+export function isExpenseOnlyRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): boolean {
+  return Object.keys(buildDetailItemFromRow(rawRow, columnMapping)).length === 0 && buildDetailExpenseFromRow(rawRow, columnMapping) !== null;
+}
+
+/** Field header yang tetap wajib berisi pada baris hanya-Beban (kolom barang tidak diwajibkan karena baris ini memang tidak punya barang). */
+const EXPENSE_ONLY_REQUIRED_FIELDS: readonly PurchaseInvoiceField[] = ["vendorNo", "transDate", "number"];
+
+/**
+ * § Fase 214 — apakah field wajib `internalField` DIBEBASKAN untuk baris ini. Baris hanya-Beban (tanpa barang) tidak diwajibkan mengisi kolom barang; header
+ * (`vendorNo`/`transDate`/`number`) tetap wajib. Dipakai server (`missingRequiredValues`) DAN UI (dialog edit + grid edit massal, lewat `apps/web/lib/`)
+ * supaya aturannya satu sumber — pola sama `isRequiredFieldExemptForRow` Sales Invoice (Fase 198).
+ */
+export function isRequiredFieldExemptForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, internalField: string): boolean {
+  if ((EXPENSE_ONLY_REQUIRED_FIELDS as readonly string[]).includes(internalField)) return false;
+  return isExpenseOnlyRow(rawRow, columnMapping);
+}
+
+/** Field wajib yang NILAINYA kosong pada 1 baris (dipakai "Edit Baris" sebelum Retry), setelah pengecualian baris hanya-Beban. */
+export function missingRequiredValues(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): PurchaseInvoiceField[] {
+  return purchaseInvoiceMapping.requiredFields.filter((field) => {
+    if (isRequiredFieldExemptForRow(rawRow, columnMapping, field)) return false;
+    const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+    const value = excelColumn ? rawRow[excelColumn] : undefined;
+    return value === undefined || value === null || String(value).trim() === "";
+  });
+}
+
+export function planPurchaseInvoiceRows(rawRows: Record<string, unknown>[], columnMapping: Record<string, string>): PurchaseInvoiceRowPlan {
+  const expenseOnly = rawRows.map((rawRow) => isExpenseOnlyRow(rawRow, columnMapping));
+  const allExpense = rawRows.length > 0 && expenseOnly.every(Boolean);
+  return {
+    expenseOnly,
+    sentInDetailItem: expenseOnly.map((only) => (allExpense ? true : !only)),
+    mappedFromResult: expenseOnly.map((only) => (allExpense ? false : !only)),
+    allExpense,
+  };
 }
 
 // § Fase 08, ADR-0012 — diextract dari `.map()` di atas SUPAYA dipakai
