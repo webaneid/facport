@@ -1,3 +1,9 @@
+## 2.48.0 (2026-11-05)
+
+* chore: merge develop into main (Fase 214 Purchase Invoice baris hanya-Beban) ([39b6a19](https://github.com/webaneid/facport/commit/39b6a19))
+* docs: Fase 214 security review lolos ([7b92ad1](https://github.com/webaneid/facport/commit/7b92ad1))
+* feat(api web): Purchase Invoice - baris hanya-Beban tidak lagi menggagalkan seluruh grup, Retry meng ([f2ac916](https://github.com/webaneid/facport/commit/f2ac916))
+
 ## 2.47.0 (2026-10-28)
 
 * chore: merge develop into main (Fase 212 Delivery Order Atribut Tambahan, Fase 213 Work Order BOM op ([a96beb6](https://github.com/webaneid/facport/commit/a96beb6))
