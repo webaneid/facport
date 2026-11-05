@@ -187,8 +187,24 @@ Semua batch: 100% baris sukses, tanpa galat.
 **Batas uji:** Accurate PALSU (respons kecil; respons asli `save.do` jauh lebih besar → parse JSON sedikit lebih berat, perkiraan tetap kecil dibanding 450 ms), satu mesin dev, baris dummy (isi seragam), pembatas 8 req/dtk tidak ditegakkan oleh stub (ditegakkan oleh pembatas Facport). Produksi default: `IMPORT_WORKER_CONCURRENCY=2` + jalur besar 2 → paling banyak 4 job serentak, jauh dari skenario 8 akun × 1.200 baris.
 **Implikasi:** (1) `IMPORT_GROUP_PARALLELISM` 3–4 aman untuk CPU dan memori; (2) jangan menaikkan `IMPORT_WORKER_CONCURRENCY` di atas default tanpa menaikkan `mem_limit` worker ATAU mengurangi memori per baris; (3) peluang optimasi: jangan memuat seluruh baris batch ke memori sekaligus (proses per potongan) dan/atau buang kolom yang tidak dipakai dari `rawData` di memori — membuka ruang untuk lebih banyak akun serentak tanpa menambah RAM.
 
-## 16. Daftar percobaan berikutnya (status)
-- [x] CPU/memori worker, banyak akun serentak (§ 15).
+## 16. Mengurangi memori per baris (Fase 215, 2026-11-06)
+**Akar (dari kode `workers/index.ts` handler import):** (1) `db.select().from(importBatchRows)` memuat SEMUA baris batch sekaligus dengan SELURUH kolom Excel (67 kolom pada file lebar); (2) tiap baris disalin DUA kali (`cleanRawData`, lalu `normalizeKeyColumns`); (3) di akhir job seluruh baris dimuat ULANG lengkap dengan data mentah hanya untuk membaca `id` dan `status`. Seluruh kode impor membaca baris hanya lewat `columnMapping` (diverifikasi: tidak ada akses literal ke kolom lain; semua akses dinamis memakai kolom hasil `columnMapping`; satu-satunya iterasi semua kolom adalah `cleanRawData` itu sendiri).
+**Perubahan (hasil pada kolom yang dipetakan IDENTIK, dokumen yang dikirim tidak berubah):** `makeRowPreparer` (`input-hygiene.ts`): bersihkan + normalkan kolom kunci, HANYA untuk kolom yang dipetakan, satu salinan; pemetaan kosong → perilaku lama. `loadProcessableRows` (`import-rows-loader.ts`): muat per halaman (keyset `row_number`, 50 baris/halaman) dan siapkan tiap baris langsung. `finalRows` hanya memuat `id` & `status`. Tes: 10 tes baru (kesetaraan dengan pipeline lama, kolom dibuang, nama kolom berkarakter tak terlihat, pemetaan kosong, paging lintas ukuran halaman 1/3/7/500).
+**Hasil (worker asli + Accurate palsu, 8 akun × 1.200 baris lebar 67 kolom = 9.600 baris, paralel 4):**
+| Versi | RSS puncak | Di atas dasar (±158 MB) | Faktur/dtk total |
+|---|---|---|---|
+| sebelum (muat semua, 2 salinan, muat ulang penuh) | **383 MB** | +225 MB | 58,3 |
+| sesudah, halaman 500 | 285 MB | +127 MB | 58,4 |
+| sesudah, halaman 100 | 263 MB | +105 MB | 58,3 |
+| sesudah, halaman **50** (dipakai) | **223 MB** | **+65 MB** | 56,3* |
+| sesudah, halaman 25 | 211 MB | +53 MB | 55,6* |
+| sesudah, halaman 10 | 204 MB | +46 MB | 55,3* |
+(paralel 6: 409 MB → 281 MB dengan halaman 500). *Selisih kecepatan ±2–4% ada dalam derau pengukuran (waktu job 54,3–56,3 s); tidak ada tren menurut ukuran halaman di bawah 100.
+**Temuan 14:** puncak memori turun 383 → 223 MB (−42% total, **−71% di atas dasar**, +225 → +65 MB) tanpa mengubah kecepatan; heap JavaScript puncak hanya 49 MB — sisanya adalah lonjakan sesaat memori native (buffer driver DB) saat banyak job memuat baris bersamaan, sehingga halaman kecil yang menurunkannya. Titik belok di sekitar 25–50 baris/halaman (di bawahnya hasil menipis, kueri bertambah dan lonjakan CPU sesaat naik: 127% pada 10 baris). Regresi ke Accurate ASLI (100 faktur × 3 baris, paralel 4, cache hidup): 300/300 sukses, 16,9 s — identik dengan sebelum perubahan.
+**Sisa/diketahui:** ada satu tempat lain dengan pola lama (`workers/index.ts` ±baris 1427, jalur modul lain) — belum diubah; modul selain Sales Invoice diverifikasi secara statis (akses lewat `columnMapping`) dan akan teruji nyata pada uji modul lain.
+
+## 17. Daftar percobaan berikutnya (status)
+- [x] Kurangi memori per baris (§ 16): 383 → 223 MB pada 9.600 baris lebar; paralel/akun nyaris tak menambah memori.
 - [x] Uji ujung-ke-ujung via worker dengan paralel 1/2/3/4/6 + cache hidup/mati (§ 14).
 - [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
 - [x] Biaya pencarian (§ 9), pembuatan data master & balapan (§ 10), bulk & galat parsial (§ 3, 5), biaya per baris (§ 6), dokumen besar paralel (§ 7).
@@ -197,7 +213,6 @@ Semua batch: 100% baris sukses, tanpa galat.
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
-- [ ] Kurangi memori per baris (proses per potongan / buang kolom tak terpakai) lalu ukur ulang batas jumlah akun serentak pada `mem_limit` 384m.
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
 - [ ] Modul lain via worker (Purchase Invoice + Beban, Sales Receipt, Purchase Payment) dan uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).

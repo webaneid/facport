@@ -98,3 +98,27 @@ export function normalizeKeyColumns(rawData: Record<string, unknown>, columnMapp
   }
   return out;
 }
+
+/**
+ * § Fase 215 (architecture-import-speed-lab.md § 15) — pembuat fungsi penyiap baris untuk worker: HASILNYA SAMA dengan `normalizeKeyColumns(cleanRawData(raw), mapping)` untuk
+ * semua kolom yang DIPETAKAN, tetapi kolom yang tidak dipetakan DIBUANG. Seluruh kode impor membaca baris hanya lewat `columnMapping` (kolom Excel → field), tidak pernah kolom
+ * lain, sehingga tidak ada perubahan perilaku — tetapi memori per baris turun drastis pada file lebar (67 kolom → hanya yang dipakai) dan disalin satu kali, bukan dua kali.
+ * `columnMapping` kosong → perilaku lama persis (semua kolom dipertahankan).
+ */
+export function makeRowPreparer(columnMapping: Record<string, string>): (rawData: Record<string, unknown>) => Record<string, unknown> {
+  const mappedColumns = new Set(Object.keys(columnMapping));
+  if (mappedColumns.size === 0) return (rawData) => normalizeKeyColumns(cleanRawData(rawData), columnMapping);
+  const keyColumns = Object.entries(columnMapping).filter(([, field]) => isKeyField(field)).map(([column]) => column);
+  return (rawData) => {
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(rawData)) {
+      const cleanKey = cleanCell(key);
+      if (mappedColumns.has(cleanKey)) out[cleanKey] = cleanCell(value);
+    }
+    for (const column of keyColumns) {
+      const value = out[column];
+      if (typeof value === "string") out[column] = normalizeKeyValue(value);
+    }
+    return out;
+  };
+}

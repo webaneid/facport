@@ -1,4 +1,4 @@
-# Fase 215 — Cache pencarian data master per sesi Accurate (kecepatan import)
+# Fase 215 — Kecepatan import: cache pencarian data master + memori per baris
 
 **Status:** In Progress — kode & unit test selesai, terukur ke Accurate asli (DB uji "facport") 2026-11-06; belum dirilis
 **Mulai:** 2026-11-06
@@ -13,6 +13,7 @@ Keluhan pengguna: Facport baru terasa lebih lambat. Laboratorium kecepatan (`doc
 - [x] Sakelar `ACCURATE_LOOKUP_CACHE` (default aktif; `0`/`off`/`false` = perilaku lama) di `lib/env.ts` + `.env.production.example`.
 - [x] 10 unit test (`accurate-lookup-cache.test.ts`).
 - [x] Ukur ke Accurate asli: berurutan 1,17 → 1,75 faktur/dtk; paralel 8 1,59 → 6,94; permintaan/faktur 5,0 → ±1,1 (lab § 13).
+- [x] Memori per baris: muat per halaman (50 baris), hanya kolom yang dipetakan, satu salinan, `finalRows` hanya id+status — puncak RSS 8 akun × 9.600 baris lebar 383 → 223 MB, kecepatan sama (lab § 16). Regresi Accurate asli 300/300 sukses.
 - [ ] Cache untuk pencarian berulang lain (klasifikasi data, PIC Work Order, dokumen sumber) — fase lanjutan.
 - [x] Uji ujung-ke-ujung lewat worker asli (lab § 14): 100 faktur × 3 baris, 89 s → 60 s (cache) → 31,7 s (+paralel 2) → 16,9 s (+paralel 4) → 14,7 s (+paralel 6); semua sukses, tanpa Retry.
 - [x] CPU/memori worker banyak akun serentak (lab § 15): CPU bukan penghambat; memori batas nyata (9.600 baris lebar serentak = 383–409 MB > mem_limit 384m); paralel per akun nyaris tidak menambah memori.

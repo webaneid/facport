@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { cleanCell, cleanRawData, hygieneHint, isKeyField, normalizeKeyColumns, normalizeKeyValue, oddCharsHint, visibleChars } from "./input-hygiene";
+import { cleanCell, cleanRawData, hygieneHint, isKeyField, normalizeKeyColumns, normalizeKeyValue, oddCharsHint, visibleChars, makeRowPreparer } from "./input-hygiene";
 
 describe("cleanCell", () => {
   test("spasi di awal/akhir dipangkas", () => {
@@ -104,5 +104,58 @@ describe("normalizeKeyValue / normalizeKeyColumns (lapis 2)", () => {
     const raw = { "Cust No": "C  001" };
     normalizeKeyColumns(raw, { "Cust No": "customerNo" });
     expect(raw["Cust No"]).toBe("C  001");
+  });
+});
+
+describe("makeRowPreparer (Fase 215) - hasil identik dengan pipeline lama untuk kolom yang dipetakan, kolom lain dibuang", () => {
+  const mapping = { "Customer No": "customerNo", "Item No": "itemNo", Quantity: "quantity", "Unit Price": "unitPrice", "Catatan Baris": "itemNotes" };
+  const raw = {
+    "Customer No": "CUST\u00a0IN  ",
+    "Item No": "BRG\u200b-1 ",
+    Quantity: 3,
+    "Unit Price": " 1000 ",
+    "Catatan Baris": " catatan\u00a0bebas ",
+    "Kolom Tak Dipetakan 1": "isi panjang yang tidak dipakai",
+    "Kolom Tak Dipetakan 2": 123,
+  };
+
+  test("setiap kolom yang dipetakan SAMA PERSIS dengan normalizeKeyColumns(cleanRawData(...))", () => {
+    const legacy = normalizeKeyColumns(cleanRawData(raw), mapping);
+    const prepared = makeRowPreparer(mapping)(raw);
+    for (const column of Object.keys(mapping)) expect(prepared[column]).toEqual(legacy[column]);
+    expect(prepared["Customer No"]).toBe("CUST IN"); // kolom kunci dinormalkan
+    expect(prepared["Item No"]).toBe("BRG-1");
+    expect(prepared["Catatan Baris"]).toBe("catatan bebas"); // bukan kolom kunci: dibersihkan saja, tidak dinormalkan ke satu spasi
+    expect(prepared.Quantity).toBe(3);
+  });
+
+  test("kolom yang tidak dipetakan dibuang", () => {
+    const prepared = makeRowPreparer(mapping)(raw);
+    expect(Object.keys(prepared).sort()).toEqual(Object.keys(mapping).sort());
+    expect("Kolom Tak Dipetakan 1" in prepared).toBe(false);
+  });
+
+  test("nama kolom dengan karakter tak terlihat tetap cocok dengan pemetaan setelah dibersihkan", () => {
+    const prepared = makeRowPreparer(mapping)({ "Item\u00a0No ": "X-1", "Customer No": "C" } as Record<string, unknown>);
+    expect(prepared["Item No"]).toBe("X-1");
+  });
+
+  test("kolom dipetakan yang tidak ada di baris tidak muncul (sama dengan pipeline lama)", () => {
+    const prepared = makeRowPreparer(mapping)({ "Customer No": "C-1" });
+    expect(prepared).toEqual({ "Customer No": "C-1" });
+  });
+
+  test("pemetaan KOSONG → perilaku lama persis (semua kolom dipertahankan)", () => {
+    const prepared = makeRowPreparer({})(raw);
+    expect(prepared).toEqual(normalizeKeyColumns(cleanRawData(raw), {}));
+    expect(prepared["Kolom Tak Dipetakan 1"]).toBe("isi panjang yang tidak dipakai");
+  });
+
+  test("memori: baris 67 kolom dengan 7 dipetakan → hasil hanya 7 kunci", () => {
+    const wide: Record<string, unknown> = {};
+    const m: Record<string, string> = {};
+    for (let i = 0; i < 67; i++) wide[`Kolom ${i}`] = `isi-${i}`;
+    for (let i = 0; i < 7; i++) m[`Kolom ${i}`] = `field${i}`;
+    expect(Object.keys(makeRowPreparer(m)(wide)).length).toBe(7);
   });
 });
