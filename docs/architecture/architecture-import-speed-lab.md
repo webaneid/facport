@@ -158,7 +158,37 @@ Metode: file Excel 100 faktur × 3 baris (300 baris; 6 pelanggan bergilir, 3 bar
 **Cara menembus langit-langit berikutnya (belum dikerjakan):** kurangi permintaan per faktur lebih jauh (sisa ±1,1 = 1 save + pencarian pelanggan baru), atau kirim banyak faktur per permintaan lewat `bulk-save.do` (§ 3: 1 permintaan membawa N faktur → langit-langit permintaan tidak lagi mengikat; hasil per item berurutan; kompleksitas pemulihan/adopsi per faktur perlu dirancang), atau (keputusan bisnis, § 12) memperlonggar batas.
 **Batas uji:** barang jasa/NON_INVENTORY, 3 baris/faktur, satu koneksi/DB trial, mesin dev (latensi VPS bisa beda), `IMPORT_WORKER_CONCURRENCY` default (2): beberapa pelanggan serentak di produksi berbagi CPU/memori worker (384 MB) — memori & CPU di paralel tinggi BELUM diukur.
 
-## 15. Daftar percobaan berikutnya (status)
+## 15. CPU & MEMORI worker, banyak akun serentak (server Accurate PALSU lokal, 2026-11-06)
+**Pertanyaan:** satu akun sudah bisa dimaksimalkan (§ 14: paralel per akun naik sampai ≈ 7 faktur/dtk, batas resmi 8 req/dtk berlaku PER TOKEN = per akun). Berapa banyak akun yang dapat berjalan serentak sebelum CPU/memori satu proses worker menjadi penghambat?
+**Metode:** server Accurate palsu (`Bun.serve`, baca 60 ms, tulis 450 ms + 20 ms/baris, mencatat in-flight per token) + N "akun" palsu di DB dev (koneksi/Data Usaha/langganan berawalan `ZZ-STUB`, token palsu) + worker ASLI dengan `bun --preload` (mengarahkan `open-db.do` ke stub, MEMBLOKIR semua panggilan lain ke `accurate.id`, mencatat CPU/RSS/lag event-loop dari DALAM proses tiap 500 ms). Statistik hanya jendela aktif (8 dtk pertama = start worker dikecualikan). Tiap akun = 1 batch Sales Invoice; `IMPORT_WORKER_CONCURRENCY` = jumlah akun.
+**A. Baris 7 kolom, 100 faktur × 3 baris (300 baris) per akun:**
+| Akun | Paralel/akun | Faktur/dtk per akun | Total faktur/dtk | CPU rata/puncak (1 core) | RSS puncak | Lag loop maks | In-flight maks per token |
+|---|---|---|---|---|---|---|---|
+| 1 | 1 | 1,88 | 1,88 | 8% / 26% | 169 MB | 7 ms | 1 |
+| 1 | 4 | 6,62 | 6,62 | 13% / 30% | 173 MB | 5 ms | 4 |
+| 1 | 6 | 7,09 | 7,09 | 15% / 28% | 174 MB | 6 ms | 6 |
+| 2 | 4 | 6,61 | 13,2 | 16% / 34% | 186 MB | 6 ms | 4 |
+| 4 | 4 | 6,59 | 26,4 | 20% / 39% | 194 MB | 9 ms | 4 |
+| 8 | 4 | 6,56 | 52,5 | 23% / 36% | 204 MB | 7 ms | 4 |
+| 8 | 6 | 7,03 | 56,2 | 25% / 42% | 213 MB | 4 ms | 6 |
+**B. Baris LEBAR (67 kolom, meniru file klien), 400 faktur × 3 baris (1.200 baris) per akun:**
+| Akun | Paralel/akun | Faktur/dtk per akun | Total faktur/dtk | Baris di memori | CPU rata/puncak | RSS puncak | Lag loop maks |
+|---|---|---|---|---|---|---|---|
+| 1 | 4 | 7,36 | 7,36 | 1.200 | 12% / 34% | **205 MB** | 6 ms |
+| 8 | 4 | 7,29 | 58,3 | 9.600 | 31% / 91% | **383 MB** | 78 ms |
+| 8 | 6 | 7,66 | 61,3 | 9.600 | 27% / 94% | **409 MB** | 34 ms |
+Semua batch: 100% baris sukses, tanpa galat.
+**Temuan 13:**
+(a) **Skala banyak akun hampir sempurna:** tiap akun mempertahankan kecepatannya (≈ 6,6–7,7 faktur/dtk) walau 8 akun serentak; total naik lurus (7 → 58 faktur/dtk). Batas 8 req/dtk adalah PER AKUN — akun berbeda tidak saling mengurangi.
+(b) **CPU BUKAN penghambat:** rata-rata ≤ 31% dari satu core; lonjakan 91–94% hanya singkat (saat memuat/menormalkan ribuan baris), lag event-loop ≤ 78 ms.
+(c) **MEMORI adalah batas nyata.** RSS dasar ±158 MB; tumbuh menurut JUMLAH BARIS yang sedang dimuat (job memuat seluruh baris batch ke memori) dan LEBAR baris: ±40 KB/baris lebar pada 1 akun, ±23 KB/baris pada 8 akun. 9.600 baris lebar serentak → **383–409 MB, MELEWATI `mem_limit: 384m` worker produksi** (di uji lokal tanpa batas; di Docker proses itu akan di-OOM-kill).
+(d) **Paralel per akun nyaris tidak menambah memori** (8 akun: paralel 4 → 6 = +26 MB) → menaikkan `IMPORT_GROUP_PARALLELISM` aman dari sisi memori. Yang menaikkan memori adalah banyak baris/akun serentak (`IMPORT_WORKER_CONCURRENCY`, jalur besar), bukan paralel.
+(e) Server palsu membuktikan in-flight per token tidak pernah melebihi paralel yang diatur (4/6) — jauh di bawah 8 paralel resmi.
+**Batas uji:** Accurate PALSU (respons kecil; respons asli `save.do` jauh lebih besar → parse JSON sedikit lebih berat, perkiraan tetap kecil dibanding 450 ms), satu mesin dev, baris dummy (isi seragam), pembatas 8 req/dtk tidak ditegakkan oleh stub (ditegakkan oleh pembatas Facport). Produksi default: `IMPORT_WORKER_CONCURRENCY=2` + jalur besar 2 → paling banyak 4 job serentak, jauh dari skenario 8 akun × 1.200 baris.
+**Implikasi:** (1) `IMPORT_GROUP_PARALLELISM` 3–4 aman untuk CPU dan memori; (2) jangan menaikkan `IMPORT_WORKER_CONCURRENCY` di atas default tanpa menaikkan `mem_limit` worker ATAU mengurangi memori per baris; (3) peluang optimasi: jangan memuat seluruh baris batch ke memori sekaligus (proses per potongan) dan/atau buang kolom yang tidak dipakai dari `rawData` di memori — membuka ruang untuk lebih banyak akun serentak tanpa menambah RAM.
+
+## 16. Daftar percobaan berikutnya (status)
+- [x] CPU/memori worker, banyak akun serentak (§ 15).
 - [x] Uji ujung-ke-ujung via worker dengan paralel 1/2/3/4/6 + cache hidup/mati (§ 14).
 - [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
 - [x] Biaya pencarian (§ 9), pembuatan data master & balapan (§ 10), bulk & galat parsial (§ 3, 5), biaya per baris (§ 6), dokumen besar paralel (§ 7).
@@ -167,6 +197,7 @@ Metode: file Excel 100 faktur × 3 baris (300 baris; 6 pelanggan bergilir, 3 bar
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
-- [ ] Ukur memori/CPU worker (384 MB) pada paralel 3–4 dan beberapa pelanggan serentak.
+- [ ] Kurangi memori per baris (proses per potongan / buang kolom tak terpakai) lalu ukur ulang batas jumlah akun serentak pada `mem_limit` 384m.
+- [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
 - [ ] Modul lain via worker (Purchase Invoice + Beban, Sales Receipt, Purchase Payment) dan uji `bulk-save.do` sebagai jalur kirim (menembus langit-langit 8 req/dtk).
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
