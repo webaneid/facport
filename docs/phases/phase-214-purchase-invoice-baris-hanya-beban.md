@@ -32,7 +32,7 @@ Akar masalah (terbukti dari `raw_data` client): template resmi memuat pola "bari
 ## Checklist Sebelum Ditutup (sesuai SOP)
 - [x] Type check nol error (`bun run typecheck`)
 - [x] `bun test src/lib src/workers`: 1528 lulus; `purchase-invoice-import.route.test.ts` 19 lulus; test mapping/adopsi 75 lulus (DB dev dibersihkan sesudahnya)
-- [ ] Security review dijalankan
+- [x] Security review dijalankan (2026-11-05): lolos, tidak ada temuan Critical/High/Medium. Tidak ada endpoint/skema/guard baru (route hanya mengganti blok validasi nilai wajib; `body`/`permission`/`moduleAccess`/ownership tidak berubah); tanpa raw SQL, secret, `console.*`, atau `any`; nomor faktur masuk `URLSearchParams` (ter-encode); log hanya memuat id; baca Accurate memakai sesi Data Usaha milik pengguna sendiri (tanpa data lintas pengguna); file mapping yang dipakai ulang web tidak punya import (tidak menyeret kode server ke bundel).
 - [ ] Verifikasi ke Accurate nyata (butir di Scope)
 - [ ] `docs/PROGRESS.md` diupdate saat Done
 
