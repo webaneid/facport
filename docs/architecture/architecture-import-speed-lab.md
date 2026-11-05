@@ -129,12 +129,26 @@ Perkiraan waktu per faktur (k = 3, angka § 6/§ 9): 1 pelanggan (±90 ms) + 3 b
 **Temuan 10:** batas ADA (429 nyata dengan pesan resmi "Jumlah request API melebihi toleransi…") tetapi penegakannya JAUH lebih longgar daripada "8 req/dtk": bacaan ringan 8–30× angka itu diterima ±99% dan latensi tidak naik. Galat muncul sporadis (bukan ambang tegas); pada paralel 16 mulai ada 503. Retry-backoff yang sudah ada (§ `accurate-rate-limiter.ts`, 4× sampai ±22 dtk) akan menyerap 429 sporadis.
 **⚠️ Batas uji & risiko (JANGAN dibaca sebagai izin melampaui batas resmi):** (a) hanya BACA ringan (65 ms); tulis jauh lebih berat dan bobotnya bagi Accurate belum tentu sama; (b) satu token uji, satu database trial, ±2,5 menit total; (c) angka resmi dari Accurate adalah 8 req/dtk & 8 paralel per token — melampauinya secara sengaja di produksi adalah KEPUTUSAN BISNIS/risiko (kebijakan API Accurate, kemungkinan pembatasan token) yang harus diputuskan user/FAC, bukan teknis semata; (d) pembatas Facport TIDAK diubah. Pengujian di atas dilakukan hanya pada token & database uji milik pengembang.
 
-## 13. Daftar percobaan berikutnya (status)
+## 13. Cache pencarian positif per sesi — HASIL NYATA (Fase 215; fungsi produksi `findOrCreateCustomer`/`findOrCreateItem` + `saveSalesInvoice`, DB facport; faktur = 1 pelanggan + 3 barang berbeda + save)
+| Skenario | Cache | Faktur/dtk | Permintaan/faktur |
+|---|---|---|---|
+| berurutan (20 faktur) | MATI | 1,17 | 5,00 |
+| berurutan | HIDUP | **1,75** (+50%) | **1,20** |
+| berurutan, ulangan | MATI / HIDUP | 1,19 / 1,60 | 5,00 / 1,20 |
+| paralel 4 (40 faktur) | MATI | 1,59 | 5,00 |
+| paralel 4 | HIDUP | **6,13** (3,9×) | 1,10 |
+| paralel 8 (48 faktur) | MATI | 1,59 | 5,00 |
+| paralel 8 | HIDUP | **6,94** (4,4×) | 1,08 |
+**Temuan 11:** (a) cache menurunkan permintaan per faktur 5,0 → ±1,1–1,2 dan mempercepat berurutan ±33–50%; (b) **TANPA cache, paralel tidak menolong**: paralel 4 dan 8 sama-sama mentok 1,59 faktur/dtk = tepat batas pembatas 8 req/dtk ÷ 5 permintaan/faktur (prediksi § 11 terbukti); (c) dengan cache paralel baru bekerja: dari 1,17 (berurutan, tanpa cache) ke 6,94 faktur/dtk (paralel 8 + cache) ≈ **5,9×**, tetap di bawah batas resmi 8 req/dtk. Tes unit (10) menjaga: hasil "tidak ketemu" tidak dicache, sesi berbeda tidak berbagi cache, update akun piutang/hutang tetap dikirim bila nilai berbeda, 5 grup paralel dengan barang sama → 1 pencarian, `ACCURATE_LOOKUP_CACHE=0` mematikan.
+Batas uji: barang NON_INVENTORY/jasa, 3 barang per faktur (faktur dengan lebih banyak barang berbeda diuntungkan lebih besar), satu mesin dev; cache baru diterapkan pada pelanggan/vendor/barang (BELUM pada klasifikasi data, PIC Work Order, pencarian dokumen sumber, dst — lihat `findOrCreate*` lain).
+
+## 14. Daftar percobaan berikutnya (status)
 - [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
 - [x] Biaya pencarian (§ 9), pembuatan data master & balapan (§ 10), bulk & galat parsial (§ 3, 5), biaya per baris (§ 6), dokumen besar paralel (§ 7).
 - [x] Beban berkelanjutan: penegakan batas untuk BACA (§ 12).
+- [x] Prototipe cache pencarian positif per batch + ukur di jalur Sales Invoice (§ 13, Fase 215).
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
-- [ ] Prototipe cache pencarian positif per batch (Implikasi 1, § 11) dan ukur penghematan nyata di jalur Sales Invoice (lokal, DB facport).
-- [ ] Simulasi end-to-end lewat worker Facport (unggah → batch → worker) dengan `IMPORT_GROUP_PARALLELISM` 1/2/3/4 di DB facport.
+- [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
+- [ ] Simulasi end-to-end lewat worker Facport (unggah → batch → worker) dengan `IMPORT_GROUP_PARALLELISM` 1/2/3/4 di DB facport, cache hidup.
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).

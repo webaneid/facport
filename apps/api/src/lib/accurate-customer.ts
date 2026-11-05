@@ -4,6 +4,7 @@ import type { AccurateSessionContext } from "./accurate-session";
 import { todayAccurateDate } from "./accurate-vendor";
 import { accurateFetch } from "./accurate-http";
 import { runExclusive } from "./keyed-lock";
+import { lookupCacheGet, lookupCacheSet } from "./accurate-lookup-cache";
 import { oddCharsHint } from "./input-hygiene";
 import { normalizeAccurateNo } from "./accurate-no";
 
@@ -59,16 +60,24 @@ async function findOrCreateCustomerImpl(
   customerNo: string,
   createFields: Record<string, unknown>,
 ): Promise<{ id: number; name: string }> {
-  const existing = await findCustomerByNo(ctx, customerNo);
+  // § Fase 215 — cache hasil positif per sesi. `applied` = nilai akun piutang yang SUDAH diterapkan di sesi ini: update akun HANYA dilewati bila nilainya sama persis;
+  // nilai berbeda tetap dikirim (perilaku lama tidak berubah).
+  const wanted = createFields.customerReceivableAccountListNo ? String(createFields.customerReceivableAccountListNo) : undefined;
+  const cached = lookupCacheGet<{ result: { id: number; name: string }; applied?: string }>(ctx, "customer", customerNo);
+  if (cached && (wanted === undefined || cached.applied === wanted)) return cached.result;
+  const existing = cached?.result ?? (await findCustomerByNo(ctx, customerNo));
   if (existing) {
-    if (createFields.customerReceivableAccountListNo) {
-      return postCustomerSave(ctx, {
+    if (wanted !== undefined) {
+      const updated = await postCustomerSave(ctx, {
         id: existing.id,
         name: existing.name,
         transDate: await todayAccurateDate(),
         customerReceivableAccountListNo: createFields.customerReceivableAccountListNo,
       });
+      lookupCacheSet(ctx, "customer", customerNo, { result: updated, applied: wanted });
+      return updated;
     }
+    lookupCacheSet(ctx, "customer", customerNo, { result: existing });
     return existing;
   }
 
@@ -76,10 +85,12 @@ async function findOrCreateCustomerImpl(
     throw new Error(`Customer dengan nomor "${customerNo}" belum ada di Accurate, dan kolom "Nama Customer" kosong — wajib diisi untuk membuat customer baru.${oddCharsHint(customerNo)}`);
   }
 
-  return postCustomerSave(ctx, {
+  const created = await postCustomerSave(ctx, {
     customerNo,
     transDate: await todayAccurateDate(),
     categoryName: "Umum", // default, di-override kalau createFields punya categoryName sendiri
     ...createFields,
   });
+  lookupCacheSet(ctx, "customer", customerNo, { result: created, ...(wanted !== undefined ? { applied: wanted } : {}) });
+  return created;
 }
