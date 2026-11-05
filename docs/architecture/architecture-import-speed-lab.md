@@ -1,0 +1,140 @@
+# Architecture — Laboratorium kecepatan import (perilaku Accurate yang terukur)
+
+> **Tujuan:** menemukan ritme pengiriman tercepat ke Accurate secara EMPIRIS, bukan asumsi. Prinsip user (2026-11-06): kecepatan import adalah isu prinsipil dan harus terus dicari tahu; kita tidak boleh terus menambah pembatas tanpa mengukur biayanya. Dokumen ini adalah catatan HIDUP: setiap percobaan ditulis di sini (metode + angka + batas uji). Pelengkap `architecture-import-capacity.md` (data produksi) — dokumen ini berisi percobaan terkendali.
+> **Aturan dokumen pelanggan** ([[feedback-never-alter-customer-documents]]): hanya CARA PENGIRIMAN yang boleh diubah; bentuk/nomor dokumen tidak.
+
+## 0. Lingkungan uji & cara membaca angka
+- Database Accurate uji: **"facport"** (id 3083006), trial s/d 2026-12-06, akses ADMIN, baru & kosong (dibuat user 2026-11-06). Terhubung ke Data Usaha "Webane Indonesia" di DB dev lewat koneksi `8e510951…`. Semua tulis uji HANYA ke DB ini; dokumen uji dihapus setelah tiap percobaan (sisa: pelanggan `BENCH-C1`, barang jasa `BENCH-I1`, faktur `BENCH-SETUP-001`).
+- Klien: mesin dev (Mac) → `zeus.accurate.id`. **Latensi dari VPS produksi bisa berbeda** (data produksi: ±0,25–0,30 dtk/permintaan tulis; di sini ±0,5 dtk/faktur 1 baris). Yang dapat dipindahkan ke produksi adalah RASIO/bentuk kurva, bukan angka mutlak.
+- Semua permintaan lewat `accurateFetch`; "+pembatas" = lewat `withAccurateRateLimit` (perilaku produksi: 8 req/dtk & 8 paralel per koneksi); "MENTAH" = tanpa pembatas Facport.
+- Batas uji umum: dokumen kecil, barang JASA (tanpa stok), satu mesin, rentang beberapa detik per fase (batas Accurate yang bergantung durasi panjang BELUM teruji).
+
+## 1. Beban pengaman Facport sendiri (tanpa Accurate)
+| Pengaman | Diukur | Hasil |
+|---|---|---|
+| Pembatas per koneksi (`withAccurateRateLimit`) | 8 panggilan kosong di bawah batas | 0,28 ms total |
+| Kunci per data master (`runExclusive`) | 20.000 panggilan kosong | 0,35 µs/panggilan |
+| Pengatur paralelisme (`forEachGroupConcurrent`, paralel 1) | 20.000 item kosong | 4 ms total |
+**Kesimpulan:** pengaman TIDAK menambah waktu berarti. Pembatas hanya menahan bila kita mengirim >8 req/dtk (tidak pernah terjadi pada import berurutan produksi ≈ 3–4 req/dtk).
+
+## 2. Faktur Penjualan 1 baris — satu per satu (`save.do`) berurutan vs paralel (+pembatas)
+| Paralel | Faktur/dtk | Latensi/permintaan rata-rata |
+|---|---|---|
+| 1 | 1,95 | 512 ms |
+| 2 | 3,71 | 537 ms |
+| 3 | 5,30 | 540 ms |
+| 4 | 7,01 | 529 ms |
+| 6 | 7,69 | 551 ms |
+| 8 | 8,23 | 541 ms |
+**Kesimpulan:** Accurate melayani tulis paralel HAMPIR LINEAR (latensi per permintaan tidak naik), tanpa satu galat. Di atas paralel 4 kurva dipotong oleh pembatas Facport 8 req/dtk (8,23 ≈ batas).
+
+## 3. `bulk-save.do` (banyak faktur dalam SATU permintaan) — `POST sales-invoice/bulk-save.do`
+- **Bentuk yang benar:** `{"data":[ {…faktur 1…}, {…faktur 2…} ]}`. Array telanjang ditolak ("parameter diawali prefix data[n].…"). Respons: `{s:true, d:[ {s, d:"Faktur … berhasil disimpan", r:{…rekaman penuh…}}, … ]}` — **hasil PER FAKTUR** (`s` per item, `r.id`, `r.detailItem[].id` tersedia).
+- **Berurutan (1 permintaan = N faktur, 1 baris/faktur):**
+| N per permintaan | Waktu | Faktur/dtk | ms/faktur |
+|---|---|---|---|
+| 1 | 0,59 s | 1,70 | 589 |
+| 5 | 2,35 s | 2,13 | 469 |
+| 10 | 4,50 s | 2,22 | 450 |
+| 20 | 7,99 s | 2,50 | 399 |
+| 50 | 20,98 s | 2,38 | 420 |
+| 100 | 39,46 s | 2,53 | 395 |
+**Temuan 1: bulk TIDAK mempercepat pemrosesan di dalam Accurate** (≈ 400 ms/faktur, hanya ±20–30% lebih baik dari `save.do` satu-satu; selisih = sekadar hemat bolak-balik jaringan). Accurate memproses faktur dalam satu permintaan bulk SECARA BERURUTAN.
+- **Paralel bulk (+pembatas), ukuran bulk 10:**
+| Paralel | Faktur/dtk | Req/dtk |
+|---|---|---|
+| 2 | 4,55 | — |
+| 4 | 8,75 | — |
+| 6 | 11,62 | 1,16 |
+| 8 | 16,03 | 1,60 |
+**Temuan 2: bulk + paralel melampaui batas "8 req/dtk"** karena satu permintaan membawa banyak faktur (16 faktur/dtk hanya 1,6 req/dtk). Penghambat sebenarnya bergeser ke "8 proses paralel per token".
+
+## 4. Langit-langit & apakah Accurate benar-benar menegakkan batas (MENTAH, tanpa pembatas Facport)
+| Mode | Paralel | Faktur/dtk | Req/dtk | Galat |
+|---|---|---|---|---|
+| single MENTAH | 8 | 12,95 | 12,95 | 0 |
+| single MENTAH | 12 | 16,20 | 16,20 | 0 |
+| bulk10 MENTAH | 8 | 15,98 | 1,60 | 0 |
+| bulk10 MENTAH | 12 | 14,32 | 1,43 | 0 |
+**Temuan 3:** dalam rentang beberapa detik, Accurate TIDAK menolak >8 req/dtk maupun 12 paralel (0 galat dari 801 faktur). ⚠️ Jangan menyimpulkan batas tidak berlaku: pesan "melebihi toleransi (8 paralel/8 req/dtk per Token)" pernah muncul di produksi; penegakan mungkin bergantung durasi/beban/DB. Pembatas Facport TETAP dipertahankan sampai ada uji durasi panjang.
+**Temuan 4:** bulk paralel 12 LEBIH LAMBAT dari paralel 8 (latensi per bulk naik 4,7 → 6,0 dtk) → jenuh sekitar 8 paralel. **Langit-langit praktis di DB ini ≈ 16 faktur/dtk (1 baris/faktur) — ±8× lipat import berurutan sekarang (1,95/dtk).**
+
+## 5. Galat PARSIAL di dalam bulk (6 faktur: idx1 pelanggan tidak ada, idx3 nomor duplikat, idx4 barang tidak ada)
+Hasil: `top s=false`, `d.length=6`; **tiap item punya hasil sendiri, URUTAN SAMA dengan urutan kirim**: idx0 sukses (id), idx1 gagal ("Pelanggan … tidak ditemukan"), idx2 sukses, idx3 gagal ("Sudah ada data lain dengan …" — duplikat nomor), idx4 gagal ("Barang & Jasa … tidak ditemukan"), idx5 sukses.
+**Temuan 5:** bulk BUKAN semua-atau-tidak-sama-sekali; faktur yang valid tetap tersimpan, yang salah ditolak dengan pesan SAMA seperti `save.do` tunggal. **Jangan membaca `s` tingkat atas sebagai "sukses"** (bernilai `false` bila ada satu saja yang gagal) — baca `d[i].s` per item. Galat duplikat per item dapat dikenali memakai `isDuplicateNumberError` yang sudah ada.
+
+## 6. Biaya per dokumen & per baris — Faktur Penjualan (`save.do`, berurutan, barang jasa)
+| Baris/faktur | ms/faktur | ms/baris |
+|---|---|---|
+| 1 | 481 | 481 |
+| 5 | 574 | 115 |
+| 10 | 770 | 77 |
+| 25 | 965 | 39 |
+| 50 | 1.591 | 32 |
+| 100 | 2.284 | 23 |
+| 200 | 4.895 | 24 |
+**Temuan 6:** biaya ≈ **±450–480 ms TETAP per dokumen + ±20 ms per baris**, LINEAR sampai 200 baris (tidak kuadratik di rentang ini, beda dengan Sales Receipt ber-ratusan baris di `architecture-import-capacity.md` § 14). Untuk dokumen kecil, biaya tetap per dokumen yang mendominasi → inilah sumber "batch kecil terasa lambat per baris" (biaya tetap itu milik Accurate, bukan Facport).
+
+## 7. Dokumen besar secara paralel (+pembatas)
+| Baris/faktur | Paralel | Faktur/dtk | Baris/dtk |
+|---|---|---|---|
+| 25 | 1 | 1,01 | 25 |
+| 25 | 4 | 3,82 | 96 |
+| 25 | 8 | 6,91 | 173 |
+| 100 | 1 | 0,37 | 37 |
+| 100 | 4 | 1,40 | 140 |
+| 100 | 8 | 2,37 | 237 |
+**Temuan 7:** dokumen besar juga skala paralel hampir linear (paralel 8 ≈ 6,4–6,9× paralel 1), latensi per dokumen naik hanya ±10–40% (mis. 100 baris: 2,3 s → 2,0–3,3 s). Tanpa galat. Paralelisme melintasi FAKTUR berbeda (grup berbeda), tidak mengubah isi/bentuk dokumen mana pun.
+
+## 8. Barang PERSEDIAAN: kontensi barang sama vs beda (Faktur Penjualan 1 baris, +pembatas)
+| Skenario | Paralel | Faktur/dtk | Latensi rata-rata |
+|---|---|---|---|
+| barang jasa sama | 1 | 2,05 | 487 ms |
+| barang jasa sama | 8 | 7,87 | 566 ms |
+| persediaan, barang SAMA | 1 | 1,74 | 575 ms |
+| persediaan, barang SAMA | 8 | 7,94 | 607 ms |
+| persediaan, 8 barang BEDA | 8 | 8,01 | 588 ms |
+**Temuan 8:** 32 faktur paralel yang memakai barang persediaan YANG SAMA tidak lebih lambat dari barang berbeda (7,94 vs 8,01 faktur/dtk) dan tanpa galat → tidak ada antrean kunci stok yang terukur. Persediaan hanya ±18% lebih lambat per faktur dibanding barang jasa (575 vs 487 ms). ⚠️ **Batas uji:** stok awal GAGAL dibuat (Faktur Pembelian memakai `billNumber`, bukan `number`: galat "No Faktur # harus diisi") sehingga stok barang 0/negatif — Accurate tetap menerima faktur. Ulangi dengan stok nyata + HPP bila perlu.
+
+## 9. Biaya pencarian data master (GET, +pembatas, 10 ulangan)
+| Panggilan | Rata-rata | p90 |
+|---|---|---|
+| `item/detail.do?no=` (ADA) | 94 ms | 224 |
+| `item/detail.do?no=` (TIDAK ADA) | 59 ms | 79 |
+| `customer/detail.do?customerNo=` (ADA) | 92 ms | 194 |
+| `item/list.do` 1 baris | 54 ms | 57 |
+| `item/list.do` **100 baris** | **58 ms** | 65 |
+| `item/list.do` 100 baris + filter `no` | 63 ms | 110 |
+**Temuan 9:** mengambil 100 barang sekaligus (58 ms) HAMPIR SAMA mahalnya dengan mengambil 1 (54 ms). Satu panggilan `list.do` 100 baris ≈ biaya 1 pencarian per-baris tetapi menggantikan sampai 100 pencarian. Peluang: **ambil data master per halaman (prefetch) / cache per batch** alih-alih cek cari-atau-buat per baris. Biaya satu pencarian (±60–95 ms) jauh di bawah satu tulis dokumen (±480 ms), jadi pencarian per baris baru terasa bila sebuah baris memicu beberapa pencarian (lihat hitungan permintaan per baris, § 11).
+
+## 10. Pembuatan data master (pelanggan) — berurutan, paralel, balapan duplikat
+- `customer/save.do` berurutan: **174 ms/pelanggan** (jauh lebih murah dari faktur ±480 ms); `item/save.do` (persediaan): 212 ms.
+- Paralel 8 (24 pelanggan): **7,98 pelanggan/dtk** (dibatasi pembatas Facport 8 req/dtk).
+- **Balapan:** 8 pembuat pelanggan DENGAN NOMOR SAMA serentak → **1 sukses, 7 gagal** "Sudah ada data lain dengan ID Pelanggan …". Accurate sendiri menjamin keunikan (tidak ada duplikat); `runExclusive` di Facport hanya menghindari 7 percobaan gagal yang sia-sia.
+- Pembersihan: faktur penjualan 120/120, pelanggan 33/33, barang 7/8 dihapus (1 barang persediaan tersisa), pemasok `BENCH-V1` tersisa.
+
+## 11. Jumlah permintaan Accurate per faktur di kode Facport (pembacaan kode, Sales Invoice — `processSalesInvoiceGroup`, `workers/index.ts:1127`)
+Per FAKTUR (grup) tanpa perluasan dokumen sumber: `findOrCreateCustomer` (1 pencarian) + `findOrCreateItem` untuk TIAP kode barang berbeda dalam faktur itu (1 pencarian per barang; **tidak ada cache lintas faktur** — `lib/accurate-item.ts:36`, kunci `runExclusive` hanya mencegah balapan, bukan menyimpan hasil) + `ensureDataClassifications` (0 bila tak ada kolom klasifikasi) + 1 `save.do`. Jadi **k + 2 permintaan per faktur** dengan k barang berbeda; barang/pelanggan yang SAMA dicari ulang di setiap faktur.
+Perkiraan waktu per faktur (k = 3, angka § 6/§ 9): 1 pelanggan (±90 ms) + 3 barang (±75 ms) + save 3 baris (±540 ms) ≈ **±850 ms, ±35% di antaranya hanya pencarian yang berulang**.
+**Implikasi 1 (kecepatan berurutan):** cache hasil POSITIF "barang/pelanggan sudah ada" per batch (aman: barang yang ada tetap ada dalam satu batch; bila terhapus di tengah jalan, `save.do` menolak dengan galat jelas) memotong ±30–35% waktu per faktur tanpa mengubah dokumen apa pun.
+**Implikasi 2 (paralel):** bila batas efektif memang 8 req/dtk, kapasitas paralel dibatasi `8 ÷ (k+2)` faktur/dtk (k=3 → 1,6 faktur/dtk) — jauh di bawah 8 faktur/dtk yang terukur di § 2 (itu dengan 1 permintaan per faktur). **Mengurangi permintaan per faktur adalah syarat agar paralelisme berguna** selama batas 8 req/dtk dipatuhi.
+
+## 12. Apakah Accurate benar-benar menegakkan "8 req/dtk & 8 paralel per token"? (beban BERKELANJUTAN, GET `item/list.do` 1 baris, TANPA pembatas Facport)
+| Paralel | Durasi | Permintaan | Req/dtk | Latensi rata-rata | Galat "melebihi toleransi" (HTTP 429) | Galat lain |
+|---|---|---|---|---|---|---|
+| 4 | 20 s | 1.234 | 61,6 | 65 ms | 1 (0,08%) | — |
+| 8 | 40 s | 5.134 | 128,2 | 62 ms | 24 (0,47%) | — |
+| 12 | 40 s | 7.382 | 184,3 | 65 ms | 84 (1,14%) | — |
+| 16 | 30 s | 6.934 | 230,6 | 69 ms | 81 (1,17%) | HTTP 503 × 7 |
+**Temuan 10:** batas ADA (429 nyata dengan pesan resmi "Jumlah request API melebihi toleransi…") tetapi penegakannya JAUH lebih longgar daripada "8 req/dtk": bacaan ringan 8–30× angka itu diterima ±99% dan latensi tidak naik. Galat muncul sporadis (bukan ambang tegas); pada paralel 16 mulai ada 503. Retry-backoff yang sudah ada (§ `accurate-rate-limiter.ts`, 4× sampai ±22 dtk) akan menyerap 429 sporadis.
+**⚠️ Batas uji & risiko (JANGAN dibaca sebagai izin melampaui batas resmi):** (a) hanya BACA ringan (65 ms); tulis jauh lebih berat dan bobotnya bagi Accurate belum tentu sama; (b) satu token uji, satu database trial, ±2,5 menit total; (c) angka resmi dari Accurate adalah 8 req/dtk & 8 paralel per token — melampauinya secara sengaja di produksi adalah KEPUTUSAN BISNIS/risiko (kebijakan API Accurate, kemungkinan pembatasan token) yang harus diputuskan user/FAC, bukan teknis semata; (d) pembatas Facport TIDAK diubah. Pengujian di atas dilakukan hanya pada token & database uji milik pengembang.
+
+## 13. Daftar percobaan berikutnya (status)
+- [x] Barang persediaan, kontensi (§ 8) — selesai, stok awal belum nyata (ulang dengan `billNumber`).
+- [x] Biaya pencarian (§ 9), pembuatan data master & balapan (§ 10), bulk & galat parsial (§ 3, 5), biaya per baris (§ 6), dokumen besar paralel (§ 7).
+- [x] Beban berkelanjutan: penegakan batas untuk BACA (§ 12).
+- [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
+- [ ] Modul lain: Purchase Invoice (+Beban, field `billNumber`), Sales Receipt, Purchase Payment — permintaan per baris & skala paralel.
+- [ ] Prototipe cache pencarian positif per batch (Implikasi 1, § 11) dan ukur penghematan nyata di jalur Sales Invoice (lokal, DB facport).
+- [ ] Simulasi end-to-end lewat worker Facport (unggah → batch → worker) dengan `IMPORT_GROUP_PARALLELISM` 1/2/3/4 di DB facport.
+- [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
