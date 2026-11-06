@@ -1,3 +1,8 @@
+## <small>2.49.3 (2026-11-06)</small>
+
+* Merge develop: petunjuk pada pesan galat nomor grup (v2.49.3) ([29bb16e](https://github.com/webaneid/facport/commit/29bb16e))
+* fix(api): pesan galat Nomor grup sudah dipakai (Sales/Purchase Invoice) kini memuat langkah penyeles ([a1e1077](https://github.com/webaneid/facport/commit/a1e1077))
+
 ## <small>2.49.2 (2026-11-06)</small>
 
 * Merge develop: fix kategori keuangan operator (v2.49.2) ([0c65e2e](https://github.com/webaneid/facport/commit/0c65e2e))
