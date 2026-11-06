@@ -1035,7 +1035,7 @@ export async function appendToExistingPurchaseInvoice(
   // referensi yang sama).
   if (vendorNo && detail.vendor.no !== vendorNo) {
     throw new Error(
-      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Pembelian #${existingId} milik Vendor "${detail.vendor.no}" di Accurate — tidak sama dengan Vendor baris ini ("${vendorNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
+      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Pembelian #${existingId} milik Vendor "${detail.vendor.no}" di Accurate — tidak sama dengan Vendor baris ini ("${vendorNo}"), retry dibatalkan untuk mencegah salah gabung faktur. Yang perlu dilakukan: gunakan Nomor Transaksi lain untuk faktur ini, atau periksa faktur #${existingId} di Accurate (nomor itu sudah dipakai vendor lain).`,
     );
   }
 
@@ -1275,7 +1275,7 @@ export async function appendToExistingSalesInvoice(
 
   if (customerNo && detail.customer.no !== customerNo) {
     throw new Error(
-      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Penjualan #${existingId} milik Customer "${detail.customer.no}" di Accurate — tidak sama dengan Customer baris ini ("${customerNo}"), retry dibatalkan untuk mencegah salah gabung faktur.`,
+      `Nomor grup "${group.groupKey}" sudah dipakai Faktur Penjualan #${existingId} milik Customer "${detail.customer.no}" di Accurate — tidak sama dengan Customer baris ini ("${customerNo}"), retry dibatalkan untuk mencegah salah gabung faktur. Yang perlu dilakukan: gunakan Nomor Transaksi lain untuk faktur ini, atau periksa faktur #${existingId} di Accurate (nomor itu sudah dipakai customer lain).`,
     );
   }
 
