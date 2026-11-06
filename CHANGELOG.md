@@ -1,3 +1,8 @@
+## <small>2.49.2 (2026-11-06)</small>
+
+* Merge develop: fix kategori keuangan operator (v2.49.2) ([0c65e2e](https://github.com/webaneid/facport/commit/0c65e2e))
+* fix(api): penolakan hak akses saat membuat Kategori Keuangan tidak lagi menggagalkan faktur operator ([59d9278](https://github.com/webaneid/facport/commit/59d9278))
+
 ## <small>2.49.1 (2026-11-05)</small>
 
 * chore: merge develop into main (Fase 215 lanjutan: cache faktur asal retur, 16 modul terbukti parale ([fefb9ae](https://github.com/webaneid/facport/commit/fefb9ae))
