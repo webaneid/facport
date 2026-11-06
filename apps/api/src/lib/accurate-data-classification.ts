@@ -53,6 +53,11 @@ export async function findDataClassificationByName(
   });
 }
 
+/** Galat Accurate "Anda tidak memiliki hak …" (hak akses pengguna database, bukan masalah data). */
+export function isPermissionDenied(err: AccurateApiError): boolean {
+  return /tidak memiliki hak/i.test(err.message);
+}
+
 // § `index` (1-10) WAJIB sesuai slot Atribut Tambahan yang dipakai
 // (dataClassification1Name -> index 1, dst) — Accurate memisahkan
 // Kategori Keuangan per slot, nama yang sama di slot berbeda dianggap
@@ -96,6 +101,13 @@ async function findOrCreateDataClassificationImpl(
     // cuma butuh efek sampingnya, § workers/index.ts), jadi aman
     // diamkan di sini alih-alih menggagalkan seluruh baris/faktur.
     if (err instanceof AccurateApiError && /sudah ada data lain/i.test(err.message)) {
+      return undefined;
+    }
+    // § Laporan client 2026-11-06 — akun OPERATOR/User Tambahan tanpa hak "Buat Kategori Keuangan" di Accurate: pembuatan ditolak ("Anda tidak memiliki hak Buat
+    // Kategori Keuangan") dan SELURUH faktur ikut gagal, padahal kategori sudah ada (admin bisa). Langkah ini hanya PELENGKAP (nilai balik tidak dipakai pemanggil):
+    // dokumen yang dikirim TIDAK berubah. Ditolak karena HAK AKSES → lanjut kirim faktur; Accurate sendiri memvalidasi kategori saat `save.do` dan bila benar-benar
+    // tidak ada menolak dengan pesannya ("Kategori Keuangan X tidak ditemukan atau sudah dihapus") — galat sungguhan tidak tertutup.
+    if (err instanceof AccurateApiError && isPermissionDenied(err)) {
       return undefined;
     }
     throw err;
