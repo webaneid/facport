@@ -179,8 +179,12 @@ export function buildStepPayload(args: {
     if (freshTaxes.length > 0) step.detailTax = freshTaxes;
     return { payload: step, upTo };
   }
+  // Cabang WAJIB ikut di setiap penulisan: Accurate menolak write tanpa cabang untuk akun multi-cabang ("Anda harus menentukan cabang saat penulisan data"),
+  // termasuk update dengan `id`. Tanpa ini cicilan 2+ gagal padahal cicilan 1 (header lengkap) lolos.
   const step: Record<string, unknown> = {
     id: doc.id,
+    ...(payload.branchName !== undefined ? { branchName: payload.branchName } : {}),
+    ...(payload.branchId !== undefined ? { branchId: payload.branchId } : {}),
     chequeAmount,
     detailInvoice: [...doc.lines.map((l) => ({ id: l.id })), ...fresh],
   };
