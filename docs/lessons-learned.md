@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-11-09 — Kirim bertahap (SR/PP) gagal di cicilan 2+ pada akun Accurate multi-cabang
+**Gejala:** client melihat "Profil pengguna anda memiliki akses ke lebih dari satu cabang. Anda harus menentukan cabang saat penulisan data" + "500 dari 549 entri faktur sudah tersimpan"; Excel sudah berisi cabang (kolom wajib).
+**Root cause:** `buildStepPayload` (`lib/staged-send.ts`) untuk cicilan lanjutan (update dengan `id`) hanya mengirim `{id, chequeAmount, detailInvoice}` tanpa `branchName`. Cicilan 1 membawa header lengkap sehingga lolos; Accurate multi-cabang menolak SETIAP penulisan tanpa cabang.
+**Fix:** cicilan lanjutan menyertakan `branchName`/`branchId` dari payload; tes di `staged-send.test.ts`.
+**Pencegahan:** field yang divalidasi Accurate pada SETIAP write (cabang) harus ikut di payload update ringkas, bukan hanya di payload buat. Uji trial 205a memakai database satu cabang sehingga tidak menangkap ini — uji kirim bertahap di database multi-cabang. **Belum terbukti ke Accurate nyata** bahwa update dengan `id` + `branchName` diterima; verifikasi setelah rilis lewat Retry batch client.
+
+---
+
 ## 2026-09-17 — 2 Facport module (Item Transfer & Item Requisition) sengaja panggil 1 fungsi HTTP Accurate yang sama — `accurateTransactionId` TIDAK unik lintas modul
 **Konteks:** Fase 134-135 membangun 2 modul Facport terpisah ("Item
 Transfer", "Item Requisition") yang, atas keputusan eksplisit user

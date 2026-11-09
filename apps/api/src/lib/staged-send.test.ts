@@ -191,6 +191,12 @@ describe("buildStepPayload", () => {
     expect(last.payload.chequeAmount).toBe(payload.chequeAmount);
     expect(last.payload.detailTax).toEqual([{ id: 55 }]);
   });
+  test("update (cicilan 2+) membawa cabang — Accurate multi-cabang menolak write tanpa cabang", () => {
+    const doc: StagedDoc = { id: 77, lines: [1, 2].map((i) => ({ id: i, invoiceNo: `INV-00${i}`, paymentAmount: 1000 + i })), taxIds: [] };
+    const p = basePayload(entries, { branchName: "Pusat" });
+    expect(buildStepPayload({ payload: p, entries, done: 2, chunkEntries: 2, doc }).payload.branchName).toBe("Pusat");
+    expect(buildStepPayload({ payload, entries, done: 2, chunkEntries: 2, doc }).payload).not.toHaveProperty("branchName");
+  });
   test("override cheque pelanggan hanya dipakai di cicilan terakhir", () => {
     const p = basePayload(entries, { chequeAmount: 999_999 });
     expect(buildStepPayload({ payload: p, entries, done: 0, chunkEntries: 3, doc: null }).payload.chequeAmount).toBe(1001 + 1002 + 1003);
