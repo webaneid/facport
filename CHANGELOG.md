@@ -1,3 +1,8 @@
+## <small>2.49.4 (2026-11-09)</small>
+
+* Merge develop: cabang pada cicilan kirim bertahap (v2.49.4) ([b7db115](https://github.com/webaneid/facport/commit/b7db115))
+* fix(api): kirim bertahap SR/PP menyertakan cabang di cicilan lanjutan (akun Accurate multi-cabang) ([8b4e3b6](https://github.com/webaneid/facport/commit/8b4e3b6))
+
 ## <small>2.49.3 (2026-11-06)</small>
 
 * Merge develop: petunjuk pada pesan galat nomor grup (v2.49.3) ([29bb16e](https://github.com/webaneid/facport/commit/29bb16e))
