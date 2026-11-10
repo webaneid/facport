@@ -171,7 +171,9 @@ function SubscribeCartProviderInner({ dataUsahaId, children }: { dataUsahaId: st
       toast.error(
         code === "TRIAL_ALREADY_USED"
           ? "Trial untuk fitur ini sudah pernah dipakai."
-          : code === "MODULE_ALREADY_SUBSCRIBED"
+          : code === "TRIAL_DATABASE_ALREADY_USED"
+            ? "Database Accurate di Data Usaha ini sudah pernah dicoba untuk fitur ini. Silakan berlangganan."
+            : code === "MODULE_ALREADY_SUBSCRIBED"
             ? "Fitur ini sudah aktif."
             : "Gagal memulai trial. Coba lagi.",
       );

@@ -163,8 +163,8 @@ export const autoproduksiFormulaImportRoute = new Elysia()
       // § Formula TIDAK memanggil Accurate — tidak ada checkSubscriptionScopes di sini (berbeda dari 24 modul lain).
       const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       await db.update(importBatches).set({ columnMapping: body.columnMapping, status: "processing" }).where(eq(importBatches.id, batch.id));
@@ -254,8 +254,8 @@ export const autoproduksiFormulaImportRoute = new Elysia()
 
       const budgetCheck = await checkTrialRowBudget(subscription.id, pendingOrFailed.length);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       if (batch.status === "processing") {

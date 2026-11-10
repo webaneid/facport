@@ -1,5 +1,6 @@
 import { eq, and, count, sum } from "drizzle-orm";
 import { db } from "./db";
+import { ensureTrialClaims } from "./trial-claims";
 import { subscriptions, auditLogs, settings, importBatches, importBatchRows, conversionLogs } from "../db/schema";
 
 // § Fase 43 — trial gratis per modul (self-service, 1x seumur hidup per
@@ -70,24 +71,41 @@ export async function createTrialSubscription(tx: Tx, params: { userId: string; 
 // modul/subscription lain milik user yang sama — mirror query `GET
 // /me/stats`, Fase 40, tapi di-scope per-subscription) + `additionalRows`
 // yang AKAN diproses, dibanding batas global `trial.maxRows`.
-export async function checkTrialRowBudget(
-  subscriptionId: string,
-  additionalRows: number,
-): Promise<{ ok: true } | { ok: false; remaining: number; max: number }> {
+export type TrialBudgetResult =
+  | { ok: true }
+  | {
+      ok: false;
+      remaining: number;
+      max: number;
+      // Siap dikirim rute: `set.status = r.status; return r.body;` (kuota habis = 400, klaim database bentrok = 409, § Fase 217).
+      status: 400 | 409;
+      body: { code: string; remaining?: number; max?: number };
+    };
+
+export async function checkTrialRowBudget(subscriptionId: string, additionalRows: number): Promise<TrialBudgetResult> {
   const [subscription] = await db.select().from(subscriptions).where(eq(subscriptions.id, subscriptionId));
   if (!subscription || !subscription.isTrial) return { ok: true };
 
+  const maxRows = await getTrialMaxRows(db);
+
+  // § Fase 217, ADR-0054 — klaim (database, modul) di buku besar permanen. Bentrok -> tolak sebelum kuota dihitung.
+  const claim = await ensureTrialClaims(subscription);
+  if (claim.kind === "blocked") {
+    return { ok: false, remaining: 0, max: maxRows, status: claim.status, body: { code: claim.code } };
+  }
+
+  // Pemakaian = yang terbesar antara counter permanen (tahan purge) dan hitungan langsung baris sukses yang masih ada.
   const [rowCountResult] = await db
     .select({ successCount: count() })
     .from(importBatchRows)
     .innerJoin(importBatches, eq(importBatchRows.batchId, importBatches.id))
     .where(and(eq(importBatches.subscriptionId, subscriptionId), eq(importBatchRows.status, "success")));
-  const successCount = rowCountResult?.successCount ?? 0;
+  const liveCount = rowCountResult?.successCount ?? 0;
+  const usedCount = Math.max(liveCount, claim.kind === "ok" ? claim.usedRows : 0);
 
-  const maxRows = await getTrialMaxRows(db);
-  const remaining = Math.max(0, maxRows - successCount);
-  if (successCount + additionalRows > maxRows) {
-    return { ok: false, remaining, max: maxRows };
+  const remaining = Math.max(0, maxRows - usedCount);
+  if (usedCount + additionalRows > maxRows) {
+    return { ok: false, remaining, max: maxRows, status: 400, body: { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining, max: maxRows } };
   }
   return { ok: true };
 }

@@ -372,6 +372,13 @@
       "when": 1791775064770,
       "tag": "0052_subscriptions_internal_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1794322066580,
+      "tag": "0053_trial_claims",
+      "breakpoints": true
     }
   ]
 }

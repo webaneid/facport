@@ -35,6 +35,7 @@ import { getCompanyTimezone } from "../lib/company-timezone";
 import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON, EXPIRE_UNPAID_ORDERS_CRON } from "../lib/job-schedules";
 import { expireOverdueOrders } from "../lib/order-cancel";
 import { issueDueRenewalInvoices, openRenewalOrdersBySubscription, renewalPayUrl } from "../lib/renewal-billing";
+import { settleTrialUsage } from "../lib/trial-claims";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
@@ -2785,6 +2786,13 @@ async function main() {
       .map((c) => c.id);
 
     if (idsToDelete.length > 0) {
+      // § Fase 217, ADR-0054 — pemakaian kuota trial dipindah ke counter permanen SEBELUM baris dihapus (jangan hilang bersama purge).
+      const trialSubs = await db
+        .selectDistinct({ id: importBatches.subscriptionId })
+        .from(importBatches)
+        .innerJoin(subscriptions, eq(importBatches.subscriptionId, subscriptions.id))
+        .where(and(inArray(importBatches.id, idsToDelete), eq(subscriptions.isTrial, true)));
+      for (const t of trialSubs) await settleTrialUsage(t.id);
       await db.delete(importBatches).where(inArray(importBatches.id, idsToDelete));
     }
 
@@ -3718,6 +3726,9 @@ async function main() {
       .update(importBatches)
       .set({ status: hasFailed ? "completed_with_errors" : "completed", completedAt: new Date() })
       .where(eq(importBatches.id, batch.id));
+
+    // § Fase 217, ADR-0054 — catat pemakaian kuota trial ke counter permanen begitu batch selesai (tahan hapus/purge riwayat).
+    await settleTrialUsage(batch.subscriptionId).catch((err) => logger.warn({ err, batchId: batch.id }, "settleTrialUsage gagal (tidak fatal)"));
 
     // § diminta user 2026-09-27 — counter PERMANEN "efisiensi waktu kerja"
     // (§ komentar kolom `data_usaha.cumulativeSuccessfulRowCount`), TIDAK

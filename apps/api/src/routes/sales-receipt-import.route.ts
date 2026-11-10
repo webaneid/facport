@@ -184,8 +184,8 @@ export const salesReceiptImportRoute = new Elysia()
 
       const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       // § Fase 205, ADR-0051 — dokumen besar dikirim BERTAHAP ke dokumen yang sama (nomor & isi tidak berubah, hanya lebih lama): minta persetujuan pelanggan
@@ -298,8 +298,8 @@ export const salesReceiptImportRoute = new Elysia()
 
       const budgetCheck = await checkTrialRowBudget(subscription.id, pendingRowCount?.pendingCount ?? 0);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       await db

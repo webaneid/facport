@@ -250,6 +250,7 @@ sisa hari trialnya.
   backstop kadaluarsa hari, dipakai job `EXPIRE_SUBSCRIPTIONS` yang
   SUDAH ADA (§ `architecture-jobs.md`) — trial yang tidak pernah dipakai
   importnya TETAP kadaluarsa, tidak menggantung aktif selamanya.
+- **[DIGANTI Fase 217, ADR-0054] Trial kini 1x seumur hidup per (database Accurate, modul), lintas akun & Data Usaha**, diklaim saat import pertama lewat buku besar `trial_claims`; kuota baris dari counter permanen. Lihat `architecture-trial-database-ledger.md`. Aturan lama di bawah (per user/Data Usaha) tetap berlaku sebagai lapis tambahan.
 - **1x trial seumur hidup per modul per user** — subscription
   `isTrial: true` APA PUN statusnya sekarang (aktif/expired/habis kuota)
   dihitung "sudah pernah trial" modul itu. `GET /me/subscriptions`

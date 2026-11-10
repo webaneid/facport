@@ -1,6 +1,6 @@
 # Architecture — Buku Besar Trial per Database Accurate + Modul (Fase 217)
 
-> Status: **RENCANA** (2026-11-10, menunggu persetujuan). Keputusan: ADR-0054. Fase: `docs/phases/phase-217-trial-per-database-accurate.md`.
+> Status: **DIIMPLEMENTASI di sisi API** (2026-11-10); UI admin menyusul. Keputusan: ADR-0054. Fase: `docs/phases/phase-217-trial-per-database-accurate.md`.
 > Aturan trial yang berlaku sekarang: `architecture-subscription.md` § "Trial (Batas Baris)".
 
 ## 1. Kondisi sekarang (diverifikasi ke kode & produksi 2026-11-10)
@@ -68,3 +68,9 @@ Dari langganan `is_trial = true` yang Data Usaha-nya punya `accurate_db_id`: sat
 - Database baru di Accurate = trial baru.
 - Perubahan alias database tidak berpengaruh (kunci = id).
 - Trial yang dibuat lalu tidak pernah mengimpor tidak memegang klaim (sengaja: klaim saat import pertama).
+
+## 10. Implementasi (catatan)
+- `lib/trial-claims.ts`: `ensureTrialClaims`, `settleTrialUsage`, `releaseTrialClaim`, `findForeignTrialClaim`, `getExemptDbIds`. `checkTrialRowBudget` (`lib/trial.ts`) memanggil `ensureTrialClaims` lalu menghitung kuota dari yang terbesar antara counter permanen dan baris live.
+- `settleTrialUsage` dipanggil di cek kuota, akhir batch (worker), dan sebelum purge retensi; naik saja (GREATEST), idempoten.
+- Admin: `GET /admin/trial-claims` (`users.view`), `POST /admin/trial-claims/:id/release` (`users.manage`). Pengaturan `trial.exemptDbIds` divalidasi di `PUT /settings`.
+- Migrasi `0053_trial_claims.sql` membuat tabel dan mengisi klaim awal dari langganan trial yang ada.

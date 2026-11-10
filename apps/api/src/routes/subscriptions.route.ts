@@ -1,3 +1,4 @@
+import { findForeignTrialClaim } from "../lib/trial-claims";
 import { Elysia, t } from "elysia";
 import { eq, desc, and, inArray, sql } from "drizzle-orm";
 import { db } from "../lib/db";
@@ -285,6 +286,10 @@ export const subscriptionsRoute = new Elysia()
           const alreadyTrialed = plan.modules.find((m) => everTrialedModules.has(m));
           if (alreadyTrialed) throw new Error(`TRIAL_ALREADY_USED:${alreadyTrialed}`);
 
+          // § Fase 217, ADR-0054 — database Accurate Data Usaha ini sudah pernah dicoba (akun/Data Usaha lain) untuk modul ini.
+          const foreignClaim = await findForeignTrialClaim({ userId: user.id, dataUsahaId: body.dataUsahaId, modules: plan.modules }, tx);
+          if (foreignClaim) throw new Error(`TRIAL_DATABASE_ALREADY_USED:${foreignClaim}`);
+
           // § modul yang SUDAH aktif (paket asli ATAU trial lain yang
           // somehow masih aktif) juga tidak boleh ditrial lagi — reuse
           // guard yang sama seperti checkout, TANPA filter isTrial di sini
@@ -323,6 +328,10 @@ export const subscriptionsRoute = new Elysia()
         if (message.startsWith("TRIAL_ALREADY_USED:")) {
           set.status = 400;
           return { code: "TRIAL_ALREADY_USED", moduleKey: message.split(":")[1] };
+        }
+        if (message.startsWith("TRIAL_DATABASE_ALREADY_USED:")) {
+          set.status = 409;
+          return { code: "TRIAL_DATABASE_ALREADY_USED", moduleKey: message.split(":")[1] };
         }
         if (message.startsWith("MODULE_ALREADY_SUBSCRIBED:")) {
           set.status = 400;

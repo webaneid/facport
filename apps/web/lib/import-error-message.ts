@@ -29,6 +29,11 @@ export function describeImportActionError(value: ImportActionErrorValue | undefi
       return `Field wajib belum dipetakan: ${value.fields?.join(", ")}`;
     case "TRIAL_ROW_LIMIT_EXCEEDED":
       return `Kuota trial tidak cukup — sisa ${value.remaining} dari ${value.max} baris. Kurangi jumlah baris atau upgrade ke paket berbayar.`;
+    // § Fase 217, ADR-0054 — trial 1x per database Accurate + modul (tanpa membuka identitas akun lain).
+    case "TRIAL_DATABASE_ALREADY_USED":
+      return "Database Accurate ini sudah pernah dicoba untuk fitur ini, jadi trial tidak tersedia lagi. Silakan berlangganan untuk melanjutkan.";
+    case "TRIAL_SUBSCRIPTION_BOUND":
+      return "Trial ini sudah terikat pada database Accurate lain dan tidak bisa dipakai di database ini. Silakan berlangganan atau hubungi admin.";
     case "ACCURATE_SCOPE_MISSING":
       return `Izin Accurate belum lengkap untuk fitur ini${
         value.missing?.length ? ` (${value.missing.join(", ")})` : ""
