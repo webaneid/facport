@@ -1,6 +1,6 @@
 # Fase 218 — Hapus & arsip Data Usaha oleh pemilik
 
-**Status:** Done (API + UI; diuji manual di browser dev 2026-11-10; belum dirilis)
+**Status:** Done — dirilis v2.51.0 (2026-11-10); diuji manual di browser dev
 **Mulai:** 2026-11-10
 **Selesai:** 2026-11-10
 
