@@ -1,3 +1,13 @@
+## 2.51.0 (2026-11-10)
+
+* Merge develop: Fase 218 hapus & arsip Data Usaha oleh pemilik + perbaikan penyaring Konverter pada b ([05cd0fb](https://github.com/webaneid/facport/commit/05cd0fb))
+* fix(api): modul Konverter di luar buku besar trial (saring konverter_*, Fase 217) ([c36586c](https://github.com/webaneid/facport/commit/c36586c))
+* fix(web): bagian Diarsipkan tepat di bawah daftar Data Usaha; uji manual browser Fase 218 lolos ([7065116](https://github.com/webaneid/facport/commit/7065116))
+* feat: pemilik dapat menghapus Data Usaha kosong dan mengarsipkan yang punya riwayat, memutus Accurat ([44b50e1](https://github.com/webaneid/facport/commit/44b50e1))
+* docs: Fase 218 — arsip/hapus memutus Accurate, masa simpan 30 hari (ADR-0055) ([c01b1b8](https://github.com/webaneid/facport/commit/c01b1b8))
+* docs: Fase 218 — cakupan pembersihan arsip: catatan keuangan, conversion_logs, audit tidak dihapus ([35e8d21](https://github.com/webaneid/facport/commit/35e8d21))
+* docs: rencana Fase 218 hapus & arsip Data Usaha oleh pemilik (ADR-0055) ([457c865](https://github.com/webaneid/facport/commit/457c865))
+
 ## 2.50.0 (2026-11-10)
 
 * Merge develop: Fase 216 kelola akun Tim Internal + Fase 217 trial satu kali per database Accurate ([170ef33](https://github.com/webaneid/facport/commit/170ef33))
