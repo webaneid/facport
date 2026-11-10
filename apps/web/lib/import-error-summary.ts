@@ -32,7 +32,7 @@ export const ERROR_HINTS: { pattern: RegExp; hint: ErrorHint }[] = [
   },
   {
     pattern: /tidak ditemukan di Data Master Pajak/i,
-    hint: { action: "fix-data", advice: 'Isi kolom "PPh ID" persis seperti kolom Deskripsi di Master Pajak Accurate (jenis PPh 23), atau kosongkan bila fakturnya tidak kena PPh.' },
+    hint: { action: "fix-data", advice: 'Isi kolom "PPh ID" persis seperti kolom Deskripsi di Master Pajak Accurate (pajak jenis PPh, mis. PPh 23 atau Ps.4(2) — bukan PPN), atau kosongkan bila fakturnya tidak kena PPh.' },
   },
   {
     pattern: /melebihi nilai (utang|piutang)/i,

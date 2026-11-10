@@ -74,4 +74,26 @@ describe("findTaxByIdentifier — filter taxType PPH23 (Fase 118+)", () => {
     const found = await findTaxByIdentifier(ctx, "Jasa Yang Tidak Ada");
     expect(found).toBeUndefined();
   });
+
+  // § 2026-11-10 — client (Sales Receipt): pajak "Jasa logistik SKB" bertipe Pajak Penghasilan Ps.4(2) (`PPHPS4`) di Accurate, ditolak "tidak ditemukan" karena filter dulu
+  // HANYA PPH23. Semua jenis PPh (potong/pungut penghasilan) kini diterima; PPN/PPNBM TETAP ditolak (proteksi Fase 118).
+  test("pajak PPh Ps.4(2) (PPHPS4) ketemu lewat description", async () => {
+    mockTaxList([
+      { id: 50, taxCode: "PPN", description: "Jasa logistik SKB", taxType: "PPN" }, // description sama, jenis PPN → harus dilewati
+      { id: 410, taxCode: "Pajak Penghasilan Ps.4(2)", description: "Jasa logistik SKB", taxType: "PPHPS4" },
+    ]);
+    const found = await findTaxByIdentifier(ctx, "Jasa logistik SKB");
+    expect(found?.id).toBe(410);
+    expect(found?.taxType).toBe("PPHPS4");
+  });
+
+  test.each(["PPH15", "PPH21", "PPH22", "PPH23", "PPHPS4"])("jenis %s diterima", async (taxType) => {
+    mockTaxList([{ id: 7, taxCode: "X", description: "Pajak Uji", taxType }]);
+    expect((await findTaxByIdentifier(ctx, "Pajak Uji"))?.id).toBe(7);
+  });
+
+  test.each(["PPN", "PPNBM"])("jenis %s tetap TIDAK diterima", async (taxType) => {
+    mockTaxList([{ id: 7, taxCode: "X", description: "Pajak Uji", taxType }]);
+    expect(await findTaxByIdentifier(ctx, "Pajak Uji")).toBeUndefined();
+  });
 });
