@@ -1,6 +1,6 @@
 # Architecture — Kelola Akun Tim Internal (Fase 216)
 
-> Status: **RENCANA** (2026-11-10). Keputusan: ADR-0053. Rencana & status: `docs/phases/phase-216-kelola-akun-tim-internal.md`.
+> Status: **DIIMPLEMENTASI** (Fase 216, 2026-11-10). Keputusan: ADR-0053. Rencana & status: `docs/phases/phase-216-kelola-akun-tim-internal.md`.
 > Halaman: `admin.<domain>/staff` ("Tim Internal"). Model role: `architecture-user-roles.md`. Aksi peran customer: `architecture-account-lifecycle.md`.
 
 ## 1. Kondisi sekarang (diverifikasi ke kode 2026-11-10)
@@ -33,8 +33,8 @@ Tidak masuk (disengaja): hapus permanen/anonimisasi staf, ubah nama/email staf, 
 | Tidak ada perubahan bila sudah di tingkat itu | `noop` (tanpa audit/sesi/email) | — |
 | Sesi target dicabut seketika | ya | ya |
 | Email pemberitahuan | generik, tanpa PII berlebih | berisi sandi sementara, job `sensitive` (tidak masuk log) |
-| Audit | `role_change {action:"switch_tier", from, to}` | `update {passwordReset:true}` (TANPA sandi) |
-| Pembatasan laju | 10/menit | 5/menit |
+| Audit | `role_change {action:"switch_tier", from, to}` | `update {passwordReset:true}` (TANPA sandi), ditulis dalam transaksi yang sama dengan penggantian sandi dan pencabutan sesi |
+| Pembatasan laju (per IP, ember tersendiri) | 20/menit | 10/menit (daftar/tambah staf: 60/menit) |
 
 ## 4. Endpoint (baru, di `routes/admin/staff.route.ts`)
 | Endpoint | Fungsi |
@@ -67,3 +67,14 @@ Aturan murni (tanpa DB) ditambahkan di `lib/role-actions.ts`: `planTierSwitch(cu
 - Sandi sementara lewat email (risiko sama dengan pembuatan staf). Pengerasan kemudian: tautan reset sekali pakai.
 - Tidak ada "wajib ganti sandi saat login pertama" (belum ada mekanismenya di sistem).
 - Nama/email staf tidak bisa diubah.
+
+## 9. Hasil audit keamanan (subagent `security-auditor`, 2026-11-10)
+0 Critical, 0 High, 0 Medium, 4 Low, 4 Info. Tidak ada celah yang bisa dieksploitasi langsung (eskalasi hak, bypass guard, kebocoran sandi ke log/audit, penjaga Super Admin terakhir: aman).
+- LOW-1 (reset sandi tidak atomik) **diperbaiki**: kunci baris target, periksa ulang, ganti hash, cabut sesi, tulis audit dalam satu transaksi; kegagalan salah satunya membatalkan semuanya.
+- LOW-3 (batas laju longgar, ember dibagi dengan daftar) **diperbaiki**: `rateLimitPlugin` diperluas dengan `match`/`method`; reset 10/menit, ubah role 20/menit, masing-masing ember tersendiri.
+- LOW-2 (cache cookie sesi 5 menit: sesi yang dicabut masih lolos `getSession` sampai 5 menit; hak akses tetap dibaca dari DB tiap permintaan sehingga demosi langsung berlaku) **diterima**, pola yang sama dengan nonaktifkan akun.
+- LOW-4 (urutan kunci demosi vs nonaktifkan berbeda → deadlock sangat langka antar dua Super Admin, hasilnya 500 yang bisa diulang, bukan korupsi data) **dicatat**, pola yang sama sudah ada sejak Fase 189H.
+- INFO-1 (Super Admin bisa mereset kata sandi Super Admin lain dan menerima sandinya; ada email ke target dan audit) **diterima** (ADR-0053). Pengerasan opsional: step-up kata sandi pemanggil, atau tidak mengembalikan sandi untuk target Super Admin.
+- INFO-2 (sandi sementara tersimpan di data job pg-boss sampai diarsip), INFO-3 (kode galat membedakan keadaan akun, hanya untuk Super Admin), INFO-4 (percobaan gagal tidak diaudit): diterima.
+- Tidak dapat diverifikasi dari kode: retensi pg-boss job `send-email`, `x-real-ip` dari proxy produksi, dan role kustom di produksi yang memegang `users.manage`.
+

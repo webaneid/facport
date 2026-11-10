@@ -43,3 +43,25 @@ export function confirmMatches(typed: string, expected: string): boolean {
 export function canRemoveSuperAdmin(activeSuperAdminCount: number): boolean {
   return activeSuperAdminCount > 1;
 }
+
+// § Fase 216, ADR-0053 — ubah tingkat akun staf internal (Admin `staff` ↔ Super Admin `admin`) sebagai SATU operasi atomik (bukan grant lalu revoke terpisah yang bisa
+// berhenti di keadaan campuran). Role lain (mis. `customer`) tidak disentuh. Akun harus sudah staf (punya `admin` atau `staff`).
+export type StaffTier = "admin" | "staff";
+export type TierPlan =
+  | { ok: true; noop: boolean; before: string[]; after: string[]; promotes: boolean; demotes: boolean }
+  | { ok: false; code: "NOT_STAFF" };
+
+export function planTierSwitch(current: readonly string[], target: StaffTier): TierPlan {
+  const before = [...current].sort();
+  if (!before.includes("admin") && !before.includes("staff")) return { ok: false, code: "NOT_STAFF" };
+  const after = [...before.filter((r) => r !== "admin" && r !== "staff"), target].sort();
+  const noop = before.length === after.length && before.every((r, i) => r === after[i]);
+  return {
+    ok: true,
+    noop,
+    before,
+    after,
+    promotes: !before.includes("admin") && after.includes("admin"),
+    demotes: before.includes("admin") && !after.includes("admin"),
+  };
+}

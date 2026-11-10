@@ -198,3 +198,7 @@ kalau kebutuhan berubah nanti.
 - Registrasi & provisioning user → `docs/architecture/architecture-subscription.md`
   § "Dua Jalur Registrasi"
 - Surface admin vs app (domain routing) → `docs/architecture/architecture-domain-routing.md`
+
+## Kelola akun Tim Internal (Fase 216, 2026-11-10)
+Di halaman Tim Internal (`/staff`), Super Admin (`users.manage`) dapat mengubah tingkat akun staf (Admin `staff` ↔ Super Admin `admin`, atomik, dengan pratinjau dan konfirmasi ketik email), mereset kata sandi, dan menonaktifkan/mengaktifkan. Akun staf **tidak dihapus** (hanya nonaktif). Detail aturan, endpoint, dan hasil audit keamanan: `docs/architecture/architecture-staff-management.md`; keputusan: ADR-0053.
+

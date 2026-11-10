@@ -1,6 +1,6 @@
 # ADR-0053: Tim Internal — ubah role atomik dan reset kata sandi, tanpa hapus permanen
 
-**Status:** Proposed (2026-11-10, menunggu persetujuan user pada rencana Fase 216)
+**Status:** Accepted (2026-11-10, user menyetujui rencana Fase 216)
 **Tanggal:** 2026-11-10
 **Terkait:** ADR-0027 (role staff + nonaktifkan user), ADR-0045 (hapus/anonimisasi akun pelanggan; mengecualikan admin/staf), `docs/architecture/architecture-staff-management.md`, Fase 216
 
@@ -30,3 +30,5 @@ Fakta kode (diperiksa 2026-11-10):
 - Daftar Tim Internal hanya bertambah; akun yang tidak dibutuhkan hanya bisa dinonaktifkan dan tetap terlihat (bertanda Nonaktif).
 - Sandi sementara lewat email memiliki risiko yang sama dengan pembuatan staf yang sudah ada (diterima), dimitigasi: sesi lama dicabut, tampil sekali, tidak di log/audit, laju dibatasi.
 - Perlu uji untuk setiap aturan keselamatan dan audit keamanan (`security-auditor`) karena menyangkut eskalasi hak akses dan kredensial.
+- Diterima setelah audit (2026-11-10): Super Admin dapat mereset kata sandi Super Admin lain dan menerima sandinya (ada email ke target dan audit); cache cookie sesi 5 menit membuat sesi yang dicabut masih lolos `getSession` sebentar (hak akses tetap dibaca dari DB tiap permintaan). Pengerasan kemudian bila perlu: step-up kata sandi pemanggil, tautan reset sekali pakai.
+

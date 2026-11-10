@@ -143,6 +143,11 @@ export const app = new Elysia()
   // § Fase 189C — ekspor CSV Insight memuat data pribadi: batas ketat (10/menit) menahan penarikan massal oleh akun yang dibajak; pemakaian normal jauh di bawahnya.
   .use(rateLimitPlugin({ pathPrefix: "/admin/insights/export", windowMs: 60_000, max: 10 }))
   .use(rateLimitPlugin({ pathPrefix: "/admin/users/erase", windowMs: 60_000, max: 10 })) // § Fase 189H — hapus/anonimisasi akun
+  // § Fase 216 — Tim Internal: ubah tingkat staf & reset kata sandi (sandi sementara dikirim via email): batas menahan penyalahgunaan dari akun Super Admin yang dibajak; pemakaian normal jauh di bawahnya.
+  .use(rateLimitPlugin({ pathPrefix: "/admin/staff", windowMs: 60_000, max: 60 }))
+  // § audit keamanan 216 (LOW-3) — aksi yang membuat kredensial/mengubah hak punya ember sendiri yang lebih ketat daripada daftar/tambah (tidak berbagi ember dengan GET daftar).
+  .use(rateLimitPlugin({ pathPrefix: "/admin/staff", match: /\/reset-password$/, method: "POST", windowMs: 60_000, max: 10 }))
+  .use(rateLimitPlugin({ pathPrefix: "/admin/staff", match: /\/role(\/preview)?$/, method: "POST", windowMs: 60_000, max: 20 }))
   // § security review Fase 183 — POST /me/team/renew membuat invoice+order+notifikasi per panggilan.
   .use(rateLimitPlugin({ pathPrefix: "/me/team/renew", windowMs: 60_000, max: 10 }))
   // § architecture-security.md §6 — header keamanan minimal.

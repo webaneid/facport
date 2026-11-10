@@ -31,17 +31,26 @@ export function rateLimitPlugin({
   windowMs,
   max,
   pathPrefix,
+  match,
+  method,
 }: {
   windowMs: number;
   max: number;
   pathPrefix: string;
+  /** § Fase 216 — opsional: persempit ke path yang cocok regex ini (untuk aksi dengan id di tengah path, mis. `/admin/staff/:id/reset-password`). Ember tersendiri per (prefix, regex). */
+  match?: RegExp;
+  /** § Fase 216 — opsional: hanya metode HTTP ini yang dihitung (huruf besar). */
+  method?: string;
 }) {
-  return new Elysia({ name: `rate-limit-${pathPrefix}` }).onRequest(({ request, set }) => {
+  const bucketName = `${pathPrefix}${match ? `|${match.source}` : ""}${method ? `|${method}` : ""}`;
+  return new Elysia({ name: `rate-limit-${bucketName}` }).onRequest(({ request, set }) => {
     const url = new URL(request.url);
     if (!url.pathname.startsWith(pathPrefix)) return;
+    if (match && !match.test(url.pathname)) return;
+    if (method && request.method.toUpperCase() !== method) return;
 
     const ip = getClientIp(request);
-    const key = `${pathPrefix}:${ip}`;
+    const key = `${bucketName}:${ip}`;
     const now = Date.now();
     const bucket = buckets.get(key);
 

@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { ROLE_ACTIONS, planRoleChange, confirmMatches, canRemoveSuperAdmin } from "./role-actions";
+import { ROLE_ACTIONS, planRoleChange, planTierSwitch, confirmMatches, canRemoveSuperAdmin } from "./role-actions";
 
 // § Fase 189H — aturan murni aksi peran (tanpa DB): hasil aksi, role terakhir, status internal sebelum/sesudah, konfirmasi ketik, Super Admin terakhir.
 describe("planRoleChange", () => {
@@ -36,3 +36,27 @@ describe("confirmMatches / canRemoveSuperAdmin", () => {
     expect(canRemoveSuperAdmin(2)).toBe(true);
   });
 });
+
+// § Fase 216, ADR-0053 — ubah tingkat staf (Admin `staff` ↔ Super Admin `admin`) sebagai SATU operasi: hasil akhir tepat satu dari kedua role, role lain (customer) tak disentuh.
+describe("planTierSwitch", () => {
+  test("Admin → Super Admin: mengganti staff dengan admin, customer tetap", () => {
+    expect(planTierSwitch(["staff"], "admin")).toEqual({ ok: true, noop: false, before: ["staff"], after: ["admin"], promotes: true, demotes: false });
+    expect(planTierSwitch(["customer", "staff"], "admin")).toEqual({ ok: true, noop: false, before: ["customer", "staff"], after: ["admin", "customer"], promotes: true, demotes: false });
+  });
+  test("Super Admin → Admin: demotes=true (rute wajib memeriksa Super Admin aktif terakhir)", () => {
+    expect(planTierSwitch(["admin"], "staff")).toEqual({ ok: true, noop: false, before: ["admin"], after: ["staff"], promotes: false, demotes: true });
+  });
+  test("sudah di tingkat itu → noop", () => {
+    expect(planTierSwitch(["admin"], "admin")).toMatchObject({ ok: true, noop: true, promotes: false, demotes: false });
+    expect(planTierSwitch(["customer", "staff"], "staff")).toMatchObject({ ok: true, noop: true });
+  });
+  test("bukan akun staf (hanya customer / tanpa role) → NOT_STAFF", () => {
+    expect(planTierSwitch(["customer"], "admin")).toEqual({ ok: false, code: "NOT_STAFF" });
+    expect(planTierSwitch([], "staff")).toEqual({ ok: false, code: "NOT_STAFF" });
+  });
+  test("keadaan janggal (punya admin DAN staff) dinormalkan ke satu tingkat, bukan noop", () => {
+    expect(planTierSwitch(["admin", "staff"], "admin")).toMatchObject({ ok: true, noop: false, after: ["admin"], promotes: false, demotes: false });
+    expect(planTierSwitch(["admin", "staff"], "staff")).toMatchObject({ ok: true, noop: false, after: ["staff"], demotes: true });
+  });
+});
+

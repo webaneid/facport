@@ -22,7 +22,7 @@ const ROLE_LABEL: Record<string, string> = { customer: "Pengguna (aplikasi)", st
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-async function loadTarget(id: string, executor: Tx | typeof db, lock = false) {
+export async function loadTarget(id: string, executor: Tx | typeof db, lock = false) {
   const base = executor.select({ id: userTable.id, name: userTable.name, email: userTable.email, disabled: userTable.disabled, isInternal: userTable.isInternal }).from(userTable).where(eq(userTable.id, id));
   const [target] = lock ? await base.for("update") : await base;
   if (!target) return null;
@@ -30,7 +30,7 @@ async function loadTarget(id: string, executor: Tx | typeof db, lock = false) {
   return { ...target, roleNames: roleRows.map((r) => r.name).sort() };
 }
 
-async function sendRoleChangedEmail(target: { email: string; name: string }, after: string[]) {
+export async function sendRoleChangedEmail(target: { email: string; name: string }, after: string[]) {
   try {
     const labels = after.map((r) => ROLE_LABEL[r] ?? r).join(", ");
     await startQueue();

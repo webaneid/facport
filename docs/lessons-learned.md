@@ -6,6 +6,13 @@
 
 ---
 
+## 2026-11-10 — Fase 216 Tim Internal: temuan audit keamanan yang ditunda
+**Konteks:** ubah tingkat staf (atomik) dan reset kata sandi (`routes/admin/staff.route.ts`). Audit `security-auditor`: 0 Critical/High/Medium, 4 Low, 4 Info; LOW-1 (reset tidak atomik) dan LOW-3 (batas laju) diperbaiki.
+**Ditunda (Low):** (1) deadlock langka antar dua Super Admin yang saling menurunkan bersamaan: jalur demosi mengunci target lalu semua Super Admin aktif, jalur nonaktifkan (`lib/account-status.ts`) mengunci urutan lain; hasilnya 500 yang bisa diulang, bukan korupsi (penjaga Super Admin terakhir tetap benar). Perbaikan bila perlu: satu query kunci terurut atau petakan SQLSTATE 40P01 ke 409. (2) cache cookie sesi 5 menit: sesi yang dicabut masih lolos `getSession` sebentar; hak akses dibaca dari DB tiap permintaan.
+**Pelajaran:** sebelum mengaudit kode baru, tulis operasi yang menyentuh kredensial sebagai SATU transaksi sejak awal (hash di luar transaksi, sisanya di dalam). Uji "penjaga Super Admin terakhir" tidak bisa dipicu lewat endpoint; uji aturan murninya, jangan memaksa skenario yang menonaktifkan Super Admin di database bersama.
+
+---
+
 ## 2026-11-10 — Tax ID bertipe PPh Ps.4(2) ditolak "tidak ditemukan" (Sales Receipt / Purchase Payment)
 **Gejala:** client mengisi Tax ID "Jasa logistik SKB"; galat `Tax ID "Jasa logistik SKB" tidak ditemukan di Data Master Pajak Accurate` padahal pajak itu ada di Accurate dan ejaannya persis sama.
 **Root cause:** `findTaxByIdentifier` (`lib/accurate-tax.ts`) memfilter `taxType === "PPH23"` saja (Fase 118, untuk mencegah salah-cocok ke PPN). Pajak client bertipe Pajak Penghasilan Ps.4(2) (`PPHPS4`) sehingga tak pernah cocok. Pesan galat dan panduan kolom ikut menyebut "khusus PPh 23".
