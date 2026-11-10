@@ -1,6 +1,6 @@
 # Fase 217 — Trial satu kali per database Accurate + modul
 
-**Status:** Done sisi API (UI admin menyusul; belum dirilis)
+**Status:** Done (API + UI admin; uji manual browser belum; belum dirilis)
 
 **Mulai:** 2026-11-10
 **Selesai:** 2026-11-10
@@ -15,7 +15,7 @@ Tutup celah trial berulang (Data Usaha/akun baru di database Accurate yang sama)
 - [x] Worker: `rows_used` naik saat baris sukses (bukan dari `import_batch_rows`)
 - [x] Guard awal di `POST /subscriptions/trial` (UX)
 - [x] API: pengaturan `trial.exemptDbIds` (tervalidasi), `GET /admin/trial-claims`, `POST /admin/trial-claims/:id/release` (Super Admin, audit)
-- [ ] UI admin untuk daftar klaim, lepas klaim, dan isi daftar pengecualian (belum; sementara lewat API)
+- [x] UI admin: halaman `/trial` "Klaim Trial" (daftar, cari ID database, filter Aktif/Dilepas/Semua, dialog Lepas klaim dengan alasan wajib), entri sidebar (`users.view`), kolom "Database Dikecualikan dari Kunci Trial" di Pengaturan Trial; helper + tes web
 - [x] Pesan galat UI di halaman import
 - [x] Seeding dari langganan trial yang ada (±7 pasangan)
 - [ ] Update `architecture-subscription.md` § Trial, lessons-learned (kebocoran kuota ditutup)
@@ -44,7 +44,7 @@ Produk Konverter; kunci per perusahaan Accurate; deteksi pembuatan database baru
 Lihat `architecture-trial-database-ledger.md` § 9.
 
 ## Ringkasan Hasil
-Buku besar `trial_claims` aktif: trial 1x per (database Accurate, modul) lintas akun/Data Usaha, klaim saat import pertama, kuota dari counter permanen yang disinkronkan sebelum baris hilang. API admin daftar klaim + lepas klaim, pengaturan pengecualian (awal kosong), pesan UI baru. Tes baru: 10 (buku besar) + 2 (rute admin) + 1 (web); suite penuh API 2777 lolos, web 610 lolos, typecheck nol. Belum: UI admin (daftar klaim, lepas klaim, isi pengecualian), uji manual browser, rilis (bersama Fase 216 sebagai v2.50.0, ada MIGRASI 0053 yang menyeed klaim dari langganan trial yang ada).
+Buku besar `trial_claims` aktif: trial 1x per (database Accurate, modul) lintas akun/Data Usaha, klaim saat import pertama, kuota dari counter permanen yang disinkronkan sebelum baris hilang. API admin daftar klaim + lepas klaim, pengaturan pengecualian (awal kosong), pesan UI baru. Tes baru: 10 (buku besar) + 2 (rute admin) + 1 (web); suite penuh API 2777 lolos, web 610 lolos, typecheck nol. UI admin selesai (halaman `/trial`, dialog lepas klaim, kolom pengecualian di Pengaturan; web 616 tes lolos). Belum: uji manual browser (Fase 216 dan 217), rilis (bersama Fase 216 sebagai v2.50.0, ada MIGRASI 0053 yang menyeed klaim dari langganan trial yang ada).
 
 ## Known Limitations (tambahan)
 - Pelanggan yang membuat database baru di Accurate mendapat trial baru (disengaja).

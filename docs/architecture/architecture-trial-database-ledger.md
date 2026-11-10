@@ -1,6 +1,6 @@
 # Architecture — Buku Besar Trial per Database Accurate + Modul (Fase 217)
 
-> Status: **DIIMPLEMENTASI di sisi API** (2026-11-10); UI admin menyusul. Keputusan: ADR-0054. Fase: `docs/phases/phase-217-trial-per-database-accurate.md`.
+> Status: **DIIMPLEMENTASI** (2026-11-10): API + UI admin. Keputusan: ADR-0054. Fase: `docs/phases/phase-217-trial-per-database-accurate.md`.
 > Aturan trial yang berlaku sekarang: `architecture-subscription.md` § "Trial (Batas Baris)".
 
 ## 1. Kondisi sekarang (diverifikasi ke kode & produksi 2026-11-10)
@@ -74,3 +74,4 @@ Dari langganan `is_trial = true` yang Data Usaha-nya punya `accurate_db_id`: sat
 - `settleTrialUsage` dipanggil di cek kuota, akhir batch (worker), dan sebelum purge retensi; naik saja (GREATEST), idempoten.
 - Admin: `GET /admin/trial-claims` (`users.view`), `POST /admin/trial-claims/:id/release` (`users.manage`). Pengaturan `trial.exemptDbIds` divalidasi di `PUT /settings`.
 - Migrasi `0053_trial_claims.sql` membuat tabel dan mengisi klaim awal dari langganan trial yang ada.
+- UI admin: `app/admin/(protected)/trial/page.tsx` (daftar + filter + Lepas klaim, `Can users.manage`), `components/admin/trial-claim-release-dialog.tsx`, `lib/trial-claims.ts` (parse daftar pengecualian, pesan galat), kolom pengecualian di `settings/page.tsx` § Pengaturan Trial, entri sidebar "Klaim Trial".
