@@ -125,6 +125,8 @@ export const app = new Elysia()
   // transfer kepemilikan Data Usaha (`GET/POST /transfers/:token`), sama
   // alasan rate limit `/invites` di atas.
   .use(rateLimitPlugin({ pathPrefix: "/transfers", windowMs: 60_000, max: 20 }))
+  // § Fase 218 — arsip/hapus/pulihkan Data Usaha: aksi jarang, batas ketat per IP (POST saja; pratinjau GET tidak dibatasi di sini).
+  .use(rateLimitPlugin({ pathPrefix: "/me/data-usaha", windowMs: 60_000, max: 20, method: "POST", match: /^\/me\/data-usaha\/[^/]+\/(archive|delete|restore)$/ }))
   // § security review Fase 143 (Medium) — /accurate/* memanggil Accurate (db-list, open-db, tukar kode) per request dari
   // user terautentikasi; tanpa batas, bisa menghabiskan kuota Accurate / menggantung. Longgar (halaman koneksi memuat
   // beberapa endpoint sekaligus), tapi menutup abuse berulang.

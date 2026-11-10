@@ -56,6 +56,10 @@ export const dataUsaha = pgTable("data_usaha", {
   // mentahnya sudah lama terhapus retensi) — mulai dari 0 sejak fitur ini
   // live, akumulasi ke depannya permanen.
   cumulativeSuccessfulRowCount: integer("cumulative_successful_row_count").notNull().default(0),
+  // § Fase 218, ADR-0055 — diarsipkan oleh pemilik (NULL = aktif). Disembunyikan dari daftar & tidak bisa dipakai; koneksi Accurate diputus saat diarsipkan. Dibersihkan job harian setelah 30 hari.
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+  // Diisi job pembersihan harian setelah data operasional dibuang (arsip > 30 hari); baris yang masih ditahan catatan keuangan jadi "cangkang". Tidak bisa dipulihkan lagi.
+  archiveCleanedAt: timestamp("archive_cleaned_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 }, (t) => [

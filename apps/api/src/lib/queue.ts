@@ -19,6 +19,7 @@ export const JOBS = {
   IMPORT_TO_ACCURATE_LARGE: "import-to-accurate-large",
   CANCEL_IMPORT: "cancel-import", // § Fase 09, ADR-0013
   PURGE_OLD_IMPORTS: "purge-old-imports", // § Fase 10 — retensi data import
+  CLEANUP_ARCHIVED_DATA_USAHA: "cleanup-archived-data-usaha", // § Fase 218, ADR-0055 — bersihkan data operasional Data Usaha diarsipkan > 30 hari
   NOTIFY_EXPIRING_SOON: "notify-expiring-soon", // § Fase 45 — reminder H-sekian sebelum subscription/trial berakhir
   SEND_ANNOUNCEMENT: "send-announcement", // § Fase 45 — fan-out broadcast admin ke banyak penerima
   // § Fase 159 — 1 job per "Input Produksi" AutoProduksi (1 panggilan item-adjustment/save.do,

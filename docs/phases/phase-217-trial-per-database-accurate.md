@@ -49,3 +49,6 @@ Buku besar `trial_claims` aktif: trial 1x per (database Accurate, modul) lintas 
 ## Known Limitations (tambahan)
 - Pelanggan yang membuat database baru di Accurate mendapat trial baru (disengaja).
 - Penyalahgunaan lewat akses ke database orang lain: klaim dilepas admin bila salah.
+
+## Tindak lanjut v2.50.1
+- Seed awal menyertakan 2 klaim `konverter_*` (di luar cakupan). Kode kini menyaring modul Konverter (`claimableModules`), 2 baris seed dihapus di produksi lewat SQL. Tes: 2 tes baru di `lib/trial-claims.test.ts`.

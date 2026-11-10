@@ -1,4 +1,4 @@
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import { db } from "./db";
 import { dataUsaha } from "../db/schema";
 import { memberAccessibleDataUsahaIds } from "./seat-access";
@@ -25,7 +25,7 @@ export async function getOrCreateDefaultDataUsaha(userId: string): Promise<strin
     .from(dataUsaha)
     // § Fase 143 — TANPA filter `isNull(accurateConnectionId)` lagi: pointer koneksi kini HIDUP (dulu mati, jadi filter itu
     // selalu cocok). Dengan filter, Data Usaha Utama yang sudah terhubung tidak ketemu → duplikat dibuat tiap panggilan admin.
-    .where(and(eq(dataUsaha.userId, userId), eq(dataUsaha.name, DEFAULT_DATA_USAHA_NAME)));
+    .where(and(eq(dataUsaha.userId, userId), eq(dataUsaha.name, DEFAULT_DATA_USAHA_NAME), isNull(dataUsaha.archivedAt)));
   if (existing) return existing.id;
 
   const [created] = await db.insert(dataUsaha).values({ userId, name: DEFAULT_DATA_USAHA_NAME }).returning();
@@ -38,7 +38,8 @@ export async function getOrCreateDefaultDataUsaha(userId: string): Promise<strin
 // dicek, sama kelas bug seperti ownership check resource lain di
 // project ini).
 export async function ownsDataUsaha(userId: string, dataUsahaId: string): Promise<boolean> {
-  const [row] = await db.select({ id: dataUsaha.id }).from(dataUsaha).where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, userId)));
+  // § Fase 218, ADR-0055 — Data Usaha yang diarsipkan TIDAK bisa dipakai (semua rute modul lewat sini); hanya pulihkan/daftar arsip yang melihatnya.
+  const [row] = await db.select({ id: dataUsaha.id }).from(dataUsaha).where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, userId), isNull(dataUsaha.archivedAt)));
   return !!row;
 }
 
@@ -62,6 +63,7 @@ export async function hasAccessToDataUsaha(userId: string, dataUsahaId: string):
     .where(
       and(
         eq(dataUsaha.id, dataUsahaId),
+        isNull(dataUsaha.archivedAt),
         or(
           eq(dataUsaha.userId, userId),
           // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".

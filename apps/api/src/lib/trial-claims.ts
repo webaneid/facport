@@ -3,11 +3,23 @@ import { db } from "./db";
 import { trialClaims, plans, dataUsaha, settings, auditLogs } from "../db/schema";
 import type { subscriptions } from "../db/schema";
 import { getInternalReason } from "./internal-accounts";
+import { moduleProductLine } from "./module-catalog";
 
 // § Fase 217, ADR-0054, architecture-trial-database-ledger.md — trial 1x seumur hidup per (database Accurate, modul), lintas akun & Data Usaha.
 // Klaim dibuat SAAT IMPORT PERTAMA dikonfirmasi (dari `checkTrialRowBudget`), bukan saat trial dibuat.
 
 export const TRIAL_EXEMPT_DB_IDS_SETTING_KEY = "trial.exemptDbIds";
+
+/**
+ * Hanya modul yang berbicara ke database Accurate (Facport, AutoProduksi) yang punya klaim. Produk Konverter (Excel→XML untuk Accurate Desktop, `konverter_*`)
+ * tidak punya database Accurate dan di luar cakupan buku besar (ADR-0054 butir 8). Modul tak dikenal (null) juga dilewati (aman: tidak mengunci apa pun).
+ */
+export function claimableModules(modules: readonly string[]): string[] {
+  return modules.filter((m) => {
+    const line = moduleProductLine(m);
+    return line !== null && line !== "konverter";
+  });
+}
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = Tx | typeof db;
@@ -52,7 +64,7 @@ export async function ensureTrialClaims(subscription: SubscriptionRow): Promise<
   if ((await getInternalReason(subscription.userId)) !== null) return { kind: "skip" };
 
   const [plan] = await db.select({ modules: plans.modules }).from(plans).where(eq(plans.id, subscription.planId));
-  const modules = plan?.modules ?? [];
+  const modules = claimableModules(plan?.modules ?? []);
   if (modules.length === 0) return { kind: "skip" };
 
   return db.transaction(async (tx): Promise<TrialClaimOutcome> => {
@@ -107,7 +119,8 @@ export async function releaseTrialClaim(claimId: string, actorId: string, reason
  * diklaim langganan trial LAIN, kembalikan modul yang bentrok. Aturan lewati sama dengan `ensureTrialClaims` (tanpa database, dikecualikan, internal).
  */
 export async function findForeignTrialClaim(params: { userId: string; dataUsahaId: string; modules: string[] }, executor: Executor = db): Promise<string | null> {
-  const { userId, dataUsahaId, modules } = params;
+  const { userId, dataUsahaId } = params;
+  const modules = claimableModules(params.modules);
   if (modules.length === 0) return null;
   const [du] = await executor.select({ accurateDbId: dataUsaha.accurateDbId }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
   const dbId = du?.accurateDbId?.trim();

@@ -45,6 +45,18 @@ async function blockingTables(executor: Executor, fks: FkInfo[], ids: string[], 
   return out;
 }
 
+/**
+ * Tabel yang merujuk SATU Data Usaha (FK dari katalog Postgres, fail-closed) + penanda "data_usaha" bila ada formula AutoProduksi atau hitungan import. TIDAK menghitung koneksi Accurate
+ * sebagai isi (§ Fase 218, ADR-0055: Data Usaha kosong yang terhubung Accurate boleh dihapus setelah koneksinya diputus).
+ */
+export async function dataUsahaReferencingTables(executor: Executor, dataUsahaId: string): Promise<string[]> {
+  const [d] = await executor.select({ rows: dataUsaha.cumulativeSuccessfulRowCount, formulas: dataUsaha.formulaLastNumber }).from(dataUsaha).where(eq(dataUsaha.id, dataUsahaId));
+  const refs = await blockingTables(executor, await listFks(executor, "data_usaha"), [dataUsahaId], "data_usaha");
+  const tables = new Set(refs.get(dataUsahaId) ?? []);
+  if (d && (d.rows > 0 || d.formulas > 0)) tables.add("data_usaha");
+  return [...tables].sort();
+}
+
 /** Data Usaha milik `ownerIds` yang KOSONG (tanpa catatan apa pun yang merujuknya, tanpa koneksi Accurate/hitungan import) → boleh ikut dihapus. */
 async function emptyDataUsaha(executor: Executor, ownerIds: string[]) {
   const owned = await executor.select({ id: dataUsaha.id, userId: dataUsaha.userId, connectionId: dataUsaha.accurateConnectionId, rows: dataUsaha.cumulativeSuccessfulRowCount, formulas: dataUsaha.formulaLastNumber }).from(dataUsaha).where(inArray(dataUsaha.userId, ownerIds));

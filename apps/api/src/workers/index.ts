@@ -36,6 +36,7 @@ import { EXPIRE_SUBSCRIPTIONS_CRON, NOTIFY_EXPIRING_SOON_CRON, EXPIRE_UNPAID_ORD
 import { expireOverdueOrders } from "../lib/order-cancel";
 import { issueDueRenewalInvoices, openRenewalOrdersBySubscription, renewalPayUrl } from "../lib/renewal-billing";
 import { settleTrialUsage } from "../lib/trial-claims";
+import { cleanupExpiredArchives } from "../lib/data-usaha-lifecycle";
 import { IMPORT_RETENTION_SETTING_KEY, MAX_IMPORT_RETENTION_DAYS, DEFAULT_IMPORT_RETENTION_DAYS } from "../lib/import-retention";
 import { AccurateTokenError, isAccurateAuthFailure, isAccurateRecordNotFound } from "../lib/accurate";
 import { hasRunningBatch, refreshConnectionToken } from "../lib/accurate-token";
@@ -2758,6 +2759,13 @@ async function main() {
   // default admin 2 hari (§ settings.route.ts — divalidasi 1-7 di situ,
   // tapi job ini TETAP clamp ulang defensif kalau ada nilai settings yang
   // di luar batas via jalur lain, mis. edit manual DB).
+  // § Fase 218, ADR-0055 — harian 03:30 (setelah purge import 03:00): Data Usaha diarsipkan > 30 hari dibersihkan (data operasional dibuang, catatan keuangan dipertahankan).
+  await boss.schedule(JOBS.CLEANUP_ARCHIVED_DATA_USAHA, "30 3 * * *");
+  await boss.work(JOBS.CLEANUP_ARCHIVED_DATA_USAHA, async () => {
+    const result = await cleanupExpiredArchives();
+    logger.info(result, "Cleanup Data Usaha diarsipkan selesai");
+  });
+
   await boss.schedule(JOBS.PURGE_OLD_IMPORTS, "0 3 * * *");
   await boss.work(JOBS.PURGE_OLD_IMPORTS, async () => {
     const [retentionSetting] = await db.select().from(settings).where(eq(settings.key, IMPORT_RETENTION_SETTING_KEY));
