@@ -3,7 +3,7 @@ import { eq, inArray } from "drizzle-orm";
 import { db } from "./db";
 import { user as userTable, plans, subscriptions, dataUsaha, importBatches, importBatchRows, settings, trialClaims } from "../db/schema";
 import { checkTrialRowBudget, TRIAL_MAX_ROWS_SETTING_KEY } from "./trial";
-import { releaseTrialClaim, settleTrialUsage, TRIAL_EXEMPT_DB_IDS_SETTING_KEY } from "./trial-claims";
+import { releaseTrialClaim, settleTrialUsage, claimableModules, findForeignTrialClaim, TRIAL_EXEMPT_DB_IDS_SETTING_KEY } from "./trial-claims";
 
 // § Fase 217, ADR-0054 — buku besar trial per (database Accurate, modul). Dites langsung (logika murni, tanpa HTTP).
 const runId = Date.now();
@@ -158,7 +158,6 @@ describe("buku besar trial per database + modul", () => {
 
 describe("findForeignTrialClaim (guard awal saat trial dibuat)", () => {
   test("bentrok bila (db, modul) sudah diklaim langganan lain; tidak bentrok untuk database lain atau tanpa database", async () => {
-    const { findForeignTrialClaim } = await import("./trial-claims");
     const d = dbId(20);
     const a = await mkUser("f1");
     const b = await mkUser("f2");
@@ -169,5 +168,25 @@ describe("findForeignTrialClaim (guard awal saat trial dibuat)", () => {
     expect(await findForeignTrialClaim({ userId: b, dataUsahaId: sB!.dataUsahaId, modules: ["purchase_invoice"] })).toBeNull();
     const [sC] = await db.select().from(subscriptions).where(eq(subscriptions.id, await mkSub(b, null)));
     expect(await findForeignTrialClaim({ userId: b, dataUsahaId: sC!.dataUsahaId, modules: ["sales_receipt"] })).toBeNull();
+  });
+});
+
+describe("modul Konverter di luar buku besar (ADR-0054 butir 8)", () => {
+  test("claimableModules menyaring konverter_* dan modul tak dikenal, mempertahankan modul Facport", () => {
+    expect(claimableModules(["sales_receipt", "konverter_purchase_order", "modul_tidak_ada", "purchase_invoice"])).toEqual(["sales_receipt", "purchase_invoice"]);
+    expect(claimableModules(["konverter_purchase_invoice"])).toEqual([]);
+  });
+
+  test("klaim konverter_* yang sudah ada (seed lama) tidak memblokir trial Konverter; paket Konverter tidak membuat klaim", async () => {
+    const d = dbId(30);
+    const a = await mkUser("k1");
+    const b = await mkUser("k2");
+    await db.insert(trialClaims).values({ accurateDbId: d, module: "konverter_purchase_order", subscriptionId: crypto.randomUUID(), userId: a });
+    dbIds.push(d);
+    const subB = await mkSub(b, d, true, "konverter_purchase_order");
+    const [sB] = await db.select().from(subscriptions).where(eq(subscriptions.id, subB));
+    expect(await findForeignTrialClaim({ userId: b, dataUsahaId: sB!.dataUsahaId, modules: ["konverter_purchase_order"] })).toBeNull();
+    expect((await checkTrialRowBudget(subB, 1)).ok).toBe(true);
+    expect(await db.select().from(trialClaims).where(eq(trialClaims.subscriptionId, subB))).toHaveLength(0);
   });
 });
