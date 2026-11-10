@@ -56,6 +56,12 @@ async function fetchTaxList(ctx: AccurateSessionContext): Promise<TaxRecord[]> {
 // mengurangi kemungkinan), termasuk untuk match numerik (kalau user
 // kebetulan ketik id internal record yang BUKAN PPh23, sekarang gagal
 // jelas alih-alih diam-diam terkirim dengan taxId salah jenis).
+//
+// § 2026-11-10 — client memakai pajak bertipe Pajak Penghasilan Ps.4(2) (`PPHPS4`, mis. "Jasa logistik SKB") dan ditolak "tidak ditemukan" karena filter di atas HANYA PPH23.
+// Yang berbahaya bukan jenis PPh-nya, melainkan salah-cocok ke PPN/PPNBM — maka filter kini = SEMUA jenis PPh (enum `taxType` resmi: PPH15/21/22/23/PPHPS4), PPN & PPNBM
+// tetap dikecualikan (proteksi Fase 118 utuh). Accurate tetap memvalidasi `detailTax` saat save, jadi jenis yang tidak cocok untuk dokumen itu ditolak di sana dengan pesan jelas.
+export const PPH_TAX_TYPES: ReadonlySet<string> = new Set(["PPH15", "PPH21", "PPH22", "PPH23", "PPHPS4"]);
+
 export async function findTaxByIdentifier(
   ctx: AccurateSessionContext,
   identifier: string,
@@ -63,11 +69,11 @@ export async function findTaxByIdentifier(
   const trimmed = identifier.trim();
   if (trimmed === "") return undefined;
   const list = await fetchTaxList(ctx);
-  const pph23Only = list.filter((t) => t.taxType === "PPH23");
+  const pphOnly = list.filter((t) => PPH_TAX_TYPES.has(t.taxType));
   const asNumber = Number(trimmed);
   const isNumeric = !Number.isNaN(asNumber);
   const needle = trimmed.toLowerCase();
-  return pph23Only.find((t) => {
+  return pphOnly.find((t) => {
     if (isNumeric && Number(t.id) === asNumber) return true;
     const code = typeof t.taxCode === "string" ? t.taxCode.trim().toLowerCase() : "";
     const desc = typeof t.description === "string" ? t.description.trim().toLowerCase() : "";

@@ -322,5 +322,15 @@ Semua: 100% baris sukses, `retry=0`. **Temuan 20:** (a) modul yang mencari pelan
 - [ ] Penegakan batas untuk TULIS berkelanjutan (≥ 60 dtk) — di bawah batas resmi dulu (mis. paralel 4–8 lewat pembatas), lihat apakah ada 429 pada tulis.
 - [ ] Cache untuk pencarian lain yang berulang per faktur (klasifikasi data, PIC Work Order, dokumen sumber SQ/SO/DO).
 - [ ] Cek RAM VPS: bila longgar, naikkan `mem_limit` worker sebagai alternatif/tambahan.
-- [ ] Uji `bulk-save.do` sebagai jalur kirim untuk modul per-baris (menembus langit-langit 8 req/dtk; perlu rancangan pemulihan per dokumen).
+- [x] Uji `bulk-save.do` sebagai jalur kirim untuk modul per-baris — SELESAI untuk Sales Receipt (§ 25): hanya +22% (paralel 4) / +53% (paralel 8) atas `save.do` paralel 4; tidak dikerjakan.
 - [ ] Ulangi inti percobaan dari VPS produksi (latensi nyata).
+
+## 25. Sales Receipt: `bulk-save.do`, kirim bertahap vs sekali, paralel untuk dokumen besar (2026-11-10, trial 3083006, 10 cabang)
+Skrip lab TIDAK di-commit (ada di scratchpad sesi). Database trial kosong, cabang 1 dipakai untuk semua dokumen; angka indikatif (variasi antar-run besar: cicilan 500 entri pernah 62/99/166 dtk).
+- **`sales-receipt/bulk-save.do` ADA**, hasil per item (galat parsial aman, sama seperti Sales Invoice § 3-5). 120 receipt 1-baris: `save.do` paralel 1 = 2,25/dtk; paralel 4 = 7,39; bulk-10 paralel 4 = 9,02 (+22%); bulk-10 paralel 8 = 11,35 (+53%, menyentuh batas 8 proses paralel/token). Tidak membantu dokumen besar (biaya per dokumen tetap, diproses berurutan di dalam permintaan). KEPUTUSAN: tidak dikerjakan.
+- **Bertahap vs sekali kirim (550 entri, satu dokumen):** sekali kirim 216 dtk; bertahap 500+50 = 227 dtk (99 + 123). Praktis sama → menaikkan `IMPORT_STAGED_CHUNK_ROWS` TIDAK mempercepat (dugaan awal "bertahap 2–3× lebih lambat" SALAH).
+- **Paralel untuk dokumen besar (8 dokumen × 200 entri, dokumen berbeda):** paralel 1 = 231 dtk (6,9 baris/dtk; 29 dtk/dokumen); paralel 4 = 132 dtk (12,1; 1,75×); paralel 8 = 108 dtk (14,8; 2,14×). Jadi paralel MEMBANTU dokumen besar (koreksi dugaan sementara "tidak menolong"; model N² di trial meremehkan: 200 entri ≈ 29 dtk, bukan 17). 4→8 hanya +22%. Paralel 6 belum diukur (env membatasi 1–6).
+- **Bukti perbaikan cabang v2.49.4 (akun multi-cabang):** update dengan `id` tanpa cabang DITOLAK ("harus menentukan cabang saat penulisan data"), dengan `branchName` DITERIMA; end-to-end 550 entri tanpa pajak lewat `runStagedSend` selesai 2 cicilan, dokumen berisi 550 entri.
+- **PPh pada dokumen bertahap:** update dengan `detailTax` (id pajak lama + pajak baru) GAGAL di Accurate ("null value in column tax_id of relation purchase_sales_detail_tax"). Menguatkan keputusan Fase 205: dokumen ber-PPh TIDAK dicicil (`staged-plan.ts`). Jangan dibuka tanpa uji khusus format `detailTax` pada update.
+- **Pajak Ps.4(2) (`PPHPS4`)** diterima Accurate di `detailTax` Sales Receipt (lihat lessons-learned 2026-11-10).
+

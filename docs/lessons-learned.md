@@ -6,6 +6,14 @@
 
 ---
 
+## 2026-11-10 — Tax ID bertipe PPh Ps.4(2) ditolak "tidak ditemukan" (Sales Receipt / Purchase Payment)
+**Gejala:** client mengisi Tax ID "Jasa logistik SKB"; galat `Tax ID "Jasa logistik SKB" tidak ditemukan di Data Master Pajak Accurate` padahal pajak itu ada di Accurate dan ejaannya persis sama.
+**Root cause:** `findTaxByIdentifier` (`lib/accurate-tax.ts`) memfilter `taxType === "PPH23"` saja (Fase 118, untuk mencegah salah-cocok ke PPN). Pajak client bertipe Pajak Penghasilan Ps.4(2) (`PPHPS4`) sehingga tak pernah cocok. Pesan galat dan panduan kolom ikut menyebut "khusus PPh 23".
+**Fix:** filter = semua jenis PPh (PPH15/21/22/23/PPHPS4); PPN & PPNBM tetap dikecualikan. Teks hint & panduan kolom disesuaikan. Terbukti di Accurate nyata (trial): receipt dengan `detailTax` PPHPS4 tersimpan (`taxId` 100, jumlah 50, chequeAmount 9.950). Tes di `accurate-tax.test.ts`.
+**Pencegahan:** filter pengaman yang dibuat dari satu kasus harus mengecualikan kelas yang berbahaya (PPN), bukan menyempit ke satu contoh yang kebetulan dikenal. Tambahkan jenis baru ke `PPH_TAX_TYPES`, bukan filter ad hoc. Catatan terkait: dokumen ber-PPh sengaja TIDAK dicicil (`architecture-staged-send.md`); uji langsung `runStagedSend` dengan `detailTax` memang gagal di update (Accurate: "null value in column tax_id"), sehingga penyaringnya di `staged-plan.ts` harus dipertahankan.
+
+---
+
 ## 2026-11-09 — Kirim bertahap (SR/PP) gagal di cicilan 2+ pada akun Accurate multi-cabang
 **Gejala:** client melihat "Profil pengguna anda memiliki akses ke lebih dari satu cabang. Anda harus menentukan cabang saat penulisan data" + "500 dari 549 entri faktur sudah tersimpan"; Excel sudah berisi cabang (kolom wajib).
 **Root cause:** `buildStepPayload` (`lib/staged-send.ts`) untuk cicilan lanjutan (update dengan `id`) hanya mengirim `{id, chequeAmount, detailInvoice}` tanpa `branchName`. Cicilan 1 membawa header lengkap sehingga lolos; Accurate multi-cabang menolak SETIAP penulisan tanpa cabang.
