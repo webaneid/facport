@@ -180,8 +180,8 @@ export const journalVoucherImportRoute = new Elysia()
 
       const budgetCheck = await checkTrialRowBudget(subscription.id, batch.totalRows);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       await db
@@ -284,8 +284,8 @@ export const journalVoucherImportRoute = new Elysia()
 
       const budgetCheck = await checkTrialRowBudget(subscription.id, pendingRowCount?.pendingCount ?? 0);
       if (!budgetCheck.ok) {
-        set.status = 400;
-        return { code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: budgetCheck.remaining, max: budgetCheck.max };
+        set.status = budgetCheck.status;
+        return budgetCheck.body;
       }
 
       await db

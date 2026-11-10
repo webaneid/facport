@@ -1,3 +1,4 @@
+import { TRIAL_EXEMPT_DB_IDS_SETTING_KEY } from "../lib/trial-claims";
 import { Elysia, t } from "elysia";
 import { eq, inArray } from "drizzle-orm";
 import { db } from "../lib/db";
@@ -202,6 +203,16 @@ export const settingsRoute = new Elysia({ prefix: "/settings" })
         if (!Number.isInteger(maxRows) || maxRows < MIN_TRIAL_MAX_ROWS || maxRows > MAX_TRIAL_MAX_ROWS) {
           set.status = 400;
           return { code: "INVALID_TRIAL_MAX_ROWS", minRows: MIN_TRIAL_MAX_ROWS, maxRows: MAX_TRIAL_MAX_ROWS };
+        }
+      }
+
+      // § Fase 217, ADR-0054 — daftar database yang dikecualikan dari kunci trial: dibaca langsung `ensureTrialClaims`, nilai cacat harus ditolak.
+      const exemptItem = body.find((b) => b.key === TRIAL_EXEMPT_DB_IDS_SETTING_KEY);
+      if (exemptItem) {
+        const v = exemptItem.value;
+        if (!Array.isArray(v) || v.length > 200 || !v.every((x) => typeof x === "string" && /^[A-Za-z0-9_-]{1,100}$/.test(x))) {
+          set.status = 400;
+          return { code: "INVALID_TRIAL_EXEMPT_DB_IDS" };
         }
       }
 

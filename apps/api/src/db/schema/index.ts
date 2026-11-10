@@ -14,3 +14,4 @@ export * from "./customer-care.schema";
 export * from "./promo.schema";
 export * from "./conversion.schema";
 export * from "./autoproduksi.schema";
+export * from "./trial-claim.schema";

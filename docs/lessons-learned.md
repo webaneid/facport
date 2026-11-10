@@ -6,10 +6,17 @@
 
 ---
 
+## 2026-11-10 — Fase 216 Tim Internal: temuan audit keamanan yang ditunda
+**Konteks:** ubah tingkat staf (atomik) dan reset kata sandi (`routes/admin/staff.route.ts`). Audit `security-auditor`: 0 Critical/High/Medium, 4 Low, 4 Info; LOW-1 (reset tidak atomik) dan LOW-3 (batas laju) diperbaiki.
+**Ditunda (Low):** (1) deadlock langka antar dua Super Admin yang saling menurunkan bersamaan: jalur demosi mengunci target lalu semua Super Admin aktif, jalur nonaktifkan (`lib/account-status.ts`) mengunci urutan lain; hasilnya 500 yang bisa diulang, bukan korupsi (penjaga Super Admin terakhir tetap benar). Perbaikan bila perlu: satu query kunci terurut atau petakan SQLSTATE 40P01 ke 409. (2) cache cookie sesi 5 menit: sesi yang dicabut masih lolos `getSession` sebentar; hak akses dibaca dari DB tiap permintaan.
+**Pelajaran:** sebelum mengaudit kode baru, tulis operasi yang menyentuh kredensial sebagai SATU transaksi sejak awal (hash di luar transaksi, sisanya di dalam). Uji "penjaga Super Admin terakhir" tidak bisa dipicu lewat endpoint; uji aturan murninya, jangan memaksa skenario yang menonaktifkan Super Admin di database bersama.
+
+---
+
 ## 2026-11-10 — Tax ID bertipe PPh Ps.4(2) ditolak "tidak ditemukan" (Sales Receipt / Purchase Payment)
 **Gejala:** client mengisi Tax ID "Jasa logistik SKB"; galat `Tax ID "Jasa logistik SKB" tidak ditemukan di Data Master Pajak Accurate` padahal pajak itu ada di Accurate dan ejaannya persis sama.
 **Root cause:** `findTaxByIdentifier` (`lib/accurate-tax.ts`) memfilter `taxType === "PPH23"` saja (Fase 118, untuk mencegah salah-cocok ke PPN). Pajak client bertipe Pajak Penghasilan Ps.4(2) (`PPHPS4`) sehingga tak pernah cocok. Pesan galat dan panduan kolom ikut menyebut "khusus PPh 23".
-**Fix:** filter = semua jenis PPh (PPH15/21/22/23/PPHPS4); PPN & PPNBM tetap dikecualikan. Teks hint & panduan kolom disesuaikan. Terbukti di Accurate nyata (trial): receipt dengan `detailTax` PPHPS4 tersimpan (`taxId` 100, jumlah 50, chequeAmount 9.950). Tes di `accurate-tax.test.ts`.
+**Fix:** filter = semua jenis PPh (PPH15/21/22/23/PPHPS4); PPN & PPNBM tetap dikecualikan. Teks hint & panduan kolom disesuaikan. Terbukti di Accurate nyata (trial): receipt dengan `detailTax` PPHPS4 tersimpan (`taxId` 100, jumlah 50, chequeAmount 9.950). Purchase Payment (fungsi pencarian yang sama) juga terbukti 2026-11-10: `detailTax` PPHPS4 tersimpan (taxId 100, jumlah 50, chequeAmount 9.950). Jenis PPh 15/21/22 diterima pencarian tetapi BELUM diuji ke Accurate. Tes di `accurate-tax.test.ts`.
 **Pencegahan:** filter pengaman yang dibuat dari satu kasus harus mengecualikan kelas yang berbahaya (PPN), bukan menyempit ke satu contoh yang kebetulan dikenal. Tambahkan jenis baru ke `PPH_TAX_TYPES`, bukan filter ad hoc. Catatan terkait: dokumen ber-PPh sengaja TIDAK dicicil (`architecture-staged-send.md`); uji langsung `runStagedSend` dengan `detailTax` memang gagal di update (Accurate: "null value in column tax_id"), sehingga penyaringnya di `staged-plan.ts` harus dipertahankan.
 
 ---
@@ -6462,3 +6469,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Akar:** sebelum kirim faktur, `findOrCreateDataClassification` mencari kategori lalu MEMBUAT bila tidak ketemu. Pencarian operator tidak menemukan (sebab belum dibuktikan: kemungkinan hak baca daftar kategori, atau nama/slot tidak cocok) → coba buat → ditolak hak akses → seluruh faktur gagal. Langkah ini hanya pelengkap (nilai balik tidak dipakai).
 - **Perbaikan:** penolakan karena hak akses ("tidak memiliki hak") tidak lagi melempar; faktur tetap dikirim dan Accurate memvalidasi kategori saat `save.do` (kategori sungguh tidak ada → pesan Accurate "tidak ditemukan"). Dokumen tidak berubah.
 - **Pelajaran:** langkah "pastikan data master ada" harus toleran terhadap hak akses akun yang menyambung; jangan biarkan langkah pelengkap menggagalkan dokumen. Penyebab pencarian meleset untuk operator MASIH TERBUKA (butuh nama kategori + slot dari client).
+
+
+## 2026-11-10 — Trial bisa diulang lewat Data Usaha/akun baru; kuota trial bocor karena purge (ditutup Fase 217)
+**Gejala/temuan:** guard trial per `userId + dataUsahaId + modul` hanya mengunci entitas lokal; Data Usaha atau akun baru di database Accurate yang sama mendapat trial lagi. Kuota 100 baris dihitung dari `import_batch_rows` yang dipurge ±2 hari, sehingga pemakaian lama hilang. Cek produksi: pengulangan belum terbukti, tetapi riwayat batch trial hampir seluruhnya sudah hilang, jadi ketiadaan bukti lemah (dan membuktikan kebocoran kuota itu nyata).
+**Fix:** buku besar permanen `trial_claims` per `(accurate_db_id, modul)`, klaim saat import pertama, counter `rows_used` diselaraskan sebelum baris hilang. Detail: ADR-0054.
+**Pelajaran:** (1) identitas "orang yang sama" untuk batas gratis harus melekat pada sumber daya eksternal yang bernilai (database Accurate), bukan entitas lokal yang bisa dibuat ulang bebas. (2) Hitungan kuota/penagihan tidak boleh diturunkan dari tabel yang punya kebijakan retensi. (3) Dugaan "ini database contoh bersama" ternyata salah (satu perusahaan 49 akun cabang): cek data dulu sebelum merancang pengecualian.

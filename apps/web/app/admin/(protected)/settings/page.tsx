@@ -12,6 +12,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { PageHeader } from "@/components/ui/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/lib/api-client";
+import { formatExemptDbIds, parseExemptDbIds } from "@/lib/trial-claims";
 
 // § Fase 16, ADR-0022 — TERPISAH dari `company.bankAccount` (free-text
 // tunggal, Fase 15, footer PDF) — ini array TERSTRUKTUR dipakai UI pilih
@@ -67,6 +68,7 @@ type FormState = {
   retentionDays: string;
   manualInputSeconds: string;
   trialMaxRows: string;
+  trialExemptDbIds: string;
   trialDurationDays: string;
   // § Fase 106 — batas sesi login bersamaan per user (group "security").
   maxDevicesPerUser: string;
@@ -129,6 +131,7 @@ export default function AdminSettingsPage() {
         manualInputSeconds: String(data["data.manualInputSecondsPerRow"] ?? 30),
         trialMaxRows: String(data["trial.maxRows"] ?? 100),
         trialDurationDays: String(data["trial.durationDays"] ?? 30),
+        trialExemptDbIds: formatExemptDbIds(data["trial.exemptDbIds"]),
         maxDevicesPerUser: String(security["security.maxDevicesPerUser"] ?? 1),
         companyTaxId: String(billing["company.taxId"] ?? ""),
         companyPhone: String(billing["company.phone"] ?? ""),
@@ -267,6 +270,12 @@ export default function AdminSettingsPage() {
       return;
     }
 
+    const { ids: exemptDbIds, invalid: invalidExempt } = parseExemptDbIds(form.trialExemptDbIds);
+    if (invalidExempt.length > 0) {
+      setError(`ID database tidak valid: ${invalidExempt.join(", ")}. Gunakan huruf, angka, tanda minus atau garis bawah.`);
+      return;
+    }
+
     const maxDevicesPerUser = Number(form.maxDevicesPerUser);
     if (!Number.isInteger(maxDevicesPerUser) || maxDevicesPerUser < MIN_MAX_DEVICES || maxDevicesPerUser > MAX_MAX_DEVICES) {
       setError(`Maks. device per user harus angka bulat ${MIN_MAX_DEVICES}–${MAX_MAX_DEVICES}.`);
@@ -325,6 +334,7 @@ export default function AdminSettingsPage() {
       { key: "data.manualInputSecondsPerRow", value: manualInputSeconds, group: "data" },
       { key: "trial.maxRows", value: trialMaxRows, group: "data" },
       { key: "trial.durationDays", value: trialDurationDays, group: "data" },
+      { key: "trial.exemptDbIds", value: exemptDbIds, group: "data" },
       { key: "security.maxDevicesPerUser", value: maxDevicesPerUser, group: "security" },
       { key: "company.taxId", value: form.companyTaxId, group: "billing" },
       { key: "company.phone", value: form.companyPhone, group: "billing" },
@@ -368,7 +378,9 @@ export default function AdminSettingsPage() {
                         ? `Tahun mulai copyright harus angka bulat ${value.minYear}–${value.maxYear}.`
                         : value?.code === "INVALID_MAX_DEVICES"
                           ? `Maks. device per user harus angka bulat ${value.minDevices}–${value.maxDevices}.`
-                          : "Gagal menyimpan pengaturan.",
+                          : value?.code === "INVALID_TRIAL_EXEMPT_DB_IDS"
+                            ? "Daftar database yang dikecualikan tidak valid (maks. 200 ID; huruf, angka, minus, garis bawah)."
+                            : "Gagal menyimpan pengaturan.",
       );
       return;
     }
@@ -678,6 +690,18 @@ export default function AdminSettingsPage() {
               value={form.trialDurationDays}
               onChange={(e) => setForm({ ...form, trialDurationDays: e.target.value })}
             />
+          </label>
+          <label className="flex w-full flex-col gap-1.5">
+            <span className="text-sm font-medium text-foreground">Database Dikecualikan dari Kunci Trial</span>
+            <Textarea
+              rows={3}
+              placeholder="Satu ID database Accurate per baris (opsional)"
+              value={form.trialExemptDbIds}
+              onChange={(e) => setForm({ ...form, trialExemptDbIds: e.target.value })}
+            />
+            <span className="text-xs text-muted-foreground">
+              Trial hanya boleh 1x per database Accurate untuk tiap fitur. Database di daftar ini TIDAK dikunci (mis. database contoh yang dipakai bersama banyak akun tak terkait). Biarkan kosong bila tidak ada.
+            </span>
           </label>
         </CardContent>
       </Card>

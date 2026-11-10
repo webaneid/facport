@@ -51,6 +51,7 @@ import {
   ListChecks,
   History,
   BarChart3,
+  FlaskConical,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import * as DialogPrimitive from "@radix-ui/react-dialog";
@@ -265,6 +266,8 @@ const NAV_GROUPS_BY_SURFACE: Record<Surface, NavGroup[]> = {
         { href: "/insight", label: "Insight", icon: BarChart3, permission: "insights.view" },
         { href: "/staff", label: "Tim Internal", icon: UserCog, permission: "users.view" },
         { href: "/plans", label: "Paket", icon: Package, permission: "plans.manage" },
+        // § Fase 217, ADR-0054 — klaim trial per database Accurate + fitur (lihat/lepas klaim).
+        { href: "/trial", label: "Klaim Trial", icon: FlaskConical, permission: "users.view" },
         // § Fase 27, ADR-0025 — kelola invoice, termasuk bikin baru untuk user existing.
         { href: "/invoices", label: "Invoice", icon: FileText, permission: "invoices.view" },
         // § Fase 16, ADR-0022 — antrian konfirmasi pembayaran manual.

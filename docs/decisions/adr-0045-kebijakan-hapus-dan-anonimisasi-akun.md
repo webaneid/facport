@@ -27,3 +27,5 @@ Pengaman wajib: konfirmasi ketik (mis. jumlah akun atau kata "HAPUS"), ringkasan
 ---
 > Aturan: file ADR TIDAK diedit setelah Accepted. Kalau keputusan berubah,
 > buat ADR baru dan tulis "Supersedes ADR-0045" di file baru itu.
+- Catatan 2026-11-10 (Fase 216, ADR-0053): klausul "tidak berlaku untuk akun admin/staf (lewat halaman Tim Internal)" diputuskan: akun staf internal TIDAK dihapus dan TIDAK dianonimkan; hanya dinonaktifkan. Di halaman Tim Internal tersedia ubah tingkat (Admin ↔ Super Admin) dan reset kata sandi.
+

@@ -12,6 +12,11 @@ describe("describeImportActionError", () => {
     expect(msg).toBe("Field wajib belum dipetakan: customerNo, itemNo");
   });
 
+  test("TRIAL_DATABASE_ALREADY_USED dan TRIAL_SUBSCRIPTION_BOUND — pesan jelas tanpa data akun lain (Fase 217)", () => {
+    expect(describeImportActionError({ code: "TRIAL_DATABASE_ALREADY_USED" }, "fallback")).toContain("sudah pernah dicoba");
+    expect(describeImportActionError({ code: "TRIAL_SUBSCRIPTION_BOUND" }, "fallback")).toContain("terikat");
+  });
+
   test("TRIAL_ROW_LIMIT_EXCEEDED — sebut sisa kuota", () => {
     const msg = describeImportActionError({ code: "TRIAL_ROW_LIMIT_EXCEEDED", remaining: 50, max: 100 }, "fallback");
     expect(msg).toBe("Kuota trial tidak cukup — sisa 50 dari 100 baris. Kurangi jumlah baris atau upgrade ke paket berbayar.");

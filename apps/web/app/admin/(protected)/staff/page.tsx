@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { UserCog, UserX, UserCheck } from "lucide-react";
+import { UserCog, UserX, UserCheck, MoreHorizontal, ShieldCheck, KeyRound } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { StaffRoleDialog } from "@/components/admin/staff-role-dialog";
+import { StaffResetPasswordDialog } from "@/components/admin/staff-reset-password-dialog";
 import { Can } from "@/components/auth/can";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PageHeader } from "@/components/ui/page-header";
@@ -18,6 +21,7 @@ import { formatDate } from "@/lib/utils";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
 import { api } from "@/lib/api-client";
 import { roleLabel } from "@/lib/role-labels";
+import { TIER_LABEL, otherTier } from "@/lib/staff-actions";
 
 // § diminta user 2026-09-05 — menu KHUSUS tim internal (Super Admin/
 // Admin), terpisah dari halaman "Pengguna" yang sekarang cuma customer
@@ -135,6 +139,16 @@ export default function AdminStaffPage() {
   const companyTimezone = useCompanyTimezone();
   const [staff, setStaff] = useState<StaffRow[] | null>(null);
   const [search, setSearch] = useState("");
+  // § Fase 216 — id akun sendiri (dari `GET /me`) hanya untuk menonaktifkan aksi pada baris sendiri sebagai petunjuk UI; server tetap menegakkan aturannya.
+  const [meId, setMeId] = useState<string | null>(null);
+  const [roleTarget, setRoleTarget] = useState<StaffRow | null>(null);
+  const [resetTarget, setResetTarget] = useState<StaffRow | null>(null);
+
+  useEffect(() => {
+    api.me.get().then((res) => {
+      if (res.data) setMeId((res.data as unknown as { id: string }).id);
+    });
+  }, []);
 
   async function load() {
     const res = await api.admin.staff.get({ query: { search: search || undefined } });
@@ -200,21 +214,42 @@ export default function AdminStaffPage() {
       id: "actions",
       header: "Aksi",
       meta: { width: "60px" },
-      cell: ({ row }) => (
-        <div className="flex items-center justify-end gap-1">
-          <Can permission="users.manage">
-            <button
-              type="button"
-              onClick={() => toggleDisabled(row.original)}
-              title={row.original.disabled ? "Aktifkan Kembali" : "Nonaktifkan"}
-              aria-label={`${row.original.disabled ? "Aktifkan" : "Nonaktifkan"} ${row.original.name}`}
-              className={buttonVariants("ghost", "h-8 w-8 p-0")}
-            >
-              {row.original.disabled ? <UserCheck className="h-4 w-4" /> : <UserX className="h-4 w-4" />}
-            </button>
-          </Can>
-        </div>
-      ),
+      cell: ({ row }) => {
+        const r = row.original;
+        const next = otherTier(r.role);
+        const isSelf = meId !== null && r.id === meId;
+        const selfHint = isSelf ? "Tidak berlaku untuk akun Anda sendiri" : undefined;
+        return (
+          <div className="flex items-center justify-end gap-1">
+            <Can permission="users.manage">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" aria-label={`Aksi untuk ${r.name}`} className={buttonVariants("ghost", "h-8 w-8 p-0")}>
+                    <MoreHorizontal className="h-4 w-4" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  {next ? (
+                    <DropdownMenuItem disabled={isSelf || (r.disabled && next === "admin")} title={selfHint} onSelect={() => setRoleTarget(r)}>
+                      <ShieldCheck className="mr-2 h-4 w-4" />
+                      Jadikan {TIER_LABEL[next]}
+                    </DropdownMenuItem>
+                  ) : null}
+                  <DropdownMenuItem disabled={isSelf || r.disabled} title={selfHint} onSelect={() => setResetTarget(r)}>
+                    <KeyRound className="mr-2 h-4 w-4" />
+                    Reset kata sandi
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem disabled={isSelf} title={selfHint} onSelect={() => toggleDisabled(r)}>
+                    {r.disabled ? <UserCheck className="mr-2 h-4 w-4" /> : <UserX className="mr-2 h-4 w-4" />}
+                    {r.disabled ? "Aktifkan kembali" : "Nonaktifkan"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </Can>
+          </div>
+        );
+      },
     }),
   ];
 
@@ -242,6 +277,11 @@ export default function AdminStaffPage() {
           {!staff ? <Skeleton className="h-40 w-full" /> : <DataTable columns={columns} data={staff} emptyIcon={UserCog} emptyTitle="Belum ada akun tim internal" />}
         </CardContent>
       </Card>
+
+      {roleTarget && otherTier(roleTarget.role) ? (
+        <StaffRoleDialog open onOpenChange={(o) => !o && setRoleTarget(null)} staffId={roleTarget.id} targetRole={otherTier(roleTarget.role)!} onDone={load} />
+      ) : null}
+      {resetTarget ? <StaffResetPasswordDialog open onOpenChange={(o) => !o && setResetTarget(null)} staffId={resetTarget.id} email={resetTarget.email} /> : null}
     </div>
   );
 }
