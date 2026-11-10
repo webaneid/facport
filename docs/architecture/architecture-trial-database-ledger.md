@@ -12,7 +12,7 @@
 | Kebocoran kuota | Baris dipurge ±2 hari → pemakaian lama hilang → kuota bisa dipakai ulang |
 | Produk Konverter | `checkAndRecordConversionRowBudget` (tanpa database Accurate) — di luar cakupan |
 
-Data produksi: 32 trial seumur hidup (25 expired, 6 cancelled, 1 active), 13 akun; `accurate_db_id` konsisten (0 id dengan alias berbeda); 20 id dipakai >1 Data Usaha (satu id oleh 49 akun, dugaan database contoh).
+Data produksi: 32 trial seumur hidup (25 expired, 6 cancelled, 1 active), 13 akun; `accurate_db_id` konsisten (0 id dengan alias berbeda); 20 id dipakai >1 Data Usaha. Diperiksa: satu id = 49 akun cabang satu perusahaan pelanggan berbayar (0 trial); lima id = tiga akun yang tampak internal FAC. Tidak ada database contoh bersama yang perlu dikecualikan.
 
 ## 2. Model data (migrasi baru)
 `trial_claims`:

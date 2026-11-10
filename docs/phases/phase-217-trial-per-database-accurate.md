@@ -23,7 +23,7 @@ Tutup celah trial berulang (Data Usaha/akun baru di database Accurate yang sama)
 Produk Konverter; kunci per perusahaan Accurate; deteksi pembuatan database baru di Accurate; perubahan alur "coba-coba dulu".
 
 ## Keputusan yang Menunggu User
-1. Isi daftar pengecualian awal (dugaan: database contoh "A1 CV AMANDA" id 2672480 dipakai 49 akun; id kelas pelatihan 30665xx–30682xx) — perlu konfirmasi sebelum rilis.
+1. ~~Isi daftar pengecualian awal~~ — SELESAI: daftar awal kosong (id 2672480 ternyata satu perusahaan dengan 49 akun cabang berbayar; lima id lain akun internal FAC). Akun internal dilewati buku besar (verifikasi penanda internal saat eksekusi).
 2. Rilis bersama Fase 216 (v2.50.0) atau terpisah.
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
