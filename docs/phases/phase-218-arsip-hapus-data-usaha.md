@@ -1,6 +1,6 @@
 # Fase 218 — Hapus & arsip Data Usaha oleh pemilik
 
-**Status:** Done (API + UI; uji manual browser belum; belum dirilis)
+**Status:** Done (API + UI; diuji manual di browser dev 2026-11-10; belum dirilis)
 **Mulai:** 2026-11-10
 **Selesai:** 2026-11-10
 
@@ -44,7 +44,7 @@ Lihat `architecture-data-usaha-archive.md` § 8.
 - Pemeriksaan akses terpusat: `ownsDataUsaha`, `hasAccessToDataUsaha`, `memberAccessibleDataUsahaIds`, default Data Usaha, dan pemilihan koneksi menolak yang diarsipkan; rute admin yang memakai `ownsDataUsaha` ikut tertolak.
 
 ## Ringkasan Hasil
-Pemilik dapat menghapus Data Usaha kosong dan mengarsipkan yang punya riwayat dari `/pilih-usaha`, dengan Accurate diputus, penghalang jelas (langganan aktif, pesanan belum selesai, transfer tertunda, import berjalan, User Tambahan aktif), konfirmasi ketik nama, pulihkan dalam 30 hari, dan job harian pembersihan. Tes baru: 14 tes API (lifecycle) + 9 tes web; typecheck nol, lint bersih. Belum: uji manual browser, rilis (migrasi 0054 menambah dua kolom, worker berubah).
+Pemilik dapat menghapus Data Usaha kosong dan mengarsipkan yang punya riwayat dari `/pilih-usaha`, dengan Accurate diputus, penghalang jelas (langganan aktif, pesanan belum selesai, transfer tertunda, import berjalan, User Tambahan aktif), konfirmasi ketik nama, pulihkan dalam 30 hari, dan job harian pembersihan. Tes baru: 14 tes API (lifecycle) + 9 tes web; typecheck nol, lint bersih. Uji manual browser dev (akun uji sekali pakai) lolos: dialog arsip, arsip (kartu hilang, Accurate terputus, audit), pulihkan, hapus Data Usaha kosong yang terhubung (baris dan koneksi terhapus), tampilan penghalang (langganan aktif), cookie Data Usaha aktif yang menunjuk arsip dikembalikan ke `/pilih-usaha`. Temuan visual: bagian Diarsipkan awalnya menempel di dasar halaman, dipindah ke bawah daftar. Belum: rilis (migrasi 0054 menambah dua kolom, worker berubah).
 
 ## Known Limitations (tambahan)
 - Tidak ada kunci terhadap langganan yang dibuat bersamaan dengan arsip (balapan oleh pemilik sendiri; dampak: arsip dengan langganan baru, tertangkap pembersihan hanya bila langganan itu tidak ada).

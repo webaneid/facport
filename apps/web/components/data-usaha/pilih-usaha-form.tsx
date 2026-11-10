@@ -303,6 +303,7 @@ export function PilihUsahaForm({
               ))}
             </div>
           )}
+          <ArchivedDataUsahaSection items={archived} retentionDays={retentionDays} onRestored={reloadAll} />
         </div>
       </div>
 
@@ -383,12 +384,9 @@ export function PilihUsahaForm({
               <Plus className="h-4 w-4" />
               Buat Data Usaha Baru
             </Button>
+            <ArchivedDataUsahaSection items={archived} retentionDays={retentionDays} onRestored={reloadAll} />
           </>
         )}
-      </div>
-
-      <div className="mx-auto w-full max-w-6xl px-6 pb-6">
-        <ArchivedDataUsahaSection items={archived} retentionDays={retentionDays} onRestored={reloadAll} />
       </div>
 
       {lifecycleTarget ? (
