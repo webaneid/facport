@@ -1,3 +1,14 @@
+## 2.50.0 (2026-11-10)
+
+* Merge develop: Fase 216 kelola akun Tim Internal + Fase 217 trial satu kali per database Accurate ([170ef33](https://github.com/webaneid/facport/commit/170ef33))
+* feat: kelola akun Tim Internal — ubah tingkat staf (atomik) dan reset kata sandi (Fase 216) ([5d2ac4c](https://github.com/webaneid/facport/commit/5d2ac4c))
+* feat: trial satu kali per database Accurate + modul — buku besar permanen trial_claims, klaim saat i ([3578775](https://github.com/webaneid/facport/commit/3578775))
+* feat(web): UI admin klaim trial — halaman Klaim Trial, dialog lepas klaim, daftar pengecualian di Pe ([d72fb01](https://github.com/webaneid/facport/commit/d72fb01))
+* docs: Fase 217 — daftar pengecualian awal kosong, akun internal dilewati (hasil cek produksi) ([070a9bd](https://github.com/webaneid/facport/commit/070a9bd))
+* docs: Purchase Payment dengan pajak Ps.4(2) terbukti di Accurate trial ([604e4fc](https://github.com/webaneid/facport/commit/604e4fc))
+* docs: rencana Fase 216 kelola akun Tim Internal (ubah role, reset sandi, tanpa hapus) + ADR-0053 ([8949649](https://github.com/webaneid/facport/commit/8949649))
+* docs: rencana Fase 217 trial satu kali per database Accurate + modul (ADR-0054) ([fa5fc64](https://github.com/webaneid/facport/commit/fa5fc64))
+
 ## <small>2.49.5 (2026-11-10)</small>
 
 * Merge develop: Tax ID menerima semua jenis PPh termasuk Ps.4(2) ([8c37827](https://github.com/webaneid/facport/commit/8c37827))
