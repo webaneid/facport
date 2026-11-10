@@ -26,7 +26,10 @@ Migrasi: `data_usaha.archived_at timestamptz NULL`. Tidak ada tabel baru; pelaku
 | Pembatasan laju | per IP, ember tersendiri | sama | sama |
 | Klaim trial (ADR-0054) | tidak dilepas | tidak dilepas | - |
 
-Pelaksanaan dalam SATU transaksi: kunci baris Data Usaha (`FOR UPDATE`), periksa ulang syarat, lalu tulis. Hapus kosong membuang hanya baris `data_usaha` (koneksi akun Accurate tidak disentuh).
+Pelaksanaan dalam SATU transaksi: kunci baris Data Usaha (`FOR UPDATE`), periksa ulang syarat, **putus Accurate** (§ 3a), lalu tulis (arsip: `archived_at`; hapus: buang baris).
+
+### 3a. Putus Accurate (arsip dan hapus, wajib)
+Dalam transaksi yang sama: kosongkan `accurate_connection_id`, `accurate_db_id`, `accurate_db_alias`, `accurate_db_confirmed_at`; bila koneksi akun Accurate itu tidak lagi dirujuk Data Usaha mana pun, cabut koneksinya (token dibuang, pola `admin/data-usaha.route.ts`); catat peristiwa riwayat Data Usaha (alasan: diarsipkan/dihapus pemilik). Penghalang "import berjalan" melindungi dari token dicabut di tengah batch.
 
 ## 4. Endpoint (`routes/me.route.ts`)
 | Endpoint | Fungsi |
@@ -37,9 +40,12 @@ Pelaksanaan dalam SATU transaksi: kunci baris Data Usaha (`FOR UPDATE`), periksa
 | `POST /me/data-usaha/:id/restore` | Pulihkan. |
 | `GET /me/data-usaha?archived=1` | Daftar terarsip milik pemilik (untuk Pulihkan). Daftar biasa mengecualikan yang diarsipkan. |
 
+## 4a. Pulihkan
+Menghapus `archived_at` saja. Data Usaha kembali tanpa koneksi Accurate; pelanggan menghubungkan lagi. Ditolak bila masa simpan sudah lewat dan data sudah dibersihkan (`ARCHIVE_EXPIRED`).
+
 ## 5. Dampak lintas sistem (WAJIB dicek saat eksekusi)
 - `ownsDataUsaha`, `hasAccessToDataUsaha`, `memberAccessibleDataUsahaIds`, `getOrCreateDefaultDataUsaha`: kecualikan `archived_at IS NOT NULL` (yang terakhir: jangan membuat ulang "Data Usaha Utama" bila hanya yang terarsip yang ada, atau pulihkan; diputuskan saat eksekusi).
-- Rute pemilihan database: `DATABASE_ALREADY_USED` untuk database yang dipegang Data Usaha terarsip diberi petunjuk "pulihkan Data Usaha yang diarsipkan".
+- Karena arsip memutus Accurate, database yang dilepas bebas dipakai Data Usaha lain; tidak ada bentrok dengan `data_usaha_connection_db_uidx`.
 - Admin: daftar Data Usaha/insight tetap melihat yang terarsip dengan penanda "Diarsipkan" (laporan hitungan perlu dicek: arsip tidak dihitung aktif).
 - Job terjadwal (kedaluwarsa, pengingat perpanjangan): tidak terpengaruh karena arsip mensyaratkan tidak ada langganan aktif.
 
@@ -50,4 +56,7 @@ Menu aksi per kartu (pemilik saja): Ubah nama, Hapus atau Arsipkan (label mengik
 Unit aturan klasifikasi; rute: bukan pemilik 404, member seat ditolak, tiap penghalang, `NOT_EMPTY`, konfirmasi salah, atomik/balapan, pulihkan, daftar tidak memuat terarsip, modul menolak Data Usaha terarsip, audit. Web: dialog dan keadaan. Wajib typecheck nol dan audit keamanan (otorisasi, IDOR).
 
 ## 8. Known Limitations (disengaja)
-Tidak ada purge otomatis arsip; tidak ada hapus permanen untuk yang punya riwayat; aksi admin atas nama pelanggan di luar cakupan.
+Catatan keuangan (invoice, pesanan, langganan) tidak pernah dihapus; aksi admin atas nama pelanggan di luar cakupan.
+
+## 9. Pembersihan setelah 30 hari (cakupan MENUNGGU KEPUTUSAN)
+Job harian (pg-boss) untuk Data Usaha dengan `archived_at` > 30 hari. Usulan: buang data operasional yang merujuk Data Usaha itu (data AutoProduksi, log konversi, sisa riwayat import, seat yang sudah dicabut) lalu hapus baris `data_usaha` bila tidak ada lagi yang merujuk; bila masih ada catatan keuangan (invoice/pesanan/langganan), baris Data Usaha dipertahankan sebagai cangkang tersembunyi (tanpa data operasional) demi integritas catatan keuangan dan jejak audit. Audit dicatat. Setelah itu pulihkan tidak mungkin.

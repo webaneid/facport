@@ -11,18 +11,21 @@ Pemilik dapat merapikan daftar di `/pilih-usaha`: Data Usaha kosong dihapus bers
 - [ ] Migrasi `data_usaha.archived_at`
 - [ ] `lib/data-usaha-lifecycle.ts`: klasifikasi (delete/archive/blocked) dan penghalang; tes unit
 - [ ] Endpoint lifecycle, delete, archive, restore, daftar terarsip (pemilik saja, transaksi + kunci baris, audit, laju)
+- [ ] Putus Accurate wajib saat arsip dan hapus (pointer + database dikosongkan, koneksi dicabut bila tak dipakai Data Usaha lain, peristiwa riwayat)
+- [ ] Job pembersihan harian arsip > 30 hari (cakupan menunggu keputusan, arch § 9)
 - [ ] Pengecualian terarsip di `ownsDataUsaha`, `hasAccessToDataUsaha`, akses seat, default Data Usaha; cek semua pemakai
 - [ ] Pesan `DATABASE_ALREADY_USED` mengarahkan ke Pulihkan
 - [ ] UI `/pilih-usaha`: menu aksi, dialog, bagian Diarsipkan + Pulihkan; penanda di admin
 - [ ] Tes rute + web; typecheck nol; audit keamanan; bersihkan DB dev; docs
 
 ## Di Luar Scope
-Aksi admin atas nama pelanggan; purge otomatis arsip; hapus permanen yang punya riwayat; aksi massal.
+Aksi admin atas nama pelanggan; hapus catatan keuangan; aksi massal.
 
 ## Keputusan yang Perlu Dikonfirmasi
-1. Data Usaha kosong tetapi sudah terhubung Accurate (tanpa import): boleh dihapus (hanya pointer dibuang, koneksi akun tetap)?
-2. User Tambahan aktif: menghalangi arsip (usulan), bukan ikut dicabut otomatis.
-3. Arsip disimpan tanpa batas waktu.
+1. ~~Kosong tapi terhubung Accurate~~ — DISETUJUI: boleh dihapus, koneksi diputus dulu.
+2. ~~User Tambahan aktif~~ — DISETUJUI: menghalangi arsip, dicabut manual.
+3. Masa simpan arsip 30 hari lalu dibersihkan — DISETUJUI prinsipnya; **cakupan pembersihan menunggu keputusan** (arch § 9).
+4. ~~Arsip wajib memutus Accurate~~ — DISETUJUI (pelanggan mengira sudah tiada).
 
 ## Checklist Sebelum Ditutup (sesuai SOP)
 - [ ] Type check nol error
