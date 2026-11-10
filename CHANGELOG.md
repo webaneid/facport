@@ -1,3 +1,9 @@
+## <small>2.49.5 (2026-11-10)</small>
+
+* Merge develop: Tax ID menerima semua jenis PPh termasuk Ps.4(2) ([8c37827](https://github.com/webaneid/facport/commit/8c37827))
+* docs: hasil uji kecepatan Sales Receipt (bulk-save, bertahap vs sekali, paralel) dan bukti cabang ([529bed5](https://github.com/webaneid/facport/commit/529bed5))
+* fix(api): Tax ID menerima semua jenis PPh (termasuk Ps.4(2)), bukan hanya PPh 23 ([cb5780a](https://github.com/webaneid/facport/commit/cb5780a))
+
 ## <small>2.49.4 (2026-11-09)</small>
 
 * Merge develop: cabang pada cicilan kirim bertahap (v2.49.4) ([b7db115](https://github.com/webaneid/facport/commit/b7db115))
