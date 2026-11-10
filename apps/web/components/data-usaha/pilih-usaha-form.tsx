@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { toast } from "sonner";
-import { Building2, Pencil, Plus, Search } from "lucide-react";
+import { Building2, Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormField } from "@/components/ui/form-field";
@@ -22,6 +22,8 @@ import { PilihUsahaHeader } from "./pilih-usaha-header";
 import { BannerSlider, BANNER_COLLAPSE_STORAGE_KEY } from "./banner-slider";
 import { ExpiringSoonAlert, type ExpiringSubscriptionRow } from "@/components/subscribe/expiring-soon-alert";
 import { useCompanyTimezone } from "@/components/company-timezone-provider";
+import { DataUsahaLifecycleDialog } from "./data-usaha-lifecycle-dialog";
+import { ArchivedDataUsahaSection, type ArchivedRow } from "./archived-data-usaha-section";
 
 // § Fase 110, architecture-user-tambahan.md — `isOwner: false` = Data
 // Usaha ini BUKAN milik user (dia numpang lewat seat User Tambahan aktif,
@@ -93,8 +95,27 @@ export function PilihUsahaForm({
   const [createOpen, setCreateOpen] = useState(false);
   const [bannerCollapsed, setBannerCollapsed] = useState(false);
   const [renameTarget, setRenameTarget] = useState<DataUsahaRow | null>(null);
+  // § Fase 218, ADR-0055 — hapus/arsip oleh pemilik + daftar yang diarsipkan (pulihkan).
+  const [lifecycleTarget, setLifecycleTarget] = useState<DataUsahaRow | null>(null);
+  const [archived, setArchived] = useState<ArchivedRow[]>([]);
+  const [retentionDays, setRetentionDays] = useState(30);
   const form = useForm<CreateFormValues>({ resolver: zodResolver(createSchema) });
   const renameForm = useForm<CreateFormValues>({ resolver: zodResolver(createSchema) });
+
+  async function loadArchived() {
+    const res = await api.me["data-usaha"].archived.get();
+    const d = res.data as unknown as { archived: ArchivedRow[]; retentionDays: number } | undefined;
+    if (d) {
+      setArchived(d.archived);
+      setRetentionDays(d.retentionDays);
+    }
+  }
+
+  async function reloadAll() {
+    const res = await api.me["data-usaha"].get();
+    setRows((res.data as unknown as { dataUsaha: DataUsahaRow[] } | undefined)?.dataUsaha ?? []);
+    await loadArchived();
+  }
 
   // § Fase 116, architecture-promo.md — `promos` di-fetch DI SINI (parent),
   // BUKAN di dalam `BannerSlider`, supaya parent juga tahu kalau 0 promo
@@ -102,7 +123,12 @@ export function PilihUsahaForm({
   // sebelahnya) — lihat pemakaian di bawah.
   useEffect(() => {
     async function load() {
-      const [dataUsahaRes, promosRes, subsRes] = await Promise.all([api.me["data-usaha"].get(), api.promos.get(), api.me.subscriptions.get()]);
+      const [dataUsahaRes, promosRes, subsRes, archivedRes] = await Promise.all([api.me["data-usaha"].get(), api.promos.get(), api.me.subscriptions.get(), api.me["data-usaha"].archived.get()]);
+      const archivedData = archivedRes.data as unknown as { archived: ArchivedRow[]; retentionDays: number } | undefined;
+      if (archivedData) {
+        setArchived(archivedData.archived);
+        setRetentionDays(archivedData.retentionDays);
+      }
       const list = (dataUsahaRes.data as unknown as { dataUsaha: DataUsahaRow[] } | undefined)?.dataUsaha ?? [];
       setRows(list);
       const promoList = (promosRes.data as unknown as { promos: PromoRow[] } | undefined)?.promos ?? [];
@@ -244,6 +270,20 @@ export function PilihUsahaForm({
                         Anggota
                       </Badge>
                     )}
+                    {row.isOwner ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLifecycleTarget(row);
+                        }}
+                        title="Hapus / arsipkan"
+                        aria-label={`Hapus atau arsipkan ${row.name}`}
+                        className="absolute right-2 top-2 flex h-6 w-6 items-center justify-center rounded-full bg-background/80 text-muted-foreground opacity-0 shadow-sm transition-opacity hover:text-destructive group-hover:opacity-100"
+                      >
+                        <Trash2 className="h-3 w-3" />
+                      </button>
+                    ) : null}
                     <span
                       className={cn(
                         "flex h-14 w-14 items-center justify-center rounded-full text-lg font-bold text-white",
@@ -320,6 +360,20 @@ export function PilihUsahaForm({
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
                     )}
+                    {row.isOwner && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setLifecycleTarget(row);
+                        }}
+                        title="Hapus / arsipkan"
+                        aria-label={`Hapus atau arsipkan ${row.name}`}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-destructive"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -332,6 +386,23 @@ export function PilihUsahaForm({
           </>
         )}
       </div>
+
+      <div className="mx-auto w-full max-w-6xl px-6 pb-6">
+        <ArchivedDataUsahaSection items={archived} retentionDays={retentionDays} onRestored={reloadAll} />
+      </div>
+
+      {lifecycleTarget ? (
+        <DataUsahaLifecycleDialog
+          open
+          onOpenChange={(o) => !o && setLifecycleTarget(null)}
+          dataUsahaId={lifecycleTarget.id}
+          name={lifecycleTarget.name}
+          onDone={() => {
+            setLifecycleTarget(null);
+            reloadAll();
+          }}
+        />
+      ) : null}
 
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent>

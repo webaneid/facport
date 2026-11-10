@@ -1,6 +1,6 @@
 # ADR-0055: Data Usaha — pemilik dapat menghapus yang kosong dan mengarsipkan yang punya riwayat
 
-**Status:** Proposed (2026-11-10; butir 1, 2, 4 disetujui user, butir 3 menunggu keputusan cakupan pembersihan)
+**Status:** Accepted (2026-11-10, semua butir disetujui user)
 **Tanggal:** 2026-11-10
 **Terkait:** ADR-0037 (koneksi per akun Accurate), ADR-0045 (siklus hidup akun), ADR-0054 (trial per database), `docs/architecture/architecture-data-usaha-archive.md`, Fase 218
 

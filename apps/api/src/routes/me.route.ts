@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, and, or, inArray, isNotNull, count, desc } from "drizzle-orm";
+import { eq, and, or, inArray, isNotNull, isNull, count, desc } from "drizzle-orm";
 import { db } from "../lib/db";
 import { memberAccessibleDataUsahaIds } from "../lib/seat-access";
 import { user as userTable, roles, userRoles, importBatches, importBatchRows, settings, dataUsaha, ownershipTransfers, subscriptions, accurateConnections } from "../db/schema";
@@ -7,6 +7,7 @@ import { getUserPermissionKeys, permissionPlugin } from "../lib/permission";
 import { parseContact, isContactComplete } from "../lib/phone";
 import { MANUAL_INPUT_SECONDS_SETTING_KEY, DEFAULT_MANUAL_INPUT_SECONDS_PER_ROW } from "../lib/manual-input-estimate";
 import { ownsDataUsaha, hasAccessToDataUsaha } from "../lib/data-usaha";
+import { evaluateLifecycle, archiveDataUsaha, deleteEmptyDataUsaha, restoreDataUsaha, isArchiveExpired, ARCHIVE_RETENTION_DAYS } from "../lib/data-usaha-lifecycle";
 import { generateTransferToken } from "../lib/ownership-transfer";
 import { boss, JOBS, startQueue } from "../lib/queue";
 import { escapeHtml } from "../lib/email";
@@ -99,10 +100,13 @@ export const meRoute = new Elysia()
         .select({ id: dataUsaha.id, name: dataUsaha.name, ownerId: dataUsaha.userId })
         .from(dataUsaha)
         .where(
-          or(
-            eq(dataUsaha.userId, user.id),
-            // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".
-            inArray(dataUsaha.id, memberAccessibleDataUsahaIds(user.id)),
+          and(
+            isNull(dataUsaha.archivedAt), // § Fase 218 — yang diarsipkan hanya muncul di GET /me/data-usaha/archived
+            or(
+              eq(dataUsaha.userId, user.id),
+              // § 2026-10-07 — kursi harus MASIH berlaku (lib/seat-access.ts), bukan sekadar status slot "active".
+              inArray(dataUsaha.id, memberAccessibleDataUsahaIds(user.id)),
+            ),
           ),
         )
         .orderBy(desc(dataUsaha.createdAt));
@@ -155,6 +159,73 @@ export const meRoute = new Elysia()
       params: t.Object({ id: t.String({ format: "uuid" }) }),
       body: t.Object({ name: t.String({ minLength: 1, maxLength: 200 }) }),
     },
+  )
+  // § Fase 218, ADR-0055, architecture-data-usaha-archive.md — hapus (kosong) & arsip (punya riwayat) Data Usaha oleh PEMILIK; arsip/hapus memutus Accurate. Aturan dihitung ulang di dalam transaksi.
+  .get(
+    "/me/data-usaha/archived",
+    async ({ user }) => {
+      const rows = await db
+        .select({ id: dataUsaha.id, name: dataUsaha.name, archivedAt: dataUsaha.archivedAt, archiveCleanedAt: dataUsaha.archiveCleanedAt })
+        .from(dataUsaha)
+        .where(and(eq(dataUsaha.userId, user.id), isNotNull(dataUsaha.archivedAt)))
+        .orderBy(desc(dataUsaha.archivedAt));
+      const now = new Date();
+      return {
+        retentionDays: ARCHIVE_RETENTION_DAYS,
+        archived: rows
+          .filter((r) => !r.archiveCleanedAt)
+          .map((r) => ({ id: r.id, name: r.name, archivedAt: r.archivedAt, canRestore: !!r.archivedAt && !isArchiveExpired(r.archivedAt, now) })),
+      };
+    },
+    { auth: true },
+  )
+  .get(
+    "/me/data-usaha/:id/lifecycle",
+    async ({ user, params, set }) => {
+      if (!(await ownsDataUsaha(user.id, params.id))) {
+        set.status = 404;
+        return { code: "DATA_USAHA_NOT_FOUND" };
+      }
+      const life = await evaluateLifecycle(db, params.id);
+      return { mode: life.mode, blockers: life.blockers };
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
+  )
+  .post(
+    "/me/data-usaha/:id/archive",
+    async ({ user, params, body, set }) => {
+      const r = await archiveDataUsaha(user.id, params.id, body.confirm);
+      if (!r.ok) {
+        set.status = r.status;
+        return "blockers" in r ? { code: r.code, blockers: r.blockers } : { code: r.code };
+      }
+      return { archived: true, retentionDays: ARCHIVE_RETENTION_DAYS };
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ confirm: t.String({ maxLength: 200 }) }) },
+  )
+  .post(
+    "/me/data-usaha/:id/delete",
+    async ({ user, params, body, set }) => {
+      const r = await deleteEmptyDataUsaha(user.id, params.id, body.confirm);
+      if (!r.ok) {
+        set.status = r.status;
+        return { code: r.code };
+      }
+      return { deleted: true };
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }), body: t.Object({ confirm: t.String({ maxLength: 200 }) }) },
+  )
+  .post(
+    "/me/data-usaha/:id/restore",
+    async ({ user, params, set }) => {
+      const r = await restoreDataUsaha(user.id, params.id);
+      if (!r.ok) {
+        set.status = r.status;
+        return { code: r.code };
+      }
+      return { restored: true };
+    },
+    { auth: true, params: t.Object({ id: t.String({ format: "uuid" }) }) },
   )
   // § Fase 111, architecture-user-tambahan.md — inisiasi transfer
   // kepemilikan Data Usaha (self-service, 2 tahap initiate→accept, pola

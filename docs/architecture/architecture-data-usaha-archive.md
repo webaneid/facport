@@ -1,6 +1,6 @@
 # Architecture — Hapus & Arsip Data Usaha oleh Pemilik (Fase 218)
 
-> Status: **RENCANA** (2026-11-10, menunggu persetujuan). Keputusan: ADR-0055. Fase: `docs/phases/phase-218-arsip-hapus-data-usaha.md`.
+> Status: **DIIMPLEMENTASI** (2026-11-10): API + UI. Keputusan: ADR-0055. Fase: `docs/phases/phase-218-arsip-hapus-data-usaha.md`.
 > Halaman: `app.<domain>/pilih-usaha`. Terkait: `architecture-user-tambahan.md`, `architecture-account-lifecycle.md`, `architecture-trial-database-ledger.md`.
 
 ## 1. Kondisi sekarang (diverifikasi ke kode 2026-11-10)
@@ -13,7 +13,7 @@
 Rujukan ke `data_usaha.id` (tanpa cascade): `subscriptions`, `orders`, `member_seats`, `ownership_transfers`, `conversion_logs`, dan 4 tabel AutoProduksi. `ownsDataUsaha` / `hasAccessToDataUsaha` (`lib/data-usaha.ts`) dipakai terpusat oleh rute modul.
 
 ## 2. Model data
-Migrasi: `data_usaha.archived_at timestamptz NULL`. Tidak ada tabel baru; pelaku dicatat di `audit_logs`.
+Migrasi 0054: `data_usaha.archived_at` dan `data_usaha.archive_cleaned_at` (`timestamptz NULL`). Tidak ada tabel baru; pelaku dicatat di `audit_logs`.
 
 ## 3. Aturan
 | Aturan | Hapus (kosong) | Arsip | Pulihkan |
@@ -58,15 +58,20 @@ Unit aturan klasifikasi; rute: bukan pemilik 404, member seat ditolak, tiap peng
 ## 8. Known Limitations (disengaja)
 Catatan keuangan (invoice, pesanan, langganan) tidak pernah dihapus; aksi admin atas nama pelanggan di luar cakupan.
 
-## 9. Pembersihan setelah 30 hari (usulan, menunggu konfirmasi final user)
+## 9. Pembersihan setelah 30 hari (disetujui user 2026-11-10)
 Job harian (pg-boss) untuk Data Usaha dengan `archived_at` > 30 hari.
 
-**Dibuang:** data AutoProduksi milik Data Usaha itu (formula/produksi), sisa riwayat import (kuota trial dipindah ke counter permanen dulu lewat `settleTrialUsage`), seat yang sudah dicabut.
+**Dibuang:** data AutoProduksi milik Data Usaha itu (formula/produksi), sisa riwayat import (kuota trial dipindah ke counter permanen dulu lewat `settleTrialUsage`).
 
 **TIDAK PERNAH dihapus:**
 - Invoice, pesanan, langganan (catatan keuangan FAC; laporan pendapatan dan Insight bergantung padanya lewat `subscriptions`/`orders`).
 - `conversion_logs`: dipakai menghitung kuota trial Konverter (`checkAndRecordConversionRowBudget`) dan hitungan penggunaan; menghapusnya mereset kuota trial.
+- `member_seats` (termasuk slot yang sudah dicabut; catatan keanggotaan, ikut menahan baris Data Usaha sebagai cangkang).
 - Audit log, klaim trial (`trial_claims`), counter permanen `data_usaha.cumulative_successful_row_count`.
 - Data akuntansi pelanggan di Accurate (kita hanya memutus koneksi, tidak pernah menulis ke sana saat arsip).
 
 **Baris `data_usaha`:** dihapus bila setelah pembersihan tidak ada yang merujuk; bila masih ada catatan di atas, dipertahankan sebagai cangkang tersembunyi (tanpa koneksi, tanpa data operasional). Pulihkan tidak mungkin setelah dibersihkan. Audit dicatat.
+
+## 10. Implementasi (catatan)
+- `lib/data-usaha-lifecycle.ts` (klasifikasi, arsip, hapus, pulihkan, `cleanupExpiredArchives`), job harian `cleanup-archived-data-usaha` 03:30 (`workers/index.ts`), endpoint di `routes/me.route.ts`, pembatas laju 20/menit untuk POST aksi.
+- UI: `components/data-usaha/data-usaha-lifecycle-dialog.tsx`, `archived-data-usaha-section.tsx`, ikon hapus/arsip pada kartu milik sendiri di `pilih-usaha-form.tsx`.

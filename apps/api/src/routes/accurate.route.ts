@@ -1,5 +1,5 @@
 import { Elysia, t } from "elysia";
-import { eq, and, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { eq, and, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import { db } from "../lib/db";
 import { accurateConnections, dataUsaha, importBatches, importBatchRows, subscriptions } from "../db/schema";
 import { auth } from "../lib/auth";
@@ -57,7 +57,7 @@ async function pointDataUsahaToConnection(dataUsahaId: string, ownerId: string, 
   const updated = await db
     .update(dataUsaha)
     .set({ accurateConnectionId: connectionId, ...(keepDb ? {} : { accurateDbId: null, accurateDbAlias: null, accurateDbConfirmedAt: null }), updatedAt: new Date() })
-    .where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, ownerId)))
+    .where(and(eq(dataUsaha.id, dataUsahaId), eq(dataUsaha.userId, ownerId), isNull(dataUsaha.archivedAt)))
     .returning({ id: dataUsaha.id });
   return updated.length > 0;
 }

@@ -1,6 +1,6 @@
 import { and, eq, gt, isNull, or } from "drizzle-orm";
 import { db } from "./db";
-import { memberSeats, subscriptions } from "../db/schema";
+import { dataUsaha, memberSeats, subscriptions } from "../db/schema";
 
 // § 2026-10-07 — SATU aturan "member boleh memakai Data Usaha lewat kursi (seat)": status slot `active` DAN langganan kursinya (`seat_subscription_id`) MASIH AKTIF
 // (status active, end_at belum lewat; end_at NULL = data lama, dianggap berlaku). Dulu ketiga titik akses member (gerbang fitur `subscription-gate.ts`, `hasAccessToDataUsaha`,
@@ -13,8 +13,10 @@ export function memberAccessibleDataUsahaIds(userId: string, now: Date = new Dat
     .select({ dataUsahaId: memberSeats.dataUsahaId })
     .from(memberSeats)
     .innerJoin(subscriptions, eq(subscriptions.id, memberSeats.seatSubscriptionId))
+    .innerJoin(dataUsaha, eq(dataUsaha.id, memberSeats.dataUsahaId))
     .where(
       and(
+        isNull(dataUsaha.archivedAt), // § Fase 218 — Data Usaha diarsipkan tidak bisa diakses member
         eq(memberSeats.memberUserId, userId),
         eq(memberSeats.status, "active"),
         eq(subscriptions.status, "active"),
