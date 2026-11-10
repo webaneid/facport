@@ -58,5 +58,15 @@ Unit aturan klasifikasi; rute: bukan pemilik 404, member seat ditolak, tiap peng
 ## 8. Known Limitations (disengaja)
 Catatan keuangan (invoice, pesanan, langganan) tidak pernah dihapus; aksi admin atas nama pelanggan di luar cakupan.
 
-## 9. Pembersihan setelah 30 hari (cakupan MENUNGGU KEPUTUSAN)
-Job harian (pg-boss) untuk Data Usaha dengan `archived_at` > 30 hari. Usulan: buang data operasional yang merujuk Data Usaha itu (data AutoProduksi, log konversi, sisa riwayat import, seat yang sudah dicabut) lalu hapus baris `data_usaha` bila tidak ada lagi yang merujuk; bila masih ada catatan keuangan (invoice/pesanan/langganan), baris Data Usaha dipertahankan sebagai cangkang tersembunyi (tanpa data operasional) demi integritas catatan keuangan dan jejak audit. Audit dicatat. Setelah itu pulihkan tidak mungkin.
+## 9. Pembersihan setelah 30 hari (usulan, menunggu konfirmasi final user)
+Job harian (pg-boss) untuk Data Usaha dengan `archived_at` > 30 hari.
+
+**Dibuang:** data AutoProduksi milik Data Usaha itu (formula/produksi), sisa riwayat import (kuota trial dipindah ke counter permanen dulu lewat `settleTrialUsage`), seat yang sudah dicabut.
+
+**TIDAK PERNAH dihapus:**
+- Invoice, pesanan, langganan (catatan keuangan FAC; laporan pendapatan dan Insight bergantung padanya lewat `subscriptions`/`orders`).
+- `conversion_logs`: dipakai menghitung kuota trial Konverter (`checkAndRecordConversionRowBudget`) dan hitungan penggunaan; menghapusnya mereset kuota trial.
+- Audit log, klaim trial (`trial_claims`), counter permanen `data_usaha.cumulative_successful_row_count`.
+- Data akuntansi pelanggan di Accurate (kita hanya memutus koneksi, tidak pernah menulis ke sana saat arsip).
+
+**Baris `data_usaha`:** dihapus bila setelah pembersihan tidak ada yang merujuk; bila masih ada catatan di atas, dipertahankan sebagai cangkang tersembunyi (tanpa koneksi, tanpa data operasional). Pulihkan tidak mungkin setelah dibersihkan. Audit dicatat.
