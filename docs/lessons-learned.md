@@ -6477,3 +6477,14 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Pelajaran:** (1) identitas "orang yang sama" untuk batas gratis harus melekat pada sumber daya eksternal yang bernilai (database Accurate), bukan entitas lokal yang bisa dibuat ulang bebas. (2) Hitungan kuota/penagihan tidak boleh diturunkan dari tabel yang punya kebijakan retensi. (3) Dugaan "ini database contoh bersama" ternyata salah (satu perusahaan 49 akun cabang): cek data dulu sebelum merancang pengecualian.
 
 **Tambahan 2026-11-10 (setelah deploy v2.50.0):** seeding migrasi 0053 memasukkan 2 klaim modul `konverter_*` padahal Produk Konverter di luar cakupan buku besar (ADR-0054 butir 8). Terdeteksi dari hasil query verifikasi produksi, dampak kecil (hanya bisa menolak trial Konverter di Data Usaha dengan database sama). Fix: `claimableModules()` (lib/trial-claims.ts) menyaring `konverter_*` dan modul tak dikenal di `ensureTrialClaims` dan `findForeignTrialClaim`; 2 baris seed dihapus di produksi. **Pelajaran:** seeding data lama harus memakai filter cakupan yang SAMA dengan kode runtime, dan hasil seed wajib dilihat per modul (bukan hanya jumlah baris) sebelum dianggap benar.
+
+## 2026-11-10 — Release gagal di `git push --tags` (galat GitHub sementara) dan disk VPS terisi image lama
+**Gejala:** workflow Release v2.51.0 gagal di langkah semantic-release: `remote: fatal error in commit_refs`, `[remote rejected] v2.51.0`. Gerbang typecheck+tes lolos; commit `chore(release): 2.51.0 [skip ci]` sudah masuk `main`, tetapi tag, GitHub Release, dan Deploy otomatis (di-skip karena Release `failure`) tidak terjadi.
+**Fix:** jangan rerun Release (akan bentrok dengan commit rilis yang sudah ada). Buat tag ringan di commit rilis dan push, picu `Deploy` manual (`gh workflow run Deploy -f tag=vX`), lalu `gh release create`. Langkah baku ditulis di `architecture-deployment.md` § STANDAR DEPLOY, sisi Claude butir 2b.
+**Terkait:** tiap deploy menambah ±3,4 GB image di VPS yang dipakai bersama proyek lain; ditambahkan langkah 12 runbook (hapus versi lama dengan tag eksplisit, simpan versi sekarang + satu sebelumnya; larang `prune -a`/`volume prune`).
+
+## 2026-11-11 — Guard "hanya-Beban" (Fase 214) menolak faktur yang sudah dihapus di Accurate
+- **Gejala:** client (Zin) retry PI; 21 baris gagal "Nomor grup 14719 sudah punya Faktur Pembelian #382 … hanya berisi Beban", padahal faktur itu sudah dihapus di Accurate.
+- **Akar masalah:** `appendToExistingPurchaseInvoice` menolak baris hanya-Beban SEBELUM verifikasi `detail.do` ke Accurate. `#382` berasal dari catatan lokal (`import_batch_rows` sukses) yang basi. Mengulang pelajaran Fase 82.
+- **Perbaikan:** guard dipindah ke SETELAH `getPurchaseInvoiceDetail` — faktur yang sudah tidak ada jatuh ke jalur CREATE (yang mendukung baris hanya-Beban).
+- **Aturan:** guard/penolakan apa pun di jalur "append ke faktur lama" WAJIB di bawah verifikasi keberadaan faktur di Accurate.

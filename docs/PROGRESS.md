@@ -6,6 +6,17 @@
 > `docs/architecture/architecture-components.md`), dibuat otomatis oleh skill
 > `project-init` dan WAJIB jalan sebelum Fase 01 fitur.
 
+## Status Terkini (diperbarui 2026-11-10 malam)
+- **Produksi: v2.51.0** (deploy 2026-11-10, backup `2026-11-10_1720`; migrasi 0053 `trial_claims` dan 0054 `data_usaha.archived_at/archive_cleaned_at`). Dirilis hari ini: v2.49.5 (Tax ID semua jenis PPh), v2.50.0 (Fase 216 + 217), v2.51.0 (Fase 218).
+- **Sedang digarap:** tidak ada fase terbuka. Fase 216 (Tim Internal), 217 (trial per database Accurate) dan 218 (arsip/hapus Data Usaha) selesai dan live.
+- **Menunggu / langkah berikutnya:**
+  1. Hasil cek user di produksi untuk `/staff`, `/trial`, Pengaturan Trial (belum pernah diuji manual di browser) dan `/pilih-usaha` di layar telepon. Temuan masuk satu patch v2.51.1.
+  2. Laporan WhatsApp ke client (draf sudah dibuat di sesi 2026-11-10, user yang mengirim); tunggu umpan baliknya.
+  3. Fase 214 (PI baris hanya-Beban, menunggu uji Accurate nyata) dan Fase 215 (cache pencarian data master) masih In Progress.
+  4. Client belum konfirmasi pajak Ps.4(2) (v2.49.5); kasus operator (hak akses Accurate) masih menunggu.
+  5. Belum diukur: paralel 4 → 6 (tuas kecepatan tanpa rilis).
+- Cara deploy baku: `docs/architecture/architecture-deployment.md` § STANDAR DEPLOY (ada langkah 2b pemulihan rilis gagal di tag, dan langkah 12 bersihkan image lama).
+
 | Fase | Nama                     | Status      | Architecture Doc                                   | Phase Doc                              |
 |------|---------------------------|-------------|-------------------------------------------------------|-------------------------------------------|
 | 00   | Fondasi Teknis (settings, komponen, auth+RBAC, queue) | Done | `docs/architecture/architecture-components.md` | `docs/phases/phase-00-fondasi.md` |
@@ -224,9 +235,9 @@
 | 213  | Work Order: "Bill Material no" tidak wajib untuk tipe Kode Produk (PRODUCT), tetap wajib untuk tipe lain | Done sisi kode (2026-10-29, belum dirilis) | `docs/architecture/architecture-work-order.md` | `docs/phases/phase-213-work-order-bom-opsional-tipe-produk.md` |
 | 214  | Purchase Invoice: baris hanya-Beban (tanpa Item No) tidak lagi menggagalkan seluruh grup; Retry mengenali faktur yang sudah ada di Accurate | In Progress — kode & unit test selesai 2026-11-05; menunggu verifikasi ke Accurate nyata | `docs/architecture/architecture-purchase-invoice.md` § Fase 214 | `docs/phases/phase-214-purchase-invoice-baris-hanya-beban.md` |
 | 215  | Cache pencarian data master per sesi Accurate (pelanggan/vendor/barang) — kecepatan import: permintaan/faktur 5,0 → ±1,1; paralel 8 1,59 → 6,94 faktur/dtk (terukur) | In Progress — kode & unit test selesai 2026-11-06; belum dirilis | `docs/architecture/architecture-import-speed-lab.md` § 13 | `docs/phases/phase-215-cache-pencarian-data-master.md` |
-| 216  | Kelola akun Tim Internal (`/staff`): ubah tingkat Admin ↔ Super Admin (atomik) dan reset kata sandi oleh Super Admin; tanpa hapus (hanya nonaktifkan) | Done sisi kode (2026-11-10, belum dirilis) | `docs/architecture/architecture-staff-management.md`, `docs/decisions/adr-0053-tim-internal-ubah-role-reset-sandi-tanpa-hapus.md` | `docs/phases/phase-216-kelola-akun-tim-internal.md` |
-| 217  | Trial satu kali per database Accurate + modul: buku besar permanen `trial_claims`, klaim saat import pertama, kuota dari counter permanen, daftar pengecualian, lepas klaim oleh admin | Done (2026-11-10, API + UI admin; belum dirilis) | `docs/architecture/architecture-trial-database-ledger.md`, `docs/decisions/adr-0054-trial-satu-kali-per-database-accurate-dan-modul.md` | `docs/phases/phase-217-trial-per-database-accurate.md` |
-| 218  | Hapus (kosong) & arsip (punya riwayat) Data Usaha oleh pemilik di `/pilih-usaha`, bisa dipulihkan | Done (2026-11-10, API + UI; belum dirilis) | `docs/architecture/architecture-data-usaha-archive.md`, `docs/decisions/adr-0055-data-usaha-arsip-dan-hapus-oleh-pemilik.md` | `docs/phases/phase-218-arsip-hapus-data-usaha.md` |
+| 216  | Kelola akun Tim Internal (`/staff`): ubah tingkat Admin ↔ Super Admin (atomik) dan reset kata sandi oleh Super Admin; tanpa hapus (hanya nonaktifkan) | Done, dirilis v2.50.0 (2026-11-10); uji manual browser `/staff` belum | `docs/architecture/architecture-staff-management.md`, `docs/decisions/adr-0053-tim-internal-ubah-role-reset-sandi-tanpa-hapus.md` | `docs/phases/phase-216-kelola-akun-tim-internal.md` |
+| 217  | Trial satu kali per database Accurate + modul: buku besar permanen `trial_claims`, klaim saat import pertama, kuota dari counter permanen, daftar pengecualian, lepas klaim oleh admin | Done, dirilis v2.50.0 (+ penyaring Konverter v2.51.0) (2026-11-10); uji manual browser `/trial` belum | `docs/architecture/architecture-trial-database-ledger.md`, `docs/decisions/adr-0054-trial-satu-kali-per-database-accurate-dan-modul.md` | `docs/phases/phase-217-trial-per-database-accurate.md` |
+| 218  | Hapus (kosong) & arsip (punya riwayat) Data Usaha oleh pemilik di `/pilih-usaha`, bisa dipulihkan | Done, dirilis v2.51.0 (2026-11-10); diuji manual di browser dev | `docs/architecture/architecture-data-usaha-archive.md`, `docs/decisions/adr-0055-data-usaha-arsip-dan-hapus-oleh-pemilik.md` | `docs/phases/phase-218-arsip-hapus-data-usaha.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

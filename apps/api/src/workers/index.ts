@@ -1000,14 +1000,6 @@ export async function appendToExistingPurchaseInvoice(
   const rawRows = group.rows.map((r) => r.rawData);
   const vendorNo = String(buildPurchaseInvoicePayload(rawRows, columnMapping).vendorNo ?? "");
 
-  // § Fase 214 — jalur update hanya mengirim `detailItem`; Beban TIDAK ikut. Baris hanya-Beban di sini tidak boleh ditandai sukses (bebannya tidak akan
-  // pernah sampai ke Accurate) — tolak jelas. Perilaku `save.do` update untuk `detailExpense` belum teruji.
-  if (planPurchaseInvoiceRows(rawRows, columnMapping).expenseOnly.some(Boolean)) {
-    throw new Error(
-      `Nomor grup "${group.groupKey}" sudah punya Faktur Pembelian #${existingId} di Accurate, sedangkan file ini memuat baris yang hanya berisi Beban. Facport belum bisa menambahkan Beban ke faktur yang sudah ada. Tambahkan Beban itu langsung di Accurate, atau gunakan Nomor Transaksi yang berbeda.`,
-    );
-  }
-
   // § Fase 82 (2026-09-10) — evaluasi client: faktur dihapus LANGSUNG di
   // Accurate (bukan lewat Facport), lalu upload ulang Trans No yang sama
   // GAGAL, padahal seharusnya dibuatkan baru. Root cause: DB lokal kita
@@ -1030,6 +1022,14 @@ export async function appendToExistingPurchaseInvoice(
   } catch (err) {
     if (isAccurateRecordNotFound(err)) return processPurchaseInvoiceGroup(ctx, group, columnMapping);
     throw err;
+  }
+
+  // § Fase 214 — (DIPINDAH setelah verifikasi ke Accurate; lihat lessons-learned 2026-11-11) jalur update hanya mengirim `detailItem`; Beban TIDAK ikut. Baris hanya-Beban di sini tidak boleh ditandai sukses (bebannya tidak akan
+  // pernah sampai ke Accurate) — tolak jelas. Perilaku `save.do` update untuk `detailExpense` belum teruji.
+  if (planPurchaseInvoiceRows(rawRows, columnMapping).expenseOnly.some(Boolean)) {
+    throw new Error(
+      `Nomor grup "${group.groupKey}" sudah punya Faktur Pembelian #${existingId} di Accurate, sedangkan file ini memuat baris yang hanya berisi Beban. Facport belum bisa menambahkan Beban ke faktur yang sudah ada. Tambahkan Beban itu langsung di Accurate, atau gunakan Nomor Transaksi yang berbeda.`,
+    );
   }
 
   // § Safety check — JANGAN append ke faktur vendor lain walau nomor

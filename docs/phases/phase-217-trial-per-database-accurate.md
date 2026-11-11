@@ -1,6 +1,6 @@
 # Fase 217 — Trial satu kali per database Accurate + modul
 
-**Status:** Done (API + UI admin; uji manual browser belum; belum dirilis)
+**Status:** Done — dirilis v2.50.0 (penyaring Konverter menyusul di v2.51.0); uji manual browser `/trial` BELUM
 
 **Mulai:** 2026-11-10
 **Selesai:** 2026-11-10

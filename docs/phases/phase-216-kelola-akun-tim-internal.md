@@ -1,6 +1,6 @@
 # Fase 216 — Kelola Akun Tim Internal (ubah role, reset kata sandi)
 
-**Status:** Done (sisi kode; uji manual browser menyusul)
+**Status:** Done — dirilis v2.50.0 (2026-11-10); uji manual browser `/staff` BELUM
 **Mulai:** 2026-11-10
 **Selesai:** 2026-11-10
 
