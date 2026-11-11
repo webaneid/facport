@@ -6482,3 +6482,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 **Gejala:** workflow Release v2.51.0 gagal di langkah semantic-release: `remote: fatal error in commit_refs`, `[remote rejected] v2.51.0`. Gerbang typecheck+tes lolos; commit `chore(release): 2.51.0 [skip ci]` sudah masuk `main`, tetapi tag, GitHub Release, dan Deploy otomatis (di-skip karena Release `failure`) tidak terjadi.
 **Fix:** jangan rerun Release (akan bentrok dengan commit rilis yang sudah ada). Buat tag ringan di commit rilis dan push, picu `Deploy` manual (`gh workflow run Deploy -f tag=vX`), lalu `gh release create`. Langkah baku ditulis di `architecture-deployment.md` § STANDAR DEPLOY, sisi Claude butir 2b.
 **Terkait:** tiap deploy menambah ±3,4 GB image di VPS yang dipakai bersama proyek lain; ditambahkan langkah 12 runbook (hapus versi lama dengan tag eksplisit, simpan versi sekarang + satu sebelumnya; larang `prune -a`/`volume prune`).
+
+## 2026-11-11 — Guard "hanya-Beban" (Fase 214) menolak faktur yang sudah dihapus di Accurate
+- **Gejala:** client (Zin) retry PI; 21 baris gagal "Nomor grup 14719 sudah punya Faktur Pembelian #382 … hanya berisi Beban", padahal faktur itu sudah dihapus di Accurate.
+- **Akar masalah:** `appendToExistingPurchaseInvoice` menolak baris hanya-Beban SEBELUM verifikasi `detail.do` ke Accurate. `#382` berasal dari catatan lokal (`import_batch_rows` sukses) yang basi. Mengulang pelajaran Fase 82.
+- **Perbaikan:** guard dipindah ke SETELAH `getPurchaseInvoiceDetail` — faktur yang sudah tidak ada jatuh ke jalur CREATE (yang mendukung baris hanya-Beban).
+- **Aturan:** guard/penolakan apa pun di jalur "append ke faktur lama" WAJIB di bawah verifikasi keberadaan faktur di Accurate.
