@@ -1,3 +1,10 @@
+## <small>2.51.1 (2026-11-11)</small>
+
+* chore: rilis fix guard hanya-Beban PI setelah verifikasi faktur lama ke Accurate ([416e1cb](https://github.com/webaneid/facport/commit/416e1cb))
+* fix(api): guard hanya-Beban PI jalan setelah verifikasi faktur lama ke Accurate ([f01244c](https://github.com/webaneid/facport/commit/f01244c))
+* docs: PROGRESS — status terkini (prod v2.51.0), fase 216-218 dirilis, daftar menunggu/berikutnya ([d853977](https://github.com/webaneid/facport/commit/d853977))
+* docs: runbook deploy — pemulihan rilis gagal di tag, langkah 12 bersihkan image lama VPS, peringatan ([ee402ff](https://github.com/webaneid/facport/commit/ee402ff))
+
 ## 2.51.0 (2026-11-10)
 
 * Merge develop: Fase 218 hapus & arsip Data Usaha oleh pemilik + perbaikan penyaring Konverter pada b ([05cd0fb](https://github.com/webaneid/facport/commit/05cd0fb))
