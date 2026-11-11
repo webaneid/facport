@@ -6,15 +6,17 @@
 > `docs/architecture/architecture-components.md`), dibuat otomatis oleh skill
 > `project-init` dan WAJIB jalan sebelum Fase 01 fitur.
 
-## Status Terkini (diperbarui 2026-11-10 malam)
-- **Produksi: v2.51.0** (deploy 2026-11-10, backup `2026-11-10_1720`; migrasi 0053 `trial_claims` dan 0054 `data_usaha.archived_at/archive_cleaned_at`). Dirilis hari ini: v2.49.5 (Tax ID semua jenis PPh), v2.50.0 (Fase 216 + 217), v2.51.0 (Fase 218).
+## Status Terkini (diperbarui 2026-11-11)
+- **Produksi: v2.51.1** (deploy 2026-11-11, backup `2026-11-11_1335`, tanpa migrasi; hanya kode worker). v2.51.1 = fix guard baris hanya-Beban Faktur Pembelian yang menolak faktur yang sudah dihapus di Accurate (`docs/lessons-learned.md` 2026-11-11, tes regresi `apps/api/src/workers/append-purchase-invoice-expense-only.test.ts`). Sebelumnya v2.51.0 (deploy 2026-11-10, backup `2026-11-10_1720`; migrasi 0053 `trial_claims` dan 0054 `data_usaha.archived_at/archive_cleaned_at`): v2.49.5 (Tax ID semua jenis PPh), v2.50.0 (Fase 216 + 217), v2.51.0 (Fase 218).
 - **Sedang digarap:** tidak ada fase terbuka. Fase 216 (Tim Internal), 217 (trial per database Accurate) dan 218 (arsip/hapus Data Usaha) selesai dan live.
 - **Menunggu / langkah berikutnya:**
-  1. Hasil cek user di produksi untuk `/staff`, `/trial`, Pengaturan Trial (belum pernah diuji manual di browser) dan `/pilih-usaha` di layar telepon. Temuan masuk satu patch v2.51.1.
+  1. Hasil cek user di produksi untuk `/staff`, `/trial`, Pengaturan Trial (belum pernah diuji manual di browser) dan `/pilih-usaha` di layar telepon. Temuan masuk satu patch berikutnya (v2.51.2).
+  1b. **Retry client (Zin) untuk grup hanya-Beban PI** (mis. Trans No 14719, 21 baris) setelah v2.51.1: BELUM terbukti ke Accurate nyata (jalur CREATE hanya-Beban di akun client). Bila gagal dengan pesan lain, minta tangkapan layar + file baris gagal baru.
   2. Laporan WhatsApp ke client (draf sudah dibuat di sesi 2026-11-10, user yang mengirim); tunggu umpan baliknya.
   3. Fase 214 (PI baris hanya-Beban, menunggu uji Accurate nyata) dan Fase 215 (cache pencarian data master) masih In Progress.
   4. Client belum konfirmasi pajak Ps.4(2) (v2.49.5); kasus operator (hak akses Accurate) masih menunggu.
   5. Belum diukur: paralel 4 → 6 (tuas kecepatan tanpa rilis).
+- Ditunda atas permintaan user (2026-11-11): deploy VPS otomatis (isi secret SSH CI); deploy tetap manual sampai diminta.
 - Cara deploy baku: `docs/architecture/architecture-deployment.md` § STANDAR DEPLOY (ada langkah 2b pemulihan rilis gagal di tag, dan langkah 12 bersihkan image lama).
 
 | Fase | Nama                     | Status      | Architecture Doc                                   | Phase Doc                              |
