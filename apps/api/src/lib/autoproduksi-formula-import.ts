@@ -51,7 +51,7 @@ export async function processFormulaBatchRows(
             isActive: record.isActive,
           })
           .returning();
-        await tx.insert(autoproduksiFormulaItems).values(
+        if (record.items.length > 0) await tx.insert(autoproduksiFormulaItems).values(
           record.items.map((item, index) => ({
             formulaId: inserted!.id,
             itemNo: item.itemNo,

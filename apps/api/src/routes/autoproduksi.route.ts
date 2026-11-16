@@ -1,9 +1,11 @@
 import { Elysia, t } from "elysia";
 import { allocateFormulaNumber, formatFormulaCode, withFormulaCode, isFormulaNameTaken, lockDataUsahaForFormula } from "../lib/formula-number";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gte, lte } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
-import { applyContextDefaults } from "../lib/autoproduksi";
+import { applyContextDefaults, requiresStandardCost } from "../lib/autoproduksi";
+import { parseHistoryExportRange, generateHistoryExportBuffer, MAX_HISTORY_EXPORT_ROWS } from "../lib/autoproduksi-history-export";
+import { getCompanyTimezone } from "../lib/company-timezone";
 import { loadAutoproduksiDefaults } from "../lib/autoproduksi-defaults";
 import { checkFormulaUnits, unitTargetKey } from "../lib/autoproduksi-unit-check";
 import { permissionPlugin } from "../lib/permission";
@@ -59,7 +61,8 @@ const formulaBodySchema = t.Object({
   adjustmentAccountNo: t.String({ minLength: 1, maxLength: 50 }),
   adjustmentAccountName: t.Optional(t.String({ maxLength: 255 })),
   isActive: t.Optional(t.Boolean()),
-  items: t.Array(formulaItemSchema, { minItems: 1 }),
+  // § Fase 220 — Bahan Baku boleh kosong (Formula hanya Barang Jadi); kalau kosong Harga Standar WAJIB (`requiresStandardCost`).
+  items: t.Array(formulaItemSchema),
 });
 
 type FormulaBody = typeof formulaBodySchema.static;
@@ -157,6 +160,10 @@ export const autoproduksiRoute = new Elysia()
   .post(
     "/autoproduksi/formulas",
     async ({ body: rawBody, user, subscription, set }) => {
+      if (requiresStandardCost(rawBody.items.length, rawBody.standardCost)) {
+        set.status = 422;
+        return { code: "STANDARD_COST_REQUIRED" };
+      }
       const checked = await validateFormulaUnits(subscription.dataUsahaId, rawBody);
       if ("error" in checked) {
         set.status = 422;
@@ -183,7 +190,7 @@ export const autoproduksiRoute = new Elysia()
             isActive: body.isActive ?? true,
           })
           .returning();
-        await tx.insert(autoproduksiFormulaItems).values(
+        if (body.items.length > 0) await tx.insert(autoproduksiFormulaItems).values(
           body.items.map((item, index) => ({
             formulaId: inserted!.id,
             itemNo: item.itemNo,
@@ -210,6 +217,10 @@ export const autoproduksiRoute = new Elysia()
       if (!existing) {
         set.status = 404;
         return { code: "FORMULA_NOT_FOUND" };
+      }
+      if (requiresStandardCost(rawBody.items.length, rawBody.standardCost)) {
+        set.status = 422;
+        return { code: "STANDARD_COST_REQUIRED" };
       }
       const checked = await validateFormulaUnits(subscription.dataUsahaId, rawBody);
       if ("error" in checked) {
@@ -241,7 +252,7 @@ export const autoproduksiRoute = new Elysia()
         // (bahan baku per resep), lebih sederhana & aman dari edge-case
         // reorder dibanding diff manual.
         await tx.delete(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, params.id));
-        await tx.insert(autoproduksiFormulaItems).values(
+        if (body.items.length > 0) await tx.insert(autoproduksiFormulaItems).values(
           body.items.map((item, index) => ({
             formulaId: params.id,
             itemNo: item.itemNo,
@@ -328,6 +339,65 @@ export const autoproduksiRoute = new Elysia()
       return { entry: entry ?? null };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  // § Fase 221 — Export Excel Riwayat Input Produksi: tanggal PRODUKSI dipilih pelanggan, rentang maks 2 hari (inklusif), ter-scope langganan.
+  // Sinkron dengan batas baris (ditolak, bukan dipotong, bila melebihi) — alasan di `lib/autoproduksi-history-export.ts`. Static path, SEBELUM `/:id`.
+  .get(
+    "/autoproduksi/production-entries/export",
+    async ({ subscription, query, set }) => {
+      const range = parseHistoryExportRange(query.from, query.to);
+      if (!range.ok) {
+        set.status = 422;
+        return { code: range.code };
+      }
+      const rows = await db
+        .select({
+          transDate: autoproduksiProductionEntries.transDate,
+          formulaNumber: autoproduksiFormulas.formulaNumber,
+          formulaName: autoproduksiFormulas.name,
+          finishedGoodItemNo: autoproduksiFormulas.finishedGoodItemNo,
+          finishedGoodItemName: autoproduksiFormulas.finishedGoodItemName,
+          finishedGoodItemUnitName: autoproduksiFormulas.finishedGoodItemUnitName,
+          producedQty: autoproduksiProductionEntries.producedQty,
+          branchName: autoproduksiProductionEntries.branchName,
+          warehouseName: autoproduksiProductionEntries.warehouseName,
+          rawMaterialWarehouseName: autoproduksiProductionEntries.rawMaterialWarehouseName,
+          projectNo: autoproduksiProductionEntries.projectNo,
+          departmentName: autoproduksiProductionEntries.departmentName,
+          status: autoproduksiProductionEntries.status,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
+          errorMessage: autoproduksiProductionEntries.errorMessage,
+          createdAt: autoproduksiProductionEntries.createdAt,
+        })
+        .from(autoproduksiProductionEntries)
+        .innerJoin(autoproduksiFormulas, eq(autoproduksiFormulas.id, autoproduksiProductionEntries.formulaId))
+        .where(
+          and(
+            eq(autoproduksiProductionEntries.subscriptionId, subscription.id),
+            gte(autoproduksiProductionEntries.transDate, range.from),
+            lte(autoproduksiProductionEntries.transDate, range.to),
+          ),
+        )
+        .orderBy(asc(autoproduksiProductionEntries.transDate), asc(autoproduksiProductionEntries.createdAt))
+        .limit(MAX_HISTORY_EXPORT_ROWS + 1);
+      if (rows.length > MAX_HISTORY_EXPORT_ROWS) {
+        set.status = 422;
+        return { code: "EXPORT_TOO_LARGE" };
+      }
+      const buffer = generateHistoryExportBuffer(rows, await getCompanyTimezone());
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="riwayat-input-produksi-${range.from}${range.from === range.to ? "" : `_sd_${range.to}`}.xlsx"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      query: t.Object({ from: t.String({ minLength: 1, maxLength: 10 }), to: t.String({ minLength: 1, maxLength: 10 }) }),
+    },
   )
   // § Fase 185 — status SATU entri untuk popup progres (polling). Ter-scope langganan; entri langganan lain = 404 yang sama dengan "tidak ada".
   .get(

@@ -100,6 +100,32 @@ describe("POST /autoproduksi/formulas", () => {
     expect(items).toHaveLength(2);
   });
 
+  // § Fase 220 — Formula hanya Barang Jadi (tanpa Bahan Baku)
+  test("Formula TANPA bahan baku: 200 bila Harga Standar > 0 (0 baris item), 422 STANDARD_COST_REQUIRED bila kosong/0 (POST dan PUT)", async () => {
+    const owner = await createProvisionedUser(`ap-formula-noitems-${runId}@test.local`);
+    const post = (body: unknown) =>
+      testApp.handle(new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+
+    const noCost = { ...validFormulaBody, name: "Hanya BJ tanpa harga", items: [], standardCost: undefined };
+    const rejected = await post(noCost);
+    expect(rejected.status).toBe(422);
+    expect(((await rejected.json()) as { code: string }).code).toBe("STANDARD_COST_REQUIRED");
+    expect((await post({ ...noCost, standardCost: 0 })).status).toBe(422);
+
+    const ok = await post({ ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: 15000 });
+    expect(ok.status).toBe(200);
+    const { formula } = (await ok.json()) as { formula: { id: string } };
+    expect(await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, formula.id))).toHaveLength(0);
+
+    // PUT: hapus harga dari Formula tanpa bahan ditolak; mengubah ke Formula tanpa bahan (ada harga) menghapus item lama
+    const put = (id: string, body: unknown) =>
+      testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${id}`, { method: "PUT", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: undefined })).status).toBe(422);
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [{ itemNo: "100012", itemUnitName: "KG", quantity: 1 }], standardCost: undefined })).status).toBe(200);
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: 9000 })).status).toBe(200);
+    expect(await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, formula.id))).toHaveLength(0);
+  });
+
   test("409 FORMULA_NAME_TAKEN — nama sama (tak peka huruf besar/kecil) di Data Usaha yang sama ditolak; Data Usaha lain boleh", async () => {
     const owner = await createProvisionedUser(`ap-formula-name-dup-${runId}@test.local`);
     const other = await createProvisionedUser(`ap-formula-name-dup2-${runId}@test.local`);
@@ -457,6 +483,59 @@ describe("GET /autoproduksi/production-entries — riwayat", () => {
 // § diminta client 2026-10-02 — Akun Perantara jadi master data lokal
 // (bukan live-search Accurate lagi). 100% CRUD lokal, fokus test:
 // tenant-isolation (subscriptionId difilter) + duplikat kode ditolak.
+// § Fase 221 — Export Excel Riwayat Input Produksi
+describe("GET /autoproduksi/production-entries/export", () => {
+  async function seedEntries(owner: { cookie: string }, dates: string[]) {
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(validFormulaBody) }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+    for (const transDate of dates) {
+      const r = await testApp.handle(
+        new Request("http://localhost/autoproduksi/production-entries", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ formulaId: formula.id, producedQty: 3, transDate }) }),
+      );
+      expect(r.status).toBe(200);
+    }
+  }
+  const exportReq = (cookie: string, from: string, to: string) =>
+    testApp.handle(new Request(`http://localhost/autoproduksi/production-entries/export?from=${from}&to=${to}`, { headers: { cookie } }));
+
+  test("200 xlsx — hanya entri dalam rentang tanggal produksi; tanggal di luar rentang tidak ikut", async () => {
+    const owner = await createProvisionedUser(`ap-export-ok-${runId}@test.local`);
+    await seedEntries(owner, ["2026-11-14", "2026-11-15", "2026-11-16"]);
+    const res = await exportReq(owner.cookie, "2026-11-14", "2026-11-15");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("riwayat-input-produksi-2026-11-14_sd_2026-11-15.xlsx");
+    const book = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(book.Sheets["Riwayat Produksi"]!);
+    expect(rows.map((r) => r["Tanggal Produksi"])).toEqual(["2026-11-14", "2026-11-15"]);
+    expect(rows[0]).toMatchObject({ "Nama Formula": validFormulaBody.name, "Qty Produksi": 3 });
+  });
+
+  test("422 — rentang > 2 hari, terbalik, atau bukan tanggal; 422 skema bila parameter hilang", async () => {
+    const owner = await createProvisionedUser(`ap-export-bad-${runId}@test.local`);
+    const code = async (from: string, to: string) => {
+      const res = await exportReq(owner.cookie, from, to);
+      return [res.status, ((await res.json()) as { code?: string }).code] as const;
+    };
+    expect(await code("2026-11-14", "2026-11-16")).toEqual([422, "RANGE_TOO_LONG"]);
+    expect(await code("2026-11-15", "2026-11-14")).toEqual([422, "RANGE_INVALID"]);
+    expect(await code("2026-02-30", "2026-03-01")).toEqual([422, "INVALID_DATE"]);
+    expect((await testApp.handle(new Request("http://localhost/autoproduksi/production-entries/export", { headers: { cookie: owner.cookie } }))).status).toBe(422);
+  });
+
+  test("isolasi — pengguna lain TIDAK melihat entri langganan ini; tanpa login 401", async () => {
+    const owner = await createProvisionedUser(`ap-export-own-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-export-other-${runId}@test.local`);
+    await seedEntries(owner, ["2026-11-14"]);
+    const res = await exportReq(other.cookie, "2026-11-14", "2026-11-14");
+    expect(res.status).toBe(200);
+    const book = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    expect(XLSX.utils.sheet_to_json(book.Sheets["Riwayat Produksi"]!)).toHaveLength(0);
+    expect((await testApp.handle(new Request("http://localhost/autoproduksi/production-entries/export?from=2026-11-14&to=2026-11-14"))).status).toBe(401);
+  });
+});
+
 describe("CRUD /autoproduksi/accounts — Akun Perantara lokal", () => {
   test("POST lalu GET — akun baru muncul di daftar, ter-scope subscription sendiri", async () => {
     const owner = await createProvisionedUser(`ap-acc-crud-${runId}@test.local`);

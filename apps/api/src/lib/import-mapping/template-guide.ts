@@ -1560,12 +1560,12 @@ export const deliveryOrderTemplateGuide: TemplateFieldGuide[] = [
 export const autoproduksiFormulaTemplateGuide: TemplateFieldGuide[] = [
   { column: "Nama Resep/Formula", required: true, example: "Bolu Kukus SP (Spesial)", description: "Nama Formula — baris dengan nama SAMA digabung jadi 1 Formula (header + Bahan Baku + Barang Jadi). Nama WAJIB unik di Data Usaha ini — kalau sudah dipakai Formula lain, Formula itu GAGAL diimpor (tidak pernah menimpa yang lama)." },
   { column: "Akun Perantara", required: true, example: "110501", description: "Kode Akun Perantara (adjustment account) PERSIS seperti terdaftar di Accurate." },
-  { column: "Tipe Barang", required: true, example: "BB", description: "BB = Bahan Baku, BJ = Barang Jadi. Setiap Formula WAJIB tepat 1 baris BJ dan minimal 1 baris BB." },
+  { column: "Tipe Barang", required: true, example: "BB", description: "BB = Bahan Baku, BJ = Barang Jadi. Setiap Formula WAJIB tepat 1 baris BJ. Baris BB boleh tidak ada (Formula hanya Barang Jadi) — tetapi kalau tidak ada BB, kolom Unit Cost baris BJ WAJIB diisi lebih dari 0." },
   { column: "Nomor Item", required: true, example: "100006", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
   { column: "Nama Item", required: false, example: "Telur", description: "Nama barang — hanya catatan tampilan, tidak dikirim ke Accurate." },
   { column: "Jumlah", required: false, example: "0.5", description: "WAJIB diisi untuk baris Bahan Baku (BB) — takaran PER 1 unit Barang Jadi. Tidak dipakai untuk baris Barang Jadi (BJ), boleh dikosongkan." },
   { column: "Nama Unit", required: true, example: "Kg", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
-  { column: "Unit Cost", required: false, example: "17000", description: "Hanya berlaku di baris Barang Jadi (BJ) — biaya produksi per unit, dipakai saat Input Produksi diproses." },
+  { column: "Unit Cost", required: false, example: "17000", description: "Hanya berlaku di baris Barang Jadi (BJ) — biaya produksi per unit, dipakai saat Input Produksi diproses. WAJIB (lebih dari 0) bila Formula tidak punya baris Bahan Baku." },
   { column: "Status", required: false, example: "Aktif", description: "Aktif atau Nonaktif — dibaca dari baris Barang Jadi (BJ). Kosong = Aktif. Hasil Export Formula memuat kolom ini sehingga Formula nonaktif tetap nonaktif saat diimpor kembali." },
 ];
 

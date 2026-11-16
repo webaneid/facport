@@ -335,7 +335,7 @@ diminta.
 
 ## Satuan ke-2..5 barang (evaluasi client 2026-10-03)
 Barang di Accurate bisa punya sampai 5 satuan (`unit1..5` + `ratio2..5` terhadap satuan 1) — contoh client: GULA `100028` = KG (satuan 1) dan Pouch (= 10 KG). Sebelumnya `GET /accurate/items/search` hanya membaca `unit1`, jadi form Formula hanya menawarkan satuan terkecil. Sekarang endpoint itu juga mengembalikan `units: {name, ratio}[]` (`lib/accurate-item-units.ts`, dibaca defensif: objek nested/string/flat), dan form Formula (Barang Jadi + tiap Bahan Baku) menampilkan `<Select>` satuan lewat `UnitField` kalau barang punya >1 satuan; selain itu tetap `Input` bebas. `itemUnitName` yang disimpan dikirim apa adanya ke `item-adjustment/save.do` — Accurate yang mengonversi kuantitas lewat rasio.
-⚠️ Nama field BACA `unit2..5`/`ratio2..5` di `item/list.do` belum diverifikasi test call nyata (hanya `unit1` yang pernah). Kalau Accurate menolak permintaan yang diperluas, route mengulang dengan field lama (pencarian tidak rusak, daftar satuan saja yang hilang). Verifikasi dengan barang 100028 di akun client setelah deploy.
+✅ **Terverifikasi test call nyata 2026-11-17 (Fase 222):** `item/list.do` dan `item/detail.do` mengembalikan `unit2..5` sebagai objek nested `{id,name,codeUnitTax}` (null bila tidak ada) dan `ratio2..5` sebagai angka (0 bila tidak ada) — persis yang dibaca `extractItemUnits`. Detail lihat § Fase 222 di bawah.
 
 ## Nomor transaksi Accurate di Riwayat/batch (evaluasi client 2026-10-03)
 Kolom "No. Penyesuaian Accurate" dulu menampilkan `accurateTransactionId` = **id internal numerik** Accurate (mis. `1250`), yang tidak dikenali client. Sekarang `number` dari respons `item-adjustment/save.do` (mis. `ADJ.2026.10.00001`) disimpan di kolom baru `accurate_transaction_number` (`autoproduksi_production_entries` + `import_batch_rows`, migration 0039, nullable) oleh worker manual maupun Import Produksi Excel, dan ditampilkan lewat `accurateResultText()` (`apps/web/lib/accurate-result-text.ts`). Baris/entry lama (tanpa nomor) tampil sebagai "ID internal N". `accurateTransactionId` tetap disimpan (id dibutuhkan kalau suatu saat perlu `detail.do`). Kolom `import_batch_rows.accurate_transaction_number` generik — modul lain belum mengisinya (semua halaman batch 24 modul lain masih menampilkan id; kandidat fase lanjutan kalau client mengeluhkan hal yang sama).
@@ -375,3 +375,35 @@ Keputusan sinkron Fase 166 dicabut: `confirm`/`retry` Import Formula mengubah ba
 - **Sel teks xlsx bertipe string** (bukan rumus): nilai berawalan `=`/`@` tidak dieksekusi dan sengaja tidak dimodifikasi agar round-trip persis.
 - **Tidak ikut:** Nama Akun Perantara (hanya nomornya), riwayat Input Produksi (menunjuk UUID Formula lama).
 - **Aturan nama:** teks "duplikat Nama Resep/Formula DIBOLEHKAN" yang tertinggal di komentar/panduan (route import, template guide, halaman import web, mapping & worker produksi) sudah dihapus — aturan berlaku adalah nama unik (permintaan client 2026-10-09). Formula lama yang sudah kembar tetap ditangani Input Produksi (2+ cocok ditolak).
+
+## Keterangan otomatis di Accurate (Fase 219, evaluasi client 2026-11-16)
+
+`buildProductionEntryPayload()` (satu-satunya titik rakit payload, dipakai form Input Produksi DAN Import Produksi Excel) kini mengirim:
+- `description` (Keterangan dokumen, kolom "Keterangan" di daftar Penyesuaian Persediaan) = `Input Dari AutoProduksi - <nama Barang Jadi>`. Nama dari `finishedGoodItemName`, cadangan nama Formula bila kosong (Formula hasil Import Excel).
+- `detailItem[].detailNotes` (tab Info Lainnya → Keterangan per baris) = `Bahan Baku` untuk baris `ADJUSTMENT_OUT`, `Barang Jadi` untuk baris `ADJUSTMENT_IN`. Field yang sama dipakai modul Inventory Adjustment (`detailNotes`).
+Hanya dokumen BARU yang berformat baru; dokumen yang sudah terkirim tidak diubah. Terverifikasi ke Accurate nyata 2026-11-17: respons `save.do` memuat `description` dan `detailItem[].detailNotes` persis seperti dikirim (lihat `docs/phases/phase-219-keterangan-otomatis-penyesuaian-persediaan.md`).
+
+## Formula tanpa Bahan Baku (Fase 220, evaluasi client 2026-11-16)
+
+Formula boleh hanya Barang Jadi (form, rute `POST/PUT /autoproduksi/formulas`, Import Formula Excel). Dokumen Accurate-nya hanya berisi 1 baris `ADJUSTMENT_IN`.
+- **Harga Standar WAJIB (> 0) bila tanpa Bahan Baku** (`requiresStandardCost()` di `lib/autoproduksi.ts`, dipakai rute → 422 `STANDARD_COST_REQUIRED`, pemetaan Excel, dan form web). Dengan Bahan Baku Harga Standar tetap opsional (perilaku lama).
+- **Alasan (uji nyata ke Accurate 2026-11-17):** `ADJUSTMENT_IN` TANPA `unitCost` diterima tetapi barang masuk bernilai 0 (`totalAmount` 0) — diam-diam salah secara akuntansi; dengan `unitCost` 15000 tercatat `totalAmount` 15000.
+- Penyisipan item dilewati bila daftar kosong (`values([])` Drizzle melempar galat) di POST, PUT (ganti-total), dan Import Formula.
+- Import Excel: baris BB boleh tidak ada, tetapi Unit Cost baris BJ wajib > 0; panduan template diperbarui. Export Formula tetap round-trip (Formula tanpa bahan diekspor sebagai 1 baris BJ + Unit Cost).
+- Catatan: Formula DENGAN Bahan Baku tanpa Harga Standar tetap menghasilkan barang jadi bernilai 0 di Accurate (perilaku lama, di luar permintaan ini) — kandidat fase terpisah bila client mempermasalahkan.
+
+## Multi satuan — perbaikan keandalan (Fase 222, evaluasi client 2026-11-16)
+
+Riset: format field baca BENAR (lihat catatan terverifikasi di atas), jadi akar masalah "pilihan satuan tidak muncul" ada di sisi kami — kegagalan diam-diam dan pemuatan satuan Formula tersimpan yang rapuh.
+- **Pemuatan per KODE:** `GET /accurate/items/units?nos=A,B,...` (maks 20 kode, `parseItemNos`) memakai `item/list.do` dengan `filter.no.op=EQUAL` + `filter.no.val[n]` (terbukti: beberapa kode dalam 1 panggilan; `op=IN` ditolak Accurate "Invalid field value"). Form Formula memanggilnya SEKALI saat Formula tersimpan dibuka untuk edit — menggantikan N pencarian kata kunci paralel (bisa meleset, hanya halaman pertama, memicu 429).
+- **Tidak lagi diam-diam:** `GET /accurate/items/search` mengembalikan `unitsLoaded:false` bila Accurate menolak field satuan tambahan (server jatuh ke `unit1` saja); UI menampilkan petunjuk "Daftar pilihan satuan tidak dapat dimuat dari Accurate — ketik satuan secara manual". Gagal total (galat jaringan/Accurate) juga memunculkan petunjuk yang sama.
+- Pilihan satuan tetap hanya tampil bila barang punya >1 satuan (`UnitField`); satuan tersimpan yang tidak ada di daftar tetap ditampilkan.
+
+## Unduh Riwayat Input Produksi ke Excel (Fase 221, evaluasi client 2026-11-16)
+
+- **Endpoint:** `GET /autoproduksi/production-entries/export?from=YYYY-MM-DD&to=YYYY-MM-DD` (permission `import.create` + gate modul, ter-scope langganan; static path sebelum `/:id`). Mencakup entri dari form DAN Import Produksi Excel (keduanya ada di `autoproduksi_production_entries`).
+- **Rentang (keputusan user):** pelanggan memilih tanggal sendiri; **maksimal 2 hari inklusif** (dari = sampai = 1 hari). Filter pada **tanggal produksi** (`trans_date`, bukan waktu input). Divalidasi server (`parseHistoryExportRange`): `INVALID_DATE` / `RANGE_INVALID` / `RANGE_TOO_LONG` → 422; UI mencerminkan aturan yang sama hanya sebagai kemudahan.
+- **Sinkron, bukan job queue — keputusan sadar:** rentang ≤ 2 hari + batas `MAX_HISTORY_EXPORT_ROWS` = 20.000; melebihi batas → 422 `EXPORT_TOO_LARGE` (DITOLAK, tidak dipotong diam-diam). Bila client kelak meminta rentang panjang, pindahkan ke job (arsitektur jobs).
+- **Kolom:** Tanggal Produksi, No./Nama Formula, Kode/Nama Barang Jadi, Qty, Satuan, Cabang, Gudang Barang Jadi/Bahan Baku, Proyek, Departemen, Status (Indonesia), No. Transaksi Accurate, Pesan Galat, Waktu Input. **Waktu Input** dirender di zona waktu perusahaan (`company.timezone`); penyimpanan tetap UTC.
+- **Keamanan:** sel teks xlsx bertipe string, jadi pesan galat berawalan `=` tidak dieksekusi (diuji); data hanya milik langganan pemanggil (diuji isolasi antar pengguna).
+- **UI:** `HistoryExportButton` di halaman Riwayat (dua pilihan tanggal, default hari ini, tombol terkunci bila rentang tidak sah / sedang mengunduh).

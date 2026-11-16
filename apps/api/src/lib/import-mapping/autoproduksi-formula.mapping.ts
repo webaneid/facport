@@ -21,6 +21,8 @@
 // dipakai GAGAL (tak peka huruf besar/kecil), TIDAK PERNAH update/timpa.
 // Formula lama yang sudah kembar tetap ada; Input Produksi tetap menolak
 // nama ganda (bukan menebak) — lihat `autoproduksi-production.mapping.ts`.
+import { requiresStandardCost } from "../autoproduksi";
+
 export const AUTOPRODUKSI_ITEM_TYPES = ["BB", "BJ"] as const;
 export type AutoproduksiItemType = (typeof AUTOPRODUKSI_ITEM_TYPES)[number];
 
@@ -167,7 +169,8 @@ export function autoproduksiFormulaRowError(rawRow: Record<string, unknown>, col
 }
 
 /**
- * Validasi SATU GRUP (= 1 Formula): tepat 1 baris BJ, minimal 1 baris BB.
+ * Validasi SATU GRUP (= 1 Formula): tepat 1 baris BJ. Baris BB boleh tidak ada (Fase 220: Formula hanya Barang Jadi),
+ * tetapi kalau tidak ada BB maka Unit Cost (Harga Standar, > 0) baris BJ WAJIB — lihat `requiresStandardCost`.
  * Mengembalikan pesan galat, atau null bila valid.
  */
 export function validateAutoproduksiFormulaGroup(group: AutoproduksiFormulaGroup, columnMapping: Record<string, string>): string | null {
@@ -175,7 +178,12 @@ export function validateAutoproduksiFormulaGroup(group: AutoproduksiFormulaGroup
   const bjCount = types.filter((t) => t === "BJ").length;
   const bbCount = types.filter((t) => t === "BB").length;
   if (bjCount !== 1) return `Formula "${group.groupKey}" harus punya TEPAT 1 baris Tipe Barang=BJ (Barang Jadi) — ditemukan ${bjCount}.`;
-  if (bbCount < 1) return `Formula "${group.groupKey}" butuh minimal 1 baris Tipe Barang=BB (Bahan Baku).`;
+  if (bbCount === 0) {
+    const bjRow = group.rows[types.indexOf("BJ")]!;
+    if (requiresStandardCost(0, textOf(bjRow, columnMapping, "unitCost"))) {
+      return `Formula "${group.groupKey}" tidak punya baris Bahan Baku (BB) — kolom Unit Cost baris Barang Jadi (BJ) WAJIB diisi lebih dari 0 (harga standar barang jadi).`;
+    }
+  }
   return null;
 }
 

@@ -7,7 +7,7 @@ import { parseAccurateEnvelope, AccurateApiError } from "../lib/accurate";
 import { withAccurateRateLimit } from "../lib/accurate-rate-limiter";
 import { DATA_USAHA_HEADER } from "../lib/subscription-gate";
 import { logger } from "../lib/logger";
-import { extractItemUnits } from "../lib/accurate-item-units";
+import { extractItemUnits, parseItemNos } from "../lib/accurate-item-units";
 
 // § Fase 163, ADR-0039 — endpoint PERTAMA di Facport yang panggil Accurate
 // SINKRON dari HTTP route (bukan job worker) — SENGAJA, search-as-you-type
@@ -76,6 +76,23 @@ async function fetchAccurateList<T>(ctx: AccurateSessionContext, path: string, k
   });
 }
 
+// § Fase 222 — ambil barang berdasarkan KODE PERSIS (bukan pencarian kata kunci): `filter.no.op=EQUAL` + `filter.no.val[n]`
+// (terbukti test call nyata 2026-11-17: beberapa kode dalam 1 panggilan; op=IN ditolak Accurate).
+async function fetchAccurateItemsByNo<T>(ctx: AccurateSessionContext, nos: string[], fields: string): Promise<T[]> {
+  return withAccurateRateLimit(async () => {
+    const url = new URL(`${ctx.host}/accurate/api/item/list.do`);
+    url.searchParams.set("fields", fields);
+    url.searchParams.set("filter.no.op", "EQUAL");
+    nos.forEach((no, i) => url.searchParams.set(`filter.no.val[${i}]`, no));
+    url.searchParams.set("sp.pageSize", String(nos.length));
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${ctx.accessToken}`, "X-Session-ID": ctx.session },
+      signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS),
+    });
+    return parseAccurateEnvelope<T[]>(res);
+  });
+}
+
 type AccurateItemRecord = Record<string, unknown> & { no?: string; name?: string; unit1?: { name?: string } | null };
 type AccurateGlAccountRecord = { no?: string; name?: string };
 // § Gudang (warehouse) di Accurate TIDAK punya kode ("no") seperti
@@ -110,13 +127,18 @@ export const accurateLookupRoute = new Elysia()
         // ulangi dengan field lama supaya pencarian TIDAK PERNAH rusak (hanya
         // kehilangan daftar satuan tambahan).
         let records: AccurateItemRecord[];
+        // § Fase 222 — kegagalan field satuan TIDAK lagi diam-diam: `unitsLoaded:false` memberi tahu UI supaya pelanggan
+        // melihat petunjuk "ketik satuan manual", bukan kotak teks tanpa penjelasan.
+        let unitsLoaded = true;
         try {
           records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1,unit2,unit3,unit4,unit5,ratio2,ratio3,ratio4,ratio5");
         } catch (extendedErr) {
           logger.warn({ err: extendedErr, dataUsahaId: duResult.dataUsahaId }, "Pencarian Item dengan field satuan tambahan gagal, ulangi dengan field dasar");
           records = await fetchAccurateList<AccurateItemRecord>(session, "item/list.do", query.q, "id,no,name,unit1");
+          unitsLoaded = false;
         }
         return {
+          unitsLoaded,
           items: records.map((r) => ({ no: r.no ?? "", name: r.name ?? "", unitName: r.unit1?.name ?? "", units: extractItemUnits(r) })),
         };
       } catch (err) {
@@ -126,6 +148,37 @@ export const accurateLookupRoute = new Elysia()
       }
     },
     { auth: true, query: t.Object({ q: t.String({ minLength: 1, maxLength: 100 }) }) },
+  )
+  // § Fase 222 — satuan barang Formula TERSIMPAN dimuat per KODE (pasti), menggantikan pencarian kata kunci per-barang di form
+  // (yang bisa meleset, hanya halaman pertama, dan memicu 429 bila banyak bahan). Maks MAX_ITEM_NOS kode per panggilan.
+  .get(
+    "/accurate/items/units",
+    async ({ query, user, request, set }) => {
+      const nos = parseItemNos(query.nos);
+      if (!nos) {
+        set.status = 422;
+        return { code: "INVALID_ITEM_NOS" };
+      }
+      const duResult = await resolveDataUsahaOrError(user.id, request.headers);
+      if ("error" in duResult) {
+        set.status = duResult.error.code === "DATA_USAHA_FORBIDDEN" ? 403 : 400;
+        return duResult.error;
+      }
+      const session = await openSessionOrError(duResult.dataUsahaId);
+      if (isSessionError(session)) {
+        set.status = 400;
+        return session.error;
+      }
+      try {
+        const records = await fetchAccurateItemsByNo<AccurateItemRecord>(session, nos, "id,no,name,unit1,unit2,unit3,unit4,unit5,ratio2,ratio3,ratio4,ratio5");
+        return { items: records.map((r) => ({ no: r.no ?? "", units: extractItemUnits(r) })) };
+      } catch (err) {
+        logger.error({ err, dataUsahaId: duResult.dataUsahaId }, "Gagal memuat satuan Item di Accurate");
+        set.status = err instanceof AccurateApiError ? 502 : 500;
+        return { code: "ACCURATE_SEARCH_FAILED" };
+      }
+    },
+    { auth: true, query: t.Object({ nos: t.String({ minLength: 1, maxLength: 2100 }) }) },
   )
   .get(
     "/accurate/glaccounts/search",

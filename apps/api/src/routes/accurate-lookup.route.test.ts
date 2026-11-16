@@ -48,6 +48,47 @@ async function search(path: "items" | "glaccounts" | "warehouses", cookie: strin
   );
 }
 
+// § Fase 222 — pemuatan satuan Formula tersimpan per kode barang
+describe("GET /accurate/items/units — guard", () => {
+  const units = (cookie: string, nos: string, dataUsahaId?: string) =>
+    testApp.handle(new Request(`http://localhost/accurate/items/units?nos=${encodeURIComponent(nos)}`, { headers: { cookie, ...(dataUsahaId ? { "x-data-usaha-id": dataUsahaId } : {}) } }));
+
+  test("401 tanpa login", async () => {
+    expect((await testApp.handle(new Request("http://localhost/accurate/items/units?nos=100028"))).status).toBe(401);
+  });
+
+  test("422 INVALID_ITEM_NOS — daftar kosong atau melebihi 20 kode", async () => {
+    const email = `lookup-units-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
+    for (const nos of [" , ", Array.from({ length: 21 }, (_, i) => `K${i}`).join(",")]) {
+      const res = await units(cookie, nos, dataUsahaId);
+      expect(res.status).toBe(422);
+      expect(((await res.json()) as { code: string }).code).toBe("INVALID_ITEM_NOS");
+    }
+  });
+
+  test("400 ACCURATE_NOT_CONNECTED — Data Usaha tanpa koneksi", async () => {
+    const email = `lookup-units-noconn-${runId}@test.local`;
+    const userId = await signUp(email);
+    const cookie = await signIn(email);
+    const dataUsahaId = await createTestDataUsaha(userId);
+    const res = await units(cookie, "100028", dataUsahaId);
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { code: string }).code).toBe("ACCURATE_NOT_CONNECTED");
+  });
+
+  test("403 DATA_USAHA_FORBIDDEN — Data Usaha milik user lain", async () => {
+    const ownerId = await signUp(`lookup-units-owner-${runId}@test.local`);
+    const otherDataUsahaId = await createTestDataUsaha(ownerId);
+    const attackerEmail = `lookup-units-attacker-${runId}@test.local`;
+    await signUp(attackerEmail);
+    const res = await units(await signIn(attackerEmail), "100028", otherDataUsahaId);
+    expect(res.status).toBe(403);
+  });
+});
+
 describe("GET /accurate/items/search & /accurate/glaccounts/search — guard", () => {
   test("401 tanpa login", async () => {
     const res = await testApp.handle(new Request("http://localhost/accurate/items/search?q=bolu"));
