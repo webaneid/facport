@@ -100,6 +100,32 @@ describe("POST /autoproduksi/formulas", () => {
     expect(items).toHaveLength(2);
   });
 
+  // § Fase 220 — Formula hanya Barang Jadi (tanpa Bahan Baku)
+  test("Formula TANPA bahan baku: 200 bila Harga Standar > 0 (0 baris item), 422 STANDARD_COST_REQUIRED bila kosong/0 (POST dan PUT)", async () => {
+    const owner = await createProvisionedUser(`ap-formula-noitems-${runId}@test.local`);
+    const post = (body: unknown) =>
+      testApp.handle(new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+
+    const noCost = { ...validFormulaBody, name: "Hanya BJ tanpa harga", items: [], standardCost: undefined };
+    const rejected = await post(noCost);
+    expect(rejected.status).toBe(422);
+    expect(((await rejected.json()) as { code: string }).code).toBe("STANDARD_COST_REQUIRED");
+    expect((await post({ ...noCost, standardCost: 0 })).status).toBe(422);
+
+    const ok = await post({ ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: 15000 });
+    expect(ok.status).toBe(200);
+    const { formula } = (await ok.json()) as { formula: { id: string } };
+    expect(await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, formula.id))).toHaveLength(0);
+
+    // PUT: hapus harga dari Formula tanpa bahan ditolak; mengubah ke Formula tanpa bahan (ada harga) menghapus item lama
+    const put = (id: string, body: unknown) =>
+      testApp.handle(new Request(`http://localhost/autoproduksi/formulas/${id}`, { method: "PUT", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(body) }));
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: undefined })).status).toBe(422);
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [{ itemNo: "100012", itemUnitName: "KG", quantity: 1 }], standardCost: undefined })).status).toBe(200);
+    expect((await put(formula.id, { ...validFormulaBody, name: "Hanya BJ", items: [], standardCost: 9000 })).status).toBe(200);
+    expect(await db.select().from(autoproduksiFormulaItems).where(eq(autoproduksiFormulaItems.formulaId, formula.id))).toHaveLength(0);
+  });
+
   test("409 FORMULA_NAME_TAKEN — nama sama (tak peka huruf besar/kecil) di Data Usaha yang sama ditolak; Data Usaha lain boleh", async () => {
     const owner = await createProvisionedUser(`ap-formula-name-dup-${runId}@test.local`);
     const other = await createProvisionedUser(`ap-formula-name-dup2-${runId}@test.local`);

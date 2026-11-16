@@ -56,6 +56,15 @@ const AUTOPRODUKSI_DESCRIPTION = "Input Dari AutoProduksi";
 export const DETAIL_NOTE_FINISHED_GOOD = "Barang Jadi";
 export const DETAIL_NOTE_RAW_MATERIAL = "Bahan Baku";
 
+// § Fase 220 — Formula boleh TANPA Bahan Baku (hanya Barang Jadi). Uji nyata ke
+// Accurate 2026-11-17: ADJUSTMENT_IN tanpa `unitCost` DITERIMA tetapi barang
+// masuk bernilai 0 (salah secara akuntansi, diam-diam). Tanpa Bahan Baku tidak
+// ada nilai lain yang bisa dipakai, jadi Harga Standar (> 0) WAJIB. Dengan
+// Bahan Baku perilaku lama tetap (Harga Standar opsional).
+export function requiresStandardCost(itemCount: number, standardCost: number | string | null | undefined): boolean {
+  return itemCount === 0 && !(Number(standardCost) > 0);
+}
+
 export function buildProductionDescription(formula: Pick<Formula, "finishedGoodItemName" | "name">): string {
   const productName = (formula.finishedGoodItemName ?? "").trim() || formula.name.trim();
   return productName ? `${AUTOPRODUKSI_DESCRIPTION} - ${productName}` : AUTOPRODUKSI_DESCRIPTION;

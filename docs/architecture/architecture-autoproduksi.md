@@ -382,3 +382,12 @@ Keputusan sinkron Fase 166 dicabut: `confirm`/`retry` Import Formula mengubah ba
 - `description` (Keterangan dokumen, kolom "Keterangan" di daftar Penyesuaian Persediaan) = `Input Dari AutoProduksi - <nama Barang Jadi>`. Nama dari `finishedGoodItemName`, cadangan nama Formula bila kosong (Formula hasil Import Excel).
 - `detailItem[].detailNotes` (tab Info Lainnya → Keterangan per baris) = `Bahan Baku` untuk baris `ADJUSTMENT_OUT`, `Barang Jadi` untuk baris `ADJUSTMENT_IN`. Field yang sama dipakai modul Inventory Adjustment (`detailNotes`).
 Hanya dokumen BARU yang berformat baru; dokumen yang sudah terkirim tidak diubah. Terverifikasi ke Accurate nyata 2026-11-17: respons `save.do` memuat `description` dan `detailItem[].detailNotes` persis seperti dikirim (lihat `docs/phases/phase-219-keterangan-otomatis-penyesuaian-persediaan.md`).
+
+## Formula tanpa Bahan Baku (Fase 220, evaluasi client 2026-11-16)
+
+Formula boleh hanya Barang Jadi (form, rute `POST/PUT /autoproduksi/formulas`, Import Formula Excel). Dokumen Accurate-nya hanya berisi 1 baris `ADJUSTMENT_IN`.
+- **Harga Standar WAJIB (> 0) bila tanpa Bahan Baku** (`requiresStandardCost()` di `lib/autoproduksi.ts`, dipakai rute → 422 `STANDARD_COST_REQUIRED`, pemetaan Excel, dan form web). Dengan Bahan Baku Harga Standar tetap opsional (perilaku lama).
+- **Alasan (uji nyata ke Accurate 2026-11-17):** `ADJUSTMENT_IN` TANPA `unitCost` diterima tetapi barang masuk bernilai 0 (`totalAmount` 0) — diam-diam salah secara akuntansi; dengan `unitCost` 15000 tercatat `totalAmount` 15000.
+- Penyisipan item dilewati bila daftar kosong (`values([])` Drizzle melempar galat) di POST, PUT (ganti-total), dan Import Formula.
+- Import Excel: baris BB boleh tidak ada, tetapi Unit Cost baris BJ wajib > 0; panduan template diperbarui. Export Formula tetap round-trip (Formula tanpa bahan diekspor sebagai 1 baris BJ + Unit Cost).
+- Catatan: Formula DENGAN Bahan Baku tanpa Harga Standar tetap menghasilkan barang jadi bernilai 0 di Accurate (perilaku lama, di luar permintaan ini) — kandidat fase terpisah bila client mempermasalahkan.

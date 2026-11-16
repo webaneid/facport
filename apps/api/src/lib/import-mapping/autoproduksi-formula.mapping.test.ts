@@ -145,9 +145,23 @@ describe("validateAutoproduksiFormulaGroup", () => {
     expect(validateAutoproduksiFormulaGroup(group, columnMapping)).toMatch(/TEPAT 1 baris Tipe Barang=BJ/);
   });
 
-  test("0 baris BB -> error jelas", () => {
+  // § Fase 220 — Formula hanya Barang Jadi (tanpa BB) sekarang valid, ASAL Unit Cost BJ > 0.
+  test("0 baris BB + Unit Cost BJ > 0 -> valid (Formula hanya Barang Jadi)", () => {
     const group = { groupKey: "X", rows: [rows[2]!] };
-    expect(validateAutoproduksiFormulaGroup(group, columnMapping)).toMatch(/minimal 1 baris Tipe Barang=BB/);
+    expect(validateAutoproduksiFormulaGroup(group, columnMapping)).toBeNull();
+  });
+
+  test("0 baris BB + Unit Cost BJ kosong atau 0 -> error jelas (barang masuk bernilai 0 di Accurate)", () => {
+    for (const cost of [undefined, "", "0"]) {
+      const bj: ImportRowRecord = { ...rows[2]!, rawData: { ...rows[2]!.rawData, "Unit Cost": cost } };
+      expect(validateAutoproduksiFormulaGroup({ groupKey: "X", rows: [bj] }, columnMapping)).toMatch(/Unit Cost.*WAJIB/);
+    }
+  });
+
+  test("record Formula tanpa BB -> items kosong, standardCost terbawa", () => {
+    const record = buildAutoproduksiFormulaRecord({ groupKey: "X", rows: [rows[2]!] }, columnMapping);
+    expect(record.items).toHaveLength(0);
+    expect(record.standardCost).toBe("17000");
   });
 });
 

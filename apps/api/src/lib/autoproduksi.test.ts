@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { buildProductionEntryPayload, formatTransDateForAccurate, applyContextDefaults, type ContextDefaults } from "./autoproduksi";
+import { buildProductionEntryPayload, formatTransDateForAccurate, applyContextDefaults, requiresStandardCost, type ContextDefaults } from "./autoproduksi";
 import type { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries } from "../db/schema";
 
 // § Fase 159 — kasus contoh dari simulasi client (Autoproduksi.xlsx):
@@ -101,6 +101,22 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     expect(detailItem[0]!.detailNotes).toBe("Bahan Baku");
     expect(detailItem[1]!.detailNotes).toBe("Bahan Baku");
     expect(detailItem[2]!.detailNotes).toBe("Barang Jadi");
+  });
+
+  // § Fase 220 — Formula hanya Barang Jadi
+  test("Formula TANPA bahan baku -> detailItem hanya 1 baris ADJUSTMENT_IN lengkap unitCost", () => {
+    const detailItem = buildProductionEntryPayload(baseFormula, [], baseEntry).detailItem as Record<string, unknown>[];
+    expect(detailItem).toHaveLength(1);
+    expect(detailItem[0]).toMatchObject({ itemNo: "100011", itemAdjustmentType: "ADJUSTMENT_IN", detailNotes: "Barang Jadi", unitCost: 20000 });
+  });
+
+  test("requiresStandardCost: wajib hanya bila tanpa bahan baku dan harga kosong/0", () => {
+    expect(requiresStandardCost(0, null)).toBe(true);
+    expect(requiresStandardCost(0, undefined)).toBe(true);
+    expect(requiresStandardCost(0, "0.00")).toBe(true);
+    expect(requiresStandardCost(0, 15000)).toBe(false);
+    expect(requiresStandardCost(0, "15000.00")).toBe(false);
+    expect(requiresStandardCost(2, null)).toBe(false);
   });
 
   test("qty produksi 10 -> kebutuhan bahan baku ikut dikali 10 (inti fitur 'Auto')", () => {

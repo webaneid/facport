@@ -232,8 +232,10 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       }
       validItems.push({ item, quantity });
     }
-    if (validItems.length === 0) {
-      setError("Minimal 1 Bahan Baku (kode barang, satuan, dan takaran > 0).");
+    // § Fase 220 — Bahan Baku boleh kosong (Formula hanya Barang Jadi), tetapi Standard Cost WAJIB: tanpa bahan
+    // Accurate tidak punya dasar nilai dan barang jadi masuk bernilai 0.
+    if (validItems.length === 0 && !(Number(standardCost) > 0)) {
+      setError("Formula tanpa Bahan Baku wajib mengisi Standard Cost (lebih dari 0), kalau tidak barang jadi masuk bernilai 0 di Accurate.");
       return;
     }
     setSubmitting(true);
@@ -260,6 +262,8 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
       setError(
         value?.code === "FORMULA_NAME_TAKEN"
           ? "Nama formula sudah dipakai di Data Usaha ini. Gunakan nama lain."
+          : value?.code === "STANDARD_COST_REQUIRED"
+          ? "Formula tanpa Bahan Baku wajib mengisi Standard Cost (lebih dari 0)."
           : value?.code === "UNIT_NOT_IN_ITEM"
           ? `Satuan "${value.unitName}" tidak terdaftar di barang ${value.itemNo} di Accurate. Satuan yang tersedia: ${(value.availableUnits ?? []).join(", ")}.`
           : "Gagal menyimpan formula — cek kembali isian.",
@@ -305,7 +309,9 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
               <UnitField value={finishedGoodItemUnitName} units={unitsByItemNo[finishedGoodItemNo]} onChange={setFinishedGoodItemUnitName} placeholder="Pilih barang dulu" />
             </label>
             <label className="col-span-2 flex flex-col gap-1.5">
-              <span className="text-xs text-muted-foreground">Standard Cost (opsional — diisi manual)</span>
+              <span className="text-xs text-muted-foreground">
+                Standard Cost ({items.some((i) => i.itemNo.trim() || i.itemUnitName.trim() || i.quantity.trim()) ? "opsional — diisi manual" : "WAJIB karena tanpa Bahan Baku"})
+              </span>
               <Input
                 type="text"
                 inputMode="numeric"
@@ -318,7 +324,9 @@ function FormulaFormDialog({ formulaId, onSaved }: { formulaId?: string; onSaved
 
           <div className="flex flex-col gap-2 rounded-lg border border-border/60 p-3">
             <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-foreground">Bahan Baku (takaran per 1 unit Barang Jadi)</span>
+              <span className="text-xs font-medium text-foreground">
+                Bahan Baku (opsional — takaran per 1 unit Barang Jadi; kosongkan untuk Formula hanya Barang Jadi)
+              </span>
               <button type="button" onClick={() => setItems((prev) => [...prev, { ...EMPTY_ITEM }])} className={buttonVariants("outline", "h-7 text-xs")}>
                 + Baris
               </button>
