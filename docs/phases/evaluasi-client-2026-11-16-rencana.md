@@ -92,3 +92,12 @@
 ## Urutan & Rilis (usulan)
 
 219 → 220 → 222 (discovery boleh paralel dengan 219) → 221. Satu rilis minor gabungan setelah semua selesai + diuji, atau dipecah 219+220 dulu — **rilis hanya atas permintaan eksplisit**. Tiap fase mengikuti SOP: typecheck nol → tinjauan keamanan → bersihkan data uji DB dev bersama → tutup fase → catat PROGRESS.
+
+## Hasil Pemeriksaan Sheet Lain (2026-11-17)
+
+Dibandingkan sel + hash gambar dengan panduan lama `docs/referencehtml/facport/developmen-15-september-2026.xlsx`:
+- **14 dari 15 sheet modul IDENTIK** (Purchase Order, Receive Item, Purchase Return, Sales Quotation, Sales Return, Other Deposit, Sales Order, Item Requisition, Item Transfer, Inventory Adjustment, Job Costing, Roll Over, Work Order, Material Slip, Finished Good Slip) — itu panduan pemetaan kolom Excel → layar Accurate yang sudah menjadi dasar pembangunan modulnya, **bukan permintaan baru**.
+- **Delivery Order berbeda** hanya karena kolom Atribut Tambahan (CLS 1–10, Custom Character/Number/Date detail item + header) — sudah dikerjakan di Fase 212 (v2.47.0).
+- **Sheet "Note"**: kolom "Cek" kini terisi "Sudah" untuk Other Deposit, Journal Voucher, Work Order, Material Slip, Finished Good Slip (status verifikasi client).
+- Satu-satunya sheet yang benar-benar baru: **"Catatan 16 Nov 26"** (Fase 219–222).
+- Catatan kecil Purchase Order: judul kolom di panduan client `EXPENSE : Finance Category 1..10` (spasi sebelum titik dua) vs template kami `EXPENSE: Finance Category N`; pencocokan header kami hanya `trim` + huruf kecil, jadi file Excel BUATAN SENDIRI dengan ejaan spasi tidak otomatis terpetakan (template unduhan Facport aman; pemetaan manual di UI tetap bisa). Perbaikan opsional (toleransi spasi di sekitar `:`) menyentuh banyak rute — hanya bila client mengeluh.
