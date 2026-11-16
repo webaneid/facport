@@ -46,6 +46,21 @@ export function formatTransDateForAccurate(isoDate: string): string {
 // ditebak.
 const AUTOPRODUKSI_DESCRIPTION = "Input Dari AutoProduksi";
 
+// § Fase 219 (evaluasi client 2026-11-16) — Keterangan dokumen di Accurate
+// ditambah nama produk jadi: "Input Dari AutoProduksi - Bolu Kukus". Nama
+// diambil dari `finishedGoodItemName` (disimpan saat Formula dibuat dari form,
+// bisa null untuk Formula hasil Import Excel) dengan cadangan nama Formula
+// (kolom wajib, maks 255 → hasil akhir tidak melebihi ±300 karakter).
+// Keterangan per baris barang (`detailNotes`, tab Info Lainnya) menandai
+// peran barang — field yang SAMA dengan modul Inventory Adjustment.
+export const DETAIL_NOTE_FINISHED_GOOD = "Barang Jadi";
+export const DETAIL_NOTE_RAW_MATERIAL = "Bahan Baku";
+
+export function buildProductionDescription(formula: Pick<Formula, "finishedGoodItemName" | "name">): string {
+  const productName = (formula.finishedGoodItemName ?? "").trim() || formula.name.trim();
+  return productName ? `${AUTOPRODUKSI_DESCRIPTION} - ${productName}` : AUTOPRODUKSI_DESCRIPTION;
+}
+
 export function buildProductionEntryPayload(formula: Formula, formulaItems: FormulaItem[], entry: ProductionEntryInput): Record<string, unknown> {
   const producedQty = Number(entry.producedQty);
 
@@ -63,6 +78,7 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     // sesuai kebutuhan yang diproduksi".
     quantity: Number(item.quantity) * producedQty,
     itemAdjustmentType: "ADJUSTMENT_OUT" satisfies ItemAdjustmentType,
+    detailNotes: DETAIL_NOTE_RAW_MATERIAL,
     ...(entry.rawMaterialWarehouseName ? { warehouseName: entry.rawMaterialWarehouseName } : {}),
     ...(entry.projectNo ? { projectNo: entry.projectNo } : {}),
     ...(entry.departmentName ? { departmentName: entry.departmentName } : {}),
@@ -74,6 +90,7 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     // § Barang Jadi BERTAMBAH — qty produksi APA ADANYA (bukan dikali apa pun).
     quantity: producedQty,
     itemAdjustmentType: "ADJUSTMENT_IN" satisfies ItemAdjustmentType,
+    detailNotes: DETAIL_NOTE_FINISHED_GOOD,
     // § Gudang Barang Jadi (`entry.warehouseName`) — field terpisah dari
     // `entry.rawMaterialWarehouseName` di atas, karena baris Barang Jadi
     // vs Bahan Baku butuh gudang yang berbeda.
@@ -98,7 +115,7 @@ export function buildProductionEntryPayload(formula: Formula, formulaItems: Form
     // (dikonfirmasi `accurate-openapi.json`: `branchName` TIDAK required
     // di top-level `item-adjustment/save.do`).
     ...(entry.branchName ? { branchName: entry.branchName } : {}),
-    description: AUTOPRODUKSI_DESCRIPTION,
+    description: buildProductionDescription(formula),
     detailItem: [...rawMaterialLines, finishedGoodLine],
   };
 }

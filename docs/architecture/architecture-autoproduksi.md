@@ -375,3 +375,10 @@ Keputusan sinkron Fase 166 dicabut: `confirm`/`retry` Import Formula mengubah ba
 - **Sel teks xlsx bertipe string** (bukan rumus): nilai berawalan `=`/`@` tidak dieksekusi dan sengaja tidak dimodifikasi agar round-trip persis.
 - **Tidak ikut:** Nama Akun Perantara (hanya nomornya), riwayat Input Produksi (menunjuk UUID Formula lama).
 - **Aturan nama:** teks "duplikat Nama Resep/Formula DIBOLEHKAN" yang tertinggal di komentar/panduan (route import, template guide, halaman import web, mapping & worker produksi) sudah dihapus — aturan berlaku adalah nama unik (permintaan client 2026-10-09). Formula lama yang sudah kembar tetap ditangani Input Produksi (2+ cocok ditolak).
+
+## Keterangan otomatis di Accurate (Fase 219, evaluasi client 2026-11-16)
+
+`buildProductionEntryPayload()` (satu-satunya titik rakit payload, dipakai form Input Produksi DAN Import Produksi Excel) kini mengirim:
+- `description` (Keterangan dokumen, kolom "Keterangan" di daftar Penyesuaian Persediaan) = `Input Dari AutoProduksi - <nama Barang Jadi>`. Nama dari `finishedGoodItemName`, cadangan nama Formula bila kosong (Formula hasil Import Excel).
+- `detailItem[].detailNotes` (tab Info Lainnya → Keterangan per baris) = `Bahan Baku` untuk baris `ADJUSTMENT_OUT`, `Barang Jadi` untuk baris `ADJUSTMENT_IN`. Field yang sama dipakai modul Inventory Adjustment (`detailNotes`).
+Hanya dokumen BARU yang berformat baru; dokumen yang sudah terkirim tidak diubah. Terverifikasi ke Accurate nyata 2026-11-17: respons `save.do` memuat `description` dan `detailItem[].detailNotes` persis seperti dikirim (lihat `docs/phases/phase-219-keterangan-otomatis-penyesuaian-persediaan.md`).

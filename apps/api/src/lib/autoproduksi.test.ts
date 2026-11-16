@@ -74,7 +74,8 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
     expect(payload.transDate).toBe("28/09/2026");
     expect(payload.adjustmentAccountNo).toBe("11078");
     expect(payload.branchName).toBe("JAKARTA");
-    expect(payload.description).toBe("Input Dari AutoProduksi");
+    // § Fase 219 — nama produk jadi ditambahkan; fixture ini finishedGoodItemName=null → cadangan nama Formula
+    expect(payload.description).toBe("Input Dari AutoProduksi - Bolu Kukus SP (Spesial BGT)");
 
     const detailItem = payload.detailItem as Record<string, unknown>[];
     expect(detailItem).toHaveLength(3);
@@ -85,6 +86,21 @@ describe("buildProductionEntryPayload — kasus simulasi client (Bolu = Telur + 
 
     // 1 baris Barang Jadi BERTAMBAH (ADJUSTMENT_IN), qty = qty produksi
     expect(detailItem[2]).toMatchObject({ itemNo: "100011", quantity: 1, itemAdjustmentType: "ADJUSTMENT_IN" });
+  });
+
+  // § Fase 219 (evaluasi client 2026-11-16)
+  test("Keterangan dokumen memakai nama Barang Jadi bila ada, cadangan nama Formula bila kosong/spasi", () => {
+    const withName = buildProductionEntryPayload({ ...baseFormula, finishedGoodItemName: "Bolu Kukus" }, formulaItems, baseEntry);
+    expect(withName.description).toBe("Input Dari AutoProduksi - Bolu Kukus");
+    const blank = buildProductionEntryPayload({ ...baseFormula, finishedGoodItemName: "   " }, formulaItems, baseEntry);
+    expect(blank.description).toBe("Input Dari AutoProduksi - Bolu Kukus SP (Spesial BGT)");
+  });
+
+  test("detailNotes: baris Bahan Baku = 'Bahan Baku', baris Barang Jadi = 'Barang Jadi'", () => {
+    const detailItem = buildProductionEntryPayload(baseFormula, formulaItems, baseEntry).detailItem as Record<string, unknown>[];
+    expect(detailItem[0]!.detailNotes).toBe("Bahan Baku");
+    expect(detailItem[1]!.detailNotes).toBe("Bahan Baku");
+    expect(detailItem[2]!.detailNotes).toBe("Barang Jadi");
   });
 
   test("qty produksi 10 -> kebutuhan bahan baku ikut dikali 10 (inti fitur 'Auto')", () => {
