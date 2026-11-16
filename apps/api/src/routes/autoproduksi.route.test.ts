@@ -483,6 +483,59 @@ describe("GET /autoproduksi/production-entries — riwayat", () => {
 // § diminta client 2026-10-02 — Akun Perantara jadi master data lokal
 // (bukan live-search Accurate lagi). 100% CRUD lokal, fokus test:
 // tenant-isolation (subscriptionId difilter) + duplikat kode ditolak.
+// § Fase 221 — Export Excel Riwayat Input Produksi
+describe("GET /autoproduksi/production-entries/export", () => {
+  async function seedEntries(owner: { cookie: string }, dates: string[]) {
+    const createRes = await testApp.handle(
+      new Request("http://localhost/autoproduksi/formulas", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify(validFormulaBody) }),
+    );
+    const { formula } = (await createRes.json()) as { formula: { id: string } };
+    for (const transDate of dates) {
+      const r = await testApp.handle(
+        new Request("http://localhost/autoproduksi/production-entries", { method: "POST", headers: { cookie: owner.cookie, "Content-Type": "application/json" }, body: JSON.stringify({ formulaId: formula.id, producedQty: 3, transDate }) }),
+      );
+      expect(r.status).toBe(200);
+    }
+  }
+  const exportReq = (cookie: string, from: string, to: string) =>
+    testApp.handle(new Request(`http://localhost/autoproduksi/production-entries/export?from=${from}&to=${to}`, { headers: { cookie } }));
+
+  test("200 xlsx — hanya entri dalam rentang tanggal produksi; tanggal di luar rentang tidak ikut", async () => {
+    const owner = await createProvisionedUser(`ap-export-ok-${runId}@test.local`);
+    await seedEntries(owner, ["2026-11-14", "2026-11-15", "2026-11-16"]);
+    const res = await exportReq(owner.cookie, "2026-11-14", "2026-11-15");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain("riwayat-input-produksi-2026-11-14_sd_2026-11-15.xlsx");
+    const book = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    const rows = XLSX.utils.sheet_to_json<Record<string, string | number>>(book.Sheets["Riwayat Produksi"]!);
+    expect(rows.map((r) => r["Tanggal Produksi"])).toEqual(["2026-11-14", "2026-11-15"]);
+    expect(rows[0]).toMatchObject({ "Nama Formula": validFormulaBody.name, "Qty Produksi": 3 });
+  });
+
+  test("422 — rentang > 2 hari, terbalik, atau bukan tanggal; 422 skema bila parameter hilang", async () => {
+    const owner = await createProvisionedUser(`ap-export-bad-${runId}@test.local`);
+    const code = async (from: string, to: string) => {
+      const res = await exportReq(owner.cookie, from, to);
+      return [res.status, ((await res.json()) as { code?: string }).code] as const;
+    };
+    expect(await code("2026-11-14", "2026-11-16")).toEqual([422, "RANGE_TOO_LONG"]);
+    expect(await code("2026-11-15", "2026-11-14")).toEqual([422, "RANGE_INVALID"]);
+    expect(await code("2026-02-30", "2026-03-01")).toEqual([422, "INVALID_DATE"]);
+    expect((await testApp.handle(new Request("http://localhost/autoproduksi/production-entries/export", { headers: { cookie: owner.cookie } }))).status).toBe(422);
+  });
+
+  test("isolasi — pengguna lain TIDAK melihat entri langganan ini; tanpa login 401", async () => {
+    const owner = await createProvisionedUser(`ap-export-own-${runId}@test.local`);
+    const other = await createProvisionedUser(`ap-export-other-${runId}@test.local`);
+    await seedEntries(owner, ["2026-11-14"]);
+    const res = await exportReq(other.cookie, "2026-11-14", "2026-11-14");
+    expect(res.status).toBe(200);
+    const book = XLSX.read(Buffer.from(await res.arrayBuffer()), { type: "buffer" });
+    expect(XLSX.utils.sheet_to_json(book.Sheets["Riwayat Produksi"]!)).toHaveLength(0);
+    expect((await testApp.handle(new Request("http://localhost/autoproduksi/production-entries/export?from=2026-11-14&to=2026-11-14"))).status).toBe(401);
+  });
+});
+
 describe("CRUD /autoproduksi/accounts — Akun Perantara lokal", () => {
   test("POST lalu GET — akun baru muncul di daftar, ter-scope subscription sendiri", async () => {
     const owner = await createProvisionedUser(`ap-acc-crud-${runId}@test.local`);

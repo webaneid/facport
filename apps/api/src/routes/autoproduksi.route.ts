@@ -1,9 +1,11 @@
 import { Elysia, t } from "elysia";
 import { allocateFormulaNumber, formatFormulaCode, withFormulaCode, isFormulaNameTaken, lockDataUsahaForFormula } from "../lib/formula-number";
-import { eq, and, desc, inArray } from "drizzle-orm";
+import { eq, and, desc, asc, inArray, gte, lte } from "drizzle-orm";
 import { db } from "../lib/db";
 import { autoproduksiFormulas, autoproduksiFormulaItems, autoproduksiProductionEntries, autoproduksiIntermediaryAccounts, autoproduksiDefaults } from "../db/schema";
 import { applyContextDefaults, requiresStandardCost } from "../lib/autoproduksi";
+import { parseHistoryExportRange, generateHistoryExportBuffer, MAX_HISTORY_EXPORT_ROWS } from "../lib/autoproduksi-history-export";
+import { getCompanyTimezone } from "../lib/company-timezone";
 import { loadAutoproduksiDefaults } from "../lib/autoproduksi-defaults";
 import { checkFormulaUnits, unitTargetKey } from "../lib/autoproduksi-unit-check";
 import { permissionPlugin } from "../lib/permission";
@@ -337,6 +339,65 @@ export const autoproduksiRoute = new Elysia()
       return { entry: entry ?? null };
     },
     { permission: "import.create", moduleAccess: "autoproduksi_production" },
+  )
+  // § Fase 221 — Export Excel Riwayat Input Produksi: tanggal PRODUKSI dipilih pelanggan, rentang maks 2 hari (inklusif), ter-scope langganan.
+  // Sinkron dengan batas baris (ditolak, bukan dipotong, bila melebihi) — alasan di `lib/autoproduksi-history-export.ts`. Static path, SEBELUM `/:id`.
+  .get(
+    "/autoproduksi/production-entries/export",
+    async ({ subscription, query, set }) => {
+      const range = parseHistoryExportRange(query.from, query.to);
+      if (!range.ok) {
+        set.status = 422;
+        return { code: range.code };
+      }
+      const rows = await db
+        .select({
+          transDate: autoproduksiProductionEntries.transDate,
+          formulaNumber: autoproduksiFormulas.formulaNumber,
+          formulaName: autoproduksiFormulas.name,
+          finishedGoodItemNo: autoproduksiFormulas.finishedGoodItemNo,
+          finishedGoodItemName: autoproduksiFormulas.finishedGoodItemName,
+          finishedGoodItemUnitName: autoproduksiFormulas.finishedGoodItemUnitName,
+          producedQty: autoproduksiProductionEntries.producedQty,
+          branchName: autoproduksiProductionEntries.branchName,
+          warehouseName: autoproduksiProductionEntries.warehouseName,
+          rawMaterialWarehouseName: autoproduksiProductionEntries.rawMaterialWarehouseName,
+          projectNo: autoproduksiProductionEntries.projectNo,
+          departmentName: autoproduksiProductionEntries.departmentName,
+          status: autoproduksiProductionEntries.status,
+          accurateTransactionNumber: autoproduksiProductionEntries.accurateTransactionNumber,
+          errorMessage: autoproduksiProductionEntries.errorMessage,
+          createdAt: autoproduksiProductionEntries.createdAt,
+        })
+        .from(autoproduksiProductionEntries)
+        .innerJoin(autoproduksiFormulas, eq(autoproduksiFormulas.id, autoproduksiProductionEntries.formulaId))
+        .where(
+          and(
+            eq(autoproduksiProductionEntries.subscriptionId, subscription.id),
+            gte(autoproduksiProductionEntries.transDate, range.from),
+            lte(autoproduksiProductionEntries.transDate, range.to),
+          ),
+        )
+        .orderBy(asc(autoproduksiProductionEntries.transDate), asc(autoproduksiProductionEntries.createdAt))
+        .limit(MAX_HISTORY_EXPORT_ROWS + 1);
+      if (rows.length > MAX_HISTORY_EXPORT_ROWS) {
+        set.status = 422;
+        return { code: "EXPORT_TOO_LARGE" };
+      }
+      const buffer = generateHistoryExportBuffer(rows, await getCompanyTimezone());
+      return new Response(new Uint8Array(buffer), {
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="riwayat-input-produksi-${range.from}${range.from === range.to ? "" : `_sd_${range.to}`}.xlsx"`,
+          "Cache-Control": "no-store",
+        },
+      });
+    },
+    {
+      permission: "import.create",
+      moduleAccess: "autoproduksi_production",
+      query: t.Object({ from: t.String({ minLength: 1, maxLength: 10 }), to: t.String({ minLength: 1, maxLength: 10 }) }),
+    },
   )
   // § Fase 185 — status SATU entri untuk popup progres (polling). Ter-scope langganan; entri langganan lain = 404 yang sama dengan "tidak ada".
   .get(

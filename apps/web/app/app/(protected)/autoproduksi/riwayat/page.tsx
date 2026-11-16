@@ -7,7 +7,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { DataTable, createDataTableColumns } from "@/components/ui/data-table";
 import { TruncateText } from "@/components/ui/truncate-text";
 import { Skeleton } from "@/components/ui/skeleton";
-import { api } from "@/lib/api-client";
+import { api, apiBaseUrl, activeDataUsahaHeaders } from "@/lib/api-client";
+import { HistoryExportButton } from "@/components/autoproduksi/history-export-button";
 import { accurateResultText } from "@/lib/accurate-result-text";
 
 // § Fase 159 — riwayat "Input Produksi", polling 3 detik mirror pola
@@ -69,9 +70,12 @@ export default function AutoProduksiRiwayatPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">Riwayat Input Produksi</h1>
-        <p className="text-sm text-muted-foreground">Status tiap input produksi — diproses async, refresh otomatis tiap 3 detik.</p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-foreground">Riwayat Input Produksi</h1>
+          <p className="text-sm text-muted-foreground">Status tiap input produksi — diproses async, refresh otomatis tiap 3 detik.</p>
+        </div>
+        <HistoryExportButton baseUrl={apiBaseUrl} getHeaders={activeDataUsahaHeaders} />
       </div>
 
       <Card>
