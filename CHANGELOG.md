@@ -1,3 +1,14 @@
+## 2.52.0 (2026-11-16)
+
+* chore: rilis Fase 219-222 (AutoProduksi evaluasi client 16 Nov) ([778df2d](https://github.com/webaneid/facport/commit/778df2d))
+* docs: PROGRESS — prod v2.51.1 (fix guard hanya-Beban PI), menunggu Retry client ([a092422](https://github.com/webaneid/facport/commit/a092422))
+* docs: PROGRESS — rincian kasus PI hanya-Beban client dan butir cek besok ([220e829](https://github.com/webaneid/facport/commit/220e829))
+* docs: rencana evaluasi client 16 Nov — hasil pemeriksaan sheet lain ([f2aaf53](https://github.com/webaneid/facport/commit/f2aaf53))
+* feat: Formula AutoProduksi boleh tanpa Bahan Baku, Harga Standar wajib (Fase 220) ([28ac232](https://github.com/webaneid/facport/commit/28ac232))
+* feat: pemuatan satuan Formula per kode + hilangkan kegagalan diam-diam (Fase 222) ([c47f0e4](https://github.com/webaneid/facport/commit/c47f0e4))
+* feat: unduh Riwayat Input Produksi AutoProduksi ke Excel, maks 2 hari (Fase 221) ([b4d641d](https://github.com/webaneid/facport/commit/b4d641d))
+* feat(api): Keterangan otomatis Penyesuaian Persediaan AutoProduksi (Fase 219) ([a0fe5e2](https://github.com/webaneid/facport/commit/a0fe5e2))
+
 ## <small>2.51.1 (2026-11-11)</small>
 
 * chore: rilis fix guard hanya-Beban PI setelah verifikasi faktur lama ke Accurate ([416e1cb](https://github.com/webaneid/facport/commit/416e1cb))
