@@ -29,6 +29,15 @@ export function extractItemUnits(record: Record<string, unknown>): ItemUnit[] {
   return units;
 }
 
+// § Fase 222 — daftar kode barang untuk pemuatan satuan Formula tersimpan: dipisah koma, dipangkas, tanpa duplikat,
+// maksimal MAX_ITEM_NOS (1 halaman `item/list.do`, `sp.pageSize` = jumlah kode). null = kosong/melebihi batas/terlalu panjang.
+export const MAX_ITEM_NOS = 20;
+export function parseItemNos(raw: string): string[] | null {
+  const nos = [...new Set(raw.split(",").map((n) => n.trim()).filter(Boolean))];
+  if (nos.length === 0 || nos.length > MAX_ITEM_NOS || nos.some((n) => n.length > 100)) return null;
+  return nos;
+}
+
 export type UnitMatch = { status: "ok"; canonical: string } | { status: "invalid"; available: string[] };
 
 // § Pencocokan tidak membedakan huruf besar/kecil ("pcs" = "Pcs") dan mengabaikan spasi ujung —

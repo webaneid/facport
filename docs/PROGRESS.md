@@ -243,7 +243,7 @@
 | 219  | AutoProduksi: Keterangan dokumen Penyesuaian Persediaan = `Input Dari AutoProduksi - <nama Barang Jadi>`; Keterangan per baris (`detailNotes`) = Bahan Baku/Barang Jadi (evaluasi client 16 Nov, butir 1+2) | Done (2026-11-17, commit a0fe5e2, belum dirilis); terverifikasi ke Accurate nyata | `docs/architecture/architecture-autoproduksi.md` § Fase 219 | `docs/phases/phase-219-keterangan-otomatis-penyesuaian-persediaan.md` |
 | 220  | AutoProduksi: Formula boleh hanya Barang Jadi (tanpa Bahan Baku) di form + Import Excel; Harga Standar WAJIB bila tanpa bahan (evaluasi client 16 Nov, butir 4) | Done (2026-11-17, belum dirilis); terverifikasi ke Accurate nyata | `docs/architecture/architecture-autoproduksi.md` § Fase 220 | `docs/phases/phase-220-formula-tanpa-bahan-baku.md` |
 | 221  | AutoProduksi: unduh Riwayat Input Produksi ke Excel (pilih tanggal, maks 2 hari) (evaluasi client 16 Nov, butir 3) | Planned | - | `docs/phases/evaluasi-client-2026-11-16-rencana.md` |
-| 222  | AutoProduksi: multi satuan Barang Jadi/Bahan Baku — dugaan bug, discovery field Accurate dulu (evaluasi client 16 Nov, butir 5) | Planned | - | `docs/phases/evaluasi-client-2026-11-16-rencana.md` |
+| 222  | AutoProduksi: multi satuan Barang Jadi/Bahan Baku — format field terverifikasi benar; perbaiki pemuatan satuan Formula tersimpan (per kode) + hilangkan kegagalan diam-diam (evaluasi client 16 Nov, butir 5) | Done sisi kode (2026-11-17, belum dirilis); cek visual + konfirmasi client menunggu | `docs/architecture/architecture-autoproduksi.md` § Fase 222 | `docs/phases/phase-222-multi-satuan-keandalan.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 
