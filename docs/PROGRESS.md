@@ -247,6 +247,7 @@
 | 220  | AutoProduksi: Formula boleh hanya Barang Jadi (tanpa Bahan Baku) di form + Import Excel; Harga Standar WAJIB bila tanpa bahan (evaluasi client 16 Nov, butir 4) | Done (2026-11-17, belum dirilis); terverifikasi ke Accurate nyata | `docs/architecture/architecture-autoproduksi.md` § Fase 220 | `docs/phases/phase-220-formula-tanpa-bahan-baku.md` |
 | 221  | AutoProduksi: unduh Riwayat Input Produksi ke Excel (pilih tanggal produksi, maks 2 hari) (evaluasi client 16 Nov, butir 3) | Done sisi kode (2026-11-17, belum dirilis); cek visual + konfirmasi client menunggu | `docs/architecture/architecture-autoproduksi.md` § Fase 221 | `docs/phases/phase-221-unduh-riwayat-input-produksi.md` |
 | 222  | AutoProduksi: multi satuan Barang Jadi/Bahan Baku — format field terverifikasi benar; perbaiki pemuatan satuan Formula tersimpan (per kode) + hilangkan kegagalan diam-diam (evaluasi client 16 Nov, butir 5) | Done sisi kode (2026-11-17, belum dirilis); cek visual + konfirmasi client menunggu | `docs/architecture/architecture-autoproduksi.md` § Fase 222 | `docs/phases/phase-222-multi-satuan-keandalan.md` |
+| 223  | Retry otomatis HTTP 503 Accurate (bergelombang) dengan jeda per koneksi + pemutus + log header respons — dari batch Sales Invoice 5.997 baris 2026-11-17 | Done sisi kode (2026-11-17, belum dirilis); efek produksi belum terukur | `docs/architecture/architecture-import-capacity.md` § 17 | `docs/phases/phase-223-retry-otomatis-503-accurate.md` |
 
 **Status legend:** `Not Started` → `Planned` → `In Progress` → `Done`
 

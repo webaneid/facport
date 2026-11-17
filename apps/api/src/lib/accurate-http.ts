@@ -122,9 +122,11 @@ export async function accurateFetch(url: string, init: RequestInit = {}, deps: A
   const started = deps.now();
   let outcome: "ok" | "timeout" | "error" = "ok";
   let status: number | undefined;
+  let rejectionHeaders: Record<string, string> | undefined;
   try {
     const res = await deps.fetch(url, { ...init, ...timeoutInit(timeoutMs) });
     status = res.status;
+    if (status === 503) rejectionHeaders = pickRejectionHeaders(res.headers);
     return res;
   } catch (err) {
     const timedOut = err instanceof Error && (err.name === "TimeoutError" || /operation timed out/i.test(err.message));
@@ -133,7 +135,7 @@ export async function accurateFetch(url: string, init: RequestInit = {}, deps: A
     throw err;
   } finally {
     const durationMs = deps.now() - started;
-    if (save || outcome !== "ok" || durationMs >= SLOW_REQUEST_LOG_MS) {
+    if (save || outcome !== "ok" || durationMs >= SLOW_REQUEST_LOG_MS || rejectionHeaders) {
       logger.info(
         {
           event: "accurate_request",
@@ -145,12 +147,26 @@ export async function accurateFetch(url: string, init: RequestInit = {}, deps: A
           durationMs,
           outcome,
           status,
+          ...(rejectionHeaders ? { rejectionHeaders } : {}),
           connectionId: currentAccurateConnectionId(),
         },
         "Panggilan Accurate",
       );
     }
   }
+}
+
+// § Fase 223 — header respons 503 yang ikut dicatat supaya kelak terlihat SIAPA yang menolak (Accurate, gateway/CDN, atau proteksi beban) dan apakah ada
+// `Retry-After`. ALLOWLIST (bukan seluruh header) agar cookie/token yang mungkin ada di respons tidak masuk log; nilai dipotong.
+const REJECTION_HEADER_ALLOWLIST = ["retry-after", "server", "via", "content-type", "content-length", "x-request-id", "cf-ray", "x-cache"] as const;
+
+export function pickRejectionHeaders(headers: Headers): Record<string, string> {
+  const picked: Record<string, string> = {};
+  for (const name of REJECTION_HEADER_ALLOWLIST) {
+    const value = headers.get(name);
+    if (value !== null) picked[name] = value.slice(0, 120);
+  }
+  return picked;
 }
 
 function safePath(url: string): string {

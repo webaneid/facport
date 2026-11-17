@@ -5,6 +5,7 @@
 // instance, revisit ke limiter terpusat, mis. lewat tabel/Redis).
 import { AsyncLocalStorage } from "node:async_hooks";
 import { AccurateApiError } from "./accurate";
+import { logger } from "./logger";
 
 const MAX_PER_SECOND = 8;
 const MAX_CONCURRENT = 8;
@@ -28,13 +29,38 @@ function isAccurateRateLimitError(err: unknown): boolean {
   return err instanceof AccurateApiError && err.message.includes(RATE_LIMIT_ERROR_SNIPPET);
 }
 
+// § Fase 223 — HTTP 503 dari Accurate datang BERGELOMBANG (prod 2026-11-17, batch Sales Invoice 5.997 baris: 376+ baris gagal, galat 2–9 per 5 menit lalu
+// 112–117 per 5 menit selama menit-menit tertentu). Terukur dari log: 503 dibalas dalam 6–60 ms, jauh lebih cepat dari waktu memproses & menyimpan faktur →
+// dokumen TIDAK tersimpan, aman diulang. Yang dicoba ulang HANYA 503 tanpa pesan logis dari Accurate (body kosong/non-JSON): 502/504 pada `save.do` bisa berarti
+// Accurate SEMPAT memproses (risiko dokumen ganda pada penomoran otomatis), jadi tetap perilaku lama. Backoff 5–120 dtk (±11 menit total) menyerap gelombang
+// beberapa menit — jauh lebih panjang dari backoff 429 (±22 dtk, hanya untuk tabrakan sesaat).
+// Jeda berlaku PER KONEKSI: begitu satu request kena 503, SEMUA jalur paralel koneksi itu berhenti menembak sampai jeda lewat (bukan hanya request yang gagal).
+let unavailableBackoffMs: readonly number[] = [5_000, 15_000, 45_000, 120_000, 120_000, 120_000, 120_000, 120_000];
+const UNAVAILABLE_JITTER_RATIO = 0.1;
+
+/** Hanya untuk tes: ganti jadwal jeda (ms) supaya tes tidak menunggu menit sungguhan. Mengembalikan fungsi pemulih. */
+export function setUnavailableBackoffForTest(schedule: readonly number[]): () => void {
+  const previous = unavailableBackoffMs;
+  unavailableBackoffMs = schedule;
+  return () => {
+    unavailableBackoffMs = previous;
+  };
+}
+
+/** 503 "polos": body kosong/non-JSON. 503 yang membawa pesan logis dari Accurate (`s:false` + detail) BUKAN gangguan sementara. */
+export function isAccurateUnavailableError(err: unknown): boolean {
+  if (!(err instanceof AccurateApiError) || err.httpStatus !== 503) return false;
+  return err.message.startsWith("Accurate API gagal: HTTP 503") || err.message.includes("body non-JSON");
+}
+
 // § Fase 167, ADR-0048 — batas Accurate berlaku PER TOKEN (= per koneksi Accurate), jadi tiap koneksi punya bucket sendiri (in-memory, 1 proses worker).
 // Kunci bucket diambil dari `AsyncLocalStorage` yang di-set handler worker (`runWithAccurateConnection`) — 45+ titik panggilan `withAccurateRateLimit`
 // tidak perlu diubah. Panggilan tanpa konteks (mis. dari proses API) memakai bucket "global" (perilaku lama).
 const GLOBAL_BUCKET_KEY = "global";
 const connectionContext = new AsyncLocalStorage<string>();
 
-type Bucket = { inFlight: number; waitingForSlot: Array<() => void>; recentCallTimestamps: number[] };
+// `pausedUntil` = epoch ms sampai kapan koneksi ini ditahan setelah 503; `unavailableStreak` = jumlah jeda beruntun tanpa satu pun sukses (menentukan panjang jeda).
+type Bucket = { inFlight: number; waitingForSlot: Array<() => void>; recentCallTimestamps: number[]; pausedUntil: number; unavailableStreak: number };
 const buckets = new Map<string, Bucket>();
 
 export function runWithAccurateConnection<T>(connectionKey: string, fn: () => Promise<T>): Promise<T> {
@@ -54,7 +80,7 @@ export function accurateLimiterBucketCount(): number {
 function getBucket(key: string): Bucket {
   let bucket = buckets.get(key);
   if (!bucket) {
-    bucket = { inFlight: 0, waitingForSlot: [], recentCallTimestamps: [] };
+    bucket = { inFlight: 0, waitingForSlot: [], recentCallTimestamps: [], pausedUntil: 0, unavailableStreak: 0 };
     buckets.set(key, bucket);
   }
   return bucket;
@@ -64,7 +90,8 @@ function getBucket(key: string): Bucket {
 function sweepIdleBuckets(): void {
   const now = Date.now();
   for (const [key, b] of buckets) {
-    if (b.inFlight === 0 && b.waitingForSlot.length === 0 && b.recentCallTimestamps.every((t) => now - t >= 1000)) buckets.delete(key);
+    // Bucket yang masih dalam jeda 503 / punya riwayat 503 beruntun JANGAN dibuang (riwayatnya hilang → jeda berikutnya mulai dari awal).
+    if (b.inFlight === 0 && b.waitingForSlot.length === 0 && b.pausedUntil <= now && (b.unavailableStreak === 0 || now - b.pausedUntil > 600_000) &&b.recentCallTimestamps.every((t) => now - t >= 1000)) buckets.delete(key);
   }
 }
 
@@ -88,6 +115,11 @@ function releaseConcurrencySlot(bucket: Bucket): void {
 async function waitForRateSlot(bucket: Bucket): Promise<void> {
   for (;;) {
     const now = Date.now();
+    // § Fase 223 — koneksi sedang dijeda karena 503: tunggu sampai jeda lewat SEBELUM mengambil slot detik (bukan menembak lalu gagal lagi).
+    if (bucket.pausedUntil > now) {
+      await new Promise((resolve) => setTimeout(resolve, bucket.pausedUntil - now));
+      continue;
+    }
     while (bucket.recentCallTimestamps.length > 0 && now - bucket.recentCallTimestamps[0]! >= 1000) {
       bucket.recentCallTimestamps.shift();
     }
@@ -112,11 +144,34 @@ export async function withAccurateRateLimit<T>(fn: () => Promise<T>): Promise<T>
   await acquireConcurrencySlot(bucket);
   try {
     let attempt = 0;
+    let unavailableAttempts = 0;
     for (;;) {
       await waitForRateSlot(bucket);
       try {
-        return await fn();
+        const result = await fn();
+        bucket.unavailableStreak = 0; // satu sukses = Accurate pulih, jeda berikutnya (kalau ada) mulai dari yang terpendek
+        return result;
       } catch (err) {
+        if (isAccurateUnavailableError(err)) {
+          // Pemutus: setelah SATU rangkaian jeda penuh habis tanpa satu pun sukses (Accurate mati >±11 menit), request berikutnya pada koneksi ini GAGAL CEPAT
+          // (perilaku lama) — tanpa ini tiap baris batch 6.000 baris menghabiskan ±11 menit sendiri-sendiri (puluhan jam; job pg-boss kedaluwarsa 2 jam).
+          // Sukses pertama mereset streak, jadi pemulihan Accurate otomatis terdeteksi.
+          if (unavailableAttempts >= unavailableBackoffMs.length || bucket.unavailableStreak >= unavailableBackoffMs.length) throw err;
+          unavailableAttempts += 1;
+          // Hanya request PERTAMA yang kena 503 pada satu jeda yang menaikkan streak; request lain yang sudah terbang bersamaan dan gagal belakangan ikut jeda
+          // yang sama (tanpa ini 4 jalur paralel langsung melompat ke jeda terpanjang dalam hitungan milidetik).
+          if (bucket.pausedUntil <= Date.now()) {
+            const idx = Math.min(bucket.unavailableStreak, unavailableBackoffMs.length - 1);
+            const pauseMs = Math.round(unavailableBackoffMs[idx]! * (1 + Math.random() * UNAVAILABLE_JITTER_RATIO));
+            bucket.unavailableStreak += 1;
+            bucket.pausedUntil = Date.now() + pauseMs;
+            logger.warn(
+              { event: "accurate_unavailable_backoff", connectionId: connectionContext.getStore() ?? null, streak: bucket.unavailableStreak, pauseMs, attempt: unavailableAttempts },
+              "Accurate 503 — koneksi dijeda lalu dicoba ulang",
+            );
+          }
+          continue; // waitForRateSlot di awal loop menunggu sampai jeda lewat
+        }
         if (!isAccurateRateLimitError(err) || attempt >= MAX_RATE_LIMIT_RETRIES) throw err;
         attempt += 1;
         // Backoff eksponensial + jitter kecil — hindari semua retry menabrak lagi serentak.

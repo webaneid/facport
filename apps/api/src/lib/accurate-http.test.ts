@@ -140,3 +140,22 @@ describe("pagar accurateFetch", () => {
     expect(offenders).toEqual([]);
   });
 });
+
+// § Fase 223 — header respons 503 dicatat lewat ALLOWLIST (tidak boleh membocorkan cookie/token).
+describe("pickRejectionHeaders", () => {
+  test("hanya header allowlist, nilai dipotong 120 karakter; Set-Cookie/Authorization tidak ikut", async () => {
+    const { pickRejectionHeaders } = await import("./accurate-http");
+    const headers = new Headers({
+      "Retry-After": "30",
+      Server: "nginx",
+      "Set-Cookie": "session=rahasia",
+      Authorization: "Bearer rahasia",
+      "X-Request-Id": "x".repeat(300),
+    });
+    const picked = pickRejectionHeaders(headers);
+    expect(picked["retry-after"]).toBe("30");
+    expect(picked["server"]).toBe("nginx");
+    expect(picked["x-request-id"]!.length).toBe(120);
+    expect(JSON.stringify(picked)).not.toContain("rahasia");
+  });
+});
