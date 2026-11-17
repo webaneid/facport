@@ -1,3 +1,9 @@
+## 2.53.0 (2026-11-17)
+
+* chore: rilis Fase 223 (retry otomatis 503 Accurate) ([ae86ddb](https://github.com/webaneid/facport/commit/ae86ddb))
+* feat: retry otomatis HTTP 503 Accurate dengan jeda per koneksi + pemutus (Fase 223) ([88038bf](https://github.com/webaneid/facport/commit/88038bf))
+* docs: PROGRESS — status terkini (prod v2.52.0), Fase 219-222 live, daftar belum diverifikasi ([2c508e9](https://github.com/webaneid/facport/commit/2c508e9))
+
 ## 2.52.0 (2026-11-16)
 
 * chore: rilis Fase 219-222 (AutoProduksi evaluasi client 16 Nov) ([778df2d](https://github.com/webaneid/facport/commit/778df2d))
