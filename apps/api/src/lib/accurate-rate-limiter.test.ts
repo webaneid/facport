@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { withAccurateRateLimit, runWithAccurateConnection, accurateLimiterBucketCount } from "./accurate-rate-limiter";
+import { withAccurateRateLimit, runWithAccurateConnection, accurateLimiterBucketCount, isAccurateUnavailableError, setUnavailableBackoffForTest } from "./accurate-rate-limiter";
 import { AccurateApiError } from "./accurate";
 
 // § bug nyata 2026-09-25 (§ lessons-learned.md) — akar masalah SEBENARNYA
@@ -102,5 +102,178 @@ describe("withAccurateRateLimit — bucket per koneksi (Fase 167)", () => {
     // Bucket baru disapu saat panggilan berikutnya; cukup satu panggilan lagi untuk memicu sapuan.
     await withAccurateRateLimit(async () => "ok");
     expect(accurateLimiterBucketCount()).toBeLessThanOrEqual(2);
+  }, 10_000);
+});
+
+// § Fase 223 — HTTP 503 dari Accurate datang bergelombang (prod 2026-11-17): dicoba ulang dengan jeda PER KONEKSI, hanya untuk 503 "polos".
+describe("withAccurateRateLimit — 503 Accurate: retry + jeda per koneksi (Fase 223)", () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const plain503 = () => new AccurateApiError("Accurate API gagal: HTTP 503", 503);
+
+  test("isAccurateUnavailableError: hanya 503 polos (kosong/non-JSON); 503 berpesan logis, 502/504, 429-text, dan error non-Accurate BUKAN", () => {
+    expect(isAccurateUnavailableError(plain503())).toBe(true);
+    expect(isAccurateUnavailableError(new AccurateApiError("Accurate API mengembalikan body non-JSON (HTTP 503)", 503))).toBe(true);
+    expect(isAccurateUnavailableError(new AccurateApiError("Barang tidak ditemukan", 503))).toBe(false);
+    expect(isAccurateUnavailableError(new AccurateApiError("Accurate API gagal: HTTP 502", 502))).toBe(false);
+    expect(isAccurateUnavailableError(new AccurateApiError("Accurate API gagal: HTTP 504", 504))).toBe(false);
+    expect(isAccurateUnavailableError(new Error("Accurate API gagal: HTTP 503"))).toBe(false);
+  });
+
+  test("503 lalu sukses → dicoba ulang otomatis, hasil sukses dikembalikan", async () => {
+    const restore = setUnavailableBackoffForTest([10, 10]);
+    try {
+      let calls = 0;
+      const result = await runWithAccurateConnection("conn-503-ok", () =>
+        withAccurateRateLimit(async () => {
+          calls += 1;
+          if (calls < 3) throw plain503();
+          return "ok";
+        }),
+      );
+      expect(result).toBe("ok");
+      expect(calls).toBe(3);
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("503 terus-menerus → setelah jadwal habis dilempar galat 503 aslinya (1 + panjang jadwal panggilan)", async () => {
+    const restore = setUnavailableBackoffForTest([10, 10, 10]);
+    try {
+      let calls = 0;
+      await expect(
+        runWithAccurateConnection("conn-503-exhaust", () =>
+          withAccurateRateLimit(async () => {
+            calls += 1;
+            throw plain503();
+          }),
+        ),
+      ).rejects.toThrow("HTTP 503");
+      expect(calls).toBe(4);
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("pemutus: setelah jadwal habis tanpa sukses, request berikutnya pada koneksi itu gagal CEPAT (tanpa retry/jeda); sukses memulihkan retry normal", async () => {
+    const restore = setUnavailableBackoffForTest([10, 10]);
+    try {
+      const run = <T>(fn: () => Promise<T>) => runWithAccurateConnection("conn-503-breaker", () => withAccurateRateLimit(fn));
+      let calls = 0;
+      await expect(run(async () => { calls += 1; throw plain503(); })).rejects.toThrow("HTTP 503");
+      expect(calls).toBe(3); // 1 + 2 jeda, jadwal habis
+
+      let fastCalls = 0;
+      const t0 = Date.now();
+      await expect(run(async () => { fastCalls += 1; throw plain503(); })).rejects.toThrow("HTTP 503");
+      expect(fastCalls).toBe(1);
+      expect(Date.now() - t0).toBeLessThan(100);
+
+      // Accurate pulih: satu sukses mereset streak → retry normal berfungsi lagi.
+      await run(async () => "ok");
+      let again = 0;
+      await run(async () => { again += 1; if (again === 1) throw plain503(); return "ok"; });
+      expect(again).toBe(2);
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("503 berpesan logis, 502, dan 504 TIDAK dicoba ulang (risiko dokumen ganda pada save.do)", async () => {
+    const restore = setUnavailableBackoffForTest([10]);
+    try {
+      for (const err of [new AccurateApiError("Barang tidak ditemukan", 503), new AccurateApiError("Accurate API gagal: HTTP 502", 502), new AccurateApiError("Accurate API gagal: HTTP 504", 504)]) {
+        let calls = 0;
+        await expect(
+          runWithAccurateConnection("conn-503-noretry", () =>
+            withAccurateRateLimit(async () => {
+              calls += 1;
+              throw err;
+            }),
+          ),
+        ).rejects.toThrow();
+        expect(calls).toBe(1);
+      }
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("jeda berlaku untuk SELURUH koneksi: request lain yang mulai sesudah 503 menunggu jeda, bukan menembak langsung", async () => {
+    const restore = setUnavailableBackoffForTest([300]);
+    try {
+      let aCalls = 0;
+      let bStartedAt = 0;
+      const t0 = Date.now();
+      const a = runWithAccurateConnection("conn-503-shared", () =>
+        withAccurateRateLimit(async () => {
+          aCalls += 1;
+          if (aCalls === 1) throw plain503();
+          return "a";
+        }),
+      );
+      await sleep(50); // A sudah gagal & menetapkan jeda 300 ms
+      const b = runWithAccurateConnection("conn-503-shared", () =>
+        withAccurateRateLimit(async () => {
+          bStartedAt = Date.now();
+          return "b";
+        }),
+      );
+      await Promise.all([a, b]);
+      expect(bStartedAt - t0).toBeGreaterThanOrEqual(280);
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("koneksi LAIN tidak ikut dijeda", async () => {
+    const restore = setUnavailableBackoffForTest([400]);
+    try {
+      const a = runWithAccurateConnection("conn-503-x", () => {
+        let calls = 0;
+        return withAccurateRateLimit(async () => {
+          calls += 1;
+          if (calls === 1) throw plain503();
+          return "x";
+        });
+      });
+      await sleep(50);
+      const t0 = Date.now();
+      await runWithAccurateConnection("conn-503-y", () => withAccurateRateLimit(async () => "y"));
+      expect(Date.now() - t0).toBeLessThan(200);
+      await a;
+    } finally {
+      restore();
+    }
+  }, 10_000);
+
+  test("jeda NAIK bertahap selama 503 beruntun, dan turun ke awal setelah satu sukses", async () => {
+    const restore = setUnavailableBackoffForTest([50, 400]);
+    try {
+      // Dua 503 beruntun: jeda 50 ms lalu 400 ms (≥ 400 ms total ekstra).
+      let calls = 0;
+      const t0 = Date.now();
+      await runWithAccurateConnection("conn-503-escalate", () =>
+        withAccurateRateLimit(async () => {
+          calls += 1;
+          if (calls <= 2) throw plain503();
+          return "ok";
+        }),
+      );
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(430);
+      // Setelah sukses streak kembali 0: 503 berikutnya hanya kena jeda 50 ms, bukan 400 ms.
+      let calls2 = 0;
+      const t1 = Date.now();
+      await runWithAccurateConnection("conn-503-escalate", () =>
+        withAccurateRateLimit(async () => {
+          calls2 += 1;
+          if (calls2 === 1) throw plain503();
+          return "ok";
+        }),
+      );
+      expect(Date.now() - t1).toBeLessThan(300);
+    } finally {
+      restore();
+    }
   }, 10_000);
 });

@@ -6488,3 +6488,10 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Akar masalah:** `appendToExistingPurchaseInvoice` menolak baris hanya-Beban SEBELUM verifikasi `detail.do` ke Accurate. `#382` berasal dari catatan lokal (`import_batch_rows` sukses) yang basi. Mengulang pelajaran Fase 82.
 - **Perbaikan:** guard dipindah ke SETELAH `getPurchaseInvoiceDetail` — faktur yang sudah tidak ada jatuh ke jalur CREATE (yang mendukung baris hanya-Beban).
 - **Aturan:** guard/penolakan apa pun di jalur "append ke faktur lama" WAJIB di bawah verifikasi keberadaan faktur di Accurate.
+
+## 2026-11-17 — HTTP 503 Accurate bergelombang menggagalkan ratusan baris Sales Invoice (Fase 223)
+- **Gejala:** batch `b509f504` (5.997 baris) — 376+ baris gagal "Accurate API gagal: HTTP 503" / "body non-JSON (HTTP 503)"; galat bergelombang (112–117 per 5 menit pada 09:15–09:20 UTC), bukan merata.
+- **Akar masalah:** `withAccurateRateLimit` hanya me-retry 429 ("melebihi toleransi"); 503 langsung jadi gagal permanen per baris. 503 ditolak 6–60 ms (tidak menyimpan dokumen), jadi aman diulang. Penyebab penolakan di sisi Accurate belum diketahui.
+- **Perbaikan:** retry 503 polos dengan jeda 5–120 dtk per KONEKSI + pemutus (gagal cepat setelah jadwal habis) + log header respons 503. Detail → `architecture-import-capacity.md` § 17.
+- **Aturan:** (1) retry otomatis pada POST hanya boleh untuk galat yang TERBUKTI tidak memproses (ukur durasi respons di log dulu); 502/504 bukan termasuk. (2) Setiap retry berjeda WAJIB punya pemutus — tanpa itu outage panjang mengalikan waktu per baris dan melewati expire job. (3) Diagnosis galat produksi: urutan kerja yang berhasil = SQL sebaran waktu galat per 5 menit → log `accurate_request` (status+durationMs).
+- **Terbuka:** efek produksi belum terukur; bila `rejectionHeaders` menunjukkan proteksi beban, pertimbangkan penurunan paralelisme otomatis.
