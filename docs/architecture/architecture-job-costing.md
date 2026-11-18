@@ -12,6 +12,7 @@
 > `/api/material-adjustment/save.do` — endpoint KEDUA yang TIDAK ADA di
 > snapshot JSON lokal, ketemu 2026-09-21 lewat verifikasi browser
 > langsung, § "✅ RESOLVED: 2 Endpoint" di bawah).
+> **⚠ Fase 224 (2026-11-18): bagian "2 panggilan" di bawah SUDAH TIDAK BERLAKU.** Job Costing kini hanya memanggil `job-order/save.do`; `material-adjustment/save.do` tidak lagi dipanggil otomatis (stok keluar dobel karena client mengerjakan Penambahan Bahan Baku sendiri). Lihat `docs/phases/phase-224-job-costing-pisah-penambahan-bahan-baku.md`.
 > **PENTING**: sheet tracker "Note" di file yang sama menandai kolom
 > "Panduan"/"Eksekusi" untuk Job Costing/Roll Over/Work Order KOSONG —
 > TAPI ketiga sheet-nya TETAP punya screenshot panduan lengkap (dicek
