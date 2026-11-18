@@ -1,3 +1,10 @@
+## <small>2.53.1 (2026-11-18)</small>
+
+* Merge develop: Fase 224 Job Costing tidak lagi membuat Penambahan Bahan Baku otomatis ([c4b3b83](https://github.com/webaneid/facport/commit/c4b3b83))
+* docs: Fase 224 terverifikasi manual di UI Accurate dev ([73b694e](https://github.com/webaneid/facport/commit/73b694e))
+* docs: koreksi Fase 224 — detailItem Job Order mengurangi stok (uji nyata Accurate dev) ([79d47ec](https://github.com/webaneid/facport/commit/79d47ec))
+* fix: Job Costing tidak lagi membuat Penambahan Bahan Baku otomatis (Fase 224) ([fadc067](https://github.com/webaneid/facport/commit/fadc067))
+
 ## 2.53.0 (2026-11-17)
 
 * chore: rilis Fase 223 (retry otomatis 503 Accurate) ([ae86ddb](https://github.com/webaneid/facport/commit/ae86ddb))
