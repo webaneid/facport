@@ -33,9 +33,14 @@ Kolom gudang & serial number di Excel Job Costing sekarang hanya terpakai oleh P
 - [ ] Uji double-count: bahan baku di `detailItem` Job Order + Penambahan Bahan Baku — belum terbukti apakah Accurate menghitung dobel nilai.
 
 ## Hasil eksekusi (2026-11-18) — versi dipersempit
-- `processJobCostingGroup` (`apps/api/src/workers/index.ts`) hanya memanggil `saveJobOrder`; `saveMaterialAdjustment` tidak lagi dipanggil. `detailItem[]` bahan baku tetap dikirim di Job Order (estimasi, tidak mengeluarkan stok; mencegah penolakan "Detail dari transaksi belum diisi!" untuk Excel tanpa biaya tambahan).
+- `processJobCostingGroup` (`apps/api/src/workers/index.ts`) hanya memanggil `saveJobOrder`; `saveMaterialAdjustment` tidak lagi dipanggil. `detailItem[]` bahan baku tetap dikirim di Job Order (mencegah penolakan "Detail dari transaksi belum diisi!" untuk Excel tanpa biaya tambahan).
 - Retry: baris lama yang sudah punya `accurateTransactionId` (Job Order sudah ada) tidak membuat Job Order baru, dan sekarang tidak membuat Penambahan Bahan Baku. Batch lama yang gagal di tahap bahan baku akan jadi sukses saat Retry tanpa membuatnya.
 - Di luar kode: dokumen Penambahan Bahan Baku yang terlanjur dibuat otomatis di Accurate client harus dihapus client sendiri (stok mereka kelebihan keluar); Facport tidak mengubah dokumen pelanggan.
 - Kolom gudang/serial di Excel Job Costing kini tak terpakai oleh Job Costing (tetap diterima, diteruskan ke `detailItem` Job Order bila ada).
 - `saveMaterialAdjustment` di `lib/accurate-job-costing.ts` dibiarkan untuk modul Penambahan Bahan Baku kelak.
-- Typecheck nol error; tes job-costing 40 lulus. Belum diuji nyata ke Accurate dev.
+- Typecheck nol error; tes job-costing 40 lulus. 
+## Uji nyata Accurate dev (2026-11-18) — database demo "Data Sample" (koneksi dev, scope hanya `job_order_save` + `material_adjustment_save`, tanpa view/delete)
+- Payload dari `buildJobOrderPayload` (hanya bahan baku BENCH-INV1 qty 1, tanpa Expense, akun 110403) DITERIMA `job-order/save.do`: Job Order `JC.2026.11.00002` (id 100, status "Sedang diproses", ada `journalId`). Jalur tanpa Penambahan Bahan Baku valid.
+- **TEMUAN KOREKSI:** `detailItem` Job Order BUKAN sekadar estimasi — saldo stok BENCH-INV1 turun 1 per Job Order (0 → -1 → -2, `item/detail.do` `balance`). Jadi Job Order itu sendiri sudah mengeluarkan stok bahan (1x); sebelum Fase 224 bahan yang sama dikeluarkan lagi oleh Penambahan Bahan Baku otomatis (2x). Setelah Fase 224 tinggal 1x dari Job Order. Apakah angka 1x ini sesuai alur akuntansi client (Job Order tanpa bahan lalu Penambahan Bahan Baku manual?) BELUM dikonfirmasi client — pertanyaan #2 (bahan baku tampil di Pekerjaan Pesanan atau dikosongkan) kembali terbuka dan bisa memengaruhi stok mereka.
+- Tidak bisa diverifikasi lewat API: ada/tidaknya Penambahan Bahan Baku (scope `material_adjustment_view` tidak ada); hanya terbukti lewat kode bahwa panggilannya dihapus.
+- Sisa uji di demo (tidak bisa dihapus lewat API, scope delete tidak ada): 2 Job Order uji (JC.2026.11.00001 dari percobaan pertama, JC.2026.11.00002), stok BENCH-INV1 -2. Hapus lewat UI Accurate bila perlu.

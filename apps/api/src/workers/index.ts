@@ -2313,8 +2313,9 @@ export async function processWorkOrderGroup(
 // ============================================================
 // § Fase 224 (sebelumnya Fase 139: 2 panggilan) — Job Costing sekarang HANYA
 // 1 panggilan: `job-order/save.do` (shell + detailExpense[] + detailItem[]
-// bahan baku sebagai ESTIMASI, tidak mengeluarkan stok; dibutuhkan agar
-// Excel tanpa biaya tambahan tidak ditolak Accurate). Penambahan Bahan Baku
+// bahan baku). TERBUKTI uji nyata 2026-11-18: detailItem Job Order ITSELF
+// mengurangi saldo stok barang (1x); wajib ada karena Excel tanpa biaya
+// tambahan ditolak Accurate bila detailItem & detailExpense sama-sama kosong. Penambahan Bahan Baku
 // (`material-adjustment`) dikerjakan client sendiri — lihat
 // docs/phases/phase-224-job-costing-pisah-penambahan-bahan-baku.md.
 // ============================================================
@@ -2360,7 +2361,7 @@ export async function processJobCostingGroup(
       .where(inArray(importBatchRows.id, rowIds));
   }
 
-  // § Fase 224 — Penambahan Bahan Baku (ITEM_PICK) TIDAK lagi dibuat otomatis: client mengerjakannya sendiri sebagai langkah terpisah (Pekerjaan Pesanan → Penambahan Bahan Baku → Penyelesaian). Membuatnya di sini mengeluarkan stok dobel.
+  // § Fase 224 — Penambahan Bahan Baku (ITEM_PICK) TIDAK lagi dibuat otomatis: client mengerjakannya sendiri sebagai langkah terpisah (Pekerjaan Pesanan → Penambahan Bahan Baku → Penyelesaian). Membuatnya di sini menambah pengeluaran stok KEDUA untuk bahan yang sama.
   return { jobOrderNumber, rowIds };
 }
 
