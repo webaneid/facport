@@ -303,10 +303,9 @@ import {
 // alasan Inventory Adjustment — Excel client TIDAK punya kolom "RM Item
 // Name", `findOrCreateItem` mewajibkan nama). Grouping DEFAULT ADR-0011
 // by "No. Job Order" (opsional).
-import { saveJobOrder, saveMaterialAdjustment } from "../lib/accurate-job-costing";
+import { saveJobOrder } from "../lib/accurate-job-costing";
 import {
   buildJobOrderPayload,
-  buildMaterialAdjustmentDetailItems,
   extractDataClassificationValues as extractDataClassificationValuesJC,
   groupJobCostingRows,
   type JobCostingGroup,
@@ -2312,31 +2311,22 @@ export async function processWorkOrderGroup(
 }
 
 // ============================================================
-// § Fase 139 — Job Costing: BUKAN 1 transaksi, 2 PANGGILAN BERURUTAN.
-// (1) `job-order/save.do` — shell + detailExpense[]. (2)
-// `material-adjustment/save.do` — realisasi RM, `jobOrderNumber` =
-// `number` dari RESPONS panggilan (1) (BUKAN nilai Excel "No. Job
-// Order" mentah — Accurate generate nomor otomatis kalau kolom itu
-// kosong). `materialAdjustmentAccountNo` REUSE nilai "Job Account No"
-// yang sama dengan `jobAccountNo` — ASUMSI belum dikonfirmasi client
-// (§ architecture-job-costing.md Known Limitations).
-//
-// Kegagalan PARSIAL (job-order sukses, material-adjustment gagal):
-// TIDAK ada rollback (Accurate tidak punya API rollback lintas
-// transaksi) — error yang dilempar WAJIB menyebutkan nomor Job Order
-// yang SUDAH terlanjur dibuat, supaya user tahu ada dokumen "orphan"
-// di Accurate yang perlu dicek/dihapus manual.
+// § Fase 224 (sebelumnya Fase 139: 2 panggilan) — Job Costing sekarang HANYA
+// 1 panggilan: `job-order/save.do` (shell + detailExpense[] + detailItem[]
+// bahan baku sebagai ESTIMASI, tidak mengeluarkan stok; dibutuhkan agar
+// Excel tanpa biaya tambahan tidak ditolak Accurate). Penambahan Bahan Baku
+// (`material-adjustment`) dikerjakan client sendiri — lihat
+// docs/phases/phase-224-job-costing-pisah-penambahan-bahan-baku.md.
 // ============================================================
 export type JobCostingGroupResult = {
   jobOrderNumber: string;
-  materialAdjustmentId: number;
   rowIds: string[];
 };
 
-// § Fase 139 fix (security-auditor HIGH, 2026-09-21) — RETRY-SAFE: kalau
-// `saveJobOrder` sukses tapi `saveMaterialAdjustment` gagal di attempt
-// SEBELUMNYA, retry berikutnya TIDAK BOLEH bikin Job Order baru lagi
-// (Job Order Accurate "orphan" akan menumpuk tiap kali user retry). Nomor
+// § Fase 139 fix (security-auditor HIGH, 2026-09-21) — RETRY-SAFE: batch
+// lama yang Job Order-nya sudah terbuat (accurateTransactionId terisi) tidak
+// boleh membuat Job Order baru lagi saat Retry, dan sejak Fase 224 Retry
+// juga TIDAK membuat Penambahan Bahan Baku. Nomor
 // Job Order yang sudah berhasil dibuat disimpan ke `accurateTransactionId`
 // SEGERA setelah `saveJobOrder` sukses (bukan nunggu seluruh grup
 // selesai) — retry membaca nilai ini dulu, skip `saveJobOrder` kalau ADA.
@@ -2357,7 +2347,6 @@ export async function processJobCostingGroup(
   await ensureJobCostingDataClassifications(ctx, rawRows, columnMapping);
 
   const jobOrderPayload = buildJobOrderPayload(rawRows, columnMapping);
-  const jobAccountNo = jobOrderPayload.jobAccountNo as string | undefined;
 
   let jobOrderNumber: string;
   if (existingJobOrderNumber) {
@@ -2371,25 +2360,8 @@ export async function processJobCostingGroup(
       .where(inArray(importBatchRows.id, rowIds));
   }
 
-  const detailItem = buildMaterialAdjustmentDetailItems(rawRows, columnMapping);
-  const materialAdjustmentPayload: Record<string, unknown> = {
-    jobOrderNumber,
-    materialAdjustmentAccountNo: jobAccountNo ?? "",
-    materialAdjustmentType: "ITEM_PICK",
-    transDate: jobOrderPayload.transDate,
-    branchName: jobOrderPayload.branchName,
-    detailItem,
-  };
-
-  try {
-    const materialAdjustmentResult = await saveMaterialAdjustment(ctx, materialAdjustmentPayload);
-    return { jobOrderNumber, materialAdjustmentId: materialAdjustmentResult.id, rowIds };
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      `Job Order ${jobOrderNumber} berhasil dibuat, tapi realisasi bahan baku gagal: ${message}. Job Order sudah ada di Accurate, cek manual atau hapus kalau perlu.`,
-    );
-  }
+  // § Fase 224 — Penambahan Bahan Baku (ITEM_PICK) TIDAK lagi dibuat otomatis: client mengerjakannya sendiri sebagai langkah terpisah (Pekerjaan Pesanan → Penambahan Bahan Baku → Penyelesaian). Membuatnya di sini mengeluarkan stok dobel.
+  return { jobOrderNumber, rowIds };
 }
 
 async function main() {
