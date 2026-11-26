@@ -6498,3 +6498,9 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 
 ## 2026-11-26 — Receive Item: baris Item No kembar tertaut ke baris PO yang salah tanpa error (Fase 225)
 Mengirim `purchaseOrderNumber` saja membuat Accurate menautkan semua baris kembar ke baris PO pertama dan menerima melebihi pesanan. Wajib kirim `purchaseOrderDetailId` (tak terdokumentasi di spec, terbukti uji nyata). Cek juga relasi lain di `architecture-source-line-resolution.md`.
+
+## 2026-11-26 — "Batal Import" gagal memulai meninggalkan batch di `cancelling`, tombol "Perbarui Izin" mati
+- **Gejala:** popup izin baru tampil dengan tombol abu-abu ("Ada import yang sedang berjalan") padahal tidak ada yang berjalan. `hasRunningBatch` berlaku per koneksi Accurate, jadi satu batch macet menahan semua pengguna koneksi itu.
+- **Temuan:** job `cancel-import` berstatus `completed` dalam 15 detik, 0 baris dibatalkan. Handler `CANCEL_IMPORT` (`workers/index.ts`) `return` lebih awal bila koneksi tak ada / gagal buka sesi tanpa mengembalikan status; penyebab persis kejadian ini tidak terbukti (log sudah hilang). `recoverOrphanedImportJobs` juga tidak mencakup antrean cancel.
+- **Pemulihan:** pastikan 0 baris `cancelled` dan job tidak aktif, lalu `update import_batches set status='completed_with_errors' (atau `completed`), completed_at=... where id=... and status='cancelling'`.
+- **Terbuka:** handler harus mengembalikan status saat gagal memulai (belum dikerjakan).
