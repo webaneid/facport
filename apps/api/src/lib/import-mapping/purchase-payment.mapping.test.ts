@@ -565,6 +565,12 @@ describe("buildPurchasePaymentPayload — faktur sama di beberapa baris digabung
     expect(multi[0]!.detailDiscount).toEqual([{ amount: 10, accountNo: "A" }]);
   });
 
+  test("sel Payment kosong di baris lanjutan ikut baris pertama (tidak dijumlahkan)", () => {
+    const lanjutan = [{ ...base }, { ...base, Payment: "" }];
+    expect(validateInvoiceRowsConsistencyForPayment(group(lanjutan), mapping)).toBeNull();
+    expect(buildPurchasePaymentPayload(lanjutan, mapping, taxIds).chequeAmount).toBe(100000);
+  });
+
   test("validateInvoiceRowsConsistencyForPayment: lolos untuk Payment sama; ditolak untuk Payment beda, Paid PPH/PPh No bertentangan, PPh ID dobel di faktur sama (di faktur beda boleh)", () => {
     expect(validateInvoiceRowsConsistencyForPayment(group(rows), mapping)).toBeNull();
     const diffAmount = validateInvoiceRowsConsistencyForPayment(group([{ ...base }, { ...base, Payment: 50000 }]), mapping);

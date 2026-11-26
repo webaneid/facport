@@ -665,3 +665,6 @@ Dua laporan client dari contoh Excel mereka (faktur `JASA-01` di 2 baris: baris 
 ## Dokumen besar: kirim bertahap (Fase 205, ADR-0051)
 Dokumen Sales Receipt bernomor dengan baris di atas `IMPORT_STAGED_THRESHOLD_ROWS` (default 200) dikirim BERTAHAP ke dokumen Accurate yang SAMA bila `IMPORT_STAGED_MODULES` memuat modul ini (default mati): nomor, header, dan isi tidak berubah; yang dicicil hanya pengiriman (create lalu update `id` + baris lama `{id}`). Pelanggan menyetujui lewat popup. Dokumen ber-PPh (Tax ID terisi) tidak dicicil. Detail, batasan, dan bukti: `docs/architecture/architecture-staged-send.md`.
 
+
+## Update 2026-11-26: "Jumlah Bayar" kosong di baris lanjutan ikut baris pertama
+Faktur yang sama di beberapa baris (pecah biaya/diskon): "Jumlah Bayar" cukup diisi di satu baris (lazimnya baris pertama). Sel kosong tidak lagi dibaca 0 sehingga tidak ditolak "berbeda". Angka terisi yang berbeda tetap ditolak, tidak dijumlahkan; bila semua kosong, perilaku lama (0). Batasan: edit baris gagal di layar masih mewajibkan kolom ini. Menggantikan catatan 2026-10-06 bahwa kolom wajib diisi di tiap baris.
