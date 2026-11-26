@@ -611,6 +611,14 @@ describe("validateInvoiceRowsConsistencyForReceipt", () => {
     expect(validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "A", "Jumlah Bayar": 100 }, { "No Faktur": "B", "Jumlah Bayar": 50 }]), mapping)).toBeNull();
   });
 
+  test("sel Jumlah Bayar kosong di baris lanjutan ikut baris yang terisi (tidak dijumlahkan)", () => {
+    const rows = [{ "No Faktur": "A", "Jumlah Bayar": "" }, { "No Faktur": "A", "Jumlah Bayar": 199950 }, { "No Faktur": "A" }];
+    expect(validateInvoiceRowsConsistencyForReceipt(group(rows), mapping)).toBeNull();
+    const payload = buildSalesReceiptPayload(rows, mapping);
+    expect(payload.detailInvoice).toEqual([{ invoiceNo: "A", paymentAmount: 199950 }]);
+    expect(payload.chequeAmount).toBe(199950);
+  });
+
   test("ditolak: faktur sama dengan Jumlah Bayar BERBEDA (tidak dijumlahkan diam-diam)", () => {
     const err = validateInvoiceRowsConsistencyForReceipt(group([{ "No Faktur": "JASA-01", "Jumlah Bayar": 100000 }, { "No Faktur": "JASA-01", "Jumlah Bayar": 50000 }]), mapping);
     expect(err).toContain('Faktur "JASA-01"');

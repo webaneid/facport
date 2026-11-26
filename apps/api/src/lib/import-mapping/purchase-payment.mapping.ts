@@ -225,7 +225,8 @@ export function validateInvoiceRowsConsistencyForPayment(group: PurchasePaymentG
 
   for (const { invoiceNo, rows } of byInvoice.values()) {
     if (rows.length < 2) continue;
-    const amounts = new Set(rows.map((r) => Number(r.chequeAmount ?? 0)));
+    // Sel kosong = ikut nilai baris lain faktur itu (2026-11-26); hanya angka TERISI yang dibandingkan.
+    const amounts = new Set(rows.filter((r) => String(r.chequeAmount ?? "").trim() !== "").map((r) => Number(r.chequeAmount)));
     if (amounts.size > 1) {
       return `Faktur "${invoiceNo}" ada di ${rows.length} baris dengan "Payment" berbeda (${[...amounts].join(" vs ")}). Satu faktur hanya boleh satu pembayaran per Purchase Payment — isi "Payment" SAMA di semua baris faktur itu (baris tambahan hanya untuk diskon/PPh tambahan).`;
     }
@@ -422,10 +423,11 @@ export function buildPurchasePaymentPayload(
     const key = invoiceNo.trim() === "" ? `__row${rowIndex}` : invoiceNo.trim().toLowerCase();
     let entry = invoiceEntries.get(key);
     if (!entry) {
-      entry = { invoiceNo, paymentAmount: Number(rowValues.chequeAmount ?? 0) };
+      entry = { invoiceNo, paymentAmount: undefined };
       invoiceEntries.set(key, entry);
       invoiceOrder.push(entry);
     }
+    if (String(rowValues.chequeAmount ?? "").trim() !== "") entry.paymentAmount ??= Number(rowValues.chequeAmount);
     if (rowValues.paidPph !== undefined && entry.paidPph === undefined) entry.paidPph = rowValues.paidPph;
     if (rowValues.pphNumber !== undefined && entry.pphNumber === undefined) entry.pphNumber = String(rowValues.pphNumber);
     const discount = buildDetailDiscountFromRowValues(rowValues);
@@ -440,6 +442,7 @@ export function buildPurchasePaymentPayload(
       }
     }
   });
+  for (const entry of invoiceOrder) entry.paymentAmount ??= 0;
   const detailInvoice = invoiceOrder;
 
   // § Fase 90 (2026-09-10, BUG DITEMUKAN via test call NYATA ke Accurate,

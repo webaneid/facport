@@ -1,6 +1,6 @@
 # Fase 225 — Receive Item: tarik isi Purchase Order cukup dengan nomor PO
 
-**Status:** Done sisi kode (2026-11-26); terbukti ke Accurate dev
+**Status:** Done, LIVE v2.54.0 (2026-11-26); terbukti ke Accurate dev
 **Mulai:** 2026-11-26 (rencana)
 **Selesai:** -
 
