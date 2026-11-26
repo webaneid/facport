@@ -57,6 +57,8 @@ export type SalesQuotationLine = {
   useTax3?: boolean;
   // § Fase 198 tahap C — gudang baris (dibaca bila ada; dipakai HANYA oleh sumber Delivery Order, modul lain mengabaikannya).
   warehouseName?: string;
+  // § Fase 225 — ID baris dokumen sumber; diisi HANYA untuk Purchase Order.
+  sourceDetailId?: number;
   // § Fase 198 (lanjutan, sedang) — atribut tambahan baris yang dibaca TOLERAN (nama = nama field TULIS Sales Invoice): dataClassificationNName,
   // charFieldN, numericFieldN, useTax2. Hanya dipakai Sales Invoice; Sales Order mengabaikannya.
   extra?: Record<string, string | number | boolean>;
@@ -258,7 +260,7 @@ export function summarizeSourceShape(raw: RawQuotation | null | undefined): { li
 }
 
 // § Fase 198 tahap B — parser yang SAMA dipakai Sales Order sebagai dokumen sumber Sales Invoice (`docLabel` hanya mengubah kata di pesan galat).
-export type SourceDocLabel = "Penawaran" | "Pesanan" | "Pengiriman";
+export type SourceDocLabel = "Penawaran" | "Pesanan" | "Pengiriman" | "Pesanan Pembelian" | "Penerimaan Barang";
 
 export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, quotationNumber: string, docLabel: SourceDocLabel = "Penawaran"): SalesQuotationDetail {
   const items = raw?.detailItem ?? [];
@@ -270,7 +272,8 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
   // `available*` yang sudah dihitung Accurate sendiri (setelah retur & penagihan sebelumnya): `availableQuantity` (7), `availableUnitPrice`, `availableItemUnitName`,
   // `availableItemCashDiscount`; `quantity`/`quantityDefault` = kuantitas ASLI (10), `returnQuantity` = 3, `invoiceQuantity` = 0. Faktur dari DO memakai kelompok ini;
   // baris dengan sisa 0 dilewati. Berlaku HANYA untuk DO (bentuk SO/SQ belum terbukti — kuantitas asli tetap dipakai).
-  const useAvailable = docLabel === "Pengiriman";
+  const isPurchaseDoc = docLabel === "Pesanan Pembelian" || docLabel === "Penerimaan Barang"; // sisa & ID baris terbukti uji nyata Fase 225/226
+  const useAvailable = docLabel === "Pengiriman" || isPurchaseDoc;
   const mapped = items.map((it, index): SalesQuotationLine | null => {
     const available = useAvailable ? num(it.availableQuantity) : null;
     if (available !== null && available <= 0) return null; // sudah habis diretur/ditagih
@@ -300,13 +303,19 @@ export function parseSalesQuotationDetail(raw: RawQuotation | null | undefined, 
     // pembulatan di Accurate, jadi bila persen ada, hanya persen yang ditarik.
     if (extras.itemDiscPercent !== undefined) extras.itemCashDiscount = undefined;
     for (const [k, v] of Object.entries(extras)) if (v !== undefined) (line as Record<string, unknown>)[k] = v;
+    if (isPurchaseDoc) {
+      const id = num(it.id);
+      if (id === null) throw new Error(`ID baris ${docLabel.toLowerCase()} "${quotationNumber}" tidak terbaca dari Accurate — isi kolom item di Excel secara manual.`);
+      line.sourceDetailId = id;
+    }
     const lineExtra = readLineExtras(it);
     if (Object.keys(lineExtra).length > 0) line.extra = lineExtra;
     return line;
   });
   const lines = mapped.filter((l): l is SalesQuotationLine => l !== null);
   if (useAvailable && lines.length === 0) {
-    throw new Error(`${docLabel} "${quotationNumber}" tidak punya sisa yang bisa ditagih — semua barangnya sudah ditagih atau diretur.`);
+    const reason = docLabel === "Pesanan Pembelian" ? "diterima — semua barangnya sudah diterima atau ditutup" : "ditagih — semua barangnya sudah ditagih atau diretur";
+    throw new Error(`${docLabel} "${quotationNumber}" tidak punya sisa yang bisa ${reason}.`);
   }
 
   const expenses = (raw?.detailExpense ?? []).map((ex, index): SalesQuotationExpense => {

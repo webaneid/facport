@@ -172,6 +172,10 @@ import {
   extractDataClassificationValues as extractDataClassificationValuesRI,
   type ReceiveItemGroup,
 } from "../lib/import-mapping/receive-item.mapping";
+import { expandPurchaseOrderRowsInPayload, assertReceiveItemLines } from "../lib/import-mapping/receive-item-expansion";
+import { getPurchaseOrderByNumber, getReceiveItemByNumber } from "../lib/accurate-purchase-order";
+import { expandPurchaseSourceRows } from "../lib/import-mapping/source-doc-lines";
+import { purchaseSourceOfRow } from "../lib/import-mapping/purchase-invoice.mapping";
 // § Fase 122 — Purchase Return, dokumen LANJUTAN (TIDAK auto-create
 // vendor/item, mirror Receive Item) TAPI grouping DEFAULT ADR-0011
 // (opsional by "number", BUKAN wajib seperti Receive Item). Punya
@@ -835,6 +839,22 @@ export async function processPurchaseInvoiceGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
+  const plan = planPurchaseInvoiceRows(rawRows, columnMapping);
+  // § Fase 226 — SEBELUM auto-create vendor (pemasok dicocokkan dengan dokumen sumber). `offsets[k]` = indeks detail untuk entri barang ke-k.
+  const entryRows = rawRows.filter((_, i) => plan.sentInDetailItem[i]);
+  const sources = entryRows.map((raw) => {
+    const source = purchaseSourceOfRow(raw, columnMapping);
+    if (!source) return null;
+    const receipt = source.kind === "receiveItem";
+    return {
+      number: source.number,
+      label: receipt ? "Penerimaan Barang" : "Purchase Order",
+      detailIdField: receipt ? "receiveItemDetailId" : "purchaseOrderDetailId",
+      fetch: (number: string) => (receipt ? getReceiveItemByNumber(ctx, number) : getPurchaseOrderByNumber(ctx, number)),
+    };
+  });
+  const expandedAny = sources.some(Boolean);
+  const offsets = await expandPurchaseSourceRows(payload, entryRows, columnMapping, sources);
 
   const vendorNo = String(payload.vendorNo ?? "");
   if (vendorNo) {
@@ -858,9 +878,10 @@ export async function processPurchaseInvoiceGroup(
   // § Fase 214 — baris hanya-Beban tidak ikut `detailItem[]` (lihat `planPurchaseInvoiceRows`), jadi hanya baris barang yang dipetakan ke `result.detailItem`.
   // Jumlah hasil simpan tidak sama dengan yang dikirim → faktur SUDAH tersimpan; jangan tandai gagal bila terbukti cocok berurutan (kode item), selain itu
   // tolak dengan pesan yang menjelaskan fakturnya sudah ada (bukan terbaca sebagai salah data pelanggan).
-  const plan = planPurchaseInvoiceRows(rawRows, columnMapping);
   const mappedIdx = group.rows.map((_, i) => i).filter((i) => plan.mappedFromResult[i]);
-  const sentItemNos = mappedIdx.map((i) => extractRowDetailItemNo(rawRows[i]!, columnMapping) ?? "");
+  const sentItemNos = expandedAny
+    ? (payload.detailItem as { itemNo?: unknown }[]).map((d) => String(d.itemNo ?? ""))
+    : mappedIdx.map((i) => extractRowDetailItemNo(rawRows[i]!, columnMapping) ?? "");
   const saved = await selectSavedDetailForMapping(
     sentItemNos,
     result.detailItem ?? [],
@@ -868,16 +889,16 @@ export async function processPurchaseInvoiceGroup(
     (info) => logger.info({ invoiceId: result.id, ...info }, "Purchase Invoice: Accurate menambah baris otomatis, baris dikirim terpetakan aman"),
     (err) => logger.warn({ err, invoiceId: result.id }, "Purchase Invoice: gagal membaca detail faktur untuk menyelaraskan baris"),
   );
-  if (saved.length !== mappedIdx.length) {
+  if (saved.length !== sentItemNos.length) {
     throw new Error(
-      `Faktur Pembelian "${result.number}" (ID ${result.id}) SUDAH tersimpan di Accurate, tetapi Facport belum bisa memetakan baris-barisnya (Accurate mengembalikan ${saved.length} baris barang, ${mappedIdx.length} dikirim). ` +
+      `Faktur Pembelian "${result.number}" (ID ${result.id}) SUDAH tersimpan di Accurate, tetapi Facport belum bisa memetakan baris-barisnya (Accurate mengembalikan ${saved.length} baris barang, ${sentItemNos.length} dikirim). ` +
         "Ini bukan kesalahan data Anda — jangan unggah ulang. Tekan Retry agar Facport mengenali faktur itu; bila tetap gagal, hubungi support.",
     );
   }
-  let nextSaved = 0;
+  let nextEntry = 0; // baris perluasan menyimpan id detail PERTAMA hasil perluasannya (pola Fase 198)
   return {
     invoiceId: result.id,
-    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: plan.mappedFromResult[i] ? saved[nextSaved++]!.id : EXPENSE_ONLY_ROW_MARKER })),
+    rows: group.rows.map((row, i) => ({ rowId: row.id, detailItemId: plan.mappedFromResult[i] ? saved[offsets[nextEntry++]!]!.id : EXPENSE_ONLY_ROW_MARKER })),
   };
 }
 
@@ -892,6 +913,7 @@ export async function tryAdoptExistingPurchaseInvoice(
   columnMapping: Record<string, string>,
 ): Promise<AdoptionResult | null> {
   const rawRows = group.rows.map((r) => r.rawData);
+  if (rawRows.some((r) => purchaseSourceOfRow(r, columnMapping))) return null;
   const payload = buildPurchaseInvoicePayload(rawRows, columnMapping);
   const number = String(payload.number ?? "").trim();
   if (!number) return null;
@@ -1028,6 +1050,13 @@ export async function appendToExistingPurchaseInvoice(
   if (planPurchaseInvoiceRows(rawRows, columnMapping).expenseOnly.some(Boolean)) {
     throw new Error(
       `Nomor grup "${group.groupKey}" sudah punya Faktur Pembelian #${existingId} di Accurate, sedangkan file ini memuat baris yang hanya berisi Beban. Facport belum bisa menambahkan Beban ke faktur yang sudah ada. Tambahkan Beban itu langsung di Accurate, atau gunakan Nomor Transaksi yang berbeda.`,
+    );
+  }
+
+  // § Fase 226 — jalur append mencocokkan duplikat per baris Excel; baris dari dokumen sumber (1 → banyak) tidak cocok dengan itu → ditolak jelas.
+  if (rawRows.some((r) => purchaseSourceOfRow(r, columnMapping))) {
+    throw new Error(
+      `Nomor grup "${group.groupKey}" sudah ada sebagai Faktur Pembelian #${existingId} di Accurate, sehingga baris yang mengambil isi dari Penerimaan Barang/PO tidak bisa ditambahkan ke faktur itu. Isi kolom barang secara manual, atau gunakan Nomor Transaksi lain.`,
     );
   }
 
@@ -1559,6 +1588,9 @@ export async function processReceiveItemGroup(
 
   const rawRows = group.rows.map((r) => r.rawData);
   const payload = buildReceiveItemPayload(rawRows, columnMapping);
+  // § Fase 225 — dibaca ulang tiap grup (TANPA cache): sisa PO berubah setiap kali ada penerimaan.
+  await expandPurchaseOrderRowsInPayload(payload, rawRows, columnMapping, (number) => getPurchaseOrderByNumber(ctx, number));
+  assertReceiveItemLines(payload);
 
   await ensureReceiveItemDataClassifications(ctx, rawRows, columnMapping);
 

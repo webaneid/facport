@@ -42,6 +42,8 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
       "POST purchase-invoice/save.do",
       "GET purchase-invoice/detail.do", // append ke faktur existing (Fase 08)
       "DELETE purchase-invoice/delete.do", // Batal Import (Fase 09) — spec: purchase_invoice_delete
+      "GET receive-item/detail.do", // § Fase 226 — tarik isi Penerimaan Barang
+      "GET purchase-order/detail.do", // § Fase 226 — tarik isi PO
       ...ITEM,
       ...CLASSIFICATION,
       ...VENDOR,
@@ -90,7 +92,7 @@ export const ACCURATE_ENDPOINT_REGISTRY: Record<string, ModuleEndpoints> = {
     extraScopes: [legacy("other_deposit_view")],
   },
   purchase_order: { endpoints: ["POST purchase-order/save.do", "DELETE purchase-order/delete.do", ...VENDOR, ...ITEM, ...CLASSIFICATION] },
-  receive_item: { endpoints: ["POST receive-item/save.do", "DELETE receive-item/delete.do", ...CLASSIFICATION] },
+  receive_item: { endpoints: ["POST receive-item/save.do", "DELETE receive-item/delete.do", "GET purchase-order/detail.do", ...CLASSIFICATION] }, // detail.do PO: Fase 225
   // § Fase 170 — `GET purchase-invoice/detail.do` BARU: Unit Price (dan diskon baris) retur diambil dari faktur asal bila dikosongkan.
   purchase_return: { endpoints: ["POST purchase-return/save.do", "DELETE purchase-return/delete.do", "GET purchase-invoice/detail.do", ...CLASSIFICATION] },
   sales_quotation: { endpoints: ["POST sales-quotation/save.do", "DELETE sales-quotation/delete.do", ...CUSTOMER, ...ITEM, ...CLASSIFICATION] },

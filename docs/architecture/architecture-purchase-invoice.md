@@ -323,3 +323,6 @@ Template memungkinkan 1 faktur = baris barang + baris Beban TERPISAH (baris Beba
   `apps/api/src/lib/accurate-vendor.ts`,
   `apps/api/src/lib/import-mapping/purchase-invoice.mapping.ts`,
   `apps/api/src/workers/index.ts` (`processPurchaseInvoiceGroup`)
+
+## Fase 226 — tarik isi Penerimaan Barang / PO dari nomornya
+Scope baru `receive_item_view`, `purchase_order_view`. Detail: `docs/phases/phase-226-purchase-invoice-tarik-isi-dokumen-sumber.md`.

@@ -512,6 +512,21 @@ export function isExpenseOnlyRow(rawRow: Record<string, unknown>, columnMapping:
   return Object.keys(buildDetailItemFromRow(rawRow, columnMapping)).length === 0 && buildDetailExpenseFromRow(rawRow, columnMapping) !== null;
 }
 
+// § Fase 226 — nomor Penerimaan Barang / PO terisi DAN kolom item kosong → isi diambil dari dokumen itu. Penerimaan Barang menang (prioritas Accurate).
+const SOURCE_ITEM_FIELDS = ["itemNo", "itemName", "unitPrice", "itemNotes", "quantity", "itemUnitName"];
+const SOURCE_EXEMPT_REQUIRED = new Set(["itemNo", "unitPrice", "quantity", "itemUnitName", "warehouseName"]);
+
+export function purchaseSourceOfRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>): { kind: "receiveItem" | "purchaseOrder"; number: string } | null {
+  const cell = (field: string) => {
+    const column = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
+    return String((column ? rawRow[column] : undefined) ?? "").trim();
+  };
+  if (SOURCE_ITEM_FIELDS.some((f) => cell(f) !== "")) return null;
+  if (cell("itemReceiveItemNo")) return { kind: "receiveItem", number: cell("itemReceiveItemNo") };
+  if (cell("itemPurchaseOrderNo")) return { kind: "purchaseOrder", number: cell("itemPurchaseOrderNo") };
+  return null;
+}
+
 /** Field header yang tetap wajib berisi pada baris hanya-Beban (kolom barang tidak diwajibkan karena baris ini memang tidak punya barang). */
 const EXPENSE_ONLY_REQUIRED_FIELDS: readonly PurchaseInvoiceField[] = ["vendorNo", "transDate", "number"];
 
@@ -522,6 +537,7 @@ const EXPENSE_ONLY_REQUIRED_FIELDS: readonly PurchaseInvoiceField[] = ["vendorNo
  */
 export function isRequiredFieldExemptForRow(rawRow: Record<string, unknown>, columnMapping: Record<string, string>, internalField: string): boolean {
   if ((EXPENSE_ONLY_REQUIRED_FIELDS as readonly string[]).includes(internalField)) return false;
+  if (SOURCE_EXEMPT_REQUIRED.has(internalField) && purchaseSourceOfRow(rawRow, columnMapping)) return true; // § Fase 226
   return isExpenseOnlyRow(rawRow, columnMapping);
 }
 

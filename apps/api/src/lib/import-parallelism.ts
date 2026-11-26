@@ -1,12 +1,13 @@
 import { env } from "./env";
 import { configuredGroupParallelism } from "./group-concurrency";
 import { salesInvoiceMapping } from "./import-mapping/sales-invoice.mapping";
-import { purchaseInvoiceMapping } from "./import-mapping/purchase-invoice.mapping";
+import { purchaseInvoiceMapping, purchaseSourceOfRow } from "./import-mapping/purchase-invoice.mapping";
 import { salesReceiptMapping } from "./import-mapping/sales-receipt.mapping";
 import { purchasePaymentMapping } from "./import-mapping/purchase-payment.mapping";
 import { salesReturnMapping } from "./import-mapping/sales-return.mapping";
 import { purchaseOrderMapping } from "./import-mapping/purchase-order.mapping";
 import { receiveItemMapping } from "./import-mapping/receive-item.mapping";
+import { isPurchaseOrderExpansionRow } from "./import-mapping/receive-item-expansion";
 import { salesQuotationMapping } from "./import-mapping/sales-quotation.mapping";
 import { salesOrderMapping } from "./import-mapping/sales-order.mapping";
 import { deliveryOrderMapping } from "./import-mapping/delivery-order.mapping";
@@ -82,7 +83,7 @@ export function numberColumnsOf(module: string, columnMapping: Record<string, st
   return Object.entries(columnMapping).filter(([, field]) => mapping.fieldToAccuratePath[field] === "number").map(([column]) => column);
 }
 
-export type ParallelReason = "ok" | "off" | "module_not_enabled" | "no_number_column" | "blank_numbers";
+export type ParallelReason = "ok" | "off" | "module_not_enabled" | "no_number_column" | "blank_numbers" | "source_expansion";
 export type ParallelDecision = { parallelism: number; reason: ParallelReason };
 
 /**
@@ -108,5 +109,12 @@ export function decideGroupParallelism(args: {
       return value !== undefined && value !== null && String(value).trim() !== "";
     });
   if (!args.rows.every(hasNumber)) return { parallelism: 1, reason: "blank_numbers" };
+  if (args.module === "purchase_invoice" && args.rows.some((r) => purchaseSourceOfRow(r.rawData, args.columnMapping))) {
+    return { parallelism: 1, reason: "source_expansion" };
+  }
+  // § Fase 225 — dua penerimaan serentak dari PO yang sama akan sama-sama membaca sisa penuh (Accurate tidak menolak berlebih).
+  if (args.module === "receive_item" && args.rows.some((r) => isPurchaseOrderExpansionRow(r.rawData, args.columnMapping))) {
+    return { parallelism: 1, reason: "source_expansion" };
+  }
   return { parallelism: configured, reason: "ok" };
 }

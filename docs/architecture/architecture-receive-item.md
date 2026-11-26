@@ -133,3 +133,6 @@ Rekomendasi eksekusi sama: 1x verifikasi test call nyata ke
 - Spec resmi: `docs/referencehtml/accurate-openapi.json` `/api/receive-item/save.do`
 - Panduan client (gitignored): sheet "Receive Item"
 - Modul sebelum/sesudah dalam rantai: `architecture-purchase-order.md`, `architecture-purchase-invoice.md`, `architecture-purchase-return.md`
+
+## Fase 225 — tarik isi Purchase Order dari nomornya
+`lib/import-mapping/receive-item-expansion.ts`: `ITEM: Purchase Order No` terisi + kolom barang kosong → semua SISA baris PO (`getPurchaseOrderByNumber`, scope `purchase_order_view`), dikirim dengan `purchaseOrderDetailId`. Dibaca ulang per grup tanpa cache; batch berisi baris ini tidak paralel. Aturan & temuan uji: `docs/phases/phase-225-receive-item-tarik-isi-purchase-order.md`.
