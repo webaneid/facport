@@ -1,3 +1,10 @@
+## <small>2.54.1 (2026-11-26)</small>
+
+* chore: rilis Jumlah Bayar/Payment baris lanjutan (SR & PP) ([38a8b48](https://github.com/webaneid/facport/commit/38a8b48))
+* fix: Jumlah Bayar/Payment kosong di baris lanjutan ikut baris yang terisi (SR & PP) ([3fa288d](https://github.com/webaneid/facport/commit/3fa288d))
+* docs: Fase 225-226 dirilis v2.54.0 ([9d0d497](https://github.com/webaneid/facport/commit/9d0d497))
+* docs: v2.54.0 live ([7f0db8a](https://github.com/webaneid/facport/commit/7f0db8a))
+
 ## 2.54.0 (2026-11-26)
 
 * chore: rilis Fase 225-226 (perbaikan gerbang tes) ([7951c77](https://github.com/webaneid/facport/commit/7951c77))
