@@ -1,6 +1,6 @@
 # Fase 226 — Faktur Pembelian: tarik isi Penerimaan Barang / PO cukup dengan nomornya
 
-**Status:** Done, dirilis v2.54.0 (2026-11-26); terbukti ke Accurate dev
+**Status:** Done, LIVE v2.54.0 (2026-11-26); terbukti ke Accurate dev
 **Mulai:** 2026-11-26
 
 ## Tujuan
