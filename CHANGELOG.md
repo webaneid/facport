@@ -1,3 +1,11 @@
+## 2.54.0 (2026-11-26)
+
+* chore: rilis Fase 225-226 (perbaikan gerbang tes) ([7951c77](https://github.com/webaneid/facport/commit/7951c77))
+* chore: rilis Fase 225-226 (tarik isi dokumen sumber pembelian) ([1e9a5e6](https://github.com/webaneid/facport/commit/1e9a5e6))
+* test: lengkapi mock next/navigation di command-palette (gerbang rilis) ([77d6af3](https://github.com/webaneid/facport/commit/77d6af3))
+* feat: Receive Item & Faktur Pembelian tarik isi dokumen sumber cukup dengan nomornya (Fase 225-226) ([7887483](https://github.com/webaneid/facport/commit/7887483))
+* docs: PROGRESS — Fase 224 live v2.53.1 ([ead088d](https://github.com/webaneid/facport/commit/ead088d))
+
 ## <small>2.53.1 (2026-11-18)</small>
 
 * Merge develop: Fase 224 Job Costing tidak lagi membuat Penambahan Bahan Baku otomatis ([c4b3b83](https://github.com/webaneid/facport/commit/c4b3b83))
