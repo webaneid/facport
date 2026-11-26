@@ -6,7 +6,8 @@ import userEvent from "@testing-library/user-event";
 let permissions = ["users.view", "insights.view"];
 const push = mock((_href: string) => {});
 const usersGet = mock(async (_a: unknown): Promise<{ data: unknown; error: unknown }> => ({ data: { users: [{ id: "u1", name: "Budi Santoso", email: "budi@test.local" }] }, error: null }));
-mock.module("next/navigation", () => ({ useRouter: () => ({ push }) }));
+// § mock harus lengkap: bocor ke berkas tes lain (SOP deploy — gerbang rilis gagal 2×)
+mock.module("next/navigation", () => ({ useRouter: () => ({ push }), useSearchParams: () => new URLSearchParams(), usePathname: () => "/", useParams: () => ({}) }));
 mock.module("@/lib/api-client", () => ({ api: { admin: { users: { get: usersGet } } }, apiBaseUrl: "" }));
 mock.module("@/lib/use-permissions", () => ({ usePermissions: () => permissions, usePermission: (k: string) => permissions.includes(k), PermissionsProvider: ({ children }: { children: React.ReactNode }) => children }));
 const { CommandPalette } = await import("./command-palette");
