@@ -6495,3 +6495,6 @@ Fase 43 memilih 1 Tahun = 12×30 = 360 hari "agar bulat" — dan konstanta itu d
 - **Perbaikan:** retry 503 polos dengan jeda 5–120 dtk per KONEKSI + pemutus (gagal cepat setelah jadwal habis) + log header respons 503. Detail → `architecture-import-capacity.md` § 17.
 - **Aturan:** (1) retry otomatis pada POST hanya boleh untuk galat yang TERBUKTI tidak memproses (ukur durasi respons di log dulu); 502/504 bukan termasuk. (2) Setiap retry berjeda WAJIB punya pemutus — tanpa itu outage panjang mengalikan waktu per baris dan melewati expire job. (3) Diagnosis galat produksi: urutan kerja yang berhasil = SQL sebaran waktu galat per 5 menit → log `accurate_request` (status+durationMs).
 - **Terbuka:** efek produksi belum terukur; bila `rejectionHeaders` menunjukkan proteksi beban, pertimbangkan penurunan paralelisme otomatis.
+
+## 2026-11-26 — Receive Item: baris Item No kembar tertaut ke baris PO yang salah tanpa error (Fase 225)
+Mengirim `purchaseOrderNumber` saja membuat Accurate menautkan semua baris kembar ke baris PO pertama dan menerima melebihi pesanan. Wajib kirim `purchaseOrderDetailId` (tak terdokumentasi di spec, terbukti uji nyata). Cek juga relasi lain di `architecture-source-line-resolution.md`.

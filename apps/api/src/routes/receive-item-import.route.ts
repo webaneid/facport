@@ -10,6 +10,7 @@ import { ownsDataUsaha } from "../lib/data-usaha";
 import { parseExcelBuffer, generateTemplateBuffer, generateFailedRowsBuffer, sanitizeFilenamePart } from "../lib/excel";
 import { buildDataCheck } from "../lib/data-check";
 import { receiveItemMapping } from "../lib/import-mapping/receive-item.mapping";
+import { isRequiredFieldExemptForRow } from "../lib/import-mapping/receive-item-expansion";
 import { receiveItemTemplateGuide } from "../lib/import-mapping/template-guide";
 import { JOBS } from "../lib/queue";
 import { checkTrialRowBudget } from "../lib/trial";
@@ -312,6 +313,7 @@ export const receiveItemImportRoute = new Elysia()
 
       const columnMapping = (batch.columnMapping ?? {}) as Record<string, string>;
       const missing = receiveItemMapping.requiredFields.filter((field) => {
+        if (isRequiredFieldExemptForRow(body.rawData, columnMapping, field)) return false; // § Fase 225
         const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
         const value = excelColumn ? body.rawData[excelColumn] : undefined;
         return value === undefined || value === null || String(value).trim() === "";
@@ -363,6 +365,7 @@ export const receiveItemImportRoute = new Elysia()
         }
 
         const missing = receiveItemMapping.requiredFields.filter((field) => {
+          if (isRequiredFieldExemptForRow(item.rawData, columnMapping, field)) return false; // § Fase 225
           const excelColumn = Object.entries(columnMapping).find(([, f]) => f === field)?.[0];
           const value = excelColumn ? item.rawData[excelColumn] : undefined;
           return value === undefined || value === null || String(value).trim() === "";

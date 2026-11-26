@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api-client";
+import { isRequiredFieldExemptForRow } from "@/lib/receive-item-expansion";
 
 // § mirror `components/purchase-order/edit-row-dialog.tsx` — modul ini
 // juga create-only (TIDAK ada findExisting/append), grouping multi-baris
@@ -86,7 +87,7 @@ export function EditRowDialog({
   }, [error]);
 
   function validateRequired(vals: Record<string, string>): Set<string> {
-    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === ""));
+    return new Set([...requiredColumns].filter((col) => (vals[col] ?? "").trim() === "" && !isRequiredFieldExemptForRow(vals, columnMapping, columnMapping[col]!)));
   }
 
   function openDialog() {

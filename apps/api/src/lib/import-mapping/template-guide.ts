@@ -43,11 +43,11 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   { column: "To Address", required: false, example: "", description: "Alamat tujuan pengiriman (kalau relevan)." },
   { column: "Shipment Name", required: false, example: "", description: "Nama pengiriman/ekspedisi (kalau relevan)." },
   { column: "Shipment Date", required: false, format: DATE_FORMAT, example: "19/08/2026", description: "Tanggal pengiriman (kalau relevan)." },
-  { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online." },
-  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000)." },
-  { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dibeli." },
-  { column: "Item Unit Name", required: true, example: "PCS", description: "Satuan barang PERSIS seperti di Accurate (mis. PCS, KG, BOX)." },
-  { column: "Item Warehouse", required: true, example: "Gudang Utama", description: "Nama gudang tujuan barang PERSIS seperti di Accurate." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Nomor/kode barang PERSIS seperti terdaftar di Accurate Online. Tidak perlu diisi bila barang diambil dari ITEM: RECEIVE ITEM NO / ITEM: PURCHASE ORDER NO." },
+  { column: "Unit Price", required: true, example: "50000", description: "Harga satuan barang. Angka polos, TANPA titik/koma pemisah ribuan (mis. 50000, bukan 50.000). Tidak perlu diisi bila barang diambil dari ITEM: RECEIVE ITEM NO / ITEM: PURCHASE ORDER NO." },
+  { column: "Item Qty", required: true, example: "10", description: "Jumlah/kuantitas barang yang dibeli. Tidak perlu diisi bila barang diambil dari ITEM: RECEIVE ITEM NO / ITEM: PURCHASE ORDER NO." },
+  { column: "Item Unit Name", required: true, example: "PCS", description: "Satuan barang PERSIS seperti di Accurate (mis. PCS, KG, BOX). Tidak perlu diisi bila barang diambil dari ITEM: RECEIVE ITEM NO / ITEM: PURCHASE ORDER NO." },
+  { column: "Item Warehouse", required: true, example: "Gudang Utama", description: "Nama gudang tujuan barang PERSIS seperti di Accurate. Tidak perlu diisi bila barang diambil dari ITEM: RECEIVE ITEM NO / ITEM: PURCHASE ORDER NO." },
   { column: "Item Name", required: false, example: "Kertas A4 80gsm", description: "Nama barang — dipakai untuk BIKIN barang baru otomatis kalau Item No belum terdaftar di Accurate." },
   { column: "Item Notes", required: false, example: "", description: "Catatan khusus untuk baris barang ini." },
   { column: "Item Cash Disc", required: false, example: "0", description: "Nominal diskon tunai khusus barang ini (Rupiah)." },
@@ -164,8 +164,8 @@ export const purchaseInvoiceTemplateGuide: TemplateFieldGuide[] = [
   // ⚠️ Ketiga field level ITEM berikut SALING TERHUBUNG — Accurate cuma
   // proses SATU kalau diisi bersamaan, prioritas: "ITEM: RECEIVE ITEM
   // NO" > "ITEM: PURCHASE ORDER NO" > "ITEM: PURCHASE REQUISITION NO".
-  { column: "ITEM: RECEIVE ITEM NO", required: false, example: "", description: "Nomor transaksi Penerimaan Barang (Receive Item) yang terhubung dengan baris barang ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Purchase Order No/Purchase Requisition No — yang lain diabaikan." },
-  { column: "ITEM: PURCHASE ORDER NO", required: false, example: "", description: "Nomor transaksi Pesanan Pembelian (Purchase Order) yang terhubung dengan baris barang ini. Diabaikan kalau Receive Item No juga terisi di baris yang sama." },
+  { column: "ITEM: RECEIVE ITEM NO", required: false, example: "", description: "Nomor transaksi Penerimaan Barang (Receive Item) yang terhubung dengan baris barang ini. PRIORITAS TERTINGGI kalau diisi bersamaan dengan Purchase Order No/Purchase Requisition No — yang lain diabaikan. Bila Item No, Item Name, harga, qty, satuan dan Item Notes SEMUA kosong, barang diambil otomatis dari SISA dokumen ini (satu baris per nomor)." },
+  { column: "ITEM: PURCHASE ORDER NO", required: false, example: "", description: "Nomor transaksi Pesanan Pembelian (Purchase Order) yang terhubung dengan baris barang ini. Diabaikan kalau Receive Item No juga terisi di baris yang sama. Bila Item No, Item Name, harga, qty, satuan dan Item Notes SEMUA kosong, barang diambil otomatis dari SISA dokumen ini (satu baris per nomor)." },
   { column: "ITEM: PURCHASE REQUISITION NO", required: false, example: "", description: "Nomor transaksi Permintaan Pembelian (Purchase Requisition) yang terhubung dengan baris barang ini. PRIORITAS TERENDAH — diabaikan kalau Receive Item No ATAU Purchase Order No juga terisi di baris yang sama." },
 ];
 
@@ -792,15 +792,15 @@ export const receiveItemTemplateGuide: TemplateFieldGuide[] = [
   { column: "Custom Number 10", required: false, example: "", description: "Atribut tambahan angka 10, sama catatan di atas." },
   { column: "Custom Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 1 level dokumen." },
   { column: "Custom Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 2, sama catatan di atas." },
-  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada." },
+  { column: "Item No", required: true, example: "BRG-001", description: "Kode barang PERSIS seperti terdaftar di Accurate — TIDAK dibuatkan otomatis kalau belum ada. Tidak perlu diisi bila barang diambil dari ITEM: Purchase Order No." },
   { column: "Item Name", required: false, example: "", description: "Nama/deskripsi barang — kosongkan untuk pakai nama dari data master barang." },
-  { column: "Quantity", required: true, example: "10", description: "Jumlah barang yang diterima." },
-  { column: "Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate." },
+  { column: "Quantity", required: true, example: "10", description: "Jumlah barang yang diterima. Tidak perlu diisi bila barang diambil dari ITEM: Purchase Order No." },
+  { column: "Unit Name", required: true, example: "Unit", description: "Satuan barang, harus PERSIS terdaftar di Accurate. Tidak perlu diisi bila barang diambil dari ITEM: Purchase Order No." },
   { column: "Item Warehouse", required: false, example: "", description: "Nama gudang tujuan barang, harus PERSIS terdaftar di Accurate." },
   { column: "ITEM: Department", required: false, example: "", description: "Nama departemen untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "ITEM: Project No", required: false, example: "", description: "Kode proyek untuk baris ini, harus PERSIS terdaftar di Accurate." },
   { column: "ITEM: Description", required: false, example: "", description: "Catatan tambahan untuk baris barang ini (BUKAN nama barang — lihat \"Item Name\" di atas)." },
-  { column: "ITEM: Purchase Order No", required: false, example: "", description: "Nomor transaksi Pesanan Pembelian (Purchase Order) terkait, kalau barang ini menutup PO tertentu — kolom TAMBAHAN di luar permintaan awal, opsional." },
+  { column: "ITEM: Purchase Order No", required: false, example: "", description: "Nomor Pesanan Pembelian (PO) terkait, opsional. Bila Item No, Item Name, Item Price, ITEM: Description, Quantity dan Unit Name SEMUA kosong, barang diambil otomatis dari SISA PO ini (satu baris per PO)." },
   { column: "ITEM: Finance Category 1", required: false, example: "", description: "Kategori Keuangan 1 untuk baris ini, harus PERSIS terdaftar di Accurate — dibuat otomatis kalau belum ada." },
   { column: "ITEM: Finance Category 2", required: false, example: "", description: "Kategori Keuangan 2, sama catatan di atas." },
   { column: "ITEM: Finance Category 3", required: false, example: "", description: "Kategori Keuangan 3, sama catatan di atas." },
@@ -833,7 +833,7 @@ export const receiveItemTemplateGuide: TemplateFieldGuide[] = [
   { column: "ITEM: Custom Number 10", required: false, example: "", description: "Atribut tambahan angka 10, sama catatan di atas." },
   { column: "ITEM: Custom Date 1", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 1 level barang." },
   { column: "ITEM: Custom Date 2", required: false, format: DATE_FORMAT, example: "", description: "Atribut tambahan tanggal 2, sama catatan di atas." },
-  { column: "Item Price", required: true, example: "50000", description: "Harga satuan barang — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung)." },
+  { column: "Item Price", required: true, example: "50000", description: "Harga satuan barang — WAJIB diisi (field resmi Accurate `unitPrice`, diminta client, posisi paling ujung). Tidak perlu diisi bila barang diambil dari ITEM: Purchase Order No." },
 ];
 
 // § Fase 122, architecture-purchase-return.md — retur terhadap
